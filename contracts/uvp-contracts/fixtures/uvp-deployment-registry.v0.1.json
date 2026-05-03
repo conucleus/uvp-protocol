@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "uvp-eth.uvpDeploymentRegistryAbiFixture.v1",
+  "contractName": "UVPDeploymentRegistry",
+  "abiVersion": "0.1",
+  "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPDeploymentRegistry.sol",
+  "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPDeploymentRegistry.sol/UVPDeploymentRegistry.json",
+  "compiler": {
+    "name": "solc",
+    "version": "0.8.24+commit.e11b9ed9"
+  },
+  "hashes": {
+    "abiHash": "0x163a5190ed911f5f36c4e915d1c006963a53b21a47f094d0db7f5fed048fecb0",
+    "bytecodeHash": "0x7cfd3f4eea6d932bfa6a7e66f19aeb09518faf5df08cbc153fcfd0cbd1315cd3",
+    "deployedBytecodeHash": "0x2f9e5585f9ba9c4b7914d116dc2c37e257c4a08f687731c880c3be61171697fb",
+    "artifactHash": "0x3203d017d46b6f31fcd142bd4e3de857b7cfd85db9595c0b309b55772d3f3942"
+  },
+  "events": {
+    "OwnershipTransferred": {
+      "signature": "OwnershipTransferred(address,address)",
+      "topic": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
+    },
+    "DeploymentRegistered": {
+      "signature": "DeploymentRegistered(bytes32,address,address,bytes32,bytes32,bytes32,uint64,string)",
+      "topic": "0x3c31ff82a9611ec984dec3f32437aff009a65bfdadf230e23c92b62613d48845"
+    },
+    "DeploymentCanaryMarked": {
+      "signature": "DeploymentCanaryMarked(bytes32,bytes32,string)",
+      "topic": "0xfb08f40b1f7a84d2b3a142e167d8cad66dddacb8bf3460cee0d175b8a97c1dfc"
+    },
+    "DeploymentActivated": {
+      "signature": "DeploymentActivated(bytes32,bytes32,bytes32,string)",
+      "topic": "0x6d34241898d03f000c7a1369fd2d9a6bf6f464ebfacf8865bbb9d7efc483c68b"
+    },
+    "DeploymentDeprecated": {
+      "signature": "DeploymentDeprecated(bytes32,bytes32,string)",
+      "topic": "0x88ef895076c73550d7d82c1f8e8c0a12a8c7a142db88cec245422ab049efa90d"
+    },
+    "DeploymentRetired": {
+      "signature": "DeploymentRetired(bytes32,bytes32,string)",
+      "topic": "0x20bd10c06edc495b8b8242ca42ed513ff2eb5a06621ddee6d240897908c434ea"
+    }
+  },
+  "functions": {
+    "owner": {
+      "signature": "owner()",
+      "selector": "0x8da5cb5b"
+    },
+    "transferOwnership": {
+      "signature": "transferOwnership(address)",
+      "selector": "0xf2fde38b"
+    },
+    "registerDeployment": {
+      "signature": "registerDeployment(bytes32,address,address,bytes32,bytes32,bytes32,uint64,string)",
+      "selector": "0x48cbfa0f"
+    },
+    "markCanary": {
+      "signature": "markCanary(bytes32,bytes32,string)",
+      "selector": "0x60926b0b"
+    },
+    "activateDeployment": {
+      "signature": "activateDeployment(bytes32,bytes32,string)",
+      "selector": "0x472ff335"
+    },
+    "deprecateDeployment": {
+      "signature": "deprecateDeployment(bytes32,bytes32,string)",
+      "selector": "0xd7bba969"
+    },
+    "retireDeployment": {
+      "signature": "retireDeployment(bytes32,bytes32,string)",
+      "selector": "0xc89108c9"
+    },
+    "activeDeploymentId": {
+      "signature": "activeDeploymentId()",
+      "selector": "0xdfba66f0"
+    },
+    "deploymentExists": {
+      "signature": "deploymentExists(bytes32)",
+      "selector": "0xbd6d32c5"
+    },
+    "deploymentCount": {
+      "signature": "deploymentCount()",
+      "selector": "0x4c36f10d"
+    },
+    "deploymentIdAt": {
+      "signature": "deploymentIdAt(uint256)",
+      "selector": "0xe2ed158f"
+    },
+    "getDeployment": {
+      "signature": "getDeployment(bytes32)",
+      "selector": "0x8fc7bdc6"
+    },
+    "getActiveDeployment": {
+      "signature": "getActiveDeployment()",
+      "selector": "0xd4d74813"
+    }
+  }
+}

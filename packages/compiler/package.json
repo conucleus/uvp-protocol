@@ -1,0 +1,30 @@
+{
+  "name": "@uvp-eth/compiler",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic EVM artifact compiler for Zhixu HookPlan state-machine definitions.",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "fixtures",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@uvp-eth/hook-core": "workspace:*",
+    "yaml": "^2.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "tsx": "^4.20.6",
+    "typescript": "^5.8.3"
+  }
+}

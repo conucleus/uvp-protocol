@@ -1,0 +1,325 @@
+{
+  "schemaVersion": "uvp-eth.uvpStateMachineAbiFixture.v1",
+  "contractName": "UVPStateMachine",
+  "abiVersion": "0.1",
+  "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStateMachine.sol",
+  "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStateMachine.sol/UVPStateMachine.json",
+  "compiler": {
+    "name": "solc",
+    "version": "0.8.24+commit.e11b9ed9"
+  },
+  "hashes": {
+    "abiHash": "0x0aca0ddd1aa38801dc2297b9234aecfda0d47e05da255f02e524a24d525eebdb",
+    "bytecodeHash": "0x1be92222ae4188e9b97c7ce0ba527658c64b317073e35cad21b9d0ce3ae78b5d",
+    "deployedBytecodeHash": "0x477acd0e586bc64ad6df1973edf9acc506a4561279eb30b337dfd616abf96631",
+    "artifactHash": "0x4fb8ad89d789dfbaf7e502be244e7e9bd30f5057a6de82800951a73e2fe2f222"
+  },
+  "events": {
+    "OwnershipTransferred": {
+      "signature": "OwnershipTransferred(address,address)",
+      "topic": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
+    },
+    "PlanPublisherSet": {
+      "signature": "PlanPublisherSet(address,bool)",
+      "topic": "0x695154746b0eaab0839daadcd01a0203da573cc8e8a2a4927d923d54bb08a3f0"
+    },
+    "OrderRegistrarSet": {
+      "signature": "OrderRegistrarSet(address,bool)",
+      "topic": "0x2eb3861cb484f8598862085ed1ccb9ac5d5736e5d1365fa57b403e43797e3f40"
+    },
+    "PlanRegistered": {
+      "signature": "PlanRegistered(bytes32,bytes32,uint256)",
+      "topic": "0x979e3b71a04f8380bc947d476d6c9bb27aa40ad81a622686d37e5d6b88512bfd"
+    },
+    "PlanPublisherRecorded": {
+      "signature": "PlanPublisherRecorded(bytes32,address)",
+      "topic": "0x0e3566d89d3ecd84eb7712329920f7ce99b6142ab4cbde4324ff9fae8ec3a2f3"
+    },
+    "OrderRegistered": {
+      "signature": "OrderRegistered(bytes32,bytes32)",
+      "topic": "0x4228a1a218f29332c9684f0eed67f17c49aa237467c3770d074734070532349f"
+    },
+    "OrderRegistrarRecorded": {
+      "signature": "OrderRegistrarRecorded(bytes32,address,address)",
+      "topic": "0x7cc31df8e34a32bebb6e843afd4a1e4a666131ec45a30c4597a85659f4c05d8f"
+    },
+    "SignalSubmitterAuthorized": {
+      "signature": "SignalSubmitterAuthorized(bytes32,bytes32,bytes32,address,bytes32,bytes32)",
+      "topic": "0x5397395fa31304c4bedc7871788aa6abc2c2acb5330324ecfcb740245482adf4"
+    },
+    "SignalSubmitted": {
+      "signature": "SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,address)",
+      "topic": "0xdd8f95cfbb4abacb1a0574112eefa06b742609579afd156fb2240b0ff5fbe849"
+    },
+    "StageSelectorBindingRegistered": {
+      "signature": "StageSelectorBindingRegistered(bytes32,bytes32,bytes32)",
+      "topic": "0x1d5e3c0d12001355133d01f23aadca56f42e3689fbd193291c26667bf922ed02"
+    },
+    "StageExecutorPatchApplied": {
+      "signature": "StageExecutorPatchApplied(bytes32,bytes32,bytes32,address,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string)",
+      "topic": "0xe905e100cc72bc7f5c43d9352a70e249f8fdd2697f1fa346dd93a955679f1d9d"
+    },
+    "StageResourcePatchApplied": {
+      "signature": "StageResourcePatchApplied(bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,uint256,string)",
+      "topic": "0x3f89634997832c91424efc916eea7d86c8a9c74b3602c2469957565ea4085d69"
+    },
+    "DockedOrderLinked": {
+      "signature": "DockedOrderLinked(bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32,uint256,string)",
+      "topic": "0x27f6470067196605adadb4df8e5f726c687a70082a033e3f9999ae0bd44b1210"
+    },
+    "DockedSignalMapped": {
+      "signature": "DockedSignalMapped(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",
+      "topic": "0x3660ac684d414fb405fafd103907c1b8b765a77106a22f0a5e52a9d1dd369040"
+    },
+    "DockedSignalSubmitted": {
+      "signature": "DockedSignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
+      "topic": "0x12fc02232ce7d6e4fcc41af2d149244497e54aa2d5fda3ade7d86f90eb473c56"
+    },
+    "StageExecutorActivated": {
+      "signature": "StageExecutorActivated(bytes32,bytes32,address,bytes32,bytes32,uint256)",
+      "topic": "0x5c579f4fb432f093ca872f6918973fb9fbf5c7a5a2a603e04a30dbc20cd73804"
+    },
+    "HookStatusChanged": {
+      "signature": "HookStatusChanged(bytes32,bytes32,uint8,uint8,uint64)",
+      "topic": "0x5be89146d09c52d7c340dd4d7e4116db5352f9f46970109c2f0569babf4272ed"
+    },
+    "HookReady": {
+      "signature": "HookReady(bytes32,bytes32,bytes32,bytes32)",
+      "topic": "0xb63262a494e75638737bc4536aaa7418515d36c7835cfee91f21c3f34da9ace4"
+    },
+    "TimerPoked": {
+      "signature": "TimerPoked(bytes32,bytes32,uint64)",
+      "topic": "0x0993e0474543bdefb1908d2527dac2fd76cfa2fa6fdb36cbb26aeac167ed5c79"
+    }
+  },
+  "functions": {
+    "owner": {
+      "signature": "owner()",
+      "selector": "0x8da5cb5b"
+    },
+    "transferOwnership": {
+      "signature": "transferOwnership(address)",
+      "selector": "0xf2fde38b"
+    },
+    "setPlanPublisher": {
+      "signature": "setPlanPublisher(address,bool)",
+      "selector": "0x0cfc57b7"
+    },
+    "setOrderRegistrar": {
+      "signature": "setOrderRegistrar(address,bool)",
+      "selector": "0xafe2e9c5"
+    },
+    "planPublishers": {
+      "signature": "planPublishers(address)",
+      "selector": "0xb887a20a"
+    },
+    "orderRegistrars": {
+      "signature": "orderRegistrars(address)",
+      "selector": "0xecb6deb5"
+    },
+    "trustRegistry": {
+      "signature": "trustRegistry()",
+      "selector": "0x9b835427"
+    },
+    "officialDomainId": {
+      "signature": "officialDomainId()",
+      "selector": "0xbd43ed5a"
+    },
+    "EXECUTOR_PATCH_SIGNAL_ID": {
+      "signature": "EXECUTOR_PATCH_SIGNAL_ID()",
+      "selector": "0x0305855c"
+    },
+    "RESOURCE_PATCH_SIGNAL_ID": {
+      "signature": "RESOURCE_PATCH_SIGNAL_ID()",
+      "selector": "0xfe5e196c"
+    },
+    "DOCKED_ORDER_LINK_SIGNAL_ID": {
+      "signature": "DOCKED_ORDER_LINK_SIGNAL_ID()",
+      "selector": "0xa4119f3b"
+    },
+    "EXECUTOR_PATCH_MODE_ASSIGN": {
+      "signature": "EXECUTOR_PATCH_MODE_ASSIGN()",
+      "selector": "0x40311d02"
+    },
+    "EXECUTOR_PATCH_MODE_HANDOFF": {
+      "signature": "EXECUTOR_PATCH_MODE_HANDOFF()",
+      "selector": "0x6e99c81f"
+    },
+    "EXECUTOR_PATCH_MODE_REPLACEMENT": {
+      "signature": "EXECUTOR_PATCH_MODE_REPLACEMENT()",
+      "selector": "0xfc356f98"
+    },
+    "registerPlan": {
+      "signature": "registerPlan(bytes32,bytes32,(bytes32,bytes32,bytes32,bool,(uint8,bytes32,bytes32,uint16,uint64)[],bytes32[])[])",
+      "selector": "0x38a4981f"
+    },
+    "registerPlanWithSelectorBindings": {
+      "signature": "registerPlan(bytes32,bytes32,(bytes32,bytes32,bytes32,bool,(uint8,bytes32,bytes32,uint16,uint64)[],bytes32[])[],(bytes32,bytes32)[])",
+      "selector": "0xa35a1fb7"
+    },
+    "registerOrder": {
+      "signature": "registerOrder(bytes32,bytes32)",
+      "selector": "0x42389221"
+    },
+    "registerOrderWithCreator": {
+      "signature": "registerOrder(bytes32,bytes32,address)",
+      "selector": "0xb162dfd3"
+    },
+    "registerOrderWithAuthorizations": {
+      "signature": "registerOrder(bytes32,bytes32,(bytes32,bytes32,address,bytes32,bytes32)[])",
+      "selector": "0xb970d602"
+    },
+    "registerOrderWithCreatorAndAuthorizations": {
+      "signature": "registerOrder(bytes32,bytes32,address,(bytes32,bytes32,address,bytes32,bytes32)[])",
+      "selector": "0xd9e9adcd"
+    },
+    "applyStageExecutorPatch": {
+      "signature": "applyStageExecutorPatch(bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string))",
+      "selector": "0x8d0e1737"
+    },
+    "applyStageExecutorPatchFor": {
+      "signature": "applyStageExecutorPatchFor(bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string),address,uint256,bytes,bytes)",
+      "selector": "0x2ea9f6dd"
+    },
+    "applyStageResourcePatch": {
+      "signature": "applyStageResourcePatch(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string))",
+      "selector": "0xe3484181"
+    },
+    "applyStageResourcePatchFor": {
+      "signature": "applyStageResourcePatchFor(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string),address,uint256,bytes)",
+      "selector": "0xb0e6e7c1"
+    },
+    "linkDockedOrder": {
+      "signature": "linkDockedOrder(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string,(bytes32,bytes32,bytes32,bytes32)[]))",
+      "selector": "0xfe900c04"
+    },
+    "linkDockedOrderFor": {
+      "signature": "linkDockedOrderFor(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string,(bytes32,bytes32,bytes32,bytes32)[]),address,uint256,bytes)",
+      "selector": "0xd089e907"
+    },
+    "submitSignal": {
+      "signature": "submitSignal(bytes32,bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x2748e1f9"
+    },
+    "submitSignalFor": {
+      "signature": "submitSignalFor(bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256,bytes)",
+      "selector": "0xa7e12b50"
+    },
+    "submitDockedSignal": {
+      "signature": "submitDockedSignal(bytes32,bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x418063e1"
+    },
+    "signalSubmissionDigest": {
+      "signature": "signalSubmissionDigest(bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256)",
+      "selector": "0xaa402b89"
+    },
+    "stageExecutorPatchDigest": {
+      "signature": "stageExecutorPatchDigest(bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string),address,uint256)",
+      "selector": "0xb5df2947"
+    },
+    "stageResourcePatchDigest": {
+      "signature": "stageResourcePatchDigest(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string),address,uint256)",
+      "selector": "0x51e10c7d"
+    },
+    "dockedOrderLinkDigest": {
+      "signature": "dockedOrderLinkDigest(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string,(bytes32,bytes32,bytes32,bytes32)[]),address,uint256)",
+      "selector": "0xcdbceef9"
+    },
+    "DOMAIN_SEPARATOR": {
+      "signature": "DOMAIN_SEPARATOR()",
+      "selector": "0x3644e515"
+    },
+    "pokeTimer": {
+      "signature": "pokeTimer(bytes32,bytes32)",
+      "selector": "0x0cab733b"
+    },
+    "isSignalSubmitterAuthorized": {
+      "signature": "isSignalSubmitterAuthorized(bytes32,bytes32,bytes32,address)",
+      "selector": "0x700603d1"
+    },
+    "getSignalAuthorization": {
+      "signature": "getSignalAuthorization(bytes32,bytes32,bytes32,address)",
+      "selector": "0x4e11d0c6"
+    },
+    "planExists": {
+      "signature": "planExists(bytes32)",
+      "selector": "0x1df23e4d"
+    },
+    "planSelectorBindingCount": {
+      "signature": "planSelectorBindingCount(bytes32)",
+      "selector": "0xfcaa1370"
+    },
+    "planSelectorBindingAt": {
+      "signature": "planSelectorBindingAt(bytes32,uint256)",
+      "selector": "0x7859d18d"
+    },
+    "isStageSelectorBound": {
+      "signature": "isStageSelectorBound(bytes32,bytes32,bytes32)",
+      "selector": "0xa400a1bd"
+    },
+    "orderExists": {
+      "signature": "orderExists(bytes32)",
+      "selector": "0x2cb77e9f"
+    },
+    "orderPlanId": {
+      "signature": "orderPlanId(bytes32)",
+      "selector": "0x0ae76940"
+    },
+    "planPublisher": {
+      "signature": "planPublisher(bytes32)",
+      "selector": "0x1b3c6520"
+    },
+    "orderRegistrar": {
+      "signature": "orderRegistrar(bytes32)",
+      "selector": "0x4ba193b9"
+    },
+    "orderCreator": {
+      "signature": "orderCreator(bytes32)",
+      "selector": "0xcf2941f6"
+    },
+    "activeStageExecutor": {
+      "signature": "activeStageExecutor(bytes32,bytes32)",
+      "selector": "0x3f7d1763"
+    },
+    "orderStageExecutorPatchNonce": {
+      "signature": "orderStageExecutorPatchNonce(bytes32,bytes32)",
+      "selector": "0x9b7efdef"
+    },
+    "getActiveStageExecutorPatch": {
+      "signature": "getActiveStageExecutorPatch(bytes32,bytes32)",
+      "selector": "0x6334d2a8"
+    },
+    "orderStageResourcePatchNonce": {
+      "signature": "orderStageResourcePatchNonce(bytes32,bytes32,bytes32)",
+      "selector": "0x0a27a10a"
+    },
+    "getActiveStageResourcePatch": {
+      "signature": "getActiveStageResourcePatch(bytes32,bytes32,bytes32)",
+      "selector": "0x901cfaaf"
+    },
+    "orderDockedOrderLinkNonce": {
+      "signature": "orderDockedOrderLinkNonce(bytes32,bytes32)",
+      "selector": "0x68767215"
+    },
+    "getActiveDockedOrderLink": {
+      "signature": "getActiveDockedOrderLink(bytes32,bytes32)",
+      "selector": "0x1c1579c8"
+    },
+    "getActiveDockedSignalBinding": {
+      "signature": "getActiveDockedSignalBinding(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x73ca8690"
+    },
+    "sourceSignalCount": {
+      "signature": "sourceSignalCount(bytes32,bytes32)",
+      "selector": "0x489810cc"
+    },
+    "lastSignalSubmitter": {
+      "signature": "lastSignalSubmitter(bytes32,bytes32)",
+      "selector": "0xb11cc0c6"
+    },
+    "getHookStatus": {
+      "signature": "getHookStatus(bytes32,bytes32)",
+      "selector": "0x98400245"
+    }
+  }
+}

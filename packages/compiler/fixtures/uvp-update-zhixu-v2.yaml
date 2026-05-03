@@ -1,0 +1,115 @@
+# Source: uvp bootstrap update fixture
+# Source tag: uvp 0.1.3
+# Purpose: local Anvil self-bootstrap fixture for uvp-eth.
+apiVersion: uvp/v0
+kind: Zhixu
+metadata:
+  name: uvp-bootstrap-update-v2
+  note: |
+    UVP 自举更新秩序（M1）。
+    目标：通过 OUTSIDE 触发后完成 init/audit/prepare/build/deploy/verify/switch/cleanup。
+    任意关键阶段失败后进入 rollback。
+spec:
+  platform:
+    type: blockchain
+    provider: eth
+    version: "0.1.3"
+  nucleation:
+    id: uvp-bootstrap
+  taskPatterns:
+    - name: update
+      stages:
+        - name: init
+          source: bootstrap
+          trigger: ["TRIGGER"]
+          receiveSignals:
+            TRIGGER: "::OUTSIDE"
+          sendSignals: ["str", "cmp", "err"]
+          fileResources:
+            update_spec:
+              fileType: local
+              localFile:
+                path: "./bootstrap/update/update_spec.sample.json"
+          executor:
+            supplierID: "{{ .update_init_executor_uid }}"
+            supplierType: individual
+
+        - name: audit
+          source: bootstrap
+          trigger: ["init_done"]
+          receiveSignals:
+            init_done: "bootstrap::update.init.cmp"
+          sendSignals: ["str", "pass", "reject", "cmp", "err"]
+          executor:
+            supplierID: "{{ .update_audit_executor_uid }}"
+            supplierType: individual
+
+        - name: prepare
+          source: bootstrap
+          trigger: ["audit_pass"]
+          receiveSignals:
+            audit_pass: "bootstrap::update.audit.pass"
+          sendSignals: ["str", "cmp", "err"]
+          executor:
+            supplierID: "{{ .update_prepare_executor_uid }}"
+            supplierType: individual
+
+        - name: build
+          source: bootstrap
+          trigger: ["prepare_done"]
+          receiveSignals:
+            prepare_done: "bootstrap::update.prepare.cmp"
+          sendSignals: ["str", "cmp", "err"]
+          executor:
+            supplierID: "{{ .update_build_executor_uid }}"
+            supplierType: individual
+
+        - name: deploy
+          source: bootstrap
+          trigger: ["build_done"]
+          receiveSignals:
+            build_done: "bootstrap::update.build.cmp"
+          sendSignals: ["str", "cmp", "err"]
+          executor:
+            supplierID: "{{ .update_deploy_executor_uid }}"
+            supplierType: individual
+
+        - name: verify
+          source: bootstrap
+          trigger: ["deploy_done"]
+          receiveSignals:
+            deploy_done: "bootstrap::update.deploy.cmp"
+          sendSignals: ["str", "pass", "fail", "cmp", "err"]
+          executor:
+            supplierID: "{{ .update_verify_executor_uid }}"
+            supplierType: individual
+
+        - name: switch
+          source: bootstrap
+          trigger: ["verify_pass"]
+          receiveSignals:
+            verify_pass: "bootstrap::update.verify.pass"
+          sendSignals: ["str", "cmp", "err"]
+          executor:
+            supplierID: "{{ .update_switch_executor_uid }}"
+            supplierType: individual
+
+        - name: cleanup
+          source: bootstrap
+          trigger: ["switch_done"]
+          receiveSignals:
+            switch_done: "bootstrap::update.switch.cmp"
+          sendSignals: ["str", "cmp", "err"]
+          executor:
+            supplierID: "{{ .update_cleanup_executor_uid }}"
+            supplierType: individual
+
+        - name: rollback
+          source: bootstrap
+          trigger: ["failure"]
+          receiveSignals:
+            failure: "bootstrap::update.prepare.err | update.build.err | update.deploy.err | update.verify.fail | update.verify.err"
+          sendSignals: ["str", "cmp", "err"]
+          executor:
+            supplierID: "{{ .update_rollback_executor_uid }}"
+            supplierType: individual

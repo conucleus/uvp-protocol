@@ -1,0 +1,278 @@
+[
+  {
+    "eventName": "PlanRegistered",
+    "blockNumber": 1,
+    "logIndex": 0,
+    "transactionHash": "0x01",
+    "plan": {
+      "planId": "0x312bed89090d5be24d38a236e312f8734d64dff50f8da3376542bee659dbb35d",
+      "zhixuId": "chain-oracle",
+      "version": "1",
+      "compiledHooks": [
+        {
+          "hookId": "init.main#TRIGGER",
+          "kind": "receive",
+          "stageIdentifier": "init.main",
+          "hookName": "TRIGGER",
+          "trigger": true,
+          "ast": {
+            "raw": "::OUTSIDE",
+            "source": "",
+            "condition": {
+              "kind": "external",
+              "mode": "OUTSIDE"
+            }
+          },
+          "dependencies": [
+            {
+              "kind": "positive",
+              "source": "",
+              "signalName": "OUTSIDE"
+            }
+          ]
+        },
+        {
+          "hookId": "exec.main#START",
+          "kind": "receive",
+          "stageIdentifier": "exec.main",
+          "hookName": "START",
+          "trigger": true,
+          "ast": {
+            "raw": "buyer::init.main.cmp",
+            "source": "buyer",
+            "condition": {
+              "kind": "signal",
+              "signalName": "init.main.cmp"
+            }
+          },
+          "dependencies": [
+            {
+              "kind": "positive",
+              "source": "buyer",
+              "signalName": "init.main.cmp"
+            }
+          ]
+        },
+        {
+          "hookId": "exec.main#TIMEOUT",
+          "kind": "receive",
+          "stageIdentifier": "exec.main",
+          "hookName": "TIMEOUT",
+          "trigger": false,
+          "ast": {
+            "raw": "buyer::(init.main.cmp +5s) & ~exec.main.cmp",
+            "source": "buyer",
+            "condition": {
+              "kind": "and",
+              "terms": [
+                {
+                  "kind": "delay",
+                  "expr": {
+                    "kind": "signal",
+                    "signalName": "init.main.cmp"
+                  },
+                  "rawDuration": "5s",
+                  "durationSeconds": 5
+                },
+                {
+                  "kind": "not",
+                  "expr": {
+                    "kind": "signal",
+                    "signalName": "exec.main.cmp"
+                  }
+                }
+              ]
+            }
+          },
+          "dependencies": [
+            {
+              "kind": "negative",
+              "source": "buyer",
+              "signalName": "exec.main.cmp"
+            },
+            {
+              "kind": "positive",
+              "source": "buyer",
+              "signalName": "init.main.cmp"
+            },
+            {
+              "kind": "timer",
+              "source": "buyer",
+              "signalName": "init.main.cmp",
+              "delaySeconds": 5
+            }
+          ]
+        }
+      ],
+      "dependencyIndex": {
+        "::OUTSIDE": [
+          "init.main#TRIGGER"
+        ],
+        "buyer::exec.main.cmp": [
+          "exec.main#TIMEOUT"
+        ],
+        "buyer::init.main.cmp": [
+          "exec.main#START",
+          "exec.main#TIMEOUT"
+        ]
+      }
+    }
+  },
+  {
+    "eventName": "OrderRegistered",
+    "blockNumber": 1,
+    "logIndex": 1,
+    "transactionHash": "0x02",
+    "planId": "0x312bed89090d5be24d38a236e312f8734d64dff50f8da3376542bee659dbb35d",
+    "zhixuId": "chain-oracle",
+    "orderId": "order-cancel",
+    "registeredAt": "2026-04-27T00:00:00.000Z"
+  },
+  {
+    "eventName": "SignalSubmitted",
+    "blockNumber": 2,
+    "logIndex": 0,
+    "transactionHash": "0x03",
+    "zhixuId": "chain-oracle",
+    "orderId": "order-cancel",
+    "source": "buyer",
+    "stageIdentifier": "init.main",
+    "signalName": "init.main.cmp",
+    "senderId": "init-executor-a",
+    "submittedAt": "2026-04-27T00:00:00.000Z"
+  },
+  {
+    "eventName": "HookReady",
+    "blockNumber": 2,
+    "logIndex": 1,
+    "transactionHash": "0x03",
+    "zhixuId": "chain-oracle",
+    "orderId": "order-cancel",
+    "hookId": "exec.main#START",
+    "stageIdentifier": "exec.main",
+    "hookName": "START"
+  },
+  {
+    "eventName": "HookStatusChanged",
+    "blockNumber": 2,
+    "logIndex": 2,
+    "transactionHash": "0x03",
+    "zhixuId": "chain-oracle",
+    "orderId": "order-cancel",
+    "hookId": "exec.main#TIMEOUT",
+    "status": "wait",
+    "dueAt": "2026-04-27T00:00:05.000Z"
+  },
+  {
+    "eventName": "SignalSubmitted",
+    "blockNumber": 3,
+    "logIndex": 0,
+    "transactionHash": "0x04",
+    "zhixuId": "chain-oracle",
+    "orderId": "order-cancel",
+    "source": "buyer",
+    "stageIdentifier": "init.main",
+    "signalName": "init.main.cmp",
+    "senderId": "init-executor-b",
+    "submittedAt": "2026-04-27T00:00:01.000Z"
+  },
+  {
+    "eventName": "SignalSubmitted",
+    "blockNumber": 4,
+    "logIndex": 0,
+    "transactionHash": "0x05",
+    "zhixuId": "chain-oracle",
+    "orderId": "order-cancel",
+    "source": "buyer",
+    "stageIdentifier": "exec.main",
+    "signalName": "exec.main.cmp",
+    "senderId": "exec-executor",
+    "submittedAt": "2026-04-27T00:00:03.000Z"
+  },
+  {
+    "eventName": "HookStatusChanged",
+    "blockNumber": 4,
+    "logIndex": 1,
+    "transactionHash": "0x05",
+    "zhixuId": "chain-oracle",
+    "orderId": "order-cancel",
+    "hookId": "exec.main#TIMEOUT",
+    "status": "cxl"
+  },
+  {
+    "eventName": "TimerPoked",
+    "blockNumber": 5,
+    "logIndex": 0,
+    "transactionHash": "0x06",
+    "zhixuId": "chain-oracle",
+    "orderId": "order-cancel",
+    "hookId": "exec.main#TIMEOUT",
+    "pokedAt": "2026-04-27T00:00:06.000Z"
+  },
+  {
+    "eventName": "OrderRegistered",
+    "blockNumber": 6,
+    "logIndex": 0,
+    "transactionHash": "0x07",
+    "planId": "0x312bed89090d5be24d38a236e312f8734d64dff50f8da3376542bee659dbb35d",
+    "zhixuId": "chain-oracle",
+    "orderId": "order-timer",
+    "registeredAt": "2026-04-27T00:01:00.000Z"
+  },
+  {
+    "eventName": "SignalSubmitted",
+    "blockNumber": 7,
+    "logIndex": 0,
+    "transactionHash": "0x08",
+    "zhixuId": "chain-oracle",
+    "orderId": "order-timer",
+    "source": "buyer",
+    "stageIdentifier": "init.main",
+    "signalName": "init.main.cmp",
+    "senderId": "init-executor",
+    "submittedAt": "2026-04-27T00:01:00.000Z"
+  },
+  {
+    "eventName": "HookReady",
+    "blockNumber": 7,
+    "logIndex": 1,
+    "transactionHash": "0x08",
+    "zhixuId": "chain-oracle",
+    "orderId": "order-timer",
+    "hookId": "exec.main#START",
+    "stageIdentifier": "exec.main",
+    "hookName": "START"
+  },
+  {
+    "eventName": "HookStatusChanged",
+    "blockNumber": 7,
+    "logIndex": 2,
+    "transactionHash": "0x08",
+    "zhixuId": "chain-oracle",
+    "orderId": "order-timer",
+    "hookId": "exec.main#TIMEOUT",
+    "status": "wait",
+    "dueAt": "2026-04-27T00:01:05.000Z"
+  },
+  {
+    "eventName": "TimerPoked",
+    "blockNumber": 8,
+    "logIndex": 0,
+    "transactionHash": "0x09",
+    "zhixuId": "chain-oracle",
+    "orderId": "order-timer",
+    "hookId": "exec.main#TIMEOUT",
+    "pokedAt": "2026-04-27T00:01:06.000Z"
+  },
+  {
+    "eventName": "HookReady",
+    "blockNumber": 8,
+    "logIndex": 1,
+    "transactionHash": "0x09",
+    "zhixuId": "chain-oracle",
+    "orderId": "order-timer",
+    "hookId": "exec.main#TIMEOUT",
+    "stageIdentifier": "exec.main",
+    "hookName": "TIMEOUT"
+  }
+]

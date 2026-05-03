@@ -1,0 +1,37 @@
+{
+  "name": "@uvp-eth/runtime-host",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "In-process UVP HookPlan runtime host with append-only event log and dispatcher adapter seam.",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "uvp-runtime-host": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "cli": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@uvp-eth/compiler": "workspace:*",
+    "@uvp-eth/hook-core": "workspace:*",
+    "@uvp-eth/statemachine": "workspace:*",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@uvp-eth/executor-kit": "workspace:*",
+    "@types/node": "^22.15.3",
+    "tsx": "^4.20.6",
+    "typescript": "^5.8.3"
+  }
+}

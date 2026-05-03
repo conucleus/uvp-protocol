@@ -1,0 +1,13 @@
+{
+  "name": "uvp-protocol",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "check": "pnpm -r --if-present --filter './packages/**' --filter './tools/**' run typecheck",
+    "typecheck": "pnpm -r --if-present --filter './packages/**' --filter './tools/**' run typecheck",
+    "test": "pnpm -r --if-present --filter './packages/**' --filter './tools/**' run test",
+    "build": "pnpm -r --if-present --filter './packages/**' --filter './tools/**' run build"
+  }
+}
