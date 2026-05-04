@@ -2,12 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assertOnchainHookPlanArtifact,
+  compileEvmHookPlan,
+  compileHookPlanForTarget,
   compileOnchainHookPlan,
+  compileSolanaHookPlan,
   compileZhixuHookPlan,
   keccak256Hex,
   onchainSelectorBindingHash,
   OnchainHookPlanArtifactValidationError,
   toSolidityRegisterPlanArgs,
+  UnsupportedChainTargetError,
   validateOnchainHookPlanArtifact,
   type OnchainSignalInstruction,
   type ZhixuDefinition
@@ -125,6 +129,29 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
 
   assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
   assert.doesNotThrow(() => assertOnchainHookPlanArtifact(onchain));
+});
+
+test("keeps the new EVM target entrypoint compatible with the legacy on-chain entrypoint", () => {
+  const sourcePlan = compileZhixuHookPlan(baseZhixu);
+
+  assert.deepEqual(compileEvmHookPlan(sourcePlan), compileOnchainHookPlan(sourcePlan));
+  assert.deepEqual(compileHookPlanForTarget(sourcePlan, { target: "evm" }), compileOnchainHookPlan(sourcePlan));
+});
+
+test("reserves the Solana target behind an explicit unsupported error", () => {
+  const sourcePlan = compileZhixuHookPlan(baseZhixu);
+
+  assert.throws(
+    () => compileSolanaHookPlan(sourcePlan),
+    (error) =>
+      error instanceof UnsupportedChainTargetError &&
+      error.target === "solana" &&
+      /not implemented/.test(error.message)
+  );
+  assert.throws(
+    () => compileHookPlanForTarget(sourcePlan, { target: "solana" }),
+    UnsupportedChainTargetError
+  );
 });
 
 test("compiles Hook AST nodes to stable on-chain instruction arrays", () => {

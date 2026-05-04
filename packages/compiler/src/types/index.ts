@@ -1,7 +1,11 @@
 export const COMPILER_NAME = "uvp-eth-compiler" as const;
 export const COMPILER_VERSION = "0.1.0" as const;
 export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v1" as const;
-export const ONCHAIN_HOOK_PLAN_SCHEMA_VERSION = "uvp.onchainHookPlan.v1" as const;
+export const EVM_HOOK_PLAN_SCHEMA_VERSION = "uvp.onchainHookPlan.v1" as const;
+export const ONCHAIN_HOOK_PLAN_SCHEMA_VERSION = EVM_HOOK_PLAN_SCHEMA_VERSION;
+export const SOLANA_HOOK_PLAN_SCHEMA_VERSION = "uvp.solanaHookPlan.v1" as const;
+
+export type ChainTarget = "evm" | "solana";
 
 export type HexString = `0x${string}`;
 export type Address = HexString;
@@ -209,6 +213,29 @@ export interface OnchainHookPlanArtifact {
   readonly executorRoutes: readonly OnchainExecutorRoute[];
   readonly selectorBindings: readonly OnchainStageSelectorBinding[];
   readonly planHash: HexString;
+}
+
+export type EvmHookInstruction = OnchainHookInstruction;
+export type EvmSignalInstruction = OnchainSignalInstruction;
+export type EvmUnaryInstruction = OnchainUnaryInstruction;
+export type EvmJoinInstruction = OnchainJoinInstruction;
+export type EvmDelayInstruction = OnchainDelayInstruction;
+export type EvmHookDependency = OnchainHookDependency;
+export type EvmExecutorRouteRef = OnchainExecutorRouteRef;
+export type EvmExecutorRoute = OnchainExecutorRoute;
+export type EvmStageSelectorBinding = OnchainStageSelectorBinding;
+export type EvmCompiledHook = OnchainCompiledHook;
+export type EvmHookPlanArtifact = OnchainHookPlanArtifact;
+
+export interface SolanaHookPlanArtifact {
+  readonly schemaVersion: typeof SOLANA_HOOK_PLAN_SCHEMA_VERSION;
+  readonly target: "solana";
+  readonly planId: string;
+  readonly zhixuId: string;
+  readonly version: string;
+  readonly zhixuName: string;
+  readonly platform: ZhixuPlatform;
+  readonly sourcePlanHash: HexString;
 }
 
 export type SolidityRegisterInstructionArg =

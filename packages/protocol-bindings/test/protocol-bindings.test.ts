@@ -2,6 +2,12 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { decodeFunctionData } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { STATE_MACHINE_ABI as EVM_STATE_MACHINE_ABI } from '@uvp-eth/protocol-bindings/evm';
+import {
+  UnsupportedChainTargetError,
+  unsupportedSolanaProtocolBinding,
+  type SolanaInstructionPlanPlaceholder,
+} from '@uvp-eth/protocol-bindings/solana';
 import {
   EXECUTOR_PATCH_MODE_ASSIGN,
   EXECUTOR_PATCH_MODE_HANDOFF,
@@ -126,6 +132,24 @@ const resourcePatchHash = hashStageResourcePatchPayload({
 });
 
 describe('protocol bindings', () => {
+  it('exposes explicit EVM and Solana binding boundaries', () => {
+    assert.equal(EVM_STATE_MACHINE_ABI, STATE_MACHINE_ABI);
+    const placeholder: SolanaInstructionPlanPlaceholder = {
+      target: 'solana',
+      programIds: {},
+      TODO: 'solana protocol bindings are reserved but not implemented',
+    };
+
+    assert.equal(placeholder.target, 'solana');
+    assert.throws(
+      () => unsupportedSolanaProtocolBinding(),
+      (error) =>
+        error instanceof UnsupportedChainTargetError &&
+        error.target === 'solana' &&
+        /not implemented/.test(error.message),
+    );
+  });
+
   it('builds stable Product submit typed data', () => {
     const typedData = buildProductSubmitTypedData({
       chainId: 31337,

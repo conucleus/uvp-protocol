@@ -7,6 +7,7 @@ import { hashCanonical, keccak256Hex } from "./hash.js";
 import { assertHookPlanArtifact } from "./hook-plan.js";
 import {
   ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
+  type EvmHookPlanArtifact,
   type HexString,
   type HookPlanArtifact,
   type HookPlanExecutorRoute,
@@ -37,9 +38,9 @@ export class OnchainHookPlanArtifactValidationError extends Error {
   }
 }
 
-export function compileOnchainHookPlan(
+export function compileEvmHookPlan(
   hookPlanArtifact: HookPlanArtifact
-): OnchainHookPlanArtifact {
+): EvmHookPlanArtifact {
   assertHookPlanArtifact(hookPlanArtifact);
 
   const compiledHooks = hookPlanArtifact.compiledHooks
@@ -79,6 +80,8 @@ export function compileOnchainHookPlan(
     planHash: hashOnchainPlanPayload(payload)
   };
 }
+
+export const compileOnchainHookPlan = compileEvmHookPlan;
 
 export function validateOnchainHookPlanArtifact(value: unknown): readonly string[] {
   const issues: string[] = [];
@@ -157,6 +160,8 @@ export function validateOnchainHookPlanArtifact(value: unknown): readonly string
   return issues;
 }
 
+export const validateEvmHookPlanArtifact = validateOnchainHookPlanArtifact;
+
 export function assertOnchainHookPlanArtifact(
   value: unknown
 ): asserts value is OnchainHookPlanArtifact {
@@ -165,6 +170,8 @@ export function assertOnchainHookPlanArtifact(
     throw new OnchainHookPlanArtifactValidationError(issues);
   }
 }
+
+export const assertEvmHookPlanArtifact = assertOnchainHookPlanArtifact;
 
 export function toSolidityRegisterPlanArgs(
   artifact: OnchainHookPlanArtifact
