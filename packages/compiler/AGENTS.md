@@ -2,16 +2,17 @@
 
 ## Module Purpose
 
-`uvp-protocol/packages/compiler/` owns the EVM-oriented compilation layer. It
-converts Zhixu DSL into deterministic HookPlan and on-chain state-machine
-artifacts that contracts, services, executor-kit, and replay tools can verify.
+`uvp-protocol/packages/compiler/` owns the current EVM-oriented compilation
+layer. It converts Zhixu DSL into deterministic on-chain state-machine artifacts
+that contracts, services, executor-kit, and replay tools can verify.
 
 This module must be independent from the Go cloud UVP compiler.
 
 ## Responsibilities
 
-- Define the EVM MVP input schema for Zhixu HookPlan definitions.
-- Produce platform-neutral HookPlan artifacts and EVM-facing compact hook plans.
+- Define the MVP input schema for Zhixu definitions while preserving
+  `spec.platform` as an open future-target reservation.
+- Produce EVM-facing compact hook plans and `registerPlan` args.
 - Produce stable hashes:
   - `planId`
   - `planHash`
@@ -42,6 +43,12 @@ This module must be independent from the Go cloud UVP compiler.
   `uvp-protocol/packages/statemachine/` replay tests.
 - Any change to `OnchainHookPlanArtifact`, `registerPlan` args, or id/hash
   derivation must be treated as ABI-adapter drift.
+- Do not narrow `ZhixuPlatform.provider`, `network`, `version`, or `params` to
+  EVM-only values. The current public artifact is EVM-facing, but the Zhixu
+  schema intentionally preserves future chain target metadata.
+- Do not reintroduce a public non-EVM compiler entrypoint until
+  `docs/future-chain-target-roadmap.md` gates are satisfied by a target artifact
+  schema, runtime boundary, replay oracle, and fixtures.
 
 ## Testing Expectations
 

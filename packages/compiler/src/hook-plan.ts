@@ -17,6 +17,7 @@ import {
   type HookPlanArtifact,
   type HookPlanExecutorRoute,
   type SelectedStageBinding,
+  type SignalCapability,
   type ZhixuPlatform,
   type ZhixuDefinition,
   type ZhixuStage
@@ -55,6 +56,7 @@ export function compileZhixuHookPlan(definition: ZhixuDefinition): HookPlanArtif
   const stageIds = new Set(stageEntries.map((entry) => entry.stageIdentifier));
   const selectedStageBindings = buildSelectedStageBindings(stageEntries, stageIds);
   const executorRoutes = buildExecutorRoutes(stageEntries);
+  const signalCapabilities = buildSignalCapabilities(stageEntries);
 
   const validationIssues = [
     ...validateStageExecutors(stageEntries, selectedStageBindings),
@@ -87,6 +89,7 @@ export function compileZhixuHookPlan(definition: ZhixuDefinition): HookPlanArtif
     dependencyIndex,
     executorRoutes,
     selectedStageBindings,
+    signalCapabilities,
     source: canonicalize(definition)
   };
   const planHash = hashCanonical("uvp:hook-plan-artifact:v1", payload);
@@ -102,6 +105,7 @@ export function compileZhixuHookPlan(definition: ZhixuDefinition): HookPlanArtif
     dependencyIndex,
     executorRoutes,
     selectedStageBindings,
+    signalCapabilities,
     planHash
   };
 }
@@ -136,6 +140,9 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
   if (!Array.isArray(value.selectedStageBindings)) {
     issues.push("selectedStageBindings must be an array");
   }
+  if (!Array.isArray(value.signalCapabilities)) {
+    issues.push("signalCapabilities must be an array");
+  }
 
   if (compiledHooks) {
     issues.push(...validateCompiledHooks(compiledHooks));
@@ -169,6 +176,9 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
       expectNonEmptyString(binding.targetStageIdentifier, `selectedStageBindings[${index}].targetStageIdentifier`, issues);
     }
   }
+  if (Array.isArray(value.signalCapabilities)) {
+    issues.push(...validateSignalCapabilities(value.signalCapabilities));
+  }
 
   return issues;
 }
@@ -177,6 +187,7 @@ function normalizePlatform(platform: ZhixuPlatform): ZhixuPlatform {
   return {
     type: platform.type,
     ...(platform.provider !== undefined ? { provider: platform.provider } : {}),
+    ...(platform.network !== undefined ? { network: platform.network } : {}),
     ...(platform.version !== undefined ? { version: platform.version } : {}),
     ...(platform.params !== undefined ? { params: platform.params } : {})
   };
@@ -202,7 +213,7 @@ function validateCompiledHooks(hooks: readonly unknown[]): readonly string[] {
     expectOneOf(hook.kind, ["receive", "signalMap"], `${prefix}.kind`, issues);
     expectNonEmptyString(hook.stageIdentifier, `${prefix}.stageIdentifier`, issues);
     expectNonEmptyString(hook.hookName, `${prefix}.hookName`, issues);
-    expectBoolean(hook.trigger, `${prefix}.trigger`, issues);
+    expectBoolean(hook.isTrigger, `${prefix}.isTrigger`, issues);
     expectNonEmptyString(hook.rawExpression, `${prefix}.rawExpression`, issues);
     expectNonEmptyString(hook.normalizedExpression, `${prefix}.normalizedExpression`, issues);
     if (!isRecord(hook.ast)) {
@@ -253,6 +264,42 @@ function validateDependencies(dependencies: readonly unknown[], path: string): r
       (!Number.isSafeInteger(dependency.delaySeconds) || Number(dependency.delaySeconds) <= 0)
     ) {
       issues.push(`${path}[${index}].delaySeconds must be a positive safe integer for timer dependencies`);
+    }
+  }
+  return issues;
+}
+
+function validateSignalCapabilities(capabilities: readonly unknown[]): readonly string[] {
+  const issues: string[] = [];
+  const seen = new Set<string>();
+  for (const [index, capability] of capabilities.entries()) {
+    if (!isRecord(capability)) {
+      issues.push(`signalCapabilities[${index}] must be an object`);
+      continue;
+    }
+    const prefix = `signalCapabilities[${index}]`;
+    expectNonEmptyString(capability.stageIdentifier, `${prefix}.stageIdentifier`, issues);
+    expectNonEmptyString(capability.source, `${prefix}.source`, issues);
+    expectNonEmptyString(capability.declaredSignal, `${prefix}.declaredSignal`, issues);
+    expectNonEmptyString(capability.targetSource, `${prefix}.targetSource`, issues);
+    expectNonEmptyString(capability.targetSignalName, `${prefix}.targetSignalName`, issues);
+    expectOneOf(capability.targetOrderRelation, ["current", "triggerParent"], `${prefix}.targetOrderRelation`, issues);
+    if (
+      typeof capability.stageIdentifier === "string" &&
+      typeof capability.targetSource === "string" &&
+      typeof capability.targetSignalName === "string" &&
+      typeof capability.targetOrderRelation === "string"
+    ) {
+      const key = [
+        capability.stageIdentifier,
+        capability.targetSource,
+        capability.targetSignalName,
+        capability.targetOrderRelation
+      ].join("\u0000");
+      if (seen.has(key)) {
+        issues.push(`duplicate signal capability ${capability.stageIdentifier}:${capability.targetSource}::${capability.targetSignalName}`);
+      }
+      seen.add(key);
     }
   }
   return issues;
@@ -445,9 +492,19 @@ function validateTriggerReferences(stageEntries: readonly StageEntry[]): readonl
   const issues: string[] = [];
   for (const entry of stageEntries) {
     const receiveSignals = entry.stage.receiveSignals ?? {};
-    for (const trigger of entry.stage.trigger) {
-      if (!receiveSignals[trigger]) {
-        issues.push(`${entry.stageIdentifier}.trigger references missing receiveSignals key ${trigger}`);
+    if (!Array.isArray(entry.stage.trigger)) {
+      issues.push(`${entry.stageIdentifier}.trigger must be a non-empty receiveSignals key array`);
+      continue;
+    }
+    const triggerKeys = normalizeTriggerKeys(entry.stage.trigger);
+    if (triggerKeys.length === 0) {
+      issues.push(`${entry.stageIdentifier}.trigger must contain at least one receiveSignals key`);
+      continue;
+    }
+    for (const triggerKey of triggerKeys) {
+      const rawExpression = receiveSignals[triggerKey];
+      if (!rawExpression) {
+        issues.push(`${entry.stageIdentifier}.trigger references missing receiveSignals key ${triggerKey}`);
       }
     }
   }
@@ -617,12 +674,13 @@ function parseSignalReference(
 
 function compileStageHooks(entry: StageEntry): readonly CompiledHookPlanHook[] {
   const hooks: CompiledHookPlanHook[] = [];
+  const triggerKeys = new Set(normalizeTriggerKeys(entry.stage.trigger));
   for (const [hookName, rawExpression] of Object.entries(entry.stage.receiveSignals ?? {})) {
     hooks.push(compileHook({
       kind: "receive",
       stageIdentifier: entry.stageIdentifier,
       hookName,
-      trigger: entry.stage.trigger.includes(hookName),
+      isTrigger: triggerKeys.has(hookName),
       rawExpression,
       ...(entry.stage.executor ? { route: routeForStage(entry) } : {})
     }));
@@ -636,7 +694,7 @@ function compileStageHooks(entry: StageEntry): readonly CompiledHookPlanHook[] {
         kind: "signalMap",
         stageIdentifier: entry.stageIdentifier,
         hookName: `signalMap.${signalName}`,
-        trigger: false,
+        isTrigger: false,
         rawExpression,
         ...(entry.stage.executor ? { route: routeForStage(entry) } : {})
       }));
@@ -646,11 +704,77 @@ function compileStageHooks(entry: StageEntry): readonly CompiledHookPlanHook[] {
   return hooks.sort((left, right) => left.hookId.localeCompare(right.hookId));
 }
 
+function normalizeTriggerKeys(trigger: readonly string[]): readonly string[] {
+  return [...new Set(trigger.map((item) => item.trim()).filter((item) => item.length > 0))].sort();
+}
+
+function buildSignalCapabilities(stageEntries: readonly StageEntry[]): readonly SignalCapability[] {
+  const capabilities: SignalCapability[] = [];
+  const seen = new Set<string>();
+  for (const entry of stageEntries) {
+    for (const declaredSignal of entry.stage.sendSignals ?? []) {
+      const capability = parseSignalCapability(entry, declaredSignal);
+      const key = [
+        capability.stageIdentifier,
+        capability.targetSource,
+        capability.targetSignalName,
+        capability.targetOrderRelation
+      ].join("\u0000");
+      if (seen.has(key)) {
+        throw new HookPlanCompilationError([`${entry.stageIdentifier}.sendSignals contains duplicate capability ${declaredSignal}`]);
+      }
+      seen.add(key);
+      capabilities.push(capability);
+    }
+  }
+  return capabilities.sort(compareSignalCapabilities);
+}
+
+function parseSignalCapability(entry: StageEntry, declaredSignal: string): SignalCapability {
+  const signal = declaredSignal.trim();
+  if (!signal) {
+    throw new HookPlanCompilationError([`${entry.stageIdentifier}.sendSignals cannot contain an empty signal`]);
+  }
+  const separator = signal.indexOf("::");
+  if (separator >= 0) {
+    const targetSource = signal.slice(0, separator).trim();
+    const targetSignalName = signal.slice(separator + 2).trim();
+    if (!targetSource || !targetSignalName) {
+      throw new HookPlanCompilationError([`${entry.stageIdentifier}.sendSignals contains invalid target signal ${declaredSignal}`]);
+    }
+    return {
+      stageIdentifier: entry.stageIdentifier,
+      source: entry.stage.source,
+      declaredSignal,
+      targetSource,
+      targetSignalName,
+      targetOrderRelation: "triggerParent"
+    };
+  }
+  return {
+    stageIdentifier: entry.stageIdentifier,
+    source: entry.stage.source,
+    declaredSignal,
+    targetSource: entry.stage.source,
+    targetSignalName: signal.includes(".") ? signal : `${entry.stageIdentifier}.${signal}`,
+    targetOrderRelation: "current"
+  };
+}
+
+function compareSignalCapabilities(left: SignalCapability, right: SignalCapability): number {
+  return (
+    left.stageIdentifier.localeCompare(right.stageIdentifier) ||
+    left.targetSource.localeCompare(right.targetSource) ||
+    left.targetSignalName.localeCompare(right.targetSignalName) ||
+    left.targetOrderRelation.localeCompare(right.targetOrderRelation)
+  );
+}
+
 function compileHook(input: {
   readonly kind: "receive" | "signalMap";
   readonly stageIdentifier: string;
   readonly hookName: string;
-  readonly trigger: boolean;
+  readonly isTrigger: boolean;
   readonly rawExpression: string;
   readonly route?: HookPlanExecutorRoute;
 }): CompiledHookPlanHook {
@@ -661,7 +785,7 @@ function compileHook(input: {
     kind: input.kind,
     stageIdentifier: input.stageIdentifier,
     hookName: input.hookName,
-    trigger: input.trigger,
+    isTrigger: input.isTrigger,
     rawExpression: input.rawExpression,
     normalizedExpression: normalizeHookExpression(ast),
     ast,
@@ -731,6 +855,7 @@ function isPlatform(value: unknown): value is ZhixuPlatform {
     typeof value.type === "string" &&
     value.type.trim().length > 0 &&
     (value.provider === undefined || typeof value.provider === "string") &&
+    (value.network === undefined || typeof value.network === "string") &&
     (value.version === undefined || typeof value.version === "string") &&
     (
       value.params === undefined ||
@@ -786,4 +911,8 @@ function expectOneOf(
   if (typeof value !== "string" || !allowed.includes(value)) {
     issues.push(`${fieldName} must be one of ${allowed.join(", ")}`);
   }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`unexpected value: ${String(value)}`);
 }

@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "uvp-eth.contractAbiFixture.v2",
+  "contractName": "UVPStateMachineLens",
+  "abiVersion": "0.1",
+  "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStateMachineLens.sol",
+  "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStateMachineLens.sol/UVPStateMachineLens.json",
+  "compiler": {
+    "name": "solc",
+    "version": "0.8.24+commit.e11b9ed9"
+  },
+  "hashes": {
+    "abiHash": "0x807c259e954a697905ee96ba31397cde4b4fa4d2da4d8869bd49c1b8013a5d5d",
+    "bytecodeHash": "0xe11e07d13f27ec3cd8defdf51c2aece99550eb95657aee8f5d9312586675d874",
+    "deployedBytecodeHash": "0xec89ae19a60c3d66cd916fc44b7f284da45cfbc2bb38ab1652a7765c064ed8b6",
+    "artifactHash": "0x0cda2d0fde073ba6a4d6babeba927cddce1cda88b6afb1088bb2edfe7ce6190d"
+  },
+  "events": {},
+  "functions": {
+    "getActiveDockedOrderLink": {
+      "signature": "getActiveDockedOrderLink(bytes32,bytes32)",
+      "selector": "0x1c1579c8"
+    },
+    "getActiveDockedSignalBinding": {
+      "signature": "getActiveDockedSignalBinding(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x73ca8690"
+    },
+    "getActiveStageExecutorPatch": {
+      "signature": "getActiveStageExecutorPatch(bytes32,bytes32)",
+      "selector": "0x6334d2a8"
+    },
+    "getActiveStageResourcePatch": {
+      "signature": "getActiveStageResourcePatch(bytes32,bytes32,bytes32)",
+      "selector": "0x901cfaaf"
+    },
+    "getOrderTriggerLink": {
+      "signature": "getOrderTriggerLink(bytes32)",
+      "selector": "0x32ea5510"
+    },
+    "isSignalCapabilityRegistered": {
+      "signature": "isSignalCapabilityRegistered(bytes32,bytes32,bytes32,bytes32,uint8)",
+      "selector": "0x55fce6ac"
+    },
+    "isStageSelectorBound": {
+      "signature": "isStageSelectorBound(bytes32,bytes32,bytes32)",
+      "selector": "0xa400a1bd"
+    },
+    "planSelectorBindingAt": {
+      "signature": "planSelectorBindingAt(bytes32,uint256)",
+      "selector": "0x7859d18d"
+    },
+    "planSelectorBindingCount": {
+      "signature": "planSelectorBindingCount(bytes32)",
+      "selector": "0xfcaa1370"
+    },
+    "planSignalCapabilityCount": {
+      "signature": "planSignalCapabilityCount(bytes32)",
+      "selector": "0xf80d6ef0"
+    },
+    "stateMachine": {
+      "signature": "stateMachine()",
+      "selector": "0x37b416d8"
+    },
+    "targetOrderRelation": {
+      "signature": "targetOrderRelation(bytes32,bytes32)",
+      "selector": "0x4b019097"
+    }
+  }
+}

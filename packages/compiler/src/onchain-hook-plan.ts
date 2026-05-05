@@ -7,7 +7,6 @@ import { hashCanonical, keccak256Hex } from "./hash.js";
 import { assertHookPlanArtifact } from "./hook-plan.js";
 import {
   ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
-  type EvmHookPlanArtifact,
   type HexString,
   type HookPlanArtifact,
   type HookPlanExecutorRoute,
@@ -17,16 +16,22 @@ import {
   type OnchainHookDependency,
   type OnchainHookInstruction,
   type OnchainHookPlanArtifact,
+  type OnchainSignalCapability,
   type OnchainStageSelectorBinding,
   type SelectedStageBinding,
+  type SignalCapability,
+  type SignalTargetOrderRelation,
   type SolidityRegisterInstructionArg,
   type SolidityRegisterPlanArgs,
+  type ZhixuDefinition,
   type ZhixuPlatform
 } from "./types/index.js";
+import { compileZhixuHookPlan } from "./hook-plan.js";
 
 const ONCHAIN_PLAN_HASH_DOMAIN = "uvp:onchain-hook-plan-artifact:v1";
 const ONCHAIN_ROUTE_HASH_DOMAIN = "uvp:onchain-hook-route:v1";
 const ONCHAIN_SELECTOR_BINDING_HASH_DOMAIN = "uvp:onchain-stage-selector-binding:v1";
+const ONCHAIN_SIGNAL_CAPABILITY_HASH_DOMAIN = "uvp:onchain-signal-capability:v1";
 
 export class OnchainHookPlanArtifactValidationError extends Error {
   readonly issues: readonly string[];
@@ -38,9 +43,9 @@ export class OnchainHookPlanArtifactValidationError extends Error {
   }
 }
 
-export function compileEvmHookPlan(
+export function compileOnchainHookPlan(
   hookPlanArtifact: HookPlanArtifact
-): EvmHookPlanArtifact {
+): OnchainHookPlanArtifact {
   assertHookPlanArtifact(hookPlanArtifact);
 
   const compiledHooks = hookPlanArtifact.compiledHooks
@@ -50,7 +55,7 @@ export function compileEvmHookPlan(
       stageIdentifier: hook.stageIdentifier,
       hookName: hook.hookName,
       kind: hook.kind,
-      trigger: hook.trigger,
+      isTrigger: hook.isTrigger,
       instructions: compileHookInstructions(hook.ast),
       dependencies: hook.dependencies.map(compileDependency),
       ...(hook.route ? { routeRef: routeRefForRoute(hook.route) } : {})
@@ -61,6 +66,7 @@ export function compileEvmHookPlan(
     .map(compileExecutorRoute)
     .sort(compareExecutorRoutes);
   const selectorBindings = compileSelectorBindings(hookPlanArtifact.selectedStageBindings);
+  const signalCapabilities = compileSignalCapabilities(hookPlanArtifact.signalCapabilities);
   const payload = {
     schemaVersion: ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
     planId: hookPlanArtifact.planId,
@@ -72,7 +78,8 @@ export function compileEvmHookPlan(
     compiledHooks,
     dependencyIndex,
     executorRoutes,
-    selectorBindings
+    selectorBindings,
+    signalCapabilities
   };
 
   return {
@@ -81,7 +88,13 @@ export function compileEvmHookPlan(
   };
 }
 
-export const compileOnchainHookPlan = compileEvmHookPlan;
+export function compileZhixuOnchainHookPlan(definition: ZhixuDefinition): OnchainHookPlanArtifact {
+  return compileOnchainHookPlan(compileZhixuHookPlan(definition));
+}
+
+export function compileZhixuRegisterPlanArgs(definition: ZhixuDefinition): SolidityRegisterPlanArgs {
+  return toSolidityRegisterPlanArgs(compileZhixuOnchainHookPlan(definition));
+}
 
 export function validateOnchainHookPlanArtifact(value: unknown): readonly string[] {
   const issues: string[] = [];
@@ -123,6 +136,10 @@ export function validateOnchainHookPlanArtifact(value: unknown): readonly string
   if (!selectorBindings) {
     issues.push("selectorBindings must be an array");
   }
+  const signalCapabilities = Array.isArray(value.signalCapabilities) ? value.signalCapabilities : undefined;
+  if (!signalCapabilities) {
+    issues.push("signalCapabilities must be an array");
+  }
 
   if (compiledHooks) {
     issues.push(...validateOnchainCompiledHooks(compiledHooks, executorRoutes ?? []));
@@ -137,6 +154,9 @@ export function validateOnchainHookPlanArtifact(value: unknown): readonly string
   if (selectorBindings) {
     issues.push(...validateOnchainSelectorBindings(selectorBindings));
   }
+  if (signalCapabilities) {
+    issues.push(...validateOnchainSignalCapabilities(signalCapabilities));
+  }
 
   if (isPlanHashRecomputable(value)) {
     const expectedPlanHash = hashOnchainPlanPayload({
@@ -150,7 +170,8 @@ export function validateOnchainHookPlanArtifact(value: unknown): readonly string
       compiledHooks: value.compiledHooks,
       dependencyIndex: value.dependencyIndex,
       executorRoutes: value.executorRoutes,
-      selectorBindings: value.selectorBindings
+      selectorBindings: value.selectorBindings,
+      signalCapabilities: value.signalCapabilities
     });
     if (value.planHash !== expectedPlanHash) {
       issues.push("planHash must match the canonical on-chain HookPlan payload");
@@ -160,8 +181,6 @@ export function validateOnchainHookPlanArtifact(value: unknown): readonly string
   return issues;
 }
 
-export const validateEvmHookPlanArtifact = validateOnchainHookPlanArtifact;
-
 export function assertOnchainHookPlanArtifact(
   value: unknown
 ): asserts value is OnchainHookPlanArtifact {
@@ -170,8 +189,6 @@ export function assertOnchainHookPlanArtifact(
     throw new OnchainHookPlanArtifactValidationError(issues);
   }
 }
-
-export const assertEvmHookPlanArtifact = assertOnchainHookPlanArtifact;
 
 export function toSolidityRegisterPlanArgs(
   artifact: OnchainHookPlanArtifact
@@ -190,7 +207,7 @@ export function toSolidityRegisterPlanArgs(
         stageId: hook.stageId,
         hookName: onchainHookName(hook.hookName),
         kind: hook.kind,
-        trigger: hook.trigger,
+        isTrigger: hook.isTrigger,
         instructions: hook.instructions.map(toSolidityInstructionArg),
         dependencyKeys: uniqueSorted(hook.dependencies.map((dependency) => dependency.signalKey))
       };
@@ -212,6 +229,12 @@ export function toSolidityRegisterPlanArgs(
     selectorBindings: artifact.selectorBindings.map((binding) => ({
       selectorStageId: binding.selectorStageId,
       targetStageId: binding.targetStageId
+    })),
+    signalCapabilities: artifact.signalCapabilities.map((capability) => ({
+      stageId: capability.stageId,
+      targetSourceId: capability.targetSourceId,
+      signalId: capability.signalId,
+      targetOrderRelation: solidityTargetOrderRelation(capability.targetOrderRelation)
     }))
   };
 }
@@ -348,6 +371,51 @@ function compileSelectorBindings(
   return compiled.sort(compareSelectorBindings);
 }
 
+function compileSignalCapabilities(
+  capabilities: readonly SignalCapability[]
+): readonly OnchainSignalCapability[] {
+  const issues: string[] = [];
+  const seen = new Set<string>();
+  const compiled: OnchainSignalCapability[] = [];
+  for (const capability of capabilities) {
+    const stageId = onchainStageId(capability.stageIdentifier);
+    const targetSourceId = onchainSourceId(capability.targetSource);
+    const signalId = onchainSignalId(capability.targetSignalName);
+    const key = [
+      stageId,
+      targetSourceId,
+      signalId,
+      capability.targetOrderRelation
+    ].join("\u0000");
+    if (seen.has(key)) {
+      issues.push(`duplicate signal capability ${capability.stageIdentifier}->${capability.targetSource}::${capability.targetSignalName}`);
+      continue;
+    }
+    seen.add(key);
+    compiled.push({
+      stageIdentifier: capability.stageIdentifier,
+      stageId,
+      source: capability.source,
+      declaredSignal: capability.declaredSignal,
+      targetSource: capability.targetSource,
+      targetSourceId,
+      targetSignalName: capability.targetSignalName,
+      signalId,
+      targetOrderRelation: capability.targetOrderRelation,
+      capabilityHash: onchainSignalCapabilityHash(
+        stageId,
+        targetSourceId,
+        signalId,
+        capability.targetOrderRelation
+      )
+    });
+  }
+  if (issues.length > 0) {
+    throw new OnchainHookPlanArtifactValidationError(issues);
+  }
+  return compiled.sort(compareSignalCapabilities);
+}
+
 function routeRefForRoute(route: HookPlanExecutorRoute): OnchainExecutorRouteRef {
   return {
     routeId: onchainRouteId(route.stageIdentifier),
@@ -383,6 +451,20 @@ export function onchainSelectorBindingHash(
   return hashCanonical(ONCHAIN_SELECTOR_BINDING_HASH_DOMAIN, {
     selectorStageId,
     targetStageId
+  });
+}
+
+export function onchainSignalCapabilityHash(
+  stageId: HexString,
+  targetSourceId: HexString,
+  signalId: HexString,
+  targetOrderRelation: SignalTargetOrderRelation
+): HexString {
+  return hashCanonical(ONCHAIN_SIGNAL_CAPABILITY_HASH_DOMAIN, {
+    stageId,
+    targetSourceId,
+    signalId,
+    targetOrderRelation
   });
 }
 
@@ -430,6 +512,17 @@ function toSolidityInstructionArg(
   }
 }
 
+function solidityTargetOrderRelation(relation: SignalTargetOrderRelation): 0 | 1 {
+  switch (relation) {
+    case "current":
+      return 0;
+    case "triggerParent":
+      return 1;
+    default:
+      assertNever(relation);
+  }
+}
+
 function validateOnchainCompiledHooks(
   hooks: readonly unknown[],
   executorRoutes: readonly unknown[]
@@ -455,7 +548,7 @@ function validateOnchainCompiledHooks(
     expectNonEmptyString(hook.stageIdentifier, `${prefix}.stageIdentifier`, issues);
     expectNonEmptyString(hook.hookName, `${prefix}.hookName`, issues);
     expectOneOf(hook.kind, ["receive", "signalMap"], `${prefix}.kind`, issues);
-    expectBoolean(hook.trigger, `${prefix}.trigger`, issues);
+    expectBoolean(hook.isTrigger, `${prefix}.isTrigger`, issues);
 
     if (
       typeof hook.stageIdentifier === "string" &&
@@ -765,6 +858,77 @@ function validateOnchainSelectorBindings(bindings: readonly unknown[]): readonly
   return issues;
 }
 
+function validateOnchainSignalCapabilities(capabilities: readonly unknown[]): readonly string[] {
+  const issues: string[] = [];
+  const seen = new Set<string>();
+  for (const [index, capability] of capabilities.entries()) {
+    if (!isRecord(capability)) {
+      issues.push(`signalCapabilities[${index}] must be an object`);
+      continue;
+    }
+    const prefix = `signalCapabilities[${index}]`;
+    expectNonEmptyString(capability.stageIdentifier, `${prefix}.stageIdentifier`, issues);
+    expectHexHash(capability.stageId, `${prefix}.stageId`, issues);
+    expectNonEmptyString(capability.source, `${prefix}.source`, issues);
+    expectNonEmptyString(capability.declaredSignal, `${prefix}.declaredSignal`, issues);
+    expectNonEmptyString(capability.targetSource, `${prefix}.targetSource`, issues);
+    expectHexHash(capability.targetSourceId, `${prefix}.targetSourceId`, issues);
+    expectNonEmptyString(capability.targetSignalName, `${prefix}.targetSignalName`, issues);
+    expectHexHash(capability.signalId, `${prefix}.signalId`, issues);
+    expectOneOf(capability.targetOrderRelation, ["current", "triggerParent"], `${prefix}.targetOrderRelation`, issues);
+    expectHexHash(capability.capabilityHash, `${prefix}.capabilityHash`, issues);
+
+    if (
+      typeof capability.stageIdentifier === "string" &&
+      typeof capability.stageId === "string" &&
+      capability.stageId !== onchainStageId(capability.stageIdentifier)
+    ) {
+      issues.push(`${prefix}.stageId must be keccak256(stageIdentifier)`);
+    }
+    if (
+      typeof capability.targetSource === "string" &&
+      typeof capability.targetSourceId === "string" &&
+      capability.targetSourceId !== onchainSourceId(capability.targetSource)
+    ) {
+      issues.push(`${prefix}.targetSourceId must be keccak256(targetSource)`);
+    }
+    if (
+      typeof capability.targetSignalName === "string" &&
+      typeof capability.signalId === "string" &&
+      capability.signalId !== onchainSignalId(capability.targetSignalName)
+    ) {
+      issues.push(`${prefix}.signalId must be keccak256(targetSignalName)`);
+    }
+    if (
+      isHexHash(capability.stageId) &&
+      isHexHash(capability.targetSourceId) &&
+      isHexHash(capability.signalId) &&
+      (capability.targetOrderRelation === "current" || capability.targetOrderRelation === "triggerParent")
+    ) {
+      const expectedHash = onchainSignalCapabilityHash(
+        capability.stageId,
+        capability.targetSourceId,
+        capability.signalId,
+        capability.targetOrderRelation
+      );
+      if (capability.capabilityHash !== expectedHash) {
+        issues.push(`${prefix}.capabilityHash must match capability fields`);
+      }
+      const key = [
+        capability.stageId,
+        capability.targetSourceId,
+        capability.signalId,
+        capability.targetOrderRelation
+      ].join("\u0000");
+      if (seen.has(key)) {
+        issues.push(`duplicate signal capability ${key}`);
+      }
+      seen.add(key);
+    }
+  }
+  return issues;
+}
+
 function isOnchainHookDependency(value: unknown): value is OnchainHookDependency {
   return (
     isRecord(value) &&
@@ -792,6 +956,7 @@ function isPlanHashRecomputable(
     isHexArrayRecord(value.dependencyIndex) &&
     Array.isArray(value.executorRoutes) &&
     Array.isArray(value.selectorBindings) &&
+    Array.isArray(value.signalCapabilities) &&
     isHexHash(value.planHash)
   );
 }
@@ -822,6 +987,19 @@ function compareSelectorBindings(
     left.selectorStageId.localeCompare(right.selectorStageId) ||
     left.targetStageId.localeCompare(right.targetStageId) ||
     left.bindingHash.localeCompare(right.bindingHash)
+  );
+}
+
+function compareSignalCapabilities(
+  left: OnchainSignalCapability,
+  right: OnchainSignalCapability
+): number {
+  return (
+    left.stageId.localeCompare(right.stageId) ||
+    left.targetSourceId.localeCompare(right.targetSourceId) ||
+    left.signalId.localeCompare(right.signalId) ||
+    left.targetOrderRelation.localeCompare(right.targetOrderRelation) ||
+    left.capabilityHash.localeCompare(right.capabilityHash)
   );
 }
 
@@ -877,6 +1055,7 @@ function isPlatform(value: unknown): value is ZhixuPlatform {
     typeof value.type === "string" &&
     value.type.trim().length > 0 &&
     (value.provider === undefined || typeof value.provider === "string") &&
+    (value.network === undefined || typeof value.network === "string") &&
     (value.version === undefined || typeof value.version === "string") &&
     (
       value.params === undefined ||

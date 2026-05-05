@@ -1,18 +1,13 @@
-import {
-  applyRuntimeEvent,
-  emptyRuntimeState,
-  type HookRuntimeStatus,
-  type RuntimeEffect,
-  type RuntimeEvent,
-  type RuntimeHookPlan,
-  type RuntimeState,
-  type SignalReceivedEvent
-} from "./runtime.js";
+export type HexString = `0x${string}`;
 
 export type ChainModeEvent =
   | ChainPlanRegisteredEvent
   | ChainOrderRegisteredEvent
+  | ChainOrderMaterializedEvent
+  | ChainOrderTriggeredEvent
+  | ChainOrderLinkedEvent
   | ChainSignalSubmittedEvent
+  | ChainStageMaterializedEvent
   | ChainHookStatusChangedEvent
   | ChainHookReadyEvent
   | ChainTimerPokedEvent;
@@ -24,8 +19,8 @@ export type ChainModeInputEvent =
   | ChainTimerPokedEvent;
 
 export type ChainModeExpectedEvent = ChainHookStatusChangedEvent | ChainHookReadyEvent;
-
-export type ChainObservableHookStatus = Extract<HookRuntimeStatus, "wait" | "cxl">;
+export type ChainObservableHookStatus = "wait" | "cxl";
+export type ChainOracleHookStatus = "init" | "wait" | "reg" | "cxl";
 
 export interface ChainEventBase {
   readonly eventName: string;
@@ -37,29 +32,103 @@ export interface ChainEventBase {
 
 export interface ChainPlanRegisteredEvent extends ChainEventBase {
   readonly eventName: "PlanRegistered";
-  readonly plan: RuntimeHookPlan;
+  readonly plan: ChainOraclePlan;
 }
+
+export interface ChainOraclePlan {
+  readonly planId: HexString;
+  readonly zhixuId: string;
+  readonly version: string;
+  readonly compiledHooks: readonly ChainOracleHook[];
+  readonly dependencyIndex: Record<HexString, readonly HexString[]>;
+}
+
+export interface ChainOracleHook {
+  readonly hookId: HexString;
+  readonly stageId: HexString;
+  readonly stageIdentifier: string;
+  readonly hookName: string;
+  readonly isTrigger: boolean;
+  readonly instructions: readonly ChainOracleInstruction[];
+}
+
+export type ChainOracleInstruction =
+  | {
+      readonly op: "SIGNAL";
+      readonly sourceId: HexString;
+      readonly signalId: HexString;
+      readonly signalKey: HexString;
+    }
+  | {
+      readonly op: "NOT";
+    }
+  | {
+      readonly op: "AND" | "OR";
+      readonly arity: number;
+    }
+  | {
+      readonly op: "DELAY";
+      readonly delaySeconds: number;
+    };
 
 export interface ChainOrderRegisteredEvent extends ChainEventBase {
   readonly eventName: "OrderRegistered";
-  readonly planId: `0x${string}`;
+  readonly planId: HexString;
   readonly zhixuId: string;
   readonly orderId: string;
   readonly registeredAt: string;
+}
+
+export interface ChainOrderMaterializedEvent extends ChainEventBase {
+  readonly eventName: "OrderMaterialized";
+  readonly orderId: string;
+  readonly planId: HexString;
+  readonly stageId: string;
+}
+
+export interface ChainOrderTriggeredEvent extends ChainEventBase {
+  readonly eventName: "OrderTriggered";
+  readonly orderId: string;
+  readonly planId: HexString;
+  readonly triggerStageId: string;
+  readonly sourceId: string;
+  readonly signalId: string;
+  readonly submitter: string;
+}
+
+export interface ChainOrderLinkedEvent extends ChainEventBase {
+  readonly eventName: "OrderLinked";
+  readonly childOrderId: string;
+  readonly parentOrderId: string;
+  readonly triggerStageId: string;
+  readonly originSourceId: string;
+  readonly originSignalId: string;
 }
 
 export interface ChainSignalSubmittedEvent extends ChainEventBase {
   readonly eventName: "SignalSubmitted";
   readonly zhixuId: string;
   readonly orderId: string;
-  readonly source: string;
-  readonly stageIdentifier: string;
-  readonly signalName: string;
+  readonly sourceId: HexString;
+  readonly signalId: HexString;
+  readonly signalKey: HexString;
   readonly senderId: string;
   readonly submittedAt: string;
+  readonly source?: string;
+  readonly stageIdentifier?: string;
+  readonly signalName?: string;
   readonly idempotencyKey?: string;
   readonly traceId?: string;
   readonly payloadRef?: string;
+}
+
+export interface ChainStageMaterializedEvent extends ChainEventBase {
+  readonly eventName: "StageMaterialized";
+  readonly orderId: string;
+  readonly stageId: string;
+  readonly triggerHookId: string;
+  readonly sourceId: string;
+  readonly signalId: string;
 }
 
 export interface ChainHookStatusChangedEvent extends ChainEventBase {
@@ -88,9 +157,7 @@ export interface ChainTimerPokedEvent extends ChainEventBase {
   readonly pokedAt: string;
 }
 
-export type ChainHookObservation =
-  | ChainHookReadyObservation
-  | ChainHookStatusChangedObservation;
+export type ChainHookObservation = ChainHookReadyObservation | ChainHookStatusChangedObservation;
 
 export interface ChainHookReadyObservation {
   readonly eventName: "HookReady";
@@ -116,11 +183,39 @@ export interface ChainReplayOptions {
 }
 
 export interface ChainReplayResult {
-  readonly state: RuntimeState;
-  readonly runtimeEvents: readonly RuntimeEvent[];
+  readonly state: ChainOracleState;
   readonly expected: readonly ChainHookObservation[];
   readonly observed: readonly ChainHookObservation[];
   readonly mismatches: readonly ChainReplayMismatch[];
+}
+
+export interface ChainOracleState {
+  readonly plans: Record<string, ChainOraclePlan>;
+  readonly orders: Record<string, ChainOracleOrderState>;
+}
+
+export interface ChainOracleOrderState {
+  readonly planId: HexString;
+  readonly zhixuId: string;
+  readonly orderId: string;
+  readonly signals: Record<string, ChainOracleSignalRecord>;
+  readonly hookStatuses: Record<string, ChainOracleHookRuntime>;
+  readonly materializedStages: Record<string, boolean>;
+}
+
+export interface ChainOracleSignalRecord {
+  readonly eventId: string;
+  readonly sourceId: HexString;
+  readonly signalId: HexString;
+  readonly signalKey: HexString;
+  readonly senderId: string;
+  readonly submittedAt: string;
+}
+
+export interface ChainOracleHookRuntime {
+  readonly status: ChainOracleHookStatus;
+  readonly dueAt?: string;
+  readonly readyEmitted: boolean;
 }
 
 export interface ChainReplayMismatch {
@@ -145,27 +240,43 @@ export function replayChainEvents(
   options: ChainReplayOptions = {}
 ): ChainReplayResult {
   const sorted = options.sort === false ? [...events] : [...events].sort(compareChainEvents);
-  let state = emptyRuntimeState();
-  const runtimeEvents: RuntimeEvent[] = [];
+  const state: ChainOracleState = { plans: {}, orders: {} };
   const expected: ChainHookObservation[] = [];
   const observed: ChainHookObservation[] = [];
 
   for (const event of sorted) {
-    const runtimeEvent = chainEventToRuntimeEvent(event);
-    if (runtimeEvent) {
-      const previousEffectCount = state.effects.length;
-      state = applyRuntimeEvent(state, runtimeEvent);
-      runtimeEvents.push(runtimeEvent);
-      observed.push(...effectsToChainObservations(state.effects.slice(previousEffectCount)));
-      continue;
+    switch (event.eventName) {
+      case "PlanRegistered":
+        state.plans[event.plan.planId] = event.plan;
+        break;
+      case "OrderRegistered":
+        state.orders[orderKey(event.zhixuId, event.orderId)] = {
+          planId: event.planId,
+          zhixuId: event.zhixuId,
+          orderId: event.orderId,
+          signals: {},
+          hookStatuses: {},
+          materializedStages: {}
+        };
+        break;
+      case "SignalSubmitted":
+        observed.push(...recordSignalAndEvaluate(state, event));
+        break;
+      case "TimerPoked":
+        observed.push(...evaluateTimerHook(state, event));
+        break;
+      case "HookReady":
+      case "HookStatusChanged":
+        expected.push(chainEventToExpectedObservation(event));
+        break;
+      case "OrderMaterialized":
+      case "OrderTriggered":
+      case "OrderLinked":
+      case "StageMaterialized":
+        break;
+      default:
+        assertNever(event);
     }
-
-    if (isChainExpectedEvent(event)) {
-      expected.push(chainEventToExpectedObservation(event));
-      continue;
-    }
-
-    throw new Error(`chain event did not map to runtime or expectation: ${event.eventName}`);
   }
 
   const mismatches = compareHookObservations(expected, observed);
@@ -173,60 +284,7 @@ export function replayChainEvents(
     throw new ChainReplayMismatchError(mismatches);
   }
 
-  return {
-    state,
-    runtimeEvents,
-    expected,
-    observed,
-    mismatches
-  };
-}
-
-export function chainEventToRuntimeEvent(event: ChainModeEvent): RuntimeEvent | null {
-  switch (event.eventName) {
-    case "PlanRegistered":
-      return {
-        eventId: chainEventId(event),
-        type: "PlanRegistered",
-        plan: event.plan
-      };
-    case "OrderRegistered":
-      return {
-        eventId: chainEventId(event),
-        type: "OrderRegistered",
-        planId: event.planId,
-        zhixuId: event.zhixuId,
-        orderId: event.orderId,
-        receivedAt: event.registeredAt
-      };
-    case "SignalSubmitted":
-      return {
-        eventId: chainEventId(event),
-        type: "SignalReceived",
-        zhixuId: event.zhixuId,
-        orderId: event.orderId,
-        source: event.source,
-        stageIdentifier: event.stageIdentifier,
-        signalName: event.signalName,
-        senderId: event.senderId,
-        receivedAt: event.submittedAt,
-        ...optionalSignalFields(event)
-      };
-    case "TimerPoked":
-      return {
-        eventId: chainEventId(event),
-        type: "TimerDue",
-        zhixuId: event.zhixuId,
-        orderId: event.orderId,
-        hookId: event.hookId,
-        now: event.pokedAt
-      };
-    case "HookStatusChanged":
-    case "HookReady":
-      return null;
-    default:
-      return assertNever(event);
-  }
+  return { state, expected, observed, mismatches };
 }
 
 export function chainEventId(event: ChainEventBase): string {
@@ -237,9 +295,7 @@ export function compareChainEvents(a: ChainEventBase, b: ChainEventBase): number
   return a.blockNumber - b.blockNumber || a.logIndex - b.logIndex;
 }
 
-export function chainEventToExpectedObservation(
-  event: ChainModeExpectedEvent
-): ChainHookObservation {
+export function chainEventToExpectedObservation(event: ChainModeExpectedEvent): ChainHookObservation {
   switch (event.eventName) {
     case "HookReady":
       return {
@@ -264,43 +320,6 @@ export function chainEventToExpectedObservation(
   }
 }
 
-export function effectsToChainObservations(
-  effects: readonly RuntimeEffect[]
-): ChainHookObservation[] {
-  return effects.map((effect) => {
-    switch (effect.type) {
-      case "HookReady":
-        return {
-          eventName: "HookReady",
-          zhixuId: effect.zhixuId,
-          orderId: effect.orderId,
-          hookId: effect.hookId,
-          stageIdentifier: effect.stageIdentifier,
-          hookName: effect.hookName
-        };
-      case "HookWaiting":
-        return {
-          eventName: "HookStatusChanged",
-          zhixuId: effect.zhixuId,
-          orderId: effect.orderId,
-          hookId: effect.hookId,
-          status: "wait",
-          dueAt: effect.dueAt
-        };
-      case "HookCancelled":
-        return {
-          eventName: "HookStatusChanged",
-          zhixuId: effect.zhixuId,
-          orderId: effect.orderId,
-          hookId: effect.hookId,
-          status: "cxl"
-        };
-      default:
-        return assertNever(effect);
-    }
-  });
-}
-
 export function compareHookObservations(
   expected: readonly ChainHookObservation[],
   observed: readonly ChainHookObservation[]
@@ -313,26 +332,14 @@ export function compareHookObservations(
     const observedObservation = observed[index];
 
     if (!expectedObservation && observedObservation) {
-      mismatches.push({
-        index,
-        reason: "unexpected-observed",
-        observed: observedObservation
-      });
+      mismatches.push({ index, reason: "unexpected-observed", observed: observedObservation });
       continue;
     }
     if (expectedObservation && !observedObservation) {
-      mismatches.push({
-        index,
-        reason: "missing-observed",
-        expected: expectedObservation
-      });
+      mismatches.push({ index, reason: "missing-observed", expected: expectedObservation });
       continue;
     }
-    if (
-      expectedObservation &&
-      observedObservation &&
-      !sameHookObservation(expectedObservation, observedObservation)
-    ) {
+    if (expectedObservation && observedObservation && !sameHookObservation(expectedObservation, observedObservation)) {
       mismatches.push({
         index,
         reason: "semantic-mismatch",
@@ -345,45 +352,282 @@ export function compareHookObservations(
   return mismatches;
 }
 
-function optionalSignalFields(
+function recordSignalAndEvaluate(
+  state: ChainOracleState,
   event: ChainSignalSubmittedEvent
-): Pick<SignalReceivedEvent, "idempotencyKey" | "traceId" | "payloadRef"> {
-  const fields: {
-    idempotencyKey?: string;
-    traceId?: string;
-    payloadRef?: string;
-  } = {};
-  if (event.idempotencyKey !== undefined) {
-    fields.idempotencyKey = event.idempotencyKey;
+): readonly ChainHookObservation[] {
+  const order = state.orders[orderKey(event.zhixuId, event.orderId)];
+  if (!order) {
+    throw new Error(`chain oracle missing order ${event.zhixuId}:${event.orderId}`);
   }
-  if (event.traceId !== undefined) {
-    fields.traceId = event.traceId;
+  if (order.signals[event.signalKey]) {
+    return [];
   }
-  if (event.payloadRef !== undefined) {
-    fields.payloadRef = event.payloadRef;
+
+  order.signals[event.signalKey] = {
+    eventId: chainEventId(event),
+    sourceId: event.sourceId,
+    signalId: event.signalId,
+    signalKey: event.signalKey,
+    senderId: event.senderId,
+    submittedAt: event.submittedAt
+  };
+
+  const plan = state.plans[order.planId];
+  if (!plan) {
+    throw new Error(`chain oracle missing plan ${order.planId}`);
   }
-  return fields;
+
+  const hookIds = plan.dependencyIndex[event.signalKey] ?? [];
+  const hooks = hookIds.map((hookId) => findHook(plan, hookId));
+  const observations: ChainHookObservation[] = [];
+  for (const hook of hooks.filter((item) => item.isTrigger)) {
+    observations.push(...evaluateHook(order, hook, event.submittedAt));
+  }
+  for (const hook of hooks.filter((item) => !item.isTrigger)) {
+    observations.push(...evaluateHook(order, hook, event.submittedAt));
+  }
+  return observations;
 }
 
-function isChainExpectedEvent(event: ChainModeEvent): event is ChainModeExpectedEvent {
-  return event.eventName === "HookStatusChanged" || event.eventName === "HookReady";
+function evaluateTimerHook(
+  state: ChainOracleState,
+  event: ChainTimerPokedEvent
+): readonly ChainHookObservation[] {
+  const order = state.orders[orderKey(event.zhixuId, event.orderId)];
+  if (!order) {
+    throw new Error(`chain oracle missing order ${event.zhixuId}:${event.orderId}`);
+  }
+  const plan = state.plans[order.planId];
+  if (!plan) {
+    throw new Error(`chain oracle missing plan ${order.planId}`);
+  }
+  return evaluateHook(order, findHook(plan, event.hookId), event.pokedAt);
 }
 
-function sameHookObservation(
-  expected: ChainHookObservation,
-  observed: ChainHookObservation
-): boolean {
+function evaluateHook(
+  order: ChainOracleOrderState,
+  hook: ChainOracleHook,
+  now: string
+): readonly ChainHookObservation[] {
+  const previous = order.hookStatuses[hook.hookId] ?? { status: "init", readyEmitted: false };
+  if (previous.status === "cxl" || previous.status === "reg") {
+    return [];
+  }
+  if (!hook.isTrigger && !order.materializedStages[hook.stageId]) {
+    return [];
+  }
+
+  const result = evaluateInstructions(order, hook.instructions, now);
+  const next: { status: ChainOracleHookStatus; dueAt?: string; readyEmitted: boolean } = {
+    status: "init",
+    readyEmitted: previous.readyEmitted
+  };
+  if (result.cancel) {
+    next.status = "cxl";
+  } else if (result.wait) {
+    next.status = "wait";
+    const dueAt = isoFromSeconds(result.dueAt);
+    if (dueAt) {
+      next.dueAt = dueAt;
+    }
+  } else if (result.value) {
+    next.status = "reg";
+  }
+  order.hookStatuses[hook.hookId] = next;
+
+  const observations: ChainHookObservation[] = [];
+  if ((previous.status !== next.status || previous.dueAt !== next.dueAt) && next.status === "wait") {
+    const waiting: ChainHookStatusChangedObservation = {
+      eventName: "HookStatusChanged",
+      zhixuId: order.zhixuId,
+      orderId: order.orderId,
+      hookId: hook.hookId,
+      status: "wait",
+      ...(next.dueAt ? { dueAt: next.dueAt } : {})
+    };
+    observations.push(waiting);
+  }
+  if (previous.status !== next.status && next.status === "cxl") {
+    observations.push({
+      eventName: "HookStatusChanged",
+      zhixuId: order.zhixuId,
+      orderId: order.orderId,
+      hookId: hook.hookId,
+      status: "cxl"
+    });
+  }
+  if (next.status === "reg" && hook.isTrigger && !previous.readyEmitted) {
+    next.readyEmitted = true;
+    order.hookStatuses[hook.hookId] = next;
+    order.materializedStages[hook.stageId] = true;
+    observations.push({
+      eventName: "HookReady",
+      zhixuId: order.zhixuId,
+      orderId: order.orderId,
+      hookId: hook.hookId,
+      stageIdentifier: hook.stageIdentifier,
+      hookName: hook.hookName
+    });
+  }
+  return observations;
+}
+
+function evaluateInstructions(
+  order: ChainOracleOrderState,
+  instructions: readonly ChainOracleInstruction[],
+  now: string
+): EvalValue {
+  const stack: EvalValue[] = [];
+  for (const instruction of instructions) {
+    switch (instruction.op) {
+      case "SIGNAL":
+        stack.push(signalValue(order, instruction.signalKey));
+        break;
+      case "NOT":
+        stack[stack.length - 1] = notValue(stack[stack.length - 1] ?? falseValue());
+        break;
+      case "DELAY":
+        stack[stack.length - 1] = delayValue(stack[stack.length - 1] ?? falseValue(), instruction.delaySeconds, now);
+        break;
+      case "AND": {
+        const terms = stack.splice(stack.length - instruction.arity, instruction.arity);
+        stack.push(terms.reduce((left, right) => andValue(left, right)));
+        break;
+      }
+      case "OR": {
+        const terms = stack.splice(stack.length - instruction.arity, instruction.arity);
+        stack.push(terms.reduce((left, right) => orValue(left, right)));
+        break;
+      }
+      default:
+        assertNever(instruction);
+    }
+  }
+  return stack[0] ?? falseValue();
+}
+
+interface EvalValue {
+  readonly value: boolean;
+  readonly wait: boolean;
+  readonly cancel: boolean;
+  readonly dueAt: number;
+  readonly anchorAt: number;
+}
+
+function signalValue(order: ChainOracleOrderState, signalKey: string): EvalValue {
+  const signal = order.signals[signalKey];
+  if (!signal) {
+    return falseValue();
+  }
+  return { value: true, wait: false, cancel: false, dueAt: 0, anchorAt: secondsFromIso(signal.submittedAt) };
+}
+
+function falseValue(): EvalValue {
+  return { value: false, wait: false, cancel: false, dueAt: 0, anchorAt: 0 };
+}
+
+function notValue(value: EvalValue): EvalValue {
+  if (value.value || value.wait) {
+    return { value: false, wait: false, cancel: true, dueAt: 0, anchorAt: 0 };
+  }
+  return { value: true, wait: false, cancel: false, dueAt: 0, anchorAt: 0 };
+}
+
+function delayValue(value: EvalValue, delaySeconds: number, now: string): EvalValue {
+  if (value.cancel || !value.value) {
+    return value;
+  }
+  const dueAt = value.anchorAt + delaySeconds;
+  if (secondsFromIso(now) < dueAt) {
+    return { value: false, wait: true, cancel: false, dueAt, anchorAt: value.anchorAt };
+  }
+  return { value: true, wait: false, cancel: false, dueAt: 0, anchorAt: value.anchorAt };
+}
+
+function andValue(left: EvalValue, right: EvalValue): EvalValue {
+  if (left.cancel || right.cancel) {
+    return { value: false, wait: false, cancel: true, dueAt: 0, anchorAt: 0 };
+  }
+  if (left.value && right.value) {
+    return { value: true, wait: false, cancel: false, dueAt: 0, anchorAt: Math.max(left.anchorAt, right.anchorAt) };
+  }
+  if ((left.wait && (right.value || right.wait)) || (right.wait && (left.value || left.wait))) {
+    return {
+      value: false,
+      wait: true,
+      cancel: false,
+      dueAt: Math.max(left.dueAt, right.dueAt),
+      anchorAt: Math.max(left.anchorAt, right.anchorAt)
+    };
+  }
+  return falseValue();
+}
+
+function orValue(left: EvalValue, right: EvalValue): EvalValue {
+  if (left.value || right.value) {
+    return { value: true, wait: false, cancel: false, dueAt: 0, anchorAt: Math.max(left.anchorAt, right.anchorAt) };
+  }
+  if (left.wait || right.wait) {
+    return {
+      value: false,
+      wait: true,
+      cancel: false,
+      dueAt: minNonZero(left.dueAt, right.dueAt),
+      anchorAt: Math.max(left.anchorAt, right.anchorAt)
+    };
+  }
+  if (left.cancel && right.cancel) {
+    return { value: false, wait: false, cancel: true, dueAt: 0, anchorAt: 0 };
+  }
+  return falseValue();
+}
+
+function minNonZero(left: number, right: number): number {
+  if (left === 0) {
+    return right;
+  }
+  if (right === 0) {
+    return left;
+  }
+  return Math.min(left, right);
+}
+
+function findHook(plan: ChainOraclePlan, hookId: string): ChainOracleHook {
+  const hook = plan.compiledHooks.find((item) => item.hookId.toLowerCase() === hookId.toLowerCase());
+  if (!hook) {
+    throw new Error(`chain oracle missing hook ${hookId}`);
+  }
+  return hook;
+}
+
+function orderKey(zhixuId: string, orderId: string): string {
+  return `${zhixuId}::${orderId}`;
+}
+
+function secondsFromIso(value: string): number {
+  const milliseconds = Date.parse(value);
+  if (Number.isNaN(milliseconds)) {
+    throw new Error(`invalid chain oracle timestamp ${value}`);
+  }
+  return Math.floor(milliseconds / 1000);
+}
+
+function isoFromSeconds(value: number | undefined): string | undefined {
+  return value === undefined || value === 0 ? undefined : new Date(value * 1000).toISOString();
+}
+
+function sameHookObservation(expected: ChainHookObservation, observed: ChainHookObservation): boolean {
   if (expected.eventName !== observed.eventName) {
     return false;
   }
-
   switch (expected.eventName) {
     case "HookReady":
       return (
         observed.eventName === "HookReady" &&
         expected.zhixuId === observed.zhixuId &&
         expected.orderId === observed.orderId &&
-        expected.hookId === observed.hookId &&
+        expected.hookId.toLowerCase() === observed.hookId.toLowerCase() &&
         expected.stageIdentifier === observed.stageIdentifier &&
         expected.hookName === observed.hookName
       );
@@ -392,7 +636,7 @@ function sameHookObservation(
         observed.eventName === "HookStatusChanged" &&
         expected.zhixuId === observed.zhixuId &&
         expected.orderId === observed.orderId &&
-        expected.hookId === observed.hookId &&
+        expected.hookId.toLowerCase() === observed.hookId.toLowerCase() &&
         expected.status === observed.status &&
         expected.dueAt === observed.dueAt
       );

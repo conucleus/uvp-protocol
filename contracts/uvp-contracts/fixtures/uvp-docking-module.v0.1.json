@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "uvp-eth.contractAbiFixture.v2",
+  "contractName": "UVPDockingModule",
+  "abiVersion": "0.1",
+  "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPDockingModule.sol",
+  "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPDockingModule.sol/UVPDockingModule.json",
+  "compiler": {
+    "name": "solc",
+    "version": "0.8.24+commit.e11b9ed9"
+  },
+  "hashes": {
+    "abiHash": "0xf7b790b890f761673154bc195abe3bb7efea2e21957abdc4244cdef40b7e5103",
+    "bytecodeHash": "0xd6f6f91af73e267cf782a2f5b147193d5b63d0dd9e362456d4fdeffc82e29c35",
+    "deployedBytecodeHash": "0xb34a2da3344d5ebc527cde342edeeb9e06bb6b11f8857e1b6a09ac0bfa1f6c28",
+    "artifactHash": "0xa1d03d59ea8592de19336274c336e0915c9bbaf45c16da2f6c8de6b5bcb7c005"
+  },
+  "events": {
+    "DockedOrderLinked": {
+      "signature": "DockedOrderLinked(bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32,uint256,string)",
+      "topic": "0x27f6470067196605adadb4df8e5f726c687a70082a033e3f9999ae0bd44b1210"
+    },
+    "DockedSignalMapped": {
+      "signature": "DockedSignalMapped(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",
+      "topic": "0x3660ac684d414fb405fafd103907c1b8b765a77106a22f0a5e52a9d1dd369040"
+    },
+    "DockedSignalSubmitted": {
+      "signature": "DockedSignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
+      "topic": "0x12fc02232ce7d6e4fcc41af2d149244497e54aa2d5fda3ade7d86f90eb473c56"
+    }
+  },
+  "functions": {
+    "DOCKED_ORDER_LINK_SIGNAL_ID": {
+      "signature": "DOCKED_ORDER_LINK_SIGNAL_ID()",
+      "selector": "0xa4119f3b"
+    },
+    "DOMAIN_SEPARATOR": {
+      "signature": "DOMAIN_SEPARATOR()",
+      "selector": "0x3644e515"
+    },
+    "dockedOrderLinkDigest": {
+      "signature": "dockedOrderLinkDigest(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string,(bytes32,bytes32,bytes32,bytes32)[]),address,uint256)",
+      "selector": "0xcdbceef9"
+    },
+    "getActiveDockedOrderLink": {
+      "signature": "getActiveDockedOrderLink(bytes32,bytes32)",
+      "selector": "0x1c1579c8"
+    },
+    "getActiveDockedSignalBinding": {
+      "signature": "getActiveDockedSignalBinding(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x73ca8690"
+    },
+    "linkDockedOrder": {
+      "signature": "linkDockedOrder(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string,(bytes32,bytes32,bytes32,bytes32)[]))",
+      "selector": "0xfe900c04"
+    },
+    "linkDockedOrderFor": {
+      "signature": "linkDockedOrderFor(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string,(bytes32,bytes32,bytes32,bytes32)[]),address,uint256,bytes)",
+      "selector": "0xd089e907"
+    },
+    "orderDockedOrderLinkNonce": {
+      "signature": "orderDockedOrderLinkNonce(bytes32,bytes32)",
+      "selector": "0x68767215"
+    },
+    "stateMachine": {
+      "signature": "stateMachine()",
+      "selector": "0x37b416d8"
+    },
+    "submitDockedSignal": {
+      "signature": "submitDockedSignal(bytes32,bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x418063e1"
+    }
+  }
+}

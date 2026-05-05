@@ -1,0 +1,101 @@
+{
+  "schemaVersion": "uvp-eth.contractAbiFixture.v2",
+  "contractName": "UVPStagePatchModule",
+  "abiVersion": "0.1",
+  "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStagePatchModule.sol",
+  "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStagePatchModule.sol/UVPStagePatchModule.json",
+  "compiler": {
+    "name": "solc",
+    "version": "0.8.24+commit.e11b9ed9"
+  },
+  "hashes": {
+    "abiHash": "0x78e2a7b8ef4b7cf4357a3c0dab748dcdec888c8b07e963af190d536f670e8970",
+    "bytecodeHash": "0xb8ca4ca1ec70615b8794004eb004631d82d70ad6f9561388f704b0c9ef77c07f",
+    "deployedBytecodeHash": "0x4c32167806eee3f70e14800988a394955bc4e7987466a4e7983204fd546b6c42",
+    "artifactHash": "0xced4a83db6a879c3e6444be3bc3e2104fcd3f140627560dc6209869190f7ba3a"
+  },
+  "events": {
+    "StageExecutorPatchApplied": {
+      "signature": "StageExecutorPatchApplied(bytes32,bytes32,bytes32,address,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string)",
+      "topic": "0xe905e100cc72bc7f5c43d9352a70e249f8fdd2697f1fa346dd93a955679f1d9d"
+    },
+    "StageResourcePatchApplied": {
+      "signature": "StageResourcePatchApplied(bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,uint256,string)",
+      "topic": "0x3f89634997832c91424efc916eea7d86c8a9c74b3602c2469957565ea4085d69"
+    }
+  },
+  "functions": {
+    "DOMAIN_SEPARATOR": {
+      "signature": "DOMAIN_SEPARATOR()",
+      "selector": "0x3644e515"
+    },
+    "EXECUTOR_PATCH_MODE_ASSIGN": {
+      "signature": "EXECUTOR_PATCH_MODE_ASSIGN()",
+      "selector": "0x40311d02"
+    },
+    "EXECUTOR_PATCH_MODE_HANDOFF": {
+      "signature": "EXECUTOR_PATCH_MODE_HANDOFF()",
+      "selector": "0x6e99c81f"
+    },
+    "EXECUTOR_PATCH_MODE_REPLACEMENT": {
+      "signature": "EXECUTOR_PATCH_MODE_REPLACEMENT()",
+      "selector": "0xfc356f98"
+    },
+    "EXECUTOR_PATCH_SIGNAL_ID": {
+      "signature": "EXECUTOR_PATCH_SIGNAL_ID()",
+      "selector": "0x0305855c"
+    },
+    "RESOURCE_PATCH_SIGNAL_ID": {
+      "signature": "RESOURCE_PATCH_SIGNAL_ID()",
+      "selector": "0xfe5e196c"
+    },
+    "activeStageExecutor": {
+      "signature": "activeStageExecutor(bytes32,bytes32)",
+      "selector": "0x3f7d1763"
+    },
+    "applyStageExecutorPatch": {
+      "signature": "applyStageExecutorPatch(bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string))",
+      "selector": "0x8d0e1737"
+    },
+    "applyStageExecutorPatchFor": {
+      "signature": "applyStageExecutorPatchFor(bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string),address,uint256,bytes,bytes)",
+      "selector": "0x2ea9f6dd"
+    },
+    "applyStageResourcePatch": {
+      "signature": "applyStageResourcePatch(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string))",
+      "selector": "0xe3484181"
+    },
+    "applyStageResourcePatchFor": {
+      "signature": "applyStageResourcePatchFor(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string),address,uint256,bytes)",
+      "selector": "0xb0e6e7c1"
+    },
+    "getActiveStageExecutorPatch": {
+      "signature": "getActiveStageExecutorPatch(bytes32,bytes32)",
+      "selector": "0x6334d2a8"
+    },
+    "getActiveStageResourcePatch": {
+      "signature": "getActiveStageResourcePatch(bytes32,bytes32,bytes32)",
+      "selector": "0x901cfaaf"
+    },
+    "orderStageExecutorPatchNonce": {
+      "signature": "orderStageExecutorPatchNonce(bytes32,bytes32)",
+      "selector": "0x9b7efdef"
+    },
+    "orderStageResourcePatchNonce": {
+      "signature": "orderStageResourcePatchNonce(bytes32,bytes32,bytes32)",
+      "selector": "0x0a27a10a"
+    },
+    "stageExecutorPatchDigest": {
+      "signature": "stageExecutorPatchDigest(bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string),address,uint256)",
+      "selector": "0xb5df2947"
+    },
+    "stageResourcePatchDigest": {
+      "signature": "stageResourcePatchDigest(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string),address,uint256)",
+      "selector": "0x51e10c7d"
+    },
+    "stateMachine": {
+      "signature": "stateMachine()",
+      "selector": "0x37b416d8"
+    }
+  }
+}

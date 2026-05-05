@@ -15,6 +15,7 @@ import {
 
 export const STATE_MACHINE_ABI = parseAbi([
   'event OwnershipTransferred(address indexed previousOwner,address indexed newOwner)',
+  'event StateMachineModuleSet(bytes32 indexed moduleId,address indexed previousModule,address indexed newModule)',
   'event PlanPublisherSet(address indexed publisher,bool allowed)',
   'event OrderRegistrarSet(address indexed registrar,bool allowed)',
   'event HookReady(bytes32 indexed orderId,bytes32 indexed hookId,bytes32 indexed stageId,bytes32 hookName)',
@@ -22,66 +23,142 @@ export const STATE_MACHINE_ABI = parseAbi([
   'event PlanRegistered(bytes32 indexed planId,bytes32 planHash,uint256 hookCount)',
   'event PlanPublisherRecorded(bytes32 indexed planId,address indexed publisher)',
   'event OrderRegistered(bytes32 indexed orderId,bytes32 indexed planId)',
+  'event OrderMaterialized(bytes32 indexed orderId,bytes32 indexed planId,bytes32 indexed stageId)',
   'event OrderRegistrarRecorded(bytes32 indexed orderId,address indexed registrar,address indexed creator)',
   'event SignalSubmitterAuthorized(bytes32 indexed orderId,bytes32 indexed sourceId,bytes32 indexed signalId,address submitter,bytes32 role,bytes32 metadataHash)',
-  'event StageSelectorBindingRegistered(bytes32 indexed planId,bytes32 indexed selectorStageId,bytes32 indexed targetStageId)',
-  'event StageExecutorPatchApplied(bytes32 indexed orderId,bytes32 indexed selectorStageId,bytes32 indexed targetStageId,address selector,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 approvalSourceId,bytes32 approvalSignalId,bytes32 patchHash,uint256 patchNonce,string metadataURI)',
+  'event StageMaterialized(bytes32 indexed orderId,bytes32 indexed stageId,bytes32 indexed triggerHookId,bytes32 sourceId,bytes32 signalId)',
+  'event OrderTriggered(bytes32 indexed orderId,bytes32 indexed planId,bytes32 indexed triggerStageId,bytes32 sourceId,bytes32 signalId,address submitter)',
   'event StageExecutorActivated(bytes32 indexed orderId,bytes32 indexed targetStageId,address indexed executor,bytes32 role,bytes32 metadataHash,uint256 patchNonce)',
-  'event StageResourcePatchApplied(bytes32 indexed orderId,bytes32 indexed selectorStageId,bytes32 indexed targetStageId,address selector,bytes32 resourceKey,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI)',
-  'event DockedOrderLinked(bytes32 indexed localOrderId,bytes32 indexed linkedOrderId,bytes32 indexed localSourceId,bytes32 selectorStageId,bytes32 linkedPlanId,address selector,bytes32 linkHash,uint256 linkNonce,string metadataURI)',
-  'event DockedSignalMapped(bytes32 indexed localOrderId,bytes32 indexed linkedOrderId,bytes32 indexed linkedSourceId,bytes32 linkedSignalId,bytes32 localSourceId,bytes32 localSignalId)',
-  'event DockedSignalSubmitted(bytes32 indexed localOrderId,bytes32 indexed linkedOrderId,bytes32 indexed linkedSourceId,bytes32 linkedSignalId,bytes32 localSourceId,bytes32 localSignalId,bytes32 payloadHash,address submitter)',
   'function owner() view returns (address)',
+  'function stagePatchModule() view returns (address)',
+  'function derivedSignalModule() view returns (address)',
+  'function dockingModule() view returns (address)',
+  'function planMetadataModule() view returns (address)',
+  'function orderLinkModule() view returns (address)',
+  'function lens() view returns (address)',
   'function transferOwnership(address newOwner)',
+  'function setStagePatchModule(address moduleAddress)',
+  'function setDerivedSignalModule(address moduleAddress)',
+  'function setDockingModule(address moduleAddress)',
+  'function setPlanMetadataModule(address moduleAddress)',
+  'function setOrderLinkModule(address moduleAddress)',
+  'function setLens(address moduleAddress)',
   'function setPlanPublisher(address publisher,bool allowed)',
   'function setOrderRegistrar(address registrar,bool allowed)',
   'function planPublishers(address publisher) view returns (bool)',
   'function orderRegistrars(address registrar) view returns (bool)',
-  'function registerPlan(bytes32 planId,bytes32 planHash,(bytes32 hookId,bytes32 stageId,bytes32 hookName,bool trigger,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks,(bytes32 selectorStageId,bytes32 targetStageId)[] selectorBindings)',
-  'function registerOrder(bytes32 orderId,bytes32 planId)',
-  'function registerOrder(bytes32 orderId,bytes32 planId,address creator)',
-  'function registerOrder(bytes32 orderId,bytes32 planId,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations)',
-  'function registerOrder(bytes32 orderId,bytes32 planId,address creator,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations)',
-  'function applyStageExecutorPatch(bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 approvalSourceId,bytes32 approvalSignalId,bytes32 patchHash,uint256 patchNonce,string metadataURI) patch)',
-  'function applyStageExecutorPatchFor(bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 approvalSourceId,bytes32 approvalSignalId,bytes32 patchHash,uint256 patchNonce,string metadataURI) patch,address selector,uint256 deadline,bytes selectorSignature,bytes previousExecutorSignature)',
-  'function applyStageResourcePatch(bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 resourceKey,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI) patch)',
-  'function applyStageResourcePatchFor(bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 resourceKey,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI) patch,address selector,uint256 deadline,bytes signature)',
-  'function linkDockedOrder(bytes32 localOrderId,(bytes32 selectorStageId,bytes32 localSourceId,bytes32 linkedOrderId,bytes32 linkedPlanId,bytes32 linkHash,uint256 linkNonce,string metadataURI,(bytes32 localSourceId,bytes32 localSignalId,bytes32 linkedSourceId,bytes32 linkedSignalId)[] signalBindings) link)',
-  'function linkDockedOrderFor(bytes32 localOrderId,(bytes32 selectorStageId,bytes32 localSourceId,bytes32 linkedOrderId,bytes32 linkedPlanId,bytes32 linkHash,uint256 linkNonce,string metadataURI,(bytes32 localSourceId,bytes32 localSignalId,bytes32 linkedSourceId,bytes32 linkedSignalId)[] signalBindings) link,address selector,uint256 deadline,bytes signature)',
-  'function submitDockedSignal(bytes32 localOrderId,bytes32 linkedOrderId,bytes32 linkedSourceId,bytes32 linkedSignalId,bytes32 idempotencyKey)',
+  'function registerPlan(bytes32 planId,bytes32 planHash,(bytes32 hookId,bytes32 stageId,bytes32 hookName,bool isTrigger,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks)',
+  'function triggerOrderFromOutsideFor((bytes32 orderId,bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) trigger,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations,bytes signature)',
   'function submitSignal(bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey)',
   'function submitSignalFor(bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline,bytes signature)',
-  'function signalSubmissionDigest(bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) view returns (bytes32)',
-  'function stageExecutorPatchDigest(bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 approvalSourceId,bytes32 approvalSignalId,bytes32 patchHash,uint256 patchNonce,string metadataURI) patch,address selector,uint256 deadline) view returns (bytes32)',
-  'function stageResourcePatchDigest(bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 resourceKey,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI) patch,address selector,uint256 deadline) view returns (bytes32)',
-  'function dockedOrderLinkDigest(bytes32 localOrderId,(bytes32 selectorStageId,bytes32 localSourceId,bytes32 linkedOrderId,bytes32 linkedPlanId,bytes32 linkHash,uint256 linkNonce,string metadataURI,(bytes32 localSourceId,bytes32 localSignalId,bytes32 linkedSourceId,bytes32 linkedSignalId)[] signalBindings) link,address selector,uint256 deadline) view returns (bytes32)',
-  'function EXECUTOR_PATCH_MODE_ASSIGN() view returns (bytes32)',
-  'function EXECUTOR_PATCH_MODE_HANDOFF() view returns (bytes32)',
-  'function EXECUTOR_PATCH_MODE_REPLACEMENT() view returns (bytes32)',
-  'function DOCKED_ORDER_LINK_SIGNAL_ID() view returns (bytes32)',
+  'function submitSignalFromModule(bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter)',
+  'function triggerOrderFromSignalFromModule((bytes32 orderId,bytes32 planId,address creator,bytes32 parentOrderId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) trigger,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations,address registrar)',
+  'function activateStageExecutorFromModule(bytes32 orderId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 patchHash,uint256 patchNonce)',
+  'function SIGNAL_TARGET_CURRENT_ORDER() view returns (uint8)',
+  'function SIGNAL_TARGET_TRIGGER_PARENT() view returns (uint8)',
   'function sourceSignalCount(bytes32 orderId,bytes32 sourceId) view returns (uint256)',
   'function lastSignalSubmitter(bytes32 orderId,bytes32 sourceId) view returns (address)',
   'function DOMAIN_SEPARATOR() view returns (bytes32)',
-  'function trustRegistry() view returns (address)',
-  'function officialDomainId() view returns (bytes32)',
   'function orderPlanId(bytes32 orderId) view returns (bytes32)',
   'function planPublisher(bytes32 planId) view returns (address)',
   'function orderRegistrar(bytes32 orderId) view returns (address)',
   'function orderCreator(bytes32 orderId) view returns (address)',
+  'function hasExplicitSignalAuthorization(bytes32 orderId,bytes32 sourceId,bytes32 signalId,address submitter) view returns (bool)',
+]);
+
+export const PLAN_METADATA_MODULE_ABI = parseAbi([
+  'event StageSelectorBindingRegistered(bytes32 indexed planId,bytes32 indexed selectorStageId,bytes32 indexed targetStageId)',
+  'event SignalCapabilityRegistered(bytes32 indexed planId,bytes32 indexed stageId,bytes32 indexed targetSourceId,bytes32 signalId,uint8 targetOrderRelation)',
+  'function registerPlanMetadata(bytes32 planId,(bytes32 selectorStageId,bytes32 targetStageId)[] selectorBindings,(bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation)[] signalCapabilities)',
+  'function planSelectorBindingCount(bytes32 planId) view returns (uint256)',
+  'function planSelectorBindingAt(bytes32 planId,uint256 index) view returns (bytes32 selectorStageId,bytes32 targetStageId)',
+  'function planSignalCapabilityCount(bytes32 planId) view returns (uint256)',
+  'function isStageSelectorBound(bytes32 planId,bytes32 selectorStageId,bytes32 targetStageId) view returns (bool)',
+  'function isSignalCapabilityRegistered(bytes32 planId,bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation) view returns (bool)',
+  'function stageSelectorBindingKey(bytes32 selectorStageId,bytes32 targetStageId) pure returns (bytes32)',
+  'function signalCapabilityKey(bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation) pure returns (bytes32)',
+]);
+
+export const ORDER_LINK_MODULE_ABI = parseAbi([
+  'event OrderLinked(bytes32 indexed childOrderId,bytes32 indexed parentOrderId,bytes32 indexed triggerStageId,bytes32 originSourceId,bytes32 originSignalId)',
+  'function triggerOrderFromSignalFor((bytes32 orderId,bytes32 planId,address creator,bytes32 parentOrderId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) trigger,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations,bytes signature)',
+  'function targetOrderRelation(bytes32 fromOrderId,bytes32 targetOrderId) view returns (uint8)',
+  'function getOrderTriggerLink(bytes32 childOrderId) view returns (bool exists,bytes32 parentOrderId,bytes32 originSourceId,bytes32 originSignalId,bytes32 triggerStageId)',
+  'function signalAuthorizationsHash((bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations) pure returns (bytes32)',
+  'function triggerOrderFromSignalDigest((bytes32 orderId,bytes32 planId,address creator,bytes32 parentOrderId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) trigger,bytes32 authorizationsHash) view returns (bytes32)',
+]);
+
+export const STAGE_PATCH_MODULE_ABI = parseAbi([
+  'event StageExecutorPatchApplied(bytes32 indexed orderId,bytes32 indexed selectorStageId,bytes32 indexed targetStageId,address selector,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 approvalSourceId,bytes32 approvalSignalId,bytes32 patchHash,uint256 patchNonce,string metadataURI)',
+  'event StageResourcePatchApplied(bytes32 indexed orderId,bytes32 indexed selectorStageId,bytes32 indexed targetStageId,address selector,bytes32 resourceKey,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI)',
+  'function EXECUTOR_PATCH_SIGNAL_ID() view returns (bytes32)',
+  'function RESOURCE_PATCH_SIGNAL_ID() view returns (bytes32)',
+  'function EXECUTOR_PATCH_MODE_ASSIGN() view returns (bytes32)',
+  'function EXECUTOR_PATCH_MODE_HANDOFF() view returns (bytes32)',
+  'function EXECUTOR_PATCH_MODE_REPLACEMENT() view returns (bytes32)',
+  'function applyStageExecutorPatch(bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 approvalSourceId,bytes32 approvalSignalId,bytes32 patchHash,uint256 patchNonce,string metadataURI) patch)',
+  'function applyStageExecutorPatchFor(bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 approvalSourceId,bytes32 approvalSignalId,bytes32 patchHash,uint256 patchNonce,string metadataURI) patch,address selector,uint256 deadline,bytes selectorSignature,bytes previousExecutorSignature)',
+  'function applyStageResourcePatch(bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 resourceKey,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI) patch)',
+  'function applyStageResourcePatchFor(bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 resourceKey,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI) patch,address selector,uint256 deadline,bytes signature)',
+  'function stageExecutorPatchDigest(bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 approvalSourceId,bytes32 approvalSignalId,bytes32 patchHash,uint256 patchNonce,string metadataURI) patch,address selector,uint256 deadline) view returns (bytes32)',
+  'function stageResourcePatchDigest(bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 resourceKey,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI) patch,address selector,uint256 deadline) view returns (bytes32)',
+  'function getActiveStageExecutorPatch(bytes32 orderId,bytes32 targetStageId) view returns (bool exists,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 patchHash,uint256 patchNonce,string metadataURI)',
+  'function getActiveStageResourcePatch(bytes32 orderId,bytes32 targetStageId,bytes32 resourceKey) view returns (bool exists,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI)',
+]);
+
+export const DERIVED_SIGNAL_MODULE_ABI = parseAbi([
+  'function submitDerivedSignal(bytes32 fromOrderId,bytes32 fromStageId,bytes32 targetOrderId,bytes32 targetSourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey)',
+  'function submitDerivedSignalFor(bytes32 fromOrderId,bytes32 fromStageId,bytes32 targetOrderId,bytes32 targetSourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline,bytes signature)',
+  'function derivedSignalDigest(bytes32 fromOrderId,bytes32 fromStageId,bytes32 targetOrderId,bytes32 targetSourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) view returns (bytes32)',
+]);
+
+export const DOCKING_MODULE_ABI = parseAbi([
+  'event DockedOrderLinked(bytes32 indexed localOrderId,bytes32 indexed linkedOrderId,bytes32 indexed localSourceId,bytes32 selectorStageId,bytes32 linkedPlanId,address selector,bytes32 linkHash,uint256 linkNonce,string metadataURI)',
+  'event DockedSignalMapped(bytes32 indexed localOrderId,bytes32 indexed linkedOrderId,bytes32 indexed linkedSourceId,bytes32 linkedSignalId,bytes32 localSourceId,bytes32 localSignalId)',
+  'event DockedSignalSubmitted(bytes32 indexed localOrderId,bytes32 indexed linkedOrderId,bytes32 indexed linkedSourceId,bytes32 linkedSignalId,bytes32 localSourceId,bytes32 localSignalId,bytes32 payloadHash,address submitter)',
+  'function DOCKED_ORDER_LINK_SIGNAL_ID() view returns (bytes32)',
+  'function linkDockedOrder(bytes32 localOrderId,(bytes32 selectorStageId,bytes32 localSourceId,bytes32 linkedOrderId,bytes32 linkedPlanId,bytes32 linkHash,uint256 linkNonce,string metadataURI,(bytes32 localSourceId,bytes32 localSignalId,bytes32 linkedSourceId,bytes32 linkedSignalId)[] signalBindings) link)',
+  'function linkDockedOrderFor(bytes32 localOrderId,(bytes32 selectorStageId,bytes32 localSourceId,bytes32 linkedOrderId,bytes32 linkedPlanId,bytes32 linkHash,uint256 linkNonce,string metadataURI,(bytes32 localSourceId,bytes32 localSignalId,bytes32 linkedSourceId,bytes32 linkedSignalId)[] signalBindings) link,address selector,uint256 deadline,bytes signature)',
+  'function submitDockedSignal(bytes32 localOrderId,bytes32 linkedOrderId,bytes32 linkedSourceId,bytes32 linkedSignalId,bytes32 idempotencyKey)',
+  'function dockedOrderLinkDigest(bytes32 localOrderId,(bytes32 selectorStageId,bytes32 localSourceId,bytes32 linkedOrderId,bytes32 linkedPlanId,bytes32 linkHash,uint256 linkNonce,string metadataURI,(bytes32 localSourceId,bytes32 localSignalId,bytes32 linkedSourceId,bytes32 linkedSignalId)[] signalBindings) link,address selector,uint256 deadline) view returns (bytes32)',
+  'function getActiveDockedOrderLink(bytes32 localOrderId,bytes32 linkedOrderId) view returns (bool exists,bytes32 selectorStageId,bytes32 localSourceId,bytes32 linkedPlanId,address selector,bytes32 linkHash,uint256 linkNonce,string metadataURI)',
+  'function getActiveDockedSignalBinding(bytes32 localOrderId,bytes32 linkedOrderId,bytes32 linkedSourceId,bytes32 linkedSignalId) view returns (bool exists,bytes32 localSourceId,bytes32 localSignalId)',
+]);
+
+export const STATE_MACHINE_LENS_ABI = parseAbi([
+  'function stateMachine() view returns (address)',
+  'function getActiveStageExecutorPatch(bytes32 orderId,bytes32 targetStageId) view returns (bool exists,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 patchHash,uint256 patchNonce,string metadataURI)',
+  'function getActiveStageResourcePatch(bytes32 orderId,bytes32 targetStageId,bytes32 resourceKey) view returns (bool exists,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI)',
+  'function getActiveDockedOrderLink(bytes32 localOrderId,bytes32 linkedOrderId) view returns (bool exists,bytes32 selectorStageId,bytes32 localSourceId,bytes32 linkedPlanId,address selector,bytes32 linkHash,uint256 linkNonce,string metadataURI)',
+  'function getActiveDockedSignalBinding(bytes32 localOrderId,bytes32 linkedOrderId,bytes32 linkedSourceId,bytes32 linkedSignalId) view returns (bool exists,bytes32 localSourceId,bytes32 localSignalId)',
+  'function planSelectorBindingCount(bytes32 planId) view returns (uint256)',
+  'function planSelectorBindingAt(bytes32 planId,uint256 index) view returns (bytes32 selectorStageId,bytes32 targetStageId)',
+  'function planSignalCapabilityCount(bytes32 planId) view returns (uint256)',
+  'function isStageSelectorBound(bytes32 planId,bytes32 selectorStageId,bytes32 targetStageId) view returns (bool)',
+  'function isSignalCapabilityRegistered(bytes32 planId,bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation) view returns (bool)',
+  'function targetOrderRelation(bytes32 fromOrderId,bytes32 targetOrderId) view returns (uint8)',
+  'function getOrderTriggerLink(bytes32 childOrderId) view returns (bool exists,bytes32 parentOrderId,bytes32 originSourceId,bytes32 originSignalId,bytes32 triggerStageId)',
 ]);
 
 export const PRODUCT_SUBMIT_DOMAIN_NAME = 'UVPStateMachine';
-export const PRODUCT_SUBMIT_DOMAIN_VERSION = '0.2';
+export const PRODUCT_SUBMIT_DOMAIN_VERSION = '0.7';
 export const PRODUCT_SUBMIT_PRIMARY_TYPE = 'UVPStateMachineSignal';
-export const STAGE_EXECUTOR_PATCH_DOMAIN_NAME = PRODUCT_SUBMIT_DOMAIN_NAME;
-export const STAGE_EXECUTOR_PATCH_DOMAIN_VERSION = PRODUCT_SUBMIT_DOMAIN_VERSION;
-export const STAGE_EXECUTOR_PATCH_PRIMARY_TYPE = 'UVPStateMachineStageExecutorPatch';
-export const STAGE_RESOURCE_PATCH_DOMAIN_NAME = PRODUCT_SUBMIT_DOMAIN_NAME;
-export const STAGE_RESOURCE_PATCH_DOMAIN_VERSION = PRODUCT_SUBMIT_DOMAIN_VERSION;
-export const STAGE_RESOURCE_PATCH_PRIMARY_TYPE = 'UVPStateMachineStageResourcePatch';
-export const DOCKED_ORDER_LINK_DOMAIN_NAME = PRODUCT_SUBMIT_DOMAIN_NAME;
-export const DOCKED_ORDER_LINK_DOMAIN_VERSION = PRODUCT_SUBMIT_DOMAIN_VERSION;
-export const DOCKED_ORDER_LINK_PRIMARY_TYPE = 'UVPStateMachineDockedOrderLink';
+export const TRIGGER_ORDER_FROM_OUTSIDE_PRIMARY_TYPE = 'UVPStateMachineTriggerOrderFromOutside';
+export const ORDER_LINK_DOMAIN_NAME = 'UVPOrderLinkModule';
+export const ORDER_LINK_DOMAIN_VERSION = '0.7';
+export const TRIGGER_ORDER_FROM_SIGNAL_PRIMARY_TYPE = 'UVPOrderLinkModuleTriggerOrderFromSignal';
+export const DERIVED_SIGNAL_DOMAIN_NAME = 'UVPDerivedSignalModule';
+export const DERIVED_SIGNAL_DOMAIN_VERSION = '0.6';
+export const DERIVED_SIGNAL_PRIMARY_TYPE = 'UVPDerivedSignalModuleSignal';
+export const STAGE_EXECUTOR_PATCH_DOMAIN_NAME = 'UVPStagePatchModule';
+export const STAGE_EXECUTOR_PATCH_DOMAIN_VERSION = '0.1';
+export const STAGE_EXECUTOR_PATCH_PRIMARY_TYPE = 'UVPStagePatchModuleStageExecutorPatch';
+export const STAGE_RESOURCE_PATCH_DOMAIN_NAME = STAGE_EXECUTOR_PATCH_DOMAIN_NAME;
+export const STAGE_RESOURCE_PATCH_DOMAIN_VERSION = STAGE_EXECUTOR_PATCH_DOMAIN_VERSION;
+export const STAGE_RESOURCE_PATCH_PRIMARY_TYPE = 'UVPStagePatchModuleStageResourcePatch';
+export const DOCKED_ORDER_LINK_DOMAIN_NAME = 'UVPDockingModule';
+export const DOCKED_ORDER_LINK_DOMAIN_VERSION = '0.1';
+export const DOCKED_ORDER_LINK_PRIMARY_TYPE = 'UVPDockingModuleDockedOrderLink';
 export const STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN = 'uvp:stage-executor-patch-payload:v1';
 export const STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN = 'uvp:stage-resource-patch-payload:v1';
 export const DOCKED_ORDER_LINK_PAYLOAD_HASH_DOMAIN = 'uvp:docked-order-link-payload:v1';
@@ -104,6 +181,37 @@ export const PRODUCT_SUBMIT_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataFi
   { name: 'signalId', type: 'bytes32' },
   { name: 'payloadHash', type: 'bytes32' },
   { name: 'idempotencyKey', type: 'bytes32' },
+  { name: 'submitter', type: 'address' },
+  { name: 'deadline', type: 'uint256' },
+];
+
+export const TRIGGER_ORDER_FROM_OUTSIDE_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] = [
+  { name: 'orderId', type: 'bytes32' },
+  { name: 'planId', type: 'bytes32' },
+  { name: 'creator', type: 'address' },
+  { name: 'triggerHookId', type: 'bytes32' },
+  { name: 'triggerStageId', type: 'bytes32' },
+  { name: 'sourceId', type: 'bytes32' },
+  { name: 'signalId', type: 'bytes32' },
+  { name: 'payloadHash', type: 'bytes32' },
+  { name: 'idempotencyKey', type: 'bytes32' },
+  { name: 'authorizationsHash', type: 'bytes32' },
+  { name: 'submitter', type: 'address' },
+  { name: 'deadline', type: 'uint256' },
+];
+
+export const TRIGGER_ORDER_FROM_SIGNAL_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] = [
+  { name: 'orderId', type: 'bytes32' },
+  { name: 'planId', type: 'bytes32' },
+  { name: 'creator', type: 'address' },
+  { name: 'parentOrderId', type: 'bytes32' },
+  { name: 'triggerHookId', type: 'bytes32' },
+  { name: 'triggerStageId', type: 'bytes32' },
+  { name: 'originSourceId', type: 'bytes32' },
+  { name: 'originSignalId', type: 'bytes32' },
+  { name: 'payloadHash', type: 'bytes32' },
+  { name: 'idempotencyKey', type: 'bytes32' },
+  { name: 'authorizationsHash', type: 'bytes32' },
   { name: 'submitter', type: 'address' },
   { name: 'deadline', type: 'uint256' },
 ];
@@ -176,6 +284,93 @@ export interface ProductSubmitTypedData {
   };
 }
 
+export interface SignalAuthorizationPayload {
+  readonly sourceId: Hex | string;
+  readonly signalId: Hex | string;
+  readonly submitter: Address | string;
+  readonly role: Hex | string;
+  readonly metadataHash: Hex | string;
+}
+
+export interface TriggerOrderFromOutsidePayload {
+  readonly orderId: Hex | string;
+  readonly planId: Hex | string;
+  readonly creator: Address | string;
+  readonly triggerHookId: Hex | string;
+  readonly triggerStageId: Hex | string;
+  readonly sourceId: Hex | string;
+  readonly signalId: Hex | string;
+  readonly payloadHash: Hex | string;
+  readonly idempotencyKey: Hex | string;
+  readonly submitter: Address | string;
+  readonly deadline: bigint | number | string;
+}
+
+export interface TriggerOrderFromSignalPayload {
+  readonly orderId: Hex | string;
+  readonly planId: Hex | string;
+  readonly creator: Address | string;
+  readonly parentOrderId: Hex | string;
+  readonly triggerHookId: Hex | string;
+  readonly triggerStageId: Hex | string;
+  readonly originSourceId: Hex | string;
+  readonly originSignalId: Hex | string;
+  readonly payloadHash: Hex | string;
+  readonly idempotencyKey: Hex | string;
+  readonly submitter: Address | string;
+  readonly deadline: bigint | number | string;
+}
+
+export interface TriggerOrderFromOutsideTypedData {
+  readonly domain: ProductSubmitTypedData['domain'];
+  readonly types: {
+    readonly UVPStateMachineTriggerOrderFromOutside: readonly ProductSubmitTypedDataField[];
+  };
+  readonly primaryType: typeof TRIGGER_ORDER_FROM_OUTSIDE_PRIMARY_TYPE;
+  readonly message: {
+    readonly orderId: Hex;
+    readonly planId: Hex;
+    readonly creator: Address;
+    readonly triggerHookId: Hex;
+    readonly triggerStageId: Hex;
+    readonly sourceId: Hex;
+    readonly signalId: Hex;
+    readonly payloadHash: Hex;
+    readonly idempotencyKey: Hex;
+    readonly authorizationsHash: Hex;
+    readonly submitter: Address;
+    readonly deadline: string;
+  };
+}
+
+export interface TriggerOrderFromSignalTypedData {
+  readonly domain: {
+    readonly name: typeof ORDER_LINK_DOMAIN_NAME;
+    readonly version: typeof ORDER_LINK_DOMAIN_VERSION;
+    readonly chainId: number;
+    readonly verifyingContract: Address;
+  };
+  readonly types: {
+    readonly UVPOrderLinkModuleTriggerOrderFromSignal: readonly ProductSubmitTypedDataField[];
+  };
+  readonly primaryType: typeof TRIGGER_ORDER_FROM_SIGNAL_PRIMARY_TYPE;
+  readonly message: {
+    readonly orderId: Hex;
+    readonly planId: Hex;
+    readonly creator: Address;
+    readonly parentOrderId: Hex;
+    readonly triggerHookId: Hex;
+    readonly triggerStageId: Hex;
+    readonly originSourceId: Hex;
+    readonly originSignalId: Hex;
+    readonly payloadHash: Hex;
+    readonly idempotencyKey: Hex;
+    readonly authorizationsHash: Hex;
+    readonly submitter: Address;
+    readonly deadline: string;
+  };
+}
+
 export interface StageExecutorPatchPayload {
   readonly selectorStageId: Hex | string;
   readonly targetStageId: Hex | string;
@@ -202,7 +397,7 @@ export interface StageExecutorPatchTypedData {
     readonly verifyingContract: Address;
   };
   readonly types: {
-    readonly UVPStateMachineStageExecutorPatch: readonly ProductSubmitTypedDataField[];
+    readonly UVPStagePatchModuleStageExecutorPatch: readonly ProductSubmitTypedDataField[];
   };
   readonly primaryType: typeof STAGE_EXECUTOR_PATCH_PRIMARY_TYPE;
   readonly message: {
@@ -246,7 +441,7 @@ export interface StageResourcePatchTypedData {
     readonly verifyingContract: Address;
   };
   readonly types: {
-    readonly UVPStateMachineStageResourcePatch: readonly ProductSubmitTypedDataField[];
+    readonly UVPStagePatchModuleStageResourcePatch: readonly ProductSubmitTypedDataField[];
   };
   readonly primaryType: typeof STAGE_RESOURCE_PATCH_PRIMARY_TYPE;
   readonly message: {
@@ -293,7 +488,7 @@ export interface DockedOrderLinkTypedData {
     readonly verifyingContract: Address;
   };
   readonly types: {
-    readonly UVPStateMachineDockedOrderLink: readonly ProductSubmitTypedDataField[];
+    readonly UVPDockingModuleDockedOrderLink: readonly ProductSubmitTypedDataField[];
   };
   readonly primaryType: typeof DOCKED_ORDER_LINK_PRIMARY_TYPE;
   readonly message: {
@@ -357,6 +552,18 @@ export interface BuildProductSubmitTypedDataInput {
   readonly deadline: string;
 }
 
+export interface BuildTriggerOrderFromOutsideTypedDataInput extends TriggerOrderFromOutsidePayload {
+  readonly chainId: number;
+  readonly verifyingContract: Address | string;
+  readonly authorizations: readonly SignalAuthorizationPayload[];
+}
+
+export interface BuildTriggerOrderFromSignalTypedDataInput extends TriggerOrderFromSignalPayload {
+  readonly chainId: number;
+  readonly verifyingContract: Address | string;
+  readonly authorizations: readonly SignalAuthorizationPayload[];
+}
+
 export interface BuildStageExecutorPatchTypedDataInput extends StageExecutorPatchCallPatch {
   readonly chainId: number;
   readonly verifyingContract: Address | string;
@@ -389,6 +596,29 @@ export interface SubmitSignalForCallArgs {
   readonly idempotencyKey: Hex | string;
   readonly submitter: Address | string;
   readonly deadline: bigint | number | string;
+  readonly signature: Hex | string;
+}
+
+export interface SubmitDerivedSignalForCallArgs {
+  readonly fromOrderId: Hex | string;
+  readonly fromStageId: Hex | string;
+  readonly targetOrderId: Hex | string;
+  readonly targetSourceId: Hex | string;
+  readonly signalId: Hex | string;
+  readonly payloadHash: Hex | string;
+  readonly idempotencyKey: Hex | string;
+  readonly submitter: Address | string;
+  readonly deadline: bigint | number | string;
+  readonly signature: Hex | string;
+}
+
+export interface TriggerOrderFromOutsideForCallArgs extends TriggerOrderFromOutsidePayload {
+  readonly authorizations: readonly SignalAuthorizationPayload[];
+  readonly signature: Hex | string;
+}
+
+export interface TriggerOrderFromSignalForCallArgs extends TriggerOrderFromSignalPayload {
+  readonly authorizations: readonly SignalAuthorizationPayload[];
   readonly signature: Hex | string;
 }
 
@@ -430,16 +660,120 @@ export interface SubmitSignalForCallConfig {
   readonly chainId?: number;
 }
 
-export type ApplyStageExecutorPatchForCallConfig = SubmitSignalForCallConfig;
-export type ApplyStageResourcePatchForCallConfig = SubmitSignalForCallConfig;
-export type LinkDockedOrderForCallConfig = SubmitSignalForCallConfig;
-export type SubmitDockedSignalCallConfig = SubmitSignalForCallConfig;
+export interface StagePatchModuleCallConfig {
+  readonly stagePatchModuleAddress: Address | string;
+  readonly chainId?: number;
+}
+
+export interface DerivedSignalModuleCallConfig {
+  readonly derivedSignalModuleAddress: Address | string;
+  readonly chainId?: number;
+}
+
+export interface DockingModuleCallConfig {
+  readonly dockingModuleAddress: Address | string;
+  readonly chainId?: number;
+}
+
+export interface OrderLinkModuleCallConfig {
+  readonly orderLinkModuleAddress: Address | string;
+  readonly chainId?: number;
+}
+
+export type ApplyStageExecutorPatchForCallConfig = StagePatchModuleCallConfig;
+export type ApplyStageResourcePatchForCallConfig = StagePatchModuleCallConfig;
+export type LinkDockedOrderForCallConfig = DockingModuleCallConfig;
+export type SubmitDockedSignalCallConfig = DockingModuleCallConfig;
+export type SubmitDerivedSignalForCallConfig = DerivedSignalModuleCallConfig;
+export type TriggerOrderFromOutsideForCallConfig = SubmitSignalForCallConfig;
+export type TriggerOrderFromSignalForCallConfig = OrderLinkModuleCallConfig;
 
 export interface SubmitSignalForCall {
   readonly address: Address;
   readonly abi: typeof STATE_MACHINE_ABI;
   readonly functionName: 'submitSignalFor';
   readonly args: readonly [Hex, Hex, Hex, Hex, Hex, Address, bigint, Hex];
+  readonly data: Hex;
+  readonly chainId?: number;
+}
+
+export interface SubmitDerivedSignalForCall {
+  readonly address: Address;
+  readonly abi: typeof DERIVED_SIGNAL_MODULE_ABI;
+  readonly functionName: 'submitDerivedSignalFor';
+  readonly args: readonly [Hex, Hex, Hex, Hex, Hex, Hex, Hex, Address, bigint, Hex];
+  readonly data: Hex;
+  readonly chainId?: number;
+}
+
+export type SignalAuthorizationCallTuple = readonly [Hex, Hex, Address, Hex, Hex];
+
+export interface SignalAuthorizationCallStruct {
+  readonly sourceId: Hex;
+  readonly signalId: Hex;
+  readonly submitter: Address;
+  readonly role: Hex;
+  readonly metadataHash: Hex;
+}
+
+export type TriggerOrderFromOutsideCallTuple = readonly [
+  Hex,
+  Hex,
+  Address,
+  Hex,
+  Hex,
+  Hex,
+  Hex,
+  Hex,
+  Hex,
+  Address,
+  bigint,
+];
+
+export type TriggerOrderFromSignalCallTuple = readonly [
+  Hex,
+  Hex,
+  Address,
+  Hex,
+  Hex,
+  Hex,
+  Hex,
+  Hex,
+  Hex,
+  Hex,
+  Address,
+  bigint,
+];
+
+export interface TriggerOrderFromSignalCallStruct {
+  readonly orderId: Hex;
+  readonly planId: Hex;
+  readonly creator: Address;
+  readonly parentOrderId: Hex;
+  readonly triggerHookId: Hex;
+  readonly triggerStageId: Hex;
+  readonly originSourceId: Hex;
+  readonly originSignalId: Hex;
+  readonly payloadHash: Hex;
+  readonly idempotencyKey: Hex;
+  readonly submitter: Address;
+  readonly deadline: bigint;
+}
+
+export interface TriggerOrderFromOutsideForCall {
+  readonly address: Address;
+  readonly abi: typeof STATE_MACHINE_ABI;
+  readonly functionName: 'triggerOrderFromOutsideFor';
+  readonly args: readonly [TriggerOrderFromOutsideCallTuple, readonly SignalAuthorizationCallTuple[], Hex];
+  readonly data: Hex;
+  readonly chainId?: number;
+}
+
+export interface TriggerOrderFromSignalForCall {
+  readonly address: Address;
+  readonly abi: typeof ORDER_LINK_MODULE_ABI;
+  readonly functionName: 'triggerOrderFromSignalFor';
+  readonly args: readonly [TriggerOrderFromSignalCallStruct, readonly SignalAuthorizationCallStruct[], Hex];
   readonly data: Hex;
   readonly chainId?: number;
 }
@@ -461,7 +795,7 @@ export type StageExecutorPatchCallTuple = readonly [
 
 export interface ApplyStageExecutorPatchForCall {
   readonly address: Address;
-  readonly abi: typeof STATE_MACHINE_ABI;
+  readonly abi: typeof STAGE_PATCH_MODULE_ABI;
   readonly functionName: 'applyStageExecutorPatchFor';
   readonly args: readonly [Hex, StageExecutorPatchCallTuple, Address, bigint, Hex, Hex];
   readonly data: Hex;
@@ -481,7 +815,7 @@ export type StageResourcePatchCallTuple = readonly [
 
 export interface ApplyStageResourcePatchForCall {
   readonly address: Address;
-  readonly abi: typeof STATE_MACHINE_ABI;
+  readonly abi: typeof STAGE_PATCH_MODULE_ABI;
   readonly functionName: 'applyStageResourcePatchFor';
   readonly args: readonly [Hex, StageResourcePatchCallTuple, Address, bigint, Hex];
   readonly data: Hex;
@@ -503,7 +837,7 @@ export type DockedOrderLinkCallTuple = readonly [
 
 export interface LinkDockedOrderForCall {
   readonly address: Address;
-  readonly abi: typeof STATE_MACHINE_ABI;
+  readonly abi: typeof DOCKING_MODULE_ABI;
   readonly functionName: 'linkDockedOrderFor';
   readonly args: readonly [Hex, DockedOrderLinkCallTuple, Address, bigint, Hex];
   readonly data: Hex;
@@ -512,7 +846,7 @@ export interface LinkDockedOrderForCall {
 
 export interface SubmitDockedSignalCall {
   readonly address: Address;
-  readonly abi: typeof STATE_MACHINE_ABI;
+  readonly abi: typeof DOCKING_MODULE_ABI;
   readonly functionName: 'submitDockedSignal';
   readonly args: readonly [Hex, Hex, Hex, Hex, Hex];
   readonly data: Hex;
@@ -581,6 +915,71 @@ export function buildProductSubmitTypedData(input: BuildProductSubmitTypedDataIn
   };
 }
 
+export function buildTriggerOrderFromOutsideTypedData(
+  input: BuildTriggerOrderFromOutsideTypedDataInput,
+): TriggerOrderFromOutsideTypedData {
+  const trigger = normalizeTriggerOrderFromOutside(input);
+  return {
+    domain: {
+      name: PRODUCT_SUBMIT_DOMAIN_NAME,
+      version: PRODUCT_SUBMIT_DOMAIN_VERSION,
+      chainId: normalizeChainId(input.chainId),
+      verifyingContract: normalizeAddress(input.verifyingContract, 'verifyingContract'),
+    },
+    types: {
+      UVPStateMachineTriggerOrderFromOutside: TRIGGER_ORDER_FROM_OUTSIDE_TYPED_DATA_FIELDS,
+    },
+    primaryType: TRIGGER_ORDER_FROM_OUTSIDE_PRIMARY_TYPE,
+    message: {
+      orderId: trigger[0],
+      planId: trigger[1],
+      creator: trigger[2],
+      triggerHookId: trigger[3],
+      triggerStageId: trigger[4],
+      sourceId: trigger[5],
+      signalId: trigger[6],
+      payloadHash: trigger[7],
+      idempotencyKey: trigger[8],
+      authorizationsHash: hashSignalAuthorizations(input.authorizations),
+      submitter: trigger[9],
+      deadline: trigger[10].toString(10),
+    },
+  };
+}
+
+export function buildTriggerOrderFromSignalTypedData(
+  input: BuildTriggerOrderFromSignalTypedDataInput,
+): TriggerOrderFromSignalTypedData {
+  const trigger = normalizeTriggerOrderFromSignal(input);
+  return {
+    domain: {
+      name: ORDER_LINK_DOMAIN_NAME,
+      version: ORDER_LINK_DOMAIN_VERSION,
+      chainId: normalizeChainId(input.chainId),
+      verifyingContract: normalizeAddress(input.verifyingContract, 'verifyingContract'),
+    },
+    types: {
+      UVPOrderLinkModuleTriggerOrderFromSignal: TRIGGER_ORDER_FROM_SIGNAL_TYPED_DATA_FIELDS,
+    },
+    primaryType: TRIGGER_ORDER_FROM_SIGNAL_PRIMARY_TYPE,
+    message: {
+      orderId: trigger[0],
+      planId: trigger[1],
+      creator: trigger[2],
+      parentOrderId: trigger[3],
+      triggerHookId: trigger[4],
+      triggerStageId: trigger[5],
+      originSourceId: trigger[6],
+      originSignalId: trigger[7],
+      payloadHash: trigger[8],
+      idempotencyKey: trigger[9],
+      authorizationsHash: hashSignalAuthorizations(input.authorizations),
+      submitter: trigger[10],
+      deadline: trigger[11].toString(10),
+    },
+  };
+}
+
 export function buildStageExecutorPatchTypedData(
   input: BuildStageExecutorPatchTypedDataInput,
 ): StageExecutorPatchTypedData {
@@ -593,7 +992,7 @@ export function buildStageExecutorPatchTypedData(
       verifyingContract: normalizeAddress(input.verifyingContract, 'verifyingContract'),
     },
     types: {
-      UVPStateMachineStageExecutorPatch: STAGE_EXECUTOR_PATCH_TYPED_DATA_FIELDS,
+      UVPStagePatchModuleStageExecutorPatch: STAGE_EXECUTOR_PATCH_TYPED_DATA_FIELDS,
     },
     primaryType: STAGE_EXECUTOR_PATCH_PRIMARY_TYPE,
     message: {
@@ -628,7 +1027,7 @@ export function buildStageResourcePatchTypedData(
       verifyingContract: normalizeAddress(input.verifyingContract, 'verifyingContract'),
     },
     types: {
-      UVPStateMachineStageResourcePatch: STAGE_RESOURCE_PATCH_TYPED_DATA_FIELDS,
+      UVPStagePatchModuleStageResourcePatch: STAGE_RESOURCE_PATCH_TYPED_DATA_FIELDS,
     },
     primaryType: STAGE_RESOURCE_PATCH_PRIMARY_TYPE,
     message: {
@@ -657,7 +1056,7 @@ export function buildDockedOrderLinkTypedData(input: BuildDockedOrderLinkTypedDa
       verifyingContract: normalizeAddress(input.verifyingContract, 'verifyingContract'),
     },
     types: {
-      UVPStateMachineDockedOrderLink: DOCKED_ORDER_LINK_TYPED_DATA_FIELDS,
+      UVPDockingModuleDockedOrderLink: DOCKED_ORDER_LINK_TYPED_DATA_FIELDS,
     },
     primaryType: DOCKED_ORDER_LINK_PRIMARY_TYPE,
     message: {
@@ -685,6 +1084,34 @@ export async function recoverProductSubmitSigner(typedData: ProductSubmitTypedDa
     signature: normalizeHex(signature, 'signature'),
   } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
   return normalizeAddress(recovered, 'recoveredSubmitter');
+}
+
+export async function recoverTriggerOrderFromOutsideSigner(
+  typedData: TriggerOrderFromOutsideTypedData,
+  signature: Hex | string,
+): Promise<Address> {
+  const recovered = await recoverTypedDataAddress({
+    domain: typedData.domain,
+    types: typedData.types,
+    primaryType: typedData.primaryType,
+    message: typedData.message,
+    signature: normalizeHex(signature, 'signature'),
+  } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
+  return normalizeAddress(recovered, 'recoveredTriggerOrderSigner');
+}
+
+export async function recoverTriggerOrderFromSignalSigner(
+  typedData: TriggerOrderFromSignalTypedData,
+  signature: Hex | string,
+): Promise<Address> {
+  const recovered = await recoverTypedDataAddress({
+    domain: typedData.domain,
+    types: typedData.types,
+    primaryType: typedData.primaryType,
+    message: typedData.message,
+    signature: normalizeHex(signature, 'signature'),
+  } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
+  return normalizeAddress(recovered, 'recoveredTriggerOrderSigner');
 }
 
 export async function recoverStageExecutorPatchSigner(
@@ -755,6 +1182,86 @@ export function buildSubmitSignalForCall(config: SubmitSignalForCallConfig, args
   };
 }
 
+export function buildSubmitDerivedSignalForCall(
+  config: SubmitDerivedSignalForCallConfig,
+  args: SubmitDerivedSignalForCallArgs,
+): SubmitDerivedSignalForCall {
+  const normalizedArgs = [
+    normalizeBytes32(args.fromOrderId, 'fromOrderId'),
+    normalizeBytes32(args.fromStageId, 'fromStageId'),
+    normalizeBytes32(args.targetOrderId, 'targetOrderId'),
+    normalizeBytes32(args.targetSourceId, 'targetSourceId'),
+    normalizeBytes32(args.signalId, 'signalId'),
+    normalizeBytes32(args.payloadHash, 'payloadHash'),
+    normalizeBytes32(args.idempotencyKey, 'idempotencyKey'),
+    normalizeAddress(args.submitter, 'submitter'),
+    normalizeUintBigInt(args.deadline, 'deadline'),
+    normalizeHex(args.signature, 'signature'),
+  ] as const;
+
+  return {
+    address: normalizeAddress(config.derivedSignalModuleAddress, 'derivedSignalModuleAddress'),
+    abi: DERIVED_SIGNAL_MODULE_ABI,
+    functionName: 'submitDerivedSignalFor',
+    args: normalizedArgs,
+    data: encodeFunctionData({
+      abi: DERIVED_SIGNAL_MODULE_ABI,
+      functionName: 'submitDerivedSignalFor',
+      args: normalizedArgs,
+    }),
+    ...(config.chainId !== undefined ? { chainId: normalizeChainId(config.chainId) } : {}),
+  };
+}
+
+export function buildTriggerOrderFromOutsideForCall(
+  config: TriggerOrderFromOutsideForCallConfig,
+  args: TriggerOrderFromOutsideForCallArgs,
+): TriggerOrderFromOutsideForCall {
+  const normalizedArgs = [
+    normalizeTriggerOrderFromOutside(args),
+    args.authorizations.map(normalizeSignalAuthorization),
+    normalizeHex(args.signature, 'signature'),
+  ] as const;
+
+  return {
+    address: normalizeAddress(config.stateMachineAddress, 'stateMachineAddress'),
+    abi: STATE_MACHINE_ABI,
+    functionName: 'triggerOrderFromOutsideFor',
+    args: normalizedArgs,
+    data: encodeFunctionData({
+      abi: STATE_MACHINE_ABI,
+      functionName: 'triggerOrderFromOutsideFor',
+      args: normalizedArgs,
+    }),
+    ...(config.chainId !== undefined ? { chainId: normalizeChainId(config.chainId) } : {}),
+  };
+}
+
+export function buildTriggerOrderFromSignalForCall(
+  config: TriggerOrderFromSignalForCallConfig,
+  args: TriggerOrderFromSignalForCallArgs,
+): TriggerOrderFromSignalForCall {
+  const trigger = normalizeTriggerOrderFromSignalStruct(args);
+  const normalizedArgs = [
+    trigger,
+    args.authorizations.map(normalizeSignalAuthorizationStruct),
+    normalizeHex(args.signature, 'signature'),
+  ] as const;
+
+  return {
+    address: normalizeAddress(config.orderLinkModuleAddress, 'orderLinkModuleAddress'),
+    abi: ORDER_LINK_MODULE_ABI,
+    functionName: 'triggerOrderFromSignalFor',
+    args: normalizedArgs,
+    data: encodeFunctionData({
+      abi: ORDER_LINK_MODULE_ABI,
+      functionName: 'triggerOrderFromSignalFor',
+      args: normalizedArgs,
+    }),
+    ...(config.chainId !== undefined ? { chainId: normalizeChainId(config.chainId) } : {}),
+  };
+}
+
 export function buildApplyStageExecutorPatchForCall(
   config: ApplyStageExecutorPatchForCallConfig,
   args: ApplyStageExecutorPatchForCallArgs,
@@ -769,14 +1276,14 @@ export function buildApplyStageExecutorPatchForCall(
   ] as const;
 
   return {
-    address: normalizeAddress(config.stateMachineAddress, 'stateMachineAddress'),
-    abi: STATE_MACHINE_ABI,
+    address: normalizeAddress(config.stagePatchModuleAddress, 'stagePatchModuleAddress'),
+    abi: STAGE_PATCH_MODULE_ABI,
     functionName: 'applyStageExecutorPatchFor',
     args: normalizedArgs,
     data: encodeFunctionData({
-      abi: STATE_MACHINE_ABI,
+      abi: STAGE_PATCH_MODULE_ABI,
       functionName: 'applyStageExecutorPatchFor',
-      args: normalizedArgs,
+      args: normalizedArgs as never,
     }),
     ...(config.chainId !== undefined ? { chainId: normalizeChainId(config.chainId) } : {}),
   };
@@ -795,14 +1302,14 @@ export function buildApplyStageResourcePatchForCall(
   ] as const;
 
   return {
-    address: normalizeAddress(config.stateMachineAddress, 'stateMachineAddress'),
-    abi: STATE_MACHINE_ABI,
+    address: normalizeAddress(config.stagePatchModuleAddress, 'stagePatchModuleAddress'),
+    abi: STAGE_PATCH_MODULE_ABI,
     functionName: 'applyStageResourcePatchFor',
     args: normalizedArgs,
     data: encodeFunctionData({
-      abi: STATE_MACHINE_ABI,
+      abi: STAGE_PATCH_MODULE_ABI,
       functionName: 'applyStageResourcePatchFor',
-      args: normalizedArgs,
+      args: normalizedArgs as never,
     }),
     ...(config.chainId !== undefined ? { chainId: normalizeChainId(config.chainId) } : {}),
   };
@@ -821,14 +1328,14 @@ export function buildLinkDockedOrderForCall(
   ] as const;
 
   return {
-    address: normalizeAddress(config.stateMachineAddress, 'stateMachineAddress'),
-    abi: STATE_MACHINE_ABI,
+    address: normalizeAddress(config.dockingModuleAddress, 'dockingModuleAddress'),
+    abi: DOCKING_MODULE_ABI,
     functionName: 'linkDockedOrderFor',
     args: normalizedArgs,
     data: encodeFunctionData({
-      abi: STATE_MACHINE_ABI,
+      abi: DOCKING_MODULE_ABI,
       functionName: 'linkDockedOrderFor',
-      args: normalizedArgs,
+      args: normalizedArgs as never,
     }),
     ...(config.chainId !== undefined ? { chainId: normalizeChainId(config.chainId) } : {}),
   };
@@ -847,12 +1354,12 @@ export function buildSubmitDockedSignalCall(
   ] as const;
 
   return {
-    address: normalizeAddress(config.stateMachineAddress, 'stateMachineAddress'),
-    abi: STATE_MACHINE_ABI,
+    address: normalizeAddress(config.dockingModuleAddress, 'dockingModuleAddress'),
+    abi: DOCKING_MODULE_ABI,
     functionName: 'submitDockedSignal',
     args: normalizedArgs,
     data: encodeFunctionData({
-      abi: STATE_MACHINE_ABI,
+      abi: DOCKING_MODULE_ABI,
       functionName: 'submitDockedSignal',
       args: normalizedArgs,
     }),
@@ -1021,6 +1528,25 @@ export function hashDockedSignalBindings(bindings: readonly DockedSignalBindingC
   return rollingHash;
 }
 
+export function hashSignalAuthorizations(authorizations: readonly SignalAuthorizationPayload[]): Hex {
+  let rollingHash = keccak256(encodeAbiParameters([{ name: 'length', type: 'uint256' }], [BigInt(authorizations.length)]));
+  for (const authorization of authorizations) {
+    const normalized = normalizeSignalAuthorization(authorization);
+    rollingHash = keccak256(encodeAbiParameters(
+      [
+        { name: 'rollingHash', type: 'bytes32' },
+        { name: 'sourceId', type: 'bytes32' },
+        { name: 'signalId', type: 'bytes32' },
+        { name: 'submitter', type: 'address' },
+        { name: 'role', type: 'bytes32' },
+        { name: 'metadataHash', type: 'bytes32' },
+      ],
+      [rollingHash, normalized[0], normalized[1], normalized[2], normalized[3], normalized[4]],
+    ));
+  }
+  return rollingHash;
+}
+
 export function validateResourceManifestV1(manifest: ResourceManifestV1): void {
   normalizeResourceManifestV1(manifest);
 }
@@ -1066,6 +1592,78 @@ function normalizeStageExecutorPatchMode(value: Hex | string): Hex {
     throw new Error('mode must be assign, handoff, or replacement');
   }
   return normalized;
+}
+
+function normalizeSignalAuthorization(authorization: SignalAuthorizationPayload): SignalAuthorizationCallTuple {
+  return [
+    normalizeBytes32(authorization.sourceId, 'authorization.sourceId'),
+    normalizeNonZeroBytes32(authorization.signalId, 'authorization.signalId'),
+    normalizeAddress(authorization.submitter, 'authorization.submitter'),
+    normalizeBytes32(authorization.role, 'authorization.role'),
+    normalizeBytes32(authorization.metadataHash, 'authorization.metadataHash'),
+  ] as const;
+}
+
+function normalizeSignalAuthorizationStruct(authorization: SignalAuthorizationPayload): SignalAuthorizationCallStruct {
+  const tuple = normalizeSignalAuthorization(authorization);
+  return {
+    sourceId: tuple[0],
+    signalId: tuple[1],
+    submitter: tuple[2],
+    role: tuple[3],
+    metadataHash: tuple[4],
+  };
+}
+
+function normalizeTriggerOrderFromOutside(trigger: TriggerOrderFromOutsidePayload): TriggerOrderFromOutsideCallTuple {
+  return [
+    normalizeNonZeroBytes32(trigger.orderId, 'orderId'),
+    normalizeNonZeroBytes32(trigger.planId, 'planId'),
+    normalizeAddress(trigger.creator, 'creator'),
+    normalizeNonZeroBytes32(trigger.triggerHookId, 'triggerHookId'),
+    normalizeNonZeroBytes32(trigger.triggerStageId, 'triggerStageId'),
+    normalizeBytes32(trigger.sourceId, 'sourceId'),
+    normalizeNonZeroBytes32(trigger.signalId, 'signalId'),
+    normalizeBytes32(trigger.payloadHash, 'payloadHash'),
+    normalizeBytes32(trigger.idempotencyKey, 'idempotencyKey'),
+    normalizeAddress(trigger.submitter, 'submitter'),
+    normalizeUintBigInt(trigger.deadline, 'deadline'),
+  ] as const;
+}
+
+function normalizeTriggerOrderFromSignal(trigger: TriggerOrderFromSignalPayload): TriggerOrderFromSignalCallTuple {
+  return [
+    normalizeNonZeroBytes32(trigger.orderId, 'orderId'),
+    normalizeNonZeroBytes32(trigger.planId, 'planId'),
+    normalizeAddress(trigger.creator, 'creator'),
+    normalizeNonZeroBytes32(trigger.parentOrderId, 'parentOrderId'),
+    normalizeNonZeroBytes32(trigger.triggerHookId, 'triggerHookId'),
+    normalizeNonZeroBytes32(trigger.triggerStageId, 'triggerStageId'),
+    normalizeBytes32(trigger.originSourceId, 'originSourceId'),
+    normalizeNonZeroBytes32(trigger.originSignalId, 'originSignalId'),
+    normalizeBytes32(trigger.payloadHash, 'payloadHash'),
+    normalizeBytes32(trigger.idempotencyKey, 'idempotencyKey'),
+    normalizeAddress(trigger.submitter, 'submitter'),
+    normalizeUintBigInt(trigger.deadline, 'deadline'),
+  ] as const;
+}
+
+function normalizeTriggerOrderFromSignalStruct(trigger: TriggerOrderFromSignalPayload): TriggerOrderFromSignalCallStruct {
+  const tuple = normalizeTriggerOrderFromSignal(trigger);
+  return {
+    orderId: tuple[0],
+    planId: tuple[1],
+    creator: tuple[2],
+    parentOrderId: tuple[3],
+    triggerHookId: tuple[4],
+    triggerStageId: tuple[5],
+    originSourceId: tuple[6],
+    originSignalId: tuple[7],
+    payloadHash: tuple[8],
+    idempotencyKey: tuple[9],
+    submitter: tuple[10],
+    deadline: tuple[11],
+  };
 }
 
 function normalizeStageExecutorPatch(patch: StageExecutorPatchCallPatch): StageExecutorPatchCallTuple {

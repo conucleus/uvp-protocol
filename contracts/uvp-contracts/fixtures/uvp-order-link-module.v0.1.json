@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "uvp-eth.contractAbiFixture.v2",
+  "contractName": "UVPOrderLinkModule",
+  "abiVersion": "0.1",
+  "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPOrderLinkModule.sol",
+  "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPOrderLinkModule.sol/UVPOrderLinkModule.json",
+  "compiler": {
+    "name": "solc",
+    "version": "0.8.24+commit.e11b9ed9"
+  },
+  "hashes": {
+    "abiHash": "0xcca1c5a478fb5b01f2a63c7dfa1515918aff03acad3a60c17f75835b28de0742",
+    "bytecodeHash": "0xeb933dffa02f76b8520d13bb24c10a69461a8f47a268334fb8211d3c7a0af33c",
+    "deployedBytecodeHash": "0x19483edd094196c2d0ccf6592608791906d197b01e8e6709913845d099c14879",
+    "artifactHash": "0x08b8888f8d693cdf2fdb4d232a5e3fbb4ac3bef93a402265fad1d92bd0f341d2"
+  },
+  "events": {
+    "OrderLinked": {
+      "signature": "OrderLinked(bytes32,bytes32,bytes32,bytes32,bytes32)",
+      "topic": "0xe936fdb82b6a5232c1899d3562a56b4facfc272a9d9ca31120d810a63c374b6e"
+    }
+  },
+  "functions": {
+    "DOMAIN_SEPARATOR": {
+      "signature": "DOMAIN_SEPARATOR()",
+      "selector": "0x3644e515"
+    },
+    "SIGNAL_TARGET_CURRENT_ORDER": {
+      "signature": "SIGNAL_TARGET_CURRENT_ORDER()",
+      "selector": "0x06b6c489"
+    },
+    "SIGNAL_TARGET_TRIGGER_PARENT": {
+      "signature": "SIGNAL_TARGET_TRIGGER_PARENT()",
+      "selector": "0x889b5d3f"
+    },
+    "getOrderTriggerLink": {
+      "signature": "getOrderTriggerLink(bytes32)",
+      "selector": "0x32ea5510"
+    },
+    "signalAuthorizationsHash": {
+      "signature": "signalAuthorizationsHash((bytes32,bytes32,address,bytes32,bytes32)[])",
+      "selector": "0x9d6b224d"
+    },
+    "stateMachine": {
+      "signature": "stateMachine()",
+      "selector": "0x37b416d8"
+    },
+    "targetOrderRelation": {
+      "signature": "targetOrderRelation(bytes32,bytes32)",
+      "selector": "0x4b019097"
+    },
+    "triggerOrderFromSignalDigest": {
+      "signature": "triggerOrderFromSignalDigest((bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),bytes32)",
+      "selector": "0x4eb4090b"
+    },
+    "triggerOrderFromSignalFor": {
+      "signature": "triggerOrderFromSignalFor((bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),(bytes32,bytes32,address,bytes32,bytes32)[],bytes)",
+      "selector": "0x58fbe587"
+    }
+  }
+}

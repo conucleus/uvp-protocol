@@ -1,0 +1,90 @@
+{
+  "schemaVersion": "uvp-eth.zhixuTrustRegistryAbiFixture.v1",
+  "contractName": "ZhixuTrustRegistry",
+  "abiVersion": "0.2",
+  "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/ZhixuTrustRegistry.sol",
+  "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/ZhixuTrustRegistry.sol/ZhixuTrustRegistry.json",
+  "compiler": {
+    "name": "solc",
+    "version": "0.8.24+commit.e11b9ed9"
+  },
+  "hashes": {
+    "abiHash": "0xf18915632b1671ad5b7fb7c7b6fcd36d2f8055631a3c35e800269adfc6449da6",
+    "bytecodeHash": "0x50e4339063b8a35df82cf0b8ed1550cc71b64ca4b86afcad707c5e8ead62ee5c",
+    "deployedBytecodeHash": "0x033febd29d4fceac5a38e84ead94e165b4b3b4425b4038a605c061d7335fff4f",
+    "artifactHash": "0x6828770565993d92bca5e8b2a5a0bd3304fc3e4b92d5552798b5ea9739981d16"
+  },
+  "events": {
+    "OwnershipTransferred": {
+      "signature": "OwnershipTransferred(address,address)",
+      "topic": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
+    },
+    "PlanAttested": {
+      "signature": "PlanAttested(bytes32,bytes32,bytes32,bytes32,bytes32,string,address)",
+      "topic": "0x83c20481a671d62e757fc22aabd8f5a2d6c350b6419547625aa0aeb55be0ddee"
+    },
+    "PlanRevoked": {
+      "signature": "PlanRevoked(bytes32,bytes32,string,address)",
+      "topic": "0xe37d3d0f9b0901dce003e5f56aa2b646be05756344dd5c52ed2ed3c36611ff5e"
+    },
+    "SupplierAttested": {
+      "signature": "SupplierAttested(bytes32,address,bytes32,bytes32,bytes32,string,address)",
+      "topic": "0xf479d209c138a9b167d044476c2c69b9ef6ddc3b159360b05cc5f3172b146975"
+    },
+    "SupplierRevoked": {
+      "signature": "SupplierRevoked(bytes32,bytes32,string,address)",
+      "topic": "0xeb671716e8a622f0cb7cfc613b1a673721599f3c0565cabe315205dc830e0f8c"
+    }
+  },
+  "functions": {
+    "owner": {
+      "signature": "owner()",
+      "selector": "0x8da5cb5b"
+    },
+    "transferOwnership": {
+      "signature": "transferOwnership(address)",
+      "selector": "0xf2fde38b"
+    },
+    "attestPlan": {
+      "signature": "attestPlan(bytes32,bytes32,bytes32,bytes32,bytes32,string)",
+      "selector": "0x7c9b0ae3"
+    },
+    "revokePlan": {
+      "signature": "revokePlan(bytes32,bytes32,string)",
+      "selector": "0x7d526a84"
+    },
+    "attestSupplier": {
+      "signature": "attestSupplier(bytes32,address,bytes32,bytes32,bytes32,string)",
+      "selector": "0xa448e22c"
+    },
+    "revokeSupplier": {
+      "signature": "revokeSupplier(bytes32,bytes32,string)",
+      "selector": "0xb9479a99"
+    },
+    "getPlanAttestation": {
+      "signature": "getPlanAttestation(bytes32)",
+      "selector": "0x83b69731"
+    },
+    "isPlanActive": {
+      "signature": "isPlanActive(bytes32,bytes32)",
+      "selector": "0xb6848042"
+    },
+    "isPlanRevoked": {
+      "signature": "isPlanRevoked(bytes32)",
+      "selector": "0xdae0f39d"
+    },
+    "getPlanHashes": {
+      "signature": "getPlanHashes(bytes32)",
+      "selector": "0x58b6f76b"
+    },
+    "getSupplierAttestation": {
+      "signature": "getSupplierAttestation(bytes32)",
+      "selector": "0x47cd0649"
+    },
+    "isSupplierActive": {
+      "signature": "isSupplierActive(bytes32)",
+      "selector": "0x1c599333"
+    }
+  }
+}
+

@@ -1,10 +1,6 @@
 export { canonicalize, canonicalStringify } from "./canonical.js";
 export {
-  assertHookPlanArtifact,
-  compileZhixuHookPlan,
-  HookPlanArtifactValidationError,
   HookPlanCompilationError,
-  validateHookPlanArtifact
 } from "./hook-plan.js";
 export {
   loadZhixuDefinition,
@@ -12,10 +8,9 @@ export {
   ZhixuLoadError
 } from "./zhixu-loader.js";
 export {
-  assertEvmHookPlanArtifact,
   assertOnchainHookPlanArtifact,
-  compileEvmHookPlan,
-  compileOnchainHookPlan,
+  compileZhixuOnchainHookPlan,
+  compileZhixuRegisterPlanArgs,
   onchainHookId,
   onchainHookName,
   onchainSelectorBindingHash,
@@ -25,17 +20,38 @@ export {
   onchainStageId,
   OnchainHookPlanArtifactValidationError,
   toSolidityRegisterPlanArgs,
-  validateEvmHookPlanArtifact,
   validateOnchainHookPlanArtifact
 } from "./onchain-hook-plan.js";
-export {
-  compileSolanaHookPlan
-} from "./solana-hook-plan.js";
-export {
-  compileHookPlanForTarget,
-  type CompileHookPlanForTargetOptions,
-  type TargetHookPlanArtifact
-} from "./target.js";
-export { UnsupportedChainTargetError } from "./unsupported-chain-target.js";
 export { hashCanonical, keccak256Hex } from "./hash.js";
-export * from "./types/index.js";
+export type {
+  Address,
+  ExecuteConfigs,
+  FileResourceLike,
+  HexString,
+  ObjectMeta,
+  OnchainCompiledHook,
+  OnchainDelayInstruction,
+  OnchainExecutorRoute,
+  OnchainExecutorRouteRef,
+  OnchainHookDependency,
+  OnchainHookInstruction,
+  OnchainHookPlanArtifact,
+  OnchainJoinInstruction,
+  OnchainSignalCapability,
+  OnchainSignalInstruction,
+  OnchainStageSelectorBinding,
+  OnchainUnaryInstruction,
+  SignalTargetOrderRelation,
+  SolidityRegisterDependencyIndexArg,
+  SolidityRegisterExecutorRouteArg,
+  SolidityRegisterHookArg,
+  SolidityRegisterInstructionArg,
+  SolidityRegisterPlanArgs,
+  SolidityRegisterSignalCapabilityArg,
+  SolidityRegisterStageSelectorBindingArg,
+  SupplierDefinition,
+  ZhixuDefinition,
+  ZhixuPlatform,
+  ZhixuStage,
+  ZhixuTaskPattern
+} from "./types/index.js";

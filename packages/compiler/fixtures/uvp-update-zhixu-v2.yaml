@@ -13,6 +13,7 @@ spec:
   platform:
     type: blockchain
     provider: eth
+    network: base
     version: "0.1.3"
   nucleation:
     id: uvp-bootstrap
@@ -106,9 +107,13 @@ spec:
 
         - name: rollback
           source: bootstrap
-          trigger: ["failure"]
+          trigger: ["prepare_failure", "build_failure", "deploy_failure", "verify_failure", "verify_error"]
           receiveSignals:
-            failure: "bootstrap::update.prepare.err | update.build.err | update.deploy.err | update.verify.fail | update.verify.err"
+            prepare_failure: "bootstrap::update.prepare.err"
+            build_failure: "bootstrap::update.build.err"
+            deploy_failure: "bootstrap::update.deploy.err"
+            verify_failure: "bootstrap::update.verify.fail"
+            verify_error: "bootstrap::update.verify.err"
           sendSignals: ["str", "cmp", "err"]
           executor:
             supplierID: "{{ .update_rollback_executor_uid }}"

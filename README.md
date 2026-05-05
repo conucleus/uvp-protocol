@@ -17,11 +17,10 @@ modeled as local/linked order signal binding rather than an order hierarchy.
 This domain owns deterministic semantics and public protocol interfaces:
 
 - `packages/hook-core/`: Hook DSL parsing, dependency extraction, and local evaluation.
-- `packages/compiler/`: Zhixu-to-HookPlan and EVM artifact generation.
-- `packages/statemachine/`: reference state-machine reducer and chain-event replay oracle.
+- `packages/compiler/`: Zhixu-to-on-chain HookPlan artifact and register-plan argument generation.
+- `packages/statemachine/`: offline chain-event replay oracle.
 - `packages/product-dto/`: shared Product DTO contracts derived from protocol projections.
 - `contracts/uvp-contracts/`: Solidity contracts, ABI fixtures, and Foundry tests.
-- `tools/runtime-host/`: off-chain reference runtime harness.
 
 ## Development Topology
 
@@ -29,9 +28,9 @@ This repository is mounted by `uvp-eth` as a Git submodule. Most package
 dependencies are internal to this repository and are resolved by its local
 `pnpm-workspace.yaml`.
 
-`tools/runtime-host` also consumes `@uvp-eth/executor-kit` for reference runtime
-and E2E harnesses. Use the `uvp-eth` umbrella checkout for full integration
-development so pnpm can resolve that cross-repository `workspace:*` dependency.
+Use the `uvp-eth` umbrella checkout for full integration development so pnpm
+can resolve cross-package `workspace:*` dependencies for compiler,
+statemachine, contracts, chain services, deploy scripts, and executor-kit.
 
 Do not put chain-service API state, product-specific UI state, deployment manifests,
 or ordinary-user app code here. ABI, EIP-712 types, events, canonical hashes, and

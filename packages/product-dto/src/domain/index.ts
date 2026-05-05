@@ -475,6 +475,13 @@ export interface OrderPermissionTableEntryDTO {
   readonly requiredEvidence: readonly string[];
 }
 
+export interface StoreProductCreateOrderTriggerDTO {
+  readonly source: string;
+  readonly signalName: string;
+  readonly triggerHookId: string;
+  readonly triggerStageId: string;
+}
+
 export interface ZhixuSummaryDTO {
   readonly zhixuId: string;
   readonly title: string;
@@ -497,6 +504,7 @@ export interface ZhixuDetailDTO extends ZhixuSummaryDTO {
   readonly dockableModules: readonly DockableZhixuModuleDTO[];
   readonly stages: readonly ZhixuStageDTO[];
   readonly orderPermissionTable: readonly OrderPermissionTableEntryDTO[];
+  readonly createOrderTrigger?: StoreProductCreateOrderTriggerDTO;
   readonly proofRows: readonly ChainProofRowDTO[];
   readonly createOrderHint: string;
 }
@@ -653,6 +661,8 @@ export interface StoreProductSchemaDTO {
   readonly planId: string;
   readonly planHash: string;
   readonly artifactHash: string;
+  readonly onchainHookPlanArtifact?: unknown;
+  readonly createOrderTrigger?: StoreProductCreateOrderTriggerDTO;
   readonly roleSlots: readonly RoleSlotDTO[];
   readonly orderPermissionTable: readonly OrderPermissionTableEntryDTO[];
   readonly capabilityPlugins: readonly SlotCapabilityPluginDTO[];
@@ -888,12 +898,15 @@ export interface StoreSupplierDTO {
   readonly supplierSubjectId: string;
   readonly displayName: string;
   readonly wallet?: string;
+  readonly notificationProfile?: unknown;
+  readonly notificationProfileHash?: string;
+  readonly notificationUpdatedAt?: string;
   readonly trustStatus: StoreSupplierTrustStatus;
   readonly trustLabel: string;
   readonly capabilityTags: readonly string[];
   readonly supportedRoleSlotIds: readonly string[];
   readonly supportedStageIds: readonly string[];
-  readonly domains: readonly string[];
+  readonly registryAddresses: readonly string[];
   readonly recentOrderCount: number;
   readonly openTaskCount: number;
   readonly reviewStatus: StoreSupplierReviewStatus;
@@ -1237,7 +1250,7 @@ function usageGuidanceForStoreZhixu(row: StoreZhixuConsoleDTO, zhixu: ZhixuDetai
 
 function storeStageFromZhixuStage(stage: ZhixuStageDTO, zhixu: ZhixuDetailDTO): StoreZhixuStageDTO {
   const permission = zhixu.orderPermissionTable.find((entry) =>
-    entry.stageId === stage.stageId && entry.roleSlotId !== ORDER_REGISTRAR_ROLE_SLOT_ID
+    entry.stageId === stage.stageId
   );
   const roleSlot = zhixu.roleSlots.find((slot) =>
     slot.slotId === permission?.roleSlotId || slot.title === stage.ownerRole || slot.label === stage.ownerRole
@@ -1478,14 +1491,6 @@ function allowedActionsForStoreZhixu(row: StoreZhixuConsoleDTO): readonly StoreZ
       return [proofAction];
   }
 }
-
-export const DEFAULT_OFFICIAL_DOMAIN_ID =
-  "0xb159ab86ae8968e6d24a1df250864e72dd740c618b079b954e8af7631cee4623";
-export const ORDER_INITIAL_TRIGGER_PERMISSION_ID = "system.registrar.initial-trigger";
-export const ORDER_REGISTRAR_ROLE_SLOT_ID = "system:registrar";
-export const ORDER_SYSTEM_STAGE_ID = "system:order";
-export const ORDER_INITIAL_TRIGGER_SOURCE = "";
-export const ORDER_INITIAL_TRIGGER_SIGNAL_NAME = "OUTSIDE";
 
 export function summarizeZhixu(zhixu: ZhixuDetailDTO): ZhixuSummaryDTO {
   const {

@@ -1,11 +1,7 @@
 export const COMPILER_NAME = "uvp-eth-compiler" as const;
 export const COMPILER_VERSION = "0.1.0" as const;
 export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v1" as const;
-export const EVM_HOOK_PLAN_SCHEMA_VERSION = "uvp.onchainHookPlan.v1" as const;
-export const ONCHAIN_HOOK_PLAN_SCHEMA_VERSION = EVM_HOOK_PLAN_SCHEMA_VERSION;
-export const SOLANA_HOOK_PLAN_SCHEMA_VERSION = "uvp.solanaHookPlan.v1" as const;
-
-export type ChainTarget = "evm" | "solana";
+export const ONCHAIN_HOOK_PLAN_SCHEMA_VERSION = "uvp.onchainHookPlan.v1" as const;
 
 export type HexString = `0x${string}`;
 export type Address = HexString;
@@ -36,9 +32,13 @@ export interface ZhixuDefinition {
   };
 }
 
+// Intentionally open for future chain/runtime targets. Current public compiler
+// output is EVM-facing, but the source Zhixu schema must not be narrowed to
+// `provider: "eth"` or EVM-only platform fields.
 export interface ZhixuPlatform {
   readonly type: "cloud" | "blockchain" | "cbdc" | string;
   readonly provider?: string;
+  readonly network?: string;
   readonly version?: string;
   readonly params?: Record<string, string>;
 }
@@ -80,7 +80,6 @@ export interface SupplierDefinition {
     readonly supplierName?: string;
     readonly handlerName?: string;
     readonly authorityID?: string;
-    readonly trustDomain?: string;
     readonly capabilityClaims?: readonly string[];
     readonly attestationRefs?: readonly string[];
     readonly status?: string;
@@ -99,6 +98,7 @@ export interface HookPlanArtifact {
   readonly dependencyIndex: Record<string, readonly string[]>;
   readonly executorRoutes: Record<string, HookPlanExecutorRoute>;
   readonly selectedStageBindings: readonly SelectedStageBinding[];
+  readonly signalCapabilities: readonly SignalCapability[];
   readonly planHash: HexString;
 }
 
@@ -107,7 +107,7 @@ export interface CompiledHookPlanHook {
   readonly kind: "receive" | "signalMap";
   readonly stageIdentifier: string;
   readonly hookName: string;
-  readonly trigger: boolean;
+  readonly isTrigger: boolean;
   readonly rawExpression: string;
   readonly normalizedExpression: string;
   readonly ast: import("@uvp-eth/hook-core").HookExpressionAst;
@@ -124,6 +124,17 @@ export interface HookPlanExecutorRoute {
 export interface SelectedStageBinding {
   readonly selectorStageIdentifier: string;
   readonly targetStageIdentifier: string;
+}
+
+export type SignalTargetOrderRelation = "current" | "triggerParent";
+
+export interface SignalCapability {
+  readonly stageIdentifier: string;
+  readonly source: string;
+  readonly declaredSignal: string;
+  readonly targetSource: string;
+  readonly targetSignalName: string;
+  readonly targetOrderRelation: SignalTargetOrderRelation;
 }
 
 export type OnchainHookInstruction =
@@ -188,13 +199,26 @@ export interface OnchainStageSelectorBinding {
   readonly bindingHash: HexString;
 }
 
+export interface OnchainSignalCapability {
+  readonly stageIdentifier: string;
+  readonly stageId: HexString;
+  readonly source: string;
+  readonly declaredSignal: string;
+  readonly targetSource: string;
+  readonly targetSourceId: HexString;
+  readonly targetSignalName: string;
+  readonly signalId: HexString;
+  readonly targetOrderRelation: SignalTargetOrderRelation;
+  readonly capabilityHash: HexString;
+}
+
 export interface OnchainCompiledHook {
   readonly hookId: HexString;
   readonly stageId: HexString;
   readonly stageIdentifier: string;
   readonly hookName: string;
   readonly kind: "receive" | "signalMap";
-  readonly trigger: boolean;
+  readonly isTrigger: boolean;
   readonly instructions: readonly OnchainHookInstruction[];
   readonly dependencies: readonly OnchainHookDependency[];
   readonly routeRef?: OnchainExecutorRouteRef;
@@ -212,30 +236,8 @@ export interface OnchainHookPlanArtifact {
   readonly dependencyIndex: Record<HexString, readonly HexString[]>;
   readonly executorRoutes: readonly OnchainExecutorRoute[];
   readonly selectorBindings: readonly OnchainStageSelectorBinding[];
+  readonly signalCapabilities: readonly OnchainSignalCapability[];
   readonly planHash: HexString;
-}
-
-export type EvmHookInstruction = OnchainHookInstruction;
-export type EvmSignalInstruction = OnchainSignalInstruction;
-export type EvmUnaryInstruction = OnchainUnaryInstruction;
-export type EvmJoinInstruction = OnchainJoinInstruction;
-export type EvmDelayInstruction = OnchainDelayInstruction;
-export type EvmHookDependency = OnchainHookDependency;
-export type EvmExecutorRouteRef = OnchainExecutorRouteRef;
-export type EvmExecutorRoute = OnchainExecutorRoute;
-export type EvmStageSelectorBinding = OnchainStageSelectorBinding;
-export type EvmCompiledHook = OnchainCompiledHook;
-export type EvmHookPlanArtifact = OnchainHookPlanArtifact;
-
-export interface SolanaHookPlanArtifact {
-  readonly schemaVersion: typeof SOLANA_HOOK_PLAN_SCHEMA_VERSION;
-  readonly target: "solana";
-  readonly planId: string;
-  readonly zhixuId: string;
-  readonly version: string;
-  readonly zhixuName: string;
-  readonly platform: ZhixuPlatform;
-  readonly sourcePlanHash: HexString;
 }
 
 export type SolidityRegisterInstructionArg =
@@ -262,7 +264,7 @@ export interface SolidityRegisterHookArg {
   readonly stageId: HexString;
   readonly hookName: HexString;
   readonly kind: "receive" | "signalMap";
-  readonly trigger: boolean;
+  readonly isTrigger: boolean;
   readonly instructions: readonly SolidityRegisterInstructionArg[];
   readonly dependencyKeys: readonly HexString[];
   readonly routeId?: HexString;
@@ -286,6 +288,13 @@ export interface SolidityRegisterStageSelectorBindingArg {
   readonly targetStageId: HexString;
 }
 
+export interface SolidityRegisterSignalCapabilityArg {
+  readonly stageId: HexString;
+  readonly targetSourceId: HexString;
+  readonly signalId: HexString;
+  readonly targetOrderRelation: 0 | 1;
+}
+
 export interface SolidityRegisterPlanArgs {
   readonly schemaVersion: typeof ONCHAIN_HOOK_PLAN_SCHEMA_VERSION;
   readonly planId: HexString;
@@ -296,4 +305,5 @@ export interface SolidityRegisterPlanArgs {
   readonly dependencyIndex: readonly SolidityRegisterDependencyIndexArg[];
   readonly executorRoutes: readonly SolidityRegisterExecutorRouteArg[];
   readonly selectorBindings: readonly SolidityRegisterStageSelectorBindingArg[];
+  readonly signalCapabilities: readonly SolidityRegisterSignalCapabilityArg[];
 }

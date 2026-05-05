@@ -10,110 +10,78 @@
       "version": "1",
       "compiledHooks": [
         {
-          "hookId": "init.main#TRIGGER",
-          "kind": "receive",
+          "hookId": "0x0000000000000000000000000000000000000000000000000000000000003000",
+          "stageId": "0x0000000000000000000000000000000000000000000000000000000000004000",
           "stageIdentifier": "init.main",
           "hookName": "TRIGGER",
-          "trigger": true,
-          "ast": {
-            "raw": "::OUTSIDE",
-            "source": "",
-            "condition": {
-              "kind": "external",
-              "mode": "OUTSIDE"
-            }
-          },
-          "dependencies": [
+          "isTrigger": true,
+          "instructions": [
             {
-              "kind": "positive",
-              "source": "",
-              "signalName": "OUTSIDE"
+              "op": "SIGNAL",
+              "sourceId": "0x000000000000000000000000000000000000000000000000000000000000b000",
+              "signalId": "0x0000000000000000000000000000000000000000000000000000000000001000",
+              "signalKey": "0x0000000000000000000000000000000000000000000000000000000000002000"
             }
           ]
         },
         {
-          "hookId": "exec.main#START",
-          "kind": "receive",
+          "hookId": "0x0000000000000000000000000000000000000000000000000000000000003001",
+          "stageId": "0x0000000000000000000000000000000000000000000000000000000000004001",
           "stageIdentifier": "exec.main",
           "hookName": "START",
-          "trigger": true,
-          "ast": {
-            "raw": "buyer::init.main.cmp",
-            "source": "buyer",
-            "condition": {
-              "kind": "signal",
-              "signalName": "init.main.cmp"
-            }
-          },
-          "dependencies": [
+          "isTrigger": true,
+          "instructions": [
             {
-              "kind": "positive",
-              "source": "buyer",
-              "signalName": "init.main.cmp"
+              "op": "SIGNAL",
+              "sourceId": "0x000000000000000000000000000000000000000000000000000000000000b001",
+              "signalId": "0x0000000000000000000000000000000000000000000000000000000000001001",
+              "signalKey": "0x0000000000000000000000000000000000000000000000000000000000002001"
             }
           ]
         },
         {
-          "hookId": "exec.main#TIMEOUT",
-          "kind": "receive",
+          "hookId": "0x0000000000000000000000000000000000000000000000000000000000003002",
+          "stageId": "0x0000000000000000000000000000000000000000000000000000000000004001",
           "stageIdentifier": "exec.main",
           "hookName": "TIMEOUT",
-          "trigger": false,
-          "ast": {
-            "raw": "buyer::(init.main.cmp +5s) & ~exec.main.cmp",
-            "source": "buyer",
-            "condition": {
-              "kind": "and",
-              "terms": [
-                {
-                  "kind": "delay",
-                  "expr": {
-                    "kind": "signal",
-                    "signalName": "init.main.cmp"
-                  },
-                  "rawDuration": "5s",
-                  "durationSeconds": 5
-                },
-                {
-                  "kind": "not",
-                  "expr": {
-                    "kind": "signal",
-                    "signalName": "exec.main.cmp"
-                  }
-                }
-              ]
-            }
-          },
-          "dependencies": [
+          "isTrigger": true,
+          "instructions": [
             {
-              "kind": "negative",
-              "source": "buyer",
-              "signalName": "exec.main.cmp"
+              "op": "SIGNAL",
+              "sourceId": "0x000000000000000000000000000000000000000000000000000000000000b001",
+              "signalId": "0x0000000000000000000000000000000000000000000000000000000000001001",
+              "signalKey": "0x0000000000000000000000000000000000000000000000000000000000002001"
             },
             {
-              "kind": "positive",
-              "source": "buyer",
-              "signalName": "init.main.cmp"
-            },
-            {
-              "kind": "timer",
-              "source": "buyer",
-              "signalName": "init.main.cmp",
+              "op": "DELAY",
               "delaySeconds": 5
+            },
+            {
+              "op": "SIGNAL",
+              "sourceId": "0x000000000000000000000000000000000000000000000000000000000000b001",
+              "signalId": "0x0000000000000000000000000000000000000000000000000000000000001002",
+              "signalKey": "0x0000000000000000000000000000000000000000000000000000000000002002"
+            },
+            {
+              "op": "NOT"
+            },
+            {
+              "op": "AND",
+              "arity": 2
             }
           ]
         }
       ],
       "dependencyIndex": {
-        "::OUTSIDE": [
-          "init.main#TRIGGER"
+        "0x0000000000000000000000000000000000000000000000000000000000002000": [
+          "0x0000000000000000000000000000000000000000000000000000000000003000"
         ],
-        "buyer::exec.main.cmp": [
-          "exec.main#TIMEOUT"
+        "0x0000000000000000000000000000000000000000000000000000000000002001": [
+          "0x0000000000000000000000000000000000000000000000000000000000003001",
+          "0x0000000000000000000000000000000000000000000000000000000000003002"
         ],
-        "buyer::init.main.cmp": [
-          "exec.main#START",
-          "exec.main#TIMEOUT"
+        "0x0000000000000000000000000000000000000000000000000000000000002002": [
+          "0x0000000000000000000000000000000000000000000000000000000000003002"
         ]
       }
     }
@@ -135,6 +103,9 @@
     "transactionHash": "0x03",
     "zhixuId": "chain-oracle",
     "orderId": "order-cancel",
+    "sourceId": "0x000000000000000000000000000000000000000000000000000000000000b001",
+    "signalId": "0x0000000000000000000000000000000000000000000000000000000000001001",
+    "signalKey": "0x0000000000000000000000000000000000000000000000000000000000002001",
     "source": "buyer",
     "stageIdentifier": "init.main",
     "signalName": "init.main.cmp",
@@ -142,24 +113,44 @@
     "submittedAt": "2026-04-27T00:00:00.000Z"
   },
   {
-    "eventName": "HookReady",
+    "eventName": "OrderMaterialized",
     "blockNumber": 2,
     "logIndex": 1,
     "transactionHash": "0x03",
+    "orderId": "order-cancel",
+    "planId": "0x312bed89090d5be24d38a236e312f8734d64dff50f8da3376542bee659dbb35d",
+    "stageId": "0x0000000000000000000000000000000000000000000000000000000000004001"
+  },
+  {
+    "eventName": "StageMaterialized",
+    "blockNumber": 2,
+    "logIndex": 2,
+    "transactionHash": "0x03",
+    "orderId": "order-cancel",
+    "stageId": "0x0000000000000000000000000000000000000000000000000000000000004001",
+    "triggerHookId": "0x0000000000000000000000000000000000000000000000000000000000003001",
+    "sourceId": "0x000000000000000000000000000000000000000000000000000000000000b001",
+    "signalId": "0x0000000000000000000000000000000000000000000000000000000000001001"
+  },
+  {
+    "eventName": "HookReady",
+    "blockNumber": 2,
+    "logIndex": 3,
+    "transactionHash": "0x03",
     "zhixuId": "chain-oracle",
     "orderId": "order-cancel",
-    "hookId": "exec.main#START",
+    "hookId": "0x0000000000000000000000000000000000000000000000000000000000003001",
     "stageIdentifier": "exec.main",
     "hookName": "START"
   },
   {
     "eventName": "HookStatusChanged",
     "blockNumber": 2,
-    "logIndex": 2,
+    "logIndex": 4,
     "transactionHash": "0x03",
     "zhixuId": "chain-oracle",
     "orderId": "order-cancel",
-    "hookId": "exec.main#TIMEOUT",
+    "hookId": "0x0000000000000000000000000000000000000000000000000000000000003002",
     "status": "wait",
     "dueAt": "2026-04-27T00:00:05.000Z"
   },
@@ -170,6 +161,9 @@
     "transactionHash": "0x04",
     "zhixuId": "chain-oracle",
     "orderId": "order-cancel",
+    "sourceId": "0x000000000000000000000000000000000000000000000000000000000000b001",
+    "signalId": "0x0000000000000000000000000000000000000000000000000000000000001001",
+    "signalKey": "0x0000000000000000000000000000000000000000000000000000000000002001",
     "source": "buyer",
     "stageIdentifier": "init.main",
     "signalName": "init.main.cmp",
@@ -183,6 +177,9 @@
     "transactionHash": "0x05",
     "zhixuId": "chain-oracle",
     "orderId": "order-cancel",
+    "sourceId": "0x000000000000000000000000000000000000000000000000000000000000b001",
+    "signalId": "0x0000000000000000000000000000000000000000000000000000000000001002",
+    "signalKey": "0x0000000000000000000000000000000000000000000000000000000000002002",
     "source": "buyer",
     "stageIdentifier": "exec.main",
     "signalName": "exec.main.cmp",
@@ -196,7 +193,7 @@
     "transactionHash": "0x05",
     "zhixuId": "chain-oracle",
     "orderId": "order-cancel",
-    "hookId": "exec.main#TIMEOUT",
+    "hookId": "0x0000000000000000000000000000000000000000000000000000000000003002",
     "status": "cxl"
   },
   {
@@ -206,7 +203,7 @@
     "transactionHash": "0x06",
     "zhixuId": "chain-oracle",
     "orderId": "order-cancel",
-    "hookId": "exec.main#TIMEOUT",
+    "hookId": "0x0000000000000000000000000000000000000000000000000000000000003002",
     "pokedAt": "2026-04-27T00:00:06.000Z"
   },
   {
@@ -226,6 +223,9 @@
     "transactionHash": "0x08",
     "zhixuId": "chain-oracle",
     "orderId": "order-timer",
+    "sourceId": "0x000000000000000000000000000000000000000000000000000000000000b001",
+    "signalId": "0x0000000000000000000000000000000000000000000000000000000000001001",
+    "signalKey": "0x0000000000000000000000000000000000000000000000000000000000002001",
     "source": "buyer",
     "stageIdentifier": "init.main",
     "signalName": "init.main.cmp",
@@ -233,24 +233,44 @@
     "submittedAt": "2026-04-27T00:01:00.000Z"
   },
   {
-    "eventName": "HookReady",
+    "eventName": "OrderMaterialized",
     "blockNumber": 7,
     "logIndex": 1,
     "transactionHash": "0x08",
+    "orderId": "order-timer",
+    "planId": "0x312bed89090d5be24d38a236e312f8734d64dff50f8da3376542bee659dbb35d",
+    "stageId": "0x0000000000000000000000000000000000000000000000000000000000004001"
+  },
+  {
+    "eventName": "StageMaterialized",
+    "blockNumber": 7,
+    "logIndex": 2,
+    "transactionHash": "0x08",
+    "orderId": "order-timer",
+    "stageId": "0x0000000000000000000000000000000000000000000000000000000000004001",
+    "triggerHookId": "0x0000000000000000000000000000000000000000000000000000000000003001",
+    "sourceId": "0x000000000000000000000000000000000000000000000000000000000000b001",
+    "signalId": "0x0000000000000000000000000000000000000000000000000000000000001001"
+  },
+  {
+    "eventName": "HookReady",
+    "blockNumber": 7,
+    "logIndex": 3,
+    "transactionHash": "0x08",
     "zhixuId": "chain-oracle",
     "orderId": "order-timer",
-    "hookId": "exec.main#START",
+    "hookId": "0x0000000000000000000000000000000000000000000000000000000000003001",
     "stageIdentifier": "exec.main",
     "hookName": "START"
   },
   {
     "eventName": "HookStatusChanged",
     "blockNumber": 7,
-    "logIndex": 2,
+    "logIndex": 4,
     "transactionHash": "0x08",
     "zhixuId": "chain-oracle",
     "orderId": "order-timer",
-    "hookId": "exec.main#TIMEOUT",
+    "hookId": "0x0000000000000000000000000000000000000000000000000000000000003002",
     "status": "wait",
     "dueAt": "2026-04-27T00:01:05.000Z"
   },
@@ -261,7 +281,7 @@
     "transactionHash": "0x09",
     "zhixuId": "chain-oracle",
     "orderId": "order-timer",
-    "hookId": "exec.main#TIMEOUT",
+    "hookId": "0x0000000000000000000000000000000000000000000000000000000000003002",
     "pokedAt": "2026-04-27T00:01:06.000Z"
   },
   {
@@ -271,7 +291,7 @@
     "transactionHash": "0x09",
     "zhixuId": "chain-oracle",
     "orderId": "order-timer",
-    "hookId": "exec.main#TIMEOUT",
+    "hookId": "0x0000000000000000000000000000000000000000000000000000000000003002",
     "stageIdentifier": "exec.main",
     "hookName": "TIMEOUT"
   }

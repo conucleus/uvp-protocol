@@ -14,8 +14,6 @@ contract UVPDeploymentRegistry {
     struct Deployment {
         bytes32 deploymentId;
         address stateMachine;
-        address trustRegistry;
-        bytes32 officialDomainId;
         bytes32 artifactHash;
         bytes32 abiHash;
         uint64 deploymentBlock;
@@ -32,17 +30,14 @@ contract UVPDeploymentRegistry {
     error DeploymentNotFound();
     error DeploymentIsRetired();
     error InvalidStateMachine();
-    error InvalidTrustRegistry();
     error NotOwner();
     error ZeroAbiHash();
     error ZeroArtifactHash();
     error ZeroDeploymentBlock();
     error ZeroDeploymentId();
     error ZeroEvidenceHash();
-    error ZeroOfficialDomainId();
     error ZeroOwner();
     error ZeroStateMachine();
-    error ZeroTrustRegistry();
 
     address public owner;
     bytes32 public activeDeploymentId;
@@ -54,8 +49,6 @@ contract UVPDeploymentRegistry {
     event DeploymentRegistered(
         bytes32 indexed deploymentId,
         address indexed stateMachine,
-        address indexed trustRegistry,
-        bytes32 officialDomainId,
         bytes32 artifactHash,
         bytes32 abiHash,
         uint64 deploymentBlock,
@@ -92,8 +85,6 @@ contract UVPDeploymentRegistry {
     function registerDeployment(
         bytes32 deploymentId,
         address stateMachine,
-        address trustRegistry,
-        bytes32 officialDomainId,
         bytes32 artifactHash,
         bytes32 abiHash,
         uint64 deploymentBlock,
@@ -107,15 +98,6 @@ contract UVPDeploymentRegistry {
         }
         if (stateMachine.code.length == 0) {
             revert InvalidStateMachine();
-        }
-        if (trustRegistry == address(0)) {
-            revert ZeroTrustRegistry();
-        }
-        if (trustRegistry.code.length == 0) {
-            revert InvalidTrustRegistry();
-        }
-        if (officialDomainId == bytes32(0)) {
-            revert ZeroOfficialDomainId();
         }
         if (artifactHash == bytes32(0)) {
             revert ZeroArtifactHash();
@@ -133,8 +115,6 @@ contract UVPDeploymentRegistry {
 
         deployment.deploymentId = deploymentId;
         deployment.stateMachine = stateMachine;
-        deployment.trustRegistry = trustRegistry;
-        deployment.officialDomainId = officialDomainId;
         deployment.artifactHash = artifactHash;
         deployment.abiHash = abiHash;
         deployment.deploymentBlock = deploymentBlock;
@@ -146,8 +126,6 @@ contract UVPDeploymentRegistry {
         emit DeploymentRegistered(
             deploymentId,
             stateMachine,
-            trustRegistry,
-            officialDomainId,
             artifactHash,
             abiHash,
             deploymentBlock,
