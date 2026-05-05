@@ -13,9 +13,9 @@ pnpm --filter @uvp-eth/protocol-bindings build
 
 ## Boundary
 
-- Exposes ABI constants, EIP-712 Product submit typed-data helpers,
-  split stage executor/resource patch typed-data helpers, `submitSignalFor`,
-  `applyStageExecutorPatchFor`, and `applyStageResourcePatchFor` call
+- Exposes core and module ABI constants, EIP-712 Product submit typed-data
+  helpers, split stage executor/resource patch typed-data helpers,
+  `submitSignalFor`, `applyStageExecutorPatchFor`, and `applyStageResourcePatchFor` call
   construction, address/bytes32 validation, and canonical hash helpers.
 - Does not import Node-only modules, read env vars, hold private keys, run
   watchers, request wallet signatures, or submit transactions.
@@ -26,7 +26,7 @@ pnpm --filter @uvp-eth/protocol-bindings build
   `EXECUTOR_PATCH_MODE_ASSIGN`, `EXECUTOR_PATCH_MODE_HANDOFF`, and
   `EXECUTOR_PATCH_MODE_REPLACEMENT`.
 - `buildStageExecutorPatchTypedData` builds
-  `UVPStateMachineStageExecutorPatch` EIP-712 typed data for PRD88 `assign`,
+  `UVPStagePatchModuleStageExecutorPatch` EIP-712 typed data for PRD88 `assign`,
   `handoff`, and `replacement` payloads. The payload includes `mode`,
   `previousExecutor`, `approvalSourceId`, and `approvalSignalId`.
 - `recoverStageExecutorPatchSigner` recovers either the selector wallet or the
@@ -46,7 +46,7 @@ pnpm --filter @uvp-eth/protocol-bindings build
 ## Stage Resource Patch Helpers
 
 - `buildStageResourcePatchTypedData` builds
-  `UVPStateMachineStageResourcePatch` EIP-712 typed data.
+  `UVPStagePatchModuleStageResourcePatch` EIP-712 typed data.
 - `recoverStageResourcePatchSigner` recovers the authorized stage executor
   wallet from a resource patch signature.
 - `buildApplyStageResourcePatchForCall` encodes PRD87

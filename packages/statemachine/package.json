@@ -18,11 +18,7 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts"
   },
-  "dependencies": {
-    "@uvp-eth/hook-core": "workspace:*"
-  },
   "devDependencies": {
-    "@uvp-eth/compiler": "workspace:*",
     "@types/node": "^22.15.3",
     "tsx": "^4.20.6",
     "typescript": "^5.8.3"

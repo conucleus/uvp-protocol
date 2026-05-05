@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.uvpDeploymentRegistryAbiFixture.v1",
   "contractName": "UVPDeploymentRegistry",
-  "abiVersion": "0.1",
+  "abiVersion": "0.2",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPDeploymentRegistry.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPDeploymentRegistry.sol/UVPDeploymentRegistry.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x163a5190ed911f5f36c4e915d1c006963a53b21a47f094d0db7f5fed048fecb0",
-    "bytecodeHash": "0x7cfd3f4eea6d932bfa6a7e66f19aeb09518faf5df08cbc153fcfd0cbd1315cd3",
-    "deployedBytecodeHash": "0x2f9e5585f9ba9c4b7914d116dc2c37e257c4a08f687731c880c3be61171697fb",
-    "artifactHash": "0x3203d017d46b6f31fcd142bd4e3de857b7cfd85db9595c0b309b55772d3f3942"
+    "abiHash": "0x8a894c7d938f1589a0f3bb22cff05994f191a3e454956bbecf55bb7ff70022b1",
+    "bytecodeHash": "0xc3a79a6d07ad98cc880b2aa34ce2f94eea9b28d954fe34c380c6cbf66791cee6",
+    "deployedBytecodeHash": "0xe8e72efa6bb78cac9828c551ca79c8f35ad6f3813ce5f2253aaaa30bd6bb89f8",
+    "artifactHash": "0x4d194250997494a1d4779b09c0133926fb92abba3125e267bc1c9cd10c4b1f9e"
   },
   "events": {
     "OwnershipTransferred": {
@@ -20,8 +20,8 @@
       "topic": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
     },
     "DeploymentRegistered": {
-      "signature": "DeploymentRegistered(bytes32,address,address,bytes32,bytes32,bytes32,uint64,string)",
-      "topic": "0x3c31ff82a9611ec984dec3f32437aff009a65bfdadf230e23c92b62613d48845"
+      "signature": "DeploymentRegistered(bytes32,address,bytes32,bytes32,uint64,string)",
+      "topic": "0x195bfb1346f47a6204b881331dd35f42cff65f72e29a4cb734439096d5a4f963"
     },
     "DeploymentCanaryMarked": {
       "signature": "DeploymentCanaryMarked(bytes32,bytes32,string)",
@@ -50,8 +50,8 @@
       "selector": "0xf2fde38b"
     },
     "registerDeployment": {
-      "signature": "registerDeployment(bytes32,address,address,bytes32,bytes32,bytes32,uint64,string)",
-      "selector": "0x48cbfa0f"
+      "signature": "registerDeployment(bytes32,address,bytes32,bytes32,uint64,string)",
+      "selector": "0x8b54cc4d"
     },
     "markCanary": {
       "signature": "markCanary(bytes32,bytes32,string)",
@@ -95,3 +95,4 @@
     }
   }
 }
+

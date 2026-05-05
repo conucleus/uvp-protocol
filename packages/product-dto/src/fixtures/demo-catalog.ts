@@ -1,10 +1,4 @@
 import {
-  DEFAULT_OFFICIAL_DOMAIN_ID,
-  ORDER_INITIAL_TRIGGER_PERMISSION_ID,
-  ORDER_INITIAL_TRIGGER_SIGNAL_NAME,
-  ORDER_INITIAL_TRIGGER_SOURCE,
-  ORDER_REGISTRAR_ROLE_SLOT_ID,
-  ORDER_SYSTEM_STAGE_ID,
   type ChainAttestationStatus,
   type ChainProofRowDTO,
   type FulfillmentRequiredInputDTO,
@@ -31,10 +25,16 @@ export const DEMO_ORDER_ID = "order-cross-border-car-001";
 export const DEMO_TASK_ID = "task-customs-complete-001";
 
 export const crossBorderPlanIds = {
-  domainId: DEFAULT_OFFICIAL_DOMAIN_ID,
   planId: "0x0000000000000000000000000000000000000000000000000000000000000101",
   planHash: "0x0000000000000000000000000000000000000000000000000000000000000201",
   artifactHash: "0x0000000000000000000000000000000000000000000000000000000000000301"
+} as const;
+
+const demoCreateOrderTrigger = {
+  source: "order",
+  signalName: "registered",
+  triggerHookId: "0x0000000000000000000000000000000000000000000000000000000000001101",
+  triggerStageId: "0x0000000000000000000000000000000000000000000000000000000000001201"
 } as const;
 
 type DemoFundingSignalActorKind = "buyer" | "guarantor" | "adapter";
@@ -111,15 +111,6 @@ export const demoStages: readonly ZhixuStageDTO[] = [
 const demoStageSignalNames = ["str", "cmp", "pass", "fail", "confirm_stage", "reject_stage"] as const;
 
 export const demoOrderPermissionTable: readonly OrderPermissionTableEntryDTO[] = [
-  {
-    permissionId: ORDER_INITIAL_TRIGGER_PERMISSION_ID,
-    roleSlotId: ORDER_REGISTRAR_ROLE_SLOT_ID,
-    stageId: ORDER_SYSTEM_STAGE_ID,
-    source: ORDER_INITIAL_TRIGGER_SOURCE,
-    signalName: ORDER_INITIAL_TRIGGER_SIGNAL_NAME,
-    payloadPolicy: "optional",
-    requiredEvidence: []
-  },
   ...demoStages.flatMap((stage) => demoStageSignalNames.map((signalName) => {
     const canonicalSignalName = `${stage.stageId}.${signalName}`;
     return {
@@ -881,6 +872,7 @@ export const demoZhixuDetail: ZhixuDetailDTO = {
   ],
   stages: demoStages,
   orderPermissionTable: demoOrderPermissionTable,
+  createOrderTrigger: demoCreateOrderTrigger,
   proofRows: [
     { label: "秩序编号", value: CROSS_BORDER_ZHIXU_ID },
     { label: "审核域", value: "共同秩序官方审核" },
@@ -1062,7 +1054,7 @@ export const demoFundingGuaranteeSignalContainers = [
     },
     prepare: {
       typedData: {
-        domainLabel: "UVPStateMachine 0.2",
+        domainLabel: "UVPStateMachine 0.7",
         primaryType: "SubmitSignal",
         messageHint: "funding_condition_satisfied"
       },
@@ -1121,7 +1113,7 @@ export const demoFundingGuaranteeSignalContainers = [
     },
     prepare: {
       typedData: {
-        domainLabel: "UVPStateMachine 0.2",
+        domainLabel: "UVPStateMachine 0.7",
         primaryType: "SubmitSignal",
         messageHint: "funding_condition_satisfied"
       },
@@ -1180,7 +1172,7 @@ export const demoFundingGuaranteeSignalContainers = [
     },
     prepare: {
       typedData: {
-        domainLabel: "UVPStateMachine 0.2",
+        domainLabel: "UVPStateMachine 0.7",
         primaryType: "SubmitSignal",
         messageHint: "funding_condition_satisfied"
       },

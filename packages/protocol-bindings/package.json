@@ -6,7 +6,9 @@
   "description": "Browser-safe UVP EVM protocol ABI, EIP-712, and hashing bindings.",
   "license": "Apache-2.0",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./evm": "./src/evm.ts",
+    "./solana": "./src/solana.ts"
   },
   "files": [
     "src",

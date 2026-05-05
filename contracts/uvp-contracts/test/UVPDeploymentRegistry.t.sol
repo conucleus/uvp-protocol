@@ -17,7 +17,6 @@ contract UVPDeploymentRegistryTest {
 
     bytes32 private constant DEPLOYMENT_ID_V1 = bytes32(uint256(0x1001));
     bytes32 private constant DEPLOYMENT_ID_V2 = bytes32(uint256(0x1002));
-    bytes32 private constant DOMAIN_ID = bytes32(uint256(0x2001));
     bytes32 private constant ARTIFACT_HASH = bytes32(uint256(0x3001));
     bytes32 private constant ABI_HASH = bytes32(uint256(0x3002));
     bytes32 private constant EVIDENCE_HASH = bytes32(uint256(0x4001));
@@ -33,17 +32,9 @@ contract UVPDeploymentRegistryTest {
     function testOwnerCanRegisterCanaryAndActivateDeployment() public {
         UVPDeploymentRegistry registry = new UVPDeploymentRegistry();
         address stateMachine = _target();
-        address trustRegistry = _target();
 
         registry.registerDeployment(
-            DEPLOYMENT_ID_V1,
-            stateMachine,
-            trustRegistry,
-            DOMAIN_ID,
-            ARTIFACT_HASH,
-            ABI_HASH,
-            10,
-            "ipfs://deployment/v1"
+            DEPLOYMENT_ID_V1, stateMachine, ARTIFACT_HASH, ABI_HASH, 10, "ipfs://deployment/v1"
         );
         registry.markCanary(DEPLOYMENT_ID_V1, EVIDENCE_HASH, "ipfs://evidence/v1");
 
@@ -65,14 +56,7 @@ contract UVPDeploymentRegistryTest {
         vm.prank(NON_OWNER);
         vm.expectRevert(UVPDeploymentRegistry.NotOwner.selector);
         registry.registerDeployment(
-            DEPLOYMENT_ID_V1,
-            address(0x1111),
-            address(0x3333),
-            DOMAIN_ID,
-            ARTIFACT_HASH,
-            ABI_HASH,
-            10,
-            "ipfs://deployment/v1"
+            DEPLOYMENT_ID_V1, address(0x1111), ARTIFACT_HASH, ABI_HASH, 10, "ipfs://deployment/v1"
         );
 
         _register(registry, DEPLOYMENT_ID_V1);
@@ -85,60 +69,30 @@ contract UVPDeploymentRegistryTest {
     function testRegisterDeploymentRejectsZeroInputs() public {
         UVPDeploymentRegistry registry = new UVPDeploymentRegistry();
         address stateMachine = _target();
-        address trustRegistry = _target();
 
         vm.expectRevert(UVPDeploymentRegistry.ZeroDeploymentId.selector);
-        registry.registerDeployment(bytes32(0), stateMachine, trustRegistry, DOMAIN_ID, ARTIFACT_HASH, ABI_HASH, 10, "");
+        registry.registerDeployment(bytes32(0), stateMachine, ARTIFACT_HASH, ABI_HASH, 10, "");
 
         vm.expectRevert(UVPDeploymentRegistry.ZeroStateMachine.selector);
-        registry.registerDeployment(
-            DEPLOYMENT_ID_V1, address(0), trustRegistry, DOMAIN_ID, ARTIFACT_HASH, ABI_HASH, 10, ""
-        );
-
-        vm.expectRevert(UVPDeploymentRegistry.ZeroTrustRegistry.selector);
-        registry.registerDeployment(
-            DEPLOYMENT_ID_V1, stateMachine, address(0), DOMAIN_ID, ARTIFACT_HASH, ABI_HASH, 10, ""
-        );
-
-        vm.expectRevert(UVPDeploymentRegistry.ZeroOfficialDomainId.selector);
-        registry.registerDeployment(
-            DEPLOYMENT_ID_V1, stateMachine, trustRegistry, bytes32(0), ARTIFACT_HASH, ABI_HASH, 10, ""
-        );
+        registry.registerDeployment(DEPLOYMENT_ID_V1, address(0), ARTIFACT_HASH, ABI_HASH, 10, "");
 
         vm.expectRevert(UVPDeploymentRegistry.ZeroArtifactHash.selector);
-        registry.registerDeployment(
-            DEPLOYMENT_ID_V1, stateMachine, trustRegistry, DOMAIN_ID, bytes32(0), ABI_HASH, 10, ""
-        );
+        registry.registerDeployment(DEPLOYMENT_ID_V1, stateMachine, bytes32(0), ABI_HASH, 10, "");
 
         vm.expectRevert(UVPDeploymentRegistry.ZeroAbiHash.selector);
-        registry.registerDeployment(
-            DEPLOYMENT_ID_V1, stateMachine, trustRegistry, DOMAIN_ID, ARTIFACT_HASH, bytes32(0), 10, ""
-        );
+        registry.registerDeployment(DEPLOYMENT_ID_V1, stateMachine, ARTIFACT_HASH, bytes32(0), 10, "");
 
         vm.expectRevert(UVPDeploymentRegistry.ZeroDeploymentBlock.selector);
-        registry.registerDeployment(
-            DEPLOYMENT_ID_V1, stateMachine, trustRegistry, DOMAIN_ID, ARTIFACT_HASH, ABI_HASH, 0, ""
-        );
+        registry.registerDeployment(DEPLOYMENT_ID_V1, stateMachine, ARTIFACT_HASH, ABI_HASH, 0, "");
     }
 
     function testRegisterDeploymentRejectsNonContractAddresses() public {
         UVPDeploymentRegistry registry = new UVPDeploymentRegistry();
         address nonContractStateMachine = address(uint160(uint256(keccak256("uvp-eth:not-a-state-machine"))));
-        address nonContractTrustRegistry = address(uint160(uint256(keccak256("uvp-eth:not-a-trust-registry"))));
-        address stateMachine = _target();
-        address trustRegistry = _target();
         require(nonContractStateMachine.code.length == 0, "state machine has code");
-        require(nonContractTrustRegistry.code.length == 0, "trust registry has code");
 
         vm.expectRevert(UVPDeploymentRegistry.InvalidStateMachine.selector);
-        registry.registerDeployment(
-            DEPLOYMENT_ID_V1, nonContractStateMachine, trustRegistry, DOMAIN_ID, ARTIFACT_HASH, ABI_HASH, 10, ""
-        );
-
-        vm.expectRevert(UVPDeploymentRegistry.InvalidTrustRegistry.selector);
-        registry.registerDeployment(
-            DEPLOYMENT_ID_V1, stateMachine, nonContractTrustRegistry, DOMAIN_ID, ARTIFACT_HASH, ABI_HASH, 10, ""
-        );
+        registry.registerDeployment(DEPLOYMENT_ID_V1, nonContractStateMachine, ARTIFACT_HASH, ABI_HASH, 10, "");
     }
 
     function testActivationDeprecatesPreviousActiveDeployment() public {
@@ -190,9 +144,7 @@ contract UVPDeploymentRegistryTest {
     }
 
     function _register(UVPDeploymentRegistry registry, bytes32 deploymentId) private {
-        registry.registerDeployment(
-            deploymentId, _target(), _target(), DOMAIN_ID, ARTIFACT_HASH, ABI_HASH, 10, "ipfs://deployment"
-        );
+        registry.registerDeployment(deploymentId, _target(), ARTIFACT_HASH, ABI_HASH, 10, "ipfs://deployment");
     }
 
     function _target() private returns (address) {

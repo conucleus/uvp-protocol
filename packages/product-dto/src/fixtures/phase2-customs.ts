@@ -1,8 +1,4 @@
 import {
-  DEFAULT_OFFICIAL_DOMAIN_ID,
-  ORDER_INITIAL_TRIGGER_PERMISSION_ID,
-  ORDER_REGISTRAR_ROLE_SLOT_ID,
-  ORDER_SYSTEM_STAGE_ID,
   type OrderPermissionTableEntryDTO,
   type ParticipantAddOnManifestDTO,
   type ParticipantDTO,
@@ -59,10 +55,9 @@ export const phase2CustomsWallets = {
 } as const;
 
 export const phase2CustomsPlanIds = {
-  domainId: DEFAULT_OFFICIAL_DOMAIN_ID,
   planId: "0x336d9b556f7ffa00c83f49600554819055a4a3b300f82abca70b401f6b161ddc",
-  planHash: "0xe2c3da5c5c770f6c70b33fcbd5fe54f42eedca33028274a7f3af8298146b8075",
-  artifactHash: "0xe981b7899527d29565f4dab3e5b24440087f13369c9b55ad979340a391b1d06c"
+  planHash: "0xa8f20f1927a1e34dad69907abccba2e7a1556dd77e9cc5bf4bbfa0df305275ef",
+  artifactHash: "0x7f663c7ffaf55f72f4e17cfe0368f3b7d2a982e39b992ea9c78d80a065f8067d"
 } as const;
 
 export const phase2CustomsResourceManifest: ProductResourceManifestDTO = {
@@ -388,15 +383,6 @@ export const phase2CustomsRoleSlots: readonly RoleSlotDTO[] = [
 
 export const phase2CustomsOrderPermissionTable: readonly OrderPermissionTableEntryDTO[] = [
   {
-    permissionId: ORDER_INITIAL_TRIGGER_PERMISSION_ID,
-    roleSlotId: ORDER_REGISTRAR_ROLE_SLOT_ID,
-    stageId: ORDER_SYSTEM_STAGE_ID,
-    source: phase2CustomsInitialTriggerSource,
-    signalName: phase2CustomsSignalIds.orderRegistered,
-    payloadPolicy: "optional",
-    requiredEvidence: []
-  },
-  {
     permissionId: "phase2.customs.executor-patch",
     roleSlotId: phase2CustomsRoleSlotIds.buyerSelector,
     stageId: phase2CustomsStageIds.buyerSelectCustomsExecutor,
@@ -451,6 +437,12 @@ export const phase2CustomsZhixuDetail: ZhixuDetailDTO = {
   dockableModules: [],
   stages: phase2CustomsStages,
   orderPermissionTable: phase2CustomsOrderPermissionTable,
+  createOrderTrigger: {
+    source: phase2CustomsInitialTriggerSource,
+    signalName: phase2CustomsSignalIds.orderRegistered,
+    triggerHookId: "0x4625d43b26ce487427096279b6f54b8bf51a479e9ff90e52c0e71bcc0cba42a2",
+    triggerStageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca"
+  },
   proofRows: [
     { label: "Plan ID", value: phase2CustomsPlanIds.planId },
     { label: "Plan Hash", value: phase2CustomsPlanIds.planHash },
@@ -637,7 +629,7 @@ export const phase2CustomsOnchainHookPlanArtifact = {
       stageIdentifier: phase2CustomsStageIds.buyerPublishCustomsResources,
       hookName: "resource_controller_task_ready",
       kind: "receive",
-      trigger: true,
+      isTrigger: true,
       instructions: [
         {
           op: "SIGNAL",
@@ -670,7 +662,7 @@ export const phase2CustomsOnchainHookPlanArtifact = {
       stageIdentifier: phase2CustomsStageIds.buyerSelectCustomsExecutor,
       hookName: "selector_task_ready",
       kind: "receive",
-      trigger: true,
+      isTrigger: true,
       instructions: [
         {
           op: "SIGNAL",
@@ -703,7 +695,7 @@ export const phase2CustomsOnchainHookPlanArtifact = {
       stageIdentifier: phase2CustomsStageIds.customsComplete,
       hookName: "customs_ready",
       kind: "receive",
-      trigger: true,
+      isTrigger: true,
       instructions: [
         {
           op: "SIGNAL",
@@ -792,6 +784,7 @@ export const phase2CustomsOnchainHookPlanArtifact = {
       bindingHash: "0x6b6b2c0e1c5c37b978ae6fdbe08ec02aefbb40d213b250cbed9de70f1c4238c8"
     }
   ],
+  signalCapabilities: [],
   planHash: phase2CustomsPlanIds.planHash
 } as const;
 
@@ -804,13 +797,20 @@ export const phase2CustomsStoreProductSchema: StoreProductSchemaDTO = {
   planId: phase2CustomsPlanIds.planId,
   planHash: phase2CustomsPlanIds.planHash,
   artifactHash: phase2CustomsPlanIds.artifactHash,
+  onchainHookPlanArtifact: phase2CustomsOnchainHookPlanArtifact,
+  createOrderTrigger: {
+    source: phase2CustomsInitialTriggerSource,
+    signalName: phase2CustomsSignalIds.orderRegistered,
+    triggerHookId: "0x4625d43b26ce487427096279b6f54b8bf51a479e9ff90e52c0e71bcc0cba42a2",
+    triggerStageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca"
+  },
   roleSlots: phase2CustomsRoleSlots,
   orderPermissionTable: phase2CustomsOrderPermissionTable,
   capabilityPlugins: phase2CustomsRoleSlots.flatMap((slot) => slot.capabilityPlugins ?? []),
   businessPersonaLabels: ["买家", "报关行", "关务服务商"],
   stages: phase2CustomsStages,
   selectorBindings: phase2CustomsOnchainHookPlanArtifact.selectorBindings,
-  schemaHash: "0xe2289e6b594e13971b68fe44fce11c3f706ad7b773f69ea424a0c0ae668ed0a0",
+  schemaHash: "0x911a922c4325d2385401a78756abe2ceda423b4c51749f275f9c1e6e37c8d69d",
   validation: {
     ok: true,
     status: "explicit",

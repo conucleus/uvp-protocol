@@ -1,10 +1,6 @@
 export { canonicalize, canonicalStringify } from "./canonical.js";
 export {
-  assertHookPlanArtifact,
-  compileZhixuHookPlan,
-  HookPlanArtifactValidationError,
   HookPlanCompilationError,
-  validateHookPlanArtifact
 } from "./hook-plan.js";
 export {
   loadZhixuDefinition,
@@ -13,7 +9,8 @@ export {
 } from "./zhixu-loader.js";
 export {
   assertOnchainHookPlanArtifact,
-  compileOnchainHookPlan,
+  compileZhixuOnchainHookPlan,
+  compileZhixuRegisterPlanArgs,
   onchainHookId,
   onchainHookName,
   onchainSelectorBindingHash,
@@ -26,4 +23,35 @@ export {
   validateOnchainHookPlanArtifact
 } from "./onchain-hook-plan.js";
 export { hashCanonical, keccak256Hex } from "./hash.js";
-export * from "./types/index.js";
+export type {
+  Address,
+  ExecuteConfigs,
+  FileResourceLike,
+  HexString,
+  ObjectMeta,
+  OnchainCompiledHook,
+  OnchainDelayInstruction,
+  OnchainExecutorRoute,
+  OnchainExecutorRouteRef,
+  OnchainHookDependency,
+  OnchainHookInstruction,
+  OnchainHookPlanArtifact,
+  OnchainJoinInstruction,
+  OnchainSignalCapability,
+  OnchainSignalInstruction,
+  OnchainStageSelectorBinding,
+  OnchainUnaryInstruction,
+  SignalTargetOrderRelation,
+  SolidityRegisterDependencyIndexArg,
+  SolidityRegisterExecutorRouteArg,
+  SolidityRegisterHookArg,
+  SolidityRegisterInstructionArg,
+  SolidityRegisterPlanArgs,
+  SolidityRegisterSignalCapabilityArg,
+  SolidityRegisterStageSelectorBindingArg,
+  SupplierDefinition,
+  ZhixuDefinition,
+  ZhixuPlatform,
+  ZhixuStage,
+  ZhixuTaskPattern
+} from "./types/index.js";

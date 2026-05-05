@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "uvp-eth.contractAbiFixture.v2",
+  "contractName": "UVPDerivedSignalModule",
+  "abiVersion": "0.1",
+  "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPDerivedSignalModule.sol",
+  "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPDerivedSignalModule.sol/UVPDerivedSignalModule.json",
+  "compiler": {
+    "name": "solc",
+    "version": "0.8.24+commit.e11b9ed9"
+  },
+  "hashes": {
+    "abiHash": "0x0b654bf7f47769f222ab95812da5316b44a40dd18b5a336627a50a8cdeee2508",
+    "bytecodeHash": "0xdfb6986e99e56d137f9910584221252bf76fbcd2744240353b70e7b3e2da8f9f",
+    "deployedBytecodeHash": "0x0763d0728576ab7582bd13478bff019b7aea594184c038831f239ebeee427ef9",
+    "artifactHash": "0xd53125bc8d492e83f872ac350f0b6fbd3843e8ffbec557d9c8e74b82a6ce457a"
+  },
+  "events": {},
+  "functions": {
+    "DOMAIN_SEPARATOR": {
+      "signature": "DOMAIN_SEPARATOR()",
+      "selector": "0x3644e515"
+    },
+    "derivedSignalDigest": {
+      "signature": "derivedSignalDigest(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256)",
+      "selector": "0x50f19c24"
+    },
+    "stateMachine": {
+      "signature": "stateMachine()",
+      "selector": "0x37b416d8"
+    },
+    "submitDerivedSignal": {
+      "signature": "submitDerivedSignal(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0xdd06ba25"
+    },
+    "submitDerivedSignalFor": {
+      "signature": "submitDerivedSignalFor(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256,bytes)",
+      "selector": "0x8c4e3cbf"
+    }
+  }
+}

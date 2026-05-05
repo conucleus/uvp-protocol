@@ -32,9 +32,13 @@ export interface ZhixuDefinition {
   };
 }
 
+// Intentionally open for future chain/runtime targets. Current public compiler
+// output is EVM-facing, but the source Zhixu schema must not be narrowed to
+// `provider: "eth"` or EVM-only platform fields.
 export interface ZhixuPlatform {
   readonly type: "cloud" | "blockchain" | "cbdc" | string;
   readonly provider?: string;
+  readonly network?: string;
   readonly version?: string;
   readonly params?: Record<string, string>;
 }
@@ -76,7 +80,6 @@ export interface SupplierDefinition {
     readonly supplierName?: string;
     readonly handlerName?: string;
     readonly authorityID?: string;
-    readonly trustDomain?: string;
     readonly capabilityClaims?: readonly string[];
     readonly attestationRefs?: readonly string[];
     readonly status?: string;
@@ -95,6 +98,7 @@ export interface HookPlanArtifact {
   readonly dependencyIndex: Record<string, readonly string[]>;
   readonly executorRoutes: Record<string, HookPlanExecutorRoute>;
   readonly selectedStageBindings: readonly SelectedStageBinding[];
+  readonly signalCapabilities: readonly SignalCapability[];
   readonly planHash: HexString;
 }
 
@@ -103,7 +107,7 @@ export interface CompiledHookPlanHook {
   readonly kind: "receive" | "signalMap";
   readonly stageIdentifier: string;
   readonly hookName: string;
-  readonly trigger: boolean;
+  readonly isTrigger: boolean;
   readonly rawExpression: string;
   readonly normalizedExpression: string;
   readonly ast: import("@uvp-eth/hook-core").HookExpressionAst;
@@ -120,6 +124,17 @@ export interface HookPlanExecutorRoute {
 export interface SelectedStageBinding {
   readonly selectorStageIdentifier: string;
   readonly targetStageIdentifier: string;
+}
+
+export type SignalTargetOrderRelation = "current" | "triggerParent";
+
+export interface SignalCapability {
+  readonly stageIdentifier: string;
+  readonly source: string;
+  readonly declaredSignal: string;
+  readonly targetSource: string;
+  readonly targetSignalName: string;
+  readonly targetOrderRelation: SignalTargetOrderRelation;
 }
 
 export type OnchainHookInstruction =
@@ -184,13 +199,26 @@ export interface OnchainStageSelectorBinding {
   readonly bindingHash: HexString;
 }
 
+export interface OnchainSignalCapability {
+  readonly stageIdentifier: string;
+  readonly stageId: HexString;
+  readonly source: string;
+  readonly declaredSignal: string;
+  readonly targetSource: string;
+  readonly targetSourceId: HexString;
+  readonly targetSignalName: string;
+  readonly signalId: HexString;
+  readonly targetOrderRelation: SignalTargetOrderRelation;
+  readonly capabilityHash: HexString;
+}
+
 export interface OnchainCompiledHook {
   readonly hookId: HexString;
   readonly stageId: HexString;
   readonly stageIdentifier: string;
   readonly hookName: string;
   readonly kind: "receive" | "signalMap";
-  readonly trigger: boolean;
+  readonly isTrigger: boolean;
   readonly instructions: readonly OnchainHookInstruction[];
   readonly dependencies: readonly OnchainHookDependency[];
   readonly routeRef?: OnchainExecutorRouteRef;
@@ -208,6 +236,7 @@ export interface OnchainHookPlanArtifact {
   readonly dependencyIndex: Record<HexString, readonly HexString[]>;
   readonly executorRoutes: readonly OnchainExecutorRoute[];
   readonly selectorBindings: readonly OnchainStageSelectorBinding[];
+  readonly signalCapabilities: readonly OnchainSignalCapability[];
   readonly planHash: HexString;
 }
 
@@ -235,7 +264,7 @@ export interface SolidityRegisterHookArg {
   readonly stageId: HexString;
   readonly hookName: HexString;
   readonly kind: "receive" | "signalMap";
-  readonly trigger: boolean;
+  readonly isTrigger: boolean;
   readonly instructions: readonly SolidityRegisterInstructionArg[];
   readonly dependencyKeys: readonly HexString[];
   readonly routeId?: HexString;
@@ -259,6 +288,13 @@ export interface SolidityRegisterStageSelectorBindingArg {
   readonly targetStageId: HexString;
 }
 
+export interface SolidityRegisterSignalCapabilityArg {
+  readonly stageId: HexString;
+  readonly targetSourceId: HexString;
+  readonly signalId: HexString;
+  readonly targetOrderRelation: 0 | 1;
+}
+
 export interface SolidityRegisterPlanArgs {
   readonly schemaVersion: typeof ONCHAIN_HOOK_PLAN_SCHEMA_VERSION;
   readonly planId: HexString;
@@ -269,4 +305,5 @@ export interface SolidityRegisterPlanArgs {
   readonly dependencyIndex: readonly SolidityRegisterDependencyIndexArg[];
   readonly executorRoutes: readonly SolidityRegisterExecutorRouteArg[];
   readonly selectorBindings: readonly SolidityRegisterStageSelectorBindingArg[];
+  readonly signalCapabilities: readonly SolidityRegisterSignalCapabilityArg[];
 }

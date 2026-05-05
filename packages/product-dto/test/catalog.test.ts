@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  ORDER_INITIAL_TRIGGER_PERMISSION_ID,
-  ORDER_REGISTRAR_ROLE_SLOT_ID,
-  ORDER_SYSTEM_STAGE_ID,
   STORE_SUPPLIER_CAPABILITY_TAGS,
   type ParticipantAddOnManifestDTO,
   type ParticipantAddOnKind,
@@ -153,17 +150,15 @@ describe("product DTO catalog", () => {
     assert.equal("visibility" in (resourcePatchSlot?.addOnManifest?.actions[0]?.inputBindings ?? {}), false);
     assert.equal(signalSubmitSlot?.addOnManifest?.actions[0]?.actionKind, "submit_signal");
     assert.equal(signalSubmitSlot?.addOnManifest?.actions[0]?.inputBindings.confirmation, "customsExecutor.confirmation");
-    assert.equal(zhixu.roleSlots.some((slot) => slot.slotId === ORDER_REGISTRAR_ROLE_SLOT_ID), false);
-    assert.deepEqual(zhixu.orderPermissionTable[0], {
-      permissionId: ORDER_INITIAL_TRIGGER_PERMISSION_ID,
-      roleSlotId: ORDER_REGISTRAR_ROLE_SLOT_ID,
-      stageId: ORDER_SYSTEM_STAGE_ID,
+    assert.equal(zhixu.roleSlots.some((slot) => slot.slotId.startsWith("system:")), false);
+    assert.equal(zhixu.orderPermissionTable.some((entry) => entry.permissionId.startsWith("system.")), false);
+    assert.deepEqual(zhixu.createOrderTrigger, {
       source: phase2CustomsInitialTriggerSource,
       signalName: phase2CustomsSignalIds.orderRegistered,
-      payloadPolicy: "optional",
-      requiredEvidence: []
+      triggerHookId: "0x4625d43b26ce487427096279b6f54b8bf51a479e9ff90e52c0e71bcc0cba42a2",
+      triggerStageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca"
     });
-    assert.deepEqual(phase2CustomsStoreProductSchema.orderPermissionTable[0], zhixu.orderPermissionTable[0]);
+    assert.deepEqual(phase2CustomsStoreProductSchema.createOrderTrigger, zhixu.createOrderTrigger);
 
     const serialized = JSON.stringify([executorPatchSlot, resourcePatchSlot, signalSubmitSlot]);
     const parsed = JSON.parse(serialized);

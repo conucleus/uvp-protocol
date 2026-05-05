@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assertOnchainHookPlanArtifact,
-  compileOnchainHookPlan,
-  compileZhixuHookPlan,
+  compileZhixuOnchainHookPlan,
   keccak256Hex,
   onchainSelectorBindingHash,
   OnchainHookPlanArtifactValidationError,
@@ -12,6 +11,8 @@ import {
   type OnchainSignalInstruction,
   type ZhixuDefinition
 } from "../src/index.js";
+import { compileZhixuHookPlan } from "../src/hook-plan.js";
+import { compileOnchainHookPlan } from "../src/onchain-hook-plan.js";
 
 const baseZhixu: ZhixuDefinition = {
   apiVersion: "uvp/v0",
@@ -82,14 +83,14 @@ const baseZhixu: ZhixuDefinition = {
 test("compiles a stable compact on-chain HookPlan artifact", () => {
   const sourcePlan = compileZhixuHookPlan(baseZhixu);
   const onchain = compileOnchainHookPlan(sourcePlan);
-  const again = compileOnchainHookPlan(sourcePlan);
+  const again = compileZhixuOnchainHookPlan(baseZhixu);
 
   assert.deepEqual(onchain, again);
   assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v1");
   assert.equal(onchain.planId, sourcePlan.planId);
   assert.deepEqual(onchain.platform, sourcePlan.platform);
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
-  assert.equal(onchain.planHash, "0xb148ee139eb4865bc13e0d4ab32a885e9add80be3b1173006a2ca176c3bc78c6");
+  assert.equal(onchain.planHash, "0x406a2044484e1f7b736b34d6a8abf1704e96d86ddd04cef6b807b2e231ca4912");
   assert.deepEqual(onchain.selectorBindings, [
     {
       selectorStageIdentifier: "selector.assign",
@@ -101,6 +102,17 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
         keccak256Hex("execution.main")
       )
     }
+  ]);
+  assert.deepEqual(onchain.signalCapabilities.map((capability) => [
+    capability.stageIdentifier,
+    capability.targetSource,
+    capability.targetSignalName,
+    capability.targetOrderRelation
+  ]), [
+    ["execution.main", "buyer", "execution.main.cmp", "current"],
+    ["execution.main", "buyer", "execution.main.err", "current"],
+    ["execution.main", "buyer", "execution.main.str", "current"],
+    ["selector.assign", "buyer", "selector.assign.executor_selected", "current"]
   ]);
   assert.deepEqual(onchain.compiledHooks.map((hook) => hook.hookId), [
     "0x4192cb3bc76e04ab3c8f9a95ead3b20e86b5af753ac911791d20249e19a81e5a",
@@ -252,6 +264,7 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
       targetStageId: keccak256Hex("execution.main")
     }
   ]);
+  assert.deepEqual(args.signalCapabilities.map((capability) => capability.targetOrderRelation), [0, 0, 0, 0]);
 });
 
 test("includes selector bindings in on-chain plan hash", () => {

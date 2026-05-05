@@ -5,17 +5,21 @@
 `uvp-protocol/contracts/uvp-contracts/` owns the Solidity source, ABI fixtures,
 deployment artifacts, and contract tests for the EVM UVP state-machine track.
 
-`UVPStateMachine`, `ZhixuTrustRegistry`, and `UVPDeploymentRegistry` are the
-authoritative chain layer for plan, order, signal, hook, timer, trust-attestation
-state, and versioned state-machine deployment cutover.
+`UVPStateMachine`, its protocol modules, `ZhixuTrustRegistry`, and
+`UVPDeploymentRegistry` are the authoritative chain layer for plan, order,
+signal, hook, timer, trust-attestation state, and versioned state-machine
+deployment cutover.
 
 ## Responsibilities
 
-- Implement `ZhixuTrustRegistry` official-domain, plan, and supplier
-  attestation contracts.
+- Implement `ZhixuTrustRegistry` owner-controlled plan and supplier attestation
+  contracts. A registry address is the trust boundary; do not reintroduce trust
+  domains.
 - Implement `UVPStateMachine` plan publisher governance, order registrar
-  governance, official plan checks, order registration, signal submitter
-  authorization, first-writer-wins signals, hook evaluation, and timers.
+  governance, order registration, signal submitter authorization,
+  first-writer-wins signals, hook evaluation, and timers.
+- Keep stage patch, derived signal, docking, plan metadata, order link, and lens
+  behavior in explicit module contracts configured by the state-machine owner.
 - Implement `UVPDeploymentRegistry` as a versioned redeployment cutover ledger;
   it records active deployments for new orders but must not forward signals or
   hold order state.
@@ -35,10 +39,12 @@ state, and versioned state-machine deployment cutover.
 
 - Treat ABI, event topics, constructor args, function selectors, and fixture
   hashes as public interfaces.
-- `UVPStateMachine.registerPlan` must require an allowed publisher and an active
-  official trust-registry attestation.
-- `UVPStateMachine.registerOrder` must require an allowed registrar and must
-  reject revoked plans.
+- `UVPStateMachine.registerPlan` must require an allowed publisher, but must not
+  hold, query, or enforce a trust registry.
+- Public order creation must go through signed trigger-order entrypoints
+  (`triggerOrderFromOutsideFor` on the core or `triggerOrderFromSignalFor` on
+  the order-link module), require an allowed registrar transaction sender, and
+  recover the business submitter.
 - Product order paths must bind explicit signal submitter authorization before
   accepting first-writer-wins signals unless a target stage has an active
   executor overlay; in that case the overlay's active executor is the only valid

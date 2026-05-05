@@ -2,16 +2,25 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { decodeFunctionData } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { STATE_MACHINE_ABI as EVM_STATE_MACHINE_ABI } from '@uvp-eth/protocol-bindings/evm';
+import {
+  UnsupportedChainTargetError,
+  unsupportedSolanaProtocolBinding,
+  type SolanaInstructionPlanPlaceholder,
+} from '@uvp-eth/protocol-bindings/solana';
 import {
   EXECUTOR_PATCH_MODE_ASSIGN,
   EXECUTOR_PATCH_MODE_HANDOFF,
   EXECUTOR_PATCH_MODE_REPLACEMENT,
+  DERIVED_SIGNAL_MODULE_ABI,
   STATE_MACHINE_ABI,
+  STAGE_PATCH_MODULE_ABI,
   buildApplyStageExecutorPatchForCall,
   buildApplyStageResourcePatchForCall,
   buildProductSubmitTypedData,
   buildStageExecutorPatchTypedData,
   buildStageResourcePatchTypedData,
+  buildSubmitDerivedSignalForCall,
   buildSubmitSignalForCall,
   canonicalJson,
   hashEvidenceJson,
@@ -126,6 +135,24 @@ const resourcePatchHash = hashStageResourcePatchPayload({
 });
 
 describe('protocol bindings', () => {
+  it('exposes explicit EVM and Solana binding boundaries', () => {
+    assert.equal(EVM_STATE_MACHINE_ABI, STATE_MACHINE_ABI);
+    const placeholder: SolanaInstructionPlanPlaceholder = {
+      target: 'solana',
+      programIds: {},
+      TODO: 'solana protocol bindings are reserved but not implemented',
+    };
+
+    assert.equal(placeholder.target, 'solana');
+    assert.throws(
+      () => unsupportedSolanaProtocolBinding(),
+      (error) =>
+        error instanceof UnsupportedChainTargetError &&
+        error.target === 'solana' &&
+        /not implemented/.test(error.message),
+    );
+  });
+
   it('builds stable Product submit typed data', () => {
     const typedData = buildProductSubmitTypedData({
       chainId: 31337,
@@ -142,7 +169,7 @@ describe('protocol bindings', () => {
     assert.deepEqual(typedData, {
       domain: {
         name: 'UVPStateMachine',
-        version: '0.2',
+        version: '0.7',
         chainId: 31337,
         verifyingContract,
       },
@@ -208,7 +235,7 @@ describe('protocol bindings', () => {
       deadline,
     });
 
-    assert.deepEqual(firstTypedData.types.UVPStateMachineStageExecutorPatch, [
+    assert.deepEqual(firstTypedData.types.UVPStagePatchModuleStageExecutorPatch, [
       { name: 'orderId', type: 'bytes32' },
       { name: 'selectorStageId', type: 'bytes32' },
       { name: 'targetStageId', type: 'bytes32' },
@@ -225,7 +252,7 @@ describe('protocol bindings', () => {
       { name: 'selector', type: 'address' },
       { name: 'deadline', type: 'uint256' },
     ]);
-    assert.equal(firstTypedData.primaryType, 'UVPStateMachineStageExecutorPatch');
+    assert.equal(firstTypedData.primaryType, 'UVPStagePatchModuleStageExecutorPatch');
 
     for (const { payload, patchHash } of cases) {
       const typedData = buildStageExecutorPatchTypedData({
@@ -290,7 +317,7 @@ describe('protocol bindings', () => {
       typedData as unknown as Parameters<typeof account.signTypedData>[0],
     );
 
-    assert.deepEqual(typedData.types.UVPStateMachineStageResourcePatch, [
+    assert.deepEqual(typedData.types.UVPStagePatchModuleStageResourcePatch, [
       { name: 'orderId', type: 'bytes32' },
       { name: 'selectorStageId', type: 'bytes32' },
       { name: 'targetStageId', type: 'bytes32' },
@@ -303,7 +330,7 @@ describe('protocol bindings', () => {
       { name: 'selector', type: 'address' },
       { name: 'deadline', type: 'uint256' },
     ]);
-    assert.equal(typedData.primaryType, 'UVPStateMachineStageResourcePatch');
+    assert.equal(typedData.primaryType, 'UVPStagePatchModuleStageResourcePatch');
     assert.equal(typedData.message.patchNonce, resourcePatchNonce);
     assert.equal(typedData.message.manifestURI, manifestURI);
     assert.equal(await recoverStageResourcePatchSigner(typedData, signature), submitter);
@@ -341,11 +368,47 @@ describe('protocol bindings', () => {
     assert.match(call.data, /^0x[0-9a-f]+$/);
   });
 
-  it('builds applyStageExecutorPatchFor calls from the shared ABI', () => {
+  it('builds submitDerivedSignalFor calls from the derived signal module ABI', () => {
+    const signature = `0x${'ab'.repeat(65)}` as const;
+    const call = buildSubmitDerivedSignalForCall({
+      derivedSignalModuleAddress: verifyingContract,
+      chainId: 31337,
+    }, {
+      fromOrderId: orderId,
+      fromStageId: targetStageId,
+      targetOrderId: bytes32('11'),
+      targetSourceId: sourceId,
+      signalId,
+      payloadHash,
+      idempotencyKey,
+      submitter,
+      deadline,
+      signature,
+    });
+
+    assert.equal(call.address, verifyingContract);
+    assert.equal(call.abi, DERIVED_SIGNAL_MODULE_ABI);
+    assert.equal(call.functionName, 'submitDerivedSignalFor');
+    assert.deepEqual(call.args, [
+      orderId,
+      targetStageId,
+      bytes32('11'),
+      sourceId,
+      signalId,
+      payloadHash,
+      idempotencyKey,
+      submitter,
+      BigInt(deadline),
+      signature,
+    ]);
+    assert.match(call.data, /^0x[0-9a-f]+$/);
+  });
+
+  it('builds applyStageExecutorPatchFor calls from the stage patch module ABI', () => {
     const selectorSignature = `0x${'bb'.repeat(65)}` as const;
     const previousExecutorSignature = `0x${'dd'.repeat(65)}` as const;
     const call = buildApplyStageExecutorPatchForCall({
-      stateMachineAddress: verifyingContract,
+      stagePatchModuleAddress: verifyingContract,
       chainId: 31337,
     }, {
       orderId,
@@ -359,12 +422,12 @@ describe('protocol bindings', () => {
       previousExecutorSignature,
     });
     const decoded = decodeFunctionData({
-      abi: STATE_MACHINE_ABI,
+      abi: STAGE_PATCH_MODULE_ABI,
       data: call.data,
     });
 
     assert.equal(call.address, verifyingContract);
-    assert.equal(call.abi, STATE_MACHINE_ABI);
+    assert.equal(call.abi, STAGE_PATCH_MODULE_ABI);
     assert.equal(call.functionName, 'applyStageExecutorPatchFor');
     assert.deepEqual(call.args, [
       orderId,
@@ -411,10 +474,10 @@ describe('protocol bindings', () => {
     assert.equal(decodedArgs[5], previousExecutorSignature);
   });
 
-  it('builds applyStageResourcePatchFor calls from the shared ABI', () => {
+  it('builds applyStageResourcePatchFor calls from the stage patch module ABI', () => {
     const signature = `0x${'cc'.repeat(65)}` as const;
     const call = buildApplyStageResourcePatchForCall({
-      stateMachineAddress: verifyingContract,
+      stagePatchModuleAddress: verifyingContract,
       chainId: 31337,
     }, {
       orderId,
@@ -433,12 +496,12 @@ describe('protocol bindings', () => {
       signature,
     });
     const decoded = decodeFunctionData({
-      abi: STATE_MACHINE_ABI,
+      abi: STAGE_PATCH_MODULE_ABI,
       data: call.data,
     });
 
     assert.equal(call.address, verifyingContract);
-    assert.equal(call.abi, STATE_MACHINE_ABI);
+    assert.equal(call.abi, STAGE_PATCH_MODULE_ABI);
     assert.equal(call.functionName, 'applyStageResourcePatchFor');
     assert.deepEqual(call.args, [
       orderId,

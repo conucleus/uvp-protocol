@@ -3,7 +3,6 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   ChainReplayMismatchError,
-  chainEventToRuntimeEvent,
   replayChainEvents,
   type ChainHookReadyEvent,
   type ChainModeEvent
@@ -21,70 +20,39 @@ test("chain-mode replay matches hook expectations from stable chain events", asy
 
   assert.deepEqual(result.mismatches, []);
   assert.deepEqual(result.observed, result.expected);
-  assert.deepEqual(
-    result.runtimeEvents.map((event) => event.type),
-    [
-      "PlanRegistered",
-      "OrderRegistered",
-      "SignalReceived",
-      "SignalReceived",
-      "SignalReceived",
-      "TimerDue",
-      "OrderRegistered",
-      "SignalReceived",
-      "TimerDue"
-    ]
-  );
-  assert.equal(
-    result.runtimeEvents.some(
-      (event) => event.type === "DispatchSucceeded" || event.type === "DispatchFailed"
-    ),
-    false
-  );
 
   const cancelOrder = result.state.orders["chain-oracle::order-cancel"];
-  assert.equal(cancelOrder?.signals["buyer::init.main.cmp"]?.senderId, "init-executor-a");
-  assert.equal(cancelOrder?.signals["buyer::init.main.cmp"]?.eventId, "2:0:0x03");
-  assert.equal(cancelOrder?.hookStatuses["exec.main#START"]?.status, "reg");
-  assert.equal(cancelOrder?.hookStatuses["exec.main#TIMEOUT"]?.status, "cxl");
+  assert.equal(
+    cancelOrder?.signals["0x0000000000000000000000000000000000000000000000000000000000002001"]?.senderId,
+    "init-executor-a"
+  );
+  assert.equal(
+    cancelOrder?.signals["0x0000000000000000000000000000000000000000000000000000000000002001"]?.eventId,
+    "2:0:0x03"
+  );
+  assert.equal(cancelOrder?.hookStatuses["0x0000000000000000000000000000000000000000000000000000000000003001"]?.status, "reg");
+  assert.equal(cancelOrder?.hookStatuses["0x0000000000000000000000000000000000000000000000000000000000003002"]?.status, "cxl");
 
   const cancelStartReadyCount = result.observed.filter(
     (event) =>
       event.eventName === "HookReady" &&
       event.orderId === "order-cancel" &&
-      event.hookId === "exec.main#START"
+      event.hookId === "0x0000000000000000000000000000000000000000000000000000000000003001"
   ).length;
   assert.equal(cancelStartReadyCount, 1);
 
   const timerOrder = result.state.orders["chain-oracle::order-timer"];
-  assert.equal(timerOrder?.hookStatuses["exec.main#START"]?.status, "reg");
-  assert.equal(timerOrder?.hookStatuses["exec.main#TIMEOUT"]?.status, "reg");
+  assert.equal(timerOrder?.hookStatuses["0x0000000000000000000000000000000000000000000000000000000000003001"]?.status, "reg");
+  assert.equal(timerOrder?.hookStatuses["0x0000000000000000000000000000000000000000000000000000000000003002"]?.status, "reg");
   assert.equal(
     result.observed.some(
       (event) =>
         event.eventName === "HookReady" &&
         event.orderId === "order-timer" &&
-        event.hookId === "exec.main#TIMEOUT"
+        event.hookId === "0x0000000000000000000000000000000000000000000000000000000000003002"
     ),
     true
   );
-});
-
-test("chain adapter maps SignalSubmitted and TimerPoked to runtime events", async () => {
-  const events = await loadChainEvents();
-  const signal = events.find((event) => event.eventName === "SignalSubmitted");
-  const timer = events.find((event) => event.eventName === "TimerPoked");
-
-  assert.ok(signal);
-  assert.ok(timer);
-
-  const signalRuntimeEvent = chainEventToRuntimeEvent(signal);
-  const timerRuntimeEvent = chainEventToRuntimeEvent(timer);
-
-  assert.equal(signalRuntimeEvent?.type, "SignalReceived");
-  assert.equal(signalRuntimeEvent?.eventId, "2:0:0x03");
-  assert.equal(timerRuntimeEvent?.type, "TimerDue");
-  assert.equal(timerRuntimeEvent?.eventId, "5:0:0x06");
 });
 
 test("chain-mode reports mismatched golden hook events", async () => {

@@ -1,22 +1,22 @@
 # compiler
 
-Zhixu compiler for deterministic HookPlan and EVM state-machine artifacts.
+Zhixu compiler for deterministic EVM state-machine artifacts.
 
-This module compiles UVP DSL into deterministic runtime artifacts. The protocol
-output is `HookPlanArtifact`, `OnchainHookPlanArtifact`, and
-`UVPStateMachine.registerPlan` args.
+This module compiles UVP DSL directly into deterministic on-chain artifacts.
+The public protocol output is `OnchainHookPlanArtifact` and
+`UVPStateMachine.registerPlan` args. `HookPlanArtifact` is compiler-internal IR.
 
 ## Inputs
 
 - `apiVersion: uvp/v0`, `kind: Zhixu` YAML/JSON definitions;
 - Hook DSL expressions under `receiveSignals`;
 - selected-stage executor bindings and supplier `signalMap` data;
-- target platform metadata, currently `platform.type=blockchain` and
-  `platform.provider=eth` for this track.
+- target platform metadata, currently `platform.type=blockchain`,
+  `platform.provider=eth`, and optional `platform.network` such as `base` for
+  this track.
 
 ## Outputs
 
-- platform-neutral `HookPlanArtifact`;
 - EVM-facing `OnchainHookPlanArtifact`;
 - Solidity `UVPStateMachine.registerPlan` args;
 - deterministic `planId`, `planHash`, source `zhixu_hash`, `policy_hash`,
@@ -27,7 +27,7 @@ output is `HookPlanArtifact`, `OnchainHookPlanArtifact`, and
 
 ## MVP Constraint
 
-The supported compiler surface is the generic HookPlan path:
+The supported compiler surface is the chain artifact path:
 
 - `receiveSignals` hook parsing;
 - `trigger` reference validation;
@@ -44,6 +44,16 @@ cannot publish order stages that nobody is authorized to select or perform.
 Do not execute hooks in this module. Runtime evaluation belongs in
 `hook-core`/`statemachine`.
 
+## Future Chain Targets
+
+`ZhixuDefinition.spec.platform` is intentionally open. Do not narrow
+`provider`, `network`, `version`, or `params` to EVM-only values just because the
+current public artifact is EVM-facing. The roadmap for Solana or any other
+future target lives in `../../../docs/future-chain-target-roadmap.md`.
+
+Until that roadmap's gates are satisfied, non-EVM platform metadata is a schema
+reservation, not a supported runtime target.
+
 ## Local Package
 
 This directory is intentionally self-contained. It does not import the Go UVP
@@ -57,49 +67,44 @@ pnpm --filter @uvp-eth/compiler typecheck
 
 ## Source
 
-- `src/types/`: public TypeScript interfaces for Zhixu HookPlan inputs,
-  compiler artifacts, compact on-chain hook plans, and Solidity registration
-  args.
-- `src/hook-plan.ts`: deterministic Zhixu-to-HookPlan compiler.
-- `src/onchain-hook-plan.ts`: compact HookPlan compiler for Solidity
-  registration inputs.
+- `src/types/`: public TypeScript interfaces for Zhixu inputs, compact
+  on-chain hook plans, and Solidity registration args.
+- `src/hook-plan.ts`: deterministic Zhixu-to-HookPlan internal IR compiler.
+- `src/onchain-hook-plan.ts`: public Zhixu-to-on-chain artifact compiler and
+  Solidity registration input builder.
 - `src/zhixu-loader.ts`: YAML/JSON loader for `apiVersion: uvp/v0`,
   `kind: Zhixu` definitions.
 - `src/canonical.ts`: canonical JSON normalization used before hashing.
 - `src/hash.ts`: in-module Keccak-256 boundary hashing for EVM-compatible test
   vectors.
 - `fixtures/uvp-update-zhixu-v2.yaml`: UVP `0.1.3` self-bootstrap update
-  fixture, normalized for the EVM track with `platform.type=blockchain` and
-  `platform.provider=eth`.
+  fixture, normalized for the EVM track with `platform.type=blockchain`,
+  `platform.provider=eth`, and `platform.network=base`.
 - `test/hash.test.ts`: hash vector and canonicalization tests.
-- `test/hook-plan.test.ts`: HookPlan hash stability, dependency index, trigger,
-  selected-stage, and peer-Zhixu signal-map validation tests.
+- `test/hook-plan.test.ts`: internal IR hash stability, dependency index,
+  trigger, selected-stage, and peer-Zhixu signal-map validation tests.
 
-## HookPlan Output
+## Public Output
 
-`compileZhixuHookPlan(zhixu)` emits:
+Use these root-package entrypoints:
 
-- stable `planId` and `planHash`;
-- target `platform` from Zhixu YAML, now treated as a protocol field
-  (`type=blockchain`, `provider=eth` for the EVM track);
-- `compiledHooks` with normalized Hook ASTs and dependencies;
-- `dependencyIndex` keyed by `source::signal`;
-- `executorRoutes` for dispatch adapters;
-- `selectedStageBindings` for order-level executor patch authority.
+- `compileZhixuOnchainHookPlan(zhixuDefinition)`;
+- `compileZhixuRegisterPlanArgs(zhixuDefinition)`;
+- `toSolidityRegisterPlanArgs(onchainHookPlanArtifact)`.
 
-`validateHookPlanArtifact(value)` and `assertHookPlanArtifact(value)` provide a
-runtime checker for this public artifact boundary.
+`compileZhixuOnchainHookPlan(zhixu)` emits schema
+`uvp.onchainHookPlan.v1`. It:
 
-## On-Chain HookPlan Output
-
-`compileOnchainHookPlan(hookPlanArtifact)` emits schema
-`uvp.onchainHookPlan.v1`. It keeps the same `planId`, `zhixuId`, and `version`
-as the platform-neutral plan, replaces hook expressions with postfix
-instruction arrays, indexes dependencies by packed signal key, and exposes
-executor routes through route references. It also compiles
-`selectedStageBindings` into sorted `selectorBindings` for PRD81
-`StageSelectorBinding` registration, and includes those bindings in the
-canonical on-chain `planHash`.
+- emits stable `planId` and `planHash`;
+- carries target `platform` from Zhixu YAML as a protocol field
+  (`type=blockchain`, `provider=eth`, optional `network=base` for the EVM
+  track; omitted `network` keeps the current default path);
+- replaces hook expressions with postfix instruction arrays;
+- indexes dependencies by packed signal key;
+- exposes executor routes through route references;
+- compiles `selectedStageBindings` into sorted `selectorBindings` for
+  `StageSelectorBinding` registration;
+- includes selector bindings in the canonical on-chain `planHash`.
 
 Stable ids use raw Keccak-256:
 
@@ -107,7 +112,7 @@ Stable ids use raw Keccak-256:
 - `stageId = keccak256(stageIdentifier)`;
 - `sourceId = keccak256(source)`;
 - `signalId = keccak256(task.stage.signal)`;
-- `signalKey = keccak256(abi.encodePacked(sourceId, signalId))`.
+- `signalKey = keccak256(abi.encodePacked(sourceId, signalId))`;
 - `selectorStageId` / `targetStageId = keccak256(stageIdentifier)`.
 
 `validateOnchainHookPlanArtifact(value)` checks the compact artifact shape,
