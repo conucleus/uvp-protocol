@@ -283,7 +283,7 @@ function validateSignalCapabilities(capabilities: readonly unknown[]): readonly 
     expectNonEmptyString(capability.declaredSignal, `${prefix}.declaredSignal`, issues);
     expectNonEmptyString(capability.targetSource, `${prefix}.targetSource`, issues);
     expectNonEmptyString(capability.targetSignalName, `${prefix}.targetSignalName`, issues);
-    expectOneOf(capability.targetOrderRelation, ["current", "triggerParent"], `${prefix}.targetOrderRelation`, issues);
+    expectOneOf(capability.targetOrderRelation, ["current", "triggerOrigin"], `${prefix}.targetOrderRelation`, issues);
     if (
       typeof capability.stageIdentifier === "string" &&
       typeof capability.targetSource === "string" &&
@@ -748,7 +748,7 @@ function parseSignalCapability(entry: StageEntry, declaredSignal: string): Signa
       declaredSignal,
       targetSource,
       targetSignalName,
-      targetOrderRelation: "triggerParent"
+      targetOrderRelation: "triggerOrigin"
     };
   }
   return {

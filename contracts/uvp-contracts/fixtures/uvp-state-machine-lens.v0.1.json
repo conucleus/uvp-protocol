@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x807c259e954a697905ee96ba31397cde4b4fa4d2da4d8869bd49c1b8013a5d5d",
-    "bytecodeHash": "0xe11e07d13f27ec3cd8defdf51c2aece99550eb95657aee8f5d9312586675d874",
-    "deployedBytecodeHash": "0xec89ae19a60c3d66cd916fc44b7f284da45cfbc2bb38ab1652a7765c064ed8b6",
-    "artifactHash": "0x0cda2d0fde073ba6a4d6babeba927cddce1cda88b6afb1088bb2edfe7ce6190d"
+    "abiHash": "0x77eff1efa246399362fac8617cc518af92138b675b92adf2d0be472591249c18",
+    "bytecodeHash": "0xf458034cb9dd5d319ca4f076b4eaa62f3d4a2ab33cda646a818549c809db1366",
+    "deployedBytecodeHash": "0xbc2acf40aa00a855920fab2a65c82dc7fd1f10ee81cf2853ada6bab2c0cdb3be",
+    "artifactHash": "0x9b0f3bac701c099bc1c1fde78065529374d731e05c6344beaf74ae34804d7553"
   },
   "events": {},
   "functions": {
@@ -32,9 +32,9 @@
       "signature": "getActiveStageResourcePatch(bytes32,bytes32,bytes32)",
       "selector": "0x901cfaaf"
     },
-    "getOrderTriggerLink": {
-      "signature": "getOrderTriggerLink(bytes32)",
-      "selector": "0x32ea5510"
+    "getTriggerOriginLink": {
+      "signature": "getTriggerOriginLink(bytes32)",
+      "selector": "0x97481ae8"
     },
     "isSignalCapabilityRegistered": {
       "signature": "isSignalCapabilityRegistered(bytes32,bytes32,bytes32,bytes32,uint8)",

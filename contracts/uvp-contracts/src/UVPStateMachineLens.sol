@@ -73,12 +73,12 @@ interface IUVPPlanMetadataModuleLens {
 
 interface IUVPOrderLinkModuleLens {
     function targetOrderRelation(bytes32 fromOrderId, bytes32 targetOrderId) external view returns (uint8);
-    function getOrderTriggerLink(bytes32 childOrderId)
+    function getTriggerOriginLink(bytes32 triggeredOrderId)
         external
         view
         returns (
             bool exists,
-            bytes32 parentOrderId,
+            bytes32 triggerOriginOrderId,
             bytes32 originSourceId,
             bytes32 originSignalId,
             bytes32 triggerStageId
@@ -210,17 +210,17 @@ contract UVPStateMachineLens {
         );
     }
 
-    function getOrderTriggerLink(bytes32 childOrderId)
+    function getTriggerOriginLink(bytes32 triggeredOrderId)
         external
         view
         returns (
             bool exists,
-            bytes32 parentOrderId,
+            bytes32 triggerOriginOrderId,
             bytes32 originSourceId,
             bytes32 originSignalId,
             bytes32 triggerStageId
         )
     {
-        return IUVPOrderLinkModuleLens(_moduleDirectory.orderLinkModule()).getOrderTriggerLink(childOrderId);
+        return IUVPOrderLinkModuleLens(_moduleDirectory.orderLinkModule()).getTriggerOriginLink(triggeredOrderId);
     }
 }

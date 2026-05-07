@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x48b107eb10bb20523e3ded3141aeb2857165c48c32bdb10bb8f7f59fcf18ed1b",
-    "bytecodeHash": "0xba08685da2c1e108c9dd9dbc4acd632f384a0f932280531bf281963111bf0b66",
-    "deployedBytecodeHash": "0xa0c364470ebb985efc1d944ae64228358790b3d25204fb1f8e75d27c03ba6a47",
-    "artifactHash": "0xd60dc61c2954af856b89ac8358c3c1dc63fcd30a1c504404f4d50e6c70e06d20"
+    "abiHash": "0x46c808ab0f5732a8946881ff7f7ef74f475aa72ae20885490448a32bc9fc0333",
+    "bytecodeHash": "0xde58387b51f1c5fc1af920f9b6373bbeaa381e70d8f546d554943d81a3b5c442",
+    "deployedBytecodeHash": "0xa265109ae9e3b9390de0e7f552c3cfaef6772c9dd06b6e5842e1c434df7e3fe1",
+    "artifactHash": "0x820d9b7dcd1fa4bb968f1c741bf89708e27025e7d9e09ae77983d9b90419c1b8"
   },
   "events": {
     "HookReady": {
@@ -113,9 +113,9 @@
       "signature": "SIGNAL_TARGET_CURRENT_ORDER()",
       "selector": "0x06b6c489"
     },
-    "SIGNAL_TARGET_TRIGGER_PARENT": {
-      "signature": "SIGNAL_TARGET_TRIGGER_PARENT()",
-      "selector": "0x889b5d3f"
+    "SIGNAL_TARGET_TRIGGER_ORIGIN": {
+      "signature": "SIGNAL_TARGET_TRIGGER_ORIGIN()",
+      "selector": "0x909f38ec"
     },
     "STAGE_PATCH_MODULE_ID": {
       "signature": "STAGE_PATCH_MODULE_ID()",

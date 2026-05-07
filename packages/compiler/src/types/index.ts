@@ -126,7 +126,7 @@ export interface SelectedStageBinding {
   readonly targetStageIdentifier: string;
 }
 
-export type SignalTargetOrderRelation = "current" | "triggerParent";
+export type SignalTargetOrderRelation = "current" | "triggerOrigin";
 
 export interface SignalCapability {
   readonly stageIdentifier: string;

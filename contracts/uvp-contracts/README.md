@@ -139,9 +139,9 @@ code do not silently drift away from the contract ABI.
     registered binding. The two orders keep independent plans, authorization,
     events, and lifecycle.
 12. `triggerOrderFromOutsideFor` and `triggerOrderFromSignalFor` create orders
-    through signed trigger paths. Signal-triggered child orders record a parent
+    through signed trigger paths. Signal-triggered orders record a trigger-origin
     link so `UVPDerivedSignalModule` can write declared signals back to the
-    trigger parent order.
+    trigger-origin order.
 13. The state machine evaluates compact hook instructions, emits
     `HookStatusChanged`, `HookReady`, and `TimerPoked`, and can be replayed from
     events by `statemachine` and `chain-services`.

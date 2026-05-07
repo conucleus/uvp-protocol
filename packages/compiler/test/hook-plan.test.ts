@@ -169,6 +169,47 @@ test("compiles internal HookPlan IR", () => {
   assert.doesNotThrow(() => assertHookPlanArtifact(plan));
 });
 
+test("compiles source-qualified sendSignals as trigger-origin capabilities", () => {
+  const plan = compileZhixuHookPlan({
+    ...baseZhixu,
+    metadata: {
+      name: "trigger_origin_signal_demo"
+    },
+    spec: {
+      ...baseZhixu.spec,
+      taskPatterns: [
+        {
+          name: "settlement",
+          stages: [
+            {
+              name: "close",
+              source: "trade",
+              trigger: ["START"],
+              receiveSignals: {
+                START: "::OUTSIDE"
+              },
+              sendSignals: ["book::book.settlement_wait.cmp"],
+              executor: {
+                supplierType: "organization",
+                supplierID: "settlement-operator"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.deepEqual(plan.signalCapabilities.map((capability) => [
+    capability.stageIdentifier,
+    capability.targetSource,
+    capability.targetSignalName,
+    capability.targetOrderRelation
+  ]), [
+    ["settlement.close", "book", "book.settlement_wait.cmp", "triggerOrigin"]
+  ]);
+});
+
 test("preserves opaque platform metadata for future target schemas at the internal IR boundary", () => {
   const platform = {
     type: "blockchain",

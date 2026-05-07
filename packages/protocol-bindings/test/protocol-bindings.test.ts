@@ -13,6 +13,7 @@ import {
   EXECUTOR_PATCH_MODE_HANDOFF,
   EXECUTOR_PATCH_MODE_REPLACEMENT,
   DERIVED_SIGNAL_MODULE_ABI,
+  ORDER_LINK_MODULE_ABI,
   STATE_MACHINE_ABI,
   STAGE_PATCH_MODULE_ABI,
   buildApplyStageExecutorPatchForCall,
@@ -22,6 +23,8 @@ import {
   buildStageResourcePatchTypedData,
   buildSubmitDerivedSignalForCall,
   buildSubmitSignalForCall,
+  buildTriggerOrderFromSignalForCall,
+  buildTriggerOrderFromSignalTypedData,
   canonicalJson,
   hashEvidenceJson,
   hashResourceManifest,
@@ -30,6 +33,7 @@ import {
   recoverProductSubmitSigner,
   recoverStageExecutorPatchSigner,
   recoverStageResourcePatchSigner,
+  recoverTriggerOrderFromSignalSigner,
   type ResourceManifestV1,
 } from '../src/index.js';
 
@@ -43,6 +47,10 @@ const verifyingContract = '0x8888888888888888888888888888888888888888' as const;
 const zeroAddress = '0x0000000000000000000000000000000000000000' as const;
 const zeroBytes32 = bytes32('');
 const orderId = bytes32('01');
+const triggerOriginOrderId = bytes32('12');
+const planId = bytes32('13');
+const triggerHookId = bytes32('14');
+const triggerStageId = bytes32('15');
 const sourceId = bytes32('02');
 const signalId = bytes32('03');
 const payloadHash = bytes32('04');
@@ -58,6 +66,8 @@ const resourceKey = bytes32('0d');
 const contentHash = bytes32('0e');
 const approvalSourceId = bytes32('0f');
 const approvalSignalId = bytes32('10');
+const originSourceId = bytes32('16');
+const originSignalId = bytes32('17');
 const deadline = '1777777777';
 const executor = '0x7777777777777777777777777777777777777777' as const;
 const metadataURI = 'ipfs://stage-overlay/executor-demo';
@@ -133,6 +143,15 @@ const resourcePatchHash = hashStageResourcePatchPayload({
   patchNonce: resourcePatchNonce,
   manifestURI,
 });
+const signalAuthorizations = [
+  {
+    sourceId,
+    signalId,
+    submitter,
+    role,
+    metadataHash: executorMetadataHash,
+  },
+] as const;
 
 describe('protocol bindings', () => {
   it('exposes explicit EVM and Solana binding boundaries', () => {
@@ -214,6 +233,47 @@ describe('protocol bindings', () => {
     );
 
     assert.equal(await recoverProductSubmitSigner(typedData, signature), submitter);
+  });
+
+  it('builds and recovers trigger-origin order typed data', async () => {
+    const typedData = buildTriggerOrderFromSignalTypedData({
+      chainId: 31337,
+      verifyingContract,
+      orderId,
+      planId,
+      creator: submitter,
+      triggerOriginOrderId,
+      triggerHookId,
+      triggerStageId,
+      originSourceId,
+      originSignalId,
+      payloadHash,
+      idempotencyKey,
+      authorizations: signalAuthorizations,
+      submitter,
+      deadline,
+    });
+    const signature = await account.signTypedData(
+      typedData as unknown as Parameters<typeof account.signTypedData>[0],
+    );
+
+    assert.deepEqual(typedData.types.UVPOrderLinkModuleTriggerOrderFromSignal.map((field) => field.name), [
+      'orderId',
+      'planId',
+      'creator',
+      'triggerOriginOrderId',
+      'triggerHookId',
+      'triggerStageId',
+      'originSourceId',
+      'originSignalId',
+      'payloadHash',
+      'idempotencyKey',
+      'authorizationsHash',
+      'submitter',
+      'deadline',
+    ]);
+    assert.equal(typedData.message.triggerOriginOrderId, triggerOriginOrderId);
+    assert.equal(await recoverTriggerOrderFromSignalSigner(typedData, signature), submitter);
   });
 
   it('builds assign, handoff, and replacement stage executor patch typed data', () => {
@@ -366,6 +426,41 @@ describe('protocol bindings', () => {
       signature,
     ]);
     assert.match(call.data, /^0x[0-9a-f]+$/);
+  });
+
+  it('builds triggerOrderFromSignalFor calls from the order-link module ABI', () => {
+    const signature = `0x${'ac'.repeat(65)}` as const;
+    const call = buildTriggerOrderFromSignalForCall({
+      orderLinkModuleAddress: verifyingContract,
+      chainId: 31337,
+    }, {
+      orderId,
+      planId,
+      creator: submitter,
+      triggerOriginOrderId,
+      triggerHookId,
+      triggerStageId,
+      originSourceId,
+      originSignalId,
+      payloadHash,
+      idempotencyKey,
+      submitter,
+      deadline,
+      authorizations: signalAuthorizations,
+      signature,
+    });
+    const decoded = decodeFunctionData({
+      abi: ORDER_LINK_MODULE_ABI,
+      data: call.data,
+    });
+
+    assert.equal(call.address, verifyingContract);
+    assert.equal(call.abi, ORDER_LINK_MODULE_ABI);
+    assert.equal(call.functionName, 'triggerOrderFromSignalFor');
+    assert.equal(call.args[0].triggerOriginOrderId, triggerOriginOrderId);
+    assert.equal(decoded.functionName, 'triggerOrderFromSignalFor');
+    assert.equal(decoded.args[0].triggerOriginOrderId, triggerOriginOrderId);
+    assert.equal(decoded.args[2], signature);
   });
 
   it('builds submitDerivedSignalFor calls from the derived signal module ABI', () => {
