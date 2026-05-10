@@ -52,10 +52,10 @@ export const STATE_MACHINE_ABI = parseAbi([
   'function submitSignal(bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey)',
   'function submitSignalFor(bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline,bytes signature)',
   'function submitSignalFromModule(bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter)',
-  'function triggerOrderFromSignalFromModule((bytes32 orderId,bytes32 planId,address creator,bytes32 parentOrderId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) trigger,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations,address registrar)',
+  'function triggerOrderFromSignalFromModule((bytes32 orderId,bytes32 planId,address creator,bytes32 triggerOriginOrderId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) trigger,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations,address registrar)',
   'function activateStageExecutorFromModule(bytes32 orderId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 patchHash,uint256 patchNonce)',
   'function SIGNAL_TARGET_CURRENT_ORDER() view returns (uint8)',
-  'function SIGNAL_TARGET_TRIGGER_PARENT() view returns (uint8)',
+  'function SIGNAL_TARGET_TRIGGER_ORIGIN() view returns (uint8)',
   'function sourceSignalCount(bytes32 orderId,bytes32 sourceId) view returns (uint256)',
   'function lastSignalSubmitter(bytes32 orderId,bytes32 sourceId) view returns (address)',
   'function DOMAIN_SEPARATOR() view returns (bytes32)',
@@ -80,12 +80,12 @@ export const PLAN_METADATA_MODULE_ABI = parseAbi([
 ]);
 
 export const ORDER_LINK_MODULE_ABI = parseAbi([
-  'event OrderLinked(bytes32 indexed childOrderId,bytes32 indexed parentOrderId,bytes32 indexed triggerStageId,bytes32 originSourceId,bytes32 originSignalId)',
-  'function triggerOrderFromSignalFor((bytes32 orderId,bytes32 planId,address creator,bytes32 parentOrderId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) trigger,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations,bytes signature)',
+  'event OrderLinked(bytes32 indexed triggeredOrderId,bytes32 indexed triggerOriginOrderId,bytes32 indexed triggerStageId,bytes32 originSourceId,bytes32 originSignalId)',
+  'function triggerOrderFromSignalFor((bytes32 orderId,bytes32 planId,address creator,bytes32 triggerOriginOrderId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) trigger,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations,bytes signature)',
   'function targetOrderRelation(bytes32 fromOrderId,bytes32 targetOrderId) view returns (uint8)',
-  'function getOrderTriggerLink(bytes32 childOrderId) view returns (bool exists,bytes32 parentOrderId,bytes32 originSourceId,bytes32 originSignalId,bytes32 triggerStageId)',
+  'function getTriggerOriginLink(bytes32 triggeredOrderId) view returns (bool exists,bytes32 triggerOriginOrderId,bytes32 originSourceId,bytes32 originSignalId,bytes32 triggerStageId)',
   'function signalAuthorizationsHash((bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations) pure returns (bytes32)',
-  'function triggerOrderFromSignalDigest((bytes32 orderId,bytes32 planId,address creator,bytes32 parentOrderId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) trigger,bytes32 authorizationsHash) view returns (bytes32)',
+  'function triggerOrderFromSignalDigest((bytes32 orderId,bytes32 planId,address creator,bytes32 triggerOriginOrderId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) trigger,bytes32 authorizationsHash) view returns (bytes32)',
 ]);
 
 export const STAGE_PATCH_MODULE_ABI = parseAbi([
@@ -137,7 +137,7 @@ export const STATE_MACHINE_LENS_ABI = parseAbi([
   'function isStageSelectorBound(bytes32 planId,bytes32 selectorStageId,bytes32 targetStageId) view returns (bool)',
   'function isSignalCapabilityRegistered(bytes32 planId,bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation) view returns (bool)',
   'function targetOrderRelation(bytes32 fromOrderId,bytes32 targetOrderId) view returns (uint8)',
-  'function getOrderTriggerLink(bytes32 childOrderId) view returns (bool exists,bytes32 parentOrderId,bytes32 originSourceId,bytes32 originSignalId,bytes32 triggerStageId)',
+  'function getTriggerOriginLink(bytes32 triggeredOrderId) view returns (bool exists,bytes32 triggerOriginOrderId,bytes32 originSourceId,bytes32 originSignalId,bytes32 triggerStageId)',
 ]);
 
 export const PRODUCT_SUBMIT_DOMAIN_NAME = 'UVPStateMachine';
@@ -204,7 +204,7 @@ export const TRIGGER_ORDER_FROM_SIGNAL_TYPED_DATA_FIELDS: readonly ProductSubmit
   { name: 'orderId', type: 'bytes32' },
   { name: 'planId', type: 'bytes32' },
   { name: 'creator', type: 'address' },
-  { name: 'parentOrderId', type: 'bytes32' },
+  { name: 'triggerOriginOrderId', type: 'bytes32' },
   { name: 'triggerHookId', type: 'bytes32' },
   { name: 'triggerStageId', type: 'bytes32' },
   { name: 'originSourceId', type: 'bytes32' },
@@ -310,7 +310,7 @@ export interface TriggerOrderFromSignalPayload {
   readonly orderId: Hex | string;
   readonly planId: Hex | string;
   readonly creator: Address | string;
-  readonly parentOrderId: Hex | string;
+  readonly triggerOriginOrderId: Hex | string;
   readonly triggerHookId: Hex | string;
   readonly triggerStageId: Hex | string;
   readonly originSourceId: Hex | string;
@@ -358,7 +358,7 @@ export interface TriggerOrderFromSignalTypedData {
     readonly orderId: Hex;
     readonly planId: Hex;
     readonly creator: Address;
-    readonly parentOrderId: Hex;
+    readonly triggerOriginOrderId: Hex;
     readonly triggerHookId: Hex;
     readonly triggerStageId: Hex;
     readonly originSourceId: Hex;
@@ -749,7 +749,7 @@ export interface TriggerOrderFromSignalCallStruct {
   readonly orderId: Hex;
   readonly planId: Hex;
   readonly creator: Address;
-  readonly parentOrderId: Hex;
+  readonly triggerOriginOrderId: Hex;
   readonly triggerHookId: Hex;
   readonly triggerStageId: Hex;
   readonly originSourceId: Hex;
@@ -966,7 +966,7 @@ export function buildTriggerOrderFromSignalTypedData(
       orderId: trigger[0],
       planId: trigger[1],
       creator: trigger[2],
-      parentOrderId: trigger[3],
+      triggerOriginOrderId: trigger[3],
       triggerHookId: trigger[4],
       triggerStageId: trigger[5],
       originSourceId: trigger[6],
@@ -1636,7 +1636,7 @@ function normalizeTriggerOrderFromSignal(trigger: TriggerOrderFromSignalPayload)
     normalizeNonZeroBytes32(trigger.orderId, 'orderId'),
     normalizeNonZeroBytes32(trigger.planId, 'planId'),
     normalizeAddress(trigger.creator, 'creator'),
-    normalizeNonZeroBytes32(trigger.parentOrderId, 'parentOrderId'),
+    normalizeNonZeroBytes32(trigger.triggerOriginOrderId, 'triggerOriginOrderId'),
     normalizeNonZeroBytes32(trigger.triggerHookId, 'triggerHookId'),
     normalizeNonZeroBytes32(trigger.triggerStageId, 'triggerStageId'),
     normalizeBytes32(trigger.originSourceId, 'originSourceId'),
@@ -1654,7 +1654,7 @@ function normalizeTriggerOrderFromSignalStruct(trigger: TriggerOrderFromSignalPa
     orderId: tuple[0],
     planId: tuple[1],
     creator: tuple[2],
-    parentOrderId: tuple[3],
+    triggerOriginOrderId: tuple[3],
     triggerHookId: tuple[4],
     triggerStageId: tuple[5],
     originSourceId: tuple[6],

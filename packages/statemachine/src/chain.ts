@@ -98,8 +98,8 @@ export interface ChainOrderTriggeredEvent extends ChainEventBase {
 
 export interface ChainOrderLinkedEvent extends ChainEventBase {
   readonly eventName: "OrderLinked";
-  readonly childOrderId: string;
-  readonly parentOrderId: string;
+  readonly triggeredOrderId: string;
+  readonly triggerOriginOrderId: string;
   readonly triggerStageId: string;
   readonly originSourceId: string;
   readonly originSignalId: string;

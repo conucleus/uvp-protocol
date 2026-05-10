@@ -1,0 +1,234 @@
+# Source: original character physicalization fixture
+# Purpose: lightweight multi-party production workflow for Zhixu modeling.
+apiVersion: uvp/v0
+kind: Zhixu
+metadata:
+  name: original-figure-custom-order
+  uid: zhixu-original-figure-custom-order-v1
+  labels:
+    industry: creative-manufacturing
+    scenario: original-character-physicalization
+  annotations:
+    version: "1"
+    status: demo-fixture
+spec:
+  platform:
+    type: blockchain
+    provider: eth
+    network: base
+    version: "0.1.3"
+    params:
+      chainId: "84532"
+  nucleation:
+    id: figure-studio-nucleus
+    params:
+      category: original-character-physicalization
+  taskPatterns:
+    - name: figure
+      stages:
+        - name: brief
+          source: client
+          trigger: ["ORDER_OPENED"]
+          receiveSignals:
+            ORDER_OPENED: "::OUTSIDE"
+          sendSignals: ["cmp", "cxl", "err"]
+          fileResources:
+            brief_template:
+              fileType: local
+              localFile:
+                path: "./fixtures/figure/brief-template.json"
+          executor:
+            supplierType: individual
+            supplierID: "{{ .client_subject_uid }}"
+
+        - name: license_review
+          source: platform
+          trigger: ["BRIEF_READY"]
+          receiveSignals:
+            BRIEF_READY: "client::figure.brief.cmp"
+          sendSignals: ["pass", "reject", "err"]
+          fileResources:
+            originality_policy:
+              fileType: local
+              localFile:
+                path: "./fixtures/figure/originality-policy.json"
+          executor:
+            supplierType: organization
+            supplierID: "{{ .platform_ip_review_uid }}"
+
+        - name: supplier_selection
+          source: platform
+          trigger: ["LICENSE_PASS"]
+          receiveSignals:
+            LICENSE_PASS: "platform::figure.license_review.pass"
+          selectedStages:
+            - figure.concept_sheet
+            - figure.sculpt_model
+            - figure.printability_check
+            - figure.prototype_print
+            - figure.paint_sample
+            - figure.qa_review
+            - figure.pack_ship
+          sendSignals: ["cmp", "err"]
+          fileResources:
+            supplier_requirements:
+              fileType: local
+              localFile:
+                path: "./fixtures/figure/supplier-requirements.json"
+          executor:
+            supplierType: organization
+            supplierID: "{{ .platform_operator_uid }}"
+
+        - name: concept_sheet
+          source: artist
+          trigger: ["SUPPLIERS_READY"]
+          receiveSignals:
+            SUPPLIERS_READY: "platform::figure.supplier_selection.cmp"
+          sendSignals: ["str", "cmp", "err"]
+          fileResources:
+            concept_requirements:
+              fileType: local
+              localFile:
+                path: "./fixtures/figure/concept-requirements.json"
+          executor:
+            supplierType: individual
+            supplierID: "{{ .concept_artist_uid }}"
+
+        - name: concept_approval
+          source: client
+          trigger: ["CONCEPT_READY"]
+          receiveSignals:
+            CONCEPT_READY: "artist::figure.concept_sheet.cmp"
+          sendSignals: ["pass", "reject", "err"]
+          executor:
+            supplierType: individual
+            supplierID: "{{ .client_subject_uid }}"
+
+        - name: sculpt_model
+          source: sculptor
+          trigger: ["CONCEPT_APPROVED"]
+          receiveSignals:
+            CONCEPT_APPROVED: "client::figure.concept_approval.pass"
+          sendSignals: ["str", "cmp", "err"]
+          fileResources:
+            sculpt_delivery_spec:
+              fileType: local
+              localFile:
+                path: "./fixtures/figure/sculpt-delivery-spec.json"
+          executor:
+            supplierType: individual
+            supplierID: "{{ .sculptor_uid }}"
+
+        - name: printability_check
+          source: printer
+          trigger: ["SCULPT_READY"]
+          receiveSignals:
+            SCULPT_READY: "sculptor::figure.sculpt_model.cmp"
+          sendSignals: ["pass", "fail", "err"]
+          fileResources:
+            printability_checklist:
+              fileType: local
+              localFile:
+                path: "./fixtures/figure/printability-checklist.json"
+          executor:
+            supplierType: organization
+            supplierID: "{{ .print_shop_uid }}"
+
+        - name: prototype_print
+          source: printer
+          trigger: ["PRINTABILITY_PASS"]
+          receiveSignals:
+            PRINTABILITY_PASS: "printer::figure.printability_check.pass"
+          sendSignals: ["str", "cmp", "err"]
+          fileResources:
+            prototype_photo_manifest:
+              fileType: local
+              localFile:
+                path: "./fixtures/figure/prototype-photo-manifest.json"
+          executor:
+            supplierType: organization
+            supplierID: "{{ .print_shop_uid }}"
+
+        - name: paint_sample
+          source: painter
+          trigger: ["PROTOTYPE_READY"]
+          receiveSignals:
+            PROTOTYPE_READY: "printer::figure.prototype_print.cmp"
+          sendSignals: ["str", "cmp", "err"]
+          fileResources:
+            paint_style_guide:
+              fileType: local
+              localFile:
+                path: "./fixtures/figure/paint-style-guide.json"
+          executor:
+            supplierType: individual
+            supplierID: "{{ .painter_uid }}"
+
+        - name: qa_review
+          source: qa
+          trigger: ["PAINT_READY"]
+          receiveSignals:
+            PAINT_READY: "painter::figure.paint_sample.cmp"
+          sendSignals: ["pass", "fail", "err"]
+          fileResources:
+            qa_checklist:
+              fileType: local
+              localFile:
+                path: "./fixtures/figure/qa-checklist.json"
+          executor:
+            supplierType: organization
+            supplierID: "{{ .qa_reviewer_uid }}"
+
+        - name: pack_ship
+          source: logistics
+          trigger: ["QA_PASS"]
+          receiveSignals:
+            QA_PASS: "qa::figure.qa_review.pass"
+          sendSignals: ["str", "cmp", "err"]
+          fileResources:
+            packing_manifest:
+              fileType: local
+              localFile:
+                path: "./fixtures/figure/packing-manifest.json"
+          executor:
+            supplierType: organization
+            supplierID: "{{ .logistics_uid }}"
+
+        - name: final_acceptance
+          source: client
+          trigger: ["DELIVERED"]
+          receiveSignals:
+            DELIVERED: "logistics::figure.pack_ship.cmp"
+          sendSignals: ["pass", "reject", "err"]
+          executor:
+            supplierType: individual
+            supplierID: "{{ .client_subject_uid }}"
+
+        - name: rework
+          source: platform
+          trigger:
+            - CONCEPT_REJECTED
+            - PRINT_FAILED
+            - QA_FAILED
+            - BUYER_REJECTED
+          receiveSignals:
+            CONCEPT_REJECTED: "client::figure.concept_approval.reject"
+            PRINT_FAILED: "printer::figure.printability_check.fail"
+            QA_FAILED: "qa::figure.qa_review.fail"
+            BUYER_REJECTED: "client::figure.final_acceptance.reject"
+          selectedStages:
+            - figure.concept_sheet
+            - figure.sculpt_model
+            - figure.printability_check
+            - figure.prototype_print
+            - figure.paint_sample
+            - figure.qa_review
+          sendSignals: ["str", "cmp", "err"]
+          fileResources:
+            rework_policy:
+              fileType: local
+              localFile:
+                path: "./fixtures/figure/rework-policy.json"
+          executor:
+            supplierType: organization
+            supplierID: "{{ .platform_operator_uid }}"

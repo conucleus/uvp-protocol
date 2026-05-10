@@ -13,6 +13,7 @@ import { compileZhixuHookPlan } from "../src/hook-plan.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturePath = join(__dirname, "../fixtures/uvp-update-zhixu-v2.yaml");
+const originalFigureFixturePath = join(__dirname, "../fixtures/original-figure-custom-order.yaml");
 
 test("loads UVP update zhixu yaml and compiles stable on-chain plan", async () => {
   const definition = await loadZhixuDefinition(fixturePath);
@@ -41,6 +42,35 @@ test("loads UVP update zhixu yaml and compiles stable on-chain plan", async () =
   assert.equal(
     args.hooks.find((hook) => hook.hookId === onchain.compiledHooks.find((item) => item.stageIdentifier === "update.init")?.hookId)?.isTrigger,
     true
+  );
+});
+
+test("loads original figure custom order yaml and compiles multi-party plan", async () => {
+  const definition = await loadZhixuDefinition(originalFigureFixturePath);
+  const hookPlan = compileZhixuHookPlan(definition);
+  const onchain = compileZhixuOnchainHookPlan(definition);
+  const args = compileZhixuRegisterPlanArgs(definition);
+
+  assert.equal(definition.metadata.name, "original-figure-custom-order");
+  assert.equal(definition.metadata.uid, "zhixu-original-figure-custom-order-v1");
+  assert.equal(hookPlan.compiledHooks.length, 16);
+  assert.equal(onchain.compiledHooks.length, 16);
+  assert.equal(args.hooks.length, 16);
+  assert.equal(hookPlan.selectedStageBindings.length, 13);
+  assert.ok(
+    hookPlan.selectedStageBindings.some(
+      (binding) =>
+        binding.selectorStageIdentifier === "figure.supplier_selection" &&
+        binding.targetStageIdentifier === "figure.sculpt_model"
+    )
+  );
+  assert.ok(
+    hookPlan.signalCapabilities.some(
+      (capability) =>
+        capability.stageIdentifier === "figure.final_acceptance" &&
+        capability.targetSource === "client" &&
+        capability.targetSignalName === "figure.final_acceptance.pass"
+    )
   );
 });
 

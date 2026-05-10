@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xcca1c5a478fb5b01f2a63c7dfa1515918aff03acad3a60c17f75835b28de0742",
-    "bytecodeHash": "0xeb933dffa02f76b8520d13bb24c10a69461a8f47a268334fb8211d3c7a0af33c",
-    "deployedBytecodeHash": "0x19483edd094196c2d0ccf6592608791906d197b01e8e6709913845d099c14879",
-    "artifactHash": "0x08b8888f8d693cdf2fdb4d232a5e3fbb4ac3bef93a402265fad1d92bd0f341d2"
+    "abiHash": "0x97f5ae026e78f63de2859601f1b7d3a0be109b1cdd443d5112acb256c883ca82",
+    "bytecodeHash": "0x96c65053709fad3c095b89f5828ee6b86da4fc1ce2faa8f023cdaa7e62d2b1cb",
+    "deployedBytecodeHash": "0xa2faa2a06af3b55a3fbb42cab7b18c1ab8e2c8326286edce1accc11e396b652e",
+    "artifactHash": "0xed5bf66b1e7488b346704452e18d02da8fe27d8b9d8909e2c0ac6d5f056241be"
   },
   "events": {
     "OrderLinked": {
@@ -29,13 +29,13 @@
       "signature": "SIGNAL_TARGET_CURRENT_ORDER()",
       "selector": "0x06b6c489"
     },
-    "SIGNAL_TARGET_TRIGGER_PARENT": {
-      "signature": "SIGNAL_TARGET_TRIGGER_PARENT()",
-      "selector": "0x889b5d3f"
+    "SIGNAL_TARGET_TRIGGER_ORIGIN": {
+      "signature": "SIGNAL_TARGET_TRIGGER_ORIGIN()",
+      "selector": "0x909f38ec"
     },
-    "getOrderTriggerLink": {
-      "signature": "getOrderTriggerLink(bytes32)",
-      "selector": "0x32ea5510"
+    "getTriggerOriginLink": {
+      "signature": "getTriggerOriginLink(bytes32)",
+      "selector": "0x97481ae8"
     },
     "signalAuthorizationsHash": {
       "signature": "signalAuthorizationsHash((bytes32,bytes32,address,bytes32,bytes32)[])",

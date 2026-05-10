@@ -516,7 +516,7 @@ function solidityTargetOrderRelation(relation: SignalTargetOrderRelation): 0 | 1
   switch (relation) {
     case "current":
       return 0;
-    case "triggerParent":
+    case "triggerOrigin":
       return 1;
     default:
       assertNever(relation);
@@ -875,7 +875,7 @@ function validateOnchainSignalCapabilities(capabilities: readonly unknown[]): re
     expectHexHash(capability.targetSourceId, `${prefix}.targetSourceId`, issues);
     expectNonEmptyString(capability.targetSignalName, `${prefix}.targetSignalName`, issues);
     expectHexHash(capability.signalId, `${prefix}.signalId`, issues);
-    expectOneOf(capability.targetOrderRelation, ["current", "triggerParent"], `${prefix}.targetOrderRelation`, issues);
+    expectOneOf(capability.targetOrderRelation, ["current", "triggerOrigin"], `${prefix}.targetOrderRelation`, issues);
     expectHexHash(capability.capabilityHash, `${prefix}.capabilityHash`, issues);
 
     if (
@@ -903,7 +903,7 @@ function validateOnchainSignalCapabilities(capabilities: readonly unknown[]): re
       isHexHash(capability.stageId) &&
       isHexHash(capability.targetSourceId) &&
       isHexHash(capability.signalId) &&
-      (capability.targetOrderRelation === "current" || capability.targetOrderRelation === "triggerParent")
+      (capability.targetOrderRelation === "current" || capability.targetOrderRelation === "triggerOrigin")
     ) {
       const expectedHash = onchainSignalCapabilityHash(
         capability.stageId,

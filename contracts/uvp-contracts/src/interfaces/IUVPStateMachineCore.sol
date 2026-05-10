@@ -14,7 +14,7 @@ interface IUVPStateMachineCore {
         bytes32 orderId;
         bytes32 planId;
         address creator;
-        bytes32 parentOrderId;
+        bytes32 triggerOriginOrderId;
         bytes32 triggerHookId;
         bytes32 triggerStageId;
         bytes32 originSourceId;

@@ -139,6 +139,48 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.doesNotThrow(() => assertOnchainHookPlanArtifact(onchain));
 });
 
+test("serializes trigger-origin signal capabilities to Solidity relation 1", () => {
+  const onchain = compileZhixuOnchainHookPlan({
+    ...baseZhixu,
+    metadata: {
+      name: "trigger_origin_signal_demo"
+    },
+    spec: {
+      ...baseZhixu.spec,
+      taskPatterns: [
+        {
+          name: "settlement",
+          stages: [
+            {
+              name: "close",
+              source: "trade",
+              trigger: ["START"],
+              receiveSignals: {
+                START: "::OUTSIDE"
+              },
+              sendSignals: ["book::book.settlement_wait.cmp"],
+              executor: {
+                supplierType: "organization",
+                supplierID: "settlement-operator"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  });
+  const args = toSolidityRegisterPlanArgs(onchain);
+
+  assert.deepEqual(onchain.signalCapabilities.map((capability) => [
+    capability.targetSource,
+    capability.targetSignalName,
+    capability.targetOrderRelation
+  ]), [
+    ["book", "book.settlement_wait.cmp", "triggerOrigin"]
+  ]);
+  assert.deepEqual(args.signalCapabilities.map((capability) => capability.targetOrderRelation), [1]);
+});
+
 test("compiles Hook AST nodes to stable on-chain instruction arrays", () => {
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
   const timeoutHook = onchain.compiledHooks.find((hook) => hook.hookName === "TIMEOUT");

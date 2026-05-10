@@ -80,7 +80,7 @@ contract UVPStateMachine {
         bytes32 orderId;
         bytes32 planId;
         address creator;
-        bytes32 parentOrderId;
+        bytes32 triggerOriginOrderId;
         bytes32 triggerHookId;
         bytes32 triggerStageId;
         bytes32 originSourceId;
@@ -196,7 +196,7 @@ contract UVPStateMachine {
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _EIP712_NAME_HASH = keccak256("UVPStateMachine");
     uint8 public constant SIGNAL_TARGET_CURRENT_ORDER = 0;
-    uint8 public constant SIGNAL_TARGET_TRIGGER_PARENT = 1;
+    uint8 public constant SIGNAL_TARGET_TRIGGER_ORIGIN = 1;
 
     bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.7");
     bytes32 private constant _SIGNAL_SUBMISSION_TYPEHASH = keccak256(
@@ -436,7 +436,8 @@ contract UVPStateMachine {
             trigger.signalId,
             trigger.payloadHash,
             trigger.idempotencyKey,
-            trigger.submitter
+            trigger.submitter,
+            false
         );
         _requireTriggerHookReady(trigger.orderId, trigger.planId, trigger.triggerHookId, trigger.triggerStageId);
     }
@@ -453,15 +454,15 @@ contract UVPStateMachine {
             revert ZeroSubmitter();
         }
 
-        Order storage parentOrder = _orders[trigger.parentOrderId];
-        if (!parentOrder.exists) {
+        Order storage triggerOriginOrder = _orders[trigger.triggerOriginOrderId];
+        if (!triggerOriginOrder.exists) {
             revert UnknownOrder();
         }
-        if (!_hasSignal(trigger.parentOrderId, trigger.originSourceId, trigger.originSignalId)) {
+        if (!_hasSignal(trigger.triggerOriginOrderId, trigger.originSourceId, trigger.originSignalId)) {
             revert UnknownOrder();
         }
         _requireTriggerHookReadyForOrder(
-            trigger.parentOrderId, trigger.planId, trigger.triggerHookId, trigger.triggerStageId
+            trigger.triggerOriginOrderId, trigger.planId, trigger.triggerHookId, trigger.triggerStageId
         );
 
         _createOrder(trigger.orderId, trigger.planId, trigger.creator, registrar);
@@ -649,7 +650,7 @@ contract UVPStateMachine {
         if (submitter == address(0)) {
             revert ZeroSubmitter();
         }
-        _recordSignal(orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter);
+        _recordSignal(orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, true);
     }
 
     function _submitSignal(
@@ -673,7 +674,7 @@ contract UVPStateMachine {
         }
         _requireActiveStageExecutor(orderId, sourceId, submitter);
 
-        _recordSignal(orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter);
+        _recordSignal(orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, true);
     }
 
     function _recordSignal(
@@ -682,11 +683,18 @@ contract UVPStateMachine {
         bytes32 signalId,
         bytes32 payloadHash,
         bytes32 idempotencyKey,
-        address submitter
+        address submitter,
+        bool requireSourceStageMaterialized
     ) private {
         Order storage order = _orders[orderId];
         if (!order.exists) {
             revert UnknownOrder();
+        }
+        if (
+            requireSourceStageMaterialized && _isPlanStage(order.planId, sourceId)
+                && !order.materializedStages[sourceId]
+        ) {
+            revert UnknownHook();
         }
         bytes32 key = _signalKey(sourceId, signalId);
         SignalRecord storage signal = _signals[orderId][key];
@@ -869,10 +877,11 @@ contract UVPStateMachine {
         return rollingHash;
     }
 
-    function _triggerOrderFromOutsideDigest(
-        TriggerOrderFromOutsideRequest calldata trigger,
-        bytes32 authorizationsHash
-    ) private view returns (bytes32) {
+    function _triggerOrderFromOutsideDigest(TriggerOrderFromOutsideRequest calldata trigger, bytes32 authorizationsHash)
+        private
+        view
+        returns (bytes32)
+    {
         bytes memory encoded = new bytes(0x1a0);
         _writeWord(encoded, 0x00, _TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH);
         _writeWord(encoded, 0x20, trigger.orderId);
@@ -893,6 +902,19 @@ contract UVPStateMachine {
 
     function _signalKey(bytes32 sourceId, bytes32 signalId) private pure returns (bytes32) {
         return keccak256(abi.encode(sourceId, signalId));
+    }
+
+    function _isPlanStage(bytes32 planId, bytes32 stageId) private view returns (bool) {
+        if (stageId == bytes32(0)) {
+            return false;
+        }
+        Plan storage plan = _plans[planId];
+        for (uint256 i = 0; i < plan.hookIds.length; i++) {
+            if (plan.hooks[plan.hookIds[i]].stageId == stageId) {
+                return true;
+            }
+        }
+        return false;
     }
 
     function _validateHook(CompactHook calldata hook) private pure {
@@ -955,12 +977,10 @@ contract UVPStateMachine {
         }
     }
 
-    function _requireTriggerHookReady(
-        bytes32 orderId,
-        bytes32 planId,
-        bytes32 triggerHookId,
-        bytes32 triggerStageId
-    ) private view {
+    function _requireTriggerHookReady(bytes32 orderId, bytes32 planId, bytes32 triggerHookId, bytes32 triggerStageId)
+        private
+        view
+    {
         _validatedTriggerHook(planId, triggerHookId, triggerStageId);
 
         HookRuntime storage runtime = _orders[orderId].hookRuntimes[triggerHookId];

@@ -7,7 +7,7 @@ import {UVPSignatures} from "./libraries/UVPSignatures.sol";
 
 contract UVPOrderLinkModule {
     struct OrderTriggerLink {
-        bytes32 parentOrderId;
+        bytes32 triggerOriginOrderId;
         bytes32 originSourceId;
         bytes32 originSignalId;
         bytes32 triggerStageId;
@@ -17,30 +17,30 @@ contract UVPOrderLinkModule {
     error ExpiredSignalSignature(uint256 deadline);
     error InvalidSignalSignatureLength(uint256 length);
     error InvalidTriggerOrderSignature(address expectedSigner, address recoveredSigner);
-    error OrderTriggerLinkAlreadyRegistered(bytes32 childOrderId);
+    error OrderTriggerLinkAlreadyRegistered(bytes32 triggeredOrderId);
     error UnauthorizedOrderRegistrar();
     error UnknownOrder();
-    error UnknownOrderTriggerLink(bytes32 childOrderId);
+    error UnknownOrderTriggerLink(bytes32 triggeredOrderId);
     error ZeroSubmitter();
 
     IUVPStateMachineCore public immutable stateMachine;
 
     uint8 public constant SIGNAL_TARGET_CURRENT_ORDER = 0;
-    uint8 public constant SIGNAL_TARGET_TRIGGER_PARENT = 1;
+    uint8 public constant SIGNAL_TARGET_TRIGGER_ORIGIN = 1;
 
     bytes32 private constant _EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _EIP712_NAME_HASH = keccak256("UVPOrderLinkModule");
     bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.7");
     bytes32 private constant _TRIGGER_ORDER_FROM_SIGNAL_TYPEHASH = keccak256(
-        "UVPOrderLinkModuleTriggerOrderFromSignal(bytes32 orderId,bytes32 planId,address creator,bytes32 parentOrderId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
+        "UVPOrderLinkModuleTriggerOrderFromSignal(bytes32 orderId,bytes32 planId,address creator,bytes32 triggerOriginOrderId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
     );
 
-    mapping(bytes32 childOrderId => OrderTriggerLink link) private _orderTriggerLinks;
+    mapping(bytes32 triggeredOrderId => OrderTriggerLink link) private _orderTriggerLinks;
 
     event OrderLinked(
-        bytes32 indexed childOrderId,
-        bytes32 indexed parentOrderId,
+        bytes32 indexed triggeredOrderId,
+        bytes32 indexed triggerOriginOrderId,
         bytes32 indexed triggerStageId,
         bytes32 originSourceId,
         bytes32 originSignalId
@@ -64,10 +64,10 @@ contract UVPOrderLinkModule {
         if (!stateMachine.orderRegistrars(msg.sender)) {
             revert UnauthorizedOrderRegistrar();
         }
-        if (!stateMachine.orderExists(trigger.parentOrderId)) {
+        if (!stateMachine.orderExists(trigger.triggerOriginOrderId)) {
             revert UnknownOrder();
         }
-        if (!stateMachine.hasSignal(trigger.parentOrderId, trigger.originSourceId, trigger.originSignalId)) {
+        if (!stateMachine.hasSignal(trigger.triggerOriginOrderId, trigger.originSourceId, trigger.originSignalId)) {
             revert UnknownOrder();
         }
         if (_orderTriggerLinks[trigger.orderId].exists) {
@@ -82,7 +82,7 @@ contract UVPOrderLinkModule {
         }
 
         _orderTriggerLinks[trigger.orderId] = OrderTriggerLink({
-            parentOrderId: trigger.parentOrderId,
+            triggerOriginOrderId: trigger.triggerOriginOrderId,
             originSourceId: trigger.originSourceId,
             originSignalId: trigger.originSignalId,
             triggerStageId: trigger.triggerStageId,
@@ -92,7 +92,7 @@ contract UVPOrderLinkModule {
         stateMachine.triggerOrderFromSignalFromModule(trigger, authorizations, msg.sender);
         emit OrderLinked(
             trigger.orderId,
-            trigger.parentOrderId,
+            trigger.triggerOriginOrderId,
             trigger.triggerStageId,
             trigger.originSourceId,
             trigger.originSignalId
@@ -104,25 +104,25 @@ contract UVPOrderLinkModule {
             return SIGNAL_TARGET_CURRENT_ORDER;
         }
         OrderTriggerLink storage link = _orderTriggerLinks[fromOrderId];
-        if (link.exists && link.parentOrderId == targetOrderId) {
-            return SIGNAL_TARGET_TRIGGER_PARENT;
+        if (link.exists && link.triggerOriginOrderId == targetOrderId) {
+            return SIGNAL_TARGET_TRIGGER_ORIGIN;
         }
         revert UnknownOrderTriggerLink(fromOrderId);
     }
 
-    function getOrderTriggerLink(bytes32 childOrderId)
+    function getTriggerOriginLink(bytes32 triggeredOrderId)
         external
         view
         returns (
             bool exists,
-            bytes32 parentOrderId,
+            bytes32 triggerOriginOrderId,
             bytes32 originSourceId,
             bytes32 originSignalId,
             bytes32 triggerStageId
         )
     {
-        OrderTriggerLink storage link = _orderTriggerLinks[childOrderId];
-        return (link.exists, link.parentOrderId, link.originSourceId, link.originSignalId, link.triggerStageId);
+        OrderTriggerLink storage link = _orderTriggerLinks[triggeredOrderId];
+        return (link.exists, link.triggerOriginOrderId, link.originSourceId, link.originSignalId, link.triggerStageId);
     }
 
     function DOMAIN_SEPARATOR() public view returns (bytes32) {
@@ -162,7 +162,7 @@ contract UVPOrderLinkModule {
         _writeWord(encoded, 0x20, trigger.orderId);
         _writeWord(encoded, 0x40, trigger.planId);
         _writeAddress(encoded, 0x60, trigger.creator);
-        _writeWord(encoded, 0x80, trigger.parentOrderId);
+        _writeWord(encoded, 0x80, trigger.triggerOriginOrderId);
         _writeWord(encoded, 0xa0, trigger.triggerHookId);
         _writeWord(encoded, 0xc0, trigger.triggerStageId);
         _writeWord(encoded, 0xe0, trigger.originSourceId);

@@ -36,7 +36,7 @@ contract UVPPlanMetadataModule {
     IUVPStateMachineCore public immutable stateMachine;
 
     uint8 public constant SIGNAL_TARGET_CURRENT_ORDER = 0;
-    uint8 public constant SIGNAL_TARGET_TRIGGER_PARENT = 1;
+    uint8 public constant SIGNAL_TARGET_TRIGGER_ORIGIN = 1;
 
     mapping(bytes32 planId => PlanMetadata metadata) private _metadata;
 
@@ -194,7 +194,7 @@ contract UVPPlanMetadataModule {
         }
         if (
             capability.targetOrderRelation != SIGNAL_TARGET_CURRENT_ORDER
-                && capability.targetOrderRelation != SIGNAL_TARGET_TRIGGER_PARENT
+                && capability.targetOrderRelation != SIGNAL_TARGET_TRIGGER_ORIGIN
         ) {
             revert InvalidTargetOrderRelation(capability.targetOrderRelation);
         }
