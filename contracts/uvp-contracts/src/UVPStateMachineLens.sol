@@ -62,6 +62,7 @@ interface IUVPPlanMetadataModuleLens {
         external
         view
         returns (bool);
+    function isSelectorTargetStage(bytes32 planId, bytes32 targetStageId) external view returns (bool);
     function isSignalCapabilityRegistered(
         bytes32 planId,
         bytes32 stageId,
@@ -192,6 +193,12 @@ contract UVPStateMachineLens {
         );
     }
 
+    function isSelectorTargetStage(bytes32 planId, bytes32 targetStageId) external view returns (bool) {
+        return IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule()).isSelectorTargetStage(
+            planId, targetStageId
+        );
+    }
+
     function isSignalCapabilityRegistered(
         bytes32 planId,
         bytes32 stageId,
@@ -205,9 +212,8 @@ contract UVPStateMachineLens {
     }
 
     function targetOrderRelation(bytes32 fromOrderId, bytes32 targetOrderId) external view returns (uint8) {
-        return IUVPOrderLinkModuleLens(_moduleDirectory.orderLinkModule()).targetOrderRelation(
-            fromOrderId, targetOrderId
-        );
+        return
+            IUVPOrderLinkModuleLens(_moduleDirectory.orderLinkModule()).targetOrderRelation(fromOrderId, targetOrderId);
     }
 
     function getTriggerOriginLink(bytes32 triggeredOrderId)

@@ -441,7 +441,8 @@ export const phase2CustomsZhixuDetail: ZhixuDetailDTO = {
     source: phase2CustomsInitialTriggerSource,
     signalName: phase2CustomsSignalIds.orderRegistered,
     triggerHookId: "0x4625d43b26ce487427096279b6f54b8bf51a479e9ff90e52c0e71bcc0cba42a2",
-    triggerStageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca"
+    triggerStageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca",
+    submitterRoleSlotId: phase2CustomsRoleSlotIds.buyerResourceController
   },
   proofRows: [
     { label: "Plan ID", value: phase2CustomsPlanIds.planId },
@@ -802,7 +803,8 @@ export const phase2CustomsStoreProductSchema: StoreProductSchemaDTO = {
     source: phase2CustomsInitialTriggerSource,
     signalName: phase2CustomsSignalIds.orderRegistered,
     triggerHookId: "0x4625d43b26ce487427096279b6f54b8bf51a479e9ff90e52c0e71bcc0cba42a2",
-    triggerStageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca"
+    triggerStageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca",
+    submitterRoleSlotId: phase2CustomsRoleSlotIds.buyerResourceController
   },
   roleSlots: phase2CustomsRoleSlots,
   orderPermissionTable: phase2CustomsOrderPermissionTable,
@@ -810,7 +812,7 @@ export const phase2CustomsStoreProductSchema: StoreProductSchemaDTO = {
   businessPersonaLabels: ["买家", "报关行", "关务服务商"],
   stages: phase2CustomsStages,
   selectorBindings: phase2CustomsOnchainHookPlanArtifact.selectorBindings,
-  schemaHash: "0x911a922c4325d2385401a78756abe2ceda423b4c51749f275f9c1e6e37c8d69d",
+  schemaHash: "0x8d3d6cda824a197ddea166e33c955cfa27a67bb693aad840daf14a24512be7af",
   validation: {
     ok: true,
     status: "explicit",

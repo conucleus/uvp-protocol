@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x353cbe14e85304d73c3730ee7f14fc44bda11d03554a49bd06ac386e7ff0310b",
-    "bytecodeHash": "0xb337081d957421aeb5e6030be9c2bd98034a6c3142a44b9c3d0c8e91cd5d6286",
-    "deployedBytecodeHash": "0x19cebd9818af5f0cb8c61b1e6470eceab78219eb6ed499a07ccd82140a90f0ca",
-    "artifactHash": "0x28efdc7293dcd9bbc3b4564e3eb41a2642209f5a793a030cf9fc9f68e13b1f7d"
+    "abiHash": "0x5a76c0c23f75ddc68996731adbf90aca1aeadd28de36603208173c035b2e637a",
+    "bytecodeHash": "0x213c7b6f99f1e32f0df994396b0387c0f3a53422e794fe2b68257cb8bde8c982",
+    "deployedBytecodeHash": "0x2a6d4f66a28cdc24f7389638fbbcc5ea5eb07f5e688be8cf743d574e819cbcc3",
+    "artifactHash": "0x2a6df5953fbedca266973e71c9369e9ce11dcdf1830c930a0cc0238192b65392"
   },
   "events": {
     "SignalCapabilityRegistered": {
@@ -32,6 +32,10 @@
     "SIGNAL_TARGET_TRIGGER_ORIGIN": {
       "signature": "SIGNAL_TARGET_TRIGGER_ORIGIN()",
       "selector": "0x909f38ec"
+    },
+    "isSelectorTargetStage": {
+      "signature": "isSelectorTargetStage(bytes32,bytes32)",
+      "selector": "0xaa3c361a"
     },
     "isSignalCapabilityRegistered": {
       "signature": "isSignalCapabilityRegistered(bytes32,bytes32,bytes32,bytes32,uint8)",

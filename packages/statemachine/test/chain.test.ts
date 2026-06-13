@@ -9,6 +9,15 @@ import {
 } from "../src/index.js";
 
 const chainFixtureUrl = new URL("../fixtures/chain-hook-oracle.events.json", import.meta.url);
+const andLatestWaitPlanId = "0x000000000000000000000000000000000000000000000000000000000000f001";
+const andLatestWaitHookId = "0x000000000000000000000000000000000000000000000000000000000000f101";
+const andLatestWaitStageId = "0x000000000000000000000000000000000000000000000000000000000000f201";
+const andLatestWaitSourceA = "0x000000000000000000000000000000000000000000000000000000000000f301";
+const andLatestWaitSourceB = "0x000000000000000000000000000000000000000000000000000000000000f302";
+const andLatestWaitSignalA = "0x000000000000000000000000000000000000000000000000000000000000f401";
+const andLatestWaitSignalB = "0x000000000000000000000000000000000000000000000000000000000000f402";
+const andLatestWaitKeyA = "0x000000000000000000000000000000000000000000000000000000000000f501";
+const andLatestWaitKeyB = "0x000000000000000000000000000000000000000000000000000000000000f502";
 
 async function loadChainEvents(): Promise<ChainModeEvent[]> {
   return JSON.parse(await readFile(chainFixtureUrl, "utf8")) as ChainModeEvent[];
@@ -73,4 +82,102 @@ test("chain-mode reports mismatched golden hook events", async () => {
   assert.equal(result.mismatches.length, 1);
   assert.equal(result.mismatches[0]?.reason, "semantic-mismatch");
   assert.throws(() => replayChainEvents(badEvents), ChainReplayMismatchError);
+});
+
+test("chain-mode keeps AND delayed branches waiting until the latest live timer", () => {
+  const events: ChainModeEvent[] = [
+    {
+      eventName: "PlanRegistered",
+      blockNumber: 1,
+      logIndex: 0,
+      transactionHash: "0x01",
+      plan: {
+        planId: andLatestWaitPlanId,
+        zhixuId: "chain-parity",
+        version: "test",
+        compiledHooks: [
+          {
+            hookId: andLatestWaitHookId,
+            stageId: andLatestWaitStageId,
+            stageIdentifier: "latest-wait-stage",
+            hookName: "latest-wait-hook",
+            isTrigger: true,
+            instructions: [
+              {
+                op: "SIGNAL",
+                sourceId: andLatestWaitSourceA,
+                signalId: andLatestWaitSignalA,
+                signalKey: andLatestWaitKeyA
+              },
+              { op: "DELAY", delaySeconds: 5 },
+              {
+                op: "SIGNAL",
+                sourceId: andLatestWaitSourceB,
+                signalId: andLatestWaitSignalB,
+                signalKey: andLatestWaitKeyB
+              },
+              { op: "DELAY", delaySeconds: 10 },
+              { op: "AND", arity: 2 }
+            ]
+          }
+        ],
+        dependencyIndex: {
+          [andLatestWaitKeyA]: [andLatestWaitHookId],
+          [andLatestWaitKeyB]: [andLatestWaitHookId]
+        }
+      }
+    },
+    {
+      eventName: "OrderRegistered",
+      blockNumber: 2,
+      logIndex: 0,
+      transactionHash: "0x02",
+      planId: andLatestWaitPlanId,
+      zhixuId: "chain-parity",
+      orderId: "and-latest-wait",
+      registeredAt: "2026-04-27T00:00:00.000Z"
+    },
+    {
+      eventName: "SignalSubmitted",
+      blockNumber: 3,
+      logIndex: 0,
+      transactionHash: "0x03",
+      zhixuId: "chain-parity",
+      orderId: "and-latest-wait",
+      sourceId: andLatestWaitSourceA,
+      signalId: andLatestWaitSignalA,
+      signalKey: andLatestWaitKeyA,
+      senderId: "executor-a",
+      submittedAt: "2026-04-27T00:00:00.000Z"
+    },
+    {
+      eventName: "SignalSubmitted",
+      blockNumber: 4,
+      logIndex: 0,
+      transactionHash: "0x04",
+      zhixuId: "chain-parity",
+      orderId: "and-latest-wait",
+      sourceId: andLatestWaitSourceB,
+      signalId: andLatestWaitSignalB,
+      signalKey: andLatestWaitKeyB,
+      senderId: "executor-b",
+      submittedAt: "2026-04-27T00:00:00.000Z"
+    },
+    {
+      eventName: "HookStatusChanged",
+      blockNumber: 5,
+      logIndex: 0,
+      transactionHash: "0x05",
+      zhixuId: "chain-parity",
+      orderId: "and-latest-wait",
+      hookId: andLatestWaitHookId,
+      status: "wait",
+      dueAt: "2026-04-27T00:00:10.000Z"
+    }
+  ];
+
+  const result = replayChainEvents(events);
+
+  assert.deepEqual(result.mismatches, []);
+  assert.deepEqual(result.observed, result.expected);
 });

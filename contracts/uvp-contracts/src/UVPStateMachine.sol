@@ -4,6 +4,10 @@ pragma solidity ^0.8.24;
 import {ECDSA} from "./libraries/ECDSA.sol";
 import {UVPSignatures} from "./libraries/UVPSignatures.sol";
 
+interface IUVPPlanMetadataModuleForStateMachine {
+    function isSelectorTargetStage(bytes32 planId, bytes32 targetStageId) external view returns (bool);
+}
+
 contract UVPStateMachine {
     enum HookStatus {
         Init,
@@ -113,6 +117,7 @@ contract UVPStateMachine {
         bytes32[] hookIds;
         mapping(bytes32 hookId => StoredHook hook) hooks;
         mapping(bytes32 signalKey => bytes32[] hookIds) dependencyIndex;
+        mapping(bytes32 stageId => bool exists) stageExists;
         bool exists;
     }
 
@@ -132,6 +137,7 @@ contract UVPStateMachine {
         bytes32 executorMetadataHash;
         bytes32 patchHash;
         uint256 patchNonce;
+        string metadataURI;
         bool exists;
     }
 
@@ -144,7 +150,6 @@ contract UVPStateMachine {
     }
 
     error EmptyPlan();
-    error EmptySignalAuthorizations();
     error ExpiredSignalSignature(uint256 deadline);
     error HookAlreadyRegistered();
     error InvalidSignalSignature(address expectedSigner, address recoveredSigner);
@@ -159,6 +164,7 @@ contract UVPStateMachine {
     error PlanAlreadyRegistered();
     error SignalAlreadyExists();
     error SignalSubmitterAlreadyAuthorized(bytes32 orderId, bytes32 sourceId, bytes32 signalId, address submitter);
+    error StageExecutorNotAssigned(bytes32 orderId, bytes32 targetStageId);
     error StageExecutorPatchNonceNotIncreasing(
         bytes32 orderId, bytes32 targetStageId, uint256 previousNonce, uint256 patchNonce
     );
@@ -265,7 +271,8 @@ contract UVPStateMachine {
         address indexed executor,
         bytes32 role,
         bytes32 metadataHash,
-        uint256 patchNonce
+        uint256 patchNonce,
+        string metadataURI
     );
     event HookStatusChanged(
         bytes32 indexed orderId, bytes32 indexed hookId, HookStatus previousStatus, HookStatus newStatus, uint64 dueAt
@@ -395,6 +402,7 @@ contract UVPStateMachine {
             }
 
             plan.hookIds.push(input.hookId);
+            plan.stageExists[input.stageId] = true;
         }
 
         emit PlanRegistered(planId, planHash, hooks.length);
@@ -603,7 +611,8 @@ contract UVPStateMachine {
         bytes32 role,
         bytes32 executorMetadataHash,
         bytes32 patchHash,
-        uint256 patchNonce
+        uint256 patchNonce,
+        string calldata metadataURI
     ) external {
         if (msg.sender != stagePatchModule) {
             revert UnauthorizedStateMachineModule(msg.sender);
@@ -631,9 +640,12 @@ contract UVPStateMachine {
         activePatch.executorMetadataHash = executorMetadataHash;
         activePatch.patchHash = patchHash;
         activePatch.patchNonce = patchNonce;
+        activePatch.metadataURI = metadataURI;
         activePatch.exists = true;
 
-        emit StageExecutorActivated(orderId, targetStageId, executor, role, executorMetadataHash, patchNonce);
+        emit StageExecutorActivated(
+            orderId, targetStageId, executor, role, executorMetadataHash, patchNonce, metadataURI
+        );
     }
 
     function submitSignalFromModule(
@@ -690,11 +702,14 @@ contract UVPStateMachine {
         if (!order.exists) {
             revert UnknownOrder();
         }
-        if (
-            requireSourceStageMaterialized && _isPlanStage(order.planId, sourceId)
-                && !order.materializedStages[sourceId]
-        ) {
-            revert UnknownHook();
+        if (requireSourceStageMaterialized) {
+            bool sourceIsPlanStage = _isPlanStage(order.planId, sourceId);
+            if (sourceIsPlanStage && !order.materializedStages[sourceId]) {
+                revert UnknownHook();
+            }
+            if (sourceIsPlanStage) {
+                _requireStageExecutorAssigned(orderId, order.planId, sourceId);
+            }
         }
         bytes32 key = _signalKey(sourceId, signalId);
         SignalRecord storage signal = _signals[orderId][key];
@@ -908,13 +923,16 @@ contract UVPStateMachine {
         if (stageId == bytes32(0)) {
             return false;
         }
-        Plan storage plan = _plans[planId];
-        for (uint256 i = 0; i < plan.hookIds.length; i++) {
-            if (plan.hooks[plan.hookIds[i]].stageId == stageId) {
-                return true;
-            }
+        return _plans[planId].stageExists[stageId];
+    }
+
+    function _requireStageExecutorAssigned(bytes32 orderId, bytes32 planId, bytes32 targetStageId) private view {
+        if (_activeStageExecutorPatches[orderId][targetStageId].exists || planMetadataModule == address(0)) {
+            return;
         }
-        return false;
+        if (IUVPPlanMetadataModuleForStateMachine(planMetadataModule).isSelectorTargetStage(planId, targetStageId)) {
+            revert StageExecutorNotAssigned(orderId, targetStageId);
+        }
     }
 
     function _validateHook(CompactHook calldata hook) private pure {

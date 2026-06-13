@@ -156,7 +156,8 @@ describe("product DTO catalog", () => {
       source: phase2CustomsInitialTriggerSource,
       signalName: phase2CustomsSignalIds.orderRegistered,
       triggerHookId: "0x4625d43b26ce487427096279b6f54b8bf51a479e9ff90e52c0e71bcc0cba42a2",
-      triggerStageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca"
+      triggerStageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca",
+      submitterRoleSlotId: phase2CustomsRoleSlotIds.buyerResourceController
     });
     assert.deepEqual(phase2CustomsStoreProductSchema.createOrderTrigger, zhixu.createOrderTrigger);
 
