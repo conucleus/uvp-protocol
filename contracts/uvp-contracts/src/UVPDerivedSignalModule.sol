@@ -41,6 +41,17 @@ contract UVPDerivedSignalModule {
         "UVPDerivedSignalModuleSignal(bytes32 fromOrderId,bytes32 fromStageId,bytes32 targetOrderId,bytes32 targetSourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
     );
 
+    event DerivedSignalSubmitted(
+        bytes32 indexed fromOrderId,
+        bytes32 indexed targetOrderId,
+        bytes32 indexed signalId,
+        bytes32 fromStageId,
+        bytes32 targetSourceId,
+        bytes32 payloadHash,
+        bytes32 idempotencyKey,
+        address submitter
+    );
+
     constructor(address stateMachineAddress) {
         stateMachine = IUVPStateMachineCore(stateMachineAddress);
     }
@@ -55,14 +66,7 @@ contract UVPDerivedSignalModule {
         bytes32 idempotencyKey
     ) external {
         _submitDerivedSignal(
-            fromOrderId,
-            fromStageId,
-            targetOrderId,
-            targetSourceId,
-            signalId,
-            payloadHash,
-            idempotencyKey,
-            msg.sender
+            fromOrderId, fromStageId, targetOrderId, targetSourceId, signalId, payloadHash, idempotencyKey, msg.sender
         );
     }
 
@@ -104,14 +108,7 @@ contract UVPDerivedSignalModule {
         }
 
         _submitDerivedSignal(
-            fromOrderId,
-            fromStageId,
-            targetOrderId,
-            targetSourceId,
-            signalId,
-            payloadHash,
-            idempotencyKey,
-            submitter
+            fromOrderId, fromStageId, targetOrderId, targetSourceId, signalId, payloadHash, idempotencyKey, submitter
         );
     }
 
@@ -174,14 +171,24 @@ contract UVPDerivedSignalModule {
 
         uint8 relation = _targetOrderRelation(fromOrderId, targetOrderId);
         bytes32 fromPlanId = stateMachine.orderPlanId(fromOrderId);
-        if (!_planMetadata().isSignalCapabilityRegistered(fromPlanId, fromStageId, targetSourceId, signalId, relation)) {
+        if (!_planMetadata().isSignalCapabilityRegistered(fromPlanId, fromStageId, targetSourceId, signalId, relation))
+        {
             revert InvalidSignalCapability();
         }
-        if (!_isDerivedSignalSubmitterAuthorized(fromOrderId, fromStageId, targetOrderId, targetSourceId, signalId, submitter)) {
+        if (
+            !_isDerivedSignalSubmitterAuthorized(
+                fromOrderId, fromStageId, targetOrderId, targetSourceId, signalId, submitter
+            )
+        ) {
             revert UnauthorizedSignalSubmitter(targetOrderId, targetSourceId, signalId, submitter);
         }
 
-        stateMachine.submitSignalFromModule(targetOrderId, targetSourceId, signalId, payloadHash, idempotencyKey, submitter);
+        stateMachine.submitSignalFromModule(
+            targetOrderId, targetSourceId, signalId, payloadHash, idempotencyKey, submitter
+        );
+        emit DerivedSignalSubmitted(
+            fromOrderId, targetOrderId, signalId, fromStageId, targetSourceId, payloadHash, idempotencyKey, submitter
+        );
     }
 
     function _isDerivedSignalSubmitterAuthorized(

@@ -354,7 +354,8 @@ contract UVPStagePatchModule {
             patch.role,
             patch.executorMetadataHash,
             patch.patchHash,
-            patch.patchNonce
+            patch.patchNonce,
+            patch.metadataURI
         );
     }
 
@@ -387,7 +388,11 @@ contract UVPStagePatchModule {
         if (!_planMetadata().isStageSelectorBound(planId, patch.selectorStageId, patch.targetStageId)) {
             revert StageSelectorBindingNotFound(planId, patch.selectorStageId, patch.targetStageId);
         }
-        if (!stateMachine.hasExplicitSignalAuthorization(orderId, patch.selectorStageId, EXECUTOR_PATCH_SIGNAL_ID, selector)) {
+        if (
+            !stateMachine.hasExplicitSignalAuthorization(
+                orderId, patch.selectorStageId, EXECUTOR_PATCH_SIGNAL_ID, selector
+            )
+        ) {
             revert UnauthorizedStageExecutorPatchSelector(orderId, patch.selectorStageId, selector);
         }
     }
@@ -471,7 +476,11 @@ contract UVPStagePatchModule {
         if (!_planMetadata().isStageSelectorBound(planId, patch.selectorStageId, patch.targetStageId)) {
             revert StageSelectorBindingNotFound(planId, patch.selectorStageId, patch.targetStageId);
         }
-        if (!stateMachine.hasExplicitSignalAuthorization(orderId, patch.selectorStageId, RESOURCE_PATCH_SIGNAL_ID, selector)) {
+        if (
+            !stateMachine.hasExplicitSignalAuthorization(
+                orderId, patch.selectorStageId, RESOURCE_PATCH_SIGNAL_ID, selector
+            )
+        ) {
             revert UnauthorizedStageResourcePatchSelector(orderId, patch.selectorStageId, selector);
         }
         if (stateMachine.sourceSignalCount(orderId, patch.targetStageId) != 0) {

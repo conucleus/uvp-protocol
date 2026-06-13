@@ -33,7 +33,8 @@ interface IUVPStateMachineCore {
         bytes32 role,
         bytes32 executorMetadataHash,
         bytes32 patchHash,
-        uint256 patchNonce
+        uint256 patchNonce,
+        string calldata metadataURI
     ) external;
     function hasExplicitSignalAuthorization(bytes32 orderId, bytes32 sourceId, bytes32 signalId, address submitter)
         external

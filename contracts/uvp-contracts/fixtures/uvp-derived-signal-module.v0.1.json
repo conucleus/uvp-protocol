@@ -9,12 +9,17 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x0b654bf7f47769f222ab95812da5316b44a40dd18b5a336627a50a8cdeee2508",
-    "bytecodeHash": "0xdfb6986e99e56d137f9910584221252bf76fbcd2744240353b70e7b3e2da8f9f",
-    "deployedBytecodeHash": "0x0763d0728576ab7582bd13478bff019b7aea594184c038831f239ebeee427ef9",
-    "artifactHash": "0xd53125bc8d492e83f872ac350f0b6fbd3843e8ffbec557d9c8e74b82a6ce457a"
+    "abiHash": "0xefc6127fc3b3cd7b650ef586aebfd70359ac6ede3311fe3fa568815c0785018b",
+    "bytecodeHash": "0x4f71c1179481398583699dc2e63ef5e3405f663191e413600820ba13e6a1631a",
+    "deployedBytecodeHash": "0xe8c5ae73bb0489176833836af315d4b5bea58fd4160e9299a07ff4210a306d74",
+    "artifactHash": "0x7e52effee5bfea0bf5ce91abff3c8337f89bb80e62491e940c929c33256b7092"
   },
-  "events": {},
+  "events": {
+    "DerivedSignalSubmitted": {
+      "signature": "DerivedSignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
+      "topic": "0x954bb9cb5ace133c867e02bfe159854cf2314287a8b0693e1dbfbecee3d6e33f"
+    }
+  },
   "functions": {
     "DOMAIN_SEPARATOR": {
       "signature": "DOMAIN_SEPARATOR()",

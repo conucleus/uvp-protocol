@@ -35,7 +35,8 @@ pnpm --filter @uvp-eth/statemachine typecheck
   `TimerPoked` oracle replay.
 - `fixtures/chain-hook-oracle.events.json`: chain-mode golden fixture for
   duplicate signals, timer due, negative cancellation, and ready-once behavior.
-- `test/chain.test.ts`: chain adapter and golden replay tests.
+- `test/chain.test.ts`: chain adapter, golden replay tests, and parity checks
+  for hook-combiner edge cases mirrored from `@uvp-eth/hook-core`.
 
 ## Chain-Mode Oracle
 

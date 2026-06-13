@@ -133,6 +133,39 @@ test("handles multiple delayed branches and chooses the earliest due timer", () 
   );
 });
 
+test("keeps AND expressions waiting until the latest live delayed branch", () => {
+  const ast = parseHookExpression("buyer::(task.a.cmp +5s) & (task.b.cmp +10s)");
+
+  assert.deepEqual(
+    evaluateHook(
+      ast,
+      index([
+        ["buyer", "task.a.cmp", at],
+        ["buyer", "task.b.cmp", at]
+      ]),
+      at
+    ),
+    { status: "wait", dueAt: "2026-04-27T00:00:10.000Z" }
+  );
+  assert.deepEqual(
+    evaluateHook(ast, index([["buyer", "task.a.cmp", at]]), at),
+    { status: "init" }
+  );
+});
+
+test("evaluates timestamps at chain second precision", () => {
+  const ast = parseHookExpression("buyer::task.pay.cmp +5s");
+
+  assert.deepEqual(
+    evaluateHook(ast, index([["buyer", "task.pay.cmp", "2026-04-27T00:00:00.900Z"]]), "2026-04-27T00:00:04.999Z"),
+    { status: "wait", dueAt: "2026-04-27T00:00:05.000Z" }
+  );
+  assert.deepEqual(
+    evaluateHook(ast, index([["buyer", "task.pay.cmp", "2026-04-27T00:00:00.900Z"]]), "2026-04-27T00:00:05.001Z"),
+    { status: "reg" }
+  );
+});
+
 test("evaluates nested parentheses with multiple negative guards", () => {
   const ast = parseHookExpression("buyer::task.a.cmp & (task.b.cmp | (task.c.cmp +5s)) & ~task.cancel.cmp & ~task.fail.cmp");
 

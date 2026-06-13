@@ -13,8 +13,8 @@ It does not know about databases, Solidity, escrow, Kafka, or funding adapters.
 - Runtime signal indexes are first-writer-wins by `source::signalName`.
 - Negative conditions are monotonic: once `~A` sees `A`, the hook evaluates to
   `cxl`, even if another positive anchor has not arrived yet.
-- Delays use the positive anchor's first receive time; `AND` and `OR` wait on
-  the earliest live due timer.
+- Delays use the positive anchor's first receive time; `AND` waits on the
+  latest live due timer, while `OR` waits on the earliest live due timer.
 
 ```bash
 pnpm --filter @uvp-eth/hook-core typecheck

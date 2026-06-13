@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x46c808ab0f5732a8946881ff7f7ef74f475aa72ae20885490448a32bc9fc0333",
-    "bytecodeHash": "0xde58387b51f1c5fc1af920f9b6373bbeaa381e70d8f546d554943d81a3b5c442",
-    "deployedBytecodeHash": "0xa265109ae9e3b9390de0e7f552c3cfaef6772c9dd06b6e5842e1c434df7e3fe1",
-    "artifactHash": "0x820d9b7dcd1fa4bb968f1c741bf89708e27025e7d9e09ae77983d9b90419c1b8"
+    "abiHash": "0xa1cdc6e80a70d4afd47507730635aa15c5494bd92742e44063f36da9be37ccc2",
+    "bytecodeHash": "0x7e515cecfb8b8240966dd9f5d9a8158879e366d5df945c8f3e04ee99be2b64f6",
+    "deployedBytecodeHash": "0xfbe54b58699330535f29ee25c30227b366df3bebd52c41322589c789741a9230",
+    "artifactHash": "0x977a0684c693e16a21b5200564b5fe9c201b778f2e212713d75033bd4dba0d90"
   },
   "events": {
     "HookReady": {
@@ -68,8 +68,8 @@
       "topic": "0x5397395fa31304c4bedc7871788aa6abc2c2acb5330324ecfcb740245482adf4"
     },
     "StageExecutorActivated": {
-      "signature": "StageExecutorActivated(bytes32,bytes32,address,bytes32,bytes32,uint256)",
-      "topic": "0x5c579f4fb432f093ca872f6918973fb9fbf5c7a5a2a603e04a30dbc20cd73804"
+      "signature": "StageExecutorActivated(bytes32,bytes32,address,bytes32,bytes32,uint256,string)",
+      "topic": "0xc2a6f6132324472c97db8a2c45e25f32a9495325114d14442f04b85c8735f1ef"
     },
     "StageMaterialized": {
       "signature": "StageMaterialized(bytes32,bytes32,bytes32,bytes32,bytes32)",
@@ -122,8 +122,8 @@
       "selector": "0x3d5f9dc0"
     },
     "activateStageExecutorFromModule": {
-      "signature": "activateStageExecutorFromModule(bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256)",
-      "selector": "0xafe7beb9"
+      "signature": "activateStageExecutorFromModule(bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string)",
+      "selector": "0x6aa44d6b"
     },
     "activeStageExecutor": {
       "signature": "activeStageExecutor(bytes32,bytes32)",

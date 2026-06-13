@@ -10,9 +10,9 @@
   },
   "hashes": {
     "abiHash": "0x78e2a7b8ef4b7cf4357a3c0dab748dcdec888c8b07e963af190d536f670e8970",
-    "bytecodeHash": "0xb8ca4ca1ec70615b8794004eb004631d82d70ad6f9561388f704b0c9ef77c07f",
-    "deployedBytecodeHash": "0x4c32167806eee3f70e14800988a394955bc4e7987466a4e7983204fd546b6c42",
-    "artifactHash": "0xced4a83db6a879c3e6444be3bc3e2104fcd3f140627560dc6209869190f7ba3a"
+    "bytecodeHash": "0x9be4c1d3604dea4689608a00a6d41e62b941e2e87e333bd4a58dcf8c523ae129",
+    "deployedBytecodeHash": "0x7a5aa9823ad846ca35bf8e59fe3c03531f7fe6863539c665424bb5268099dcf8",
+    "artifactHash": "0xd0445b1d74ef6d8d1a4523336b91fb775f40287fced8be1a15d4203f51492a68"
   },
   "events": {
     "StageExecutorPatchApplied": {

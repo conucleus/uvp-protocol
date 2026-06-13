@@ -75,8 +75,8 @@ pnpm --filter @uvp-eth/compiler typecheck
 - `src/zhixu-loader.ts`: YAML/JSON loader for `apiVersion: uvp/v0`,
   `kind: Zhixu` definitions.
 - `src/canonical.ts`: canonical JSON normalization used before hashing.
-- `src/hash.ts`: in-module Keccak-256 boundary hashing for EVM-compatible test
-  vectors.
+- `src/hash.ts`: viem-backed Keccak-256 boundary hashing for EVM-compatible
+  test vectors.
 - `fixtures/uvp-update-zhixu-v2.yaml`: UVP `0.1.3` self-bootstrap update
   fixture, normalized for the EVM track with `platform.type=blockchain`,
   `platform.provider=eth`, and `platform.network=base`.

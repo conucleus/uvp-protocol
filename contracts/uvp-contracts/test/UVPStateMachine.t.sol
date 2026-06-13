@@ -416,14 +416,23 @@ contract UVPStateMachineTest {
             _triggeredDerivedSignalAuths(SUBMITTER_A)
         );
 
+        vm.recordLogs();
         vm.prank(SUBMITTER_A);
         _derivedSignal(machine).submitDerivedSignal(
             ORDER_ID_2, STAGE_AUDIT, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, PAYLOAD_HASH, bytes32(uint256(3))
         );
+        Vm.Log[] memory logs = vm.getRecordedLogs();
 
         require(
             machine.hasSignal(ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL),
             "derived signal missing on trigger origin"
+        );
+        require(
+            _countTopic(
+                logs,
+                keccak256("DerivedSignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)")
+            ) == 1,
+            "derived signal event count"
         );
     }
 
@@ -463,7 +472,9 @@ contract UVPStateMachineTest {
             "patch event count"
         );
         require(
-            _countTopic(logs, keccak256("StageExecutorActivated(bytes32,bytes32,address,bytes32,bytes32,uint256)")) == 1,
+            _countTopic(
+                logs, keccak256("StageExecutorActivated(bytes32,bytes32,address,bytes32,bytes32,uint256,string)")
+            ) == 1,
             "executor event count"
         );
         require(machine.activeStageExecutor(ORDER_ID, STAGE_AUDIT) == SUBMITTER_A, "bad active executor");
@@ -541,16 +552,14 @@ contract UVPStateMachineTest {
         _stagePatch(machine).applyStageExecutorPatch(ORDER_ID, _stageExecutorPatch(2, SUBMITTER_A, PATCH_HASH_2));
     }
 
-    function testApplyStageExecutorPatchAssignRejectsAfterTargetStageSignal() public {
+    function testSelectorTargetStageRejectsSignalBeforeExecutorAssigned() public {
         UVPStateMachine machine = _registeredOverlayMachine(address(this), SUBMITTER_A);
 
         vm.prank(SUBMITTER_A);
-        machine.submitSignal(ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, PAYLOAD_HASH, IDEMPOTENCY_KEY);
-
         vm.expectRevert(
-            abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, ORDER_ID, STAGE_AUDIT)
+            abi.encodeWithSelector(UVPStateMachine.StageExecutorNotAssigned.selector, ORDER_ID, STAGE_AUDIT)
         );
-        _stagePatch(machine).applyStageExecutorPatch(ORDER_ID, _stageExecutorPatch(1, SUBMITTER_A, PATCH_HASH));
+        machine.submitSignal(ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, PAYLOAD_HASH, IDEMPOTENCY_KEY);
     }
 
     function testApplyStageExecutorPatchAssignRejectsUnexpectedGovernanceFields() public {
@@ -657,12 +666,13 @@ contract UVPStateMachineTest {
         address selector = vm.addr(SUBMITTER_PRIVATE_KEY);
         address previousExecutor = vm.addr(WRONG_SUBMITTER_PRIVATE_KEY);
         UVPStateMachine machine = _registeredOverlayMachine(selector, previousExecutor);
+        _activateInitialStageExecutor(machine, selector, previousExecutor);
 
         vm.prank(previousExecutor);
         machine.submitSignal(ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, PAYLOAD_HASH, bytes32(uint256(1)));
 
         UVPStagePatchModule.StageExecutorPatch memory patch = _stageExecutorPatchWithMode(
-            1, SUBMITTER_B, PATCH_HASH, EXECUTOR_PATCH_MODE_HANDOFF, previousExecutor, bytes32(0), bytes32(0)
+            2, SUBMITTER_B, PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, previousExecutor, bytes32(0), bytes32(0)
         );
         {
             uint256 deadline = block.timestamp + 1 hours;
@@ -703,12 +713,13 @@ contract UVPStateMachineTest {
         address selector = vm.addr(SUBMITTER_PRIVATE_KEY);
         address previousExecutor = vm.addr(WRONG_SUBMITTER_PRIVATE_KEY);
         UVPStateMachine machine = _registeredOverlayMachine(selector, previousExecutor);
+        _activateInitialStageExecutor(machine, selector, previousExecutor);
 
         vm.prank(previousExecutor);
         machine.submitSignal(ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, PAYLOAD_HASH, bytes32(uint256(1)));
 
         UVPStagePatchModule.StageExecutorPatch memory patch = _stageExecutorPatchWithMode(
-            1, SUBMITTER_B, PATCH_HASH, EXECUTOR_PATCH_MODE_HANDOFF, previousExecutor, bytes32(0), bytes32(0)
+            2, SUBMITTER_B, PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, previousExecutor, bytes32(0), bytes32(0)
         );
         {
             uint256 deadline = block.timestamp + 1 hours;
@@ -738,12 +749,13 @@ contract UVPStateMachineTest {
         address selector = vm.addr(SUBMITTER_PRIVATE_KEY);
         address previousExecutor = vm.addr(WRONG_SUBMITTER_PRIVATE_KEY);
         UVPStateMachine machine = _registeredOverlayMachine(selector, previousExecutor);
+        _activateInitialStageExecutor(machine, selector, previousExecutor);
 
         vm.prank(previousExecutor);
         machine.submitSignal(ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, PAYLOAD_HASH, bytes32(uint256(1)));
 
         UVPStagePatchModule.StageExecutorPatch memory patch = _stageExecutorPatchWithMode(
-            1, SUBMITTER_B, PATCH_HASH, EXECUTOR_PATCH_MODE_HANDOFF, previousExecutor, bytes32(0), bytes32(0)
+            2, SUBMITTER_B, PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, previousExecutor, bytes32(0), bytes32(0)
         );
         {
             uint256 deadline = block.timestamp + 1 hours;
@@ -770,6 +782,7 @@ contract UVPStateMachineTest {
     function testHandoffStageExecutorPatchRejectsApprovalFields() public {
         address previousExecutor = vm.addr(WRONG_SUBMITTER_PRIVATE_KEY);
         UVPStateMachine machine = _registeredOverlayMachine(address(this), previousExecutor);
+        _activateInitialStageExecutor(machine, address(this), previousExecutor);
 
         vm.prank(previousExecutor);
         machine.submitSignal(ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, PAYLOAD_HASH, bytes32(uint256(1)));
@@ -777,7 +790,7 @@ contract UVPStateMachineTest {
         machine.submitSignal(ORDER_ID, STAGE_INIT, SIGNAL_AUDIT_PASS, PAYLOAD_HASH, bytes32(uint256(2)));
 
         UVPStagePatchModule.StageExecutorPatch memory patch = _stageExecutorPatchWithMode(
-            1, SUBMITTER_B, PATCH_HASH, EXECUTOR_PATCH_MODE_HANDOFF, previousExecutor, STAGE_INIT, SIGNAL_AUDIT_PASS
+            2, SUBMITTER_B, PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, previousExecutor, STAGE_INIT, SIGNAL_AUDIT_PASS
         );
 
         vm.expectRevert(
@@ -793,13 +806,14 @@ contract UVPStateMachineTest {
 
     function testReplacementStageExecutorPatchSucceedsWithApprovalSignal() public {
         UVPStateMachine machine = _registeredOverlayMachine(address(this), SUBMITTER_A);
+        _activateInitialStageExecutor(machine, address(this), SUBMITTER_A);
 
         vm.prank(SUBMITTER_A);
         machine.submitSignal(ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, PAYLOAD_HASH, bytes32(uint256(1)));
         machine.submitSignal(ORDER_ID, STAGE_INIT, SIGNAL_AUDIT_PASS, PAYLOAD_HASH, bytes32(uint256(2)));
 
         UVPStagePatchModule.StageExecutorPatch memory patch = _stageExecutorPatchWithMode(
-            1, SUBMITTER_B, PATCH_HASH, EXECUTOR_PATCH_MODE_REPLACEMENT, SUBMITTER_A, STAGE_INIT, SIGNAL_AUDIT_PASS
+            2, SUBMITTER_B, PATCH_HASH_2, EXECUTOR_PATCH_MODE_REPLACEMENT, SUBMITTER_A, STAGE_INIT, SIGNAL_AUDIT_PASS
         );
         _stagePatch(machine).applyStageExecutorPatch(ORDER_ID, patch);
 
@@ -821,12 +835,13 @@ contract UVPStateMachineTest {
 
     function testReplacementStageExecutorPatchFailsWithoutApprovalSignal() public {
         UVPStateMachine machine = _registeredOverlayMachine(address(this), SUBMITTER_A);
+        _activateInitialStageExecutor(machine, address(this), SUBMITTER_A);
 
         vm.prank(SUBMITTER_A);
         machine.submitSignal(ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, PAYLOAD_HASH, bytes32(uint256(1)));
 
         UVPStagePatchModule.StageExecutorPatch memory patch = _stageExecutorPatchWithMode(
-            1, SUBMITTER_B, PATCH_HASH, EXECUTOR_PATCH_MODE_REPLACEMENT, SUBMITTER_A, STAGE_INIT, SIGNAL_AUDIT_PASS
+            2, SUBMITTER_B, PATCH_HASH_2, EXECUTOR_PATCH_MODE_REPLACEMENT, SUBMITTER_A, STAGE_INIT, SIGNAL_AUDIT_PASS
         );
 
         vm.expectRevert(
@@ -842,12 +857,13 @@ contract UVPStateMachineTest {
 
     function testStageExecutorPatchRejectsPreviousExecutorMismatch() public {
         UVPStateMachine machine = _registeredOverlayMachine(address(this), SUBMITTER_A);
+        _activateInitialStageExecutor(machine, address(this), SUBMITTER_A);
 
         vm.prank(SUBMITTER_A);
         machine.submitSignal(ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, PAYLOAD_HASH, bytes32(uint256(1)));
 
         UVPStagePatchModule.StageExecutorPatch memory patch = _stageExecutorPatchWithMode(
-            1, SUBMITTER_B, PATCH_HASH, EXECUTOR_PATCH_MODE_REPLACEMENT, SUBMITTER_B, STAGE_INIT, SIGNAL_AUDIT_PASS
+            2, SUBMITTER_B, PATCH_HASH_2, EXECUTOR_PATCH_MODE_REPLACEMENT, SUBMITTER_B, STAGE_INIT, SIGNAL_AUDIT_PASS
         );
 
         vm.expectRevert(
@@ -897,6 +913,7 @@ contract UVPStateMachineTest {
         require(!exists, "prematerialized stage signal was stored");
 
         machine.submitSignal(ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, PAYLOAD_HASH, bytes32(uint256(2)));
+        _activateInitialStageExecutor(machine, address(this), SUBMITTER_A);
 
         vm.prank(SUBMITTER_A);
         machine.submitSignal(ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, PAYLOAD_HASH, bytes32(uint256(3)));
@@ -1013,6 +1030,7 @@ contract UVPStateMachineTest {
 
     function testApplyStageResourcePatchRejectsAfterTargetStageSignal() public {
         UVPStateMachine machine = _registeredOverlayMachine(address(this), SUBMITTER_A);
+        _activateInitialStageExecutor(machine, address(this), SUBMITTER_A);
 
         vm.prank(SUBMITTER_A);
         machine.submitSignal(ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, PAYLOAD_HASH, IDEMPOTENCY_KEY);
@@ -1549,6 +1567,16 @@ contract UVPStateMachineTest {
         );
         vm.prank(selector);
         machine.submitSignal(ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, PAYLOAD_HASH, bytes32(uint256(0x9101)));
+    }
+
+    function _activateInitialStageExecutor(UVPStateMachine machine, address selector, address executor) private {
+        UVPStagePatchModule.StageExecutorPatch memory patch = _stageExecutorPatch(1, executor, PATCH_HASH);
+        if (selector == address(this)) {
+            _stagePatch(machine).applyStageExecutorPatch(ORDER_ID, patch);
+            return;
+        }
+        vm.prank(selector);
+        _stagePatch(machine).applyStageExecutorPatch(ORDER_ID, patch);
     }
 
     function _dockingGasMachine() private returns (UVPStateMachine machine) {

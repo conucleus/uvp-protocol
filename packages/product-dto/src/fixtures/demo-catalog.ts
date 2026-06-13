@@ -34,7 +34,8 @@ const demoCreateOrderTrigger = {
   source: "order",
   signalName: "registered",
   triggerHookId: "0x0000000000000000000000000000000000000000000000000000000000001101",
-  triggerStageId: "0x0000000000000000000000000000000000000000000000000000000000001201"
+  triggerStageId: "0x0000000000000000000000000000000000000000000000000000000000001201",
+  submitterRoleSlotId: "funds"
 } as const;
 
 type DemoFundingSignalActorKind = "buyer" | "guarantor" | "adapter";

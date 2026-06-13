@@ -28,7 +28,7 @@ export const STATE_MACHINE_ABI = parseAbi([
   'event SignalSubmitterAuthorized(bytes32 indexed orderId,bytes32 indexed sourceId,bytes32 indexed signalId,address submitter,bytes32 role,bytes32 metadataHash)',
   'event StageMaterialized(bytes32 indexed orderId,bytes32 indexed stageId,bytes32 indexed triggerHookId,bytes32 sourceId,bytes32 signalId)',
   'event OrderTriggered(bytes32 indexed orderId,bytes32 indexed planId,bytes32 indexed triggerStageId,bytes32 sourceId,bytes32 signalId,address submitter)',
-  'event StageExecutorActivated(bytes32 indexed orderId,bytes32 indexed targetStageId,address indexed executor,bytes32 role,bytes32 metadataHash,uint256 patchNonce)',
+  'event StageExecutorActivated(bytes32 indexed orderId,bytes32 indexed targetStageId,address indexed executor,bytes32 role,bytes32 metadataHash,uint256 patchNonce,string metadataURI)',
   'function owner() view returns (address)',
   'function stagePatchModule() view returns (address)',
   'function derivedSignalModule() view returns (address)',
@@ -53,7 +53,7 @@ export const STATE_MACHINE_ABI = parseAbi([
   'function submitSignalFor(bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline,bytes signature)',
   'function submitSignalFromModule(bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter)',
   'function triggerOrderFromSignalFromModule((bytes32 orderId,bytes32 planId,address creator,bytes32 triggerOriginOrderId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) trigger,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations,address registrar)',
-  'function activateStageExecutorFromModule(bytes32 orderId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 patchHash,uint256 patchNonce)',
+  'function activateStageExecutorFromModule(bytes32 orderId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 patchHash,uint256 patchNonce,string metadataURI)',
   'function SIGNAL_TARGET_CURRENT_ORDER() view returns (uint8)',
   'function SIGNAL_TARGET_TRIGGER_ORIGIN() view returns (uint8)',
   'function sourceSignalCount(bytes32 orderId,bytes32 sourceId) view returns (uint256)',
@@ -74,6 +74,7 @@ export const PLAN_METADATA_MODULE_ABI = parseAbi([
   'function planSelectorBindingAt(bytes32 planId,uint256 index) view returns (bytes32 selectorStageId,bytes32 targetStageId)',
   'function planSignalCapabilityCount(bytes32 planId) view returns (uint256)',
   'function isStageSelectorBound(bytes32 planId,bytes32 selectorStageId,bytes32 targetStageId) view returns (bool)',
+  'function isSelectorTargetStage(bytes32 planId,bytes32 targetStageId) view returns (bool)',
   'function isSignalCapabilityRegistered(bytes32 planId,bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation) view returns (bool)',
   'function stageSelectorBindingKey(bytes32 selectorStageId,bytes32 targetStageId) pure returns (bytes32)',
   'function signalCapabilityKey(bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation) pure returns (bytes32)',
@@ -107,6 +108,7 @@ export const STAGE_PATCH_MODULE_ABI = parseAbi([
 ]);
 
 export const DERIVED_SIGNAL_MODULE_ABI = parseAbi([
+  'event DerivedSignalSubmitted(bytes32 indexed fromOrderId,bytes32 indexed targetOrderId,bytes32 indexed signalId,bytes32 fromStageId,bytes32 targetSourceId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter)',
   'function submitDerivedSignal(bytes32 fromOrderId,bytes32 fromStageId,bytes32 targetOrderId,bytes32 targetSourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey)',
   'function submitDerivedSignalFor(bytes32 fromOrderId,bytes32 fromStageId,bytes32 targetOrderId,bytes32 targetSourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline,bytes signature)',
   'function derivedSignalDigest(bytes32 fromOrderId,bytes32 fromStageId,bytes32 targetOrderId,bytes32 targetSourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) view returns (bytes32)',
@@ -135,6 +137,7 @@ export const STATE_MACHINE_LENS_ABI = parseAbi([
   'function planSelectorBindingAt(bytes32 planId,uint256 index) view returns (bytes32 selectorStageId,bytes32 targetStageId)',
   'function planSignalCapabilityCount(bytes32 planId) view returns (uint256)',
   'function isStageSelectorBound(bytes32 planId,bytes32 selectorStageId,bytes32 targetStageId) view returns (bool)',
+  'function isSelectorTargetStage(bytes32 planId,bytes32 targetStageId) view returns (bool)',
   'function isSignalCapabilityRegistered(bytes32 planId,bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation) view returns (bool)',
   'function targetOrderRelation(bytes32 fromOrderId,bytes32 targetOrderId) view returns (uint8)',
   'function getTriggerOriginLink(bytes32 triggeredOrderId) view returns (bool exists,bytes32 triggerOriginOrderId,bytes32 originSourceId,bytes32 originSignalId,bytes32 triggerStageId)',
@@ -1395,8 +1398,13 @@ export function canonicalJson(value: unknown): string {
     const record = value as Record<string, unknown>;
     const entries = Object.keys(record)
       .sort()
-      .filter((key) => record[key] !== undefined)
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`);
+      .map((key) => {
+        const child = record[key];
+        if (typeof child === 'undefined') {
+          throw new TypeError('canonical JSON does not support undefined object properties');
+        }
+        return `${JSON.stringify(key)}:${canonicalJson(child)}`;
+      });
     return `{${entries.join(',')}}`;
   }
 

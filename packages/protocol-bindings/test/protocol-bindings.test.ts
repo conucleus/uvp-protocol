@@ -635,6 +635,8 @@ describe('protocol bindings', () => {
 
   it('hashes canonical JSON in a browser-safe helper', () => {
     assert.equal(canonicalJson({ b: 2, a: { d: 4, c: 3 } }), '{"a":{"c":3,"d":4},"b":2}');
+    assert.equal(canonicalJson({ n: -0 }), '{"n":0}');
+    assert.throws(() => canonicalJson({ optional: undefined }), /undefined object properties/);
     assert.equal(hashEvidenceJson({ b: 2, a: 1 }).evidenceHash, hashEvidenceJson({ a: 1, b: 2 }).evidenceHash);
   });
 

@@ -480,6 +480,7 @@ export interface StoreProductCreateOrderTriggerDTO {
   readonly signalName: string;
   readonly triggerHookId: string;
   readonly triggerStageId: string;
+  readonly submitterRoleSlotId?: string;
 }
 
 export interface ZhixuSummaryDTO {
@@ -626,6 +627,7 @@ export type StoreProductSchemaValidationIssueCode =
   | "addon_manifest_stage_not_bound"
   | "addon_manifest_input_not_found"
   | "stage_executor_selection_invalid"
+  | "create_order_trigger_invalid"
   | "duplicate_stage_capability";
 
 export interface StoreProductSchemaValidationIssueDTO {

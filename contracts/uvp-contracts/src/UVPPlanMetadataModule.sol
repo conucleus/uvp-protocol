@@ -20,6 +20,7 @@ contract UVPPlanMetadataModule {
         bytes32[] selectorBindingKeys;
         bytes32[] signalCapabilityKeys;
         mapping(bytes32 bindingKey => StageSelectorBinding binding) selectorBindings;
+        mapping(bytes32 targetStageId => bool exists) selectorTargetStages;
         mapping(bytes32 capabilityKey => bool exists) signalCapabilities;
     }
 
@@ -96,6 +97,14 @@ contract UVPPlanMetadataModule {
             .selectorStageId != bytes32(0);
     }
 
+    function isSelectorTargetStage(bytes32 planId, bytes32 targetStageId) external view returns (bool) {
+        _requireKnownPlan(planId);
+        if (targetStageId == bytes32(0)) {
+            return false;
+        }
+        return _metadata[planId].selectorTargetStages[targetStageId];
+    }
+
     function isSignalCapabilityRegistered(
         bytes32 planId,
         bytes32 stageId,
@@ -111,12 +120,11 @@ contract UVPPlanMetadataModule {
         return keccak256(abi.encode(selectorStageId, targetStageId));
     }
 
-    function signalCapabilityKey(
-        bytes32 stageId,
-        bytes32 targetSourceId,
-        bytes32 signalId,
-        uint8 relation
-    ) public pure returns (bytes32) {
+    function signalCapabilityKey(bytes32 stageId, bytes32 targetSourceId, bytes32 signalId, uint8 relation)
+        public
+        pure
+        returns (bytes32)
+    {
         return keccak256(abi.encode(stageId, targetSourceId, signalId, relation));
     }
 
@@ -138,6 +146,7 @@ contract UVPPlanMetadataModule {
 
             metadata.selectorBindings[key] =
                 StageSelectorBinding({selectorStageId: binding.selectorStageId, targetStageId: binding.targetStageId});
+            metadata.selectorTargetStages[binding.targetStageId] = true;
             metadata.selectorBindingKeys.push(key);
             emit StageSelectorBindingRegistered(planId, binding.selectorStageId, binding.targetStageId);
         }
@@ -149,10 +158,7 @@ contract UVPPlanMetadataModule {
             SignalCapability calldata capability = signalCapabilities[i];
             _validateSignalCapability(capability);
             bytes32 capabilityKey = signalCapabilityKey(
-                capability.stageId,
-                capability.targetSourceId,
-                capability.signalId,
-                capability.targetOrderRelation
+                capability.stageId, capability.targetSourceId, capability.signalId, capability.targetOrderRelation
             );
             if (metadata.signalCapabilities[capabilityKey]) {
                 revert InvalidSignalCapability();

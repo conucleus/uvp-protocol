@@ -342,12 +342,12 @@ function evaluateAnd(
     }
     anchors.push(...evaluated.anchors);
   }
-  const nextDue = earliestDate(waits);
-  if (nextDue) {
-    return { status: "wait", dueAt: nextDue };
-  }
   if (hasFalseTerm) {
     return { status: "false" };
+  }
+  const nextDue = latestDate(waits);
+  if (nextDue) {
+    return { status: "wait", dueAt: nextDue };
   }
   return { status: "true", anchors };
 }
@@ -566,7 +566,8 @@ function isSignalReference(value: string): boolean {
 }
 
 function toDate(value: string | Date): Date {
-  const date = value instanceof Date ? value : new Date(value);
+  const rawDate = value instanceof Date ? value : new Date(value);
+  const date = new Date(Math.floor(rawDate.getTime() / 1000) * 1000);
   if (Number.isNaN(date.getTime())) {
     throw new HookExpressionError(`invalid date: ${String(value)}`);
   }
