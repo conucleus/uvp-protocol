@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import {
   extractHookDependencies,
   normalizeHookExpression,
@@ -22,6 +23,11 @@ import {
   type ZhixuDefinition,
   type ZhixuStage
 } from "./types/index.js";
+
+const require = createRequire(import.meta.url);
+const uvpCore = require("../../../../uvp-core/crates/uvp-node/index.cjs") as {
+  readonly compile: (request: unknown) => unknown;
+};
 
 export class HookPlanCompilationError extends Error {
   readonly issues: readonly string[];
@@ -48,16 +54,28 @@ export function compileZhixuHookPlan(definition: ZhixuDefinition): HookPlanArtif
   if (issues.length > 0) {
     throw new HookPlanCompilationError(issues);
   }
+  validateZhixuSemanticsBeforeCore(definition);
 
-  const zhixuId = definition.metadata.uid ?? definition.metadata.name;
-  const version = definition.metadata.annotations?.version ?? "1";
-  const platform = normalizePlatform(definition.spec.platform);
+  let artifact: unknown;
+  try {
+    artifact = uvpCore.compile({ target: "hook_plan", definition });
+  } catch (error) {
+    throw new HookPlanCompilationError([
+      error instanceof Error ? error.message : String(error)
+    ]);
+  }
+
+  const artifactIssues = validateHookPlanArtifact(artifact);
+  if (artifactIssues.length > 0) {
+    throw new HookPlanArtifactValidationError(artifactIssues);
+  }
+  return artifact as HookPlanArtifact;
+}
+
+function validateZhixuSemanticsBeforeCore(definition: ZhixuDefinition): void {
   const stageEntries = flattenStages(definition);
   const stageIds = new Set(stageEntries.map((entry) => entry.stageIdentifier));
   const selectedStageBindings = buildSelectedStageBindings(stageEntries, stageIds);
-  const executorRoutes = buildExecutorRoutes(stageEntries);
-  const signalCapabilities = buildSignalCapabilities(stageEntries);
-
   const validationIssues = [
     ...validateStageExecutors(stageEntries, selectedStageBindings),
     ...validateTriggerReferences(stageEntries),
@@ -67,47 +85,6 @@ export function compileZhixuHookPlan(definition: ZhixuDefinition): HookPlanArtif
   if (validationIssues.length > 0) {
     throw new HookPlanCompilationError(validationIssues);
   }
-
-  const compiledHooks = stageEntries.flatMap((entry) => compileStageHooks(entry));
-  const dependencyIndex = buildDependencyIndex(compiledHooks);
-  const planId = hashCanonical("uvp:hook-plan-id:v1", {
-    compiler: { name: COMPILER_NAME, version: COMPILER_VERSION },
-    platform,
-    version,
-    zhixuId,
-    zhixuName: definition.metadata.name
-  });
-
-  const payload = {
-    schemaVersion: HOOK_PLAN_SCHEMA_VERSION,
-    planId,
-    zhixuId,
-    version,
-    zhixuName: definition.metadata.name,
-    platform,
-    compiledHooks,
-    dependencyIndex,
-    executorRoutes,
-    selectedStageBindings,
-    signalCapabilities,
-    source: canonicalize(definition)
-  };
-  const planHash = hashCanonical("uvp:hook-plan-artifact:v1", payload);
-
-  return {
-    schemaVersion: HOOK_PLAN_SCHEMA_VERSION,
-    planId,
-    zhixuId,
-    version,
-    zhixuName: definition.metadata.name,
-    platform,
-    compiledHooks,
-    dependencyIndex,
-    executorRoutes,
-    selectedStageBindings,
-    signalCapabilities,
-    planHash
-  };
 }
 
 export function validateHookPlanArtifact(value: unknown): readonly string[] {
