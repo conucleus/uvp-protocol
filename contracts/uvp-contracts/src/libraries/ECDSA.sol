@@ -8,7 +8,8 @@ library ECDSA {
     error InvalidSignatureS(bytes32 s);
     error InvalidSignatureV(uint8 v);
 
-    uint256 private constant _SECP256K1N_HALF_ORDER = 0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0;
+    uint256 private constant _SECP256K1N_HALF_ORDER =
+        0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0;
 
     function recover(bytes32 digest, UVPSignatures.Signature memory signature) internal pure returns (address signer) {
         if (uint256(signature.s) > _SECP256K1N_HALF_ORDER) {

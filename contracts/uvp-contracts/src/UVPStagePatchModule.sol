@@ -434,11 +434,9 @@ contract UVPStagePatchModule {
         if (!_planMetadata().isStageSelectorBound(planId, patch.selectorStageId, patch.targetStageId)) {
             revert StageSelectorBindingNotFound(planId, patch.selectorStageId, patch.targetStageId);
         }
-        if (
-            !stateMachine.hasExplicitSignalAuthorization(
+        if (!stateMachine.hasExplicitSignalAuthorization(
                 orderId, patch.selectorStageId, EXECUTOR_PATCH_SIGNAL_ID, selector
-            )
-        ) {
+            )) {
             revert UnauthorizedStageExecutorPatchSelector(orderId, patch.selectorStageId, selector);
         }
     }
@@ -522,11 +520,9 @@ contract UVPStagePatchModule {
         if (!_planMetadata().isStageSelectorBound(planId, patch.selectorStageId, patch.targetStageId)) {
             revert StageSelectorBindingNotFound(planId, patch.selectorStageId, patch.targetStageId);
         }
-        if (
-            !stateMachine.hasExplicitSignalAuthorization(
+        if (!stateMachine.hasExplicitSignalAuthorization(
                 orderId, patch.selectorStageId, RESOURCE_PATCH_SIGNAL_ID, selector
-            )
-        ) {
+            )) {
             revert UnauthorizedStageResourcePatchSelector(orderId, patch.selectorStageId, selector);
         }
         if (stateMachine.sourceSignalCount(orderId, patch.targetStageId) != 0) {
@@ -644,11 +640,7 @@ contract UVPStagePatchModule {
         return (length + 31) & ~uint256(31);
     }
 
-    function _recoverStageExecutorPatchSigner(bytes32 digest, bytes calldata signature)
-        private
-        pure
-        returns (address)
-    {
+    function _recoverStageExecutorPatchSigner(bytes32 digest, bytes calldata signature) private pure returns (address) {
         if (signature.length != 65) {
             revert InvalidStageExecutorPatchSignatureLength(signature.length);
         }

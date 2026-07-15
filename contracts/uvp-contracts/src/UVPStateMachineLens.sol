@@ -115,9 +115,8 @@ contract UVPStateMachineLens {
             string memory metadataURI
         )
     {
-        return IUVPStagePatchModuleLens(_moduleDirectory.stagePatchModule()).getActiveStageExecutorPatch(
-            orderId, targetStageId
-        );
+        return IUVPStagePatchModuleLens(_moduleDirectory.stagePatchModule())
+            .getActiveStageExecutorPatch(orderId, targetStageId);
     }
 
     function getActiveStageResourcePatch(bytes32 orderId, bytes32 targetStageId, bytes32 resourceKey)
@@ -132,9 +131,8 @@ contract UVPStateMachineLens {
             string memory manifestURI
         )
     {
-        return IUVPStagePatchModuleLens(_moduleDirectory.stagePatchModule()).getActiveStageResourcePatch(
-            orderId, targetStageId, resourceKey
-        );
+        return IUVPStagePatchModuleLens(_moduleDirectory.stagePatchModule())
+            .getActiveStageResourcePatch(orderId, targetStageId, resourceKey);
     }
 
     function getActiveDockedOrderLink(bytes32 localOrderId, bytes32 linkedOrderId)
@@ -151,9 +149,8 @@ contract UVPStateMachineLens {
             string memory metadataURI
         )
     {
-        return IUVPDockingModuleLens(_moduleDirectory.dockingModule()).getActiveDockedOrderLink(
-            localOrderId, linkedOrderId
-        );
+        return IUVPDockingModuleLens(_moduleDirectory.dockingModule())
+            .getActiveDockedOrderLink(localOrderId, linkedOrderId);
     }
 
     function getActiveDockedSignalBinding(
@@ -162,9 +159,8 @@ contract UVPStateMachineLens {
         bytes32 linkedSourceId,
         bytes32 linkedSignalId
     ) external view returns (bool exists, bytes32 localSourceId, bytes32 localSignalId) {
-        return IUVPDockingModuleLens(_moduleDirectory.dockingModule()).getActiveDockedSignalBinding(
-            localOrderId, linkedOrderId, linkedSourceId, linkedSignalId
-        );
+        return IUVPDockingModuleLens(_moduleDirectory.dockingModule())
+            .getActiveDockedSignalBinding(localOrderId, linkedOrderId, linkedSourceId, linkedSignalId);
     }
 
     function planSelectorBindingCount(bytes32 planId) external view returns (uint256) {
@@ -188,15 +184,14 @@ contract UVPStateMachineLens {
         view
         returns (bool)
     {
-        return IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule()).isStageSelectorBound(
-            planId, selectorStageId, targetStageId
-        );
+        return IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule())
+            .isStageSelectorBound(planId, selectorStageId, targetStageId);
     }
 
     function isSelectorTargetStage(bytes32 planId, bytes32 targetStageId) external view returns (bool) {
-        return IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule()).isSelectorTargetStage(
-            planId, targetStageId
-        );
+        return
+            IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule())
+                .isSelectorTargetStage(planId, targetStageId);
     }
 
     function isSignalCapabilityRegistered(
@@ -206,9 +201,8 @@ contract UVPStateMachineLens {
         bytes32 signalId,
         uint8 relation
     ) external view returns (bool) {
-        return IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule()).isSignalCapabilityRegistered(
-            planId, stageId, targetSourceId, signalId, relation
-        );
+        return IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule())
+            .isSignalCapabilityRegistered(planId, stageId, targetSourceId, signalId, relation);
     }
 
     function targetOrderRelation(bytes32 fromOrderId, bytes32 targetOrderId) external view returns (uint8) {

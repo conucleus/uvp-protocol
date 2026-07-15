@@ -175,11 +175,9 @@ contract UVPDerivedSignalModule {
         {
             revert InvalidSignalCapability();
         }
-        if (
-            !_isDerivedSignalSubmitterAuthorized(
+        if (!_isDerivedSignalSubmitterAuthorized(
                 fromOrderId, fromStageId, targetOrderId, targetSourceId, signalId, submitter
-            )
-        ) {
+            )) {
             revert UnauthorizedSignalSubmitter(targetOrderId, targetSourceId, signalId, submitter);
         }
 
@@ -213,9 +211,8 @@ contract UVPDerivedSignalModule {
         if (fromOrderId == targetOrderId) {
             return 0;
         }
-        return IUVPOrderLinkModuleForDerivedSignal(stateMachine.orderLinkModule()).targetOrderRelation(
-            fromOrderId, targetOrderId
-        );
+        return IUVPOrderLinkModuleForDerivedSignal(stateMachine.orderLinkModule())
+            .targetOrderRelation(fromOrderId, targetOrderId);
     }
 
     function _planMetadata() private view returns (IUVPPlanMetadataModuleForDerivedSignal) {
