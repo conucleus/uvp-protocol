@@ -7,6 +7,7 @@ import {
   normalizeHookExpression,
   parseHookExpression,
   signalKey,
+  type HookExpressionAst,
   type SignalIndex
 } from "../src/index.js";
 
@@ -231,6 +232,18 @@ test("supports OUTSIDE and OUTSOURCE target dependencies", () => {
   assert.deepEqual(evaluateHook(ast, index([["seller", "task.ship.cmp", at]]), at), {
     status: "reg"
   });
+});
+
+test("rejects raw-less ASTs at adapter boundaries", () => {
+  const ast = parseHookExpression("buyer::task.main.cmp");
+  const rawLess = {
+    source: ast.source,
+    condition: ast.condition
+  } as HookExpressionAst;
+
+  assert.throws(() => normalizeHookExpression(rawLess), /raw expression/);
+  assert.throws(() => extractHookDependencies(rawLess), /raw expression/);
+  assert.throws(() => evaluateHook(rawLess, index([["buyer", "task.main.cmp", at]]), at), /raw expression/);
 });
 
 test("rejects invalid hooks", () => {

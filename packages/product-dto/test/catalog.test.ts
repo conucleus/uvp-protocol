@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  STORE_SUPPLIER_CAPABILITY_TAGS,
   type ParticipantAddOnManifestDTO,
   type ParticipantAddOnKind,
   type ProductExecutorPatchMode,
@@ -25,13 +24,13 @@ import {
   demoResourcePatchTask,
   demoSelectorTask,
   demoTask,
-  phase2CustomsInitialTriggerSource,
-  phase2CustomsProductCatalog,
-  phase2CustomsResourceManifest,
-  phase2CustomsRoleSlotIds,
-  phase2CustomsSignalIds,
-  phase2CustomsStageIds,
-  phase2CustomsStoreProductSchema
+  customsInitialTriggerSource,
+  customsProductCatalog,
+  customsResourceManifest,
+  customsRoleSlotIds,
+  customsSignalIds,
+  customsStageIds,
+  customsStoreProductSchema
 } from "@uvp-eth/product-dto/fixtures";
 
 describe("product DTO catalog", () => {
@@ -128,20 +127,20 @@ describe("product DTO catalog", () => {
     assert.equal("writerWallet" in (demoResourcePatchTask.addOnManifest?.actions[0]?.inputBindings ?? {}), false);
   });
 
-  it("exports the Phase 2 customs scenario fixture with role-slot manifests", () => {
-    const zhixu = phase2CustomsProductCatalog.zhixus[0];
+  it("exports the customs scenario fixture with role-slot manifests", () => {
+    const zhixu = customsProductCatalog.zhixus[0];
     assert.ok(zhixu);
     assert.deepEqual(zhixu.stages.map((stage) => stage.stageId), [
-      phase2CustomsStageIds.buyerSelectCustomsExecutor,
-      phase2CustomsStageIds.buyerPublishCustomsResources,
-      phase2CustomsStageIds.customsComplete
+      customsStageIds.buyerSelectCustomsExecutor,
+      customsStageIds.buyerPublishCustomsResources,
+      customsStageIds.customsComplete
     ]);
-    assert.equal(phase2CustomsStoreProductSchema.validation.ok, true);
-    assert.equal(phase2CustomsStoreProductSchema.selectorBindings?.length, 2);
+    assert.equal(customsStoreProductSchema.validation.ok, true);
+    assert.equal(customsStoreProductSchema.selectorBindings?.length, 2);
 
-    const executorPatchSlot = zhixu.roleSlots.find((slot) => slot.slotId === phase2CustomsRoleSlotIds.buyerSelector);
-    const resourcePatchSlot = zhixu.roleSlots.find((slot) => slot.slotId === phase2CustomsRoleSlotIds.buyerResourceController);
-    const signalSubmitSlot = zhixu.roleSlots.find((slot) => slot.slotId === phase2CustomsRoleSlotIds.customsExecutor);
+    const executorPatchSlot = zhixu.roleSlots.find((slot) => slot.slotId === customsRoleSlotIds.buyerSelector);
+    const resourcePatchSlot = zhixu.roleSlots.find((slot) => slot.slotId === customsRoleSlotIds.buyerResourceController);
+    const signalSubmitSlot = zhixu.roleSlots.find((slot) => slot.slotId === customsRoleSlotIds.customsExecutor);
     assert.equal(executorPatchSlot?.addOnManifest?.actions[0]?.actionKind, "stage_executor_patch");
     assert.equal(executorPatchSlot?.addOnManifest?.actions[0]?.inputBindings.executorMetadataHash, "buyerSelector.executorMetadataHash");
     assert.equal(resourcePatchSlot?.addOnManifest?.actions[0]?.actionKind, "stage_resource_patch");
@@ -153,46 +152,46 @@ describe("product DTO catalog", () => {
     assert.equal(zhixu.roleSlots.some((slot) => slot.slotId.startsWith("system:")), false);
     assert.equal(zhixu.orderPermissionTable.some((entry) => entry.permissionId.startsWith("system.")), false);
     assert.deepEqual(zhixu.createOrderTrigger, {
-      source: phase2CustomsInitialTriggerSource,
-      signalName: phase2CustomsSignalIds.orderRegistered,
+      source: customsInitialTriggerSource,
+      signalName: customsSignalIds.orderRegistered,
       triggerHookId: "0x4625d43b26ce487427096279b6f54b8bf51a479e9ff90e52c0e71bcc0cba42a2",
       triggerStageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca",
-      submitterRoleSlotId: phase2CustomsRoleSlotIds.buyerResourceController
+      submitterRoleSlotId: customsRoleSlotIds.buyerResourceController
     });
-    assert.deepEqual(phase2CustomsStoreProductSchema.createOrderTrigger, zhixu.createOrderTrigger);
+    assert.deepEqual(customsStoreProductSchema.createOrderTrigger, zhixu.createOrderTrigger);
 
     const serialized = JSON.stringify([executorPatchSlot, resourcePatchSlot, signalSubmitSlot]);
     const parsed = JSON.parse(serialized);
     assert.deepEqual(parsed.map((slot: { slotId: string }) => slot.slotId), [
-      phase2CustomsRoleSlotIds.buyerSelector,
-      phase2CustomsRoleSlotIds.buyerResourceController,
-      phase2CustomsRoleSlotIds.customsExecutor
+      customsRoleSlotIds.buyerSelector,
+      customsRoleSlotIds.buyerResourceController,
+      customsRoleSlotIds.customsExecutor
     ]);
   });
 
-  it("keeps the Phase 2 customs resource manifest content-addressed and payload-safe", () => {
-    assert.equal(phase2CustomsResourceManifest.schemaVersion, "uvp-resource-manifest-v1");
-    assert.equal(phase2CustomsResourceManifest.resourceKey, "customs_declaration_pdf");
-    assert.match(phase2CustomsResourceManifest.manifestURI, /^uvp-resource:\/\//);
-    assert.match(phase2CustomsResourceManifest.manifestHash, /^0x[0-9a-f]{64}$/);
-    assert.match(phase2CustomsResourceManifest.policyHash, /^0x[0-9a-f]{64}$/);
-    assert.doesNotMatch(JSON.stringify(phase2CustomsResourceManifest), /https?:\/\/|plain_text|download/);
+  it("keeps the customs resource manifest content-addressed and payload-safe", () => {
+    assert.equal(customsResourceManifest.schemaVersion, "uvp-resource-manifest-v1");
+    assert.equal(customsResourceManifest.resourceKey, "customs_declaration_pdf");
+    assert.match(customsResourceManifest.manifestURI, /^uvp-resource:\/\//);
+    assert.match(customsResourceManifest.manifestHash, /^0x[0-9a-f]{64}$/);
+    assert.match(customsResourceManifest.policyHash, /^0x[0-9a-f]{64}$/);
+    assert.doesNotMatch(JSON.stringify(customsResourceManifest), /https?:\/\/|plain_text|download/);
   });
 
-  it("derives Store console lifecycle from review and chain attestation state", () => {
+  it("derives Store lifecycle from review and Plan publication", () => {
     const zhixu = demoProductCatalog.zhixus[0];
     assert.ok(zhixu);
 
     const draftRow = toStoreZhixuConsoleDTO(summarizeZhixu(zhixu));
     assert.equal(draftRow.lifecycleStatus, "approved_for_broadcast");
-    assert.equal(draftRow.lifecycleLabel, "待链上背书");
+    assert.equal(draftRow.lifecycleLabel, "待发布签名");
 
     const activeRow = toStoreZhixuConsoleDTO({
       ...summarizeZhixu(zhixu),
-      chainAttestation: {
-        ...zhixu.chainAttestation,
-        status: "attested",
-        label: "已写入链上背书",
+      planPublication: {
+        ...zhixu.planPublication,
+        status: "published",
+        label: "Plan 已发布",
         txHash: "0xabc"
       }
     }, {
@@ -209,21 +208,19 @@ describe("product DTO catalog", () => {
     assert.equal(summary.needsReview, 1);
     assert.equal(summary.runningOrders, 2);
     assert.equal(summary.openTasks, 1);
-    assert.equal(summary.trustedSuppliers, 3);
+    assert.equal(summary.registeredSuppliers, 3);
   });
 
   it("models ordinary participant fulfillment plugins without real funding claims", () => {
-    assert.equal(demoTask.fulfillmentKind, "delivery_update");
     assert.equal(demoTask.addOnKind, "submit_signal");
     assert.ok(demoTask.resourceRequirements?.some((resource) => resource.source === "plan_default"));
-    assert.equal(demoTask.capabilityPlugin?.pluginKind, demoTask.fulfillmentKind);
+    assert.equal(demoTask.capabilityPlugin?.pluginKind, "delivery_update");
     assert.equal(demoTask.capabilityPlugin?.source, "explicit");
     assert.equal(demoTask.performanceSlotId, "delivery");
     assert.equal(demoTask.primaryActionLabel, "确认报关完成");
     assert.equal(demoTask.requiredInputs?.some((input) => input.inputType === "evidence"), true);
 
-    assert.equal(demoPaymentTask.fulfillmentKind, "payment_placeholder");
-    assert.equal(demoPaymentTask.capabilityPlugin?.pluginKind, demoPaymentTask.fulfillmentKind);
+    assert.equal(demoPaymentTask.capabilityPlugin?.pluginKind, "payment_placeholder");
     assert.equal(demoPaymentTask.capabilityPlugin?.roleSlotId, demoPaymentTask.performanceSlotId);
     assert.equal(demoPaymentTask.settlementPreview?.adapterStatus, "placeholder");
     assert.ok(demoPaymentTask.proofRows.some((row) => row.label === "链上事件" && row.value === "SignalSubmitted"));
@@ -291,27 +288,11 @@ describe("product DTO catalog", () => {
 
     const guarantorContainer = demoFundingGuaranteeSignalContainers.find((container) => container.acceptedActor.actorKind === "guarantor");
     assert.ok(guarantorContainer);
-    assert.equal(guarantorContainer.acceptedActor.trustStatus, "attested");
     assert.equal(guarantorContainer.fundingMetadata.guarantorSupplierSubjectId, guarantorContainer.acceptedActor.supplierSubjectId);
 
     const adapterContainer = demoFundingGuaranteeSignalContainers.find((container) => container.acceptedActor.actorKind === "adapter");
     assert.ok(adapterContainer);
-    assert.equal(adapterContainer.acceptedActor.trustStatus, "attested");
     assert.ok(adapterContainer.fundingMetadata.adapterProofRows.some((row) => row.label === "外部状态"));
-  });
-
-  it("keeps task capability plugins aligned with fulfillmentKind", () => {
-    const fulfillmentTasks = demoProductCatalog.tasks.filter((task) => task.fulfillmentKind);
-    assert.ok(fulfillmentTasks.length > 0);
-
-    for (const task of fulfillmentTasks) {
-      assert.ok(task.fulfillmentKind);
-      assert.ok(task.capabilityPlugin);
-      assert.equal(task.capabilityPlugin.pluginKind, task.fulfillmentKind);
-      assert.equal(task.capabilityPlugin.source, "explicit");
-      assert.equal(task.capabilityPlugin.roleSlotId, task.performanceSlotId);
-      assert.deepEqual(task.capabilityPlugin.inputPolicy, task.requiredInputs);
-    }
   });
 
   it("serializes executor overlays and resource requirement DTOs", () => {
@@ -470,34 +451,32 @@ describe("product DTO catalog", () => {
     assert.equal("signalId" in parsed, false);
   });
 
-  it("keeps fallback task payloads compatible without add-on fields", () => {
-    const legacyTask: ProductTaskDTO = {
-      taskId: "legacy-evidence-task",
-      orderId: "legacy-order",
-      orderTitle: "Legacy order",
-      zhixuId: "legacy-zhixu",
+  it("serializes capability-plugin tasks without add-on fields", () => {
+    const capabilityTask: ProductTaskDTO = {
+      taskId: "evidence-task",
+      orderId: "order",
+      orderTitle: "Order",
+      zhixuId: "zhixu",
       title: "Submit evidence",
-      subtitle: "Legacy payload using fulfillment plugin fields.",
+      subtitle: "Payload using an explicit capability plugin.",
       assigneeRole: "Participant",
-      stageId: "legacy-stage",
-      stageName: "Legacy stage",
+      stageId: "stage",
+      stageName: "Stage",
       deadline: "2026-05-01 18:00",
       fundingImpact: "No funding movement is represented by this DTO.",
       requiredEvidence: ["Evidence hash"],
       status: "open",
-      fulfillmentKind: "evidence_submission",
       capabilityPlugin: {
         pluginKind: "evidence_submission",
-        source: "legacy_inferred",
+        source: "explicit",
         requiredEvidence: ["Evidence hash"]
       },
       responsibilityStatements: [],
       proofRows: []
     };
 
-    const parsed = JSON.parse(JSON.stringify(legacyTask));
-    assert.equal(parsed.fulfillmentKind, "evidence_submission");
-    assert.equal(parsed.capabilityPlugin.pluginKind, parsed.fulfillmentKind);
+    const parsed = JSON.parse(JSON.stringify(capabilityTask));
+    assert.equal(parsed.capabilityPlugin.pluginKind, "evidence_submission");
     assert.equal("addOnKind" in parsed, false);
     assert.equal("resourceRequirements" in parsed, false);
   });
@@ -507,7 +486,6 @@ describe("product DTO catalog", () => {
     assert.deepEqual(supportedKinds, ["submit_signal", "stage_executor_patch", "stage_resource_patch"]);
 
     assert.equal(demoSelectorTask.addOnKind, "stage_executor_patch");
-    assert.equal(demoSelectorTask.fulfillmentKind, undefined);
     assert.equal(demoSelectorTask.capabilityPlugin, undefined);
     assert.ok(demoSelectorTask.selectableTargets?.some((target) => target.allowed));
 
@@ -641,44 +619,23 @@ describe("product DTO catalog", () => {
       plugin.requiredEvidence.includes("报关单")
     ));
     assert.ok(detail.supplierRequirements.length > 0);
-    assert.ok(detail.proofSections.some((section) => section.sectionId === "chain-attestation"));
-    assert.ok(detail.allowedActions.some((action) => action.actionId === "broadcast_attestation"));
+    assert.ok(detail.proofSections.some((section) => section.sectionId === "plan-publication"));
+    assert.ok(detail.allowedActions.some((action) => action.actionId === "publish_plan"));
   });
 
-  it("keeps revoked Store zhixu detail proof-visible but closed for new orders", () => {
+  it("keeps rejected Store zhixu closed for new orders", () => {
     const zhixu = demoProductCatalog.zhixus[0];
     assert.ok(zhixu);
 
     const row = toStoreZhixuConsoleDTO({
       ...summarizeZhixu(zhixu),
-      reviewStatus: "revoked",
-      reviewLabel: "链上背书已撤销",
-      chainAttestation: {
-        ...zhixu.chainAttestation,
-        status: "revoked",
-        label: "已撤销链上背书",
-        txHash: "0xabc",
-        blockNumber: "42"
-      }
+      reviewStatus: "rejected",
+      reviewLabel: "Store 审核拒绝"
     });
     const detail = toStoreZhixuDetailDTO(row, zhixu);
 
-    assert.equal(detail.lifecycleStatus, "revoked");
-    assert.match(detail.lifecycleReason, /不能创建新订单/);
+    assert.equal(detail.lifecycleStatus, "rejected");
+    assert.match(detail.lifecycleReason, /未通过 Store 审核/);
     assert.equal(detail.allowedActions.some((action) => action.actionId === "create_order"), false);
-    assert.ok(detail.proofSections.some((section) =>
-      section.rows.some((row) => row.label === "链上事件" && row.value === "PlanRevoked")
-    ));
-  });
-
-  it("exports Store supplier capability tags for registry DTOs", () => {
-    assert.deepEqual(STORE_SUPPLIER_CAPABILITY_TAGS, [
-      "logistics",
-      "customs",
-      "inspection",
-      "payment",
-      "dispute-review",
-      "document-verification"
-    ]);
   });
 });

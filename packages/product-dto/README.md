@@ -31,14 +31,13 @@ It describes the product language the UI consumes:
 - `StoreSearchResponseDTO`, `StoreOrderCandidatesResponseDTO`, and
   `StoreZhixuDetailDTO` for nucleus-facing Store search, order disambiguation,
   and Zhixu explanation views.
-- `StoreSupplierDTO` for PRD53 supplier registry rows that merge Store metadata
-  with `ZhixuTrustRegistry` supplier trust projection status.
+- `StoreSupplierDTO` for Store-owned supplier metadata and capability tags.
 
 `chain-services` enriches these DTOs from `UVPStateMachine` and
-`ZhixuTrustRegistry` projections when chain events are available. Demo, local
-fallback data, and the PRD89 Phase 2 customs scenario live behind the explicit
+`UVPIdentityRegistry` projections when chain events are available. Demo, local
+fixtures, and the customs scenario live behind the explicit
 `@uvp-eth/product-dto/fixtures` subpath; the package root is the production
-DTO/domain surface. The Phase 2 fixture includes role-slot manifests, resource
+DTO/domain surface. The customs fixture includes role-slot manifests, resource
 manifest metadata, Product Schema selector bindings, and a deterministic
 on-chain HookPlan artifact for Store draft validation. `zhixu-store-web` should
 render these DTOs without showing internal protocol words such as signal, gas,
@@ -46,16 +45,15 @@ HookReady, sourceId, signalId, ABI, or registryAddress in ordinary UI.
 
 Raw chain details belong in proof rows and advanced proof payloads only.
 
-The Store Console DTO is not ordinary-user language. It may expose lifecycle
-words such as compiled, attested, active, deprecated, and revoked because it is
+The Store Console DTO is operator language. It may expose lifecycle
+words such as compiled, published, active, deprecated, and revoked because it is
 for nuclei, governance operators, and reviewers who manage order definitions.
 Supplier capability tags in this package are Store metadata tags only. They
 help with matching and review workflows, but they are not chain truth and do not
 grant `submitSignal` authorization.
 
 Generic participant manifests are independent from `FulfillmentPluginKind`.
-Existing `fulfillmentKind` and `capabilityPlugin` payloads remain supported for
-fallback clients. New clients should prefer `RoleSlotDTO.addOnManifest` and
+Task plugin metadata uses the canonical `capabilityPlugin` field. Clients should prefer `RoleSlotDTO.addOnManifest` and
 `ProductTaskDTO.addOnManifest` when present: the manifest is a declarative page
 contract for executor actions. The public action vocabulary is `submit_signal`,
 `stage_executor_patch`, and `stage_resource_patch`. Production resource DTOs

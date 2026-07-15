@@ -3,10 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ECDSA} from "./libraries/ECDSA.sol";
 import {UVPSignatures} from "./libraries/UVPSignatures.sol";
-
-interface IUVPPlanMetadataModuleForStateMachine {
-    function isSelectorTargetStage(bytes32 planId, bytes32 targetStageId) external view returns (bool);
-}
+import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 
 contract UVPStateMachine {
     enum HookStatus {
@@ -95,9 +92,25 @@ contract UVPStateMachine {
         uint256 deadline;
     }
 
+    struct PlanCommit {
+        address publisher;
+        bytes32 hooksHash;
+        bytes32 metadataHash;
+        uint256 deadline;
+    }
+
     struct StoredSignalAuthorization {
         bytes32 role;
         bytes32 metadataHash;
+        bool exists;
+    }
+
+    struct DelegatedStageSignalAuthorization {
+        bytes32 targetStageId;
+        address executor;
+        bytes32 role;
+        bytes32 metadataHash;
+        uint256 patchNonce;
         bool exists;
     }
 
@@ -113,17 +126,20 @@ contract UVPStateMachine {
 
     struct Plan {
         bytes32 planHash;
+        bytes32 hooksHash;
+        bytes32 metadataHash;
         address publisher;
         bytes32[] hookIds;
         mapping(bytes32 hookId => StoredHook hook) hooks;
         mapping(bytes32 signalKey => bytes32[] hookIds) dependencyIndex;
         mapping(bytes32 stageId => bool exists) stageExists;
-        bool exists;
+        bool committed;
+        bool finalized;
     }
 
     struct Order {
         bytes32 planId;
-        address registrar;
+        address relayer;
         address creator;
         mapping(bytes32 hookId => HookRuntime runtime) hookRuntimes;
         mapping(bytes32 stageId => bool materialized) materializedStages;
@@ -151,17 +167,26 @@ contract UVPStateMachine {
 
     error EmptyPlan();
     error ExpiredSignalSignature(uint256 deadline);
+    error ExpiredPlanSignature(uint256 deadline);
     error HookAlreadyRegistered();
     error InvalidSignalSignature(address expectedSigner, address recoveredSigner);
     error InvalidSignalSignatureLength(uint256 length);
     error InvalidInstruction();
     error InvalidHook();
     error InvalidModuleAddress();
+    error InvalidPlanSignature(address expectedSigner, address recoveredSigner);
+    error IncompleteModuleConfiguration();
     error InvalidTriggerHook(bytes32 hookId);
     error InvalidTriggerOrderSignature(address expectedSigner, address recoveredSigner);
+    error ModulesAlreadyFrozen();
+    error ModulesFrozen();
+    error ModulesNotFrozen();
     error NotOwner();
     error OrderAlreadyRegistered();
     error PlanAlreadyRegistered();
+    error PlanMetadataHashMismatch(bytes32 expectedHash, bytes32 actualHash);
+    error PlanNotCommitted();
+    error PlanNotFinalized();
     error SignalAlreadyExists();
     error SignalSubmitterAlreadyAuthorized(bytes32 orderId, bytes32 sourceId, bytes32 signalId, address submitter);
     error StageExecutorNotAssigned(bytes32 orderId, bytes32 targetStageId);
@@ -170,8 +195,6 @@ contract UVPStateMachine {
     );
     error TimerNotDue();
     error TimerNotWaiting();
-    error UnauthorizedOrderRegistrar();
-    error UnauthorizedPlanPublisher();
     error UnauthorizedSignalSubmitter(bytes32 orderId, bytes32 sourceId, bytes32 signalId, address submitter);
     error UnauthorizedStateMachineModule(address caller);
     error UnauthorizedStageExecutor(bytes32 orderId, bytes32 targetStageId, address submitter, address executor);
@@ -180,12 +203,11 @@ contract UVPStateMachine {
     error UnknownPlan();
     error ZeroOrderCreator();
     error ZeroOrderId();
-    error ZeroOrderRegistrar();
     error ZeroPatchHash();
     error ZeroOwner();
-    error ZeroPlanId();
     error ZeroPlanPublisher();
     error ZeroSignalId();
+    error ZeroSourceId();
     error ZeroStageExecutor();
     error ZeroSubmitter();
     error ZeroTargetStageId();
@@ -197,6 +219,7 @@ contract UVPStateMachine {
     address public planMetadataModule;
     address public orderLinkModule;
     address public lens;
+    bool public modulesFrozen;
 
     bytes32 private constant _EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
@@ -204,15 +227,18 @@ contract UVPStateMachine {
     uint8 public constant SIGNAL_TARGET_CURRENT_ORDER = 0;
     uint8 public constant SIGNAL_TARGET_TRIGGER_ORIGIN = 1;
 
-    bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.7");
+    bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.8");
+    bytes32 private constant _PLAN_RUNTIME_HASH_DOMAIN = keccak256("uvp.plan.runtime.v1");
+    bytes32 private constant _PLAN_ID_HASH_DOMAIN = keccak256("uvp.plan.id.v1");
+    bytes32 private constant _PLAN_COMMIT_TYPEHASH = keccak256(
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 metadataHash,uint256 deadline)"
+    );
     bytes32 private constant _SIGNAL_SUBMISSION_TYPEHASH = keccak256(
         "UVPStateMachineSignal(bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
     );
     bytes32 private constant _TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 orderId,bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
     );
-    mapping(address publisher => bool allowed) public planPublishers;
-    mapping(address registrar => bool allowed) public orderRegistrars;
     mapping(bytes32 planId => Plan plan) private _plans;
     mapping(bytes32 orderId => Order order) private _orders;
     mapping(bytes32 orderId => mapping(bytes32 signalKey => SignalRecord signal)) private _signals;
@@ -220,6 +246,8 @@ contract UVPStateMachine {
         bytes32 orderId
             => mapping(bytes32 signalKey => mapping(address submitter => StoredSignalAuthorization authorization))
     ) private _signalAuthorizations;
+    mapping(bytes32 orderId => mapping(bytes32 signalKey => DelegatedStageSignalAuthorization authorization)) private
+        _delegatedStageSignalAuthorizations;
     mapping(bytes32 orderId => mapping(bytes32 sourceId => uint256 count)) public sourceSignalCount;
     mapping(bytes32 orderId => mapping(bytes32 sourceId => address submitter)) public lastSignalSubmitter;
     mapping(bytes32 orderId => mapping(bytes32 targetStageId => ActiveStageExecutorPatch patch)) private
@@ -227,13 +255,21 @@ contract UVPStateMachine {
 
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event StateMachineModuleSet(bytes32 indexed moduleId, address indexed previousModule, address indexed newModule);
-    event PlanPublisherSet(address indexed publisher, bool allowed);
-    event OrderRegistrarSet(address indexed registrar, bool allowed);
+    event StateMachineModulesFrozen(bytes32 indexed moduleSetHash);
+    event PlanCommitted(
+        bytes32 indexed planId,
+        bytes32 indexed planHash,
+        address indexed publisher,
+        bytes32 hooksHash,
+        bytes32 metadataHash,
+        uint256 hookCount
+    );
+    event PlanFinalized(bytes32 indexed planId, bytes32 indexed planHash, bytes32 metadataHash);
     event PlanRegistered(bytes32 indexed planId, bytes32 planHash, uint256 hookCount);
     event PlanPublisherRecorded(bytes32 indexed planId, address indexed publisher);
     event OrderRegistered(bytes32 indexed orderId, bytes32 indexed planId);
     event OrderMaterialized(bytes32 indexed orderId, bytes32 indexed planId, bytes32 indexed stageId);
-    event OrderRegistrarRecorded(bytes32 indexed orderId, address indexed registrar, address indexed creator);
+    event OrderRelayerRecorded(bytes32 indexed orderId, address indexed relayer, address indexed creator);
     event SignalSubmitterAuthorized(
         bytes32 indexed orderId,
         bytes32 indexed sourceId,
@@ -241,6 +277,16 @@ contract UVPStateMachine {
         address submitter,
         bytes32 role,
         bytes32 metadataHash
+    );
+    event StageExecutorSignalDelegated(
+        bytes32 indexed orderId,
+        bytes32 indexed targetStageId,
+        bytes32 indexed sourceId,
+        bytes32 signalId,
+        address executor,
+        bytes32 role,
+        bytes32 metadataHash,
+        uint256 patchNonce
     );
     event SignalSubmitted(
         bytes32 indexed orderId,
@@ -332,7 +378,31 @@ contract UVPStateMachine {
         lens = _setModule(LENS_MODULE_ID, lens, moduleAddress);
     }
 
+    function freezeModules() external onlyOwner {
+        if (modulesFrozen) {
+            revert ModulesAlreadyFrozen();
+        }
+        if (
+            stagePatchModule == address(0) || derivedSignalModule == address(0) || dockingModule == address(0)
+                || planMetadataModule == address(0) || orderLinkModule == address(0) || lens == address(0)
+        ) {
+            revert IncompleteModuleConfiguration();
+        }
+
+        modulesFrozen = true;
+        emit StateMachineModulesFrozen(moduleSetHash());
+    }
+
+    function moduleSetHash() public view returns (bytes32) {
+        return keccak256(
+            abi.encode(stagePatchModule, derivedSignalModule, dockingModule, planMetadataModule, orderLinkModule, lens)
+        );
+    }
+
     function _setModule(bytes32 moduleId, address previousModule, address moduleAddress) private returns (address) {
+        if (modulesFrozen) {
+            revert ModulesFrozen();
+        }
         if (moduleAddress == address(0) || moduleAddress == address(this)) {
             revert InvalidModuleAddress();
         }
@@ -340,43 +410,42 @@ contract UVPStateMachine {
         return moduleAddress;
     }
 
-    function setPlanPublisher(address publisher, bool allowed) external onlyOwner {
-        if (publisher == address(0)) {
+    function commitPlan(PlanCommit calldata commit, CompactHook[] calldata hooks, bytes calldata signature)
+        external
+        returns (bytes32 planId)
+    {
+        if (!modulesFrozen) {
+            revert ModulesNotFrozen();
+        }
+        if (block.timestamp > commit.deadline) {
+            revert ExpiredPlanSignature(commit.deadline);
+        }
+        if (commit.publisher == address(0)) {
             revert ZeroPlanPublisher();
-        }
-        planPublishers[publisher] = allowed;
-        emit PlanPublisherSet(publisher, allowed);
-    }
-
-    function setOrderRegistrar(address registrar, bool allowed) external onlyOwner {
-        if (registrar == address(0)) {
-            revert ZeroOrderRegistrar();
-        }
-        orderRegistrars[registrar] = allowed;
-        emit OrderRegistrarSet(registrar, allowed);
-    }
-
-    function registerPlan(bytes32 planId, bytes32 planHash, CompactHook[] calldata hooks) external {
-        _registerPlan(planId, planHash, hooks);
-    }
-
-    function _registerPlan(bytes32 planId, bytes32 planHash, CompactHook[] calldata hooks) private {
-        if (!planPublishers[msg.sender]) {
-            revert UnauthorizedPlanPublisher();
-        }
-        if (planId == bytes32(0)) {
-            revert ZeroPlanId();
         }
         if (hooks.length == 0) {
             revert EmptyPlan();
         }
+        bytes32 actualHooksHash = keccak256(abi.encode(hooks));
+        if (actualHooksHash != commit.hooksHash) {
+            revert PlanMetadataHashMismatch(commit.hooksHash, actualHooksHash);
+        }
+        address recoveredSigner = _recoverSignalSubmitter(_planCommitDigest(commit), signature);
+        if (recoveredSigner != commit.publisher) {
+            revert InvalidPlanSignature(commit.publisher, recoveredSigner);
+        }
+
+        bytes32 runtimePlanHash = planRuntimeHash(commit.hooksHash, commit.metadataHash);
+        planId = planIdFor(commit.publisher, runtimePlanHash);
         Plan storage plan = _plans[planId];
-        if (plan.exists) {
+        if (plan.committed) {
             revert PlanAlreadyRegistered();
         }
-        plan.planHash = planHash;
-        plan.publisher = msg.sender;
-        plan.exists = true;
+        plan.planHash = runtimePlanHash;
+        plan.hooksHash = commit.hooksHash;
+        plan.metadataHash = commit.metadataHash;
+        plan.publisher = commit.publisher;
+        plan.committed = true;
 
         for (uint256 i = 0; i < hooks.length; i++) {
             CompactHook calldata input = hooks[i];
@@ -405,8 +474,42 @@ contract UVPStateMachine {
             plan.stageExists[input.stageId] = true;
         }
 
-        emit PlanRegistered(planId, planHash, hooks.length);
-        emit PlanPublisherRecorded(planId, msg.sender);
+        emit PlanCommitted(
+            planId, runtimePlanHash, commit.publisher, commit.hooksHash, commit.metadataHash, hooks.length
+        );
+        emit PlanPublisherRecorded(planId, commit.publisher);
+    }
+
+    function finalizePlan(
+        bytes32 planId,
+        IUVPPlanMetadataModule.StageSelectorBinding[] calldata selectorBindings,
+        IUVPPlanMetadataModule.SignalCapability[] calldata signalCapabilities
+    ) external {
+        Plan storage plan = _plans[planId];
+        if (!plan.committed) {
+            revert PlanNotCommitted();
+        }
+        if (plan.finalized) {
+            revert PlanAlreadyRegistered();
+        }
+        bytes32 actualMetadataHash = keccak256(abi.encode(selectorBindings, signalCapabilities));
+        if (actualMetadataHash != plan.metadataHash) {
+            revert PlanMetadataHashMismatch(plan.metadataHash, actualMetadataHash);
+        }
+
+        IUVPPlanMetadataModule(planMetadataModule).finalizePlanMetadata(planId, selectorBindings, signalCapabilities);
+        plan.finalized = true;
+
+        emit PlanFinalized(planId, plan.planHash, plan.metadataHash);
+        emit PlanRegistered(planId, plan.planHash, plan.hookIds.length);
+    }
+
+    function planRuntimeHash(bytes32 hooksHash, bytes32 metadataHash) public pure returns (bytes32) {
+        return keccak256(abi.encode(_PLAN_RUNTIME_HASH_DOMAIN, hooksHash, metadataHash));
+    }
+
+    function planIdFor(address publisher, bytes32 runtimePlanHash) public pure returns (bytes32) {
+        return keccak256(abi.encode(_PLAN_ID_HASH_DOMAIN, publisher, runtimePlanHash));
     }
 
     function triggerOrderFromOutsideFor(
@@ -453,7 +556,7 @@ contract UVPStateMachine {
     function triggerOrderFromSignalFromModule(
         TriggerOrderFromSignalRequest calldata trigger,
         SignalAuthorization[] calldata authorizations,
-        address registrar
+        address relayer
     ) external {
         if (msg.sender != orderLinkModule) {
             revert UnauthorizedStateMachineModule(msg.sender);
@@ -473,7 +576,7 @@ contract UVPStateMachine {
             trigger.triggerOriginOrderId, trigger.planId, trigger.triggerHookId, trigger.triggerStageId
         );
 
-        _createOrder(trigger.orderId, trigger.planId, trigger.creator, registrar);
+        _createOrder(trigger.orderId, trigger.planId, trigger.creator, relayer);
         _authorizeSignalSubmitters(trigger.orderId, authorizations);
         emit OrderTriggered(
             trigger.orderId,
@@ -493,13 +596,7 @@ contract UVPStateMachine {
         );
     }
 
-    function _createOrder(bytes32 orderId, bytes32 planId, address creator, address registrar) private {
-        if (registrar == address(0)) {
-            revert ZeroOrderRegistrar();
-        }
-        if (!orderRegistrars[registrar]) {
-            revert UnauthorizedOrderRegistrar();
-        }
+    function _createOrder(bytes32 orderId, bytes32 planId, address creator, address relayer) private {
         if (orderId == bytes32(0)) {
             revert ZeroOrderId();
         }
@@ -507,15 +604,15 @@ contract UVPStateMachine {
             revert ZeroOrderCreator();
         }
         Plan storage plan = _plans[planId];
-        if (!plan.exists) {
-            revert UnknownPlan();
+        if (!plan.finalized) {
+            revert PlanNotFinalized();
         }
         Order storage order = _orders[orderId];
         if (order.exists) {
             revert OrderAlreadyRegistered();
         }
         order.planId = planId;
-        order.registrar = registrar;
+        order.relayer = relayer;
         order.creator = creator;
         order.exists = true;
 
@@ -527,7 +624,7 @@ contract UVPStateMachine {
         }
 
         emit OrderRegistered(orderId, planId);
-        emit OrderRegistrarRecorded(orderId, registrar, creator);
+        emit OrderRelayerRecorded(orderId, relayer, creator);
     }
 
     function _authorizeSignalSubmitters(bytes32 orderId, SignalAuthorization[] calldata authorizations) private {
@@ -648,6 +745,58 @@ contract UVPStateMachine {
         );
     }
 
+    function delegateStageExecutorSignalFromModule(
+        bytes32 orderId,
+        bytes32 targetStageId,
+        bytes32 sourceId,
+        bytes32 signalId,
+        address executor,
+        bytes32 role,
+        bytes32 metadataHash,
+        uint256 patchNonce
+    ) external {
+        if (msg.sender != stagePatchModule) {
+            revert UnauthorizedStateMachineModule(msg.sender);
+        }
+        if (executor == address(0)) {
+            revert ZeroStageExecutor();
+        }
+        if (targetStageId == bytes32(0)) {
+            revert ZeroTargetStageId();
+        }
+        if (sourceId == bytes32(0)) {
+            revert ZeroSourceId();
+        }
+        if (signalId == bytes32(0)) {
+            revert ZeroSignalId();
+        }
+        Order storage order = _orders[orderId];
+        if (!order.exists) {
+            revert UnknownOrder();
+        }
+        if (!_isPlanStage(order.planId, targetStageId)) {
+            revert UnknownHook();
+        }
+
+        bytes32 key = _signalKey(sourceId, signalId);
+        DelegatedStageSignalAuthorization storage delegated = _delegatedStageSignalAuthorizations[orderId][key];
+        if (patchNonce <= delegated.patchNonce) {
+            revert StageExecutorPatchNonceNotIncreasing(orderId, targetStageId, delegated.patchNonce, patchNonce);
+        }
+
+        delegated.targetStageId = targetStageId;
+        delegated.executor = executor;
+        delegated.role = role;
+        delegated.metadataHash = metadataHash;
+        delegated.patchNonce = patchNonce;
+        delegated.exists = true;
+
+        emit SignalSubmitterAuthorized(orderId, sourceId, signalId, executor, role, metadataHash);
+        emit StageExecutorSignalDelegated(
+            orderId, targetStageId, sourceId, signalId, executor, role, metadataHash, patchNonce
+        );
+    }
+
     function submitSignalFromModule(
         bytes32 orderId,
         bytes32 sourceId,
@@ -754,7 +903,19 @@ contract UVPStateMachine {
     }
 
     function planExists(bytes32 planId) external view returns (bool) {
-        return _plans[planId].exists;
+        return _plans[planId].finalized;
+    }
+
+    function planCommitted(bytes32 planId) external view returns (bool) {
+        return _plans[planId].committed;
+    }
+
+    function planFinalized(bytes32 planId) external view returns (bool) {
+        return _plans[planId].finalized;
+    }
+
+    function planHash(bytes32 planId) external view returns (bytes32) {
+        return _plans[planId].planHash;
     }
 
     function orderExists(bytes32 orderId) external view returns (bool) {
@@ -769,8 +930,8 @@ contract UVPStateMachine {
         return _plans[planId].publisher;
     }
 
-    function orderRegistrar(bytes32 orderId) external view returns (address) {
-        return _orders[orderId].registrar;
+    function orderRelayer(bytes32 orderId) external view returns (address) {
+        return _orders[orderId].relayer;
     }
 
     function orderCreator(bytes32 orderId) external view returns (address) {
@@ -835,6 +996,11 @@ contract UVPStateMachine {
         view
         returns (bool exists, bytes32 role, bytes32 metadataHash)
     {
+        DelegatedStageSignalAuthorization storage delegated =
+            _delegatedStageSignalAuthorizations[orderId][_signalKey(sourceId, signalId)];
+        if (delegated.exists) {
+            return (delegated.executor == submitter, delegated.role, delegated.metadataHash);
+        }
         StoredSignalAuthorization storage authorization =
             _signalAuthorizations[orderId][_signalKey(sourceId, signalId)][submitter];
         return (authorization.exists, authorization.role, authorization.metadataHash);
@@ -930,9 +1096,16 @@ contract UVPStateMachine {
         if (_activeStageExecutorPatches[orderId][targetStageId].exists || planMetadataModule == address(0)) {
             return;
         }
-        if (IUVPPlanMetadataModuleForStateMachine(planMetadataModule).isSelectorTargetStage(planId, targetStageId)) {
+        if (IUVPPlanMetadataModule(planMetadataModule).isSelectorTargetStage(planId, targetStageId)) {
             revert StageExecutorNotAssigned(orderId, targetStageId);
         }
+    }
+
+    function _planCommitDigest(PlanCommit calldata commit) private view returns (bytes32) {
+        bytes32 structHash = keccak256(
+            abi.encode(_PLAN_COMMIT_TYPEHASH, commit.publisher, commit.hooksHash, commit.metadataHash, commit.deadline)
+        );
+        return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
     }
 
     function _validateHook(CompactHook calldata hook) private pure {
@@ -1057,7 +1230,7 @@ contract UVPStateMachine {
         returns (StoredHook storage hook)
     {
         Plan storage plan = _plans[planId];
-        if (!plan.exists) {
+        if (!plan.finalized) {
             revert UnknownPlan();
         }
 
@@ -1294,6 +1467,11 @@ contract UVPStateMachine {
     {
         if (signalId == bytes32(0) || submitter == address(0)) {
             return false;
+        }
+        DelegatedStageSignalAuthorization storage delegated =
+            _delegatedStageSignalAuthorizations[orderId][_signalKey(sourceId, signalId)];
+        if (delegated.exists) {
+            return delegated.executor == submitter;
         }
         return _hasExplicitSignalAuthorization(orderId, sourceId, signalId, submitter);
     }

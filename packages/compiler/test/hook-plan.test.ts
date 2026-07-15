@@ -314,7 +314,7 @@ test("rejects string trigger shorthand at runtime boundary", () => {
   } as unknown as ZhixuDefinition;
 
   assertCompilationIssues(invalid, [
-    /broken\.main\.trigger must be a non-empty receiveSignals key array/
+    /invalid type: string "TRIGGER", expected a sequence/
   ]);
 });
 

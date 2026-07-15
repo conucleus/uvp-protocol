@@ -1,11 +1,15 @@
 export { canonicalize, canonicalStringify } from "./canonical.js";
 export {
+  assertHookPlanArtifact,
+  compileZhixuHookPlan,
   HookPlanCompilationError,
+  HookPlanArtifactValidationError,
+  validateHookPlanArtifact,
 } from "./hook-plan.js";
 export {
   loadZhixuDefinition,
   parseZhixuDefinition,
-  ZhixuLoadError
+  ZhixuLoadError,
 } from "./zhixu-loader.js";
 export {
   assertOnchainHookPlanArtifact,
@@ -13,6 +17,7 @@ export {
   compileZhixuRegisterPlanArgs,
   onchainHookId,
   onchainHookName,
+  planIdForPublisher,
   onchainSelectorBindingHash,
   onchainSignalId,
   onchainSignalKey,
@@ -20,9 +25,15 @@ export {
   onchainStageId,
   OnchainHookPlanArtifactValidationError,
   toSolidityRegisterPlanArgs,
-  validateOnchainHookPlanArtifact
+  validateOnchainHookPlanArtifact,
 } from "./onchain-hook-plan.js";
 export { hashCanonical, keccak256Hex } from "./hash.js";
+export {
+  COMPILER_NAME,
+  COMPILER_VERSION,
+  HOOK_PLAN_SCHEMA_VERSION,
+  ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
+} from "./types/index.js";
 export type {
   Address,
   ExecuteConfigs,
@@ -49,9 +60,8 @@ export type {
   SolidityRegisterPlanArgs,
   SolidityRegisterSignalCapabilityArg,
   SolidityRegisterStageSelectorBindingArg,
-  SupplierDefinition,
   ZhixuDefinition,
   ZhixuPlatform,
   ZhixuStage,
-  ZhixuTaskPattern
+  ZhixuTaskPattern,
 } from "./types/index.js";

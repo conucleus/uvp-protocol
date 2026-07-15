@@ -1,5 +1,4 @@
 import {
-  type ChainAttestationStatus,
   type ChainProofRowDTO,
   type FulfillmentRequiredInputDTO,
   type OrderPermissionTableEntryDTO,
@@ -46,7 +45,6 @@ interface DemoFundingSignalContainerActor {
   readonly wallet: string;
   readonly authorizationLabel: string;
   readonly supplierSubjectId?: string;
-  readonly trustStatus?: ChainAttestationStatus;
 }
 
 interface DemoFundingSignalContainerMetadata {
@@ -74,7 +72,7 @@ interface DemoFundingSignalContainerFixture {
   readonly fundingMetadata: DemoFundingSignalContainerMetadata;
   readonly prepare: {
     readonly typedData: {
-      readonly domainLabel: string;
+      readonly stateMachineLabel: string;
       readonly primaryType: "SubmitSignal";
       readonly messageHint: string;
     };
@@ -747,10 +745,10 @@ export const demoZhixuDetail: ZhixuDetailDTO = {
   supportedPaymentMethods: ["外部付款凭证", "资金适配器证明（占位）"],
   maintainer: "共同秩序",
   updatedAt: "2026-04-28",
-  chainAttestation: {
+  planPublication: {
     status: "not_found",
-    label: "未发现当前官方域的链上背书",
-    domainLabel: "共同秩序官方审核",
+    label: "等待 Plan 发布",
+    stateMachineLabel: "UVPStateMachine",
     planId: crossBorderPlanIds.planId,
     planHash: crossBorderPlanIds.planHash,
     artifactHash: crossBorderPlanIds.artifactHash
@@ -830,8 +828,8 @@ export const demoZhixuDetail: ZhixuDetailDTO = {
       slotId: "maintainer",
       title: "维护方",
       label: "共同秩序",
-      duty: "维护秩序版本、审核风险和背书执行方",
-      evidence: ["审核记录", "背书记录"],
+      duty: "维护秩序版本并审核执行方风险",
+      evidence: ["审核记录", "风险记录"],
       status: "connected",
       tone: "ok",
       required: true,
@@ -878,7 +876,7 @@ export const demoZhixuDetail: ZhixuDetailDTO = {
     { label: "秩序编号", value: CROSS_BORDER_ZHIXU_ID },
     { label: "审核域", value: "共同秩序官方审核" },
     { label: "秩序指纹", value: `${crossBorderPlanIds.planHash.slice(0, 14)}...${crossBorderPlanIds.planHash.slice(-10)}` },
-    { label: "背书状态", value: "等待链上背书同步" }
+    { label: "Plan 发布", value: "等待 StateMachine finalized 投影" }
   ],
   createOrderHint: "创建订单后，可填写参与方与商品信息并发起协作。"
 };
@@ -938,7 +936,7 @@ export const demoOrder: ProductOrderDTO = {
   orderId: DEMO_ORDER_ID,
   zhixuId: CROSS_BORDER_ZHIXU_ID,
   title: "A 公司采购 10 台车辆",
-  status: "active",
+  status: "registered",
   statusLabel: "进行中",
   totalAmount: {
     amount: "10000",
@@ -993,7 +991,6 @@ export const demoPaymentTask: ProductTaskDTO = {
   fundingImpact: "资金适配器占位：仅记录付款条件和证明，不托管、不划转、不释放、不退款任何资金",
   requiredEvidence: ["付款条件确认", "资金凭证指纹"],
   status: "done",
-  fulfillmentKind: "payment_placeholder",
   performanceSlotId: "funds",
   performanceSlotLabel: "资金保障履约者",
   businessPersonaLabels: ["买家", "资金提供者"],
@@ -1055,7 +1052,7 @@ export const demoFundingGuaranteeSignalContainers = [
     },
     prepare: {
       typedData: {
-        domainLabel: "UVPStateMachine 0.7",
+        stateMachineLabel: "UVPStateMachine 0.8",
         primaryType: "SubmitSignal",
         messageHint: "funding_condition_satisfied"
       },
@@ -1097,8 +1094,7 @@ export const demoFundingGuaranteeSignalContainers = [
       label: "担保方证明提交",
       wallet: "0x4444444444444444444444444444444444444444",
       authorizationLabel: "订单级担保方授权",
-      supplierSubjectId: "supplier:guarantor:demo-001",
-      trustStatus: "attested"
+      supplierSubjectId: "supplier:guarantor:demo-001"
     },
     fundingMetadata: {
       fundingMethodLabel: "担保方证明",
@@ -1114,7 +1110,7 @@ export const demoFundingGuaranteeSignalContainers = [
     },
     prepare: {
       typedData: {
-        domainLabel: "UVPStateMachine 0.7",
+        stateMachineLabel: "UVPStateMachine 0.8",
         primaryType: "SubmitSignal",
         messageHint: "funding_condition_satisfied"
       },
@@ -1156,8 +1152,7 @@ export const demoFundingGuaranteeSignalContainers = [
       label: "资金适配器证明提交",
       wallet: "0x5555555555555555555555555555555555555555",
       authorizationLabel: "订单级资金适配器授权",
-      supplierSubjectId: "supplier:stablecoin-adapter:demo-001",
-      trustStatus: "attested"
+      supplierSubjectId: "supplier:stablecoin-adapter:demo-001"
     },
     fundingMetadata: {
       fundingMethodLabel: "稳定币适配器证明",
@@ -1173,7 +1168,7 @@ export const demoFundingGuaranteeSignalContainers = [
     },
     prepare: {
       typedData: {
-        domainLabel: "UVPStateMachine 0.7",
+        stateMachineLabel: "UVPStateMachine 0.8",
         primaryType: "SubmitSignal",
         messageHint: "funding_condition_satisfied"
       },
@@ -1306,7 +1301,6 @@ export const demoTask: ProductTaskDTO = {
   status: "open",
   addOnKind: "submit_signal",
   resourceRequirements: demoCustomsResourceRequirements,
-  fulfillmentKind: "delivery_update",
   performanceSlotId: "delivery",
   performanceSlotLabel: "交付履约者",
   businessPersonaLabels: ["报关行", "物流/货代"],

@@ -6,10 +6,10 @@ import {
   demoResourcePatchTask,
   demoSelectorTask,
   demoTask,
-  phase2CustomsExecutorTask,
-  phase2CustomsResourceControllerTask,
-  phase2CustomsSelectorTask,
-  phase2CustomsStoreProductSchema
+  customsExecutorTask,
+  customsResourceControllerTask,
+  customsSelectorTask,
+  customsStoreProductSchema
 } from "@uvp-eth/product-dto/fixtures";
 import type { StoreProductSchemaDTO } from "@uvp-eth/product-dto";
 
@@ -107,12 +107,12 @@ const dockedOrderLinkFieldNames = [
   "deadline"
 ] as const;
 
-describe("Product DTO protocol 0.7 compatibility", () => {
-  it("maps submit_signal fixtures to the existing UVPStateMachine 0.7 submit action", async () => {
+describe("Product DTO protocol surface", () => {
+  it("maps submit_signal fixtures to the current UVPStateMachine 0.8 submit action", async () => {
     const protocol = await loadProtocolBindings();
 
     assert.equal(protocol.PRODUCT_SUBMIT_DOMAIN_NAME, "UVPStateMachine");
-    assert.equal(protocol.PRODUCT_SUBMIT_DOMAIN_VERSION, "0.7");
+    assert.equal(protocol.PRODUCT_SUBMIT_DOMAIN_VERSION, "0.8");
     assert.equal(protocol.PRODUCT_SUBMIT_PRIMARY_TYPE, "UVPStateMachineSignal");
     assert.deepEqual(fieldNames(protocol.PRODUCT_SUBMIT_TYPED_DATA_FIELDS), [...submitSignalFieldNames]);
     assertAbiNames(protocol.STATE_MACHINE_ABI, "function", ["submitSignal", "submitSignalFor"]);
@@ -121,7 +121,7 @@ describe("Product DTO protocol 0.7 compatibility", () => {
     const submitActions = [
       demoTask.addOnManifest?.actions[0],
       demoPaymentTask.addOnManifest?.actions[0],
-      phase2CustomsExecutorTask.addOnManifest?.actions[0]
+      customsExecutorTask.addOnManifest?.actions[0]
     ];
 
     for (const action of submitActions) {
@@ -131,8 +131,8 @@ describe("Product DTO protocol 0.7 compatibility", () => {
     for (const container of demoFundingGuaranteeSignalContainers) {
       assert.equal(container.schemaVersion, "uvp.signal-container.v1");
       assert.equal(container.actionKind, "submit_signal");
-      assert.equal(container.prepare.typedData.domainLabel, "UVPStateMachine 0.7");
-      assert.equal(container.prepare.typedData.domainLabel, `${protocol.PRODUCT_SUBMIT_DOMAIN_NAME} ${protocol.PRODUCT_SUBMIT_DOMAIN_VERSION}`);
+      assert.equal(container.prepare.typedData.stateMachineLabel, "UVPStateMachine 0.8");
+      assert.equal(container.prepare.typedData.stateMachineLabel, `${protocol.PRODUCT_SUBMIT_DOMAIN_NAME} ${protocol.PRODUCT_SUBMIT_DOMAIN_VERSION}`);
       assert.equal(productSubmitPrimaryType(container.prepare.typedData.primaryType), protocol.PRODUCT_SUBMIT_PRIMARY_TYPE);
       assert.equal(container.prepare.submitter, container.acceptedActor.wallet);
       assert.match(container.prepare.payloadHash, /^0x[0-9a-f]{64}$/);
@@ -159,7 +159,7 @@ describe("Product DTO protocol 0.7 compatibility", () => {
 
     const executorPatchActions = [
       demoSelectorTask.addOnManifest?.actions[0],
-      phase2CustomsSelectorTask.addOnManifest?.actions[0]
+      customsSelectorTask.addOnManifest?.actions[0]
     ];
     for (const action of executorPatchActions) {
       assertProductAction(action, "stage_executor_patch", [
@@ -186,7 +186,7 @@ describe("Product DTO protocol 0.7 compatibility", () => {
 
     const resourcePatchActions = [
       demoResourcePatchTask.addOnManifest?.actions[0],
-      phase2CustomsResourceControllerTask.addOnManifest?.actions[0]
+      customsResourceControllerTask.addOnManifest?.actions[0]
     ];
     for (const action of resourcePatchActions) {
       assertProductAction(action, "stage_resource_patch", [
@@ -267,14 +267,14 @@ describe("Product DTO protocol 0.7 compatibility", () => {
   it("fails Product signal map gate when schema source, signal, action or permission rows drift", async () => {
     const gate = await loadProductSignalMapGate();
 
-    assert.deepEqual(gate.verifyPhase2ProductSignalMap().failures, []);
+    assert.deepEqual(gate.verifyCustomsProductSignalMap().failures, []);
 
     assert.match(
-      gate.verifyPhase2ProductSignalMap({
+      gate.verifyCustomsProductSignalMap({
         schema: {
-          ...phase2CustomsStoreProductSchema,
+          ...customsStoreProductSchema,
           createOrderTrigger: {
-            ...phase2CustomsStoreProductSchema.createOrderTrigger!,
+            ...customsStoreProductSchema.createOrderTrigger!,
             source: "order-wrong"
           }
         }
@@ -283,11 +283,11 @@ describe("Product DTO protocol 0.7 compatibility", () => {
     );
 
     assert.match(
-      gate.verifyPhase2ProductSignalMap({
+      gate.verifyCustomsProductSignalMap({
         schema: {
-          ...phase2CustomsStoreProductSchema,
+          ...customsStoreProductSchema,
           createOrderTrigger: {
-            ...phase2CustomsStoreProductSchema.createOrderTrigger!,
+            ...customsStoreProductSchema.createOrderTrigger!,
             signalName: "wrong.registered"
           }
         }
@@ -296,11 +296,11 @@ describe("Product DTO protocol 0.7 compatibility", () => {
     );
 
     assert.match(
-      gate.verifyPhase2ProductSignalMap({
+      gate.verifyCustomsProductSignalMap({
         schema: {
-          ...phase2CustomsStoreProductSchema,
-          orderPermissionTable: phase2CustomsStoreProductSchema.orderPermissionTable.filter((entry) =>
-            entry.permissionId !== "phase2.customs.executor-signal"
+          ...customsStoreProductSchema,
+          orderPermissionTable: customsStoreProductSchema.orderPermissionTable.filter((entry) =>
+            entry.permissionId !== "customs.executor-signal"
           )
         }
       }).failures.join("\n"),
@@ -308,10 +308,10 @@ describe("Product DTO protocol 0.7 compatibility", () => {
     );
 
     assert.match(
-      gate.verifyPhase2ProductSignalMap({
+      gate.verifyCustomsProductSignalMap({
         schema: {
-          ...phase2CustomsStoreProductSchema,
-          selectorBindings: (phase2CustomsStoreProductSchema.selectorBindings ?? []).filter((binding) =>
+          ...customsStoreProductSchema,
+          selectorBindings: (customsStoreProductSchema.selectorBindings ?? []).filter((binding) =>
             binding.selectorStageIdentifier !== "buyer.select-customs-executor"
           )
         }
@@ -327,7 +327,7 @@ async function loadProtocolBindings(): Promise<ProtocolBindings> {
 }
 
 type ProductSignalMapGate = {
-  readonly verifyPhase2ProductSignalMap: (overrides?: { readonly schema?: StoreProductSchemaDTO }) => { readonly failures: readonly string[] };
+  readonly verifyCustomsProductSignalMap: (overrides?: { readonly schema?: StoreProductSchemaDTO }) => { readonly failures: readonly string[] };
 };
 
 async function loadProductSignalMapGate(): Promise<ProductSignalMapGate> {
@@ -340,8 +340,8 @@ function withPermission(
   patch: Partial<StoreProductSchemaDTO["orderPermissionTable"][number]>
 ): StoreProductSchemaDTO {
   return {
-    ...phase2CustomsStoreProductSchema,
-    orderPermissionTable: phase2CustomsStoreProductSchema.orderPermissionTable.map((entry) =>
+    ...customsStoreProductSchema,
+    orderPermissionTable: customsStoreProductSchema.orderPermissionTable.map((entry) =>
       entry.permissionId === permissionId ? { ...entry, ...patch } : entry
     )
   };

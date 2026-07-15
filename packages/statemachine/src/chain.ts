@@ -1,3 +1,5 @@
+import { replayWithUvpCore } from "@uvp-eth/hook-core";
+
 export type HexString = `0x${string}`;
 
 export type ChainModeEvent =
@@ -239,52 +241,19 @@ export function replayChainEvents(
   events: readonly ChainModeEvent[],
   options: ChainReplayOptions = {}
 ): ChainReplayResult {
-  const sorted = options.sort === false ? [...events] : [...events].sort(compareChainEvents);
-  const state: ChainOracleState = { plans: {}, orders: {} };
-  const expected: ChainHookObservation[] = [];
-  const observed: ChainHookObservation[] = [];
-
-  for (const event of sorted) {
-    switch (event.eventName) {
-      case "PlanRegistered":
-        state.plans[event.plan.planId] = event.plan;
-        break;
-      case "OrderRegistered":
-        state.orders[orderKey(event.zhixuId, event.orderId)] = {
-          planId: event.planId,
-          zhixuId: event.zhixuId,
-          orderId: event.orderId,
-          signals: {},
-          hookStatuses: {},
-          materializedStages: {}
-        };
-        break;
-      case "SignalSubmitted":
-        observed.push(...recordSignalAndEvaluate(state, event));
-        break;
-      case "TimerPoked":
-        observed.push(...evaluateTimerHook(state, event));
-        break;
-      case "HookReady":
-      case "HookStatusChanged":
-        expected.push(chainEventToExpectedObservation(event));
-        break;
-      case "OrderMaterialized":
-      case "OrderTriggered":
-      case "OrderLinked":
-      case "StageMaterialized":
-        break;
-      default:
-        assertNever(event);
+  const result = replayWithUvpCore({
+    events,
+    options: {
+      ...options,
+      strict: false
     }
-  }
-
-  const mismatches = compareHookObservations(expected, observed);
+  }) as ChainReplayResult;
+  const mismatches = result.mismatches;
   if ((options.strict ?? true) && mismatches.length > 0) {
     throw new ChainReplayMismatchError(mismatches);
   }
 
-  return { state, expected, observed, mismatches };
+  return result;
 }
 
 export function chainEventId(event: ChainEventBase): string {

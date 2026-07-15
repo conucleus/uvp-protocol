@@ -36,6 +36,16 @@ interface IUVPStateMachineCore {
         uint256 patchNonce,
         string calldata metadataURI
     ) external;
+    function delegateStageExecutorSignalFromModule(
+        bytes32 orderId,
+        bytes32 targetStageId,
+        bytes32 sourceId,
+        bytes32 signalId,
+        address executor,
+        bytes32 role,
+        bytes32 metadataHash,
+        uint256 patchNonce
+    ) external;
     function hasExplicitSignalAuthorization(bytes32 orderId, bytes32 sourceId, bytes32 signalId, address submitter)
         external
         view
@@ -45,7 +55,6 @@ interface IUVPStateMachineCore {
     function orderExists(bytes32 orderId) external view returns (bool);
     function orderPlanId(bytes32 orderId) external view returns (bytes32);
     function orderLinkModule() external view returns (address);
-    function orderRegistrars(address registrar) external view returns (bool);
     function planExists(bytes32 planId) external view returns (bool);
     function planMetadataModule() external view returns (address);
     function planPublisher(bytes32 planId) external view returns (address);
@@ -61,7 +70,7 @@ interface IUVPStateMachineCore {
     function triggerOrderFromSignalFromModule(
         TriggerOrderFromSignalRequest calldata trigger,
         SignalAuthorization[] calldata authorizations,
-        address registrar
+        address relayer
     ) external;
     function getSignal(bytes32 orderId, bytes32 sourceId, bytes32 signalId)
         external

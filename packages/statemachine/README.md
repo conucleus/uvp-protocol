@@ -17,8 +17,7 @@ streams. It is a test oracle, not a backend runtime or Solidity source.
 
 Given only chain events and minimal hook metadata derived from the on-chain
 artifact/register-plan boundary, this module rebuilds the expected hook state
-deterministically. For the ETH track, `UVPStateMachine` and
-`ZhixuTrustRegistry` events are the authoritative replay input.
+deterministically. `UVPStateMachine` events are the authoritative replay input.
 
 ## Local Package
 
@@ -46,8 +45,7 @@ oracle. `SignalSubmitted` and `TimerPoked` are treated as inputs. Chain-emitted
 `HookReady` and `HookStatusChanged` events are treated as golden expectations
 and compared with oracle observations.
 
-Plan publisher governance, order registrar governance, official-domain
-attestation checks, and signal submitter authorization are contract rules. This
+Plan publisher governance, order registrar governance, and signal submitter authorization are contract rules. This
 package verifies the resulting event stream and hook semantics; it does not
 replace contract authorization.
 

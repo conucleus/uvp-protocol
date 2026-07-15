@@ -18,7 +18,6 @@ contract UVPOrderLinkModule {
     error InvalidSignalSignatureLength(uint256 length);
     error InvalidTriggerOrderSignature(address expectedSigner, address recoveredSigner);
     error OrderTriggerLinkAlreadyRegistered(bytes32 triggeredOrderId);
-    error UnauthorizedOrderRegistrar();
     error UnknownOrder();
     error UnknownOrderTriggerLink(bytes32 triggeredOrderId);
     error ZeroSubmitter();
@@ -31,7 +30,7 @@ contract UVPOrderLinkModule {
     bytes32 private constant _EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _EIP712_NAME_HASH = keccak256("UVPOrderLinkModule");
-    bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.7");
+    bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.8");
     bytes32 private constant _TRIGGER_ORDER_FROM_SIGNAL_TYPEHASH = keccak256(
         "UVPOrderLinkModuleTriggerOrderFromSignal(bytes32 orderId,bytes32 planId,address creator,bytes32 triggerOriginOrderId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
     );
@@ -60,9 +59,6 @@ contract UVPOrderLinkModule {
         }
         if (trigger.submitter == address(0)) {
             revert ZeroSubmitter();
-        }
-        if (!stateMachine.orderRegistrars(msg.sender)) {
-            revert UnauthorizedOrderRegistrar();
         }
         if (!stateMachine.orderExists(trigger.triggerOriginOrderId)) {
             revert UnknownOrder();

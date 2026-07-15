@@ -33,9 +33,7 @@ contract UVPDeploymentRegistryTest {
         UVPDeploymentRegistry registry = new UVPDeploymentRegistry();
         address stateMachine = _target();
 
-        registry.registerDeployment(
-            DEPLOYMENT_ID_V1, stateMachine, ARTIFACT_HASH, ABI_HASH, 10, "ipfs://deployment/v1"
-        );
+        registry.registerDeployment(DEPLOYMENT_ID_V1, stateMachine, ARTIFACT_HASH, ABI_HASH, 10, "ipfs://deployment/v1");
         registry.markCanary(DEPLOYMENT_ID_V1, EVIDENCE_HASH, "ipfs://evidence/v1");
 
         vm.expectEmit(true, true, true, true);

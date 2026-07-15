@@ -1,12 +1,22 @@
 export type ProductTone = "ok" | "warn" | "info" | "neutral";
 
-export type ReviewStatus = "approved" | "restricted" | "rejected" | "revoked" | "unreviewed";
-export type ChainAttestationStatus = "attested" | "revoked" | "not_found";
+export type ReviewStatus =
+  | "approved"
+  | "restricted"
+  | "rejected"
+  | "revoked"
+  | "unreviewed";
+export type PlanPublicationStatus = "published" | "not_found";
 export type StageStatus = "done" | "active" | "pending";
-export type ParticipantStatus = "joined" | "invited" | "pending_confirmation" | "assigned" | "not_started";
+export type ParticipantStatus =
+  | "joined"
+  | "invited"
+  | "pending_confirmation"
+  | "assigned"
+  | "not_started";
 export type RoleSlotStatus = "required" | "connected" | "optional";
 export type DockableModuleStatus = "connected" | "available" | "planned";
-export type OrderStatus = "draft" | "pending_participants" | "active" | "in_dispute" | "completed";
+export type OrderStatus = "registered";
 export type TaskStatus = "open" | "submitted" | "blocked" | "done";
 export type PermissionPayloadPolicy = "required" | "optional";
 export type FulfillmentPluginKind =
@@ -17,13 +27,13 @@ export type FulfillmentPluginKind =
   | "dispute_material";
 export type ProductStageKind = "control" | "business";
 export type ProductStageExecutorAssignment = "static" | "selected";
-export type ParticipantAddOnManifestSchemaVersion = "participant-addon-manifest.v1";
+export type ParticipantAddOnManifestSchemaVersion =
+  "participant-addon-manifest.v1";
 export type StageExecutorActionKind =
   | "submit_signal"
   | "stage_executor_patch"
   | "stage_resource_patch";
 export type ParticipantAddOnManifestActionKind = StageExecutorActionKind;
-/** @deprecated Use StageExecutorActionKind. */
 export type ParticipantAddOnKind = StageExecutorActionKind;
 export type ParticipantAddOnManifestSignalIntent =
   | "confirm_stage"
@@ -43,13 +53,29 @@ export type ParticipantAddOnManifestComponentKind =
   | "resource_requirements"
   | "proof_rows";
 export type ProductExecutorPatchMode = "assign" | "handoff" | "replacement";
-export type ProductResourceRequirementSource = "plan_default" | "resource_patch" | "participant_input";
-export type ProductFileResourceSource = ProductResourceRequirementSource | "stage_patch";
-export type ProductResourceType = "document" | "image" | "metadata" | "uri" | "other";
+export type ProductResourceRequirementSource =
+  | "plan_default"
+  | "resource_patch"
+  | "participant_input";
+export type ProductResourceType =
+  | "document"
+  | "image"
+  | "metadata"
+  | "uri"
+  | "other";
 export type ProductFileResourceType = ProductResourceType;
 export type ProductResourceVisibility = "public" | "protected" | "private";
-export type ProductResourcePolicyPrincipalKind = "wallet" | "role" | "stage" | "participant";
-export type ProductResourceAccessState = "available" | "locked" | "request_required" | "not_authorized" | "unknown";
+export type ProductResourcePolicyPrincipalKind =
+  | "wallet"
+  | "role"
+  | "stage"
+  | "participant";
+export type ProductResourceAccessState =
+  | "available"
+  | "locked"
+  | "request_required"
+  | "not_authorized"
+  | "unknown";
 export type ProductDockedZhixuRuntimeStatus =
   | "draft_map"
   | "linked_order_required"
@@ -68,42 +94,43 @@ export type ProductizationConvergenceTrack =
   | "proof_read_model"
   | "identity_audit_ops"
   | "signal_container_producer";
-export type ProductizationConvergenceStatus = "closed" | "partial" | "prototype" | "open";
-export type CapabilityPluginSource = "explicit" | "legacy_inferred" | "missing";
+export type ProductizationConvergenceStatus =
+  | "closed"
+  | "partial"
+  | "prototype"
+  | "open";
+export type CapabilityPluginSource = "explicit" | "inferred" | "missing";
 export type StoreCapabilityReviewStatus = "explicit" | "inferred" | "missing";
 export type StoreProductSchemaVersion = "store-product-schema.v1";
 export type StoreSearchType = "all" | "zhixu" | "order" | "supplier";
 export type StoreSearchResultType = "zhixu" | "order" | "supplier";
-export type StoreSearchSourceOfTruth = "chain" | "chain-and-store-metadata" | "store-metadata";
-export type StoreProjectionSyncStatus = "indexed" | "syncing" | "stale" | "rebuilding" | "degraded";
+export type StoreSearchSourceOfTruth =
+  | "chain"
+  | "chain-and-store-metadata"
+  | "store-metadata";
+export type StoreProjectionSyncStatus =
+  | "indexed"
+  | "syncing"
+  | "stale"
+  | "rebuilding"
+  | "degraded";
 export type StoreZhixuLifecycleStatus =
   | "draft"
   | "compiled"
   | "submitted_for_review"
   | "approved_for_broadcast"
-  | "attested"
   | "active"
   | "deprecated"
   | "rejected"
   | "revoked";
-export type StoreSupplierReviewStatus = "draft" | "submitted" | "approved_for_broadcast" | "rejected" | "revoked";
-export type StoreSupplierTrustStatus = ChainAttestationStatus;
-export type StoreSupplierCapabilityTag =
-  | "logistics"
-  | "customs"
-  | "inspection"
-  | "payment"
-  | "dispute-review"
-  | "document-verification";
-
-export const STORE_SUPPLIER_CAPABILITY_TAGS: readonly StoreSupplierCapabilityTag[] = [
-  "logistics",
-  "customs",
-  "inspection",
-  "payment",
-  "dispute-review",
-  "document-verification"
-] as const;
+export type StoreSupplierReviewStatus =
+  | "draft"
+  | "submitted"
+  | "approved_for_broadcast"
+  | "rejected"
+  | "revoked";
+export type StoreSupplierIdentityStatus = "active" | "revoked" | "not_found";
+export type StoreSupplierCapabilityTag = string;
 
 export const STORE_PRODUCT_SCHEMA_V1_REQUIRED_FIELDS = [
   "schemaVersion",
@@ -121,13 +148,13 @@ export const STORE_PRODUCT_SCHEMA_V1_REQUIRED_FIELDS = [
   "schemaHash",
   "validation",
   "createdAt",
-  "updatedAt"
+  "updatedAt",
 ] as const;
 
 export const PARTICIPANT_ADDON_MANIFEST_V1_ACTION_KINDS = [
   "submit_signal",
   "stage_executor_patch",
-  "stage_resource_patch"
+  "stage_resource_patch",
 ] as const;
 
 export interface MoneyDTO {
@@ -141,17 +168,16 @@ export interface ChainProofRowDTO {
   readonly value: string;
 }
 
-export interface ChainAttestationDTO {
-  readonly status: ChainAttestationStatus;
+export interface PlanPublicationDTO {
+  readonly status: PlanPublicationStatus;
   readonly label: string;
-  readonly domainLabel: string;
+  readonly stateMachineLabel: string;
   readonly planId: string;
   readonly planHash: string;
   readonly artifactHash?: string;
-  readonly metadataURI?: string;
   readonly txHash?: string;
   readonly blockNumber?: string;
-  readonly revokedReasonURI?: string;
+  readonly publisher?: string;
 }
 
 export interface ProductExecutorOverlayDTO {
@@ -333,12 +359,6 @@ export interface ProductResourceRequirementDTO {
   readonly proofRows?: readonly ChainProofRowDTO[];
 }
 
-/** @deprecated Use ProductResourceRequirementDTO. */
-export interface ProductFileResourceDTO extends Omit<ProductResourceRequirementDTO, "source"> {
-  readonly source: ProductFileResourceSource;
-  readonly handle?: string;
-}
-
 export interface ProductSelectableTargetDTO {
   readonly targetStageId: string;
   readonly targetStageName: string;
@@ -363,8 +383,6 @@ export interface ProductSelectableTargetDTO {
   readonly executorOverlay?: ProductExecutorOverlayDTO;
   readonly resourceRequirements?: readonly ProductResourceRequirementDTO[];
   readonly resourceOverlays?: readonly ProductResourceOverlayDTO[];
-  /** @deprecated Use resourceRequirements. */
-  readonly effectiveFileResources?: readonly ProductFileResourceDTO[];
 }
 
 export interface ParticipantAddOnManifestSelectOptionDTO {
@@ -438,8 +456,6 @@ export interface ZhixuStageDTO {
   readonly executorOverlay?: ProductExecutorOverlayDTO;
   readonly resourceRequirements?: readonly ProductResourceRequirementDTO[];
   readonly resourceOverlays?: readonly ProductResourceOverlayDTO[];
-  /** @deprecated Use resourceRequirements. */
-  readonly effectiveFileResources?: readonly ProductFileResourceDTO[];
 }
 
 export interface RoleSlotDTO {
@@ -497,7 +513,7 @@ export interface ZhixuSummaryDTO {
   readonly supportedPaymentMethods: readonly string[];
   readonly maintainer: string;
   readonly updatedAt: string;
-  readonly chainAttestation: ChainAttestationDTO;
+  readonly planPublication: PlanPublicationDTO;
 }
 
 export interface ZhixuDetailDTO extends ZhixuSummaryDTO {
@@ -536,11 +552,15 @@ export interface ProductOrderDTO {
   readonly currentTaskTitle: string;
   readonly currentTaskSummary: string;
   readonly stages: readonly ZhixuStageDTO[];
-  readonly executorOverlays?: Readonly<Record<string, ProductExecutorOverlayDTO>>;
-  readonly resourceOverlays?: Readonly<Record<string, readonly ProductResourceOverlayDTO[]>>;
-  readonly resourceRequirements?: Readonly<Record<string, readonly ProductResourceRequirementDTO[]>>;
-  /** @deprecated Use resourceRequirements. */
-  readonly effectiveFileResources?: Readonly<Record<string, readonly ProductFileResourceDTO[]>>;
+  readonly executorOverlays?: Readonly<
+    Record<string, ProductExecutorOverlayDTO>
+  >;
+  readonly resourceOverlays?: Readonly<
+    Record<string, readonly ProductResourceOverlayDTO[]>
+  >;
+  readonly resourceRequirements?: Readonly<
+    Record<string, readonly ProductResourceRequirementDTO[]>
+  >;
   readonly selectableTargets?: readonly ProductSelectableTargetDTO[];
   readonly participants: readonly ParticipantDTO[];
   readonly recentEvents: readonly ProductTimelineEventDTO[];
@@ -568,8 +588,6 @@ export interface ProductTaskDTO {
   readonly subtitle: string;
   readonly assigneeRole: string;
   readonly assigneeWallet?: string;
-  readonly supplierSubjectId?: string;
-  readonly supplierTrustStatus?: ChainAttestationStatus;
   readonly stageId: string;
   readonly stageName: string;
   readonly deadline: string;
@@ -582,9 +600,6 @@ export interface ProductTaskDTO {
   readonly executorOverlay?: ProductExecutorOverlayDTO;
   readonly resourceRequirements?: readonly ProductResourceRequirementDTO[];
   readonly resourceOverlays?: readonly ProductResourceOverlayDTO[];
-  /** @deprecated Use resourceRequirements. */
-  readonly effectiveFileResources?: readonly ProductFileResourceDTO[];
-  readonly fulfillmentKind?: FulfillmentPluginKind;
   readonly performanceSlotId?: string;
   readonly performanceSlotLabel?: string;
   readonly businessPersonaLabels?: readonly string[];
@@ -675,7 +690,7 @@ export interface StoreProductSchemaDTO {
   readonly validation: StoreProductSchemaValidationDTO;
   readonly createdAt: string;
   readonly updatedAt: string;
-  readonly attestedAt?: string;
+  readonly publishedAt?: string;
   readonly deprecatedAt?: string;
 }
 
@@ -698,7 +713,11 @@ export interface ProductResponsibilityStatementDTO {
 export interface FulfillmentRequiredInputDTO {
   readonly inputId: string;
   readonly label: string;
-  readonly inputType: "evidence" | "text" | "confirmation" | "payment_placeholder";
+  readonly inputType:
+    | "evidence"
+    | "text"
+    | "confirmation"
+    | "payment_placeholder";
   readonly required: boolean;
   readonly completed: boolean;
 }
@@ -750,7 +769,7 @@ export interface StoreZhixuConsoleDTO {
   readonly planId: string;
   readonly planHash: string;
   readonly artifactHash?: string;
-  readonly chainAttestation: ChainAttestationDTO;
+  readonly planPublication: PlanPublicationDTO;
   readonly nextAction: string;
   readonly updatedAt: string;
   readonly proofRows: readonly ChainProofRowDTO[];
@@ -856,11 +875,11 @@ export interface StoreSupplierRequirementDTO {
   readonly title: string;
   readonly description: string;
   readonly requiredTags: readonly string[];
-  readonly trustExpectation: string;
+  readonly selectionGuidance: string;
 }
 
 export interface StoreProofRowDTO extends ChainProofRowDTO {
-  readonly kind?: "lifecycle" | "plan" | "attestation" | "projection" | "usage";
+  readonly kind?: "lifecycle" | "plan" | "projection" | "usage";
   readonly copyable?: boolean;
 }
 
@@ -874,7 +893,13 @@ export interface StoreProofSectionDTO {
 }
 
 export interface StoreZhixuActionDTO {
-  readonly actionId: "create_order" | "broadcast_attestation" | "submit_review" | "observe_orders" | "view_proof" | "repair_metadata";
+  readonly actionId:
+    | "create_order"
+    | "publish_plan"
+    | "submit_review"
+    | "observe_orders"
+    | "view_proof"
+    | "repair_metadata";
   readonly label: string;
   readonly enabled: boolean;
   readonly primary: boolean;
@@ -903,8 +928,8 @@ export interface StoreSupplierDTO {
   readonly notificationProfile?: unknown;
   readonly notificationProfileHash?: string;
   readonly notificationUpdatedAt?: string;
-  readonly trustStatus: StoreSupplierTrustStatus;
-  readonly trustLabel: string;
+  readonly identityStatus: StoreSupplierIdentityStatus;
+  readonly identityLabel: string;
   readonly capabilityTags: readonly string[];
   readonly supportedRoleSlotIds: readonly string[];
   readonly supportedStageIds: readonly string[];
@@ -922,15 +947,26 @@ export interface StoreConsoleSummaryDTO {
   readonly totalZhixus: number;
   readonly activeZhixus: number;
   readonly needsReview: number;
-  readonly revokedZhixus: number;
   readonly runningOrders: number;
   readonly openTasks: number;
-  readonly trustedSuppliers: number;
+  readonly registeredSuppliers: number;
 }
 
-export type StoreIndexerStatus = "ready" | "syncing" | "rebuilding" | "degraded";
-export type StoreOrderReplayStatus = "replayable" | "syncing" | "rebuild_required" | "not_found";
-export type StoreZhixuVersionStatus = "candidate" | "active" | "deprecated" | "revoked" | "rejected";
+export type StoreIndexerStatus =
+  | "ready"
+  | "syncing"
+  | "rebuilding"
+  | "degraded";
+export type StoreOrderReplayStatus =
+  | "replayable"
+  | "syncing"
+  | "rebuild_required"
+  | "not_found";
+export type StoreZhixuVersionStatus =
+  | "candidate"
+  | "active"
+  | "deprecated"
+  | "rejected";
 
 export interface StoreRuntimeSummaryDTO {
   readonly sourceOfTruth: "contracts-and-chain-events";
@@ -938,8 +974,6 @@ export interface StoreRuntimeSummaryDTO {
   readonly runningOrderCount: number;
   readonly openTaskCount: number;
   readonly blockedOrderCount: number;
-  readonly revokedPlanOrderCount: number;
-  readonly revokedSupplierOpenTaskCount: number;
   readonly indexerStatus: StoreIndexerStatus;
   readonly updatedAt: string;
 }
@@ -956,15 +990,13 @@ export interface StoreOrderStageObservationDTO {
   readonly executorOverlay?: ProductExecutorOverlayDTO;
   readonly resourceRequirements?: readonly ProductResourceRequirementDTO[];
   readonly resourceOverlays?: readonly ProductResourceOverlayDTO[];
-  /** @deprecated Use resourceRequirements. */
-  readonly effectiveFileResources?: readonly ProductFileResourceDTO[];
   readonly proofRows: readonly ChainProofRowDTO[];
 }
 
 export interface StoreOrderSupplierObservationDTO {
   readonly supplierSubjectId?: string;
   readonly wallet?: string;
-  readonly trustStatus: ChainAttestationStatus;
+  readonly identityStatus: StoreSupplierIdentityStatus;
   readonly metadataURI?: string;
   readonly revokedReasonURI?: string;
 }
@@ -978,11 +1010,15 @@ export interface StoreOrderObservationDTO {
   readonly planHash: string;
   readonly lifecycleWarnings: readonly string[];
   readonly stages: readonly StoreOrderStageObservationDTO[];
-  readonly executorOverlays?: Readonly<Record<string, ProductExecutorOverlayDTO>>;
-  readonly resourceOverlays?: Readonly<Record<string, readonly ProductResourceOverlayDTO[]>>;
-  readonly resourceRequirements?: Readonly<Record<string, readonly ProductResourceRequirementDTO[]>>;
-  /** @deprecated Use resourceRequirements. */
-  readonly effectiveFileResources?: Readonly<Record<string, readonly ProductFileResourceDTO[]>>;
+  readonly executorOverlays?: Readonly<
+    Record<string, ProductExecutorOverlayDTO>
+  >;
+  readonly resourceOverlays?: Readonly<
+    Record<string, readonly ProductResourceOverlayDTO[]>
+  >;
+  readonly resourceRequirements?: Readonly<
+    Record<string, readonly ProductResourceRequirementDTO[]>
+  >;
   readonly selectableTargets?: readonly ProductSelectableTargetDTO[];
   readonly tasks: readonly ProductTaskDTO[];
   readonly dockedZhixuRuntimes?: readonly ProductDockedZhixuRuntimeDTO[];
@@ -1019,7 +1055,7 @@ export interface StoreZhixuVersionSummaryDTO {
   readonly planId: string;
   readonly planHash: string;
   readonly artifactHash?: string;
-  readonly attestationStatus: ChainAttestationStatus;
+  readonly publicationStatus: PlanPublicationStatus;
   readonly orderCount: number;
   readonly createdAt: string;
   readonly cutoverAt?: string;
@@ -1048,11 +1084,12 @@ export interface StoreZhixuDetailOptions {
 
 export function toStoreZhixuConsoleDTO(
   zhixu: ZhixuSummaryDTO,
-  metrics: StoreZhixuConsoleMetrics = {}
+  metrics: StoreZhixuConsoleMetrics = {},
 ): StoreZhixuConsoleDTO {
-  const lifecycleStatus = metrics.lifecycleStatus ?? lifecycleStatusForZhixu(zhixu);
-  const planId = zhixu.chainAttestation.planId;
-  const planHash = zhixu.chainAttestation.planHash;
+  const lifecycleStatus =
+    metrics.lifecycleStatus ?? lifecycleStatusForZhixu(zhixu);
+  const planId = zhixu.planPublication.planId;
+  const planHash = zhixu.planPublication.planHash;
   return {
     zhixuId: zhixu.zhixuId,
     title: zhixu.title,
@@ -1071,47 +1108,57 @@ export function toStoreZhixuConsoleDTO(
     supplierCount: metrics.supplierCount ?? 0,
     planId,
     planHash,
-    ...(zhixu.chainAttestation.artifactHash ? { artifactHash: zhixu.chainAttestation.artifactHash } : {}),
-    chainAttestation: zhixu.chainAttestation,
+    ...(zhixu.planPublication.artifactHash
+      ? { artifactHash: zhixu.planPublication.artifactHash }
+      : {}),
+    planPublication: zhixu.planPublication,
     nextAction: metrics.nextAction ?? nextActionForLifecycle(lifecycleStatus),
     updatedAt: metrics.updatedAt ?? zhixu.updatedAt,
     proofRows: [
       { label: "秩序编号", value: zhixu.zhixuId },
       { label: "生命周期", value: lifecycleLabel(lifecycleStatus) },
-      { label: "背书状态", value: zhixu.chainAttestation.label },
+      { label: "Plan 发布", value: "以 StateMachine commit/finalize 事件为准" },
       { label: "Plan ID", value: planId },
-      { label: "Plan Hash", value: planHash }
-    ]
+      { label: "Plan Hash", value: planHash },
+    ],
   };
 }
 
-export function storeConsoleSummary(zhixus: readonly StoreZhixuConsoleDTO[]): StoreConsoleSummaryDTO {
+export function storeConsoleSummary(
+  zhixus: readonly StoreZhixuConsoleDTO[],
+): StoreConsoleSummaryDTO {
   return {
     totalZhixus: zhixus.length,
-    activeZhixus: zhixus.filter((zhixu) => zhixu.lifecycleStatus === "active").length,
-    needsReview: zhixus.filter((zhixu) =>
-      zhixu.lifecycleStatus === "draft" ||
-      zhixu.lifecycleStatus === "compiled" ||
-      zhixu.lifecycleStatus === "submitted_for_review" ||
-      zhixu.lifecycleStatus === "approved_for_broadcast"
+    activeZhixus: zhixus.filter((zhixu) => zhixu.lifecycleStatus === "active")
+      .length,
+    needsReview: zhixus.filter(
+      (zhixu) =>
+        zhixu.lifecycleStatus === "draft" ||
+        zhixu.lifecycleStatus === "compiled" ||
+        zhixu.lifecycleStatus === "submitted_for_review" ||
+        zhixu.lifecycleStatus === "approved_for_broadcast",
     ).length,
-    revokedZhixus: zhixus.filter((zhixu) => zhixu.lifecycleStatus === "revoked").length,
     runningOrders: zhixus.reduce((sum, zhixu) => sum + zhixu.orderCount, 0),
     openTasks: zhixus.reduce((sum, zhixu) => sum + zhixu.openTaskCount, 0),
-    trustedSuppliers: Math.max(0, ...zhixus.map((zhixu) => zhixu.supplierCount))
+    registeredSuppliers: Math.max(
+      0,
+      ...zhixus.map((zhixu) => zhixu.supplierCount),
+    ),
   };
 }
 
 export function toStoreZhixuDetailDTO(
   row: StoreZhixuConsoleDTO,
   zhixu: ZhixuDetailDTO,
-  options: StoreZhixuDetailOptions = {}
+  options: StoreZhixuDetailOptions = {},
 ): StoreZhixuDetailDTO {
   return {
     ...row,
     description: options.description ?? zhixu.subtitle,
-    lifecycleReason: options.lifecycleReason ?? lifecycleReasonForStoreZhixu(row),
-    usageGuidance: options.usageGuidance ?? usageGuidanceForStoreZhixu(row, zhixu),
+    lifecycleReason:
+      options.lifecycleReason ?? lifecycleReasonForStoreZhixu(row),
+    usageGuidance:
+      options.usageGuidance ?? usageGuidanceForStoreZhixu(row, zhixu),
     stages: zhixu.stages.map((stage) => storeStageFromZhixuStage(stage, zhixu)),
     roleSlots: zhixu.roleSlots.map(storeRoleSlotFromZhixuSlot),
     supplierRequirements: zhixu.roleSlots
@@ -1121,37 +1168,35 @@ export function toStoreZhixuDetailDTO(
         title: `${slot.title}供应能力`,
         description: slot.duty,
         requiredTags: [slot.label, ...slot.evidence],
-        trustExpectation: "需要订单级授权；正式供应商可由官方信任域背书。"
+        selectionGuidance: "需要订单级授权；身份目录只解析主体与钱包，能力与匹配由 Store 自行判断。",
       })),
     riskTags: options.riskTags ?? defaultRiskTags(zhixu),
     versionHistory: options.versionHistory ?? [versionSummaryFromStoreRow(row)],
     proofSections: options.proofSections ?? defaultProofSections(row),
-    allowedActions: options.allowedActions ?? allowedActionsForStoreZhixu(row)
+    allowedActions: options.allowedActions ?? allowedActionsForStoreZhixu(row),
   };
 }
 
 export function lifecycleStatusForZhixu(
-  zhixu: Pick<ZhixuSummaryDTO, "reviewStatus" | "chainAttestation">
+  zhixu: Pick<ZhixuSummaryDTO, "reviewStatus" | "planPublication">,
 ): StoreZhixuLifecycleStatus {
-  if (zhixu.chainAttestation.status === "revoked" || zhixu.reviewStatus === "revoked") {
+  if (zhixu.reviewStatus === "revoked") {
     return "revoked";
   }
   if (zhixu.reviewStatus === "rejected") {
     return "rejected";
   }
-  if (zhixu.chainAttestation.status === "attested" && zhixu.reviewStatus === "approved") {
-    return "active";
-  }
-  if (zhixu.chainAttestation.status === "attested") {
-    return "attested";
-  }
   if (zhixu.reviewStatus === "approved" || zhixu.reviewStatus === "restricted") {
-    return "approved_for_broadcast";
+    return zhixu.planPublication.status === "published"
+      ? "active"
+      : "approved_for_broadcast";
   }
   return "draft";
 }
 
-export function projectionStatusLabel(status: StoreProjectionSyncStatus): string {
+export function projectionStatusLabel(
+  status: StoreProjectionSyncStatus,
+): string {
   switch (status) {
     case "indexed":
       return "投影已同步";
@@ -1175,9 +1220,7 @@ export function lifecycleLabel(status: StoreZhixuLifecycleStatus): string {
     case "submitted_for_review":
       return "待审核";
     case "approved_for_broadcast":
-      return "待链上背书";
-    case "attested":
-      return "已链上背书";
+      return "待发布签名";
     case "active":
       return "可创建订单";
     case "deprecated":
@@ -1198,9 +1241,7 @@ function nextActionForLifecycle(status: StoreZhixuLifecycleStatus): string {
     case "submitted_for_review":
       return "等待治理方审核";
     case "approved_for_broadcast":
-      return "广播 Trust Registry 背书交易";
-    case "attested":
-      return "设置为可用并观察订单创建";
+      return "由 publisher 签名提交并 finalize Plan";
     case "active":
       return "持续观察订单、待办和供应商状态";
     case "deprecated":
@@ -1215,58 +1256,76 @@ function nextActionForLifecycle(status: StoreZhixuLifecycleStatus): string {
 function lifecycleReasonForStoreZhixu(row: StoreZhixuConsoleDTO): string {
   switch (row.lifecycleStatus) {
     case "active":
-      return "该秩序已通过 Store 审核，并且官方信任域链上背书有效，可用于创建新订单。";
-    case "attested":
-      return "该秩序已有链上背书，但 Store 仍需要完成可用性确认后再推荐创建新订单。";
+      return "该秩序已通过 Store 审核；链上是否可创建订单以 StateMachine 中的 finalized Plan 为准。";
     case "approved_for_broadcast":
-      return "Store 审核已通过，但尚未写入官方信任域链上背书；审核状态不能替代链上背书。";
+      return "Store 审核已通过，下一步是取得 publisher 签名并提交、冻结 Plan。";
     case "submitted_for_review":
       return "该秩序已提交治理审核，当前还不能作为官方可用版本创建新订单。";
     case "compiled":
-      return "该秩序已经编译出候选产物，还需要提交治理审核和链上背书。";
+      return "该秩序已经编译出候选产物，还需要审核并取得 publisher 签名。";
     case "draft":
-      return "该秩序仍是展示或设计草稿，当前没有可依赖的官方链上背书。";
+      return "该秩序仍是展示或设计草稿，尚未形成可验证的 finalized Plan。";
     case "deprecated":
       return "该版本仅用于历史订单回放和审计，不建议继续创建新订单。";
     case "rejected":
       return "该秩序未通过 Store 审核，需要修正风险项后重新提交。";
     case "revoked":
-      return "该秩序的审核状态或链上背书已撤销，不能创建新订单，但历史证明仍可查看。";
+      return "该秩序的 Store 审核状态已撤销，不再由本 Store 推荐；历史证明仍可查看。";
   }
 }
 
-function usageGuidanceForStoreZhixu(row: StoreZhixuConsoleDTO, zhixu: ZhixuDetailDTO): string {
+function usageGuidanceForStoreZhixu(
+  row: StoreZhixuConsoleDTO,
+  zhixu: ZhixuDetailDTO,
+): string {
   switch (row.lifecycleStatus) {
     case "active":
       return zhixu.createOrderHint;
     case "revoked":
       return "不要用该版本创建新订单；仅用于查看历史订单、版本记录和撤销证明。";
     case "rejected":
-      return "先处理审核拒绝原因，再重新编译、审核和背书。";
+      return "先处理审核拒绝原因，再重新编译、审核和签名发布。";
     case "approved_for_broadcast":
-      return "下一步是广播官方信任域背书交易；在背书确认前不要把它作为链上官方版本对外承诺。";
+      return "下一步是由 publisher 签名提交 Plan，并一次 finalize metadata。";
     default:
-      return "用于 Store 内部评估、补充说明和验证证明；正式使用前需要完成审核与链上背书。";
+      return "用于 Store 内部评估、补充说明和验证证明；正式使用前需要形成 finalized Plan。";
   }
 }
 
-function storeStageFromZhixuStage(stage: ZhixuStageDTO, zhixu: ZhixuDetailDTO): StoreZhixuStageDTO {
-  const permission = zhixu.orderPermissionTable.find((entry) =>
-    entry.stageId === stage.stageId
+function storeStageFromZhixuStage(
+  stage: ZhixuStageDTO,
+  zhixu: ZhixuDetailDTO,
+): StoreZhixuStageDTO {
+  const permission = zhixu.orderPermissionTable.find(
+    (entry) => entry.stageId === stage.stageId,
   );
-  const roleSlot = zhixu.roleSlots.find((slot) =>
-    slot.slotId === permission?.roleSlotId || slot.title === stage.ownerRole || slot.label === stage.ownerRole
+  const roleSlot = zhixu.roleSlots.find(
+    (slot) =>
+      slot.slotId === permission?.roleSlotId ||
+      slot.title === stage.ownerRole ||
+      slot.label === stage.ownerRole,
   );
-  const evidenceText = stage.evidence.length > 0 ? `需要 ${stage.evidence.join("、")}。` : "按业务约定提交确认。";
+  const evidenceText =
+    stage.evidence.length > 0
+      ? `需要 ${stage.evidence.join("、")}。`
+      : "按业务约定提交确认。";
   return {
     stageId: stage.stageId,
     title: stage.name,
     description: `${stage.ownerRole}负责该阶段。${evidenceText}`,
     ...(roleSlot ? { responsibleRoleSlotId: roleSlot.slotId } : {}),
-    expectedSupplierTags: roleSlot ? [roleSlot.label, ...roleSlot.evidence] : stage.evidence,
-    triggerSummary: stage.index === 1 ? "订单创建后进入该阶段。" : "前序阶段完成后进入该阶段。",
-    outputSummary: stage.evidence.length > 0 ? `输出 ${stage.evidence.join("、")} 等证明。` : "输出阶段确认结果。",
-    statusInSampleOrder: stage.status
+    expectedSupplierTags: roleSlot
+      ? [roleSlot.label, ...roleSlot.evidence]
+      : stage.evidence,
+    triggerSummary:
+      stage.index === 1
+        ? "订单创建后进入该阶段。"
+        : "前序阶段完成后进入该阶段。",
+    outputSummary:
+      stage.evidence.length > 0
+        ? `输出 ${stage.evidence.join("、")} 等证明。`
+        : "输出阶段确认结果。",
+    statusInSampleOrder: stage.status,
   };
 }
 
@@ -1282,16 +1341,23 @@ function roleSlotStatusLabel(status: RoleSlotStatus): string {
 }
 
 function storeRoleSlotFromZhixuSlot(slot: RoleSlotDTO): StoreRoleSlotDTO {
-  const capabilityPlugins: readonly StoreRoleSlotCapabilityPluginDTO[] = (slot.capabilityPlugins ?? []).map((plugin) => ({
+  const capabilityPlugins: readonly StoreRoleSlotCapabilityPluginDTO[] = (
+    slot.capabilityPlugins ?? []
+  ).map((plugin) => ({
     pluginKind: plugin.pluginKind,
     source: plugin.source,
     stageIds: plugin.stageIds,
     title: plugin.title ?? capabilityPluginKindLabel(plugin.pluginKind),
-    summary: plugin.summary ?? "该能力由 Store 操作员审核，用于说明该履约插槽可执行的阶段动作。",
-    ...(plugin.primaryActionLabel ? { primaryActionLabel: plugin.primaryActionLabel } : {}),
-    requiredEvidence: plugin.requiredEvidence
+    summary:
+      plugin.summary ??
+      "该能力由 Store 操作员审核，用于说明该履约插槽可执行的阶段动作。",
+    ...(plugin.primaryActionLabel
+      ? { primaryActionLabel: plugin.primaryActionLabel }
+      : {}),
+    requiredEvidence: plugin.requiredEvidence,
   }));
-  const capabilityReviewStatus = capabilityReviewStatusForPlugins(capabilityPlugins);
+  const capabilityReviewStatus =
+    capabilityReviewStatusForPlugins(capabilityPlugins);
   return {
     roleSlotId: slot.slotId,
     title: slot.title,
@@ -1300,23 +1366,27 @@ function storeRoleSlotFromZhixuSlot(slot: RoleSlotDTO): StoreRoleSlotDTO {
     expectedEvidence: slot.evidence,
     statusLabel: roleSlotStatusLabel(slot.status),
     performanceSlotLabel: slot.performanceSlotLabel ?? slot.title,
-    businessPersonaLabels: slot.businessPersonaLabels && slot.businessPersonaLabels.length > 0
-      ? slot.businessPersonaLabels
-      : [slot.label],
+    businessPersonaLabels:
+      slot.businessPersonaLabels && slot.businessPersonaLabels.length > 0
+        ? slot.businessPersonaLabels
+        : [slot.label],
     capabilityPlugins,
     ...(slot.addOnManifest ? { addOnManifest: slot.addOnManifest } : {}),
     capabilityReviewStatus,
-    capabilityReviewLabel: capabilityReviewLabel(capabilityReviewStatus)
+    capabilityReviewLabel: capabilityReviewLabel(capabilityReviewStatus),
   };
 }
 
 function capabilityReviewStatusForPlugins(
-  capabilityPlugins: readonly StoreRoleSlotCapabilityPluginDTO[]
+  capabilityPlugins: readonly StoreRoleSlotCapabilityPluginDTO[],
 ): StoreCapabilityReviewStatus {
-  if (capabilityPlugins.length === 0 || capabilityPlugins.some((plugin) => plugin.source === "missing")) {
+  if (
+    capabilityPlugins.length === 0 ||
+    capabilityPlugins.some((plugin) => plugin.source === "missing")
+  ) {
     return "missing";
   }
-  if (capabilityPlugins.some((plugin) => plugin.source === "legacy_inferred")) {
+  if (capabilityPlugins.some((plugin) => plugin.source === "inferred")) {
     return "inferred";
   }
   return "explicit";
@@ -1349,10 +1419,18 @@ function capabilityPluginKindLabel(kind: FulfillmentPluginKind): string {
 }
 
 function defaultRiskTags(zhixu: ZhixuDetailDTO): readonly string[] {
-  return [...new Set([zhixu.riskLevel, ...zhixu.excludedBusiness].filter((tag) => tag.length > 0))];
+  return [
+    ...new Set(
+      [zhixu.riskLevel, ...zhixu.excludedBusiness].filter(
+        (tag) => tag.length > 0,
+      ),
+    ),
+  ];
 }
 
-function versionSummaryFromStoreRow(row: StoreZhixuConsoleDTO): StoreZhixuVersionSummaryDTO {
+function versionSummaryFromStoreRow(
+  row: StoreZhixuConsoleDTO,
+): StoreZhixuVersionSummaryDTO {
   return {
     versionId: `${row.zhixuId}:${row.planHash}`,
     zhixuId: row.zhixuId,
@@ -1362,24 +1440,25 @@ function versionSummaryFromStoreRow(row: StoreZhixuConsoleDTO): StoreZhixuVersio
     planId: row.planId,
     planHash: row.planHash,
     ...(row.artifactHash ? { artifactHash: row.artifactHash } : {}),
-    attestationStatus: row.chainAttestation.status,
+    publicationStatus: row.planPublication.status,
     orderCount: row.orderCount,
     createdAt: row.updatedAt,
-    ...(row.chainAttestation.status === "revoked" ? { cutoverReason: "链上背书或 Store 审核已撤销" } : {})
+    ...(row.reviewStatus === "revoked" ? { cutoverReason: "Store 审核已撤销" } : {}),
   };
 }
 
-function versionStatusFromLifecycle(status: StoreZhixuLifecycleStatus): StoreZhixuVersionStatus {
+function versionStatusFromLifecycle(
+  status: StoreZhixuLifecycleStatus,
+): StoreZhixuVersionStatus {
   switch (status) {
     case "active":
-    case "attested":
       return "active";
     case "deprecated":
       return "deprecated";
     case "rejected":
       return "rejected";
     case "revoked":
-      return "revoked";
+      return "deprecated";
     case "draft":
     case "compiled":
     case "submitted_for_review":
@@ -1388,21 +1467,22 @@ function versionStatusFromLifecycle(status: StoreZhixuLifecycleStatus): StoreZhi
   }
 }
 
-function defaultProofSections(row: StoreZhixuConsoleDTO): readonly StoreProofSectionDTO[] {
-  const attestationRows: StoreProofRowDTO[] = [
+function defaultProofSections(
+  row: StoreZhixuConsoleDTO,
+): readonly StoreProofSectionDTO[] {
+  const planRows: StoreProofRowDTO[] = [
     { label: "Plan ID", value: row.planId, kind: "plan", copyable: true },
     { label: "Plan Hash", value: row.planHash, kind: "plan", copyable: true },
-    ...(row.artifactHash ? [{ label: "Artifact Hash", value: row.artifactHash, kind: "plan" as const, copyable: true }] : []),
-    { label: "背书状态", value: row.chainAttestation.label, kind: "attestation" },
-    ...(row.chainAttestation.txHash
-      ? [{ label: "背书交易", value: row.chainAttestation.txHash, kind: "attestation" as const, copyable: true }]
+    ...(row.artifactHash
+      ? [
+          {
+            label: "Artifact Hash",
+            value: row.artifactHash,
+            kind: "plan" as const,
+            copyable: true,
+          },
+        ]
       : []),
-    ...(row.chainAttestation.blockNumber
-      ? [{ label: "背书区块", value: row.chainAttestation.blockNumber, kind: "attestation" as const }]
-      : []),
-    ...(row.chainAttestation.status !== "not_found"
-      ? [{ label: "链上事件", value: row.chainAttestation.status === "revoked" ? "PlanRevoked" : "PlanAttested", kind: "attestation" as const }]
-      : [])
   ];
 
   return [
@@ -1410,38 +1490,47 @@ function defaultProofSections(row: StoreZhixuConsoleDTO): readonly StoreProofSec
       sectionId: "lifecycle",
       title: "生命周期证明",
       summary: row.lifecycleLabel,
-      sourceOfTruth: row.chainAttestation.status === "not_found" ? "store-metadata" : "chain-and-store-metadata",
+      sourceOfTruth:
+        row.planPublication.status === "not_found"
+          ? "store-metadata"
+          : "chain-and-store-metadata",
       collapsedByDefault: false,
-      rows: row.proofRows.map((proofRow): StoreProofRowDTO => ({ ...proofRow, kind: proofKindForLabel(proofRow.label) }))
+      rows: row.proofRows.map(
+        (proofRow): StoreProofRowDTO => ({
+          ...proofRow,
+          kind: proofKindForLabel(proofRow.label),
+        }),
+      ),
     },
     {
-      sectionId: "chain-attestation",
-      title: "链上背书证明",
-      summary: row.chainAttestation.label,
-      sourceOfTruth: row.chainAttestation.status === "not_found" ? "store-metadata" : "chain",
+      sectionId: "plan-publication",
+      title: "Plan 发布信息",
+      summary: "Plan 可用性以 StateMachine commit/finalize 事件为准",
+      sourceOfTruth: "chain-and-store-metadata",
       collapsedByDefault: true,
-      rows: attestationRows
-    }
+      rows: planRows,
+    },
   ];
 }
 
-function proofKindForLabel(label: string): NonNullable<StoreProofRowDTO["kind"]> {
+function proofKindForLabel(
+  label: string,
+): NonNullable<StoreProofRowDTO["kind"]> {
   if (label.includes("Plan")) {
     return "plan";
-  }
-  if (label.includes("背书")) {
-    return "attestation";
   }
   return "lifecycle";
 }
 
-function allowedActionsForStoreZhixu(row: StoreZhixuConsoleDTO): readonly StoreZhixuActionDTO[] {
+function allowedActionsForStoreZhixu(
+  row: StoreZhixuConsoleDTO,
+): readonly StoreZhixuActionDTO[] {
   const proofAction: StoreZhixuActionDTO = {
     actionId: "view_proof",
     label: "查看证明",
     enabled: true,
     primary: false,
-    href: `/store/zhixus/${encodeURIComponent(row.zhixuId)}#proof`
+    href: `/store/zhixus/${encodeURIComponent(row.zhixuId)}#proof`,
   };
   switch (row.lifecycleStatus) {
     case "active":
@@ -1451,28 +1540,27 @@ function allowedActionsForStoreZhixu(row: StoreZhixuConsoleDTO): readonly StoreZ
           label: "创建订单",
           enabled: true,
           primary: true,
-          href: `/product/orders/new?zhixuId=${encodeURIComponent(row.zhixuId)}`
+          href: `/product/orders/new?zhixuId=${encodeURIComponent(row.zhixuId)}`,
         },
         {
           actionId: "observe_orders",
           label: "查看运行订单",
           enabled: true,
           primary: false,
-          href: `/store/search?q=${encodeURIComponent(row.zhixuId)}&type=order`
+          href: `/store/search?q=${encodeURIComponent(row.zhixuId)}&type=order`,
         },
-        proofAction
+        proofAction,
       ];
     case "approved_for_broadcast":
-    case "attested":
       return [
         {
-          actionId: "broadcast_attestation",
-          label: row.lifecycleStatus === "attested" ? "确认可用性" : "广播背书",
+          actionId: "publish_plan",
+          label: "签名发布 Plan",
           enabled: true,
           primary: true,
-          reason: row.nextAction
+          reason: row.nextAction,
         },
-        proofAction
+        proofAction,
       ];
     case "draft":
     case "compiled":
@@ -1483,9 +1571,9 @@ function allowedActionsForStoreZhixu(row: StoreZhixuConsoleDTO): readonly StoreZ
           label: "推进审核",
           enabled: true,
           primary: true,
-          reason: row.nextAction
+          reason: row.nextAction,
         },
-        proofAction
+        proofAction,
       ];
     case "deprecated":
     case "rejected":
