@@ -2,32 +2,23 @@
 pragma solidity ^0.8.24;
 
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
+import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 
-contract UVPPlanMetadataModule {
-    struct StageSelectorBinding {
-        bytes32 selectorStageId;
-        bytes32 targetStageId;
-    }
-
-    struct SignalCapability {
-        bytes32 stageId;
-        bytes32 targetSourceId;
-        bytes32 signalId;
-        uint8 targetOrderRelation;
-    }
-
+contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     struct PlanMetadata {
         bytes32[] selectorBindingKeys;
         bytes32[] signalCapabilityKeys;
+        mapping(bytes32 stageId => bytes32[] capabilityKeys) stageSignalCapabilityKeys;
         mapping(bytes32 bindingKey => StageSelectorBinding binding) selectorBindings;
         mapping(bytes32 targetStageId => bool exists) selectorTargetStages;
-        mapping(bytes32 capabilityKey => bool exists) signalCapabilities;
+        mapping(bytes32 capabilityKey => SignalCapability capability) signalCapabilities;
     }
 
     error InvalidSignalCapability();
     error InvalidTargetOrderRelation(uint8 targetOrderRelation);
     error StageSelectorBindingAlreadyRegistered(bytes32 planId, bytes32 selectorStageId, bytes32 targetStageId);
-    error UnauthorizedPlanMetadataPublisher(bytes32 planId, address publisher);
+    error PlanMetadataAlreadyFinalized(bytes32 planId);
+    error UnauthorizedStateMachine(address caller);
     error UnknownPlan();
     error ZeroSelectorStageId();
     error ZeroSignalId();
@@ -40,6 +31,7 @@ contract UVPPlanMetadataModule {
     uint8 public constant SIGNAL_TARGET_TRIGGER_ORIGIN = 1;
 
     mapping(bytes32 planId => PlanMetadata metadata) private _metadata;
+    mapping(bytes32 planId => bool finalized) public planMetadataFinalized;
 
     event StageSelectorBindingRegistered(
         bytes32 indexed planId, bytes32 indexed selectorStageId, bytes32 indexed targetStageId
@@ -56,14 +48,20 @@ contract UVPPlanMetadataModule {
         stateMachine = IUVPStateMachineCore(stateMachineAddress);
     }
 
-    function registerPlanMetadata(
+    function finalizePlanMetadata(
         bytes32 planId,
         StageSelectorBinding[] calldata selectorBindings,
         SignalCapability[] calldata signalCapabilities
     ) external {
-        _requirePlanPublisher(planId);
+        if (msg.sender != address(stateMachine)) {
+            revert UnauthorizedStateMachine(msg.sender);
+        }
+        if (planMetadataFinalized[planId]) {
+            revert PlanMetadataAlreadyFinalized(planId);
+        }
         _registerStageSelectorBindings(planId, selectorBindings);
         _registerSignalCapabilities(planId, signalCapabilities);
+        planMetadataFinalized[planId] = true;
     }
 
     function planSelectorBindingCount(bytes32 planId) external view returns (uint256) {
@@ -85,6 +83,34 @@ contract UVPPlanMetadataModule {
     function planSignalCapabilityCount(bytes32 planId) external view returns (uint256) {
         _requireKnownPlan(planId);
         return _metadata[planId].signalCapabilityKeys.length;
+    }
+
+    function planSignalCapabilityAt(bytes32 planId, uint256 index)
+        external
+        view
+        returns (bytes32 stageId, bytes32 targetSourceId, bytes32 signalId, uint8 targetOrderRelation)
+    {
+        _requireKnownPlan(planId);
+        PlanMetadata storage metadata = _metadata[planId];
+        SignalCapability storage capability = metadata.signalCapabilities[metadata.signalCapabilityKeys[index]];
+        return (capability.stageId, capability.targetSourceId, capability.signalId, capability.targetOrderRelation);
+    }
+
+    function stageSignalCapabilityCount(bytes32 planId, bytes32 stageId) external view returns (uint256) {
+        _requireKnownPlan(planId);
+        return _metadata[planId].stageSignalCapabilityKeys[stageId].length;
+    }
+
+    function stageSignalCapabilityAt(bytes32 planId, bytes32 stageId, uint256 index)
+        external
+        view
+        returns (bytes32 targetSourceId, bytes32 signalId, uint8 targetOrderRelation)
+    {
+        _requireKnownPlan(planId);
+        PlanMetadata storage metadata = _metadata[planId];
+        SignalCapability storage capability =
+            metadata.signalCapabilities[metadata.stageSignalCapabilityKeys[stageId][index]];
+        return (capability.targetSourceId, capability.signalId, capability.targetOrderRelation);
     }
 
     function isStageSelectorBound(bytes32 planId, bytes32 selectorStageId, bytes32 targetStageId)
@@ -113,7 +139,8 @@ contract UVPPlanMetadataModule {
         uint8 relation
     ) external view returns (bool) {
         _requireKnownPlan(planId);
-        return _metadata[planId].signalCapabilities[signalCapabilityKey(stageId, targetSourceId, signalId, relation)];
+        return _metadata[planId].signalCapabilities[signalCapabilityKey(stageId, targetSourceId, signalId, relation)]
+            .stageId != bytes32(0);
     }
 
     function stageSelectorBindingKey(bytes32 selectorStageId, bytes32 targetStageId) public pure returns (bytes32) {
@@ -160,11 +187,12 @@ contract UVPPlanMetadataModule {
             bytes32 capabilityKey = signalCapabilityKey(
                 capability.stageId, capability.targetSourceId, capability.signalId, capability.targetOrderRelation
             );
-            if (metadata.signalCapabilities[capabilityKey]) {
+            if (metadata.signalCapabilities[capabilityKey].stageId != bytes32(0)) {
                 revert InvalidSignalCapability();
             }
-            metadata.signalCapabilities[capabilityKey] = true;
+            metadata.signalCapabilities[capabilityKey] = capability;
             metadata.signalCapabilityKeys.push(capabilityKey);
+            metadata.stageSignalCapabilityKeys[capability.stageId].push(capabilityKey);
             emit SignalCapabilityRegistered(
                 planId,
                 capability.stageId,
@@ -172,13 +200,6 @@ contract UVPPlanMetadataModule {
                 capability.signalId,
                 capability.targetOrderRelation
             );
-        }
-    }
-
-    function _requirePlanPublisher(bytes32 planId) private view {
-        _requireKnownPlan(planId);
-        if (stateMachine.planPublisher(planId) != msg.sender) {
-            revert UnauthorizedPlanMetadataPublisher(planId, msg.sender);
         }
     }
 

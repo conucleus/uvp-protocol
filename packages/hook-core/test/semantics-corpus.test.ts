@@ -1,13 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import test from "node:test";
-
-const require = createRequire(import.meta.url);
-const uvpCore = require("../../../../uvp-core/crates/uvp-node/index.cjs") as {
-  readonly parseHook: (request: unknown) => CoreParseHookOutput;
-  readonly evaluateHook: (request: unknown) => CoreEvalHookOutput;
-};
+import {
+  evaluateHookWithUvpCore,
+  parseHookWithUvpCore,
+  uvpCoreCompatibility
+} from "../src/index.js";
 
 const corpusUrl = new URL("../../../../uvp-core/fixtures/hook/semantics.v1.json", import.meta.url);
 
@@ -87,13 +85,17 @@ async function loadCorpus(): Promise<Corpus> {
 }
 
 test("uvp-core N-API parses hook semantic corpus", async () => {
+  assert.deepEqual(uvpCoreCompatibility(), {
+    coreVersion: "0.1.0",
+    semanticVersion: "uvp-semantic/0.1"
+  });
   const corpus = await loadCorpus();
   for (const item of corpus.parseCases) {
-    const output = uvpCore.parseHook({
+    const output = parseHookWithUvpCore({
       profile: item.profile,
       hookName: item.hookName,
       hook: item.hook
-    });
+    }) as CoreParseHookOutput;
 
     assert.equal(output.source, item.expect.source, item.name);
     assert.equal(output.mode, item.expect.mode, item.name);
@@ -107,13 +109,13 @@ test("uvp-core N-API parses hook semantic corpus", async () => {
 test("uvp-core N-API evaluates hook semantic corpus", async () => {
   const corpus = await loadCorpus();
   for (const item of corpus.evalCases) {
-    const output = uvpCore.evaluateHook({
+    const output = evaluateHookWithUvpCore({
       profile: item.profile,
       hookName: item.hookName,
       hook: item.hook,
       signals: item.signals,
       now: item.now
-    });
+    }) as CoreEvalHookOutput;
 
     assert.equal(output.state, item.expect.state, item.name);
     if (item.expect.readyAt) {
@@ -130,7 +132,7 @@ test("uvp-core N-API rejects invalid hook semantic corpus", async () => {
   for (const item of corpus.invalidCases) {
     let message = "";
     try {
-      uvpCore.parseHook({
+      parseHookWithUvpCore({
         profile: item.profile,
         hookName: item.hookName,
         hook: item.hook

@@ -123,14 +123,7 @@ contract UVPDeploymentRegistry {
         deployment.exists = true;
         _deploymentIds.push(deploymentId);
 
-        emit DeploymentRegistered(
-            deploymentId,
-            stateMachine,
-            artifactHash,
-            abiHash,
-            deploymentBlock,
-            metadataURI
-        );
+        emit DeploymentRegistered(deploymentId, stateMachine, artifactHash, abiHash, deploymentBlock, metadataURI);
     }
 
     function markCanary(bytes32 deploymentId, bytes32 evidenceHash, string calldata evidenceURI) external onlyOwner {

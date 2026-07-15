@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStateMachine",
-  "abiVersion": "0.7",
+  "abiVersion": "0.8",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStateMachine.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStateMachine.sol/UVPStateMachine.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xa1cdc6e80a70d4afd47507730635aa15c5494bd92742e44063f36da9be37ccc2",
-    "bytecodeHash": "0x7e515cecfb8b8240966dd9f5d9a8158879e366d5df945c8f3e04ee99be2b64f6",
-    "deployedBytecodeHash": "0xfbe54b58699330535f29ee25c30227b366df3bebd52c41322589c789741a9230",
-    "artifactHash": "0x977a0684c693e16a21b5200564b5fe9c201b778f2e212713d75033bd4dba0d90"
+    "abiHash": "0xa347c8622fc122f7a233f81f98d930bc45fa227f4575650db4914f8bc1272303",
+    "bytecodeHash": "0xc12517d56506eae32fa096d01a36f8cdcfe8abc0bac1ad8c53587aec4dca53ad",
+    "deployedBytecodeHash": "0x0af013c425c98ae151228ab670c3301bc74764d69c884e3d6e253804bc6070bb",
+    "artifactHash": "0x1b551bd808a7ba9b3a0e0a4dfe6bd9c055ec0fc76699575aee0ae3752a9f6e3e"
   },
   "events": {
     "HookReady": {
@@ -31,13 +31,9 @@
       "signature": "OrderRegistered(bytes32,bytes32)",
       "topic": "0x4228a1a218f29332c9684f0eed67f17c49aa237467c3770d074734070532349f"
     },
-    "OrderRegistrarRecorded": {
-      "signature": "OrderRegistrarRecorded(bytes32,address,address)",
-      "topic": "0x7cc31df8e34a32bebb6e843afd4a1e4a666131ec45a30c4597a85659f4c05d8f"
-    },
-    "OrderRegistrarSet": {
-      "signature": "OrderRegistrarSet(address,bool)",
-      "topic": "0x2eb3861cb484f8598862085ed1ccb9ac5d5736e5d1365fa57b403e43797e3f40"
+    "OrderRelayerRecorded": {
+      "signature": "OrderRelayerRecorded(bytes32,address,address)",
+      "topic": "0x3516dddd659c2b299fd334f3bc17684bd2d75b44c99578397cf204bf9f801439"
     },
     "OrderTriggered": {
       "signature": "OrderTriggered(bytes32,bytes32,bytes32,bytes32,bytes32,address)",
@@ -47,13 +43,17 @@
       "signature": "OwnershipTransferred(address,address)",
       "topic": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
     },
+    "PlanCommitted": {
+      "signature": "PlanCommitted(bytes32,bytes32,address,bytes32,bytes32,uint256)",
+      "topic": "0x609236c0b8475a4aae89c9ef4f3a3c49381147b864dd20eedd4eeea680192375"
+    },
+    "PlanFinalized": {
+      "signature": "PlanFinalized(bytes32,bytes32,bytes32)",
+      "topic": "0x47b4ed0992cb3930f05422a2d28f9fedbc6f166ae64f37838fff35e0ca686b82"
+    },
     "PlanPublisherRecorded": {
       "signature": "PlanPublisherRecorded(bytes32,address)",
       "topic": "0x0e3566d89d3ecd84eb7712329920f7ce99b6142ab4cbde4324ff9fae8ec3a2f3"
-    },
-    "PlanPublisherSet": {
-      "signature": "PlanPublisherSet(address,bool)",
-      "topic": "0x695154746b0eaab0839daadcd01a0203da573cc8e8a2a4927d923d54bb08a3f0"
     },
     "PlanRegistered": {
       "signature": "PlanRegistered(bytes32,bytes32,uint256)",
@@ -71,6 +71,10 @@
       "signature": "StageExecutorActivated(bytes32,bytes32,address,bytes32,bytes32,uint256,string)",
       "topic": "0xc2a6f6132324472c97db8a2c45e25f32a9495325114d14442f04b85c8735f1ef"
     },
+    "StageExecutorSignalDelegated": {
+      "signature": "StageExecutorSignalDelegated(bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256)",
+      "topic": "0x9532763512cee4f0b701dcc5dc4213303e95d037a22cedef40db40294142a762"
+    },
     "StageMaterialized": {
       "signature": "StageMaterialized(bytes32,bytes32,bytes32,bytes32,bytes32)",
       "topic": "0x718bc407057f38af06c69335f53ea1567cbde9ff7337e773962330e20decedda"
@@ -78,6 +82,10 @@
     "StateMachineModuleSet": {
       "signature": "StateMachineModuleSet(bytes32,address,address)",
       "topic": "0xe6fcc4ddcd27c589853e1c6bd979093a08d1f91d3cb98ddaec51d54bda35bec7"
+    },
+    "StateMachineModulesFrozen": {
+      "signature": "StateMachineModulesFrozen(bytes32)",
+      "topic": "0x2d87efef6750d0a2280efd60d8f30554c280d3426532492b31b071074f866f7f"
     },
     "TimerPoked": {
       "signature": "TimerPoked(bytes32,bytes32,uint64)",
@@ -129,6 +137,14 @@
       "signature": "activeStageExecutor(bytes32,bytes32)",
       "selector": "0x3f7d1763"
     },
+    "commitPlan": {
+      "signature": "commitPlan((address,bytes32,bytes32,uint256),(bytes32,bytes32,bytes32,bool,(uint8,bytes32,bytes32,uint16,uint64)[],bytes32[])[],bytes)",
+      "selector": "0x110656b1"
+    },
+    "delegateStageExecutorSignalFromModule": {
+      "signature": "delegateStageExecutorSignalFromModule(bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256)",
+      "selector": "0x31cb941f"
+    },
     "derivedSignalModule": {
       "signature": "derivedSignalModule()",
       "selector": "0x6f72d009"
@@ -136,6 +152,14 @@
     "dockingModule": {
       "signature": "dockingModule()",
       "selector": "0x4b11ebd2"
+    },
+    "finalizePlan": {
+      "signature": "finalizePlan(bytes32,(bytes32,bytes32)[],(bytes32,bytes32,bytes32,uint8)[])",
+      "selector": "0xaf33f741"
+    },
+    "freezeModules": {
+      "signature": "freezeModules()",
+      "selector": "0x5f981c96"
     },
     "getHookStatus": {
       "signature": "getHookStatus(bytes32,bytes32)",
@@ -173,6 +197,14 @@
       "signature": "lens()",
       "selector": "0x112666b7"
     },
+    "moduleSetHash": {
+      "signature": "moduleSetHash()",
+      "selector": "0x2963cb0b"
+    },
+    "modulesFrozen": {
+      "signature": "modulesFrozen()",
+      "selector": "0xb3e056f9"
+    },
     "orderCreator": {
       "signature": "orderCreator(bytes32)",
       "selector": "0xcf2941f6"
@@ -189,21 +221,33 @@
       "signature": "orderPlanId(bytes32)",
       "selector": "0x0ae76940"
     },
-    "orderRegistrar": {
-      "signature": "orderRegistrar(bytes32)",
-      "selector": "0x4ba193b9"
-    },
-    "orderRegistrars": {
-      "signature": "orderRegistrars(address)",
-      "selector": "0xecb6deb5"
+    "orderRelayer": {
+      "signature": "orderRelayer(bytes32)",
+      "selector": "0xa0ce1abb"
     },
     "owner": {
       "signature": "owner()",
       "selector": "0x8da5cb5b"
     },
+    "planCommitted": {
+      "signature": "planCommitted(bytes32)",
+      "selector": "0xbbc66f3d"
+    },
     "planExists": {
       "signature": "planExists(bytes32)",
       "selector": "0x1df23e4d"
+    },
+    "planFinalized": {
+      "signature": "planFinalized(bytes32)",
+      "selector": "0xfad0244c"
+    },
+    "planHash": {
+      "signature": "planHash(bytes32)",
+      "selector": "0x942e17f1"
+    },
+    "planIdFor": {
+      "signature": "planIdFor(address,bytes32)",
+      "selector": "0x85ad2f68"
     },
     "planMetadataModule": {
       "signature": "planMetadataModule()",
@@ -213,17 +257,13 @@
       "signature": "planPublisher(bytes32)",
       "selector": "0x1b3c6520"
     },
-    "planPublishers": {
-      "signature": "planPublishers(address)",
-      "selector": "0xb887a20a"
+    "planRuntimeHash": {
+      "signature": "planRuntimeHash(bytes32,bytes32)",
+      "selector": "0xfb0cafac"
     },
     "pokeTimer": {
       "signature": "pokeTimer(bytes32,bytes32)",
       "selector": "0x0cab733b"
-    },
-    "registerPlan": {
-      "signature": "registerPlan(bytes32,bytes32,(bytes32,bytes32,bytes32,bool,(uint8,bytes32,bytes32,uint16,uint64)[],bytes32[])[])",
-      "selector": "0x38a4981f"
     },
     "setDerivedSignalModule": {
       "signature": "setDerivedSignalModule(address)",
@@ -241,17 +281,9 @@
       "signature": "setOrderLinkModule(address)",
       "selector": "0xeacc6057"
     },
-    "setOrderRegistrar": {
-      "signature": "setOrderRegistrar(address,bool)",
-      "selector": "0xafe2e9c5"
-    },
     "setPlanMetadataModule": {
       "signature": "setPlanMetadataModule(address)",
       "selector": "0x20d29f00"
-    },
-    "setPlanPublisher": {
-      "signature": "setPlanPublisher(address,bool)",
-      "selector": "0x0cfc57b7"
     },
     "setStagePatchModule": {
       "signature": "setStagePatchModule(address)",

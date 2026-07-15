@@ -1,7 +1,8 @@
 export const COMPILER_NAME = "uvp-eth-compiler" as const;
 export const COMPILER_VERSION = "0.1.0" as const;
 export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v1" as const;
-export const ONCHAIN_HOOK_PLAN_SCHEMA_VERSION = "uvp.onchainHookPlan.v1" as const;
+export const ONCHAIN_HOOK_PLAN_SCHEMA_VERSION =
+  "uvp.onchainHookPlan.v1" as const;
 
 export type HexString = `0x${string}`;
 export type Address = HexString;
@@ -67,24 +68,6 @@ export interface ExecuteConfigs {
   };
   readonly selectableResource?: Record<string, FileResourceLike>;
   readonly [key: string]: unknown;
-}
-
-export interface SupplierDefinition {
-  readonly apiVersion: "uvp/v0";
-  readonly kind: "Supplier";
-  readonly metadata: ObjectMeta;
-  readonly spec: {
-    readonly supplierType: "individual" | "organization" | "zhixu" | string;
-    readonly realIdType?: string;
-    readonly realId?: string;
-    readonly supplierName?: string;
-    readonly handlerName?: string;
-    readonly authorityID?: string;
-    readonly capabilityClaims?: readonly string[];
-    readonly attestationRefs?: readonly string[];
-    readonly status?: string;
-    readonly SupplierHandlerConfig: Record<string, unknown>;
-  };
 }
 
 export interface HookPlanArtifact {
@@ -297,10 +280,13 @@ export interface SolidityRegisterSignalCapabilityArg {
 
 export interface SolidityRegisterPlanArgs {
   readonly schemaVersion: typeof ONCHAIN_HOOK_PLAN_SCHEMA_VERSION;
-  readonly planId: HexString;
+  readonly sourcePlanId: HexString;
   readonly zhixuId: string;
   readonly version: string;
   readonly planHash: HexString;
+  readonly artifactHash: HexString;
+  readonly hooksHash: HexString;
+  readonly metadataHash: HexString;
   readonly hooks: readonly SolidityRegisterHookArg[];
   readonly dependencyIndex: readonly SolidityRegisterDependencyIndexArg[];
   readonly executorRoutes: readonly SolidityRegisterExecutorRouteArg[];

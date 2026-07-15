@@ -59,6 +59,4 @@ pnpm --filter @uvp-eth/protocol-bindings build
 - `hashResourceManifest` canonicalizes and hashes `ResourceManifestV1` JSON.
 - `validateResourceManifestV1` applies the same validation without returning a
   hash.
-- Resource manifests reject legacy file resource handle types `http`,
-  `txcloud`, and `plain_text`, public HTTP resource URLs, and plaintext resource
-  data markers.
+- Resource manifests reject public HTTP resource URLs.

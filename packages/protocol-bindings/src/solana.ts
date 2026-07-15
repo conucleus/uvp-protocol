@@ -4,7 +4,7 @@ export { UnsupportedChainTargetError } from "./unsupported-chain-target.js";
 
 export interface SolanaProgramIds {
   readonly stateMachineProgramId?: string;
-  readonly trustRegistryProgramId?: string;
+  readonly identityRegistryProgramId?: string;
   readonly deploymentRegistryProgramId?: string;
 }
 

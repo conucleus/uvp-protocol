@@ -284,7 +284,10 @@ contract UVPDockingModule {
         if (!stateMachine.orderExists(localOrderId)) {
             revert UnknownOrder();
         }
-        if (!stateMachine.orderExists(link.linkedOrderId) || stateMachine.orderPlanId(link.linkedOrderId) != link.linkedPlanId) {
+        if (
+            !stateMachine.orderExists(link.linkedOrderId)
+                || stateMachine.orderPlanId(link.linkedOrderId) != link.linkedPlanId
+        ) {
             revert UnknownLinkedOrder(link.linkedOrderId);
         }
 
@@ -292,7 +295,11 @@ contract UVPDockingModule {
         if (!_planMetadata().isStageSelectorBound(localPlanId, link.selectorStageId, link.localSourceId)) {
             revert StageSelectorBindingNotFound(localPlanId, link.selectorStageId, link.localSourceId);
         }
-        if (!stateMachine.hasExplicitSignalAuthorization(localOrderId, link.selectorStageId, DOCKED_ORDER_LINK_SIGNAL_ID, selector)) {
+        if (
+            !stateMachine.hasExplicitSignalAuthorization(
+                localOrderId, link.selectorStageId, DOCKED_ORDER_LINK_SIGNAL_ID, selector
+            )
+        ) {
             revert UnauthorizedDockedOrderLinkSelector(localOrderId, link.selectorStageId, selector);
         }
 
@@ -341,8 +348,9 @@ contract UVPDockingModule {
             revert ZeroSignalId();
         }
 
-        ActiveDockedSignalBinding storage activeBinding =
-            _activeDockedSignalBindings[localOrderId][linkedOrderId][_signalKey(binding.linkedSourceId, binding.linkedSignalId)];
+        ActiveDockedSignalBinding storage activeBinding = _activeDockedSignalBindings[localOrderId][linkedOrderId][_signalKey(
+            binding.linkedSourceId, binding.linkedSignalId
+        )];
 
         activeBinding.localSourceId = binding.localSourceId;
         activeBinding.localSignalId = binding.localSignalId;

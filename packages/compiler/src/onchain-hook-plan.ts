@@ -1,9 +1,15 @@
 import {
   type HookConditionAst,
   type HookDependency,
-  type HookExpressionAst
+  type HookExpressionAst,
 } from "@uvp-eth/hook-core";
 import { hashCanonical, keccak256Hex } from "./hash.js";
+import {
+  encodeAbiParameters,
+  keccak256,
+  parseAbiParameters,
+  stringToHex,
+} from "viem";
 import { assertHookPlanArtifact } from "./hook-plan.js";
 import {
   ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
@@ -23,15 +29,19 @@ import {
   type SignalTargetOrderRelation,
   type SolidityRegisterInstructionArg,
   type SolidityRegisterPlanArgs,
+  type SolidityRegisterSignalCapabilityArg,
+  type SolidityRegisterStageSelectorBindingArg,
   type ZhixuDefinition,
-  type ZhixuPlatform
+  type ZhixuPlatform,
 } from "./types/index.js";
 import { compileZhixuHookPlan } from "./hook-plan.js";
 
 const ONCHAIN_PLAN_HASH_DOMAIN = "uvp:onchain-hook-plan-artifact:v1";
 const ONCHAIN_ROUTE_HASH_DOMAIN = "uvp:onchain-hook-route:v1";
-const ONCHAIN_SELECTOR_BINDING_HASH_DOMAIN = "uvp:onchain-stage-selector-binding:v1";
-const ONCHAIN_SIGNAL_CAPABILITY_HASH_DOMAIN = "uvp:onchain-signal-capability:v1";
+const ONCHAIN_SELECTOR_BINDING_HASH_DOMAIN =
+  "uvp:onchain-stage-selector-binding:v1";
+const ONCHAIN_SIGNAL_CAPABILITY_HASH_DOMAIN =
+  "uvp:onchain-signal-capability:v1";
 
 export class OnchainHookPlanArtifactValidationError extends Error {
   readonly issues: readonly string[];
@@ -44,7 +54,7 @@ export class OnchainHookPlanArtifactValidationError extends Error {
 }
 
 export function compileOnchainHookPlan(
-  hookPlanArtifact: HookPlanArtifact
+  hookPlanArtifact: HookPlanArtifact,
 ): OnchainHookPlanArtifact {
   assertHookPlanArtifact(hookPlanArtifact);
 
@@ -58,15 +68,19 @@ export function compileOnchainHookPlan(
       isTrigger: hook.isTrigger,
       instructions: compileHookInstructions(hook.ast),
       dependencies: hook.dependencies.map(compileDependency),
-      ...(hook.route ? { routeRef: routeRefForRoute(hook.route) } : {})
+      ...(hook.route ? { routeRef: routeRefForRoute(hook.route) } : {}),
     }))
     .sort(compareOnchainHooks);
   const dependencyIndex = buildOnchainDependencyIndex(compiledHooks);
   const executorRoutes = Object.values(hookPlanArtifact.executorRoutes)
     .map(compileExecutorRoute)
     .sort(compareExecutorRoutes);
-  const selectorBindings = compileSelectorBindings(hookPlanArtifact.selectedStageBindings);
-  const signalCapabilities = compileSignalCapabilities(hookPlanArtifact.signalCapabilities);
+  const selectorBindings = compileSelectorBindings(
+    hookPlanArtifact.selectedStageBindings,
+  );
+  const signalCapabilities = compileSignalCapabilities(
+    hookPlanArtifact.signalCapabilities,
+  );
   const payload = {
     schemaVersion: ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
     planId: hookPlanArtifact.planId,
@@ -79,24 +93,30 @@ export function compileOnchainHookPlan(
     dependencyIndex,
     executorRoutes,
     selectorBindings,
-    signalCapabilities
+    signalCapabilities,
   };
 
   return {
     ...payload,
-    planHash: hashOnchainPlanPayload(payload)
+    planHash: hashOnchainPlanPayload(payload),
   };
 }
 
-export function compileZhixuOnchainHookPlan(definition: ZhixuDefinition): OnchainHookPlanArtifact {
+export function compileZhixuOnchainHookPlan(
+  definition: ZhixuDefinition,
+): OnchainHookPlanArtifact {
   return compileOnchainHookPlan(compileZhixuHookPlan(definition));
 }
 
-export function compileZhixuRegisterPlanArgs(definition: ZhixuDefinition): SolidityRegisterPlanArgs {
+export function compileZhixuRegisterPlanArgs(
+  definition: ZhixuDefinition,
+): SolidityRegisterPlanArgs {
   return toSolidityRegisterPlanArgs(compileZhixuOnchainHookPlan(definition));
 }
 
-export function validateOnchainHookPlanArtifact(value: unknown): readonly string[] {
+export function validateOnchainHookPlanArtifact(
+  value: unknown,
+): readonly string[] {
   const issues: string[] = [];
   if (!isRecord(value)) {
     return ["artifact must be an object"];
@@ -106,7 +126,7 @@ export function validateOnchainHookPlanArtifact(value: unknown): readonly string
     value.schemaVersion,
     ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
     "schemaVersion",
-    issues
+    issues,
   );
   expectHexHash(value.planId, "planId", issues);
   expectNonEmptyString(value.zhixuId, "zhixuId", issues);
@@ -118,33 +138,47 @@ export function validateOnchainHookPlanArtifact(value: unknown): readonly string
   expectHexHash(value.sourcePlanHash, "sourcePlanHash", issues);
   expectHexHash(value.planHash, "planHash", issues);
 
-  const compiledHooks = Array.isArray(value.compiledHooks) ? value.compiledHooks : undefined;
+  const compiledHooks = Array.isArray(value.compiledHooks)
+    ? value.compiledHooks
+    : undefined;
   if (!compiledHooks) {
     issues.push("compiledHooks must be an array");
   }
 
-  const dependencyIndex = isHexArrayRecord(value.dependencyIndex) ? value.dependencyIndex : undefined;
+  const dependencyIndex = isHexArrayRecord(value.dependencyIndex)
+    ? value.dependencyIndex
+    : undefined;
   if (!dependencyIndex) {
     issues.push("dependencyIndex must be a record of 32-byte hex hash arrays");
   }
 
-  const executorRoutes = Array.isArray(value.executorRoutes) ? value.executorRoutes : undefined;
+  const executorRoutes = Array.isArray(value.executorRoutes)
+    ? value.executorRoutes
+    : undefined;
   if (!executorRoutes) {
     issues.push("executorRoutes must be an array");
   }
-  const selectorBindings = Array.isArray(value.selectorBindings) ? value.selectorBindings : undefined;
+  const selectorBindings = Array.isArray(value.selectorBindings)
+    ? value.selectorBindings
+    : undefined;
   if (!selectorBindings) {
     issues.push("selectorBindings must be an array");
   }
-  const signalCapabilities = Array.isArray(value.signalCapabilities) ? value.signalCapabilities : undefined;
+  const signalCapabilities = Array.isArray(value.signalCapabilities)
+    ? value.signalCapabilities
+    : undefined;
   if (!signalCapabilities) {
     issues.push("signalCapabilities must be an array");
   }
 
   if (compiledHooks) {
-    issues.push(...validateOnchainCompiledHooks(compiledHooks, executorRoutes ?? []));
+    issues.push(
+      ...validateOnchainCompiledHooks(compiledHooks, executorRoutes ?? []),
+    );
     if (dependencyIndex) {
-      issues.push(...validateOnchainDependencyIndex(compiledHooks, dependencyIndex));
+      issues.push(
+        ...validateOnchainDependencyIndex(compiledHooks, dependencyIndex),
+      );
     }
   }
 
@@ -171,10 +205,12 @@ export function validateOnchainHookPlanArtifact(value: unknown): readonly string
       dependencyIndex: value.dependencyIndex,
       executorRoutes: value.executorRoutes,
       selectorBindings: value.selectorBindings,
-      signalCapabilities: value.signalCapabilities
+      signalCapabilities: value.signalCapabilities,
     });
     if (value.planHash !== expectedPlanHash) {
-      issues.push("planHash must match the canonical on-chain HookPlan payload");
+      issues.push(
+        "planHash must match the canonical on-chain HookPlan payload",
+      );
     }
   }
 
@@ -182,7 +218,7 @@ export function validateOnchainHookPlanArtifact(value: unknown): readonly string
 }
 
 export function assertOnchainHookPlanArtifact(
-  value: unknown
+  value: unknown,
 ): asserts value is OnchainHookPlanArtifact {
   const issues = validateOnchainHookPlanArtifact(value);
   if (issues.length > 0) {
@@ -191,61 +227,183 @@ export function assertOnchainHookPlanArtifact(
 }
 
 export function toSolidityRegisterPlanArgs(
-  artifact: OnchainHookPlanArtifact
+  artifact: OnchainHookPlanArtifact,
 ): SolidityRegisterPlanArgs {
   assertOnchainHookPlanArtifact(artifact);
 
+  const hooks = artifact.compiledHooks.map((hook) => {
+    const base = {
+      hookId: hook.hookId,
+      stageId: hook.stageId,
+      hookName: onchainHookName(hook.hookName),
+      kind: hook.kind,
+      isTrigger: hook.isTrigger,
+      instructions: hook.instructions.map(toSolidityInstructionArg),
+      dependencyKeys: uniqueSorted(
+        hook.dependencies.map((dependency) => dependency.signalKey),
+      ),
+    };
+    return hook.routeRef ? { ...base, routeId: hook.routeRef.routeId } : base;
+  });
+  const selectorBindings = artifact.selectorBindings.map((binding) => ({
+    selectorStageId: binding.selectorStageId,
+    targetStageId: binding.targetStageId,
+  }));
+  const signalCapabilities = artifact.signalCapabilities.map((capability) => ({
+    stageId: capability.stageId,
+    targetSourceId: capability.targetSourceId,
+    signalId: capability.signalId,
+    targetOrderRelation: solidityTargetOrderRelation(
+      capability.targetOrderRelation,
+    ),
+  }));
+  const hooksHash = hashSolidityHooks(hooks);
+  const metadataHash = hashSolidityPlanMetadata(
+    selectorBindings,
+    signalCapabilities,
+  );
+  const planHash = keccak256(
+    encodeAbiParameters(
+      parseAbiParameters(
+        "bytes32 domain, bytes32 hooksHash, bytes32 metadataHash",
+      ),
+      [keccak256(stringToHex("uvp.plan.runtime.v1")), hooksHash, metadataHash],
+    ),
+  ) as HexString;
+
   return {
     schemaVersion: artifact.schemaVersion,
-    planId: artifact.planId,
+    sourcePlanId: artifact.planId,
     zhixuId: artifact.zhixuId,
     version: artifact.version,
-    planHash: artifact.planHash,
-    hooks: artifact.compiledHooks.map((hook) => {
-      const base = {
-        hookId: hook.hookId,
-        stageId: hook.stageId,
-        hookName: onchainHookName(hook.hookName),
-        kind: hook.kind,
-        isTrigger: hook.isTrigger,
-        instructions: hook.instructions.map(toSolidityInstructionArg),
-        dependencyKeys: uniqueSorted(hook.dependencies.map((dependency) => dependency.signalKey))
-      };
-      return hook.routeRef ? { ...base, routeId: hook.routeRef.routeId } : base;
-    }),
+    planHash,
+    artifactHash: artifact.planHash,
+    hooksHash,
+    metadataHash,
+    hooks,
     dependencyIndex: Object.entries(artifact.dependencyIndex)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([signalKey, hookIds]) => ({
         signalKey: signalKey as HexString,
-        hookIds
+        hookIds,
       })),
     executorRoutes: artifact.executorRoutes.map((route) => ({
       routeId: route.routeId,
       stageId: route.stageId,
       executorType: route.executorType,
       executorId: route.executorId,
-      routeHash: route.routeHash
+      routeHash: route.routeHash,
     })),
-    selectorBindings: artifact.selectorBindings.map((binding) => ({
-      selectorStageId: binding.selectorStageId,
-      targetStageId: binding.targetStageId
-    })),
-    signalCapabilities: artifact.signalCapabilities.map((capability) => ({
-      stageId: capability.stageId,
-      targetSourceId: capability.targetSourceId,
-      signalId: capability.signalId,
-      targetOrderRelation: solidityTargetOrderRelation(capability.targetOrderRelation)
-    }))
+    selectorBindings,
+    signalCapabilities,
   };
 }
 
-function compileHookInstructions(ast: HookExpressionAst): readonly OnchainHookInstruction[] {
+export function planIdForPublisher(
+  publisher: `0x${string}`,
+  planHash: HexString,
+): HexString {
+  return keccak256(
+    encodeAbiParameters(
+      parseAbiParameters("bytes32 domain, address publisher, bytes32 planHash"),
+      [keccak256(stringToHex("uvp.plan.id.v1")), publisher, planHash],
+    ),
+  ) as HexString;
+}
+
+function hashSolidityHooks(
+  hooks: SolidityRegisterPlanArgs["hooks"],
+): HexString {
+  const encodedHooks = hooks.map((hook) => ({
+    hookId: hook.hookId,
+    stageId: hook.stageId,
+    hookName: hook.hookName,
+    isTrigger: hook.isTrigger,
+    instructions: hook.instructions.map((instruction) =>
+      solidityInstructionTuple(instruction),
+    ),
+    dependencyKeys: hook.dependencyKeys,
+  }));
+  return keccak256(
+    encodeAbiParameters(
+      parseAbiParameters(
+        "(bytes32 hookId,bytes32 stageId,bytes32 hookName,bool isTrigger,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks",
+      ),
+      [encodedHooks] as never,
+    ),
+  ) as HexString;
+}
+
+function hashSolidityPlanMetadata(
+  selectorBindings: readonly SolidityRegisterStageSelectorBindingArg[],
+  signalCapabilities: readonly SolidityRegisterSignalCapabilityArg[],
+): HexString {
+  return keccak256(
+    encodeAbiParameters(
+      parseAbiParameters(
+        "(bytes32 selectorStageId,bytes32 targetStageId)[] selectorBindings,(bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation)[] signalCapabilities",
+      ),
+      [selectorBindings, signalCapabilities],
+    ),
+  ) as HexString;
+}
+
+function solidityInstructionTuple(instruction: SolidityRegisterInstructionArg) {
+  switch (instruction.op) {
+    case "SIGNAL":
+      return {
+        op: 0,
+        sourceId: instruction.sourceId,
+        signalId: instruction.signalId,
+        arity: 0,
+        delaySeconds: 0n,
+      };
+    case "NOT":
+      return {
+        op: 1,
+        sourceId: ZERO_HASH,
+        signalId: ZERO_HASH,
+        arity: 0,
+        delaySeconds: 0n,
+      };
+    case "AND":
+      return {
+        op: 2,
+        sourceId: ZERO_HASH,
+        signalId: ZERO_HASH,
+        arity: instruction.arity,
+        delaySeconds: 0n,
+      };
+    case "OR":
+      return {
+        op: 3,
+        sourceId: ZERO_HASH,
+        signalId: ZERO_HASH,
+        arity: instruction.arity,
+        delaySeconds: 0n,
+      };
+    case "DELAY":
+      return {
+        op: 4,
+        sourceId: ZERO_HASH,
+        signalId: ZERO_HASH,
+        arity: 0,
+        delaySeconds: BigInt(instruction.delaySeconds),
+      };
+  }
+}
+
+const ZERO_HASH = `0x${"00".repeat(32)}` as HexString;
+
+function compileHookInstructions(
+  ast: HookExpressionAst,
+): readonly OnchainHookInstruction[] {
   return compileConditionInstructions(ast.condition, ast.source);
 }
 
 function compileConditionInstructions(
   condition: HookConditionAst,
-  source: string
+  source: string,
 ): readonly OnchainHookInstruction[] {
   switch (condition.kind) {
     case "signal":
@@ -258,29 +416,36 @@ function compileConditionInstructions(
     case "not":
       return [
         ...compileConditionInstructions(condition.expr, source),
-        { op: "NOT" }
+        { op: "NOT" },
       ];
     case "and":
       return [
-        ...condition.terms.flatMap((term) => compileConditionInstructions(term, source)),
-        { op: "AND", arity: condition.terms.length }
+        ...condition.terms.flatMap((term) =>
+          compileConditionInstructions(term, source),
+        ),
+        { op: "AND", arity: condition.terms.length },
       ];
     case "or":
       return [
-        ...condition.terms.flatMap((term) => compileConditionInstructions(term, source)),
-        { op: "OR", arity: condition.terms.length }
+        ...condition.terms.flatMap((term) =>
+          compileConditionInstructions(term, source),
+        ),
+        { op: "OR", arity: condition.terms.length },
       ];
     case "delay":
       return [
         ...compileConditionInstructions(condition.expr, source),
-        { op: "DELAY", delaySeconds: condition.durationSeconds }
+        { op: "DELAY", delaySeconds: condition.durationSeconds },
       ];
     default:
       assertNever(condition);
   }
 }
 
-function signalInstruction(source: string, signalName: string): OnchainHookInstruction {
+function signalInstruction(
+  source: string,
+  signalName: string,
+): OnchainHookInstruction {
   const sourceId = onchainSourceId(source);
   const signalId = onchainSignalId(signalName);
   return {
@@ -289,7 +454,7 @@ function signalInstruction(source: string, signalName: string): OnchainHookInstr
     signalName,
     sourceId,
     signalId,
-    signalKey: onchainSignalKey(sourceId, signalId)
+    signalKey: onchainSignalKey(sourceId, signalId),
   };
 }
 
@@ -303,12 +468,14 @@ function compileDependency(dependency: HookDependency): OnchainHookDependency {
     sourceId,
     signalId,
     signalKey: onchainSignalKey(sourceId, signalId),
-    ...(dependency.delaySeconds !== undefined ? { delaySeconds: dependency.delaySeconds } : {})
+    ...(dependency.delaySeconds !== undefined
+      ? { delaySeconds: dependency.delaySeconds }
+      : {}),
   };
 }
 
 function buildOnchainDependencyIndex(
-  compiledHooks: readonly OnchainCompiledHook[]
+  compiledHooks: readonly OnchainCompiledHook[],
 ): Record<HexString, readonly HexString[]> {
   const index = new Map<HexString, Set<HexString>>();
   for (const hook of compiledHooks) {
@@ -320,25 +487,29 @@ function buildOnchainDependencyIndex(
   }
 
   const output: Record<HexString, readonly HexString[]> = {};
-  for (const [signalKey, hookIds] of [...index.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+  for (const [signalKey, hookIds] of [...index.entries()].sort(
+    ([left], [right]) => left.localeCompare(right),
+  )) {
     output[signalKey] = [...hookIds].sort();
   }
   return output;
 }
 
-function compileExecutorRoute(route: HookPlanExecutorRoute): OnchainExecutorRoute {
+function compileExecutorRoute(
+  route: HookPlanExecutorRoute,
+): OnchainExecutorRoute {
   return {
     routeId: onchainRouteId(route.stageIdentifier),
     stageId: onchainStageId(route.stageIdentifier),
     stageIdentifier: route.stageIdentifier,
     executorType: String(route.executor.supplierType),
     executorId: route.executor.supplierID ?? "",
-    routeHash: onchainRouteHash(route)
+    routeHash: onchainRouteHash(route),
   };
 }
 
 function compileSelectorBindings(
-  bindings: readonly SelectedStageBinding[]
+  bindings: readonly SelectedStageBinding[],
 ): readonly OnchainStageSelectorBinding[] {
   const issues: string[] = [];
   const seen = new Set<string>();
@@ -350,7 +521,7 @@ function compileSelectorBindings(
     const bindingKey = selectorBindingKey(selectorStageId, targetStageId);
     if (seen.has(bindingKey)) {
       issues.push(
-        `duplicate selector binding ${binding.selectorStageIdentifier}->${binding.targetStageIdentifier}`
+        `duplicate selector binding ${binding.selectorStageIdentifier}->${binding.targetStageIdentifier}`,
       );
       continue;
     }
@@ -360,7 +531,7 @@ function compileSelectorBindings(
       targetStageIdentifier: binding.targetStageIdentifier,
       selectorStageId,
       targetStageId,
-      bindingHash: onchainSelectorBindingHash(selectorStageId, targetStageId)
+      bindingHash: onchainSelectorBindingHash(selectorStageId, targetStageId),
     });
   }
 
@@ -372,7 +543,7 @@ function compileSelectorBindings(
 }
 
 function compileSignalCapabilities(
-  capabilities: readonly SignalCapability[]
+  capabilities: readonly SignalCapability[],
 ): readonly OnchainSignalCapability[] {
   const issues: string[] = [];
   const seen = new Set<string>();
@@ -385,10 +556,12 @@ function compileSignalCapabilities(
       stageId,
       targetSourceId,
       signalId,
-      capability.targetOrderRelation
+      capability.targetOrderRelation,
     ].join("\u0000");
     if (seen.has(key)) {
-      issues.push(`duplicate signal capability ${capability.stageIdentifier}->${capability.targetSource}::${capability.targetSignalName}`);
+      issues.push(
+        `duplicate signal capability ${capability.stageIdentifier}->${capability.targetSource}::${capability.targetSignalName}`,
+      );
       continue;
     }
     seen.add(key);
@@ -406,8 +579,8 @@ function compileSignalCapabilities(
         stageId,
         targetSourceId,
         signalId,
-        capability.targetOrderRelation
-      )
+        capability.targetOrderRelation,
+      ),
     });
   }
   if (issues.length > 0) {
@@ -416,15 +589,20 @@ function compileSignalCapabilities(
   return compiled.sort(compareSignalCapabilities);
 }
 
-function routeRefForRoute(route: HookPlanExecutorRoute): OnchainExecutorRouteRef {
+function routeRefForRoute(
+  route: HookPlanExecutorRoute,
+): OnchainExecutorRouteRef {
   return {
     routeId: onchainRouteId(route.stageIdentifier),
     stageId: onchainStageId(route.stageIdentifier),
-    routeHash: onchainRouteHash(route)
+    routeHash: onchainRouteHash(route),
   };
 }
 
-export function onchainHookId(stageIdentifier: string, hookName: string): HexString {
+export function onchainHookId(
+  stageIdentifier: string,
+  hookName: string,
+): HexString {
   return keccak256Hex(`${stageIdentifier}#${hookName}`);
 }
 
@@ -446,11 +624,11 @@ export function onchainSignalId(signalName: string): HexString {
 
 export function onchainSelectorBindingHash(
   selectorStageId: HexString,
-  targetStageId: HexString
+  targetStageId: HexString,
 ): HexString {
   return hashCanonical(ONCHAIN_SELECTOR_BINDING_HASH_DOMAIN, {
     selectorStageId,
-    targetStageId
+    targetStageId,
   });
 }
 
@@ -458,13 +636,13 @@ export function onchainSignalCapabilityHash(
   stageId: HexString,
   targetSourceId: HexString,
   signalId: HexString,
-  targetOrderRelation: SignalTargetOrderRelation
+  targetOrderRelation: SignalTargetOrderRelation,
 ): HexString {
   return hashCanonical(ONCHAIN_SIGNAL_CAPABILITY_HASH_DOMAIN, {
     stageId,
     targetSourceId,
     signalId,
-    targetOrderRelation
+    targetOrderRelation,
   });
 }
 
@@ -472,7 +650,10 @@ function onchainRouteId(stageIdentifier: string): HexString {
   return keccak256Hex(`${stageIdentifier}#executorRoute`);
 }
 
-export function onchainSignalKey(sourceId: HexString, signalId: HexString): HexString {
+export function onchainSignalKey(
+  sourceId: HexString,
+  signalId: HexString,
+): HexString {
   return keccak256Hex(concatHex32(sourceId, signalId));
 }
 
@@ -481,16 +662,18 @@ function onchainRouteHash(route: HookPlanExecutorRoute): HexString {
     stageId: onchainStageId(route.stageIdentifier),
     stageIdentifier: route.stageIdentifier,
     executor: route.executor,
-    fileResources: route.fileResources ?? null
+    fileResources: route.fileResources ?? null,
   });
 }
 
-function hashOnchainPlanPayload(payload: Omit<OnchainHookPlanArtifact, "planHash">): HexString {
+function hashOnchainPlanPayload(
+  payload: Omit<OnchainHookPlanArtifact, "planHash">,
+): HexString {
   return hashCanonical(ONCHAIN_PLAN_HASH_DOMAIN, payload);
 }
 
 function toSolidityInstructionArg(
-  instruction: OnchainHookInstruction
+  instruction: OnchainHookInstruction,
 ): SolidityRegisterInstructionArg {
   switch (instruction.op) {
     case "SIGNAL":
@@ -498,7 +681,7 @@ function toSolidityInstructionArg(
         op: "SIGNAL",
         sourceId: instruction.sourceId,
         signalId: instruction.signalId,
-        signalKey: instruction.signalKey
+        signalKey: instruction.signalKey,
       };
     case "NOT":
       return { op: "NOT" };
@@ -512,7 +695,9 @@ function toSolidityInstructionArg(
   }
 }
 
-function solidityTargetOrderRelation(relation: SignalTargetOrderRelation): 0 | 1 {
+function solidityTargetOrderRelation(
+  relation: SignalTargetOrderRelation,
+): 0 | 1 {
   switch (relation) {
     case "current":
       return 0;
@@ -525,7 +710,7 @@ function solidityTargetOrderRelation(relation: SignalTargetOrderRelation): 0 | 1
 
 function validateOnchainCompiledHooks(
   hooks: readonly unknown[],
-  executorRoutes: readonly unknown[]
+  executorRoutes: readonly unknown[],
 ): readonly string[] {
   const issues: string[] = [];
   const hookIds = new Set<string>();
@@ -533,7 +718,7 @@ function validateOnchainCompiledHooks(
     executorRoutes
       .filter(isRecord)
       .map((route) => route.routeId)
-      .filter((routeId): routeId is string => typeof routeId === "string")
+      .filter((routeId): routeId is string => typeof routeId === "string"),
   );
 
   for (const [index, hook] of hooks.entries()) {
@@ -545,7 +730,11 @@ function validateOnchainCompiledHooks(
     const prefix = `compiledHooks[${index}]`;
     expectHexHash(hook.hookId, `${prefix}.hookId`, issues);
     expectHexHash(hook.stageId, `${prefix}.stageId`, issues);
-    expectNonEmptyString(hook.stageIdentifier, `${prefix}.stageIdentifier`, issues);
+    expectNonEmptyString(
+      hook.stageIdentifier,
+      `${prefix}.stageIdentifier`,
+      issues,
+    );
     expectNonEmptyString(hook.hookName, `${prefix}.hookName`, issues);
     expectOneOf(hook.kind, ["receive", "signalMap"], `${prefix}.kind`, issues);
     expectBoolean(hook.isTrigger, `${prefix}.isTrigger`, issues);
@@ -556,7 +745,9 @@ function validateOnchainCompiledHooks(
       typeof hook.hookId === "string" &&
       hook.hookId !== onchainHookId(hook.stageIdentifier, hook.hookName)
     ) {
-      issues.push(`${prefix}.hookId must be keccak256(stageIdentifier#hookName)`);
+      issues.push(
+        `${prefix}.hookId must be keccak256(stageIdentifier#hookName)`,
+      );
     }
     if (
       typeof hook.stageIdentifier === "string" &&
@@ -575,22 +766,41 @@ function validateOnchainCompiledHooks(
     if (!Array.isArray(hook.instructions)) {
       issues.push(`${prefix}.instructions must be an array`);
     } else {
-      issues.push(...validateInstructions(hook.instructions, `${prefix}.instructions`));
+      issues.push(
+        ...validateInstructions(hook.instructions, `${prefix}.instructions`),
+      );
     }
 
     if (!Array.isArray(hook.dependencies)) {
       issues.push(`${prefix}.dependencies must be an array`);
     } else {
-      issues.push(...validateOnchainDependencies(hook.dependencies, `${prefix}.dependencies`));
+      issues.push(
+        ...validateOnchainDependencies(
+          hook.dependencies,
+          `${prefix}.dependencies`,
+        ),
+      );
     }
 
     if (hook.routeRef !== undefined) {
       if (!isRecord(hook.routeRef)) {
         issues.push(`${prefix}.routeRef must be an object`);
       } else {
-        expectHexHash(hook.routeRef.routeId, `${prefix}.routeRef.routeId`, issues);
-        expectHexHash(hook.routeRef.stageId, `${prefix}.routeRef.stageId`, issues);
-        expectHexHash(hook.routeRef.routeHash, `${prefix}.routeRef.routeHash`, issues);
+        expectHexHash(
+          hook.routeRef.routeId,
+          `${prefix}.routeRef.routeId`,
+          issues,
+        );
+        expectHexHash(
+          hook.routeRef.stageId,
+          `${prefix}.routeRef.stageId`,
+          issues,
+        );
+        expectHexHash(
+          hook.routeRef.routeHash,
+          `${prefix}.routeRef.routeHash`,
+          issues,
+        );
         if (
           typeof hook.routeRef.stageId === "string" &&
           typeof hook.stageId === "string" &&
@@ -598,8 +808,13 @@ function validateOnchainCompiledHooks(
         ) {
           issues.push(`${prefix}.routeRef.stageId must equal hook stageId`);
         }
-        if (typeof hook.routeRef.routeId === "string" && !routeIds.has(hook.routeRef.routeId)) {
-          issues.push(`${prefix}.routeRef.routeId must reference executorRoutes`);
+        if (
+          typeof hook.routeRef.routeId === "string" &&
+          !routeIds.has(hook.routeRef.routeId)
+        ) {
+          issues.push(
+            `${prefix}.routeRef.routeId must reference executorRoutes`,
+          );
         }
       }
     }
@@ -608,7 +823,10 @@ function validateOnchainCompiledHooks(
   return issues;
 }
 
-function validateInstructions(instructions: readonly unknown[], path: string): readonly string[] {
+function validateInstructions(
+  instructions: readonly unknown[],
+  path: string,
+): readonly string[] {
   const issues: string[] = [];
   let stackDepth = 0;
 
@@ -622,7 +840,11 @@ function validateInstructions(instructions: readonly unknown[], path: string): r
     switch (instruction.op) {
       case "SIGNAL":
         expectString(instruction.source, `${prefix}.source`, issues);
-        expectNonEmptyString(instruction.signalName, `${prefix}.signalName`, issues);
+        expectNonEmptyString(
+          instruction.signalName,
+          `${prefix}.signalName`,
+          issues,
+        );
         expectHexHash(instruction.sourceId, `${prefix}.sourceId`, issues);
         expectHexHash(instruction.signalId, `${prefix}.signalId`, issues);
         expectHexHash(instruction.signalKey, `${prefix}.signalKey`, issues);
@@ -638,16 +860,21 @@ function validateInstructions(instructions: readonly unknown[], path: string): r
           typeof instruction.signalId === "string" &&
           instruction.signalId !== onchainSignalId(instruction.signalName)
         ) {
-          issues.push(`${prefix}.signalId must be keccak256(task.stage.signal)`);
+          issues.push(
+            `${prefix}.signalId must be keccak256(task.stage.signal)`,
+          );
         }
         if (
           typeof instruction.sourceId === "string" &&
           typeof instruction.signalId === "string" &&
           isHexHash(instruction.sourceId) &&
           isHexHash(instruction.signalId) &&
-          instruction.signalKey !== onchainSignalKey(instruction.sourceId, instruction.signalId)
+          instruction.signalKey !==
+            onchainSignalKey(instruction.sourceId, instruction.signalId)
         ) {
-          issues.push(`${prefix}.signalKey must be keccak256(abi.encodePacked(sourceId, signalId))`);
+          issues.push(
+            `${prefix}.signalKey must be keccak256(abi.encodePacked(sourceId, signalId))`,
+          );
         }
         stackDepth += 1;
         break;
@@ -658,7 +885,10 @@ function validateInstructions(instructions: readonly unknown[], path: string): r
         break;
       case "AND":
       case "OR": {
-        if (!Number.isSafeInteger(instruction.arity) || Number(instruction.arity) < 2) {
+        if (
+          !Number.isSafeInteger(instruction.arity) ||
+          Number(instruction.arity) < 2
+        ) {
           issues.push(`${prefix}.arity must be a safe integer greater than 1`);
           break;
         }
@@ -671,7 +901,10 @@ function validateInstructions(instructions: readonly unknown[], path: string): r
         break;
       }
       case "DELAY":
-        if (!Number.isSafeInteger(instruction.delaySeconds) || Number(instruction.delaySeconds) <= 0) {
+        if (
+          !Number.isSafeInteger(instruction.delaySeconds) ||
+          Number(instruction.delaySeconds) <= 0
+        ) {
           issues.push(`${prefix}.delaySeconds must be a positive safe integer`);
         }
         if (stackDepth < 1) {
@@ -690,7 +923,10 @@ function validateInstructions(instructions: readonly unknown[], path: string): r
   return issues;
 }
 
-function validateOnchainDependencies(dependencies: readonly unknown[], path: string): readonly string[] {
+function validateOnchainDependencies(
+  dependencies: readonly unknown[],
+  path: string,
+): readonly string[] {
   const issues: string[] = [];
   for (const [index, dependency] of dependencies.entries()) {
     if (!isRecord(dependency)) {
@@ -699,7 +935,12 @@ function validateOnchainDependencies(dependencies: readonly unknown[], path: str
     }
 
     const prefix = `${path}[${index}]`;
-    expectOneOf(dependency.kind, ["positive", "negative", "timer"], `${prefix}.kind`, issues);
+    expectOneOf(
+      dependency.kind,
+      ["positive", "negative", "timer"],
+      `${prefix}.kind`,
+      issues,
+    );
     expectString(dependency.source, `${prefix}.source`, issues);
     expectNonEmptyString(dependency.signalName, `${prefix}.signalName`, issues);
     expectHexHash(dependency.sourceId, `${prefix}.sourceId`, issues);
@@ -724,15 +965,21 @@ function validateOnchainDependencies(dependencies: readonly unknown[], path: str
       typeof dependency.signalId === "string" &&
       isHexHash(dependency.sourceId) &&
       isHexHash(dependency.signalId) &&
-      dependency.signalKey !== onchainSignalKey(dependency.sourceId, dependency.signalId)
+      dependency.signalKey !==
+        onchainSignalKey(dependency.sourceId, dependency.signalId)
     ) {
-      issues.push(`${prefix}.signalKey must be keccak256(abi.encodePacked(sourceId, signalId))`);
+      issues.push(
+        `${prefix}.signalKey must be keccak256(abi.encodePacked(sourceId, signalId))`,
+      );
     }
     if (
       dependency.kind === "timer" &&
-      (!Number.isSafeInteger(dependency.delaySeconds) || Number(dependency.delaySeconds) <= 0)
+      (!Number.isSafeInteger(dependency.delaySeconds) ||
+        Number(dependency.delaySeconds) <= 0)
     ) {
-      issues.push(`${prefix}.delaySeconds must be a positive safe integer for timer dependencies`);
+      issues.push(
+        `${prefix}.delaySeconds must be a positive safe integer for timer dependencies`,
+      );
     }
   }
   return issues;
@@ -740,12 +987,16 @@ function validateOnchainDependencies(dependencies: readonly unknown[], path: str
 
 function validateOnchainDependencyIndex(
   hooks: readonly unknown[],
-  dependencyIndex: Record<string, readonly string[]>
+  dependencyIndex: Record<string, readonly string[]>,
 ): readonly string[] {
   const issues: string[] = [];
   const recomputed = new Map<string, Set<string>>();
   for (const hook of hooks) {
-    if (!isRecord(hook) || typeof hook.hookId !== "string" || !Array.isArray(hook.dependencies)) {
+    if (
+      !isRecord(hook) ||
+      typeof hook.hookId !== "string" ||
+      !Array.isArray(hook.dependencies)
+    ) {
       continue;
     }
     for (const dependency of hook.dependencies) {
@@ -761,7 +1012,7 @@ function validateOnchainDependencyIndex(
   const expected = Object.fromEntries(
     [...recomputed.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([signalKey, hookIds]) => [signalKey, [...hookIds].sort()])
+      .map(([signalKey, hookIds]) => [signalKey, [...hookIds].sort()]),
   );
   if (JSON.stringify(expected) !== JSON.stringify(dependencyIndex)) {
     issues.push("dependencyIndex must match on-chain hook dependencies");
@@ -769,7 +1020,9 @@ function validateOnchainDependencyIndex(
   return issues;
 }
 
-function validateOnchainExecutorRoutes(routes: readonly unknown[]): readonly string[] {
+function validateOnchainExecutorRoutes(
+  routes: readonly unknown[],
+): readonly string[] {
   const issues: string[] = [];
   const routeIds = new Set<string>();
   for (const [index, route] of routes.entries()) {
@@ -781,7 +1034,11 @@ function validateOnchainExecutorRoutes(routes: readonly unknown[]): readonly str
     const prefix = `executorRoutes[${index}]`;
     expectHexHash(route.routeId, `${prefix}.routeId`, issues);
     expectHexHash(route.stageId, `${prefix}.stageId`, issues);
-    expectNonEmptyString(route.stageIdentifier, `${prefix}.stageIdentifier`, issues);
+    expectNonEmptyString(
+      route.stageIdentifier,
+      `${prefix}.stageIdentifier`,
+      issues,
+    );
     expectNonEmptyString(route.executorType, `${prefix}.executorType`, issues);
     expectString(route.executorId, `${prefix}.executorId`, issues);
     expectHexHash(route.routeHash, `${prefix}.routeHash`, issues);
@@ -797,7 +1054,9 @@ function validateOnchainExecutorRoutes(routes: readonly unknown[]): readonly str
       typeof route.routeId === "string" &&
       route.routeId !== onchainRouteId(route.stageIdentifier)
     ) {
-      issues.push(`${prefix}.routeId must be keccak256(stageIdentifier#executorRoute)`);
+      issues.push(
+        `${prefix}.routeId must be keccak256(stageIdentifier#executorRoute)`,
+      );
     }
     if (typeof route.routeId === "string") {
       if (routeIds.has(route.routeId)) {
@@ -809,7 +1068,9 @@ function validateOnchainExecutorRoutes(routes: readonly unknown[]): readonly str
   return issues;
 }
 
-function validateOnchainSelectorBindings(bindings: readonly unknown[]): readonly string[] {
+function validateOnchainSelectorBindings(
+  bindings: readonly unknown[],
+): readonly string[] {
   const issues: string[] = [];
   const seen = new Set<string>();
   for (const [index, binding] of bindings.entries()) {
@@ -819,8 +1080,16 @@ function validateOnchainSelectorBindings(bindings: readonly unknown[]): readonly
     }
 
     const prefix = `selectorBindings[${index}]`;
-    expectNonEmptyString(binding.selectorStageIdentifier, `${prefix}.selectorStageIdentifier`, issues);
-    expectNonEmptyString(binding.targetStageIdentifier, `${prefix}.targetStageIdentifier`, issues);
+    expectNonEmptyString(
+      binding.selectorStageIdentifier,
+      `${prefix}.selectorStageIdentifier`,
+      issues,
+    );
+    expectNonEmptyString(
+      binding.targetStageIdentifier,
+      `${prefix}.targetStageIdentifier`,
+      issues,
+    );
     expectHexHash(binding.selectorStageId, `${prefix}.selectorStageId`, issues);
     expectHexHash(binding.targetStageId, `${prefix}.targetStageId`, issues);
     expectHexHash(binding.bindingHash, `${prefix}.bindingHash`, issues);
@@ -828,27 +1097,44 @@ function validateOnchainSelectorBindings(bindings: readonly unknown[]): readonly
     if (
       typeof binding.selectorStageIdentifier === "string" &&
       typeof binding.selectorStageId === "string" &&
-      binding.selectorStageId !== onchainStageId(binding.selectorStageIdentifier)
+      binding.selectorStageId !==
+        onchainStageId(binding.selectorStageIdentifier)
     ) {
-      issues.push(`${prefix}.selectorStageId must be keccak256(selectorStageIdentifier)`);
+      issues.push(
+        `${prefix}.selectorStageId must be keccak256(selectorStageIdentifier)`,
+      );
     }
     if (
       typeof binding.targetStageIdentifier === "string" &&
       typeof binding.targetStageId === "string" &&
       binding.targetStageId !== onchainStageId(binding.targetStageIdentifier)
     ) {
-      issues.push(`${prefix}.targetStageId must be keccak256(targetStageIdentifier)`);
+      issues.push(
+        `${prefix}.targetStageId must be keccak256(targetStageIdentifier)`,
+      );
     }
     if (
       isHexHash(binding.selectorStageId) &&
       isHexHash(binding.targetStageId) &&
-      binding.bindingHash !== onchainSelectorBindingHash(binding.selectorStageId, binding.targetStageId)
+      binding.bindingHash !==
+        onchainSelectorBindingHash(
+          binding.selectorStageId,
+          binding.targetStageId,
+        )
     ) {
-      issues.push(`${prefix}.bindingHash must match selectorStageId and targetStageId`);
+      issues.push(
+        `${prefix}.bindingHash must match selectorStageId and targetStageId`,
+      );
     }
 
-    if (isHexHash(binding.selectorStageId) && isHexHash(binding.targetStageId)) {
-      const key = selectorBindingKey(binding.selectorStageId, binding.targetStageId);
+    if (
+      isHexHash(binding.selectorStageId) &&
+      isHexHash(binding.targetStageId)
+    ) {
+      const key = selectorBindingKey(
+        binding.selectorStageId,
+        binding.targetStageId,
+      );
       if (seen.has(key)) {
         issues.push(`duplicate selector binding ${key}`);
       }
@@ -858,7 +1144,9 @@ function validateOnchainSelectorBindings(bindings: readonly unknown[]): readonly
   return issues;
 }
 
-function validateOnchainSignalCapabilities(capabilities: readonly unknown[]): readonly string[] {
+function validateOnchainSignalCapabilities(
+  capabilities: readonly unknown[],
+): readonly string[] {
   const issues: string[] = [];
   const seen = new Set<string>();
   for (const [index, capability] of capabilities.entries()) {
@@ -867,16 +1155,45 @@ function validateOnchainSignalCapabilities(capabilities: readonly unknown[]): re
       continue;
     }
     const prefix = `signalCapabilities[${index}]`;
-    expectNonEmptyString(capability.stageIdentifier, `${prefix}.stageIdentifier`, issues);
+    expectNonEmptyString(
+      capability.stageIdentifier,
+      `${prefix}.stageIdentifier`,
+      issues,
+    );
     expectHexHash(capability.stageId, `${prefix}.stageId`, issues);
     expectNonEmptyString(capability.source, `${prefix}.source`, issues);
-    expectNonEmptyString(capability.declaredSignal, `${prefix}.declaredSignal`, issues);
-    expectNonEmptyString(capability.targetSource, `${prefix}.targetSource`, issues);
-    expectHexHash(capability.targetSourceId, `${prefix}.targetSourceId`, issues);
-    expectNonEmptyString(capability.targetSignalName, `${prefix}.targetSignalName`, issues);
+    expectNonEmptyString(
+      capability.declaredSignal,
+      `${prefix}.declaredSignal`,
+      issues,
+    );
+    expectNonEmptyString(
+      capability.targetSource,
+      `${prefix}.targetSource`,
+      issues,
+    );
+    expectHexHash(
+      capability.targetSourceId,
+      `${prefix}.targetSourceId`,
+      issues,
+    );
+    expectNonEmptyString(
+      capability.targetSignalName,
+      `${prefix}.targetSignalName`,
+      issues,
+    );
     expectHexHash(capability.signalId, `${prefix}.signalId`, issues);
-    expectOneOf(capability.targetOrderRelation, ["current", "triggerOrigin"], `${prefix}.targetOrderRelation`, issues);
-    expectHexHash(capability.capabilityHash, `${prefix}.capabilityHash`, issues);
+    expectOneOf(
+      capability.targetOrderRelation,
+      ["current", "triggerOrigin"],
+      `${prefix}.targetOrderRelation`,
+      issues,
+    );
+    expectHexHash(
+      capability.capabilityHash,
+      `${prefix}.capabilityHash`,
+      issues,
+    );
 
     if (
       typeof capability.stageIdentifier === "string" &&
@@ -903,13 +1220,14 @@ function validateOnchainSignalCapabilities(capabilities: readonly unknown[]): re
       isHexHash(capability.stageId) &&
       isHexHash(capability.targetSourceId) &&
       isHexHash(capability.signalId) &&
-      (capability.targetOrderRelation === "current" || capability.targetOrderRelation === "triggerOrigin")
+      (capability.targetOrderRelation === "current" ||
+        capability.targetOrderRelation === "triggerOrigin")
     ) {
       const expectedHash = onchainSignalCapabilityHash(
         capability.stageId,
         capability.targetSourceId,
         capability.signalId,
-        capability.targetOrderRelation
+        capability.targetOrderRelation,
       );
       if (capability.capabilityHash !== expectedHash) {
         issues.push(`${prefix}.capabilityHash must match capability fields`);
@@ -918,7 +1236,7 @@ function validateOnchainSignalCapabilities(capabilities: readonly unknown[]): re
         capability.stageId,
         capability.targetSourceId,
         capability.signalId,
-        capability.targetOrderRelation
+        capability.targetOrderRelation,
       ].join("\u0000");
       if (seen.has(key)) {
         issues.push(`duplicate signal capability ${key}`);
@@ -929,10 +1247,14 @@ function validateOnchainSignalCapabilities(capabilities: readonly unknown[]): re
   return issues;
 }
 
-function isOnchainHookDependency(value: unknown): value is OnchainHookDependency {
+function isOnchainHookDependency(
+  value: unknown,
+): value is OnchainHookDependency {
   return (
     isRecord(value) &&
-    (value.kind === "positive" || value.kind === "negative" || value.kind === "timer") &&
+    (value.kind === "positive" ||
+      value.kind === "negative" ||
+      value.kind === "timer") &&
     typeof value.source === "string" &&
     typeof value.signalName === "string" &&
     isHexHash(value.sourceId) &&
@@ -942,8 +1264,10 @@ function isOnchainHookDependency(value: unknown): value is OnchainHookDependency
 }
 
 function isPlanHashRecomputable(
-  value: Record<string, unknown>
-): value is Omit<OnchainHookPlanArtifact, "planHash"> & { readonly planHash: HexString } {
+  value: Record<string, unknown>,
+): value is Omit<OnchainHookPlanArtifact, "planHash"> & {
+  readonly planHash: HexString;
+} {
   return (
     value.schemaVersion === ONCHAIN_HOOK_PLAN_SCHEMA_VERSION &&
     isHexHash(value.planId) &&
@@ -961,7 +1285,10 @@ function isPlanHashRecomputable(
   );
 }
 
-function compareOnchainHooks(left: OnchainCompiledHook, right: OnchainCompiledHook): number {
+function compareOnchainHooks(
+  left: OnchainCompiledHook,
+  right: OnchainCompiledHook,
+): number {
   return (
     left.stageIdentifier.localeCompare(right.stageIdentifier) ||
     left.hookName.localeCompare(right.hookName) ||
@@ -971,7 +1298,7 @@ function compareOnchainHooks(left: OnchainCompiledHook, right: OnchainCompiledHo
 
 function compareExecutorRoutes(
   left: OnchainExecutorRoute,
-  right: OnchainExecutorRoute
+  right: OnchainExecutorRoute,
 ): number {
   return (
     left.stageIdentifier.localeCompare(right.stageIdentifier) ||
@@ -981,7 +1308,7 @@ function compareExecutorRoutes(
 
 function compareSelectorBindings(
   left: OnchainStageSelectorBinding,
-  right: OnchainStageSelectorBinding
+  right: OnchainStageSelectorBinding,
 ): number {
   return (
     left.selectorStageId.localeCompare(right.selectorStageId) ||
@@ -992,7 +1319,7 @@ function compareSelectorBindings(
 
 function compareSignalCapabilities(
   left: OnchainSignalCapability,
-  right: OnchainSignalCapability
+  right: OnchainSignalCapability,
 ): number {
   return (
     left.stageId.localeCompare(right.stageId) ||
@@ -1003,7 +1330,10 @@ function compareSignalCapabilities(
   );
 }
 
-function selectorBindingKey(selectorStageId: HexString, targetStageId: HexString): string {
+function selectorBindingKey(
+  selectorStageId: HexString,
+  targetStageId: HexString,
+): string {
   return `${selectorStageId}->${targetStageId}`;
 }
 
@@ -1024,7 +1354,10 @@ function concatHex32(left: HexString, right: HexString): Uint8Array {
 function hexToBytes32(value: HexString): Uint8Array {
   const bytes = new Uint8Array(32);
   for (let index = 0; index < 32; index += 1) {
-    bytes[index] = Number.parseInt(value.slice(2 + index * 2, 4 + index * 2), 16);
+    bytes[index] = Number.parseInt(
+      value.slice(2 + index * 2, 4 + index * 2),
+      16,
+    );
   }
   return bytes;
 }
@@ -1037,7 +1370,9 @@ function isHexHash(value: unknown): value is HexString {
   return typeof value === "string" && /^0x[0-9a-f]{64}$/.test(value);
 }
 
-function isHexArrayRecord(value: unknown): value is Record<HexString, readonly HexString[]> {
+function isHexArrayRecord(
+  value: unknown,
+): value is Record<HexString, readonly HexString[]> {
   if (!isRecord(value)) {
     return false;
   }
@@ -1045,7 +1380,7 @@ function isHexArrayRecord(value: unknown): value is Record<HexString, readonly H
     ([key, item]) =>
       isHexHash(key) &&
       Array.isArray(item) &&
-      item.every((entry) => isHexHash(entry))
+      item.every((entry) => isHexHash(entry)),
   );
 }
 
@@ -1057,13 +1392,9 @@ function isPlatform(value: unknown): value is ZhixuPlatform {
     (value.provider === undefined || typeof value.provider === "string") &&
     (value.network === undefined || typeof value.network === "string") &&
     (value.version === undefined || typeof value.version === "string") &&
-    (
-      value.params === undefined ||
-      (
-        isRecord(value.params) &&
-        Object.values(value.params).every((item) => typeof item === "string")
-      )
-    )
+    (value.params === undefined ||
+      (isRecord(value.params) &&
+        Object.values(value.params).every((item) => typeof item === "string")))
   );
 }
 
@@ -1071,32 +1402,48 @@ function expectLiteral(
   value: unknown,
   expected: string,
   fieldName: string,
-  issues: string[]
+  issues: string[],
 ): void {
   if (value !== expected) {
     issues.push(`${fieldName} must be ${expected}`);
   }
 }
 
-function expectHexHash(value: unknown, fieldName: string, issues: string[]): void {
+function expectHexHash(
+  value: unknown,
+  fieldName: string,
+  issues: string[],
+): void {
   if (!isHexHash(value)) {
     issues.push(`${fieldName} must be a lowercase 32-byte hex hash`);
   }
 }
 
-function expectNonEmptyString(value: unknown, fieldName: string, issues: string[]): void {
+function expectNonEmptyString(
+  value: unknown,
+  fieldName: string,
+  issues: string[],
+): void {
   if (typeof value !== "string" || value.trim().length === 0) {
     issues.push(`${fieldName} must be a non-empty string`);
   }
 }
 
-function expectString(value: unknown, fieldName: string, issues: string[]): void {
+function expectString(
+  value: unknown,
+  fieldName: string,
+  issues: string[],
+): void {
   if (typeof value !== "string") {
     issues.push(`${fieldName} must be a string`);
   }
 }
 
-function expectBoolean(value: unknown, fieldName: string, issues: string[]): void {
+function expectBoolean(
+  value: unknown,
+  fieldName: string,
+  issues: string[],
+): void {
   if (typeof value !== "boolean") {
     issues.push(`${fieldName} must be a boolean`);
   }
@@ -1106,7 +1453,7 @@ function expectOneOf(
   value: unknown,
   allowed: readonly string[],
   fieldName: string,
-  issues: string[]
+  issues: string[],
 ): void {
   if (typeof value !== "string" || !allowed.includes(value)) {
     issues.push(`${fieldName} must be one of ${allowed.join(", ")}`);
@@ -1114,5 +1461,7 @@ function expectOneOf(
 }
 
 function assertNever(value: never): never {
-  throw new Error(`unsupported on-chain HookPlan node: ${JSON.stringify(value)}`);
+  throw new Error(
+    `unsupported on-chain HookPlan node: ${JSON.stringify(value)}`,
+  );
 }

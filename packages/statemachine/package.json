@@ -16,8 +16,10 @@
   "scripts": {
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "pretest": "cargo build --manifest-path ../../../uvp-core/Cargo.toml -p uvp-node",
     "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@uvp-eth/hook-core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.15.3",

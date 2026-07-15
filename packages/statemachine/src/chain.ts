@@ -1,9 +1,4 @@
-import { createRequire } from "node:module";
-
-const require = createRequire(import.meta.url);
-const uvpCore = require("../../../../uvp-core/crates/uvp-node/index.cjs") as {
-  readonly replay: (request: unknown) => ChainReplayResult;
-};
+import { replayWithUvpCore } from "@uvp-eth/hook-core";
 
 export type HexString = `0x${string}`;
 
@@ -246,13 +241,13 @@ export function replayChainEvents(
   events: readonly ChainModeEvent[],
   options: ChainReplayOptions = {}
 ): ChainReplayResult {
-  const result = uvpCore.replay({
+  const result = replayWithUvpCore({
     events,
     options: {
       ...options,
       strict: false
     }
-  });
+  }) as ChainReplayResult;
   const mismatches = result.mismatches;
   if ((options.strict ?? true) && mismatches.length > 0) {
     throw new ChainReplayMismatchError(mismatches);

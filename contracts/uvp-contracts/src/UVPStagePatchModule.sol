@@ -10,6 +10,11 @@ interface IUVPPlanMetadataModuleForStagePatch {
         external
         view
         returns (bool);
+    function stageSignalCapabilityCount(bytes32 planId, bytes32 stageId) external view returns (uint256);
+    function stageSignalCapabilityAt(bytes32 planId, bytes32 stageId, uint256 index)
+        external
+        view
+        returns (bytes32 targetSourceId, bytes32 signalId, uint8 targetOrderRelation);
 }
 
 contract UVPStagePatchModule {
@@ -74,6 +79,7 @@ contract UVPStagePatchModule {
         bytes32 orderId, bytes32 targetStageId, address expectedExecutor, address previousExecutor
     );
     error StageHasNoSignal(bytes32 orderId, bytes32 targetStageId);
+    error StageSignalCapabilityMissing(bytes32 planId, bytes32 targetStageId);
     error StageResourcePatchNonceNotIncreasing(
         bytes32 orderId, bytes32 targetStageId, bytes32 resourceKey, uint256 previousNonce, uint256 patchNonce
     );
@@ -356,6 +362,46 @@ contract UVPStagePatchModule {
             patch.patchHash,
             patch.patchNonce,
             patch.metadataURI
+        );
+        _delegateStageExecutorSignals(orderId, patch);
+    }
+
+    function _delegateStageExecutorSignals(bytes32 orderId, StageExecutorPatch calldata patch) private {
+        bytes32 planId = stateMachine.orderPlanId(orderId);
+        IUVPPlanMetadataModuleForStagePatch metadata = _planMetadata();
+        uint256 capabilityCount = metadata.stageSignalCapabilityCount(planId, patch.targetStageId);
+        uint256 delegatedCount;
+
+        for (uint256 i = 0; i < capabilityCount; i++) {
+            (bytes32 targetSourceId, bytes32 signalId, uint8 relation) =
+                metadata.stageSignalCapabilityAt(planId, patch.targetStageId, i);
+            if (relation != 0) {
+                continue;
+            }
+            _delegateStageExecutorSignal(orderId, targetSourceId, signalId, patch);
+            delegatedCount += 1;
+        }
+
+        if (delegatedCount == 0) {
+            revert StageSignalCapabilityMissing(planId, patch.targetStageId);
+        }
+    }
+
+    function _delegateStageExecutorSignal(
+        bytes32 orderId,
+        bytes32 targetSourceId,
+        bytes32 signalId,
+        StageExecutorPatch calldata patch
+    ) private {
+        stateMachine.delegateStageExecutorSignalFromModule(
+            orderId,
+            patch.targetStageId,
+            targetSourceId,
+            signalId,
+            patch.executor,
+            patch.role,
+            patch.executorMetadataHash,
+            patch.patchNonce
         );
     }
 

@@ -1,4 +1,4 @@
-import { createRequire } from "node:module";
+import { evaluateHookWithUvpCore, parseHookWithUvpCore } from "./core.js";
 import {
   type HookDependency,
   type HookEvaluation,
@@ -7,12 +7,6 @@ import {
   type SignalIndex,
   type SignalName
 } from "./types.js";
-
-const require = createRequire(import.meta.url);
-const uvpCore = require("../../../../uvp-core/crates/uvp-node/index.cjs") as {
-  readonly parseHook: (request: unknown) => CoreParseHookOutput;
-  readonly evaluateHook: (request: unknown) => CoreEvaluateHookOutput;
-};
 
 interface CoreParseHookOutput {
   readonly normalizedExpression: string;
@@ -35,11 +29,11 @@ export class HookExpressionError extends Error {
 
 export function parseHookExpression(raw: string): HookExpressionAst {
   try {
-    return uvpCore.parseHook({
+    return (parseHookWithUvpCore({
       profile: "evm_strict",
       hookName: "HOOK",
       hook: raw
-    }).ast;
+    }) as CoreParseHookOutput).ast;
   } catch (error) {
     throw new HookExpressionError(error instanceof Error ? error.message : String(error));
   }
@@ -48,11 +42,11 @@ export function parseHookExpression(raw: string): HookExpressionAst {
 export function normalizeHookExpression(ast: HookExpressionAst): string {
   const raw = requireRawHook(ast);
   try {
-    return uvpCore.parseHook({
+    return (parseHookWithUvpCore({
       profile: "evm_strict",
       hookName: "HOOK",
       hook: raw
-    }).normalizedExpression;
+    }) as CoreParseHookOutput).normalizedExpression;
   } catch (error) {
     throw new HookExpressionError(error instanceof Error ? error.message : String(error));
   }
@@ -61,11 +55,11 @@ export function normalizeHookExpression(ast: HookExpressionAst): string {
 export function extractHookDependencies(ast: HookExpressionAst): readonly HookDependency[] {
   const raw = requireRawHook(ast);
   try {
-    return uvpCore.parseHook({
+    return (parseHookWithUvpCore({
       profile: "evm_strict",
       hookName: "HOOK",
       hook: raw
-    }).dependencies;
+    }) as CoreParseHookOutput).dependencies;
   } catch (error) {
     throw new HookExpressionError(error instanceof Error ? error.message : String(error));
   }
@@ -78,13 +72,13 @@ export function evaluateHook(
 ): HookEvaluation {
   const raw = requireRawHook(ast);
   try {
-    const evaluated = uvpCore.evaluateHook({
+    const evaluated = evaluateHookWithUvpCore({
       profile: "evm_strict",
       hookName: "HOOK",
       hook: raw,
       signals: Object.values(signalIndex),
       now: toDate(now).toISOString()
-    });
+    }) as CoreEvaluateHookOutput;
     switch (evaluated.state) {
       case "ready":
         return { status: "reg" };

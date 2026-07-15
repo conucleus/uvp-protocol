@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "uvp-eth.identityRegistryAbiFixture.v1",
+  "contractName": "UVPIdentityRegistry",
+  "abiVersion": "0.1",
+  "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPIdentityRegistry.sol",
+  "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPIdentityRegistry.sol/UVPIdentityRegistry.json",
+  "compiler": {
+    "name": "solc",
+    "version": "0.8.24+commit.e11b9ed9"
+  },
+  "hashes": {
+    "abiHash": "0x748547465799e38b645c8637222522460cefda5ed6fba341c636afa179fe0b3e",
+    "bytecodeHash": "0x6af6b15037f806fe988adf020a9449ce3ffefde6ba9eb850824e4362ab20ed54",
+    "deployedBytecodeHash": "0xf356df2d806fb4a7759f09f5ffdf47626ac2cc11e0d72a1555464d2d4f8237a8",
+    "artifactHash": "0xb6600092db2b94f70f8f0da7d55a5789b840463730eed7e350eb9ce6c79b8849"
+  },
+  "events": {
+    "IdentityBindingRegistered": {
+      "signature": "IdentityBindingRegistered(bytes32,bytes32,address,bytes32,string,address)",
+      "topic": "0x44e4f3106014625e06ad792d48bade3109bf988aef824a8892cc3463c571300b"
+    },
+    "IdentityBindingRevoked": {
+      "signature": "IdentityBindingRevoked(bytes32,bytes32,string,address)",
+      "topic": "0x790935018f0fca7e77334dc06bd004363af19afbc3ee57f7319539ba8cf72348"
+    },
+    "OwnershipTransferred": {
+      "signature": "OwnershipTransferred(address,address)",
+      "topic": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
+    }
+  },
+  "functions": {
+    "activeBindingForAccount": {
+      "signature": "activeBindingForAccount(address)",
+      "selector": "0x6fae5ebb"
+    },
+    "bindingNonce": {
+      "signature": "bindingNonce()",
+      "selector": "0x49e04554"
+    },
+    "getIdentityBinding": {
+      "signature": "getIdentityBinding(bytes32)",
+      "selector": "0xd29e61af"
+    },
+    "owner": {
+      "signature": "owner()",
+      "selector": "0x8da5cb5b"
+    },
+    "registerIdentityBinding": {
+      "signature": "registerIdentityBinding(bytes32,address,bytes32,string)",
+      "selector": "0x73af5536"
+    },
+    "revokeIdentityBinding": {
+      "signature": "revokeIdentityBinding(bytes32,bytes32,string)",
+      "selector": "0xcb8bddef"
+    },
+    "transferOwnership": {
+      "signature": "transferOwnership(address)",
+      "selector": "0xf2fde38b"
+    }
+  }
+}

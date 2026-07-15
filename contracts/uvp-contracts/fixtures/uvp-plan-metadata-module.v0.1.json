@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x5a76c0c23f75ddc68996731adbf90aca1aeadd28de36603208173c035b2e637a",
-    "bytecodeHash": "0x213c7b6f99f1e32f0df994396b0387c0f3a53422e794fe2b68257cb8bde8c982",
-    "deployedBytecodeHash": "0x2a6d4f66a28cdc24f7389638fbbcc5ea5eb07f5e688be8cf743d574e819cbcc3",
-    "artifactHash": "0x2a6df5953fbedca266973e71c9369e9ce11dcdf1830c930a0cc0238192b65392"
+    "abiHash": "0x11b73b088157df1fa19b4c94c43550898ca3ef358eb702f5bc067c43abbbc9e7",
+    "bytecodeHash": "0xb9b76f64c5ba5f45e489a6c594cef14161d4be04804ae671d152425864717084",
+    "deployedBytecodeHash": "0xbe367ddceefc910c93e34f40a40030f12de723fbec1de54c62b82745bacbc27b",
+    "artifactHash": "0xbd93f37bdc0412c72d57e41851fad9eaf79408f086159ae6028a9a8c068e92d1"
   },
   "events": {
     "SignalCapabilityRegistered": {
@@ -33,6 +33,10 @@
       "signature": "SIGNAL_TARGET_TRIGGER_ORIGIN()",
       "selector": "0x909f38ec"
     },
+    "finalizePlanMetadata": {
+      "signature": "finalizePlanMetadata(bytes32,(bytes32,bytes32)[],(bytes32,bytes32,bytes32,uint8)[])",
+      "selector": "0x5343b10b"
+    },
     "isSelectorTargetStage": {
       "signature": "isSelectorTargetStage(bytes32,bytes32)",
       "selector": "0xaa3c361a"
@@ -45,6 +49,10 @@
       "signature": "isStageSelectorBound(bytes32,bytes32,bytes32)",
       "selector": "0xa400a1bd"
     },
+    "planMetadataFinalized": {
+      "signature": "planMetadataFinalized(bytes32)",
+      "selector": "0x855a4928"
+    },
     "planSelectorBindingAt": {
       "signature": "planSelectorBindingAt(bytes32,uint256)",
       "selector": "0x7859d18d"
@@ -53,13 +61,13 @@
       "signature": "planSelectorBindingCount(bytes32)",
       "selector": "0xfcaa1370"
     },
+    "planSignalCapabilityAt": {
+      "signature": "planSignalCapabilityAt(bytes32,uint256)",
+      "selector": "0xde0b4301"
+    },
     "planSignalCapabilityCount": {
       "signature": "planSignalCapabilityCount(bytes32)",
       "selector": "0xf80d6ef0"
-    },
-    "registerPlanMetadata": {
-      "signature": "registerPlanMetadata(bytes32,(bytes32,bytes32)[],(bytes32,bytes32,bytes32,uint8)[])",
-      "selector": "0x1ce08bf0"
     },
     "signalCapabilityKey": {
       "signature": "signalCapabilityKey(bytes32,bytes32,bytes32,uint8)",
@@ -68,6 +76,14 @@
     "stageSelectorBindingKey": {
       "signature": "stageSelectorBindingKey(bytes32,bytes32)",
       "selector": "0xc92dc0e1"
+    },
+    "stageSignalCapabilityAt": {
+      "signature": "stageSignalCapabilityAt(bytes32,bytes32,uint256)",
+      "selector": "0x446a3a1c"
+    },
+    "stageSignalCapabilityCount": {
+      "signature": "stageSignalCapabilityCount(bytes32,bytes32)",
+      "selector": "0x00c2ccab"
     },
     "stateMachine": {
       "signature": "stateMachine()",
