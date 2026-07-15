@@ -119,8 +119,9 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
         returns (bool)
     {
         _requireKnownPlan(planId);
-        return _metadata[planId].selectorBindings[stageSelectorBindingKey(selectorStageId, targetStageId)]
-            .selectorStageId != bytes32(0);
+        return _metadata[planId].selectorBindings[stageSelectorBindingKey(
+                selectorStageId, targetStageId
+            )].selectorStageId != bytes32(0);
     }
 
     function isSelectorTargetStage(bytes32 planId, bytes32 targetStageId) external view returns (bool) {
@@ -139,8 +140,9 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
         uint8 relation
     ) external view returns (bool) {
         _requireKnownPlan(planId);
-        return _metadata[planId].signalCapabilities[signalCapabilityKey(stageId, targetSourceId, signalId, relation)]
-            .stageId != bytes32(0);
+        return _metadata[planId].signalCapabilities[signalCapabilityKey(
+                stageId, targetSourceId, signalId, relation
+            )].stageId != bytes32(0);
     }
 
     function stageSelectorBindingKey(bytes32 selectorStageId, bytes32 targetStageId) public pure returns (bytes32) {

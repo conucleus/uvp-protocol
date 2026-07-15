@@ -1363,11 +1363,7 @@ contract UVPStateMachine {
         return stack[0];
     }
 
-    function _signalValue(bytes32 orderId, bytes32 sourceId, bytes32 signalId)
-        private
-        view
-        returns (EvalValue memory)
-    {
+    function _signalValue(bytes32 orderId, bytes32 sourceId, bytes32 signalId) private view returns (EvalValue memory) {
         SignalRecord storage signal = _signals[orderId][_signalKey(sourceId, signalId)];
         if (!signal.exists) {
             return EvalValue({value: false, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
@@ -1402,11 +1398,7 @@ contract UVPStateMachine {
         }
         if (left.value && right.value) {
             return EvalValue({
-                value: true,
-                wait: false,
-                cancel: false,
-                dueAt: 0,
-                anchorAt: _maxAnchor(left.anchorAt, right.anchorAt)
+                value: true, wait: false, cancel: false, dueAt: 0, anchorAt: _maxAnchor(left.anchorAt, right.anchorAt)
             });
         }
         if ((left.wait && (right.value || right.wait)) || (right.wait && (left.value || left.wait))) {
@@ -1424,11 +1416,7 @@ contract UVPStateMachine {
     function _orValue(EvalValue memory left, EvalValue memory right) private pure returns (EvalValue memory) {
         if (left.value || right.value) {
             return EvalValue({
-                value: true,
-                wait: false,
-                cancel: false,
-                dueAt: 0,
-                anchorAt: _maxAnchor(left.anchorAt, right.anchorAt)
+                value: true, wait: false, cancel: false, dueAt: 0, anchorAt: _maxAnchor(left.anchorAt, right.anchorAt)
             });
         }
         if (left.wait || right.wait) {

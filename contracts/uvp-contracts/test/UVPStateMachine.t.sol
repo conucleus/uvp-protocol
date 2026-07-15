@@ -215,8 +215,9 @@ contract UVPStateMachineTest {
         UVPStateMachine.SignalAuthorization[] memory duplicateAuthorizations = _defaultAuthorizations(address(this));
         UVPStateMachine.TriggerOrderFromOutsideRequest memory duplicateTrigger =
             _outsideTriggerRequest(ORDER_ID, HOOK_ORDER_START, SIGNAL_ORDER_START);
-        bytes memory duplicateSignature =
-            _triggerOrderFromOutsideSignature(machine, duplicateTrigger, duplicateAuthorizations, SUBMITTER_PRIVATE_KEY);
+        bytes memory duplicateSignature = _triggerOrderFromOutsideSignature(
+            machine, duplicateTrigger, duplicateAuthorizations, SUBMITTER_PRIVATE_KEY
+        );
         vm.expectRevert(UVPStateMachine.OrderAlreadyRegistered.selector);
         machine.triggerOrderFromOutsideFor(duplicateTrigger, duplicateAuthorizations, duplicateSignature);
     }
@@ -299,13 +300,14 @@ contract UVPStateMachineTest {
 
         require(_planMetadata(machine).planSignalCapabilityCount(PLAN_ID) == 1, "bad capability count");
         require(
-            _planMetadata(machine).isSignalCapabilityRegistered(
-                PLAN_ID,
-                STAGE_AUDIT,
-                SOURCE_BOOTSTRAP,
-                SIGNAL_VERIFY_FAIL,
-                _planMetadata(machine).SIGNAL_TARGET_TRIGGER_ORIGIN()
-            ),
+            _planMetadata(machine)
+                .isSignalCapabilityRegistered(
+                    PLAN_ID,
+                    STAGE_AUDIT,
+                    SOURCE_BOOTSTRAP,
+                    SIGNAL_VERIFY_FAIL,
+                    _planMetadata(machine).SIGNAL_TARGET_TRIGGER_ORIGIN()
+                ),
             "capability missing"
         );
         require(
@@ -396,9 +398,16 @@ contract UVPStateMachineTest {
 
         vm.recordLogs();
         vm.prank(SUBMITTER_A);
-        _derivedSignal(machine).submitDerivedSignal(
-            ORDER_ID_2, STAGE_AUDIT, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, PAYLOAD_HASH, bytes32(uint256(3))
-        );
+        _derivedSignal(machine)
+            .submitDerivedSignal(
+                ORDER_ID_2,
+                STAGE_AUDIT,
+                ORDER_ID,
+                SOURCE_BOOTSTRAP,
+                SIGNAL_VERIFY_FAIL,
+                PAYLOAD_HASH,
+                bytes32(uint256(3))
+            );
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         require(
@@ -427,9 +436,16 @@ contract UVPStateMachineTest {
 
         vm.prank(SUBMITTER_A);
         vm.expectRevert(UVPDerivedSignalModule.InvalidSignalCapability.selector);
-        _derivedSignal(machine).submitDerivedSignal(
-            ORDER_ID_2, STAGE_AUDIT, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, PAYLOAD_HASH, bytes32(uint256(3))
-        );
+        _derivedSignal(machine)
+            .submitDerivedSignal(
+                ORDER_ID_2,
+                STAGE_AUDIT,
+                ORDER_ID,
+                SOURCE_BOOTSTRAP,
+                SIGNAL_VERIFY_FAIL,
+                PAYLOAD_HASH,
+                bytes32(uint256(3))
+            );
     }
 
     function testApplyStageExecutorPatchStoresActiveOverlayAndEmitsEvents() public {
@@ -451,8 +467,8 @@ contract UVPStateMachineTest {
         );
         require(
             _countTopic(
-                logs, keccak256("StageExecutorActivated(bytes32,bytes32,address,bytes32,bytes32,uint256,string)")
-            ) == 1,
+                    logs, keccak256("StageExecutorActivated(bytes32,bytes32,address,bytes32,bytes32,uint256,string)")
+                ) == 1,
             "executor event count"
         );
         require(machine.activeStageExecutor(ORDER_ID, STAGE_AUDIT) == SUBMITTER_A, "bad active executor");
@@ -594,9 +610,8 @@ contract UVPStateMachineTest {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(SUBMITTER_PRIVATE_KEY, digest);
 
         vm.prank(UNAUTHORIZED_SUBMITTER);
-        _stagePatch(machine).applyStageExecutorPatchFor(
-            ORDER_ID, patch, selector, deadline, _packedSignature(v, r, s), ""
-        );
+        _stagePatch(machine)
+            .applyStageExecutorPatchFor(ORDER_ID, patch, selector, deadline, _packedSignature(v, r, s), "");
 
         require(machine.activeStageExecutor(ORDER_ID, STAGE_AUDIT) == SUBMITTER_A, "relayed patch not applied");
     }
@@ -615,9 +630,8 @@ contract UVPStateMachineTest {
                 UVPStagePatchModule.InvalidStageExecutorPatchSignature.selector, selector, wrongSigner
             )
         );
-        _stagePatch(machine).applyStageExecutorPatchFor(
-            ORDER_ID, patch, selector, deadline, _packedSignature(v, r, s), ""
-        );
+        _stagePatch(machine)
+            .applyStageExecutorPatchFor(ORDER_ID, patch, selector, deadline, _packedSignature(v, r, s), "");
     }
 
     function testRelayedStageExecutorPatchRejectsExpiredSignature() public {
@@ -631,9 +645,8 @@ contract UVPStateMachineTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPStagePatchModule.ExpiredStageExecutorPatchSignature.selector, deadline)
         );
-        _stagePatch(machine).applyStageExecutorPatchFor(
-            ORDER_ID, patch, selector, deadline, _packedSignature(v, r, s), ""
-        );
+        _stagePatch(machine)
+            .applyStageExecutorPatchFor(ORDER_ID, patch, selector, deadline, _packedSignature(v, r, s), "");
     }
 
     function testHandoffStageExecutorPatchSucceedsWithPreviousExecutorSignature() public {
@@ -655,14 +668,15 @@ contract UVPStateMachineTest {
             (uint8 previousV, bytes32 previousR, bytes32 previousS) = vm.sign(WRONG_SUBMITTER_PRIVATE_KEY, digest);
 
             vm.prank(UNAUTHORIZED_SUBMITTER);
-            _stagePatch(machine).applyStageExecutorPatchFor(
-                ORDER_ID,
-                patch,
-                selector,
-                deadline,
-                _packedSignature(selectorV, selectorR, selectorS),
-                _packedSignature(previousV, previousR, previousS)
-            );
+            _stagePatch(machine)
+                .applyStageExecutorPatchFor(
+                    ORDER_ID,
+                    patch,
+                    selector,
+                    deadline,
+                    _packedSignature(selectorV, selectorR, selectorS),
+                    _packedSignature(previousV, previousR, previousS)
+                );
         }
 
         require(machine.activeStageExecutor(ORDER_ID, STAGE_AUDIT) == SUBMITTER_B, "handoff executor not active");
@@ -709,9 +723,8 @@ contract UVPStateMachineTest {
                     UVPStagePatchModule.InvalidStageExecutorPatchSignature.selector, previousExecutor, address(0)
                 )
             );
-            _stagePatch(machine).applyStageExecutorPatchFor(
-                ORDER_ID, patch, selector, deadline, _packedSignature(v, r, s), ""
-            );
+            _stagePatch(machine)
+                .applyStageExecutorPatchFor(ORDER_ID, patch, selector, deadline, _packedSignature(v, r, s), "");
         }
 
         vm.prank(selector);
@@ -746,14 +759,15 @@ contract UVPStateMachineTest {
                     UVPStagePatchModule.InvalidStageExecutorPatchSignature.selector, previousExecutor, selector
                 )
             );
-            _stagePatch(machine).applyStageExecutorPatchFor(
-                ORDER_ID,
-                patch,
-                selector,
-                deadline,
-                _packedSignature(selectorV, selectorR, selectorS),
-                _packedSignature(wrongV, wrongR, wrongS)
-            );
+            _stagePatch(machine)
+                .applyStageExecutorPatchFor(
+                    ORDER_ID,
+                    patch,
+                    selector,
+                    deadline,
+                    _packedSignature(selectorV, selectorR, selectorS),
+                    _packedSignature(wrongV, wrongR, wrongS)
+                );
         }
     }
 
@@ -985,9 +999,8 @@ contract UVPStateMachineTest {
         );
         _stagePatch(machine).applyStageResourcePatch(ORDER_ID, _stageResourcePatch(2, RESOURCE_PATCH_HASH_2));
 
-        _stagePatch(machine).applyStageResourcePatch(
-            ORDER_ID, _stageResourcePatchWithKey(RESOURCE_KEY_2, 1, RESOURCE_PATCH_HASH_2)
-        );
+        _stagePatch(machine)
+            .applyStageResourcePatch(ORDER_ID, _stageResourcePatchWithKey(RESOURCE_KEY_2, 1, RESOURCE_PATCH_HASH_2));
         require(
             _stagePatch(machine).orderStageResourcePatchNonce(ORDER_ID, STAGE_AUDIT, RESOURCE_KEY_2) == 1,
             "resource key nonce not isolated"
@@ -1448,9 +1461,8 @@ contract UVPStateMachineTest {
         machine.submitSignal(ORDER_ID_2, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, PAYLOAD_HASH, bytes32(uint256(0x9002)));
 
         vm.resumeGasMetering();
-        _docking(machine).submitDockedSignal(
-            ORDER_ID, ORDER_ID_2, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, bytes32(uint256(0x9003))
-        );
+        _docking(machine)
+            .submitDockedSignal(ORDER_ID, ORDER_ID_2, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, bytes32(uint256(0x9003)));
         vm.pauseGasMetering();
     }
 
@@ -1463,9 +1475,8 @@ contract UVPStateMachineTest {
         uint256 attackerGas = attackerBefore - gasleft();
 
         uint256 relayBefore = gasleft();
-        _docking(machine).submitDockedSignal(
-            ORDER_ID, ORDER_ID_2, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, bytes32(uint256(0x9003))
-        );
+        _docking(machine)
+            .submitDockedSignal(ORDER_ID, ORDER_ID_2, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, bytes32(uint256(0x9003)));
         uint256 relayGas = relayBefore - gasleft();
 
         emit log_named_uint("attacker_linked_signal_gas", attackerGas);
@@ -2141,8 +2152,9 @@ contract UVPStateMachineTest {
         instructions[3] = _and(2);
 
         hooks = new UVPStateMachine.CompactHook[](1);
-        hooks[0] =
-            _hook(hookId, STAGE_INIT, HOOK_NAME_TIMEOUT, true, instructions, _deps2(SIGNAL_VERIFY_FAIL, SIGNAL_TRIGGER));
+        hooks[0] = _hook(
+            hookId, STAGE_INIT, HOOK_NAME_TIMEOUT, true, instructions, _deps2(SIGNAL_VERIFY_FAIL, SIGNAL_TRIGGER)
+        );
     }
 
     function _sharedDependencyPlanWithNonTriggerFirst()
@@ -2196,10 +2208,7 @@ contract UVPStateMachineTest {
     {
         capabilities = new IUVPPlanMetadataModule.SignalCapability[](1);
         capabilities[0] = IUVPPlanMetadataModule.SignalCapability({
-            stageId: STAGE_AUDIT,
-            targetSourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_VERIFY_FAIL,
-            targetOrderRelation: 1
+            stageId: STAGE_AUDIT, targetSourceId: SOURCE_BOOTSTRAP, signalId: SIGNAL_VERIFY_FAIL, targetOrderRelation: 1
         });
     }
 
@@ -2210,16 +2219,10 @@ contract UVPStateMachineTest {
     {
         capabilities = new IUVPPlanMetadataModule.SignalCapability[](2);
         capabilities[0] = IUVPPlanMetadataModule.SignalCapability({
-            stageId: STAGE_AUDIT,
-            targetSourceId: STAGE_AUDIT,
-            signalId: SIGNAL_STAGE_DONE,
-            targetOrderRelation: 0
+            stageId: STAGE_AUDIT, targetSourceId: STAGE_AUDIT, signalId: SIGNAL_STAGE_DONE, targetOrderRelation: 0
         });
         capabilities[1] = IUVPPlanMetadataModule.SignalCapability({
-            stageId: STAGE_AUDIT,
-            targetSourceId: STAGE_AUDIT,
-            signalId: SIGNAL_STAGE_REVIEW,
-            targetOrderRelation: 0
+            stageId: STAGE_AUDIT, targetSourceId: STAGE_AUDIT, signalId: SIGNAL_STAGE_REVIEW, targetOrderRelation: 0
         });
     }
 
@@ -2283,11 +2286,7 @@ contract UVPStateMachineTest {
 
     function _not() private pure returns (UVPStateMachine.Instruction memory) {
         return UVPStateMachine.Instruction({
-            op: UVPStateMachine.InstructionOp.Not,
-            sourceId: bytes32(0),
-            signalId: bytes32(0),
-            arity: 0,
-            delaySeconds: 0
+            op: UVPStateMachine.InstructionOp.Not, sourceId: bytes32(0), signalId: bytes32(0), arity: 0, delaySeconds: 0
         });
     }
 
