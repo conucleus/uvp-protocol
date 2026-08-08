@@ -39,8 +39,9 @@ test("loads UVP update zhixu yaml and compiles stable on-chain plan", async () =
     onchain.compiledHooks.filter((hook) => hook.stageIdentifier === "update.rollback" && hook.isTrigger).length,
     5
   );
+  assert.equal(definition.spec.taskPatterns[0]?.stages[0]?.externalSignals, undefined);
   assert.equal(
-    args.hooks.find((hook) => hook.hookId === onchain.compiledHooks.find((item) => item.stageIdentifier === "update.init")?.hookId)?.isTrigger,
+    onchain.compiledHooks.some((hook) => hook.stageIdentifier === "update.init"),
     true
   );
 });
@@ -53,9 +54,9 @@ test("loads original figure custom order yaml and compiles multi-party plan", as
 
   assert.equal(definition.metadata.name, "original-figure-custom-order");
   assert.equal(definition.metadata.uid, "zhixu-original-figure-custom-order-v1");
-  assert.equal(hookPlan.compiledHooks.length, 16);
-  assert.equal(onchain.compiledHooks.length, 16);
-  assert.equal(args.hooks.length, 16);
+  assert.equal(hookPlan.compiledHooks.length, 15);
+  assert.equal(onchain.compiledHooks.length, 15);
+  assert.equal(args.hooks.length, 15);
   assert.equal(hookPlan.selectedStageBindings.length, 13);
   assert.ok(
     hookPlan.selectedStageBindings.some(

@@ -219,19 +219,20 @@ test("cancels delayed hooks when the negative signal arrives before the anchor",
   });
 });
 
-test("supports OUTSIDE and OUTSOURCE target dependencies", () => {
-  const outsideAst = parseHookExpression("::OUTSIDE");
+test("supports explicit OUTSIDE and OUTSOURCE target dependencies", () => {
   const ast = parseHookExpression("buyer::OUTSOURCE@(seller::task.ship.cmp)");
 
-  assert.deepEqual(extractHookDependencies(outsideAst), [
-    { kind: "positive", source: "", signalName: "OUTSIDE" }
-  ]);
   assert.deepEqual(extractHookDependencies(ast), [
     { kind: "positive", source: "seller", signalName: "task.ship.cmp" }
   ]);
   assert.deepEqual(evaluateHook(ast, index([["seller", "task.ship.cmp", at]]), at), {
     status: "reg"
   });
+});
+
+test("rejects removed bare external hook conditions", () => {
+  assert.throws(() => parseHookExpression("::OUTSIDE"), /no longer supported/);
+  assert.throws(() => parseHookExpression("buyer::OUTSOURCE"), /no longer supported/);
 });
 
 test("rejects raw-less ASTs at adapter boundaries", () => {

@@ -37,9 +37,7 @@ const baseZhixu: ZhixuDefinition = {
             name: "assign",
             source: "buyer",
             trigger: ["TRIGGER"],
-            receiveSignals: {
-              TRIGGER: "::OUTSIDE"
-            },
+            externalSignals: ["TRIGGER"],
             selectedStages: ["execution.main"],
             sendSignals: ["executor_selected"],
             executor: {
@@ -129,12 +127,11 @@ test("compiles internal HookPlan IR", () => {
   assert.equal(plan.version, "7");
   assert.deepEqual(plan.platform, { type: "cloud" });
   assert.equal(plan.planId, "0x472081189619bb006814fed697f3d53ff187b5a852131ba1924bde825b0b9d6d");
-  assert.equal(plan.planHash, "0x4964b6a9999d90aca565c1c555db99d428a606868439ecad7b4d8debde338a64");
+  assert.equal(plan.planHash, "0x3edc41042f27cddacb67d9c7bc9eebb668c832f3abc72a0de864223ed5a14e0b");
   assert.equal(plan.planHash, again.planHash);
   assert.match(plan.planHash, /^0x[0-9a-f]{64}$/);
-  assert.equal(plan.compiledHooks.length, 5);
+  assert.equal(plan.compiledHooks.length, 4);
   assert.deepEqual(plan.compiledHooks.map((hook) => hook.hookId), [
-    "selector.assign#TRIGGER",
     "execution.main#signalMap.cmp",
     "execution.main#signalMap.str",
     "execution.main#START",
@@ -185,9 +182,7 @@ test("compiles source-qualified sendSignals as trigger-origin capabilities", () 
               name: "close",
               source: "trade",
               trigger: ["START"],
-              receiveSignals: {
-                START: "::OUTSIDE"
-              },
+              externalSignals: ["START"],
               sendSignals: ["book::book.settlement_wait.cmp"],
               executor: {
                 supplierType: "organization",
@@ -267,9 +262,7 @@ test("rejects missing trigger hook references", () => {
               name: "main",
               source: "buyer",
               trigger: ["MISSING"],
-              receiveSignals: {
-                TRIGGER: "::OUTSIDE"
-              },
+              externalSignals: ["TRIGGER"],
               executor: {
                 supplierType: "organization",
                 supplierID: "executor"
@@ -282,7 +275,7 @@ test("rejects missing trigger hook references", () => {
   };
 
   assertCompilationIssues(invalid, [
-    /broken\.main\.trigger references missing receiveSignals key MISSING/
+    /broken\.main\.trigger references missing externalSignals or receiveSignals key MISSING/
   ]);
 });
 
@@ -299,9 +292,7 @@ test("rejects string trigger shorthand at runtime boundary", () => {
               name: "main",
               source: "buyer",
               trigger: "TRIGGER",
-              receiveSignals: {
-                TRIGGER: "::OUTSIDE"
-              },
+              externalSignals: ["TRIGGER"],
               executor: {
                 supplierType: "organization",
                 supplierID: "executor"
@@ -420,9 +411,7 @@ test("rejects unbound stages", () => {
               name: "main",
               source: "buyer",
               trigger: ["TRIGGER"],
-              receiveSignals: {
-                TRIGGER: "::OUTSIDE"
-              }
+              externalSignals: ["TRIGGER"]
             }
           ]
         }
@@ -442,9 +431,7 @@ test("accepts executor-less selected-stage chains anchored by a static executor"
         name: "a",
         source: "buyer",
         trigger: ["TRIGGER"],
-        receiveSignals: {
-          TRIGGER: "::OUTSIDE"
-        },
+        externalSignals: ["TRIGGER"],
         selectedStages: ["flow.b"],
         executor: {
           supplierType: "organization",
@@ -455,18 +442,14 @@ test("accepts executor-less selected-stage chains anchored by a static executor"
         name: "b",
         source: "buyer",
         trigger: ["TRIGGER"],
-        receiveSignals: {
-          TRIGGER: "::OUTSIDE"
-        },
+        externalSignals: ["TRIGGER"],
         selectedStages: ["flow.c"]
       },
       {
         name: "c",
         source: "buyer",
         trigger: ["TRIGGER"],
-        receiveSignals: {
-          TRIGGER: "::OUTSIDE"
-        }
+        externalSignals: ["TRIGGER"]
       }
     ])
   );
@@ -493,18 +476,14 @@ test("rejects executor-less selected cycles without a static anchor", () => {
         name: "a",
         source: "buyer",
         trigger: ["TRIGGER"],
-        receiveSignals: {
-          TRIGGER: "::OUTSIDE"
-        },
+        externalSignals: ["TRIGGER"],
         selectedStages: ["flow.b"]
       },
       {
         name: "b",
         source: "buyer",
         trigger: ["TRIGGER"],
-        receiveSignals: {
-          TRIGGER: "::OUTSIDE"
-        },
+        externalSignals: ["TRIGGER"],
         selectedStages: ["flow.a"]
       }
     ]),
@@ -522,18 +501,14 @@ test("rejects executor-less stages reached only through non-anchored selector ch
         name: "a",
         source: "buyer",
         trigger: ["TRIGGER"],
-        receiveSignals: {
-          TRIGGER: "::OUTSIDE"
-        },
+        externalSignals: ["TRIGGER"],
         selectedStages: ["flow.b"]
       },
       {
         name: "b",
         source: "buyer",
         trigger: ["TRIGGER"],
-        receiveSignals: {
-          TRIGGER: "::OUTSIDE"
-        }
+        externalSignals: ["TRIGGER"]
       }
     ]),
     [
@@ -599,9 +574,7 @@ test("rejects local hook references to unknown stages or signals", () => {
               name: "start",
               source: "buyer",
               trigger: ["TRIGGER"],
-              receiveSignals: {
-                TRIGGER: "::OUTSIDE"
-              },
+              externalSignals: ["TRIGGER"],
               sendSignals: ["cmp"],
               executor: {
                 supplierType: "organization",
@@ -637,9 +610,7 @@ test("rejects local hook references to unknown stages or signals", () => {
               name: "start",
               source: "buyer",
               trigger: ["TRIGGER"],
-              receiveSignals: {
-                TRIGGER: "::OUTSIDE"
-              },
+              externalSignals: ["TRIGGER"],
               sendSignals: ["cmp"],
               executor: {
                 supplierType: "organization",
@@ -685,9 +656,7 @@ test("rejects zhixu signal maps without one source", () => {
               name: "main",
               source: "buyer",
               trigger: ["TRIGGER"],
-              receiveSignals: {
-                TRIGGER: "::OUTSIDE"
-              },
+              externalSignals: ["TRIGGER"],
               executor: {
                 supplierType: "zhixu",
                 supplierID: "peer-zhixu",
@@ -723,9 +692,7 @@ test("rejects missing or locally invalid zhixu signal maps", () => {
               name: "main",
               source: "buyer",
               trigger: ["TRIGGER"],
-              receiveSignals: {
-                TRIGGER: "::OUTSIDE"
-              },
+              externalSignals: ["TRIGGER"],
               executor: {
                 supplierType: "zhixu",
                 supplierID: "peer-zhixu"
@@ -748,9 +715,7 @@ test("rejects missing or locally invalid zhixu signal maps", () => {
               name: "main",
               source: "buyer",
               trigger: ["TRIGGER"],
-              receiveSignals: {
-                TRIGGER: "::OUTSIDE"
-              },
+              externalSignals: ["TRIGGER"],
               executor: {
                 supplierType: "zhixu",
                 supplierID: "peer-zhixu",
@@ -778,9 +743,7 @@ test("rejects missing or locally invalid zhixu signal maps", () => {
               name: "main",
               source: "buyer",
               trigger: ["TRIGGER"],
-              receiveSignals: {
-                TRIGGER: "::OUTSIDE"
-              },
+              externalSignals: ["TRIGGER"],
               executor: {
                 supplierType: "zhixu",
                 supplierID: "peer-zhixu",

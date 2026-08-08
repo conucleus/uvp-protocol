@@ -53,6 +53,7 @@ export interface ZhixuStage {
   readonly name: string;
   readonly source: string;
   readonly trigger: readonly string[];
+  readonly externalSignals?: readonly string[];
   readonly executor?: ExecuteConfigs;
   readonly selectedStages?: readonly string[];
   readonly sendSignals?: readonly string[];

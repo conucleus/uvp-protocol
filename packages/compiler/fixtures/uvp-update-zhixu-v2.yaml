@@ -7,7 +7,7 @@ metadata:
   name: uvp-bootstrap-update-v2
   note: |
     UVP 自举更新秩序（M1）。
-    目标：通过 OUTSIDE 触发后完成 init/audit/prepare/build/deploy/verify/switch/cleanup。
+    目标：通过 registrar 的跨源入口信号触发后完成 init/audit/prepare/build/deploy/verify/switch/cleanup。
     任意关键阶段失败后进入 rollback。
 spec:
   platform:
@@ -24,7 +24,7 @@ spec:
           source: bootstrap
           trigger: ["TRIGGER"]
           receiveSignals:
-            TRIGGER: "::OUTSIDE"
+            TRIGGER: "::OUTSIDE@(registrar::external.entry.trigger)"
           sendSignals: ["str", "cmp", "err"]
           fileResources:
             update_spec:

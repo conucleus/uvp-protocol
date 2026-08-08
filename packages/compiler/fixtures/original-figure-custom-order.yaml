@@ -29,8 +29,7 @@ spec:
         - name: brief
           source: client
           trigger: ["ORDER_OPENED"]
-          receiveSignals:
-            ORDER_OPENED: "::OUTSIDE"
+          externalSignals: ["ORDER_OPENED"]
           sendSignals: ["cmp", "cxl", "err"]
           fileResources:
             brief_template:

@@ -39,9 +39,7 @@ const baseZhixu: ZhixuDefinition = {
             name: "assign",
             source: "buyer",
             trigger: ["TRIGGER"],
-            receiveSignals: {
-              TRIGGER: "::OUTSIDE",
-            },
+            externalSignals: ["TRIGGER"],
             selectedStages: ["execution.main"],
             sendSignals: ["executor_selected"],
             executor: {
@@ -93,7 +91,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
   assert.equal(
     onchain.planHash,
-    "0x406a2044484e1f7b736b34d6a8abf1704e96d86ddd04cef6b807b2e231ca4912",
+    "0xc5a12aaea8dc6fea31a489875768514f7d60e0c5850f888e9934c87e60ec7c26",
   );
   assert.deepEqual(onchain.selectorBindings, [
     {
@@ -133,7 +131,6 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
       "0x1c89ab49405588dd2aa212acd1bdcccbf18ed9828e3cb14fa678aeb3509f02d3",
       "0x07fec9e5326c8025bd807a2d26a55476168f38f6b9b1d3ef3af9df18f758da96",
       "0x2a799fd6d3c55a26d5b940bc8fedc135a5feae293bce3e0c6cd375c4a946fc89",
-      "0xdbddf4f61e7e055756d4138cf06773730c4f2b9d9663ff4729c87e1a0e743784",
     ],
   );
   assert.equal(
@@ -177,9 +174,7 @@ test("serializes trigger-origin signal capabilities to Solidity relation 1", () 
               name: "close",
               source: "trade",
               trigger: ["START"],
-              receiveSignals: {
-                START: "::OUTSIDE",
-              },
+              externalSignals: ["START"],
               sendSignals: ["book::book.settlement_wait.cmp"],
               executor: {
                 supplierType: "organization",
@@ -287,9 +282,6 @@ test("builds a stable on-chain dependency index and route references", () => {
     "0x1845455a34645910fcbc7220c18dcb6661ad3f045893d3694d22a99a1a5dcc11": [
       "0x2a799fd6d3c55a26d5b940bc8fedc135a5feae293bce3e0c6cd375c4a946fc89",
     ],
-    "0x61cb81a7548a6a2edd47b3311aa31001794ad214e42ed5448a5e628b68d94ad8": [
-      "0xdbddf4f61e7e055756d4138cf06773730c4f2b9d9663ff4729c87e1a0e743784",
-    ],
     "0x8553bcf44b2604c2d6ba8083e354d082f7e91254eba8a3034e5ac6930923a957": [
       "0x1c89ab49405588dd2aa212acd1bdcccbf18ed9828e3cb14fa678aeb3509f02d3",
     ],
@@ -335,7 +327,7 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
     "0x1845455a34645910fcbc7220c18dcb6661ad3f045893d3694d22a99a1a5dcc11",
     "0xcf7c8f26d55e2223a316d1220b6f7c902d1654622e82b458a98871bdf4c4e433",
   ]);
-  assert.equal(args.dependencyIndex.length, 5);
+  assert.equal(args.dependencyIndex.length, 4);
   assert.equal(args.executorRoutes[0]?.executorId, "payment-zhixu");
   assert.deepEqual(args.selectorBindings, [
     {

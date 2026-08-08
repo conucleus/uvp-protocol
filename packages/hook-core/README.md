@@ -8,7 +8,9 @@ It does not know about databases, Solidity, escrow, Kafka, or funding adapters.
 ## P0 Semantics
 
 - Supported operators: `&`, `|`, `~`, `+5s/+30m/+1h/+1d`, and parentheses.
-- Supported external anchors: `OUTSIDE`, `OUTSIDE@(...)`, and `OUTSOURCE@(...)`.
+- Backend/executor external inputs are declared by stage `externalSignals`.
+- Supported cross-source wrappers: `OUTSIDE@(...)` and `OUTSOURCE@(...)`.
+- Bare `OUTSIDE` / `OUTSOURCE` hook conditions are removed syntax.
 - Signal references must use `task.stage.signal`.
 - Runtime signal indexes are first-writer-wins by `source::signalName`.
 - Negative conditions are monotonic: once `~A` sees `A`, the hook evaluates to

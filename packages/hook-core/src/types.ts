@@ -23,7 +23,7 @@ export interface SignalConditionAst {
 export interface ExternalConditionAst {
   readonly kind: "external";
   readonly mode: "OUTSIDE" | "OUTSOURCE";
-  readonly target?: HookExpressionAst;
+  readonly target: HookExpressionAst;
 }
 
 export interface NotConditionAst {
