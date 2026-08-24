@@ -10,8 +10,6 @@ import {
 export const EXPECTED_UVP_CORE_VERSION = "0.1.0" as const;
 export const EXPECTED_UVP_SEMANTIC_VERSION = "uvp-semantic/0.3" as const;
 
-let compatible = false;
-
 export function uvpCoreCompatibility(): {
   readonly coreVersion: string;
   readonly semanticVersion: string;
@@ -24,7 +22,6 @@ export function uvpCoreCompatibility(): {
       `received ${coreVersion}/${runtimeSemanticVersion}`
     );
   }
-  compatible = true;
   return { coreVersion, semanticVersion: runtimeSemanticVersion };
 }
 
@@ -48,8 +45,11 @@ export function replayWithUvpCore(request: unknown): unknown {
   return replay(request);
 }
 
+/**
+ * Every wrapped call re-checks the live native module versions. The check is
+ * two string compares, cheap enough that a swapped or rebuilt native module
+ * inside a long-lived process cannot silently bypass the compatibility gate.
+ */
 function ensureCompatible(): void {
-  if (!compatible) {
-    uvpCoreCompatibility();
-  }
+  uvpCoreCompatibility();
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { decodeFunctionData } from "viem";
+import { decodeEventLog, decodeFunctionData, toEventHash } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { STATE_MACHINE_ABI as EVM_STATE_MACHINE_ABI } from "@uvp-eth/protocol-bindings/evm";
 import {
@@ -163,6 +163,40 @@ const signalAuthorizations = [
 ] as const;
 
 describe("protocol bindings", () => {
+  it("exposes frozen v0.8 hook observation events", () => {
+    assert.equal(
+      toEventHash("HookStatusChanged(bytes32,bytes32,uint8,uint8,uint64)"),
+      "0x5be89146d09c52d7c340dd4d7e4116db5352f9f46970109c2f0569babf4272ed"
+    );
+    assert.equal(
+      toEventHash("TimerPoked(bytes32,bytes32,uint64)"),
+      "0x0993e0474543bdefb1908d2527dac2fd76cfa2fa6fdb36cbb26aeac167ed5c79"
+    );
+
+    const decoded = decodeEventLog({
+      abi: STATE_MACHINE_ABI,
+      data: (
+        "0x"
+        + "00".repeat(31) + "01"
+        + "00".repeat(31) + "02"
+        + "00".repeat(24) + "0000000000000018"
+      ) as `0x${string}`,
+      topics: [
+        "0x5be89146d09c52d7c340dd4d7e4116db5352f9f46970109c2f0569babf4272ed",
+        `0x${"11".repeat(32)}`,
+        `0x${"22".repeat(32)}`
+      ] as const
+    });
+    assert.equal(decoded.eventName, "HookStatusChanged");
+    assert.deepEqual(decoded.args, {
+      orderId: "0x" + "11".repeat(32),
+      hookId: "0x" + "22".repeat(32),
+      previousStatus: 1,
+      newStatus: 2,
+      dueAt: 24n
+    });
+  });
+
   it("exposes explicit EVM and Solana binding boundaries", () => {
     assert.equal(EVM_STATE_MACHINE_ABI, STATE_MACHINE_ABI);
     const placeholder: SolanaInstructionPlanPlaceholder = {

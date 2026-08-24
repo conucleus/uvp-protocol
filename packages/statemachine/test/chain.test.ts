@@ -171,7 +171,8 @@ test("chain-mode keeps AND delayed branches waiting until the latest live timer"
       zhixuId: "chain-parity",
       orderId: "and-latest-wait",
       hookId: andLatestWaitHookId,
-      status: "wait",
+      previousStatus: "init",
+      newStatus: "wait",
       dueAt: "2026-04-27T00:00:10.000Z"
     }
   ];

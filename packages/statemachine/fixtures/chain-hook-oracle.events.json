@@ -151,8 +151,9 @@
     "zhixuId": "chain-oracle",
     "orderId": "order-cancel",
     "hookId": "0x0000000000000000000000000000000000000000000000000000000000003002",
-    "status": "wait",
-    "dueAt": "2026-04-27T00:00:05.000Z"
+    "dueAt": "2026-04-27T00:00:05.000Z",
+    "previousStatus": "init",
+    "newStatus": "wait"
   },
   {
     "eventName": "SignalSubmitted",
@@ -194,7 +195,8 @@
     "zhixuId": "chain-oracle",
     "orderId": "order-cancel",
     "hookId": "0x0000000000000000000000000000000000000000000000000000000000003002",
-    "status": "cxl"
+    "previousStatus": "wait",
+    "newStatus": "cxl"
   },
   {
     "eventName": "TimerPoked",
@@ -271,8 +273,9 @@
     "zhixuId": "chain-oracle",
     "orderId": "order-timer",
     "hookId": "0x0000000000000000000000000000000000000000000000000000000000003002",
-    "status": "wait",
-    "dueAt": "2026-04-27T00:01:05.000Z"
+    "dueAt": "2026-04-27T00:01:05.000Z",
+    "previousStatus": "init",
+    "newStatus": "wait"
   },
   {
     "eventName": "TimerPoked",

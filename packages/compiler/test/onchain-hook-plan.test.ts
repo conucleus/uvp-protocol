@@ -11,7 +11,7 @@ import {
   type OnchainSignalInstruction,
   type ZhixuDefinition,
 } from "../src/index.js";
-import { compileZhixuHookPlan } from "../src/hook-plan.js";
+import { compileZhixuHookPlan, HookPlanCompilationError } from "../src/hook-plan.js";
 import { compileOnchainHookPlan } from "../src/onchain-hook-plan.js";
 
 const baseZhixu: ZhixuDefinition = {
@@ -91,7 +91,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
   assert.equal(
     onchain.planHash,
-    "0xc5a12aaea8dc6fea31a489875768514f7d60e0c5850f888e9934c87e60ec7c26",
+    "0x42a1058fabfee8fdd1d0bf2348459360a0b3d9531276db37004c8bf5c6d5e989",
   );
   assert.deepEqual(onchain.selectorBindings, [
     {
@@ -127,22 +127,22 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.deepEqual(
     onchain.compiledHooks.map((hook) => hook.hookId),
     [
-      "0x4192cb3bc76e04ab3c8f9a95ead3b20e86b5af753ac911791d20249e19a81e5a",
-      "0x1c89ab49405588dd2aa212acd1bdcccbf18ed9828e3cb14fa678aeb3509f02d3",
       "0x07fec9e5326c8025bd807a2d26a55476168f38f6b9b1d3ef3af9df18f758da96",
       "0x2a799fd6d3c55a26d5b940bc8fedc135a5feae293bce3e0c6cd375c4a946fc89",
+      "0x4192cb3bc76e04ab3c8f9a95ead3b20e86b5af753ac911791d20249e19a81e5a",
+      "0x1c89ab49405588dd2aa212acd1bdcccbf18ed9828e3cb14fa678aeb3509f02d3",
     ],
   );
   assert.equal(
-    onchain.compiledHooks[2]?.hookId,
+    onchain.compiledHooks[0]?.hookId,
     keccak256Hex("execution.main#START"),
   );
   assert.equal(
-    onchain.compiledHooks[2]?.stageId,
+    onchain.compiledHooks[0]?.stageId,
     keccak256Hex("execution.main"),
   );
 
-  const startSignal = onchain.compiledHooks[2]
+  const startSignal = onchain.compiledHooks[0]
     ?.instructions[0] as OnchainSignalInstruction;
   assert.equal(startSignal.sourceId, keccak256Hex("buyer"));
   assert.equal(
@@ -318,12 +318,12 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
   assert.notEqual(args.planHash, args.artifactHash);
   assert.match(args.hooksHash, /^0x[0-9a-f]{64}$/);
   assert.match(args.metadataHash, /^0x[0-9a-f]{64}$/);
-  assert.equal(args.hooks[3]?.hookName, keccak256Hex("TIMEOUT"));
+  assert.equal(args.hooks[1]?.hookName, keccak256Hex("TIMEOUT"));
   assert.deepEqual(
-    args.hooks[3]?.instructions.map((instruction) => instruction.op),
+    args.hooks[1]?.instructions.map((instruction) => instruction.op),
     ["SIGNAL", "DELAY", "SIGNAL", "NOT", "AND"],
   );
-  assert.deepEqual(args.hooks[3]?.dependencyKeys, [
+  assert.deepEqual(args.hooks[1]?.dependencyKeys, [
     "0x1845455a34645910fcbc7220c18dcb6661ad3f045893d3694d22a99a1a5dcc11",
     "0xcf7c8f26d55e2223a316d1220b6f7c902d1654622e82b458a98871bdf4c4e433",
   ]);
@@ -413,4 +413,35 @@ test("rejects invalid on-chain HookPlan artifact shapes", () => {
       }),
     OnchainHookPlanArtifactValidationError,
   );
+});
+
+test("rejects MERGE@ and ANCHOR@ receive hooks with the typed compilation error", () => {
+  for (const [hookName, expression] of [
+    ["START", "::MERGE@(buyer::selector.assign.executor_selected, buyer::execution.main.cmp)"],
+    ["START", "::ANCHOR@(execution.main.cmp)"]
+  ] as const) {
+    const zhixu: ZhixuDefinition = {
+      ...baseZhixu,
+      spec: {
+        ...baseZhixu.spec,
+        taskPatterns: baseZhixu.spec.taskPatterns.map((pattern) => ({
+          ...pattern,
+          stages: pattern.stages.map((stage) =>
+            stage.name === "main"
+              ? { ...stage, receiveSignals: { [hookName]: expression } }
+              : stage
+          )
+        }))
+      }
+    };
+
+    assert.throws(
+      () => compileOnchainHookPlan(compileZhixuHookPlan(zhixu)),
+      (error: unknown) =>
+        error instanceof HookPlanCompilationError &&
+        error.issues.some((issue) =>
+          /does not support (merge|anchor) entries/.test(issue)
+        )
+    );
+  }
 });

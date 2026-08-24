@@ -135,10 +135,17 @@ export interface ChainStageMaterializedEvent extends ChainEventBase {
 
 export interface ChainHookStatusChangedEvent extends ChainEventBase {
   readonly eventName: "HookStatusChanged";
+  /**
+   * Frozen payload: HookStatusChanged(bytes32 orderId, bytes32 hookId,
+   * uint8 previousStatus, uint8 newStatus, uint64 dueAt).
+   * zhixuId below is indexer enrichment joined from the order registration,
+   * never part of the emitted event.
+   */
   readonly zhixuId: string;
   readonly orderId: string;
   readonly hookId: string;
-  readonly status: ChainObservableHookStatus;
+  readonly previousStatus: ChainOracleHookStatus;
+  readonly newStatus: ChainOracleHookStatus;
   readonly dueAt?: string;
 }
 
@@ -153,9 +160,16 @@ export interface ChainHookReadyEvent extends ChainEventBase {
 
 export interface ChainTimerPokedEvent extends ChainEventBase {
   readonly eventName: "TimerPoked";
+  /**
+   * Frozen payload: TimerPoked(bytes32 orderId, bytes32 hookId, uint64 dueAt).
+   * zhixuId is indexer enrichment from the order registration. pokedAt is the
+   * block timestamp of the poke transaction (also enrichment); the replay
+   * oracle consumes it as the evaluation clock for this tick.
+   */
   readonly zhixuId: string;
   readonly orderId: string;
   readonly hookId: string;
+  readonly dueAt: string;
   readonly pokedAt: string;
 }
 
@@ -242,7 +256,7 @@ export function replayChainEvents(
   options: ChainReplayOptions = {}
 ): ChainReplayResult {
   const result = replayWithUvpCore({
-    events,
+    events: events.map(normalizeChainEventForOracle),
     options: {
       ...options,
       strict: false
@@ -260,6 +274,19 @@ export function chainEventId(event: ChainEventBase): string {
   return `${event.blockNumber}:${event.logIndex}:${event.transactionHash}`;
 }
 
+/**
+ * The replay oracle consumes the projected observation shape (single
+ * `status`), while the frozen chain event carries previousStatus/newStatus.
+ * This adapter is the formal boundary between the two contracts: the
+ * projection keeps newStatus and drops the redundant previous half.
+ */
+function normalizeChainEventForOracle(event: ChainModeEvent): Record<string, unknown> {
+  if (event.eventName === "HookStatusChanged") {
+    return { ...event, status: event.newStatus };
+  }
+  return { ...event };
+}
+
 export function compareChainEvents(a: ChainEventBase, b: ChainEventBase): number {
   return a.blockNumber - b.blockNumber || a.logIndex - b.logIndex;
 }
@@ -275,15 +302,21 @@ export function chainEventToExpectedObservation(event: ChainModeExpectedEvent): 
         stageIdentifier: event.stageIdentifier,
         hookName: event.hookName
       };
-    case "HookStatusChanged":
+    case "HookStatusChanged": {
+      if (event.newStatus !== "wait" && event.newStatus !== "cxl") {
+        throw new Error(
+          `HookStatusChanged ${event.hookId} carries non-observable new status ${event.newStatus}; ready transitions are observed through HookReady`
+        );
+      }
       return {
         eventName: "HookStatusChanged",
         zhixuId: event.zhixuId,
         orderId: event.orderId,
         hookId: event.hookId,
-        status: event.status,
+        status: event.newStatus,
         ...(event.dueAt ? { dueAt: event.dueAt } : {})
       };
+    }
     default:
       return assertNever(event);
   }

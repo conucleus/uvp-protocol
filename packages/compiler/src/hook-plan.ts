@@ -26,6 +26,15 @@ export class HookPlanArtifactValidationError extends Error {
   }
 }
 
+/**
+ * Deterministic code-unit ordering. localeCompare is ICU/locale dependent and
+ * must never participate in canonical artifact construction, which has to
+ * reproduce byte-identically across environments (Rust side orders by bytes).
+ */
+export function compareByCodeUnit(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 export function compileZhixuHookPlan(definition: ZhixuDefinition): HookPlanArtifact {
   const issues = validateZhixuShape(definition);
   if (issues.length > 0) {
@@ -256,7 +265,7 @@ function validateDependencyIndex(
 
   const expected = Object.fromEntries(
     [...recomputed.entries()]
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareByCodeUnit(left, right))
       .map(([key, hookIds]) => [key, [...hookIds].sort()])
   );
   if (JSON.stringify(expected) !== JSON.stringify(dependencyIndex)) {

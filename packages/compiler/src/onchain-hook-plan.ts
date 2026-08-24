@@ -10,7 +10,7 @@ import {
   parseAbiParameters,
   stringToHex,
 } from "viem";
-import { assertHookPlanArtifact } from "./hook-plan.js";
+import { assertHookPlanArtifact, compareByCodeUnit, HookPlanCompilationError } from "./hook-plan.js";
 import {
   ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
   type HexString,
@@ -282,7 +282,7 @@ export function toSolidityRegisterPlanArgs(
     metadataHash,
     hooks,
     dependencyIndex: Object.entries(artifact.dependencyIndex)
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareByCodeUnit(left, right))
       .map(([signalKey, hookIds]) => ({
         signalKey: signalKey as HexString,
         hookIds,
@@ -410,15 +410,17 @@ function compileConditionInstructions(
       return [signalInstruction(source, condition.signalName)];
     case "merge":
     case "anchor":
-      throw new Error(
+      throw new HookPlanCompilationError([
         `on-chain HookPlan does not support ${condition.kind} entries yet; `
         + "MERGE@/ANCHOR@ are per-event cloud runtime deliveries"
-      );
+      ]);
     case "external":
-      if (condition.target) {
-        return compileHookInstructions(condition.target);
+      if (!condition.target) {
+        throw new HookPlanCompilationError([
+          `external condition is missing its @(...) target in stage ${source}`
+        ]);
       }
-      return [signalInstruction(source, condition.mode)];
+      return compileHookInstructions(condition.target);
     case "not":
       return [
         ...compileConditionInstructions(condition.expr, source),
@@ -494,7 +496,7 @@ function buildOnchainDependencyIndex(
 
   const output: Record<HexString, readonly HexString[]> = {};
   for (const [signalKey, hookIds] of [...index.entries()].sort(
-    ([left], [right]) => left.localeCompare(right),
+    ([left], [right]) => compareByCodeUnit(left, right),
   )) {
     output[signalKey] = [...hookIds].sort();
   }
@@ -726,6 +728,12 @@ function validateOnchainCompiledHooks(
       .map((route) => route.routeId)
       .filter((routeId): routeId is string => typeof routeId === "string"),
   );
+  const routesById = new Map<string, Record<string, unknown>>();
+  for (const route of executorRoutes) {
+    if (isRecord(route) && typeof route.routeId === "string") {
+      routesById.set(route.routeId, route);
+    }
+  }
 
   for (const [index, hook] of hooks.entries()) {
     if (!isRecord(hook)) {
@@ -821,6 +829,30 @@ function validateOnchainCompiledHooks(
           issues.push(
             `${prefix}.routeRef.routeId must reference executorRoutes`,
           );
+        }
+        if (
+          typeof hook.routeRef.routeId === "string" &&
+          typeof hook.routeRef.routeHash === "string"
+        ) {
+          const referencedRoute = routesById.get(hook.routeRef.routeId);
+          if (
+            referencedRoute &&
+            typeof referencedRoute.stageIdentifier === "string" &&
+            isRecord(referencedRoute.executor)
+          ) {
+            const expectedHash = onchainRouteHash({
+              stageIdentifier: referencedRoute.stageIdentifier,
+              executor: referencedRoute.executor,
+              fileResources: isRecord(referencedRoute.fileResources)
+                ? referencedRoute.fileResources
+                : undefined,
+            } as unknown as HookPlanExecutorRoute);
+            if (hook.routeRef.routeHash !== expectedHash) {
+              issues.push(
+                `${prefix}.routeRef.routeHash must match the referenced executor route`,
+              );
+            }
+          }
         }
       }
     }
@@ -1017,7 +1049,7 @@ function validateOnchainDependencyIndex(
 
   const expected = Object.fromEntries(
     [...recomputed.entries()]
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareByCodeUnit(left, right))
       .map(([signalKey, hookIds]) => [signalKey, [...hookIds].sort()]),
   );
   if (JSON.stringify(expected) !== JSON.stringify(dependencyIndex)) {
@@ -1296,9 +1328,9 @@ function compareOnchainHooks(
   right: OnchainCompiledHook,
 ): number {
   return (
-    left.stageIdentifier.localeCompare(right.stageIdentifier) ||
-    left.hookName.localeCompare(right.hookName) ||
-    left.hookId.localeCompare(right.hookId)
+    compareByCodeUnit(left.stageIdentifier, right.stageIdentifier) ||
+    compareByCodeUnit(left.hookName, right.hookName) ||
+    compareByCodeUnit(left.hookId, right.hookId)
   );
 }
 
@@ -1307,8 +1339,8 @@ function compareExecutorRoutes(
   right: OnchainExecutorRoute,
 ): number {
   return (
-    left.stageIdentifier.localeCompare(right.stageIdentifier) ||
-    left.routeId.localeCompare(right.routeId)
+    compareByCodeUnit(left.stageIdentifier, right.stageIdentifier) ||
+    compareByCodeUnit(left.routeId, right.routeId)
   );
 }
 
@@ -1317,9 +1349,9 @@ function compareSelectorBindings(
   right: OnchainStageSelectorBinding,
 ): number {
   return (
-    left.selectorStageId.localeCompare(right.selectorStageId) ||
-    left.targetStageId.localeCompare(right.targetStageId) ||
-    left.bindingHash.localeCompare(right.bindingHash)
+    compareByCodeUnit(left.selectorStageId, right.selectorStageId) ||
+    compareByCodeUnit(left.targetStageId, right.targetStageId) ||
+    compareByCodeUnit(left.bindingHash, right.bindingHash)
   );
 }
 
@@ -1328,11 +1360,11 @@ function compareSignalCapabilities(
   right: OnchainSignalCapability,
 ): number {
   return (
-    left.stageId.localeCompare(right.stageId) ||
-    left.targetSourceId.localeCompare(right.targetSourceId) ||
-    left.signalId.localeCompare(right.signalId) ||
-    left.targetOrderRelation.localeCompare(right.targetOrderRelation) ||
-    left.capabilityHash.localeCompare(right.capabilityHash)
+    compareByCodeUnit(left.stageId, right.stageId) ||
+    compareByCodeUnit(left.targetSourceId, right.targetSourceId) ||
+    compareByCodeUnit(left.signalId, right.signalId) ||
+    compareByCodeUnit(left.targetOrderRelation, right.targetOrderRelation) ||
+    compareByCodeUnit(left.capabilityHash, right.capabilityHash)
   );
 }
 
