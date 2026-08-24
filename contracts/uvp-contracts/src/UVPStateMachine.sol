@@ -169,6 +169,7 @@ contract UVPStateMachine {
     error ExpiredSignalSignature(uint256 deadline);
     error ExpiredPlanSignature(uint256 deadline);
     error HookAlreadyRegistered();
+    error HookDelayTooLong(uint256 delaySeconds);
     error InvalidSignalSignature(address expectedSigner, address recoveredSigner);
     error InvalidSignalSignatureLength(uint256 length);
     error InvalidInstruction();
@@ -230,6 +231,7 @@ contract UVPStateMachine {
     bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.8");
     bytes32 private constant _PLAN_RUNTIME_HASH_DOMAIN = keccak256("uvp.plan.runtime.v1");
     bytes32 private constant _PLAN_ID_HASH_DOMAIN = keccak256("uvp.plan.id.v1");
+    uint64 public constant MAX_HOOK_DELAY_SECONDS = 30 days;
     bytes32 private constant _PLAN_COMMIT_TYPEHASH = keccak256(
         "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 metadataHash,uint256 deadline)"
     );
@@ -727,6 +729,9 @@ contract UVPStateMachine {
         if (!order.exists) {
             revert UnknownOrder();
         }
+        if (!_isPlanStage(order.planId, targetStageId)) {
+            revert UnknownHook();
+        }
         ActiveStageExecutorPatch storage activePatch = _activeStageExecutorPatches[orderId][targetStageId];
         if (patchNonce <= activePatch.patchNonce) {
             revert StageExecutorPatchNonceNotIncreasing(orderId, targetStageId, activePatch.patchNonce, patchNonce);
@@ -1130,6 +1135,9 @@ contract UVPStateMachine {
                 }
                 if (instruction.op == InstructionOp.Delay && instruction.delaySeconds == 0) {
                     revert InvalidInstruction();
+                }
+                if (instruction.op == InstructionOp.Delay && instruction.delaySeconds > MAX_HOOK_DELAY_SECONDS) {
+                    revert HookDelayTooLong(instruction.delaySeconds);
                 }
             } else if (instruction.op == InstructionOp.And || instruction.op == InstructionOp.Or) {
                 if (instruction.arity < 2 || stackDepth < instruction.arity) {

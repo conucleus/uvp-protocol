@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xa347c8622fc122f7a233f81f98d930bc45fa227f4575650db4914f8bc1272303",
-    "bytecodeHash": "0xc12517d56506eae32fa096d01a36f8cdcfe8abc0bac1ad8c53587aec4dca53ad",
-    "deployedBytecodeHash": "0x0af013c425c98ae151228ab670c3301bc74764d69c884e3d6e253804bc6070bb",
-    "artifactHash": "0x1b551bd808a7ba9b3a0e0a4dfe6bd9c055ec0fc76699575aee0ae3752a9f6e3e"
+    "abiHash": "0x81bf810d3f011f02621993bb34a2f9a63d9f95ddd2567ecbc24d5a4552a93599",
+    "bytecodeHash": "0x9a06c7c5f9df9d7215ef8eb0f882c781be670c06712e016e64d779197c645f2c",
+    "deployedBytecodeHash": "0x071e2a75260123acc0255cca8b4ccb4913db16a6357601a5cfbf241998d5466f",
+    "artifactHash": "0xb7ff03fcfd9faf829f182df92f397f419c70df17aba5484b158890bcd441cfd4"
   },
   "events": {
     "HookReady": {
@@ -108,6 +108,10 @@
     "LENS_MODULE_ID": {
       "signature": "LENS_MODULE_ID()",
       "selector": "0x1a781337"
+    },
+    "MAX_HOOK_DELAY_SECONDS": {
+      "signature": "MAX_HOOK_DELAY_SECONDS()",
+      "selector": "0xe0f77f80"
     },
     "ORDER_LINK_MODULE_ID": {
       "signature": "ORDER_LINK_MODULE_ID()",

@@ -601,6 +601,16 @@ contract UVPStateMachineTest {
         _stagePatch(machine).applyStageExecutorPatch(ORDER_ID, patch);
     }
 
+    function testActivateStageExecutorFromModuleRejectsForeignStage() public {
+        UVPStateMachine machine = _registeredMachine(_positiveHookPlan(HOOK_INIT, true));
+
+        vm.prank(address(_stagePatch(machine)));
+        vm.expectRevert(UVPStateMachine.UnknownHook.selector);
+        machine.activateStageExecutorFromModule(
+            ORDER_ID, STAGE_ROLLBACK, SUBMITTER_A, ROLE_EXECUTOR, EXECUTOR_METADATA_HASH, PATCH_HASH, 1, ""
+        );
+    }
+
     function testRelayerCanApplyStageExecutorPatchWithSelectorSignature() public {
         address selector = vm.addr(SUBMITTER_PRIVATE_KEY);
         UVPStateMachine machine = _registeredOverlayMachine(selector, SUBMITTER_A);
@@ -1383,6 +1393,49 @@ contract UVPStateMachineTest {
         require(dueAt == 0, "timer ready has due");
         require(readyEmitted, "timer ready marker missing");
         require(_countHookReady(vm.getRecordedLogs()) == 1, "timer ready event count");
+    }
+
+    function testCommitPlanAcceptsDelayAtThirtyDayBound() public {
+        UVPStateMachine machine = _registeredMachine(_timerHookPlan(HOOK_TIMEOUT, 30 days));
+
+        vm.warp(100);
+        machine.submitSignal(ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY);
+
+        (UVPStateMachine.HookStatus status, uint64 dueAt, bool readyEmitted) =
+            machine.getHookStatus(ORDER_ID, HOOK_TIMEOUT);
+        require(status == UVPStateMachine.HookStatus.Wait, "hook not waiting");
+        require(dueAt == 100 + machine.MAX_HOOK_DELAY_SECONDS(), "bad dueAt");
+        require(!readyEmitted, "early ready marker");
+    }
+
+    function testCommitPlanRejectsDelayAboveThirtyDayBound() public {
+        UVPStateMachine machine = _newMachine();
+
+        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.HookDelayTooLong.selector, uint256(30 days + 1)));
+        _commitPlan(
+            machine,
+            _timerHookPlan(HOOK_TIMEOUT, 30 days + 1),
+            new IUVPPlanMetadataModule.StageSelectorBinding[](0),
+            new IUVPPlanMetadataModule.SignalCapability[](0)
+        );
+    }
+
+    function testCommitPlanAcceptsOneSecondDelay() public {
+        UVPStateMachine machine = _registeredMachine(_timerHookPlan(HOOK_TIMEOUT, 1));
+
+        vm.warp(100);
+        machine.submitSignal(ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY);
+
+        (UVPStateMachine.HookStatus status,, bool readyEmitted) = machine.getHookStatus(ORDER_ID, HOOK_TIMEOUT);
+        require(status == UVPStateMachine.HookStatus.Wait, "hook not waiting");
+        require(!readyEmitted, "early ready marker");
+
+        vm.warp(101);
+        machine.pokeTimer(ORDER_ID, HOOK_TIMEOUT);
+
+        (status,, readyEmitted) = machine.getHookStatus(ORDER_ID, HOOK_TIMEOUT);
+        require(status == UVPStateMachine.HookStatus.Ready, "hook not ready");
+        require(readyEmitted, "ready marker missing");
     }
 
     function testNegativeSignalCancelsHook() public {
