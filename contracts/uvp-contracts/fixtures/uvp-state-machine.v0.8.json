@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x81bf810d3f011f02621993bb34a2f9a63d9f95ddd2567ecbc24d5a4552a93599",
-    "bytecodeHash": "0x9a06c7c5f9df9d7215ef8eb0f882c781be670c06712e016e64d779197c645f2c",
-    "deployedBytecodeHash": "0x071e2a75260123acc0255cca8b4ccb4913db16a6357601a5cfbf241998d5466f",
-    "artifactHash": "0xb7ff03fcfd9faf829f182df92f397f419c70df17aba5484b158890bcd441cfd4"
+    "abiHash": "0x8a8680c13e119eff59098bd0f2bed2a357deedba1f6673c84b3c7b800c033b10",
+    "bytecodeHash": "0x3e6476ee3ec4235d7b189898f08c7e96888e34f28a67d45518a6780ab3747013",
+    "deployedBytecodeHash": "0x8c51b266047d6ff43e7b346ef9be6edda6f303cdb120cf7cc91596f81e4b9a9b",
+    "artifactHash": "0xe30b3b0593d2c7d750ffc6fbc29d67df946c7c92046890f469a1a0f0c8460379"
   },
   "events": {
     "HookReady": {
@@ -112,6 +112,10 @@
     "MAX_HOOK_DELAY_SECONDS": {
       "signature": "MAX_HOOK_DELAY_SECONDS()",
       "selector": "0xe0f77f80"
+    },
+    "MAX_PLAN_DEPENDENCIES": {
+      "signature": "MAX_PLAN_DEPENDENCIES()",
+      "selector": "0x67c17cbb"
     },
     "ORDER_LINK_MODULE_ID": {
       "signature": "ORDER_LINK_MODULE_ID()",

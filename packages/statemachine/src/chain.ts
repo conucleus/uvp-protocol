@@ -276,13 +276,18 @@ export function chainEventId(event: ChainEventBase): string {
 
 /**
  * The replay oracle consumes the projected observation shape (single
- * `status`), while the frozen chain event carries previousStatus/newStatus.
- * This adapter is the formal boundary between the two contracts: the
- * projection keeps newStatus and drops the redundant previous half.
+ * `status`), while the frozen v0.8 chain event carries
+ * previousStatus/newStatus. This adapter is the formal boundary between the
+ * two contracts: v0.8 events are projected onto newStatus; legacy single
+ * `status` streams pass through untouched so older corpora stay readable.
  */
 function normalizeChainEventForOracle(event: ChainModeEvent): Record<string, unknown> {
   if (event.eventName === "HookStatusChanged") {
-    return { ...event, status: event.newStatus };
+    const { previousStatus: _previousStatus, ...rest } = event;
+    if ("newStatus" in event && event.newStatus !== undefined) {
+      return { ...rest, status: event.newStatus };
+    }
+    return { ...rest };
   }
   return { ...event };
 }
