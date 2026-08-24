@@ -408,6 +408,12 @@ function compileConditionInstructions(
   switch (condition.kind) {
     case "signal":
       return [signalInstruction(source, condition.signalName)];
+    case "merge":
+    case "anchor":
+      throw new Error(
+        `on-chain HookPlan does not support ${condition.kind} entries yet; `
+        + "MERGE@/ANCHOR@ are per-event cloud runtime deliveries"
+      );
     case "external":
       if (condition.target) {
         return compileHookInstructions(condition.target);

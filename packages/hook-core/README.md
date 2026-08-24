@@ -9,8 +9,14 @@ It does not know about databases, Solidity, escrow, Kafka, or funding adapters.
 
 - Supported operators: `&`, `|`, `~`, `+5s/+30m/+1h/+1d`, and parentheses.
 - Backend/executor external inputs are declared by stage `externalSignals`.
-- Supported cross-source wrappers: `OUTSIDE@(...)` and `OUTSOURCE@(...)`.
-- Bare `OUTSIDE` / `OUTSOURCE` hook conditions are removed syntax.
+- Supported cross-source wrappers: `::OUTSIDE@(source::task.stage.signal)`,
+  `::MERGE@(source::a.cmp, source::b.cmp)`, and
+  `::ANCHOR@(task.stage.signal)`. All three require an empty source header.
+  `OUTSOURCE` is retired syntax and is rejected by the parser.
+- Bare `OUTSIDE` / `OUTSOURCE` / `ANCHOR` hook conditions are removed syntax.
+- `MERGE@` and `ANCHOR@` entries are delivered per contributing event by the
+  runtime; core evaluation reports `needs_more` for them. On-chain HookPlan
+  compilation does not support them yet and fails fast.
 - Signal references must use `task.stage.signal`.
 - Runtime signal indexes are first-writer-wins by `source::signalName`.
 - Negative conditions are monotonic: once `~A` sees `A`, the hook evaluates to

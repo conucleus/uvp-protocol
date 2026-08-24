@@ -219,8 +219,8 @@ test("cancels delayed hooks when the negative signal arrives before the anchor",
   });
 });
 
-test("supports explicit OUTSIDE and OUTSOURCE target dependencies", () => {
-  const ast = parseHookExpression("buyer::OUTSOURCE@(seller::task.ship.cmp)");
+test("supports explicit OUTSIDE target dependencies", () => {
+  const ast = parseHookExpression("::OUTSIDE@(seller::task.ship.cmp)");
 
   assert.deepEqual(extractHookDependencies(ast), [
     { kind: "positive", source: "seller", signalName: "task.ship.cmp" }
@@ -230,9 +230,22 @@ test("supports explicit OUTSIDE and OUTSOURCE target dependencies", () => {
   });
 });
 
+test("defers merge and anchor entries to per-event delivery", () => {
+  const mergeAst = parseHookExpression(
+    "::MERGE@(seller::trade.listing.cmp, buyer::trade.intent.cmp)"
+  );
+  assert.deepEqual(evaluateHook(mergeAst, index([["buyer", "trade.intent.cmp", at]]), at), {
+    status: "init"
+  });
+
+  const anchorAst = parseHookExpression("::ANCHOR@(farmer.main.settle)");
+  assert.deepEqual(evaluateHook(anchorAst, index([]), at), { status: "init" });
+});
+
 test("rejects removed bare external hook conditions", () => {
   assert.throws(() => parseHookExpression("::OUTSIDE"), /no longer supported/);
-  assert.throws(() => parseHookExpression("buyer::OUTSOURCE"), /no longer supported/);
+  assert.throws(() => parseHookExpression("buyer::OUTSOURCE"), /OUTSOURCE has been retired/);
+  assert.throws(() => parseHookExpression("buyer::MERGE@(peer::a.b.c)"), /empty source header/);
 });
 
 test("rejects raw-less ASTs at adapter boundaries", () => {

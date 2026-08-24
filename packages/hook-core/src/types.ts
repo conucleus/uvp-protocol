@@ -4,6 +4,8 @@ export type SignalName = string;
 export type HookConditionAst =
   | SignalConditionAst
   | ExternalConditionAst
+  | MergeConditionAst
+  | AnchorConditionAst
   | NotConditionAst
   | AndConditionAst
   | OrConditionAst
@@ -22,7 +24,17 @@ export interface SignalConditionAst {
 
 export interface ExternalConditionAst {
   readonly kind: "external";
-  readonly mode: "OUTSIDE" | "OUTSOURCE";
+  readonly mode: "OUTSIDE";
+  readonly target: HookExpressionAst;
+}
+
+export interface MergeConditionAst {
+  readonly kind: "merge";
+  readonly targets: readonly HookExpressionAst[];
+}
+
+export interface AnchorConditionAst {
+  readonly kind: "anchor";
   readonly target: HookExpressionAst;
 }
 

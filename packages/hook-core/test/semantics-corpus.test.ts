@@ -72,6 +72,7 @@ interface CoreParseHookOutput {
   readonly runtimeCondition: string;
   readonly normalizedExpression: string;
   readonly dependencies: readonly HookDependency[];
+  readonly cloudAst: unknown;
 }
 
 interface CoreEvalHookOutput {
@@ -87,7 +88,7 @@ async function loadCorpus(): Promise<Corpus> {
 test("uvp-core N-API parses hook semantic corpus", async () => {
   assert.deepEqual(uvpCoreCompatibility(), {
     coreVersion: "0.1.0",
-    semanticVersion: "uvp-semantic/0.1"
+    semanticVersion: "uvp-semantic/0.3"
   });
   const corpus = await loadCorpus();
   for (const item of corpus.parseCases) {
@@ -99,7 +100,7 @@ test("uvp-core N-API parses hook semantic corpus", async () => {
 
     assert.equal(output.source, item.expect.source, item.name);
     assert.equal(output.mode, item.expect.mode, item.name);
-    assert.equal(output.upstreamSource, item.expect.upstreamSource, item.name);
+    assert.equal(output.upstreamSource ?? null, item.expect.upstreamSource ?? null, item.name);
     assert.equal(output.runtimeCondition, item.expect.runtimeCondition, item.name);
     assert.equal(output.normalizedExpression, item.expect.normalizedExpression, item.name);
     assert.deepEqual(output.dependencies, item.expect.dependencies, item.name);
@@ -109,10 +110,14 @@ test("uvp-core N-API parses hook semantic corpus", async () => {
 test("uvp-core N-API evaluates hook semantic corpus", async () => {
   const corpus = await loadCorpus();
   for (const item of corpus.evalCases) {
-    const output = evaluateHookWithUvpCore({
+    const parsed = parseHookWithUvpCore({
       profile: item.profile,
       hookName: item.hookName,
-      hook: item.hook,
+      hook: item.hook
+    }) as CoreParseHookOutput;
+    const output = evaluateHookWithUvpCore({
+      profile: item.profile,
+      ast: parsed.cloudAst,
       signals: item.signals,
       now: item.now
     }) as CoreEvalHookOutput;
