@@ -172,6 +172,14 @@ export interface OnchainExecutorRoute {
   readonly stageIdentifier: string;
   readonly executorType: string;
   readonly executorId: string;
+  /**
+   * Content digests of the opaque executor binding and its file resources,
+   * computed once by the producer over canonical JSON. The route hash commits
+   * to these digests instead of the raw free-form objects, so cross-language
+   * hash reproduction only ever compares fixed hex strings.
+   */
+  readonly executorHash: HexString;
+  readonly resourcesHash: HexString;
   readonly routeHash: HexString;
 }
 

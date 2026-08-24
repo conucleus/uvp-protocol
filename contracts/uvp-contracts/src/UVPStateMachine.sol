@@ -170,6 +170,8 @@ contract UVPStateMachine {
     error ExpiredPlanSignature(uint256 deadline);
     error HookAlreadyRegistered();
     error HookDelayTooLong(uint256 delaySeconds);
+    error CrossStageDependency(bytes32 signalKey);
+    error TooManyDependencies();
     error InvalidSignalSignature(address expectedSigner, address recoveredSigner);
     error InvalidSignalSignatureLength(uint256 length);
     error InvalidInstruction();
@@ -232,6 +234,7 @@ contract UVPStateMachine {
     bytes32 private constant _PLAN_RUNTIME_HASH_DOMAIN = keccak256("uvp.plan.runtime.v1");
     bytes32 private constant _PLAN_ID_HASH_DOMAIN = keccak256("uvp.plan.id.v1");
     uint64 public constant MAX_HOOK_DELAY_SECONDS = 30 days;
+    uint256 public constant MAX_PLAN_DEPENDENCIES = 1024;
     bytes32 private constant _PLAN_COMMIT_TYPEHASH = keccak256(
         "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 metadataHash,uint256 deadline)"
     );
@@ -449,31 +452,15 @@ contract UVPStateMachine {
         plan.publisher = commit.publisher;
         plan.committed = true;
 
-        for (uint256 i = 0; i < hooks.length; i++) {
-            CompactHook calldata input = hooks[i];
-            _validateHook(input);
-            if (plan.hooks[input.hookId].exists) {
-                revert HookAlreadyRegistered();
+        // Cross-stage dependency scan scratch: scoped so the large memory
+        // arrays release their stack slots before the commit events fire.
+        {
+            bytes32[] memory seenKeys = new bytes32[](MAX_PLAN_DEPENDENCIES);
+            bytes32[] memory seenStages = new bytes32[](MAX_PLAN_DEPENDENCIES);
+            uint256 seenCount;
+            for (uint256 i = 0; i < hooks.length; i++) {
+                seenCount = _registerPlanHook(plan, hooks[i], seenKeys, seenStages, seenCount);
             }
-
-            StoredHook storage hook = plan.hooks[input.hookId];
-            hook.hookId = input.hookId;
-            hook.stageId = input.stageId;
-            hook.hookName = input.hookName;
-            hook.isTrigger = input.isTrigger;
-            hook.exists = true;
-
-            for (uint256 j = 0; j < input.instructions.length; j++) {
-                hook.instructions.push(input.instructions[j]);
-            }
-            for (uint256 j = 0; j < input.dependencyKeys.length; j++) {
-                bytes32 dependencyKey = input.dependencyKeys[j];
-                hook.dependencyKeys.push(dependencyKey);
-                plan.dependencyIndex[dependencyKey].push(input.hookId);
-            }
-
-            plan.hookIds.push(input.hookId);
-            plan.stageExists[input.stageId] = true;
         }
 
         emit PlanCommitted(
@@ -1111,6 +1098,72 @@ contract UVPStateMachine {
             abi.encode(_PLAN_COMMIT_TYPEHASH, commit.publisher, commit.hooksHash, commit.metadataHash, commit.deadline)
         );
         return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
+    }
+
+    function _registerPlanHook(
+        Plan storage plan,
+        CompactHook calldata input,
+        bytes32[] memory seenKeys,
+        bytes32[] memory seenStages,
+        uint256 seenCount
+    ) private returns (uint256) {
+        _validateHook(input);
+        if (plan.hooks[input.hookId].exists) {
+            revert HookAlreadyRegistered();
+        }
+
+        StoredHook storage hook = plan.hooks[input.hookId];
+        hook.hookId = input.hookId;
+        hook.stageId = input.stageId;
+        hook.hookName = input.hookName;
+        hook.isTrigger = input.isTrigger;
+        hook.exists = true;
+
+        for (uint256 j = 0; j < input.instructions.length; j++) {
+            hook.instructions.push(input.instructions[j]);
+        }
+
+        uint256 updatedCount = seenCount;
+        for (uint256 j = 0; j < input.dependencyKeys.length; j++) {
+            bytes32 dependencyKey = input.dependencyKeys[j];
+
+            // A canonical dependency key may be watched by hooks of a single
+            // stage only: bootstrap signals fan out to every registered
+            // watcher, and an unmaterialized cross-stage watcher would revert
+            // the submitting transaction forever.
+            bytes32 knownStage = _seenDependencyStage(seenKeys, seenStages, updatedCount, dependencyKey);
+            if (knownStage == bytes32(0)) {
+                if (updatedCount == seenKeys.length) {
+                    revert TooManyDependencies();
+                }
+                seenKeys[updatedCount] = dependencyKey;
+                seenStages[updatedCount] = input.stageId;
+                updatedCount += 1;
+            } else if (knownStage != input.stageId) {
+                revert CrossStageDependency(dependencyKey);
+            }
+
+            hook.dependencyKeys.push(dependencyKey);
+            plan.dependencyIndex[dependencyKey].push(input.hookId);
+        }
+
+        plan.hookIds.push(input.hookId);
+        plan.stageExists[input.stageId] = true;
+        return updatedCount;
+    }
+
+    function _seenDependencyStage(
+        bytes32[] memory seenKeys,
+        bytes32[] memory seenStages,
+        uint256 seenCount,
+        bytes32 dependencyKey
+    ) private pure returns (bytes32) {
+        for (uint256 k = 0; k < seenCount; k++) {
+            if (seenKeys[k] == dependencyKey) {
+                return seenStages[k];
+            }
+        }
+        return bytes32(0);
     }
 
     function _validateHook(CompactHook calldata hook) private pure {

@@ -91,7 +91,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
   assert.equal(
     onchain.planHash,
-    "0x42a1058fabfee8fdd1d0bf2348459360a0b3d9531276db37004c8bf5c6d5e989",
+    "0xcf30bd14011cbd251a6586cbc83fffae26783f93d7febe6046153da7b7a9c14d",
   );
   assert.deepEqual(onchain.selectorBindings, [
     {
@@ -444,4 +444,34 @@ test("rejects MERGE@ and ANCHOR@ receive hooks with the typed compilation error"
         )
     );
   }
+});
+
+test("rejects a dependency key shared across stages", () => {
+  const sharedZhixu: ZhixuDefinition = {
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      taskPatterns: baseZhixu.spec.taskPatterns.map((pattern) => ({
+        ...pattern,
+        stages: pattern.stages.map((stage) =>
+          stage.name === "assign"
+            ? {
+                ...stage,
+                trigger: [...stage.trigger, "ECHO"],
+                receiveSignals: {
+                  ECHO: "buyer::selector.assign.executor_selected"
+                }
+              }
+            : stage
+        )
+      }))
+    }
+  };
+
+  assert.throws(
+    () => compileOnchainHookPlan(compileZhixuHookPlan(sharedZhixu)),
+    (error: unknown) =>
+      error instanceof HookPlanCompilationError &&
+      error.issues.some((issue) => /shared across stages/.test(issue))
+  );
 });

@@ -2405,4 +2405,32 @@ contract UVPStateMachineTest {
             }
         }
     }
+    function testCommitPlanRejectsCrossStageSharedDependencyKey() public {
+        UVPStateMachine machine = _newUnfrozenMachine();
+        machine.freezeModules();
+
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
+        hooks[0] = _signalHook(HOOK_INIT, STAGE_INIT, HOOK_NAME_TRIGGER, true, SIGNAL_TRIGGER);
+        hooks[1] =
+            _signalHook(bytes32(uint256(0x9002)), STAGE_AUDIT, bytes32("WATCHER"), false, SIGNAL_TRIGGER);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(UVPStateMachine.CrossStageDependency.selector, keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_TRIGGER)))
+        );
+        _commitPlan(machine, hooks, new IUVPPlanMetadataModule.StageSelectorBinding[](0), new IUVPPlanMetadataModule.SignalCapability[](0));
+    }
+
+    function testCommitPlanAcceptsSameStageSharedDependencyKey() public {
+        UVPStateMachine machine = _newUnfrozenMachine();
+        machine.freezeModules();
+
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
+        hooks[0] = _signalHook(HOOK_INIT, STAGE_INIT, HOOK_NAME_TRIGGER, true, SIGNAL_TRIGGER);
+        hooks[1] =
+            _signalHook(bytes32(uint256(0x9003)), STAGE_INIT, bytes32("PEER_WATCHER"), false, SIGNAL_TRIGGER);
+
+        bytes32 planId = _commitPlan(machine, hooks, new IUVPPlanMetadataModule.StageSelectorBinding[](0), new IUVPPlanMetadataModule.SignalCapability[](0));
+        require(machine.planCommitted(planId), "plan should commit");
+    }
+
 }

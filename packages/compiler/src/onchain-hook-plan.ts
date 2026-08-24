@@ -11,6 +11,7 @@ import {
   stringToHex,
 } from "viem";
 import { assertHookPlanArtifact, compareByCodeUnit, HookPlanCompilationError } from "./hook-plan.js";
+import { canonicalStringify } from "./canonical.js";
 import {
   ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
   type HexString,
@@ -71,6 +72,16 @@ export function compileOnchainHookPlan(
       ...(hook.route ? { routeRef: routeRefForRoute(hook.route) } : {}),
     }))
     .sort(compareOnchainHooks);
+  const crossStageIssues = crossStageDependencyIssues(
+    compiledHooks.map((hook) => ({
+      hookId: hook.hookId,
+      stageId: hook.stageId,
+      dependencies: hook.dependencies,
+    })),
+  );
+  if (crossStageIssues.length > 0) {
+    throw new HookPlanCompilationError(crossStageIssues);
+  }
   const dependencyIndex = buildOnchainDependencyIndex(compiledHooks);
   const executorRoutes = Object.values(hookPlanArtifact.executorRoutes)
     .map(compileExecutorRoute)
@@ -292,6 +303,8 @@ export function toSolidityRegisterPlanArgs(
       stageId: route.stageId,
       executorType: route.executorType,
       executorId: route.executorId,
+      executorHash: route.executorHash,
+      resourcesHash: route.resourcesHash,
       routeHash: route.routeHash,
     })),
     selectorBindings,
@@ -506,13 +519,23 @@ function buildOnchainDependencyIndex(
 function compileExecutorRoute(
   route: HookPlanExecutorRoute,
 ): OnchainExecutorRoute {
+  const executorHash = opaqueContentHash(route.executor);
+  const resourcesHash =
+    route.fileResources === undefined ? ZERO_HASH : opaqueContentHash(route.fileResources);
   return {
     routeId: onchainRouteId(route.stageIdentifier),
     stageId: onchainStageId(route.stageIdentifier),
     stageIdentifier: route.stageIdentifier,
     executorType: String(route.executor.supplierType),
     executorId: route.executor.supplierID ?? "",
-    routeHash: onchainRouteHash(route),
+    executorHash,
+    resourcesHash,
+    routeHash: routeHashFromDigests(
+      onchainStageId(route.stageIdentifier),
+      route.stageIdentifier,
+      executorHash,
+      resourcesHash,
+    ),
   };
 }
 
@@ -665,12 +688,30 @@ export function onchainSignalKey(
   return keccak256Hex(concatHex32(sourceId, signalId));
 }
 
+function opaqueContentHash(value: unknown): HexString {
+  return keccak256Hex(canonicalStringify(value));
+}
+
 function onchainRouteHash(route: HookPlanExecutorRoute): HexString {
+  return routeHashFromDigests(
+    onchainStageId(route.stageIdentifier),
+    route.stageIdentifier,
+    opaqueContentHash(route.executor),
+    route.fileResources === undefined ? ZERO_HASH : opaqueContentHash(route.fileResources),
+  );
+}
+
+function routeHashFromDigests(
+  stageId: HexString,
+  stageIdentifier: string,
+  executorHash: HexString,
+  resourcesHash: HexString,
+): HexString {
   return hashCanonical(ONCHAIN_ROUTE_HASH_DOMAIN, {
-    stageId: onchainStageId(route.stageIdentifier),
-    stageIdentifier: route.stageIdentifier,
-    executor: route.executor,
-    fileResources: route.fileResources ?? null,
+    stageId,
+    stageIdentifier,
+    executorHash,
+    resourcesHash,
   });
 }
 
@@ -837,21 +878,11 @@ function validateOnchainCompiledHooks(
           const referencedRoute = routesById.get(hook.routeRef.routeId);
           if (
             referencedRoute &&
-            typeof referencedRoute.stageIdentifier === "string" &&
-            isRecord(referencedRoute.executor)
+            referencedRoute.routeHash !== hook.routeRef.routeHash
           ) {
-            const expectedHash = onchainRouteHash({
-              stageIdentifier: referencedRoute.stageIdentifier,
-              executor: referencedRoute.executor,
-              fileResources: isRecord(referencedRoute.fileResources)
-                ? referencedRoute.fileResources
-                : undefined,
-            } as unknown as HookPlanExecutorRoute);
-            if (hook.routeRef.routeHash !== expectedHash) {
-              issues.push(
-                `${prefix}.routeRef.routeHash must match the referenced executor route`,
-              );
-            }
+            issues.push(
+              `${prefix}.routeRef.routeHash must match the referenced executor route`,
+            );
           }
         }
       }
@@ -1023,6 +1054,46 @@ function validateOnchainDependencies(
   return issues;
 }
 
+/**
+ * A canonical dependency key may be watched by hooks of a single stage only:
+ * bootstrap signals fan out to every registered watcher, and an unmaterialized
+ * cross-stage watcher would make the submitting transaction revert forever.
+ */
+function crossStageDependencyIssues(hooks: readonly unknown[]): readonly string[] {
+  const stagesBySignalKey = new Map<string, Set<string>>();
+  for (const hook of hooks) {
+    if (
+      !isRecord(hook) ||
+      typeof hook.hookId !== "string" ||
+      typeof hook.stageId !== "string" ||
+      !Array.isArray(hook.dependencies)
+    ) {
+      continue;
+    }
+    for (const dependency of hook.dependencies) {
+      if (!isOnchainHookDependency(dependency)) {
+        continue;
+      }
+      const stages =
+        stagesBySignalKey.get(dependency.signalKey) ?? new Set<string>();
+      stages.add(hook.stageId);
+      stagesBySignalKey.set(dependency.signalKey, stages);
+    }
+  }
+  const issues: string[] = [];
+  for (const [signalKey, stages] of stagesBySignalKey) {
+    if (stages.size > 1) {
+      issues.push(
+        `dependency ${signalKey} is shared across stages ${[...stages]
+          .sort((left, right) => compareByCodeUnit(String(left), String(right)))
+          .join(", ")}; a dependency key must belong to a single stage `
+        + "because bootstrap signals fan out to every registered watcher",
+      );
+    }
+  }
+  return issues;
+}
+
 function validateOnchainDependencyIndex(
   hooks: readonly unknown[],
   dependencyIndex: Record<string, readonly string[]>,
@@ -1046,6 +1117,8 @@ function validateOnchainDependencyIndex(
       recomputed.set(dependency.signalKey, hookIds);
     }
   }
+
+  issues.push(...crossStageDependencyIssues(hooks));
 
   const expected = Object.fromEntries(
     [...recomputed.entries()]
@@ -1079,7 +1152,26 @@ function validateOnchainExecutorRoutes(
     );
     expectNonEmptyString(route.executorType, `${prefix}.executorType`, issues);
     expectString(route.executorId, `${prefix}.executorId`, issues);
+    expectHexHash(route.executorHash, `${prefix}.executorHash`, issues);
+    expectHexHash(route.resourcesHash, `${prefix}.resourcesHash`, issues);
     expectHexHash(route.routeHash, `${prefix}.routeHash`, issues);
+    if (
+      typeof route.routeHash === "string" &&
+      typeof route.stageId === "string" &&
+      typeof route.stageIdentifier === "string" &&
+      typeof route.executorHash === "string" &&
+      typeof route.resourcesHash === "string"
+    ) {
+      const recomputedRouteHash = routeHashFromDigests(
+        route.stageId as HexString,
+        route.stageIdentifier,
+        route.executorHash as HexString,
+        route.resourcesHash as HexString,
+      );
+      if (route.routeHash !== recomputedRouteHash) {
+        issues.push(`${prefix}.routeHash must match the committed content digests`);
+      }
+    }
     if (
       typeof route.stageIdentifier === "string" &&
       typeof route.stageId === "string" &&
