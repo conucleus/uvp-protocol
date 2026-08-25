@@ -457,9 +457,11 @@ contract UVPStateMachine {
         {
             bytes32[] memory seenKeys = new bytes32[](MAX_PLAN_DEPENDENCIES);
             bytes32[] memory seenStages = new bytes32[](MAX_PLAN_DEPENDENCIES);
+            bool[] memory seenTriggerOnly = new bool[](MAX_PLAN_DEPENDENCIES);
             uint256 seenCount;
             for (uint256 i = 0; i < hooks.length; i++) {
-                seenCount = _registerPlanHook(plan, hooks[i], seenKeys, seenStages, seenCount);
+                seenCount =
+                _registerPlanHook(plan, hooks[i], seenKeys, seenStages, seenTriggerOnly, seenCount);
             }
         }
 
@@ -1105,6 +1107,7 @@ contract UVPStateMachine {
         CompactHook calldata input,
         bytes32[] memory seenKeys,
         bytes32[] memory seenStages,
+        bool[] memory seenTriggerOnly,
         uint256 seenCount
     ) private returns (uint256) {
         _validateHook(input);
@@ -1127,20 +1130,26 @@ contract UVPStateMachine {
         for (uint256 j = 0; j < input.dependencyKeys.length; j++) {
             bytes32 dependencyKey = input.dependencyKeys[j];
 
-            // A canonical dependency key may be watched by hooks of a single
-            // stage only: bootstrap signals fan out to every registered
-            // watcher, and an unmaterialized cross-stage watcher would revert
-            // the submitting transaction forever.
-            bytes32 knownStage = _seenDependencyStage(seenKeys, seenStages, updatedCount, dependencyKey);
-            if (knownStage == bytes32(0)) {
+            // Trigger watchers crossing stages are the normal selectedStages
+            // flow: the evaluation guard skips triggers of unmaterialized
+            // stages. The brick is a NON-trigger watcher in a stage that has
+            // not materialized yet -- submitting the shared key would revert
+            // that transaction forever.
+            uint256 watcherIndex = _seenDependencyIndex(seenKeys, updatedCount, dependencyKey);
+            if (watcherIndex == type(uint256).max) {
                 if (updatedCount == seenKeys.length) {
                     revert TooManyDependencies();
                 }
                 seenKeys[updatedCount] = dependencyKey;
                 seenStages[updatedCount] = input.stageId;
+                seenTriggerOnly[updatedCount] = input.isTrigger;
                 updatedCount += 1;
-            } else if (knownStage != input.stageId) {
-                revert CrossStageDependency(dependencyKey);
+            } else {
+                bool triggerOnly = seenTriggerOnly[watcherIndex] && input.isTrigger;
+                if (seenStages[watcherIndex] != input.stageId && !triggerOnly) {
+                    revert CrossStageDependency(dependencyKey);
+                }
+                seenTriggerOnly[watcherIndex] = triggerOnly;
             }
 
             hook.dependencyKeys.push(dependencyKey);
@@ -1152,18 +1161,17 @@ contract UVPStateMachine {
         return updatedCount;
     }
 
-    function _seenDependencyStage(
+    function _seenDependencyIndex(
         bytes32[] memory seenKeys,
-        bytes32[] memory seenStages,
         uint256 seenCount,
         bytes32 dependencyKey
-    ) private pure returns (bytes32) {
+    ) private pure returns (uint256) {
         for (uint256 k = 0; k < seenCount; k++) {
             if (seenKeys[k] == dependencyKey) {
-                return seenStages[k];
+                return k;
             }
         }
-        return bytes32(0);
+        return type(uint256).max;
     }
 
     function _validateHook(CompactHook calldata hook) private pure {

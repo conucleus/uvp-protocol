@@ -2415,7 +2415,10 @@ contract UVPStateMachineTest {
             _signalHook(bytes32(uint256(0x9002)), STAGE_AUDIT, bytes32("WATCHER"), false, SIGNAL_TRIGGER);
 
         vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.CrossStageDependency.selector, keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_TRIGGER)))
+            abi.encodeWithSelector(
+                UVPStateMachine.CrossStageDependency.selector,
+                keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_TRIGGER))
+            )
         );
         _commitPlan(machine, hooks, new IUVPPlanMetadataModule.StageSelectorBinding[](0), new IUVPPlanMetadataModule.SignalCapability[](0));
     }

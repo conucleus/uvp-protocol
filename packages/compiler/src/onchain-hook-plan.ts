@@ -76,6 +76,7 @@ export function compileOnchainHookPlan(
     compiledHooks.map((hook) => ({
       hookId: hook.hookId,
       stageId: hook.stageId,
+      isTrigger: hook.isTrigger,
       dependencies: hook.dependencies,
     })),
   );
@@ -1060,12 +1061,17 @@ function validateOnchainDependencies(
  * cross-stage watcher would make the submitting transaction revert forever.
  */
 function crossStageDependencyIssues(hooks: readonly unknown[]): readonly string[] {
-  const stagesBySignalKey = new Map<string, Set<string>>();
+  interface Watcher {
+    readonly stageId: string;
+    readonly isTrigger: boolean;
+  }
+  const watchersBySignalKey = new Map<string, Set<Watcher>>();
   for (const hook of hooks) {
     if (
       !isRecord(hook) ||
       typeof hook.hookId !== "string" ||
       typeof hook.stageId !== "string" ||
+      typeof hook.isTrigger !== "boolean" ||
       !Array.isArray(hook.dependencies)
     ) {
       continue;
@@ -1074,20 +1080,29 @@ function crossStageDependencyIssues(hooks: readonly unknown[]): readonly string[
       if (!isOnchainHookDependency(dependency)) {
         continue;
       }
-      const stages =
-        stagesBySignalKey.get(dependency.signalKey) ?? new Set<string>();
-      stages.add(hook.stageId);
-      stagesBySignalKey.set(dependency.signalKey, stages);
+      const watchers =
+        watchersBySignalKey.get(dependency.signalKey) ?? new Set<Watcher>();
+      watchers.add({ stageId: hook.stageId, isTrigger: hook.isTrigger });
+      watchersBySignalKey.set(dependency.signalKey, watchers);
     }
   }
   const issues: string[] = [];
-  for (const [signalKey, stages] of stagesBySignalKey) {
-    if (stages.size > 1) {
+  for (const [signalKey, watchers] of watchersBySignalKey) {
+    const stages = new Set([...watchers].map((watcher) => watcher.stageId));
+    // Trigger hooks crossing stages are the normal selectedStages flow (the
+    // contract skips triggers of unmaterialized stages). The brick is a
+    // NON-trigger watcher in a stage that has not materialized yet: it makes
+    // the submitting transaction revert forever.
+    const hasNonTriggerWatcher = [...watchers].some(
+      (watcher) => !watcher.isTrigger,
+    );
+    if (stages.size > 1 && hasNonTriggerWatcher) {
       issues.push(
         `dependency ${signalKey} is shared across stages ${[...stages]
-          .sort((left, right) => compareByCodeUnit(String(left), String(right)))
-          .join(", ")}; a dependency key must belong to a single stage `
-        + "because bootstrap signals fan out to every registered watcher",
+          .sort((left, right) => compareByCodeUnit(left, right))
+          .join(", ")} with at least one non-trigger watcher; `
+        + "an unmaterialized stage's non-trigger hook would make the "
+        + "submitting transaction revert forever",
       );
     }
   }
