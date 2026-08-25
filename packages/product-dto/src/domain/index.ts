@@ -63,7 +63,6 @@ export type ProductResourceType =
   | "metadata"
   | "uri"
   | "other";
-export type ProductFileResourceType = ProductResourceType;
 export type ProductResourceVisibility = "public" | "protected" | "private";
 export type ProductResourcePolicyPrincipalKind =
   | "wallet"
@@ -85,20 +84,6 @@ export type ProductDockedZhixuRuntimeStatus =
   | "signal_map_satisfied"
   | "blocked"
   | "not_modeled";
-export type ProductizationConvergenceTrack =
-  | "product_schema_v1"
-  | "dynamic_executor_authorization"
-  | "docked_zhixu_runtime"
-  | "resource_manifest_access"
-  | "store_schema_authoring"
-  | "proof_read_model"
-  | "identity_audit_ops"
-  | "signal_container_producer";
-export type ProductizationConvergenceStatus =
-  | "closed"
-  | "partial"
-  | "prototype"
-  | "open";
 export type CapabilityPluginSource = "explicit" | "inferred" | "missing";
 export type StoreCapabilityReviewStatus = "explicit" | "inferred" | "missing";
 export type StoreProductSchemaVersion = "store-product-schema.v1";
@@ -130,7 +115,6 @@ export type StoreSupplierReviewStatus =
   | "rejected"
   | "revoked";
 export type StoreSupplierIdentityStatus = "active" | "revoked" | "not_found";
-export type StoreSupplierCapabilityTag = string;
 
 export const STORE_PRODUCT_SCHEMA_V1_REQUIRED_FIELDS = [
   "schemaVersion",
@@ -264,20 +248,6 @@ export interface ProductDockedZhixuRuntimeDTO {
   readonly signalMap: readonly ProductDockedSignalMapEntryDTO[];
   readonly privacyNotice?: string;
   readonly proofRows: readonly ChainProofRowDTO[];
-}
-
-export interface ProductizationConvergenceItemDTO {
-  readonly track: ProductizationConvergenceTrack;
-  readonly status: ProductizationConvergenceStatus;
-  readonly ownerModule: string;
-  readonly publicClaim: string;
-  readonly nextAction: string;
-}
-
-export interface ProductizationConvergenceSummaryDTO {
-  readonly schemaVersion: "productization-convergence.v1";
-  readonly generatedAt: string;
-  readonly items: readonly ProductizationConvergenceItemDTO[];
 }
 
 export interface ProductResourcePolicyPrincipalDTO {

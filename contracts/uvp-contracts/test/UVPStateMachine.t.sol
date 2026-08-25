@@ -2405,6 +2405,49 @@ contract UVPStateMachineTest {
             }
         }
     }
+    function testOrDelayAnchorsOnEarliestReceivedSignal() public {
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](4);
+        instructions[0] = _signal(SIGNAL_TRIGGER);
+        instructions[1] = _signal(bytes32(uint256(0x4002)));
+        instructions[2] = _or(2);
+        instructions[3] = _delay(5);
+
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hook(
+            HOOK_TIMEOUT,
+            STAGE_INIT,
+            HOOK_NAME_TIMEOUT,
+            true,
+            instructions,
+            _deps2(SIGNAL_TRIGGER, bytes32(uint256(0x4002)))
+        );
+
+        UVPStateMachine machine = _registeredMachine(hooks);
+
+        vm.warp(100);
+        machine.submitSignal(ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY);
+
+        (UVPStateMachine.HookStatus status, uint64 dueAt,) = machine.getHookStatus(ORDER_ID, HOOK_TIMEOUT);
+        require(status == UVPStateMachine.HookStatus.Wait, "expected wait until due");
+        require(dueAt == 105, "dueAt must anchor on earliest arrival: 100+5");
+
+        vm.warp(104);
+        vm.expectRevert(UVPStateMachine.TimerNotDue.selector);
+        machine.pokeTimer(ORDER_ID, HOOK_TIMEOUT);
+
+        vm.warp(105);
+        machine.pokeTimer(ORDER_ID, HOOK_TIMEOUT);
+        (status,,) = machine.getHookStatus(ORDER_ID, HOOK_TIMEOUT);
+        require(status == UVPStateMachine.HookStatus.Ready, "ready at earliest anchor + delay");
+
+        vm.warp(200);
+        machine.submitSignal(
+            ORDER_ID, SOURCE_BOOTSTRAP, bytes32(uint256(0x4002)), PAYLOAD_HASH, bytes32(uint256(0x4003))
+        );
+        (status,,) = machine.getHookStatus(ORDER_ID, HOOK_TIMEOUT);
+        require(status == UVPStateMachine.HookStatus.Ready, "late branch must not regress ready");
+    }
+
     function testCommitPlanRejectsCrossStageSharedDependencyKey() public {
         UVPStateMachine machine = _newUnfrozenMachine();
         machine.freezeModules();

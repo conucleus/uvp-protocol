@@ -77,37 +77,6 @@ export const STATE_MACHINE_ABI = parseAbi([
   "function hasExplicitSignalAuthorization(bytes32 orderId,bytes32 sourceId,bytes32 signalId,address submitter) view returns (bool)",
 ]);
 
-export const PLAN_METADATA_MODULE_ABI = parseAbi([
-  "event StageSelectorBindingRegistered(bytes32 indexed planId,bytes32 indexed selectorStageId,bytes32 indexed targetStageId)",
-  "event SignalCapabilityRegistered(bytes32 indexed planId,bytes32 indexed stageId,bytes32 indexed targetSourceId,bytes32 signalId,uint8 targetOrderRelation)",
-  "function finalizePlanMetadata(bytes32 planId,(bytes32 selectorStageId,bytes32 targetStageId)[] selectorBindings,(bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation)[] signalCapabilities)",
-  "function planMetadataFinalized(bytes32 planId) view returns (bool)",
-  "function planSelectorBindingCount(bytes32 planId) view returns (uint256)",
-  "function planSelectorBindingAt(bytes32 planId,uint256 index) view returns (bytes32 selectorStageId,bytes32 targetStageId)",
-  "function planSignalCapabilityCount(bytes32 planId) view returns (uint256)",
-  "function planSignalCapabilityAt(bytes32 planId,uint256 index) view returns (bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation)",
-  "function stageSignalCapabilityCount(bytes32 planId,bytes32 stageId) view returns (uint256)",
-  "function stageSignalCapabilityAt(bytes32 planId,bytes32 stageId,uint256 index) view returns (bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation)",
-  "function isStageSelectorBound(bytes32 planId,bytes32 selectorStageId,bytes32 targetStageId) view returns (bool)",
-  "function isSelectorTargetStage(bytes32 planId,bytes32 targetStageId) view returns (bool)",
-  "function isSignalCapabilityRegistered(bytes32 planId,bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation) view returns (bool)",
-  "function stageSelectorBindingKey(bytes32 selectorStageId,bytes32 targetStageId) pure returns (bytes32)",
-  "function signalCapabilityKey(bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation) pure returns (bytes32)",
-]);
-
-export const IDENTITY_REGISTRY_ABI = parseAbi([
-  "event OwnershipTransferred(address indexed previousOwner,address indexed newOwner)",
-  "event IdentityBindingRegistered(bytes32 indexed bindingId,bytes32 indexed subjectId,address indexed account,bytes32 descriptorHash,string descriptorURI,address registrar)",
-  "event IdentityBindingRevoked(bytes32 indexed bindingId,bytes32 reasonHash,string reasonURI,address revoker)",
-  "function owner() view returns (address)",
-  "function bindingNonce() view returns (uint256)",
-  "function transferOwnership(address newOwner)",
-  "function registerIdentityBinding(bytes32 subjectId,address account,bytes32 descriptorHash,string descriptorURI) returns (bytes32 bindingId)",
-  "function revokeIdentityBinding(bytes32 bindingId,bytes32 reasonHash,string reasonURI)",
-  "function activeBindingForAccount(address account) view returns (bytes32 bindingId)",
-  "function getIdentityBinding(bytes32 bindingId) view returns (bytes32 subjectId,address account,bytes32 descriptorHash,string descriptorURI,address registrar,bool registered,bool revoked,bytes32 revokeReasonHash,string revokeReasonURI)",
-]);
-
 export const ORDER_LINK_MODULE_ABI = parseAbi([
   "event OrderLinked(bytes32 indexed triggeredOrderId,bytes32 indexed triggerOriginOrderId,bytes32 indexed triggerStageId,bytes32 originSourceId,bytes32 originSignalId)",
   "function triggerOrderFromSignalFor((bytes32 orderId,bytes32 planId,address creator,bytes32 triggerOriginOrderId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) trigger,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations,bytes signature)",

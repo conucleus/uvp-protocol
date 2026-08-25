@@ -1483,9 +1483,12 @@ contract UVPStateMachine {
     }
 
     function _orValue(EvalValue memory left, EvalValue memory right) private pure returns (EvalValue memory) {
+        // Arrival-time causality (semantic 0.5): merge keeps the EARLIEST
+        // received signal as the cause so trailing delays anchor on first
+        // arrival, matching the core evaluator and replay oracle.
         if (left.value || right.value) {
             return EvalValue({
-                value: true, wait: false, cancel: false, dueAt: 0, anchorAt: _maxAnchor(left.anchorAt, right.anchorAt)
+                value: true, wait: false, cancel: false, dueAt: 0, anchorAt: _minAnchor(left.anchorAt, right.anchorAt)
             });
         }
         if (left.wait || right.wait) {
@@ -1494,7 +1497,7 @@ contract UVPStateMachine {
                 wait: true,
                 cancel: false,
                 dueAt: _minDue(left.dueAt, right.dueAt),
-                anchorAt: _maxAnchor(left.anchorAt, right.anchorAt)
+                anchorAt: _minAnchor(left.anchorAt, right.anchorAt)
             });
         }
         if (left.cancel && right.cancel) {
@@ -1583,5 +1586,15 @@ contract UVPStateMachine {
 
     function _maxAnchor(uint64 left, uint64 right) private pure returns (uint64) {
         return left > right ? left : right;
+    }
+
+    function _minAnchor(uint64 left, uint64 right) private pure returns (uint64) {
+        if (left == 0) {
+            return right;
+        }
+        if (right == 0 || left < right) {
+            return left;
+        }
+        return right;
     }
 }
