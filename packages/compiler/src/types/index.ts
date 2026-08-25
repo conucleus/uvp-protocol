@@ -141,7 +141,7 @@ export interface OnchainUnaryInstruction {
 }
 
 export interface OnchainJoinInstruction {
-  readonly op: "AND" | "OR";
+  readonly op: "AND" | "OR" | "MERGE";
   readonly arity: number;
 }
 
@@ -243,7 +243,7 @@ export type SolidityRegisterInstructionArg =
       readonly op: "NOT";
     }
   | {
-      readonly op: "AND" | "OR";
+      readonly op: "AND" | "OR" | "MERGE";
       readonly arity: number;
     }
   | {

@@ -18,7 +18,8 @@ contract UVPStateMachine {
         Not,
         And,
         Or,
-        Delay
+        Delay,
+        Merge
     }
 
     struct Instruction {
@@ -1205,6 +1206,13 @@ contract UVPStateMachine {
                     revert InvalidInstruction();
                 }
                 stackDepth = stackDepth - instruction.arity + 1;
+            } else if (instruction.op == InstructionOp.Merge) {
+                // 撮合扇入（semantic 0.6）：表达式形态下限 k≥2；k=1 的跨订单
+                // 观察入口是 cloud 运行时投递形态，链上无对应物，编码层拒绝。
+                if (instruction.arity < 2 || stackDepth < instruction.arity) {
+                    revert InvalidInstruction();
+                }
+                stackDepth = stackDepth - instruction.arity + 1;
             } else {
                 revert InvalidInstruction();
             }
@@ -1427,6 +1435,13 @@ contract UVPStateMachine {
                 }
                 stackDepth = stackDepth - instruction.arity;
                 stack[stackDepth++] = value;
+            } else if (instruction.op == InstructionOp.Merge) {
+                EvalValue memory value = stack[stackDepth - instruction.arity];
+                for (uint256 j = stackDepth - instruction.arity + 1; j < stackDepth; j++) {
+                    value = _mergeValue(value, stack[j]);
+                }
+                stackDepth = stackDepth - instruction.arity;
+                stack[stackDepth++] = value;
             }
         }
         return stack[0];
@@ -1485,8 +1500,25 @@ contract UVPStateMachine {
         return EvalValue({value: false, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
     }
 
-    function _orValue(EvalValue memory left, EvalValue memory right) private pure returns (EvalValue memory) {
-        // Arrival-time causality (semantic 0.5): merge keeps the EARLIEST
+    /// 撮合扇入（semantic 0.6，规格 I1/I2）：任一路贡献信号在场即就绪，锚点取
+    /// 在场分支中最早到达（先到因果）。无等待/取消分支——编码层约束操作数必须是
+    /// 裸 SIGNAL 引用，永不为 wait；逐事件投递语义下首个到达即交付。
+    function _mergeValue(EvalValue memory left, EvalValue memory right) private pure returns (EvalValue memory) {
+        if (left.value && right.value) {
+            return EvalValue({
+                value: true, wait: false, cancel: false, dueAt: 0, anchorAt: _minAnchor(left.anchorAt, right.anchorAt)
+            });
+        }
+        if (left.value) {
+            return EvalValue({value: true, wait: false, cancel: false, dueAt: 0, anchorAt: left.anchorAt});
+        }
+        if (right.value) {
+            return EvalValue({value: true, wait: false, cancel: false, dueAt: 0, anchorAt: right.anchorAt});
+        }
+        return EvalValue({value: false, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
+    }
+
+    function _orValue(EvalValue memory left, EvalValue memory right) private pure returns (EvalValue memory) {        // Arrival-time causality (semantic 0.5): merge keeps the EARLIEST
         // received signal as the cause so trailing delays anchor on first
         // arrival, matching the core evaluator and replay oracle.
         if (left.value || right.value) {

@@ -88,7 +88,7 @@ async function loadCorpus(): Promise<Corpus> {
 test("uvp-core N-API parses hook semantic corpus", async () => {
   assert.deepEqual(uvpCoreCompatibility(), {
     coreVersion: "0.1.0",
-    semanticVersion: "uvp-semantic/0.5"
+    semanticVersion: "uvp-semantic/0.6"
   });
   const corpus = await loadCorpus();
   for (const item of corpus.parseCases) {

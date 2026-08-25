@@ -415,9 +415,8 @@ test("rejects invalid on-chain HookPlan artifact shapes", () => {
   );
 });
 
-test("rejects MERGE@ and ANCHOR@ receive hooks with the typed compilation error", () => {
+test("rejects ANCHOR@ receive hooks with the typed compilation error", () => {
   for (const [hookName, expression] of [
-    ["START", "::MERGE@(buyer::selector.assign.executor_selected, buyer::execution.main.cmp)"],
     ["START", "::ANCHOR@(execution.main.cmp)"]
   ] as const) {
     const zhixu: ZhixuDefinition = {
@@ -439,11 +438,50 @@ test("rejects MERGE@ and ANCHOR@ receive hooks with the typed compilation error"
       () => compileOnchainHookPlan(compileZhixuHookPlan(zhixu)),
       (error: unknown) =>
         error instanceof HookPlanCompilationError &&
-        error.issues.some((issue) =>
-          /does not support (merge|anchor) entries/.test(issue)
-        )
+        error.issues.some((issue) => /does not support anchor entries/.test(issue))
     );
   }
+});
+
+test("encodes MERGE@ as a same-order fan-in instruction and rejects k=1", () => {
+  const withReceive = (expression: string): ZhixuDefinition => ({
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      taskPatterns: baseZhixu.spec.taskPatterns.map((pattern) => ({
+        ...pattern,
+        stages: pattern.stages.map((stage) =>
+          stage.name === "main"
+            ? { ...stage, receiveSignals: { START: expression } }
+            : stage
+        )
+      }))
+    }
+  });
+
+  const merged = compileOnchainHookPlan(
+    compileZhixuHookPlan(
+      withReceive("::MERGE@(buyer::selector.assign.executor_selected, buyer::execution.main.cmp)")
+    )
+  );
+  const mergeHook = merged.compiledHooks.find((hook) =>
+    hook.instructions.some((instruction) => instruction.op === "MERGE")
+  );
+  assert.ok(mergeHook, "merge hook must compile");
+  assert.equal(
+    mergeHook.instructions.filter((instruction) => instruction.op === "SIGNAL").length,
+    2
+  );
+  const mergeInstruction = mergeHook.instructions.at(-1);
+  assert.equal(mergeInstruction?.op, "MERGE");
+  assert.equal("arity" in mergeInstruction && mergeInstruction.arity, 2);
+
+  assert.throws(
+    () => compileOnchainHookPlan(compileZhixuHookPlan(withReceive("::MERGE@(buyer::execution.main.cmp)"))),
+    (error: unknown) =>
+      error instanceof HookPlanCompilationError &&
+      error.issues.some((issue) => /requires at least two targets/.test(issue))
+  );
 });
 
 test("rejects a dependency key shared across stages", () => {

@@ -2478,6 +2478,49 @@ contract UVPStateMachineTest {
         require(status == UVPStateMachine.HookStatus.Ready, "ready at chained total");
     }
 
+    function testMergeDeliversOnFirstContributingSignal() public {
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](3);
+        instructions[0] = _signal(SIGNAL_TRIGGER);
+        instructions[1] = _signal(bytes32(uint256(0x5002)));
+        instructions[2] = UVPStateMachine.Instruction({
+            op: UVPStateMachine.InstructionOp.Merge,
+            sourceId: bytes32(0),
+            signalId: bytes32(0),
+            arity: 2,
+            delaySeconds: 0
+        });
+
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hook(
+            HOOK_INIT,
+            STAGE_INIT,
+            HOOK_NAME_TRIGGER,
+            true,
+            instructions,
+            _deps2(SIGNAL_TRIGGER, bytes32(uint256(0x5002)))
+        );
+
+        UVPStateMachine machine = _newMachine();
+        _registerPlan(machine, _withOrderStart(hooks));
+        UVPStateMachine.SignalAuthorization[] memory authorizations =
+            new UVPStateMachine.SignalAuthorization[](2);
+        authorizations[0] = _authorization(SIGNAL_TRIGGER, address(this));
+        authorizations[1] = _authorization(bytes32(uint256(0x5002)), address(this));
+        _submitTriggerOrderFromOutside(machine, ORDER_ID, PLAN_ID, ORDER_CREATOR, authorizations);
+
+        vm.warp(100);
+        machine.submitSignal(ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY);
+        (UVPStateMachine.HookStatus status,,) = machine.getHookStatus(ORDER_ID, HOOK_INIT);
+        require(status == UVPStateMachine.HookStatus.Ready, "merge delivers on first arrival");
+
+        vm.warp(200);
+        machine.submitSignal(
+            ORDER_ID, SOURCE_BOOTSTRAP, bytes32(uint256(0x5002)), PAYLOAD_HASH, bytes32(uint256(0x5003))
+        );
+        (status,,) = machine.getHookStatus(ORDER_ID, HOOK_INIT);
+        require(status == UVPStateMachine.HookStatus.Ready, "late branch must not regress ready");
+    }
+
     function testCommitPlanRejectsCrossStageSharedDependencyKey() public {
         UVPStateMachine machine = _newUnfrozenMachine();
         machine.freezeModules();

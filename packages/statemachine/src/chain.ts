@@ -278,16 +278,19 @@ export function chainEventId(event: ChainEventBase): string {
  * The replay oracle consumes the projected observation shape (single
  * `status`), while the frozen v0.8 chain event carries
  * previousStatus/newStatus. This adapter is the formal boundary between the
- * two contracts: v0.8 events are projected onto newStatus; legacy single
- * `status` streams pass through untouched so older corpora stay readable.
+ * two contracts: v0.8 events are projected onto newStatus. A HookStatusChanged
+ * event without a valid newStatus violates the frozen v0.8 contract and fails
+ * loudly instead of passing through untouched.
  */
 function normalizeChainEventForOracle(event: ChainModeEvent): Record<string, unknown> {
   if (event.eventName === "HookStatusChanged") {
-    const { previousStatus: _previousStatus, ...rest } = event;
-    if ("newStatus" in event && event.newStatus !== undefined) {
-      return { ...rest, status: event.newStatus };
+    if (!("newStatus" in event) || typeof event.newStatus !== "string") {
+      throw new Error(
+        `HookStatusChanged ${event.hookId} is missing a valid newStatus; frozen v0.8 events must carry previousStatus/newStatus`
+      );
     }
-    return { ...rest };
+    const { previousStatus: _previousStatus, ...rest } = event;
+    return { ...rest, status: event.newStatus };
   }
   return { ...event };
 }

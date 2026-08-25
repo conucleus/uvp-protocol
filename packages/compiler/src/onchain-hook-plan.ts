@@ -410,6 +410,14 @@ function solidityInstructionTuple(instruction: SolidityRegisterInstructionArg) {
         arity: 0,
         delaySeconds: BigInt(instruction.delaySeconds),
       };
+    case "MERGE":
+      return {
+        op: 5,
+        sourceId: ZERO_HASH,
+        signalId: ZERO_HASH,
+        arity: instruction.arity,
+        delaySeconds: 0n,
+      };
   }
 }
 
@@ -428,11 +436,34 @@ function compileConditionInstructions(
   switch (condition.kind) {
     case "signal":
       return [signalInstruction(source, condition.signalName)];
-    case "merge":
+    case "merge": {
+      // 撮合扇入（semantic 0.6）：同单跨源扇入，任一路在场即就绪。表达式形态
+      // k≥2；k=1 的跨订单观察入口是 cloud 运行时投递形态，链上无对应物。
+      if (condition.targets.length < 2) {
+        throw new HookPlanCompilationError([
+          `on-chain MERGE@ requires at least two targets in stage ${source}; `
+          + "k=1 observation entries are cloud-runtime deliveries"
+        ]);
+      }
+      const targetInstructions = condition.targets.map((target) => {
+        if (target.condition.kind !== "signal") {
+          throw new HookPlanCompilationError([
+            `on-chain MERGE@ targets must be plain source::task.stage.signal references `
+            + `in stage ${source}; got ${target.condition.kind ?? "non-signal"}`
+          ]);
+        }
+        return signalInstruction(target.source, target.condition.signalName);
+      });
+      return [
+        ...targetInstructions,
+        { op: "MERGE", arity: condition.targets.length },
+      ];
+    }
     case "anchor":
       throw new HookPlanCompilationError([
-        `on-chain HookPlan does not support ${condition.kind} entries yet; `
-        + "MERGE@/ANCHOR@ are per-event cloud runtime deliveries"
+        `on-chain HookPlan does not support anchor entries in stage ${source}; `
+        + "cross-order reflux requires a lineage delivery subsystem "
+        + "(see uvp-core docs/specs/merge-anchor-delivery-spec.md §8)"
       ]);
     case "external":
       if (!condition.target) {
