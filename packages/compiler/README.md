@@ -3,8 +3,9 @@
 Zhixu compiler for deterministic EVM state-machine artifacts.
 
 This module compiles UVP DSL directly into deterministic on-chain artifacts.
-The public protocol output is `OnchainHookPlanArtifact` and
-`UVPStateMachine.registerPlan` args. `HookPlanArtifact` is compiler-internal IR.
+The public protocol output is `OnchainHookPlanArtifact` and the registration
+args for the two-step `UVPStateMachine.commitPlan` + `finalizePlan` flow.
+`HookPlanArtifact` is compiler-internal IR.
 
 ## Inputs
 
@@ -18,7 +19,8 @@ The public protocol output is `OnchainHookPlanArtifact` and
 ## Outputs
 
 - EVM-facing `OnchainHookPlanArtifact`;
-- Solidity `UVPStateMachine.registerPlan` args;
+- Solidity registration args for the two-step `UVPStateMachine.commitPlan` +
+  `finalizePlan` flow;
 - deterministic `planId`, `planHash`, source `zhixu_hash`, `policy_hash`,
   `metadata_hash`, and `artifact_hash`;
 - stable hook, stage, source, signal, dependency, and route ids;

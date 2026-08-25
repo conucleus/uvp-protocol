@@ -120,6 +120,10 @@ export function compileZhixuOnchainHookPlan(
   return compileOnchainHookPlan(compileZhixuHookPlan(definition));
 }
 
+// The `RegisterPlanArgs` name predates the retired single-step
+// `registerPlan` entrypoint: since v0.8 these args feed the two-step
+// `commitPlan` + `finalizePlan` flow. Kept for API stability; renaming is a
+// breaking change.
 export function compileZhixuRegisterPlanArgs(
   definition: ZhixuDefinition,
 ): SolidityRegisterPlanArgs {
@@ -238,6 +242,8 @@ export function assertOnchainHookPlanArtifact(
   }
 }
 
+// Legacy name, see compileZhixuRegisterPlanArgs: returns args for the
+// two-step commitPlan + finalizePlan registration flow.
 export function toSolidityRegisterPlanArgs(
   artifact: OnchainHookPlanArtifact,
 ): SolidityRegisterPlanArgs {

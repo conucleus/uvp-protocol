@@ -11,10 +11,9 @@ semantics, contract interfaces, ABI fixtures, Product DTOs, and replay models
 are the public spine. External audits and production governance hardening remain
 open.
 
-Before this workspace is split into public repositories, protocol-facing
-Product DTOs must stay aligned with PRD109's convergence contract. Executor
-overlays are the current implemented dynamic stage authority. Product task
-manifests describe executor actions such as `submit_signal`,
+Protocol-facing Product DTOs are this workspace's convergence contract.
+Executor overlays are the current implemented dynamic stage authority. Product
+task manifests describe executor actions such as `submit_signal`,
 `stage_executor_patch`, and `stage_resource_patch`. Docked Zhixu runtime is
 modeled as local/linked order signal binding rather than an order hierarchy.
 

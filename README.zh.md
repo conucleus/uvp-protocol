@@ -9,7 +9,7 @@ EVM 原生 UVP 方向的协议边界。
 公开状态：alpha 协议核心。编译器制品、状态机语义、合约接口、ABI
 fixtures、Product DTO 和 replay model 是公开主干。外部审计和生产治理加固仍未完成。
 
-在本工作区拆分为公开仓库前，面向协议的 Product DTO 必须继续和 PRD109 的收束契约保持一致。Executor overlay 是当前已经实现的动态阶段权限机制。Product task manifest 描述 `submit_signal`、`stage_executor_patch`、`stage_resource_patch` 等 executor action。Docked Zhixu runtime 按本地/关联订单的 signal binding 建模，而不是订单层级结构。
+面向协议的 Product DTO 是本工作区的收束契约。Executor overlay 是当前已经实现的动态阶段权限机制。Product task manifest 描述 `submit_signal`、`stage_executor_patch`、`stage_resource_patch` 等 executor action。Docked Zhixu runtime 按本地/关联订单的 signal binding 建模，而不是订单层级结构。
 
 本域负责确定性语义和公开协议接口：
 
