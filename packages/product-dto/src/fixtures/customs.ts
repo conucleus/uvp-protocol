@@ -56,8 +56,8 @@ export const customsWallets = {
 
 export const customsPlanIds = {
   planId: "0x336d9b556f7ffa00c83f49600554819055a4a3b300f82abca70b401f6b161ddc",
-  planHash: "0x4761dcdb1b6a43bd587da0014c53db5e5a2c0794d30c3ef43708847bea13e342",
-  artifactHash: "0xd1b50a5e4c5288e52a874a2466b06c7b95175f5f1620b7c38938ba749a06c176"
+  planHash: "0x38e5dea9a693fae60fbe5f4919dd01667e35afb494026af8753fc189bfea4ae5",
+  artifactHash: "0x0bc785434c6d3208d852937b00408af66b4bd526da57cfa74537699297d28221"
 } as const;
 
 export const customsResourceManifest: ProductResourceManifestDTO = {
@@ -653,7 +653,7 @@ export const customsOnchainHookPlanArtifact = {
       routeRef: {
         routeId: "0x9963f771afc5aaa6fabb6af0a7625a6c51011bc02fb39d5d5146ee79440bac3f",
         stageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca",
-        routeHash: "0xaa0698c451e6e8eca83fa242e475f9a763f4d544db920e544b12d050fa25c80f"
+        routeHash: "0x08507123bdafbc8946aba27ab465e524ec48f016fc271024fc305fa133d74324"
       }
     },
     {
@@ -686,7 +686,7 @@ export const customsOnchainHookPlanArtifact = {
       routeRef: {
         routeId: "0x169a72a4d6908a7fd8eda5bbabaa54ee05d4de02e40ec40f9cb97f33e60f441a",
         stageId: "0x301c76d30a738a103f1a948d5edd57e97fa2e17d80ddffff275c32daa56e6047",
-        routeHash: "0xcccad2de7aa9ead401a511ba06c3fccbbe50233b80076678ca4910046b648395"
+        routeHash: "0xc07d535cc26a67052cc5f3b89878a45e18816bdc43d3a0d52c7b83bb77a064de"
       }
     },
     {
