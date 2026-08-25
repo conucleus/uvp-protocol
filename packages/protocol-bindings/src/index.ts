@@ -1789,10 +1789,6 @@ export function hashSignalAuthorizations(
   return rollingHash;
 }
 
-export function validateResourceManifestV1(manifest: ResourceManifestV1): void {
-  normalizeResourceManifestV1(manifest);
-}
-
 export function hashResourceManifest(manifest: ResourceManifestV1): Hex {
   const normalized = normalizeResourceManifestV1(manifest);
   return hashCanonicalJson(RESOURCE_MANIFEST_HASH_DOMAIN, normalized);

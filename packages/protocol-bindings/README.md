@@ -56,7 +56,6 @@ pnpm --filter @uvp-eth/protocol-bindings build
 
 ## Resource Manifest Helpers
 
-- `hashResourceManifest` canonicalizes and hashes `ResourceManifestV1` JSON.
-- `validateResourceManifestV1` applies the same validation without returning a
-  hash.
+- `hashResourceManifest` canonicalizes, validates, and hashes
+  `ResourceManifestV1` JSON.
 - Resource manifests reject public HTTP resource URLs.
