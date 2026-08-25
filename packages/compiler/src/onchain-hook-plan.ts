@@ -716,7 +716,12 @@ function routeHashFromDigests(
   });
 }
 
-function hashOnchainPlanPayload(
+/**
+ * Canonical payload hash of an on-chain HookPlan artifact. Exported so
+ * golden-fixture maintainers can re-pin planHash values with the exact
+ * production formula instead of transcribing them by hand.
+ */
+export function hashOnchainPlanPayload(
   payload: Omit<OnchainHookPlanArtifact, "planHash">,
 ): HexString {
   return hashCanonical(ONCHAIN_PLAN_HASH_DOMAIN, payload);

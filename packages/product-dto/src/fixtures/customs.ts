@@ -751,22 +751,8 @@ export const customsOnchainHookPlanArtifact = {
     ]
   },
   executorRoutes: [
-    {
-      routeId: "0x9963f771afc5aaa6fabb6af0a7625a6c51011bc02fb39d5d5146ee79440bac3f",
-      stageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca",
-      stageIdentifier: customsStageIds.buyerPublishCustomsResources,
-      executorType: "wallet",
-      executorId: "buyer",
-      routeHash: "0xaa0698c451e6e8eca83fa242e475f9a763f4d544db920e544b12d050fa25c80f"
-    },
-    {
-      routeId: "0x169a72a4d6908a7fd8eda5bbabaa54ee05d4de02e40ec40f9cb97f33e60f441a",
-      stageId: "0x301c76d30a738a103f1a948d5edd57e97fa2e17d80ddffff275c32daa56e6047",
-      stageIdentifier: customsStageIds.buyerSelectCustomsExecutor,
-      executorType: "wallet",
-      executorId: "buyer",
-      routeHash: "0xcccad2de7aa9ead401a511ba06c3fccbbe50233b80076678ca4910046b648395"
-    }
+    { routeId: "0x9963f771afc5aaa6fabb6af0a7625a6c51011bc02fb39d5d5146ee79440bac3f", stageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca", stageIdentifier: customsStageIds.buyerPublishCustomsResources, executorType: "wallet", executorId: "buyer", executorHash: "0xceba0f926893649fbdd5053bfd8e95f239a18892e2ee25e3f76562a3413e1e3b", resourcesHash: "0x069184494e0d2f806cee049270bee7ff504cb08daad1a83acc37ea2ca46b930a", routeHash: "0x08507123bdafbc8946aba27ab465e524ec48f016fc271024fc305fa133d74324" },
+    { routeId: "0x169a72a4d6908a7fd8eda5bbabaa54ee05d4de02e40ec40f9cb97f33e60f441a", stageId: "0x301c76d30a738a103f1a948d5edd57e97fa2e17d80ddffff275c32daa56e6047", stageIdentifier: customsStageIds.buyerSelectCustomsExecutor, executorType: "wallet", executorId: "buyer", executorHash: "0xecab016c59a79e17b59b3ff9a3c5e1caffecbbd4faa7220e245995b712499bbd", resourcesHash: "0x7dbcba468a4a1d997d8401f76d6d5ac8baca6007bffdba640e069955998e94f1", routeHash: "0xc07d535cc26a67052cc5f3b89878a45e18816bdc43d3a0d52c7b83bb77a064de" }
   ],
   selectorBindings: [
     {
