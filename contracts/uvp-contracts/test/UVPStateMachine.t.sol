@@ -2448,6 +2448,36 @@ contract UVPStateMachineTest {
         require(status == UVPStateMachine.HookStatus.Ready, "late branch must not regress ready");
     }
 
+    function testChainedDelayAnchorsOnMaturityMoment() public {
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](3);
+        instructions[0] = _signal(SIGNAL_TRIGGER);
+        instructions[1] = _delay(1);
+        instructions[2] = _delay(5);
+
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hook(HOOK_TIMEOUT, STAGE_INIT, HOOK_NAME_TIMEOUT, true, instructions, _deps(SIGNAL_TRIGGER));
+
+        UVPStateMachine machine = _registeredMachine(hooks);
+
+        vm.warp(100);
+        machine.submitSignal(ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY);
+
+        (UVPStateMachine.HookStatus status, uint64 dueAt,) = machine.getHookStatus(ORDER_ID, HOOK_TIMEOUT);
+        require(status == UVPStateMachine.HookStatus.Wait, "inner delay must wait first");
+        require(dueAt == 101, "inner due at arrival+1");
+
+        vm.warp(101);
+        machine.pokeTimer(ORDER_ID, HOOK_TIMEOUT);
+        (status, dueAt,) = machine.getHookStatus(ORDER_ID, HOOK_TIMEOUT);
+        require(status == UVPStateMachine.HookStatus.Wait, "outer delay chains after maturity");
+        require(dueAt == 106, "outer due at 101+5: anchor advanced to maturity moment");
+
+        vm.warp(106);
+        machine.pokeTimer(ORDER_ID, HOOK_TIMEOUT);
+        (status,,) = machine.getHookStatus(ORDER_ID, HOOK_TIMEOUT);
+        require(status == UVPStateMachine.HookStatus.Ready, "ready at chained total");
+    }
+
     function testCommitPlanRejectsCrossStageSharedDependencyKey() public {
         UVPStateMachine machine = _newUnfrozenMachine();
         machine.freezeModules();

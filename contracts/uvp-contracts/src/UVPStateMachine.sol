@@ -1458,7 +1458,10 @@ contract UVPStateMachine {
         if (block.timestamp < dueAt) {
             return EvalValue({value: false, wait: true, cancel: false, dueAt: dueAt, anchorAt: value.anchorAt});
         }
-        return EvalValue({value: true, wait: false, cancel: false, dueAt: 0, anchorAt: value.anchorAt});
+        // Anchor advancement (semantic 0.5 chained-delay ruling): the maturity
+        // moment becomes the new anchor so `(A + 1s) + 5s` counts the outer
+        // delay from A+1s, matching the core evaluator and replay oracle.
+        return EvalValue({value: true, wait: false, cancel: false, dueAt: 0, anchorAt: dueAt});
     }
 
     function _andValue(EvalValue memory left, EvalValue memory right) private pure returns (EvalValue memory) {
@@ -1487,9 +1490,14 @@ contract UVPStateMachine {
         // received signal as the cause so trailing delays anchor on first
         // arrival, matching the core evaluator and replay oracle.
         if (left.value || right.value) {
-            return EvalValue({
-                value: true, wait: false, cancel: false, dueAt: 0, anchorAt: _minAnchor(left.anchorAt, right.anchorAt)
-            });
+            // Only READY branches compete for the anchor; a waiting branch's
+            // stale anchor must not win (matches the core evaluator).
+            uint64 anchor = left.value && right.value
+                ? _minAnchor(left.anchorAt, right.anchorAt)
+                : left.value
+                    ? left.anchorAt
+                    : right.anchorAt;
+            return EvalValue({value: true, wait: false, cancel: false, dueAt: 0, anchorAt: anchor});
         }
         if (left.wait || right.wait) {
             return EvalValue({
