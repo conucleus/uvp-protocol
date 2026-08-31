@@ -7,7 +7,7 @@ import {
   uvpCoreCompatibility
 } from "../src/index.js";
 
-const corpusUrl = new URL("../../../../uvp-core/fixtures/hook/semantics.v2.json", import.meta.url);
+const corpusUrl = new URL("../../../../uvp-core/fixtures/hook/semantics.v1.json", import.meta.url);
 
 interface Corpus {
   readonly parseCases: readonly ParseCase[];
@@ -86,7 +86,7 @@ async function loadCorpus(): Promise<Corpus> {
 test("uvp-core N-API parses hook semantic corpus", async () => {
   assert.deepEqual(uvpCoreCompatibility(), {
     coreVersion: "0.1.0",
-    semanticVersion: "uvp-semantic/0.7"
+    semanticVersion: "uvp.semantic.v1"
   });
   const corpus = await loadCorpus();
   for (const item of corpus.parseCases) {

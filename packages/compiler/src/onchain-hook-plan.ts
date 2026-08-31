@@ -67,7 +67,7 @@ export function compileOnchainHookPlan(
       hookName: hook.hookName,
       kind: hook.kind,
       isTrigger: hook.isTrigger,
-      instructions: compileHookInstructions(hook.ast, {
+      instructions: compileHookInstructions(hook.ast, hook.stageIdentifier, {
         isTrigger: hook.isTrigger,
       }),
       dependencies: hook.dependencies.map(compileDependency),
@@ -419,14 +419,16 @@ const ZERO_HASH = `0x${"00".repeat(32)}` as HexString;
 
 function compileHookInstructions(
   ast: HookExpressionAst,
+  stageIdentifier: string,
   options: { readonly isTrigger: boolean },
 ): readonly OnchainHookInstruction[] {
-  return compileConditionInstructions(ast.condition, ast.source, options);
+  return compileConditionInstructions(ast.condition, ast.source, stageIdentifier, options);
 }
 
 function compileConditionInstructions(
   condition: HookConditionAst,
   source: string,
+  stageIdentifier: string,
   options: { readonly isTrigger: boolean },
 ): readonly OnchainHookInstruction[] {
   switch (condition.kind) {
@@ -449,26 +451,26 @@ function compileConditionInstructions(
       return [signalInstruction(condition.source, condition.signal)];
     case "not":
       return [
-        ...compileConditionInstructions(condition.expr, source, options),
+        ...compileConditionInstructions(condition.expr, source, stageIdentifier, options),
         { op: "NOT" },
       ];
     case "and":
       return [
         ...condition.terms.flatMap((term) =>
-          compileConditionInstructions(term, source, options),
+          compileConditionInstructions(term, source, stageIdentifier, options),
         ),
         { op: "AND", arity: condition.terms.length },
       ];
     case "or":
       return [
         ...condition.terms.flatMap((term) =>
-          compileConditionInstructions(term, source, options),
+          compileConditionInstructions(term, source, stageIdentifier, options),
         ),
         { op: "OR", arity: condition.terms.length },
       ];
     case "delay":
       return [
-        ...compileConditionInstructions(condition.expr, source, options),
+        ...compileConditionInstructions(condition.expr, source, stageIdentifier, options),
         { op: "DELAY", delaySeconds: condition.durationSeconds },
       ];
     default:

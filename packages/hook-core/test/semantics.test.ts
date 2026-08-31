@@ -243,11 +243,11 @@ test("defers subscription entries to per-event delivery without expression verdi
 });
 
 test("rejects retired cross-source hook entries", () => {
-  assert.throws(() => parseHookExpression("::OUTSIDE"), /retired in uvp-semantic\/0\.7/);
-  assert.throws(() => parseHookExpression("buyer::OUTSOURCE"), /retired in uvp-semantic\/0\.7/);
-  assert.throws(() => parseHookExpression("buyer::MERGE@(peer::a.b.c)"), /retired in uvp-semantic\/0\.7/);
-  assert.throws(() => parseHookExpression("::ANCHOR@(farmer.main.settle)"), /retired in uvp-semantic\/0\.7/);
-  assert.throws(() => parseHookExpression("::MERGE@(seller::a.b.c, buyer::d.e.f)"), /retired in uvp-semantic\/0\.7/);
+  assert.throws(() => parseHookExpression("::OUTSIDE"), /retired in uvp\.semantic\.v1/);
+  assert.throws(() => parseHookExpression("buyer::OUTSOURCE"), /retired in uvp\.semantic\.v1/);
+  assert.throws(() => parseHookExpression("buyer::MERGE@(peer::a.b.c)"), /retired in uvp\.semantic\.v1/);
+  assert.throws(() => parseHookExpression("::ANCHOR@(farmer.main.settle)"), /retired in uvp\.semantic\.v1/);
+  assert.throws(() => parseHookExpression("::MERGE@(seller::a.b.c, buyer::d.e.f)"), /retired in uvp\.semantic\.v1/);
 });
 
 test("rejects raw-less ASTs at adapter boundaries", () => {

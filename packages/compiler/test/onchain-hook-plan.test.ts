@@ -526,13 +526,13 @@ test("rejects retired cross-source headers at hook-plan compilation", () => {
     () => compileZhixuHookPlan(withReceive("::MERGE@(buyer::selector.assign.executor_selected, buyer::execution.main.cmp)")),
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
-      error.issues.some((issue) => /retired in uvp-semantic\/0\.7/.test(issue))
+      error.issues.some((issue) => /retired in uvp\.semantic\.v1/.test(issue))
   );
   assert.throws(
     () => compileZhixuHookPlan(withReceive("::ANCHOR@(execution.main.cmp)")),
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
-      error.issues.some((issue) => /retired in uvp-semantic\/0\.7/.test(issue))
+      error.issues.some((issue) => /retired in uvp\.semantic\.v1/.test(issue))
   );
 });
 

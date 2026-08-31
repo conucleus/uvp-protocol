@@ -279,24 +279,41 @@ test("rejects invalid mint declarations", () => {
   ]);
 });
 
-test("mint stages accept single-signal birth entries and isTrigger them", () => {
-  // 出生入口 hook：单正信号（外部提交事实本身即判定），链上 isTrigger=true。
+test("mint stages accept single ANCHOR birth subscriptions and isTrigger them", () => {
+  // 出生入口 hook：ANCHOR 订阅（出生事实由 registrar 命名空间提交，本身即判定），
+  // 订阅编译为单条 SIGNAL 指令，链上 isTrigger=true。
   const valid: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
       taskPatterns: [
         {
+          // 出生事实的发出方：buyer 域的 feeder 阶段（订阅类必须等于目标
+          // 阶段的 source，且不得等于接收阶段自身的 source）。
+          name: "feeder",
+          stages: [
+            {
+              name: "gate",
+              source: "buyer",
+              sendSignals: ["ready"],
+              executor: {
+                supplierType: "organization",
+                supplierID: "feeder-org"
+              }
+            }
+          ]
+        },
+        {
           name: "broken",
           stages: [
             {
               name: "main",
-              source: "buyer",
+              source: "runner",
               mint: "per-fact",
               receiveSignals: {
-                START: "buyer::broken.main.ready"
+                START: "::ANCHOR(@buyer::feeder.gate.ready)"
               },
-              sendSignals: ["ready"],
+              sendSignals: ["str", "cmp"],
               executor: {
                 supplierType: "organization",
                 supplierID: "executor"
