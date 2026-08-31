@@ -52,8 +52,12 @@ export interface ZhixuTaskPattern {
 export interface ZhixuStage {
   readonly name: string;
   readonly source: string;
-  readonly trigger: readonly string[];
-  readonly externalSignals?: readonly string[];
+  /**
+   * Birth-stage declaration (subscription-mint model): every fanned-in fact
+   * mints one order whose birth stage is this stage. Optional; "per-fact" is
+   * the only mint policy.
+   */
+  readonly mint?: "per-fact";
   readonly executor?: ExecuteConfigs;
   readonly selectedStages?: readonly string[];
   readonly sendSignals?: readonly string[];
@@ -141,7 +145,7 @@ export interface OnchainUnaryInstruction {
 }
 
 export interface OnchainJoinInstruction {
-  readonly op: "AND" | "OR" | "MERGE";
+  readonly op: "AND" | "OR";
   readonly arity: number;
 }
 
@@ -243,7 +247,7 @@ export type SolidityRegisterInstructionArg =
       readonly op: "NOT";
     }
   | {
-      readonly op: "AND" | "OR" | "MERGE";
+      readonly op: "AND" | "OR";
       readonly arity: number;
     }
   | {

@@ -185,6 +185,7 @@ describe("product DTO catalog", () => {
     const draftRow = toStoreZhixuConsoleDTO(summarizeZhixu(zhixu));
     assert.equal(draftRow.lifecycleStatus, "approved_for_broadcast");
     assert.equal(draftRow.lifecycleLabel, "待发布签名");
+    assert.equal(draftRow.metricsStatus, "unknown");
 
     const activeRow = toStoreZhixuConsoleDTO({
       ...summarizeZhixu(zhixu),
@@ -201,6 +202,7 @@ describe("product DTO catalog", () => {
     });
     assert.equal(activeRow.lifecycleStatus, "active");
     assert.equal(activeRow.nextAction, "持续观察订单、待办和供应商状态");
+    assert.equal(activeRow.metricsStatus, "observed");
 
     const summary = storeConsoleSummary([draftRow, activeRow]);
     assert.equal(summary.totalZhixus, 2);

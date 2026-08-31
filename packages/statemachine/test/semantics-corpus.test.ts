@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { replayChainEvents, type ChainModeEvent } from "../src/index.js";
 
-const corpusUrl = new URL("../../../../uvp-core/fixtures/hook/semantics.v1.json", import.meta.url);
+const corpusUrl = new URL("../../../../uvp-core/fixtures/hook/semantics.v2.json", import.meta.url);
 
 interface Corpus {
   readonly replayCases: readonly ReplayCase[];

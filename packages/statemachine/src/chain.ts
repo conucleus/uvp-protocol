@@ -27,6 +27,7 @@ export type ChainOracleHookStatus = "init" | "wait" | "reg" | "cxl";
 export interface ChainEventBase {
   readonly eventName: string;
   readonly blockNumber: number;
+  readonly transactionIndex?: number;
   readonly logIndex: number;
   readonly transactionHash: `0x${string}`;
   readonly contractAddress?: `0x${string}`;
@@ -195,7 +196,6 @@ export interface ChainHookStatusChangedObservation {
 
 export interface ChainReplayOptions {
   readonly sort?: boolean;
-  readonly strict?: boolean;
 }
 
 export interface ChainReplayResult {
@@ -226,6 +226,7 @@ export interface ChainOracleSignalRecord {
   readonly signalKey: HexString;
   readonly senderId: string;
   readonly submittedAt: string;
+  readonly transactionIndex?: number;
 }
 
 export interface ChainOracleHookRuntime {
@@ -251,6 +252,13 @@ export class ChainReplayMismatchError extends Error {
   }
 }
 
+/**
+ * The single exported replay entry point always validates strictly: any
+ * mismatch between expected and observed hook observations throws
+ * {@link ChainReplayMismatchError}. There is no option (and no exported
+ * wrapper bypass) that yields a never-throwing replay; callers who need to
+ * inspect raw mismatches can catch the error and read its `mismatches` field.
+ */
 export function replayChainEvents(
   events: readonly ChainModeEvent[],
   options: ChainReplayOptions = {}
@@ -259,12 +267,14 @@ export function replayChainEvents(
     events: events.map(normalizeChainEventForOracle),
     options: {
       ...options,
+      // The native layer collects structured mismatches instead of throwing
+      // its own opaque error; this wrapper converts them into an explicit
+      // throw so the exported surface cannot observe a lenient replay.
       strict: false
     }
   }) as ChainReplayResult;
-  const mismatches = result.mismatches;
-  if ((options.strict ?? true) && mismatches.length > 0) {
-    throw new ChainReplayMismatchError(mismatches);
+  if (result.mismatches.length > 0) {
+    throw new ChainReplayMismatchError(result.mismatches);
   }
 
   return result;
@@ -296,7 +306,14 @@ function normalizeChainEventForOracle(event: ChainModeEvent): Record<string, unk
 }
 
 export function compareChainEvents(a: ChainEventBase, b: ChainEventBase): number {
-  return a.blockNumber - b.blockNumber || a.logIndex - b.logIndex;
+  if (a.blockNumber !== b.blockNumber) {
+    return a.blockNumber - b.blockNumber;
+  }
+  if (a.transactionIndex !== undefined && b.transactionIndex !== undefined &&
+      a.transactionIndex !== b.transactionIndex) {
+    return a.transactionIndex - b.transactionIndex;
+  }
+  return a.logIndex - b.logIndex || a.transactionHash.localeCompare(b.transactionHash);
 }
 
 export function chainEventToExpectedObservation(event: ChainModeExpectedEvent): ChainHookObservation {

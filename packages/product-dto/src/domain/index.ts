@@ -736,6 +736,12 @@ export interface StoreZhixuConsoleDTO {
   readonly orderCount: number;
   readonly openTaskCount: number;
   readonly supplierCount: number;
+  /**
+   * Explicit availability marker for the metric fields above and for
+   * versionLabel: "unknown" means they were not supplied by the caller and
+   * must be displayed as unknown, never read as real observations.
+   */
+  readonly metricsStatus: StoreConsoleMetricsStatus;
   readonly planId: string;
   readonly planHash: string;
   readonly artifactHash?: string;
@@ -1032,6 +1038,8 @@ export interface StoreZhixuVersionSummaryDTO {
   readonly cutoverReason?: string;
 }
 
+export type StoreConsoleMetricsStatus = "observed" | "unknown";
+
 export interface StoreZhixuConsoleMetrics {
   readonly orderCount?: number;
   readonly openTaskCount?: number;
@@ -1060,12 +1068,22 @@ export function toStoreZhixuConsoleDTO(
     metrics.lifecycleStatus ?? lifecycleStatusForZhixu(zhixu);
   const planId = zhixu.planPublication.planId;
   const planHash = zhixu.planPublication.planHash;
+  // Metrics are either fully observed or explicitly unknown: a partial
+  // supply must not silently substitute zeros / "当前版本" for the missing
+  // fields while claiming the rest are real observations.
+  const metricsStatus: StoreConsoleMetricsStatus =
+    metrics.orderCount !== undefined &&
+    metrics.openTaskCount !== undefined &&
+    metrics.supplierCount !== undefined
+      ? "observed"
+      : "unknown";
   return {
     zhixuId: zhixu.zhixuId,
     title: zhixu.title,
     subtitle: zhixu.subtitle,
     maintainer: zhixu.maintainer,
     versionLabel: metrics.versionLabel ?? "当前版本",
+    metricsStatus,
     lifecycleStatus,
     lifecycleLabel: lifecycleLabel(lifecycleStatus),
     reviewStatus: zhixu.reviewStatus,

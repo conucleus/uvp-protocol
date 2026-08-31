@@ -28,8 +28,6 @@ spec:
       stages:
         - name: brief
           source: client
-          trigger: ["ORDER_OPENED"]
-          externalSignals: ["ORDER_OPENED"]
           sendSignals: ["cmp", "cxl", "err"]
           fileResources:
             brief_template:
@@ -42,7 +40,6 @@ spec:
 
         - name: license_review
           source: platform
-          trigger: ["BRIEF_READY"]
           receiveSignals:
             BRIEF_READY: "client::figure.brief.cmp"
           sendSignals: ["pass", "reject", "err"]
@@ -57,7 +54,6 @@ spec:
 
         - name: supplier_selection
           source: platform
-          trigger: ["LICENSE_PASS"]
           receiveSignals:
             LICENSE_PASS: "platform::figure.license_review.pass"
           selectedStages:
@@ -80,7 +76,6 @@ spec:
 
         - name: concept_sheet
           source: artist
-          trigger: ["SUPPLIERS_READY"]
           receiveSignals:
             SUPPLIERS_READY: "platform::figure.supplier_selection.cmp"
           sendSignals: ["str", "cmp", "err"]
@@ -95,7 +90,6 @@ spec:
 
         - name: concept_approval
           source: client
-          trigger: ["CONCEPT_READY"]
           receiveSignals:
             CONCEPT_READY: "artist::figure.concept_sheet.cmp"
           sendSignals: ["pass", "reject", "err"]
@@ -105,7 +99,6 @@ spec:
 
         - name: sculpt_model
           source: sculptor
-          trigger: ["CONCEPT_APPROVED"]
           receiveSignals:
             CONCEPT_APPROVED: "client::figure.concept_approval.pass"
           sendSignals: ["str", "cmp", "err"]
@@ -120,7 +113,6 @@ spec:
 
         - name: printability_check
           source: printer
-          trigger: ["SCULPT_READY"]
           receiveSignals:
             SCULPT_READY: "sculptor::figure.sculpt_model.cmp"
           sendSignals: ["pass", "fail", "err"]
@@ -135,7 +127,6 @@ spec:
 
         - name: prototype_print
           source: printer
-          trigger: ["PRINTABILITY_PASS"]
           receiveSignals:
             PRINTABILITY_PASS: "printer::figure.printability_check.pass"
           sendSignals: ["str", "cmp", "err"]
@@ -150,7 +141,6 @@ spec:
 
         - name: paint_sample
           source: painter
-          trigger: ["PROTOTYPE_READY"]
           receiveSignals:
             PROTOTYPE_READY: "printer::figure.prototype_print.cmp"
           sendSignals: ["str", "cmp", "err"]
@@ -165,7 +155,6 @@ spec:
 
         - name: qa_review
           source: qa
-          trigger: ["PAINT_READY"]
           receiveSignals:
             PAINT_READY: "painter::figure.paint_sample.cmp"
           sendSignals: ["pass", "fail", "err"]
@@ -180,7 +169,6 @@ spec:
 
         - name: pack_ship
           source: logistics
-          trigger: ["QA_PASS"]
           receiveSignals:
             QA_PASS: "qa::figure.qa_review.pass"
           sendSignals: ["str", "cmp", "err"]
@@ -195,7 +183,6 @@ spec:
 
         - name: final_acceptance
           source: client
-          trigger: ["DELIVERED"]
           receiveSignals:
             DELIVERED: "logistics::figure.pack_ship.cmp"
           sendSignals: ["pass", "reject", "err"]
@@ -205,11 +192,6 @@ spec:
 
         - name: rework
           source: platform
-          trigger:
-            - CONCEPT_REJECTED
-            - PRINT_FAILED
-            - QA_FAILED
-            - BUYER_REJECTED
           receiveSignals:
             CONCEPT_REJECTED: "client::figure.concept_approval.reject"
             PRINT_FAILED: "printer::figure.printability_check.fail"

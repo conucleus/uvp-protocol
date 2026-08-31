@@ -36,10 +36,9 @@ test("loads UVP update zhixu yaml and compiles stable on-chain plan", async () =
   assert.equal(onchain.compiledHooks.length, 13);
   assert.equal(args.hooks.length, 13);
   assert.equal(
-    onchain.compiledHooks.filter((hook) => hook.stageIdentifier === "update.rollback" && hook.isTrigger).length,
+    onchain.compiledHooks.filter((hook) => hook.stageIdentifier === "update.rollback").length,
     5
   );
-  assert.equal(definition.spec.taskPatterns[0]?.stages[0]?.externalSignals, undefined);
   assert.equal(
     onchain.compiledHooks.some((hook) => hook.stageIdentifier === "update.init"),
     true

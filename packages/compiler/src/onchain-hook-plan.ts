@@ -67,7 +67,9 @@ export function compileOnchainHookPlan(
       hookName: hook.hookName,
       kind: hook.kind,
       isTrigger: hook.isTrigger,
-      instructions: compileHookInstructions(hook.ast),
+      instructions: compileHookInstructions(hook.ast, {
+        isTrigger: hook.isTrigger,
+      }),
       dependencies: hook.dependencies.map(compileDependency),
       ...(hook.route ? { routeRef: routeRefForRoute(hook.route) } : {}),
     }))
@@ -410,14 +412,6 @@ function solidityInstructionTuple(instruction: SolidityRegisterInstructionArg) {
         arity: 0,
         delaySeconds: BigInt(instruction.delaySeconds),
       };
-    case "MERGE":
-      return {
-        op: 5,
-        sourceId: ZERO_HASH,
-        signalId: ZERO_HASH,
-        arity: instruction.arity,
-        delaySeconds: 0n,
-      };
   }
 }
 
@@ -425,75 +419,56 @@ const ZERO_HASH = `0x${"00".repeat(32)}` as HexString;
 
 function compileHookInstructions(
   ast: HookExpressionAst,
+  options: { readonly isTrigger: boolean },
 ): readonly OnchainHookInstruction[] {
-  return compileConditionInstructions(ast.condition, ast.source);
+  return compileConditionInstructions(ast.condition, ast.source, options);
 }
 
 function compileConditionInstructions(
   condition: HookConditionAst,
   source: string,
+  options: { readonly isTrigger: boolean },
 ): readonly OnchainHookInstruction[] {
   switch (condition.kind) {
     case "signal":
       return [signalInstruction(source, condition.signalName)];
-    case "merge": {
-      // 撮合扇入（semantic 0.6）：同单跨源扇入，任一路在场即就绪。表达式形态
-      // k≥2；k=1 的跨订单观察入口是 cloud 运行时投递形态，链上无对应物。
-      if (condition.targets.length < 2) {
+    case "subscription":
+      // 出生订阅可以上链：现实成立后，持有人签名提交（triggerOrderFrom*）
+      // 或 docking module 从上游订单中继，提交的 (sourceId, signalId) 本身
+      // 就是出生事实——编译为一条 SIGNAL 指令即可，链上不存在独立的订阅
+      // 投递子系统。非出生阶段（route=fanin 按类扇入 / 按单路由）的订阅
+      // 是云侧运行时投递语义，仍不上链。
+      if (!options.isTrigger) {
         throw new HookPlanCompilationError([
-          `on-chain MERGE@ requires at least two targets in stage ${source}; `
-          + "k=1 observation entries are cloud-runtime deliveries"
+          `on-chain HookPlan only supports subscription entries on mint birth hooks `
+          + `(::ANCHOR(@${condition.source}::${condition.signal}) in stage "${source}"); `
+          + "non-birth subscriptions are cloud-side runtime deliveries "
+          + "(see uvp-core docs/specs/subscription-mint-spec.md)"
         ]);
       }
-      const targetInstructions = condition.targets.map((target) => {
-        if (target.condition.kind !== "signal") {
-          throw new HookPlanCompilationError([
-            `on-chain MERGE@ targets must be plain source::task.stage.signal references `
-            + `in stage ${source}; got ${target.condition.kind ?? "non-signal"}`
-          ]);
-        }
-        return signalInstruction(target.source, target.condition.signalName);
-      });
-      return [
-        ...targetInstructions,
-        { op: "MERGE", arity: condition.targets.length },
-      ];
-    }
-    case "anchor":
-      throw new HookPlanCompilationError([
-        `on-chain HookPlan does not support anchor entries in stage ${source}; `
-        + "cross-order reflux requires a lineage delivery subsystem "
-        + "(see uvp-core docs/specs/merge-anchor-delivery-spec.md §8)"
-      ]);
-    case "external":
-      if (!condition.target) {
-        throw new HookPlanCompilationError([
-          `external condition is missing its @(...) target in stage ${source}`
-        ]);
-      }
-      return compileHookInstructions(condition.target);
+      return [signalInstruction(condition.source, condition.signal)];
     case "not":
       return [
-        ...compileConditionInstructions(condition.expr, source),
+        ...compileConditionInstructions(condition.expr, source, options),
         { op: "NOT" },
       ];
     case "and":
       return [
         ...condition.terms.flatMap((term) =>
-          compileConditionInstructions(term, source),
+          compileConditionInstructions(term, source, options),
         ),
         { op: "AND", arity: condition.terms.length },
       ];
     case "or":
       return [
         ...condition.terms.flatMap((term) =>
-          compileConditionInstructions(term, source),
+          compileConditionInstructions(term, source, options),
         ),
         { op: "OR", arity: condition.terms.length },
       ];
     case "delay":
       return [
-        ...compileConditionInstructions(condition.expr, source),
+        ...compileConditionInstructions(condition.expr, source, options),
         { op: "DELAY", delaySeconds: condition.durationSeconds },
       ];
     default:
@@ -557,6 +532,11 @@ function buildOnchainDependencyIndex(
 function compileExecutorRoute(
   route: HookPlanExecutorRoute,
 ): OnchainExecutorRoute {
+  if (route.executor.supplierID === undefined || route.executor.supplierID === "") {
+    throw new HookPlanCompilationError([
+      `executor route "${route.stageIdentifier}" (supplierType=${String(route.executor.supplierType)}) is missing a non-empty executor.supplierID`,
+    ]);
+  }
   const executorHash = opaqueContentHash(route.executor);
   const resourcesHash =
     route.fileResources === undefined ? ZERO_HASH : opaqueContentHash(route.fileResources);
@@ -565,7 +545,7 @@ function compileExecutorRoute(
     stageId: onchainStageId(route.stageIdentifier),
     stageIdentifier: route.stageIdentifier,
     executorType: String(route.executor.supplierType),
-    executorId: route.executor.supplierID ?? "",
+    executorId: route.executor.supplierID,
     executorHash,
     resourcesHash,
     routeHash: routeHashFromDigests(

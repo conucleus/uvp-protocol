@@ -12,7 +12,8 @@ import {
   type ZhixuDefinition,
 } from "../src/index.js";
 import { compileZhixuHookPlan, HookPlanCompilationError } from "../src/hook-plan.js";
-import { compileOnchainHookPlan } from "../src/onchain-hook-plan.js";
+import { compileOnchainHookPlan, onchainSignalId, onchainSourceId } from "../src/onchain-hook-plan.js";
+import type { HookPlanArtifact } from "../src/types/index.js";
 
 const baseZhixu: ZhixuDefinition = {
   apiVersion: "uvp/v0",
@@ -38,8 +39,6 @@ const baseZhixu: ZhixuDefinition = {
           {
             name: "assign",
             source: "buyer",
-            trigger: ["TRIGGER"],
-            externalSignals: ["TRIGGER"],
             selectedStages: ["execution.main"],
             sendSignals: ["executor_selected"],
             executor: {
@@ -55,7 +54,6 @@ const baseZhixu: ZhixuDefinition = {
           {
             name: "main",
             source: "buyer",
-            trigger: ["START"],
             receiveSignals: {
               START: "buyer::selector.assign.executor_selected",
               TIMEOUT:
@@ -91,7 +89,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
   assert.equal(
     onchain.planHash,
-    "0xcf30bd14011cbd251a6586cbc83fffae26783f93d7febe6046153da7b7a9c14d",
+    "0xa0d933660fdd1130410931194eef6b48a868ed747fd62febfaa0d0e1b735e9bf",
   );
   assert.deepEqual(onchain.selectorBindings, [
     {
@@ -163,6 +161,9 @@ test("serializes trigger-origin signal capabilities to Solidity relation 1", () 
     ...baseZhixu,
     metadata: {
       name: "trigger_origin_signal_demo",
+      annotations: {
+        version: "7"
+      },
     },
     spec: {
       ...baseZhixu.spec,
@@ -173,8 +174,6 @@ test("serializes trigger-origin signal capabilities to Solidity relation 1", () 
             {
               name: "close",
               source: "trade",
-              trigger: ["START"],
-              externalSignals: ["START"],
               sendSignals: ["book::book.settlement_wait.cmp"],
               executor: {
                 supplierType: "organization",
@@ -415,9 +414,9 @@ test("rejects invalid on-chain HookPlan artifact shapes", () => {
   );
 });
 
-test("rejects ANCHOR@ receive hooks with the typed compilation error", () => {
+test("rejects non-birth subscription receive hooks with the typed compilation error", () => {
   for (const [hookName, expression] of [
-    ["START", "::ANCHOR@(execution.main.cmp)"]
+    ["START", "::ANCHOR(@buyer::selector.assign.executor_selected)"]
   ] as const) {
     const zhixu: ZhixuDefinition = {
       ...baseZhixu,
@@ -438,12 +437,76 @@ test("rejects ANCHOR@ receive hooks with the typed compilation error", () => {
       () => compileOnchainHookPlan(compileZhixuHookPlan(zhixu)),
       (error: unknown) =>
         error instanceof HookPlanCompilationError &&
-        error.issues.some((issue) => /does not support anchor entries/.test(issue))
+        error.issues.some(
+          (issue) =>
+            /only supports subscription entries on mint birth hooks/.test(issue) &&
+            /subscription-mint-spec\.md/.test(issue)
+        )
     );
   }
 });
 
-test("encodes MERGE@ as a same-order fan-in instruction and rejects k=1", () => {
+test("compiles mint birth subscriptions into isTrigger SIGNAL hooks", () => {
+  // 出生订阅上链 = 提交事实本身即出生信号：编译为一条 SIGNAL 指令，
+  // isTrigger=true（triggerOrderFrom* 的硬门槛），提交者按
+  // "现实成立后任意持有人签名提交"开放。
+  const zhixu: ZhixuDefinition = {
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      taskPatterns: [
+        ...baseZhixu.spec.taskPatterns,
+        {
+          // 出生订阅的信号必须只被出生钩子监视（链上守卫：非出生钩子在
+          // 未物化阶段监视同一信号会让提交交易永久 revert）。
+          name: "intake",
+          stages: [
+            {
+              name: "post",
+              source: "buyer",
+              sendSignals: ["posted"],
+              executor: {
+                supplierType: "organization",
+                supplierID: "intake-exec",
+              },
+            },
+          ],
+        },
+        {
+          name: "fulfillment",
+          stages: [
+            {
+              name: "birth",
+              source: "fulfiller",
+              mint: "per-fact",
+              receiveSignals: {
+                BIRTH: "::ANCHOR(@buyer::intake.post.posted)",
+              },
+              sendSignals: ["str", "cmp", "err"],
+              executor: {
+                supplierType: "organization",
+                supplierID: "fulfiller-exec",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(zhixu));
+  const hook = onchain.compiledHooks.find((item) => item.hookName === "BIRTH");
+  assert.ok(hook, "birth hook missing from compiled plan");
+  assert.equal(hook.isTrigger, true);
+  assert.equal(hook.instructions.length, 1);
+  // 出生订阅编译为一条 SIGNAL 指令：提交的 (sourceId, signalId) 即出生事实。
+  const birth = hook.instructions[0] as OnchainSignalInstruction;
+  assert.equal(birth.op, "SIGNAL");
+  assert.equal(birth.sourceId, onchainSourceId("buyer"));
+  assert.equal(birth.signalId, onchainSignalId("intake.post.posted"));
+});
+
+test("rejects retired cross-source headers at hook-plan compilation", () => {
   const withReceive = (expression: string): ZhixuDefinition => ({
     ...baseZhixu,
     spec: {
@@ -459,28 +522,17 @@ test("encodes MERGE@ as a same-order fan-in instruction and rejects k=1", () => 
     }
   });
 
-  const merged = compileOnchainHookPlan(
-    compileZhixuHookPlan(
-      withReceive("::MERGE@(buyer::selector.assign.executor_selected, buyer::execution.main.cmp)")
-    )
-  );
-  const mergeHook = merged.compiledHooks.find((hook) =>
-    hook.instructions.some((instruction) => instruction.op === "MERGE")
-  );
-  assert.ok(mergeHook, "merge hook must compile");
-  assert.equal(
-    mergeHook.instructions.filter((instruction) => instruction.op === "SIGNAL").length,
-    2
-  );
-  const mergeInstruction = mergeHook.instructions.at(-1);
-  assert.equal(mergeInstruction?.op, "MERGE");
-  assert.equal("arity" in mergeInstruction && mergeInstruction.arity, 2);
-
   assert.throws(
-    () => compileOnchainHookPlan(compileZhixuHookPlan(withReceive("::MERGE@(buyer::execution.main.cmp)"))),
+    () => compileZhixuHookPlan(withReceive("::MERGE@(buyer::selector.assign.executor_selected, buyer::execution.main.cmp)")),
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
-      error.issues.some((issue) => /requires at least two targets/.test(issue))
+      error.issues.some((issue) => /retired in uvp-semantic\/0\.7/.test(issue))
+  );
+  assert.throws(
+    () => compileZhixuHookPlan(withReceive("::ANCHOR@(execution.main.cmp)")),
+    (error: unknown) =>
+      error instanceof HookPlanCompilationError &&
+      error.issues.some((issue) => /retired in uvp-semantic\/0\.7/.test(issue))
   );
 });
 
@@ -495,7 +547,6 @@ test("rejects a dependency key shared across stages", () => {
           stage.name === "assign"
             ? {
                 ...stage,
-                trigger: [...stage.trigger, "ECHO"],
                 receiveSignals: {
                   ECHO: "buyer::selector.assign.executor_selected"
                 }

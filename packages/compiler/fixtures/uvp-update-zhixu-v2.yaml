@@ -5,6 +5,8 @@ apiVersion: uvp/v0
 kind: Zhixu
 metadata:
   name: uvp-bootstrap-update-v2
+  annotations:
+    version: "2"
   note: |
     UVP 自举更新秩序（M1）。
     目标：通过 registrar 的跨源入口信号触发后完成 init/audit/prepare/build/deploy/verify/switch/cleanup。
@@ -22,10 +24,12 @@ spec:
       stages:
         - name: init
           source: bootstrap
-          trigger: ["TRIGGER"]
+          # 出生阶段（mint）：注册者签名提交 bootstrap/update.init.trigger
+          # 即出生事实（triggerOrderFromOutsideFor），链上 isTrigger 出生钩子。
+          mint: per-fact
           receiveSignals:
-            TRIGGER: "::OUTSIDE@(registrar::external.entry.trigger)"
-          sendSignals: ["str", "cmp", "err"]
+            TRIGGER: "bootstrap::update.init.trigger"
+          sendSignals: ["trigger", "str", "cmp", "err"]
           fileResources:
             update_spec:
               fileType: local
@@ -37,7 +41,6 @@ spec:
 
         - name: audit
           source: bootstrap
-          trigger: ["init_done"]
           receiveSignals:
             init_done: "bootstrap::update.init.cmp"
           sendSignals: ["str", "pass", "reject", "cmp", "err"]
@@ -47,7 +50,6 @@ spec:
 
         - name: prepare
           source: bootstrap
-          trigger: ["audit_pass"]
           receiveSignals:
             audit_pass: "bootstrap::update.audit.pass"
           sendSignals: ["str", "cmp", "err"]
@@ -57,7 +59,6 @@ spec:
 
         - name: build
           source: bootstrap
-          trigger: ["prepare_done"]
           receiveSignals:
             prepare_done: "bootstrap::update.prepare.cmp"
           sendSignals: ["str", "cmp", "err"]
@@ -67,7 +68,6 @@ spec:
 
         - name: deploy
           source: bootstrap
-          trigger: ["build_done"]
           receiveSignals:
             build_done: "bootstrap::update.build.cmp"
           sendSignals: ["str", "cmp", "err"]
@@ -77,7 +77,6 @@ spec:
 
         - name: verify
           source: bootstrap
-          trigger: ["deploy_done"]
           receiveSignals:
             deploy_done: "bootstrap::update.deploy.cmp"
           sendSignals: ["str", "pass", "fail", "cmp", "err"]
@@ -87,7 +86,6 @@ spec:
 
         - name: switch
           source: bootstrap
-          trigger: ["verify_pass"]
           receiveSignals:
             verify_pass: "bootstrap::update.verify.pass"
           sendSignals: ["str", "cmp", "err"]
@@ -97,7 +95,6 @@ spec:
 
         - name: cleanup
           source: bootstrap
-          trigger: ["switch_done"]
           receiveSignals:
             switch_done: "bootstrap::update.switch.cmp"
           sendSignals: ["str", "cmp", "err"]
@@ -107,7 +104,6 @@ spec:
 
         - name: rollback
           source: bootstrap
-          trigger: ["prepare_failure", "build_failure", "deploy_failure", "verify_failure", "verify_error"]
           receiveSignals:
             prepare_failure: "bootstrap::update.prepare.err"
             build_failure: "bootstrap::update.build.err"

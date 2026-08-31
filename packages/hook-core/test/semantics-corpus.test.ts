@@ -7,7 +7,7 @@ import {
   uvpCoreCompatibility
 } from "../src/index.js";
 
-const corpusUrl = new URL("../../../../uvp-core/fixtures/hook/semantics.v1.json", import.meta.url);
+const corpusUrl = new URL("../../../../uvp-core/fixtures/hook/semantics.v2.json", import.meta.url);
 
 interface Corpus {
   readonly parseCases: readonly ParseCase[];
@@ -23,7 +23,6 @@ interface ParseCase {
   readonly expect: {
     readonly source: string;
     readonly mode: string;
-    readonly upstreamSource?: string;
     readonly runtimeCondition: string;
     readonly normalizedExpression: string;
     readonly dependencies: readonly HookDependency[];
@@ -68,7 +67,6 @@ interface SignalFact {
 interface CoreParseHookOutput {
   readonly source: string;
   readonly mode: string;
-  readonly upstreamSource?: string;
   readonly runtimeCondition: string;
   readonly normalizedExpression: string;
   readonly dependencies: readonly HookDependency[];
@@ -88,7 +86,7 @@ async function loadCorpus(): Promise<Corpus> {
 test("uvp-core N-API parses hook semantic corpus", async () => {
   assert.deepEqual(uvpCoreCompatibility(), {
     coreVersion: "0.1.0",
-    semanticVersion: "uvp-semantic/0.6"
+    semanticVersion: "uvp-semantic/0.7"
   });
   const corpus = await loadCorpus();
   for (const item of corpus.parseCases) {
@@ -100,7 +98,6 @@ test("uvp-core N-API parses hook semantic corpus", async () => {
 
     assert.equal(output.source, item.expect.source, item.name);
     assert.equal(output.mode, item.expect.mode, item.name);
-    assert.equal(output.upstreamSource ?? null, item.expect.upstreamSource ?? null, item.name);
     assert.equal(output.runtimeCondition, item.expect.runtimeCondition, item.name);
     assert.equal(output.normalizedExpression, item.expect.normalizedExpression, item.name);
     assert.deepEqual(output.dependencies, item.expect.dependencies, item.name);

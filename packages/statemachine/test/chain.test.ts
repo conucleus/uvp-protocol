@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   ChainReplayMismatchError,
+  compareChainEvents,
   replayChainEvents,
   type ChainHookReadyEvent,
   type ChainModeEvent
@@ -64,6 +65,25 @@ test("chain-mode replay matches hook expectations from stable chain events", asy
   );
 });
 
+test("chain-mode ordering uses the EVM transaction index within a block", () => {
+  const first = {
+    eventName: "OrderRegistered" as const,
+    blockNumber: 10,
+    transactionIndex: 1,
+    logIndex: 0,
+    transactionHash: "0xa1" as const
+  };
+  const second = {
+    eventName: "OrderRegistered" as const,
+    blockNumber: 10,
+    transactionIndex: 2,
+    logIndex: 0,
+    transactionHash: "0xb1" as const
+  };
+
+  assert.equal(compareChainEvents(first, second) < 0, true);
+});
+
 test("chain-mode reports mismatched golden hook events", async () => {
   const events = await loadChainEvents();
   const readyIndex = events.findIndex(
@@ -78,10 +98,16 @@ test("chain-mode reports mismatched golden hook events", async () => {
     hookName: "WRONG"
   };
 
-  const result = replayChainEvents(badEvents, { strict: false });
-  assert.equal(result.mismatches.length, 1);
-  assert.equal(result.mismatches[0]?.reason, "semantic-mismatch");
-  assert.throws(() => replayChainEvents(badEvents), ChainReplayMismatchError);
+  let mismatchError: ChainReplayMismatchError | undefined;
+  try {
+    replayChainEvents(badEvents);
+  } catch (error) {
+    assert.ok(error instanceof ChainReplayMismatchError);
+    mismatchError = error;
+  }
+  assert.ok(mismatchError !== undefined, "strict replay must throw on mismatch");
+  assert.equal(mismatchError.mismatches.length, 1);
+  assert.equal(mismatchError.mismatches[0]?.reason, "semantic-mismatch");
 });
 
 test("chain-mode keeps AND delayed branches waiting until the latest live timer", () => {

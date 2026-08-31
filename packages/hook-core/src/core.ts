@@ -8,7 +8,7 @@ import {
 } from "@conucleus/uvp-core-node";
 
 export const EXPECTED_UVP_CORE_VERSION = "0.1.0" as const;
-export const EXPECTED_UVP_SEMANTIC_VERSION = "uvp-semantic/0.6" as const;
+export const EXPECTED_UVP_SEMANTIC_VERSION = "uvp-semantic/0.7" as const;
 
 export function uvpCoreCompatibility(): {
   readonly coreVersion: string;

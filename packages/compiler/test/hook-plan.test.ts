@@ -36,8 +36,6 @@ const baseZhixu: ZhixuDefinition = {
           {
             name: "assign",
             source: "buyer",
-            trigger: ["TRIGGER"],
-            externalSignals: ["TRIGGER"],
             selectedStages: ["execution.main"],
             sendSignals: ["executor_selected"],
             executor: {
@@ -53,7 +51,6 @@ const baseZhixu: ZhixuDefinition = {
           {
             name: "main",
             source: "buyer",
-            trigger: ["START"],
             receiveSignals: {
               START: "buyer::selector.assign.executor_selected",
               TIMEOUT: "buyer::(selector.assign.executor_selected +5s) & ~execution.main.cmp"
@@ -99,7 +96,10 @@ function topologyZhixu(stages: readonly ZhixuStage[]): ZhixuDefinition {
     apiVersion: "uvp/v0",
     kind: "Zhixu",
     metadata: {
-      name: "topology_zhixu"
+      name: "topology_zhixu",
+      annotations: {
+        version: "7"
+      }
     },
     spec: {
       platform: {
@@ -127,7 +127,7 @@ test("compiles internal HookPlan IR", () => {
   assert.equal(plan.version, "7");
   assert.deepEqual(plan.platform, { type: "cloud" });
   assert.equal(plan.planId, "0x472081189619bb006814fed697f3d53ff187b5a852131ba1924bde825b0b9d6d");
-  assert.equal(plan.planHash, "0x3edc41042f27cddacb67d9c7bc9eebb668c832f3abc72a0de864223ed5a14e0b");
+  assert.equal(plan.planHash, "0x8ce322fcd43821fffe3f0144838d0b23e657a7d20acf6ee6de7bdb071a340752");
   assert.equal(plan.planHash, again.planHash);
   assert.match(plan.planHash, /^0x[0-9a-f]{64}$/);
   assert.equal(plan.compiledHooks.length, 4);
@@ -170,7 +170,10 @@ test("compiles source-qualified sendSignals as trigger-origin capabilities", () 
   const plan = compileZhixuHookPlan({
     ...baseZhixu,
     metadata: {
-      name: "trigger_origin_signal_demo"
+      name: "trigger_origin_signal_demo",
+      annotations: {
+        version: "7"
+      }
     },
     spec: {
       ...baseZhixu.spec,
@@ -181,8 +184,6 @@ test("compiles source-qualified sendSignals as trigger-origin capabilities", () 
             {
               name: "close",
               source: "trade",
-              trigger: ["START"],
-              externalSignals: ["START"],
               sendSignals: ["book::book.settlement_wait.cmp"],
               executor: {
                 supplierType: "organization",
@@ -249,7 +250,7 @@ test("validates HookPlan IR artifacts at the internal boundary", () => {
   );
 });
 
-test("rejects missing trigger hook references", () => {
+test("rejects invalid mint declarations", () => {
   const invalid: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
@@ -261,8 +262,7 @@ test("rejects missing trigger hook references", () => {
             {
               name: "main",
               source: "buyer",
-              trigger: ["MISSING"],
-              externalSignals: ["TRIGGER"],
+              mint: "per-order" as unknown as "per-fact",
               executor: {
                 supplierType: "organization",
                 supplierID: "executor"
@@ -275,12 +275,13 @@ test("rejects missing trigger hook references", () => {
   };
 
   assertCompilationIssues(invalid, [
-    /broken\.main\.trigger references missing externalSignals or receiveSignals key MISSING/
+    /broken\.main\.mint only supports per-fact: per-order/
   ]);
 });
 
-test("rejects string trigger shorthand at runtime boundary", () => {
-  const invalid = {
+test("mint stages accept single-signal birth entries and isTrigger them", () => {
+  // 出生入口 hook：单正信号（外部提交事实本身即判定），链上 isTrigger=true。
+  const valid: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
@@ -291,8 +292,11 @@ test("rejects string trigger shorthand at runtime boundary", () => {
             {
               name: "main",
               source: "buyer",
-              trigger: "TRIGGER",
-              externalSignals: ["TRIGGER"],
+              mint: "per-fact",
+              receiveSignals: {
+                START: "buyer::broken.main.ready"
+              },
+              sendSignals: ["ready"],
               executor: {
                 supplierType: "organization",
                 supplierID: "executor"
@@ -302,33 +306,94 @@ test("rejects string trigger shorthand at runtime boundary", () => {
         }
       ]
     }
-  } as unknown as ZhixuDefinition;
+  };
+
+  const plan = compileZhixuHookPlan(valid);
+  const hook = plan.compiledHooks.find((item) => item.hookName === "START");
+  assert.ok(hook, "birth entry hook missing");
+  assert.equal(hook.isTrigger, true);
+});
+
+test("rejects composite birth entries on mint stages", () => {
+  const invalid: ZhixuDefinition = {
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      taskPatterns: [
+        {
+          name: "broken",
+          stages: [
+            {
+              name: "main",
+              source: "buyer",
+              mint: "per-fact",
+              receiveSignals: {
+                START: "buyer::(broken.main.ready & broken.main.ack)"
+              },
+              sendSignals: ["ready", "ack"],
+              executor: {
+                supplierType: "organization",
+                supplierID: "executor"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  };
 
   assertCompilationIssues(invalid, [
-    /invalid type: string "TRIGGER", expected a sequence/
+    /broken\.main\.receiveSignals\.START: mint stage birth entries must be a single plain signal/
   ]);
 });
 
-test("accepts trigger key list with multiple wake anchors", () => {
+test("accepts multi-anchor receive stages without an entry table", () => {
   const plan = compileZhixuHookPlan({
     ...baseZhixu,
     metadata: {
       name: "orderbook_match",
-      uid: "orderbook-match"
+      uid: "orderbook-match",
+      annotations: {
+        version: "7"
+      }
     },
     spec: {
       ...baseZhixu.spec,
       taskPatterns: [
+        {
+          // source 类是 zhixu 局部命名空间：hook 引用的 seller/buyer 必须有
+          // 声明阶段承载（引用存在性 + 本域 source 校验）。
+          name: "feed",
+          stages: [
+            {
+              name: "quote",
+              source: "seller",
+              sendSignals: ["updated"],
+              executor: {
+                supplierType: "organization",
+                supplierID: "seller-feed"
+              }
+            },
+            {
+              name: "bid",
+              source: "buyer",
+              sendSignals: ["updated"],
+              executor: {
+                supplierType: "organization",
+                supplierID: "buyer-feed"
+              }
+            }
+          ]
+        },
         {
           name: "market",
           stages: [
             {
               name: "match",
               source: "orderbook",
-              trigger: ["SELLER_UPDATED", "BUYER_UPDATED"],
               receiveSignals: {
-                SELLER_UPDATED: "seller::order.quote.updated",
-                BUYER_UPDATED: "buyer::order.bid.updated"
+                SELLER_UPDATED: "seller::feed.quote.updated",
+                BUYER_UPDATED: "buyer::feed.bid.updated"
               },
               sendSignals: ["matched"],
               executor: {
@@ -343,21 +408,24 @@ test("accepts trigger key list with multiple wake anchors", () => {
   });
 
   assert.deepEqual(plan.compiledHooks.map((hook) => [hook.hookName, hook.isTrigger]), [
-    ["BUYER_UPDATED", true],
-    ["SELLER_UPDATED", true]
+    ["BUYER_UPDATED", false],
+    ["SELLER_UPDATED", false]
   ]);
   assert.deepEqual(
     plan.compiledHooks.flatMap((hook) => hook.dependencies.map((dependency) => `${dependency.source}::${dependency.signalName}`)).sort(),
-    ["buyer::order.bid.updated", "seller::order.quote.updated"]
+    ["buyer::feed.bid.updated", "seller::feed.quote.updated"]
   );
 });
 
-test("accepts same-source trigger hook expressions with the full hook DSL", () => {
+test("accepts same-source hook expressions with the full hook DSL", () => {
   const plan = compileZhixuHookPlan({
     ...baseZhixu,
     metadata: {
       name: "same_source_trigger_condition",
-      uid: "same-source-trigger-condition"
+      uid: "same-source-trigger-condition",
+      annotations: {
+        version: "7"
+      }
     },
     spec: {
       ...baseZhixu.spec,
@@ -369,7 +437,6 @@ test("accepts same-source trigger hook expressions with the full hook DSL", () =
             {
               name: "close",
               source: "buyer",
-              trigger: ["ALL_DONE"],
               receiveSignals: {
                 ALL_DONE: "buyer::((selector.assign.executor_selected +5s) & ~execution.main.err) | execution.main.cmp"
               },
@@ -386,7 +453,7 @@ test("accepts same-source trigger hook expressions with the full hook DSL", () =
   });
 
   const hook = plan.compiledHooks.find((item) => item.stageIdentifier === "buyer.close" && item.hookName === "ALL_DONE");
-  assert.equal(hook?.isTrigger, true);
+  assert.equal(hook?.isTrigger, false);
   assert.deepEqual(
     hook?.dependencies.map((dependency) => `${dependency.kind}:${dependency.source}::${dependency.signalName}${dependency.delaySeconds ? `+${dependency.delaySeconds}` : ""}`).sort(),
     [
@@ -410,8 +477,6 @@ test("rejects unbound stages", () => {
             {
               name: "main",
               source: "buyer",
-              trigger: ["TRIGGER"],
-              externalSignals: ["TRIGGER"]
             }
           ]
         }
@@ -430,8 +495,6 @@ test("accepts executor-less selected-stage chains anchored by a static executor"
       {
         name: "a",
         source: "buyer",
-        trigger: ["TRIGGER"],
-        externalSignals: ["TRIGGER"],
         selectedStages: ["flow.b"],
         executor: {
           supplierType: "organization",
@@ -441,15 +504,11 @@ test("accepts executor-less selected-stage chains anchored by a static executor"
       {
         name: "b",
         source: "buyer",
-        trigger: ["TRIGGER"],
-        externalSignals: ["TRIGGER"],
         selectedStages: ["flow.c"]
       },
       {
         name: "c",
         source: "buyer",
-        trigger: ["TRIGGER"],
-        externalSignals: ["TRIGGER"]
       }
     ])
   );
@@ -475,15 +534,11 @@ test("rejects executor-less selected cycles without a static anchor", () => {
       {
         name: "a",
         source: "buyer",
-        trigger: ["TRIGGER"],
-        externalSignals: ["TRIGGER"],
         selectedStages: ["flow.b"]
       },
       {
         name: "b",
         source: "buyer",
-        trigger: ["TRIGGER"],
-        externalSignals: ["TRIGGER"],
         selectedStages: ["flow.a"]
       }
     ]),
@@ -500,15 +555,11 @@ test("rejects executor-less stages reached only through non-anchored selector ch
       {
         name: "a",
         source: "buyer",
-        trigger: ["TRIGGER"],
-        externalSignals: ["TRIGGER"],
         selectedStages: ["flow.b"]
       },
       {
         name: "b",
         source: "buyer",
-        trigger: ["TRIGGER"],
-        externalSignals: ["TRIGGER"]
       }
     ]),
     [
@@ -573,8 +624,6 @@ test("rejects local hook references to unknown stages or signals", () => {
             {
               name: "start",
               source: "buyer",
-              trigger: ["TRIGGER"],
-              externalSignals: ["TRIGGER"],
               sendSignals: ["cmp"],
               executor: {
                 supplierType: "organization",
@@ -584,7 +633,6 @@ test("rejects local hook references to unknown stages or signals", () => {
             {
               name: "wait",
               source: "buyer",
-              trigger: ["READY"],
               receiveSignals: {
                 READY: "buyer::flow.missing.cmp"
               },
@@ -609,8 +657,6 @@ test("rejects local hook references to unknown stages or signals", () => {
             {
               name: "start",
               source: "buyer",
-              trigger: ["TRIGGER"],
-              externalSignals: ["TRIGGER"],
               sendSignals: ["cmp"],
               executor: {
                 supplierType: "organization",
@@ -620,7 +666,6 @@ test("rejects local hook references to unknown stages or signals", () => {
             {
               name: "wait",
               source: "buyer",
-              trigger: ["READY"],
               receiveSignals: {
                 READY: "buyer::flow.start.err"
               },
@@ -655,8 +700,6 @@ test("rejects zhixu signal maps without one source", () => {
             {
               name: "main",
               source: "buyer",
-              trigger: ["TRIGGER"],
-              externalSignals: ["TRIGGER"],
               executor: {
                 supplierType: "zhixu",
                 supplierID: "peer-zhixu",
@@ -691,8 +734,6 @@ test("rejects missing or locally invalid zhixu signal maps", () => {
             {
               name: "main",
               source: "buyer",
-              trigger: ["TRIGGER"],
-              externalSignals: ["TRIGGER"],
               executor: {
                 supplierType: "zhixu",
                 supplierID: "peer-zhixu"
@@ -714,8 +755,6 @@ test("rejects missing or locally invalid zhixu signal maps", () => {
             {
               name: "main",
               source: "buyer",
-              trigger: ["TRIGGER"],
-              externalSignals: ["TRIGGER"],
               executor: {
                 supplierType: "zhixu",
                 supplierID: "peer-zhixu",
@@ -742,8 +781,6 @@ test("rejects missing or locally invalid zhixu signal maps", () => {
             {
               name: "main",
               source: "buyer",
-              trigger: ["TRIGGER"],
-              externalSignals: ["TRIGGER"],
               executor: {
                 supplierType: "zhixu",
                 supplierID: "peer-zhixu",
