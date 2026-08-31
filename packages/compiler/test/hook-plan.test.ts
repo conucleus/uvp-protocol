@@ -331,7 +331,7 @@ test("mint stages accept single ANCHOR birth subscriptions and isTrigger them", 
   assert.equal(hook.isTrigger, true);
 });
 
-test("rejects composite birth entries on mint stages", () => {
+test("rejects plain birth entries on mint stages (subscription only)", () => {
   const invalid: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
@@ -360,7 +360,7 @@ test("rejects composite birth entries on mint stages", () => {
   };
 
   assertCompilationIssues(invalid, [
-    /broken\.main\.receiveSignals\.START: mint stage birth entries must be a single plain signal/
+    /broken\.main\.receiveSignals\.START: mint stage accepts ANCHOR\(@…\) subscription entries only; plain birth-entry hooks are retired/
   ]);
 });
 

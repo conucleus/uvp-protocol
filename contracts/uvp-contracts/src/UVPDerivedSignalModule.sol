@@ -175,6 +175,17 @@ contract UVPDerivedSignalModule {
         {
             revert InvalidSignalCapability();
         }
+        // 审计 #1：capability 只查 from 订单的 plan 时，自版 plan 的攻击者
+        // 可对任意目标订单注入信号。跨订单派生（relation != 0）要求目标
+        // （origin）订单的 plan 声明同一 capability——目标侧的 plan/授权
+        // 必须参与同意。
+        if (relation != 0) {
+            bytes32 targetPlanId = stateMachine.orderPlanId(targetOrderId);
+            if (!_planMetadata().isSignalCapabilityRegistered(targetPlanId, fromStageId, targetSourceId, signalId, relation))
+            {
+                revert InvalidSignalCapability();
+            }
+        }
         if (!_isDerivedSignalSubmitterAuthorized(
                 fromOrderId, fromStageId, targetOrderId, targetSourceId, signalId, submitter
             )) {

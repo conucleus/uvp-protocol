@@ -125,9 +125,11 @@ code do not silently drift away from the contract ABI.
    digest, or `replacement` after start with a chain-visible approval signal.
 10. Executor patches constrain executor-only patch actions. Normal business
    signals still require explicit order-level authorization or a compiled
-   derived signal capability; an active executor patch does not erase existing
-   signal submitter authorizations. Prior `SignalSubmitted` events keep their
-   original submitter.
+   derived signal capability. An active executor patch supersedes the
+   previous executor for subsequent signal submissions (the prior executor
+   loses its implicit submitter rights immediately, and the patch cannot be
+   undone to restore them); explicit order-level authorizations remain
+   intact, and prior `SignalSubmitted` events keep their original submitter.
 11. A wallet authorized for `RESOURCE_PATCH_SIGNAL_ID` on a stage may apply an
     independent resource-manifest patch through `UVPStagePatchModule` for a
     target stage and resource key. The chain stores hashes, nonces, and manifest

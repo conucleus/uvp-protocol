@@ -1128,8 +1128,25 @@ contract UVPStateMachine {
         }
 
         uint256 updatedCount = seenCount;
+        // 审计 #31：同一 hook 输入内的重复 dependencyKey 先去重。重复项会
+        // 逐次推入 plan.dependencyIndex，此后该键每次信号提交都重复执行
+        // _evaluateHook N 次，N 足够大即永久 OOG。
+        uint256 inputKeyCount = 0;
+        bytes32[] memory inputKeys = new bytes32[](input.dependencyKeys.length);
         for (uint256 j = 0; j < input.dependencyKeys.length; j++) {
             bytes32 dependencyKey = input.dependencyKeys[j];
+            bool duplicatedInput = false;
+            for (uint256 k = 0; k < inputKeyCount; k++) {
+                if (inputKeys[k] == dependencyKey) {
+                    duplicatedInput = true;
+                    break;
+                }
+            }
+            if (duplicatedInput) {
+                continue;
+            }
+            inputKeys[inputKeyCount] = dependencyKey;
+            inputKeyCount += 1;
 
             // Trigger watchers crossing stages are the normal selectedStages
             // flow: the evaluation guard skips triggers of unmaterialized
