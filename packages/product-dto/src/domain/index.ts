@@ -547,6 +547,140 @@ export interface ProductTimelineEventDTO {
   readonly proofRows?: readonly ChainProofRowDTO[];
 }
 
+export type TaskEvidenceInputKind = "file" | "text" | "date";
+
+/**
+ * Structured, publisher-owned evidence requirement for one task slot.
+ * Optional and strictly additive over `requiredEvidence`: the open string
+ * array keeps its existing meaning (human-readable declarations), while
+ * `evidenceSpec` lets the zhixu publisher carry machine-readable rendering
+ * and upload constraints as data. Store surfaces must stay generic and must
+ * never hardcode business-specific labels, document types, or file formats.
+ */
+export interface TaskEvidenceSpecDTO {
+  /** Stable identifier; becomes the evidence documentType when uploaded. */
+  readonly key: string;
+  /** Publisher-provided display label. */
+  readonly label: string;
+  /** How the slot is collected. Defaults to "file". */
+  readonly inputKind?: TaskEvidenceInputKind;
+  /** Accepted file types (MIME types or extensions) for file inputs. */
+  readonly accept?: readonly string[];
+  /** Whether the slot must be satisfied. Defaults to true. */
+  readonly required?: boolean;
+  /** Optional publisher-provided explanation shown next to the slot. */
+  readonly description?: string;
+}
+
+export type TaskEvidenceSpecIssueCode =
+  | "empty_spec"
+  | "empty_key"
+  | "empty_label"
+  | "duplicate_key"
+  | "invalid_input_kind"
+  | "accept_on_non_file_input"
+  | "invalid_accept_entry";
+
+export interface TaskEvidenceSpecIssueDTO {
+  readonly code: TaskEvidenceSpecIssueCode;
+  readonly message: string;
+  readonly index?: number;
+}
+
+/**
+ * Validates an optional task evidence spec. An absent spec is valid; an
+ * empty array is not (either declare nothing or declare slots). Validation
+ * is structural only — it must never encode business-specific expectations.
+ */
+export function validateTaskEvidenceSpec(
+  spec: readonly TaskEvidenceSpecDTO[] | undefined | null,
+): readonly TaskEvidenceSpecIssueDTO[] {
+  if (spec === undefined || spec === null) {
+    return [];
+  }
+  if (!Array.isArray(spec)) {
+    return [
+      {
+        code: "empty_spec",
+        message: "evidenceSpec must be an array when present",
+      },
+    ];
+  }
+  if (spec.length === 0) {
+    return [
+      {
+        code: "empty_spec",
+        message: "evidenceSpec must declare at least one slot when present",
+      },
+    ];
+  }
+  const issues: TaskEvidenceSpecIssueDTO[] = [];
+  const seenKeys = new Set<string>();
+  spec.forEach((entry, index) => {
+    const key = typeof entry?.key === "string" ? entry.key.trim() : "";
+    if (key.length === 0) {
+      issues.push({
+        code: "empty_key",
+        message: `evidenceSpec[${index}].key must be a non-empty string`,
+        index,
+      });
+    } else if (seenKeys.has(key)) {
+      issues.push({
+        code: "duplicate_key",
+        message: `evidenceSpec[${index}].key "${key}" is duplicated`,
+        index,
+      });
+    }
+    if (key.length > 0) {
+      seenKeys.add(key);
+    }
+    const label = typeof entry?.label === "string" ? entry.label.trim() : "";
+    if (label.length === 0) {
+      issues.push({
+        code: "empty_label",
+        message: `evidenceSpec[${index}].label must be a non-empty string`,
+        index,
+      });
+    }
+    const inputKind = entry?.inputKind ?? "file";
+    if (inputKind !== "file" && inputKind !== "text" && inputKind !== "date") {
+      issues.push({
+        code: "invalid_input_kind",
+        message: `evidenceSpec[${index}].inputKind must be "file", "text", or "date"`,
+        index,
+      });
+    }
+    const accept = entry?.accept;
+    if (accept !== undefined) {
+      if (!Array.isArray(accept)) {
+        issues.push({
+          code: "invalid_accept_entry",
+          message: `evidenceSpec[${index}].accept must be an array of strings`,
+          index,
+        });
+      } else {
+        if (inputKind !== "file") {
+          issues.push({
+            code: "accept_on_non_file_input",
+            message: `evidenceSpec[${index}].accept only applies to file inputs`,
+            index,
+          });
+        }
+        accept.forEach((acceptEntry: unknown, acceptIndex: number) => {
+          if (typeof acceptEntry !== "string" || acceptEntry.trim().length === 0) {
+            issues.push({
+              code: "invalid_accept_entry",
+              message: `evidenceSpec[${index}].accept[${acceptIndex}] must be a non-empty string`,
+              index,
+            });
+          }
+        });
+      }
+    }
+  });
+  return issues;
+}
+
 export interface ProductTaskDTO {
   readonly taskId: string;
   readonly orderId: string;
@@ -563,6 +697,12 @@ export interface ProductTaskDTO {
   readonly deadline: string;
   readonly fundingImpact: string;
   readonly requiredEvidence: readonly string[];
+  /**
+   * Optional publisher-configured structured evidence requirements.
+   * Additive alternative to parsing `requiredEvidence` strings; when absent,
+   * consumers must degrade to generic evidence slots instead of rejecting.
+   */
+  readonly evidenceSpec?: readonly TaskEvidenceSpecDTO[];
   readonly status: TaskStatus;
   readonly addOnKind?: ParticipantAddOnKind;
   readonly selectableTargets?: readonly ProductSelectableTargetDTO[];

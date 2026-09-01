@@ -14,6 +14,7 @@ import {
   type ProductTaskCapabilityPluginDTO,
   type ProductTaskDTO,
   type SlotCapabilityPluginDTO,
+  type TaskEvidenceSpecDTO,
   type ZhixuDetailDTO,
   type ZhixuStageDTO
 } from "../domain/index.js";
@@ -1285,6 +1286,40 @@ export const demoResourcePatchTask: ProductTaskDTO = {
   ]
 };
 
+/**
+ * Demo evidence configuration, shaped exactly like a nucleation-core-carried
+ * evidenceSpec: the store renders it through the generic evidence path and
+ * contains no equivalent business-specific code.
+ */
+export const demoCustomsEvidenceSpec: readonly TaskEvidenceSpecDTO[] = [
+  {
+    key: "customs_declaration_pdf",
+    label: "报关单 PDF",
+    inputKind: "file",
+    accept: ["application/pdf", ".pdf"],
+    required: true,
+    description: "海关报关单扫描件，仅支持 PDF。"
+  },
+  {
+    key: "customs_declaration_no",
+    label: "报关单号",
+    inputKind: "text",
+    required: true
+  },
+  {
+    key: "export_port",
+    label: "出口港口",
+    inputKind: "text",
+    required: true
+  },
+  {
+    key: "completion_date",
+    label: "完成时间",
+    inputKind: "date",
+    required: true
+  }
+];
+
 export const demoTask: ProductTaskDTO = {
   taskId: DEMO_TASK_ID,
   orderId: DEMO_ORDER_ID,
@@ -1298,6 +1333,7 @@ export const demoTask: ProductTaskDTO = {
   deadline: "2026-05-03 18:00",
   fundingImpact: "进入验收；通过后第 2 阶段付款条件满足",
   requiredEvidence: ["报关单 PDF", "报关单号", "出口港口", "完成时间"],
+  evidenceSpec: demoCustomsEvidenceSpec,
   status: "open",
   addOnKind: "submit_signal",
   resourceRequirements: demoCustomsResourceRequirements,
