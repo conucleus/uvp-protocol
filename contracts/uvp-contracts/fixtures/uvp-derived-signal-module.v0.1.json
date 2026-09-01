@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xefc6127fc3b3cd7b650ef586aebfd70359ac6ede3311fe3fa568815c0785018b",
-    "bytecodeHash": "0x88ad51ab9e810e3e95a719f520b5f13d3f6eadb2a79caacc956e8b25dfbf7541",
-    "deployedBytecodeHash": "0x6bfd6ec58fa0742014152286e25e3faba38b49757e3cfae508924f2817ea2491",
-    "artifactHash": "0x1fb0ff8de722e8d075615b5c5ef5d8d16a8ed7d77b63cc8fa89e99aecd01e1d7"
+    "abiHash": "0xc7c7712cb4473c3bf66121507a834e124c579af9f4e103156a08687e74bed290",
+    "bytecodeHash": "0x021286eda0f6cb1c7a26aa3f335f81dff90d0d2594a46d8ea4f4545139d0adb1",
+    "deployedBytecodeHash": "0x1637790c8e8280a248517ca02556ba635ee1f4c90eff2da56ec9bb46b35802b0",
+    "artifactHash": "0x957410e24af71dda9e86ebbec739b069622d2c73305e590511b1d9c8640f1484"
   },
   "events": {
     "DerivedSignalSubmitted": {
@@ -26,20 +26,20 @@
       "selector": "0x3644e515"
     },
     "derivedSignalDigest": {
-      "signature": "derivedSignalDigest(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256)",
-      "selector": "0x50f19c24"
+      "signature": "derivedSignalDigest((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32),address,uint256)",
+      "selector": "0x33ffaf86"
     },
     "stateMachine": {
       "signature": "stateMachine()",
       "selector": "0x37b416d8"
     },
     "submitDerivedSignal": {
-      "signature": "submitDerivedSignal(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0xdd06ba25"
+      "signature": "submitDerivedSignal((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32),address)",
+      "selector": "0xd294cfff"
     },
     "submitDerivedSignalFor": {
-      "signature": "submitDerivedSignalFor(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256,bytes)",
-      "selector": "0x8c4e3cbf"
+      "signature": "submitDerivedSignalFor((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32),address,uint256,bytes)",
+      "selector": "0xb07108cd"
     }
   }
 }

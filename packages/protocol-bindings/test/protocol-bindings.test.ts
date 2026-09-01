@@ -50,6 +50,10 @@ const zeroBytes32 = bytes32("");
 const orderId = bytes32("01");
 const triggerOriginOrderId = bytes32("12");
 const planId = bytes32("13");
+const originPlanId = bytes32("18");
+const localPlanId = bytes32("19");
+const linkedPlanId = bytes32("20");
+const targetPlanId = bytes32("21");
 const triggerHookId = bytes32("14");
 const triggerStageId = bytes32("15");
 const sourceId = bytes32("02");
@@ -209,6 +213,7 @@ describe("protocol bindings", () => {
     const typedData = buildProductSubmitTypedData({
       chainId: 31337,
       verifyingContract,
+      planId,
       orderId,
       sourceId,
       signalId,
@@ -227,6 +232,7 @@ describe("protocol bindings", () => {
       },
       types: {
         UVPStateMachineSignal: [
+          { name: "planId", type: "bytes32" },
           { name: "orderId", type: "bytes32" },
           { name: "sourceId", type: "bytes32" },
           { name: "signalId", type: "bytes32" },
@@ -238,6 +244,7 @@ describe("protocol bindings", () => {
       },
       primaryType: "UVPStateMachineSignal",
       message: {
+        planId,
         orderId,
         sourceId,
         signalId,
@@ -253,6 +260,7 @@ describe("protocol bindings", () => {
     const typedData = buildProductSubmitTypedData({
       chainId: 31337,
       verifyingContract,
+      planId,
       orderId,
       sourceId,
       signalId,
@@ -279,6 +287,7 @@ describe("protocol bindings", () => {
       planId,
       creator: submitter,
       triggerOriginOrderId,
+      originPlanId,
       triggerHookId,
       triggerStageId,
       originSourceId,
@@ -302,6 +311,7 @@ describe("protocol bindings", () => {
         "planId",
         "creator",
         "triggerOriginOrderId",
+        "originPlanId",
         "triggerHookId",
         "triggerStageId",
         "originSourceId",
@@ -341,6 +351,7 @@ describe("protocol bindings", () => {
     const firstTypedData = buildStageExecutorPatchTypedData({
       chainId: 31337,
       verifyingContract,
+      planId,
       orderId,
       ...firstCase.payload,
       patchHash: firstCase.patchHash,
@@ -351,6 +362,7 @@ describe("protocol bindings", () => {
     assert.deepEqual(
       firstTypedData.types.UVPStagePatchModuleStageExecutorPatch,
       [
+        { name: "planId", type: "bytes32" },
         { name: "orderId", type: "bytes32" },
         { name: "selectorStageId", type: "bytes32" },
         { name: "targetStageId", type: "bytes32" },
@@ -377,6 +389,7 @@ describe("protocol bindings", () => {
       const typedData = buildStageExecutorPatchTypedData({
         chainId: 31337,
         verifyingContract,
+        planId,
         orderId,
         ...payload,
         patchHash,
@@ -408,6 +421,7 @@ describe("protocol bindings", () => {
     const typedData = buildStageExecutorPatchTypedData({
       chainId: 31337,
       verifyingContract,
+      planId,
       orderId,
       ...handoffExecutorPatchPayload,
       patchHash: handoffExecutorPatchHash,
@@ -441,6 +455,7 @@ describe("protocol bindings", () => {
     const typedData = buildStageResourcePatchTypedData({
       chainId: 31337,
       verifyingContract,
+      planId,
       orderId,
       selectorStageId,
       targetStageId,
@@ -458,6 +473,7 @@ describe("protocol bindings", () => {
     );
 
     assert.deepEqual(typedData.types.UVPStagePatchModuleStageResourcePatch, [
+      { name: "planId", type: "bytes32" },
       { name: "orderId", type: "bytes32" },
       { name: "selectorStageId", type: "bytes32" },
       { name: "targetStageId", type: "bytes32" },
@@ -490,6 +506,7 @@ describe("protocol bindings", () => {
         chainId: 31337,
       },
       {
+        planId,
         orderId,
         sourceId,
         signalId,
@@ -505,6 +522,7 @@ describe("protocol bindings", () => {
     assert.equal(call.abi, STATE_MACHINE_ABI);
     assert.equal(call.functionName, "submitSignalFor");
     assert.deepEqual(call.args, [
+      planId,
       orderId,
       sourceId,
       signalId,
@@ -529,6 +547,7 @@ describe("protocol bindings", () => {
         planId,
         creator: submitter,
         triggerOriginOrderId,
+        originPlanId,
         triggerHookId,
         triggerStageId,
         originSourceId,
@@ -563,8 +582,10 @@ describe("protocol bindings", () => {
         chainId: 31337,
       },
       {
+        fromPlanId: planId,
         fromOrderId: orderId,
         fromStageId: targetStageId,
+        targetPlanId,
         targetOrderId: bytes32("11"),
         targetSourceId: sourceId,
         signalId,
@@ -580,13 +601,17 @@ describe("protocol bindings", () => {
     assert.equal(call.abi, DERIVED_SIGNAL_MODULE_ABI);
     assert.equal(call.functionName, "submitDerivedSignalFor");
     assert.deepEqual(call.args, [
-      orderId,
-      targetStageId,
-      bytes32("11"),
-      sourceId,
-      signalId,
-      payloadHash,
-      idempotencyKey,
+      {
+        fromPlanId: planId,
+        fromOrderId: orderId,
+        fromStageId: targetStageId,
+        targetPlanId,
+        targetOrderId: bytes32("11"),
+        targetSourceId: sourceId,
+        signalId,
+        payloadHash,
+        idempotencyKey,
+      },
       submitter,
       BigInt(deadline),
       signature,
@@ -603,6 +628,7 @@ describe("protocol bindings", () => {
         chainId: 31337,
       },
       {
+        planId,
         orderId,
         patch: {
           ...replacementExecutorPatchPayload,
@@ -623,6 +649,7 @@ describe("protocol bindings", () => {
     assert.equal(call.abi, STAGE_PATCH_MODULE_ABI);
     assert.equal(call.functionName, "applyStageExecutorPatchFor");
     assert.deepEqual(call.args, [
+      planId,
       orderId,
       [
         selectorStageId,
@@ -646,8 +673,9 @@ describe("protocol bindings", () => {
     assert.equal(decoded.functionName, "applyStageExecutorPatchFor");
     assert.ok(decoded.args);
     const decodedArgs = decoded.args;
-    assert.equal(decodedArgs[0], orderId);
-    assert.deepEqual(decodedArgs[1], {
+    assert.equal(decodedArgs[0], planId);
+    assert.equal(decodedArgs[1], orderId);
+    assert.deepEqual(decodedArgs[2], {
       selectorStageId,
       targetStageId,
       executor,
@@ -661,10 +689,10 @@ describe("protocol bindings", () => {
       patchNonce: BigInt(replacementPatchNonce),
       metadataURI: replacementMetadataURI,
     });
-    assert.equal(String(decodedArgs[2]).toLowerCase(), submitter);
-    assert.equal(decodedArgs[3], BigInt(deadline));
-    assert.equal(decodedArgs[4], selectorSignature);
-    assert.equal(decodedArgs[5], previousExecutorSignature);
+    assert.equal(String(decodedArgs[3]).toLowerCase(), submitter);
+    assert.equal(decodedArgs[4], BigInt(deadline));
+    assert.equal(decodedArgs[5], selectorSignature);
+    assert.equal(decodedArgs[6], previousExecutorSignature);
   });
 
   it("builds applyStageResourcePatchFor calls from the stage patch module ABI", () => {
@@ -675,6 +703,7 @@ describe("protocol bindings", () => {
         chainId: 31337,
       },
       {
+        planId,
         orderId,
         patch: {
           selectorStageId,
@@ -700,6 +729,7 @@ describe("protocol bindings", () => {
     assert.equal(call.abi, STAGE_PATCH_MODULE_ABI);
     assert.equal(call.functionName, "applyStageResourcePatchFor");
     assert.deepEqual(call.args, [
+      planId,
       orderId,
       [
         selectorStageId,
@@ -718,8 +748,9 @@ describe("protocol bindings", () => {
     assert.equal(decoded.functionName, "applyStageResourcePatchFor");
     assert.ok(decoded.args);
     const decodedArgs = decoded.args;
-    assert.equal(decodedArgs[0], orderId);
-    assert.deepEqual(decodedArgs[1], {
+    assert.equal(decodedArgs[0], planId);
+    assert.equal(decodedArgs[1], orderId);
+    assert.deepEqual(decodedArgs[2], {
       selectorStageId,
       targetStageId,
       resourceKey,
@@ -729,9 +760,9 @@ describe("protocol bindings", () => {
       patchNonce: BigInt(resourcePatchNonce),
       manifestURI,
     });
-    assert.equal(String(decodedArgs[2]).toLowerCase(), submitter);
-    assert.equal(decodedArgs[3], BigInt(deadline));
-    assert.equal(decodedArgs[4], signature);
+    assert.equal(String(decodedArgs[3]).toLowerCase(), submitter);
+    assert.equal(decodedArgs[4], BigInt(deadline));
+    assert.equal(decodedArgs[5], signature);
   });
 
   it("hashes canonical JSON in a browser-safe helper", () => {

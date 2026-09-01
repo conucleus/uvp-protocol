@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x8a8680c13e119eff59098bd0f2bed2a357deedba1f6673c84b3c7b800c033b10",
-    "bytecodeHash": "0x2c6fce39509351b2fdafaefd5f3f7f53b26d44187b04c69239c2e600f985d0f2",
-    "deployedBytecodeHash": "0x803a64062b89a735f668e9201be2a8dc541cf2fce9f0dde37b1d762443f77c08",
-    "artifactHash": "0x549289e79dc77a2cc271764a84fe27672440b639d3340d7e62d0a37ce0228c28"
+    "abiHash": "0x09c07882359abeaad0b7404ec4b9926f9f4ce769e3ce83b2103da3c237aaddae",
+    "bytecodeHash": "0x19bbb0bcb10498c62b05ba37321efac5f07ab7c6516d181f5313516c27e5f8ca",
+    "deployedBytecodeHash": "0x5843db75bfa019d5e876a6cea68f9ef54457597ee224134e23868ac3725edafc",
+    "artifactHash": "0x84058b1d1dccf183331c4cb34d2daec361589db70652eb7f3424933d2867434c"
   },
   "events": {
     "HookReady": {
@@ -138,20 +138,20 @@
       "selector": "0x3d5f9dc0"
     },
     "activateStageExecutorFromModule": {
-      "signature": "activateStageExecutorFromModule(bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string)",
-      "selector": "0x6aa44d6b"
+      "signature": "activateStageExecutorFromModule(bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string)",
+      "selector": "0x734db05f"
     },
     "activeStageExecutor": {
-      "signature": "activeStageExecutor(bytes32,bytes32)",
-      "selector": "0x3f7d1763"
+      "signature": "activeStageExecutor(bytes32,bytes32,bytes32)",
+      "selector": "0x43d35f65"
     },
     "commitPlan": {
       "signature": "commitPlan((address,bytes32,bytes32,uint256),(bytes32,bytes32,bytes32,bool,(uint8,bytes32,bytes32,uint16,uint64)[],bytes32[])[],bytes)",
       "selector": "0x110656b1"
     },
     "delegateStageExecutorSignalFromModule": {
-      "signature": "delegateStageExecutorSignalFromModule(bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256)",
-      "selector": "0x31cb941f"
+      "signature": "delegateStageExecutorSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256)",
+      "selector": "0xf24853ff"
     },
     "derivedSignalModule": {
       "signature": "derivedSignalModule()",
@@ -170,36 +170,40 @@
       "selector": "0x5f981c96"
     },
     "getHookStatus": {
-      "signature": "getHookStatus(bytes32,bytes32)",
-      "selector": "0x98400245"
+      "signature": "getHookStatus(bytes32,bytes32,bytes32)",
+      "selector": "0x00f8f7ac"
     },
     "getSignal": {
-      "signature": "getSignal(bytes32,bytes32,bytes32)",
-      "selector": "0x5fb8cc9a"
+      "signature": "getSignal(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x68ed97f3"
     },
     "getSignalAuthorization": {
-      "signature": "getSignalAuthorization(bytes32,bytes32,bytes32,address)",
-      "selector": "0x4e11d0c6"
+      "signature": "getSignalAuthorization(bytes32,bytes32,bytes32,bytes32,address)",
+      "selector": "0x1fcc4e88"
     },
     "hasExplicitSignalAuthorization": {
-      "signature": "hasExplicitSignalAuthorization(bytes32,bytes32,bytes32,address)",
-      "selector": "0xe3ddb012"
+      "signature": "hasExplicitSignalAuthorization(bytes32,bytes32,bytes32,bytes32,address)",
+      "selector": "0x119ed4ee"
     },
     "hasSignal": {
-      "signature": "hasSignal(bytes32,bytes32,bytes32)",
-      "selector": "0x75a2f5a3"
+      "signature": "hasSignal(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x0a35000a"
     },
     "hasSourceSignal": {
-      "signature": "hasSourceSignal(bytes32,bytes32)",
-      "selector": "0x5101772a"
+      "signature": "hasSourceSignal(bytes32,bytes32,bytes32)",
+      "selector": "0xca69a3e9"
+    },
+    "hasTriggerOriginConsent": {
+      "signature": "hasTriggerOriginConsent(bytes32,bytes32,bytes32,bytes32,address)",
+      "selector": "0x387f0d5c"
     },
     "isSignalSubmitterAuthorized": {
-      "signature": "isSignalSubmitterAuthorized(bytes32,bytes32,bytes32,address)",
-      "selector": "0x700603d1"
+      "signature": "isSignalSubmitterAuthorized(bytes32,bytes32,bytes32,bytes32,address)",
+      "selector": "0x86fe4ed3"
     },
     "lastSignalSubmitter": {
-      "signature": "lastSignalSubmitter(bytes32,bytes32)",
-      "selector": "0xb11cc0c6"
+      "signature": "lastSignalSubmitter(bytes32,bytes32,bytes32)",
+      "selector": "0x80ab3979"
     },
     "lens": {
       "signature": "lens()",
@@ -214,24 +218,20 @@
       "selector": "0xb3e056f9"
     },
     "orderCreator": {
-      "signature": "orderCreator(bytes32)",
-      "selector": "0xcf2941f6"
+      "signature": "orderCreator(bytes32,bytes32)",
+      "selector": "0xeca6e954"
     },
     "orderExists": {
-      "signature": "orderExists(bytes32)",
-      "selector": "0x2cb77e9f"
+      "signature": "orderExists(bytes32,bytes32)",
+      "selector": "0xabfd253f"
     },
     "orderLinkModule": {
       "signature": "orderLinkModule()",
       "selector": "0x1d2103c0"
     },
-    "orderPlanId": {
-      "signature": "orderPlanId(bytes32)",
-      "selector": "0x0ae76940"
-    },
     "orderRelayer": {
-      "signature": "orderRelayer(bytes32)",
-      "selector": "0xa0ce1abb"
+      "signature": "orderRelayer(bytes32,bytes32)",
+      "selector": "0xd5fa735d"
     },
     "owner": {
       "signature": "owner()",
@@ -270,8 +270,8 @@
       "selector": "0xfb0cafac"
     },
     "pokeTimer": {
-      "signature": "pokeTimer(bytes32,bytes32)",
-      "selector": "0x0cab733b"
+      "signature": "pokeTimer(bytes32,bytes32,bytes32)",
+      "selector": "0x1e0bb81e"
     },
     "setDerivedSignalModule": {
       "signature": "setDerivedSignalModule(address)",
@@ -298,24 +298,24 @@
       "selector": "0x61e22a35"
     },
     "sourceSignalCount": {
-      "signature": "sourceSignalCount(bytes32,bytes32)",
-      "selector": "0x489810cc"
+      "signature": "sourceSignalCount(bytes32,bytes32,bytes32)",
+      "selector": "0xca201c09"
     },
     "stagePatchModule": {
       "signature": "stagePatchModule()",
       "selector": "0xfa894dec"
     },
     "submitSignal": {
-      "signature": "submitSignal(bytes32,bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0x2748e1f9"
+      "signature": "submitSignal(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x53f0218d"
     },
     "submitSignalFor": {
-      "signature": "submitSignalFor(bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256,bytes)",
-      "selector": "0xa7e12b50"
+      "signature": "submitSignalFor(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256,bytes)",
+      "selector": "0xc7ddf965"
     },
     "submitSignalFromModule": {
-      "signature": "submitSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,address)",
-      "selector": "0x2cc6001f"
+      "signature": "submitSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
+      "selector": "0xf00cfbca"
     },
     "transferOwnership": {
       "signature": "transferOwnership(address)",
@@ -326,8 +326,8 @@
       "selector": "0x30f89979"
     },
     "triggerOrderFromSignalFromModule": {
-      "signature": "triggerOrderFromSignalFromModule((bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),(bytes32,bytes32,address,bytes32,bytes32)[],address)",
-      "selector": "0xad571e02"
+      "signature": "triggerOrderFromSignalFromModule((bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),(bytes32,bytes32,address,bytes32,bytes32)[],address)",
+      "selector": "0xddfd54e9"
     }
   }
 }

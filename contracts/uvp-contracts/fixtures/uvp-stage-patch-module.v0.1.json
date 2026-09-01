@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xebad31459f33ef008f14556290beda82081ef7e972c9a0b32ea63b280e3a45cf",
-    "bytecodeHash": "0x6b3675cb367048758dc8a3f221f939049f74a288ffac1e60cc0f4f6b2435a8ad",
-    "deployedBytecodeHash": "0xd3df0ea16d4c9c6ca2331877908f69250466a86f8df347bffbba4b0c99b19f57",
-    "artifactHash": "0xd9fd1d746d4697c47be155212cf8ccf10b17c560684c7553e7f06c03a87aa6fd"
+    "abiHash": "0x21f846706c42e64f88717b585c0f30416ff760ba485f7fb528f89724d21d4aa6",
+    "bytecodeHash": "0x2f7d1e80abbf65a6d06af39fe9b42a2633ebb3127c842f96ffc00ba35b413e01",
+    "deployedBytecodeHash": "0x1355af1b06e37ce1fc12811725bc97fe82a96cc84213e5c3ecf119b6e6ad97a0",
+    "artifactHash": "0x0ad032dd9e734215d91badb37ce5edafe64c63a54e94d9cc725cf19bfba00da4"
   },
   "events": {
     "StageExecutorPatchApplied": {
@@ -50,48 +50,48 @@
       "selector": "0xfe5e196c"
     },
     "activeStageExecutor": {
-      "signature": "activeStageExecutor(bytes32,bytes32)",
-      "selector": "0x3f7d1763"
+      "signature": "activeStageExecutor(bytes32,bytes32,bytes32)",
+      "selector": "0x43d35f65"
     },
     "applyStageExecutorPatch": {
-      "signature": "applyStageExecutorPatch(bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string))",
-      "selector": "0x8d0e1737"
+      "signature": "applyStageExecutorPatch(bytes32,bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string))",
+      "selector": "0xda397dfa"
     },
     "applyStageExecutorPatchFor": {
-      "signature": "applyStageExecutorPatchFor(bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string),address,uint256,bytes,bytes)",
-      "selector": "0x2ea9f6dd"
+      "signature": "applyStageExecutorPatchFor(bytes32,bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string),address,uint256,bytes,bytes)",
+      "selector": "0x7934f740"
     },
     "applyStageResourcePatch": {
-      "signature": "applyStageResourcePatch(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string))",
-      "selector": "0xe3484181"
+      "signature": "applyStageResourcePatch(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string))",
+      "selector": "0x39f7e6ea"
     },
     "applyStageResourcePatchFor": {
-      "signature": "applyStageResourcePatchFor(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string),address,uint256,bytes)",
-      "selector": "0xb0e6e7c1"
+      "signature": "applyStageResourcePatchFor(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string),address,uint256,bytes)",
+      "selector": "0x22faae3a"
     },
     "getActiveStageExecutorPatch": {
-      "signature": "getActiveStageExecutorPatch(bytes32,bytes32)",
-      "selector": "0x6334d2a8"
+      "signature": "getActiveStageExecutorPatch(bytes32,bytes32,bytes32)",
+      "selector": "0x1ae5b35a"
     },
     "getActiveStageResourcePatch": {
-      "signature": "getActiveStageResourcePatch(bytes32,bytes32,bytes32)",
-      "selector": "0x901cfaaf"
+      "signature": "getActiveStageResourcePatch(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0xddfae56d"
     },
     "orderStageExecutorPatchNonce": {
-      "signature": "orderStageExecutorPatchNonce(bytes32,bytes32)",
-      "selector": "0x9b7efdef"
+      "signature": "orderStageExecutorPatchNonce(bytes32,bytes32,bytes32)",
+      "selector": "0x14f3eb90"
     },
     "orderStageResourcePatchNonce": {
-      "signature": "orderStageResourcePatchNonce(bytes32,bytes32,bytes32)",
-      "selector": "0x0a27a10a"
+      "signature": "orderStageResourcePatchNonce(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x4ca77733"
     },
     "stageExecutorPatchDigest": {
-      "signature": "stageExecutorPatchDigest(bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string),address,uint256)",
-      "selector": "0xb5df2947"
+      "signature": "stageExecutorPatchDigest(bytes32,bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string),address,uint256)",
+      "selector": "0x8c9382dc"
     },
     "stageResourcePatchDigest": {
-      "signature": "stageResourcePatchDigest(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string),address,uint256)",
-      "selector": "0x51e10c7d"
+      "signature": "stageResourcePatchDigest(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string),address,uint256)",
+      "selector": "0x055a32d3"
     },
     "stateMachine": {
       "signature": "stateMachine()",

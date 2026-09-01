@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xf7b790b890f761673154bc195abe3bb7efea2e21957abdc4244cdef40b7e5103",
-    "bytecodeHash": "0xd6f6f91af73e267cf782a2f5b147193d5b63d0dd9e362456d4fdeffc82e29c35",
-    "deployedBytecodeHash": "0xb34a2da3344d5ebc527cde342edeeb9e06bb6b11f8857e1b6a09ac0bfa1f6c28",
-    "artifactHash": "0xa1d03d59ea8592de19336274c336e0915c9bbaf45c16da2f6c8de6b5bcb7c005"
+    "abiHash": "0xaeed6a23f02659020cd38b53c655bd28b9849972c2215f6e0a568e6141106a39",
+    "bytecodeHash": "0xa14ee3961020c05592c5f300e6e86dccb5383325399db665229a1abe4417c179",
+    "deployedBytecodeHash": "0x6e90adbad17a4eaee455dbecc54e2912edaf3e45b5150942a6c701290b5eecf3",
+    "artifactHash": "0x45ad0b85feac7ff510131e971db9551f52eff5d33f9cdae05352d1302cac8fba"
   },
   "events": {
     "DockedOrderLinked": {
@@ -38,36 +38,36 @@
       "selector": "0x3644e515"
     },
     "dockedOrderLinkDigest": {
-      "signature": "dockedOrderLinkDigest(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string,(bytes32,bytes32,bytes32,bytes32)[]),address,uint256)",
-      "selector": "0xcdbceef9"
+      "signature": "dockedOrderLinkDigest(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string,(bytes32,bytes32,bytes32,bytes32)[]),address,uint256)",
+      "selector": "0xf3f7822d"
     },
     "getActiveDockedOrderLink": {
-      "signature": "getActiveDockedOrderLink(bytes32,bytes32)",
-      "selector": "0x1c1579c8"
+      "signature": "getActiveDockedOrderLink(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x5425d832"
     },
     "getActiveDockedSignalBinding": {
-      "signature": "getActiveDockedSignalBinding(bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0x73ca8690"
+      "signature": "getActiveDockedSignalBinding(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x6c13df4e"
     },
     "linkDockedOrder": {
-      "signature": "linkDockedOrder(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string,(bytes32,bytes32,bytes32,bytes32)[]))",
-      "selector": "0xfe900c04"
+      "signature": "linkDockedOrder(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string,(bytes32,bytes32,bytes32,bytes32)[]))",
+      "selector": "0x1d8a242a"
     },
     "linkDockedOrderFor": {
-      "signature": "linkDockedOrderFor(bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string,(bytes32,bytes32,bytes32,bytes32)[]),address,uint256,bytes)",
-      "selector": "0xd089e907"
+      "signature": "linkDockedOrderFor(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string,(bytes32,bytes32,bytes32,bytes32)[]),address,uint256,bytes)",
+      "selector": "0x753f1176"
     },
     "orderDockedOrderLinkNonce": {
-      "signature": "orderDockedOrderLinkNonce(bytes32,bytes32)",
-      "selector": "0x68767215"
+      "signature": "orderDockedOrderLinkNonce(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x226b5224"
     },
     "stateMachine": {
       "signature": "stateMachine()",
       "selector": "0x37b416d8"
     },
     "submitDockedSignal": {
-      "signature": "submitDockedSignal(bytes32,bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0x418063e1"
+      "signature": "submitDockedSignal(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x9b1d5c2f"
     }
   }
 }

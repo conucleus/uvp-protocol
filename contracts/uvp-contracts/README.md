@@ -144,7 +144,13 @@ code do not silently drift away from the contract ABI.
 13. `triggerOrderFromOutsideFor` and `triggerOrderFromSignalFor` create orders
     through signed trigger paths. Signal-triggered orders record a trigger-origin
     link so `UVPDerivedSignalModule` can write declared signals back to the
-    trigger-origin order.
+    trigger-origin order. Establishing a trigger link requires origin-side
+    consent: the EIP-712 submitter or the executing relayer must hold standing
+    on the origin order — as its creator, as the active stage executor of the
+    origin source stage, or as an authorized submitter of the exact origin
+    fact (`hasTriggerOriginConsent`). A foreign plan mirroring the origin
+    plan's public capability declarations without that standing cannot
+    register the link nor mint the derived order.
 14. The state machine evaluates compact hook instructions, emits
     `HookStatusChanged`, `HookReady`, and `TimerPoked`, and can be replayed from
     events by `statemachine` and `chain-services`.
@@ -152,6 +158,22 @@ code do not silently drift away from the contract ABI.
 `registerOrder` is not a public business ABI in v0.8. New order creation
 must pass through a trigger-order entrypoint so order materialization and the
 first trigger fact share one chain transaction and one business signer.
+
+### Order identity is (planId, orderId)
+
+Since the audit-unfreeze batch, order storage is addressed by the composite
+`(planId, orderId)` key across the state machine and every module
+(order-link, docking, stage-patch views included). An `orderId` alone is not
+a global key: two plans can each own an order with the same `orderId` without
+colliding, and no entry point can address one plan's order by presenting
+another plan's id. Replay idempotency is unchanged — within one plan, a
+second registration of the same `orderId` still reverts with
+`OrderAlreadyRegistered`. Off-chain order-id derivation formulas must fold
+`planId` into their domain so derived order ids are plan-scoped by
+construction. Function signatures gained a leading `planId` parameter (and
+the from-signal trigger request gained `originPlanId`); this is the
+new-version surface of the unfreeze batch, while event signatures and their
+semantics are unchanged.
 
 ## Stable Events
 

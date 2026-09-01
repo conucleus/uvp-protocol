@@ -65,6 +65,7 @@ contract UVPDockingModule {
     error ZeroLinkedOrderId();
     error ZeroLinkedPlanId();
     error ZeroLinkHash();
+    error ZeroLocalOrderId();
     error ZeroSelector();
     error ZeroSelectorStageId();
     error ZeroSignalId();
@@ -78,15 +79,33 @@ contract UVPDockingModule {
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _EIP712_NAME_HASH = keccak256("UVPDockingModule");
     bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.1");
+    // 审计 #10：摘要新增 localPlanId 字段（新版本口径），docking 链接签名
+    // 绑定本地订单的 (planId, orderId) 复合身份。
     bytes32 private constant _DOCKED_ORDER_LINK_TYPEHASH = keccak256(
-        "UVPDockingModuleDockedOrderLink(bytes32 localOrderId,bytes32 selectorStageId,bytes32 localSourceId,bytes32 linkedOrderId,bytes32 linkedPlanId,bytes32 linkHash,uint256 linkNonce,bytes32 signalBindingsHash,string metadataURI,address selector,uint256 deadline)"
+        "UVPDockingModuleDockedOrderLink(bytes32 localPlanId,bytes32 localOrderId,bytes32 selectorStageId,bytes32 localSourceId,bytes32 linkedOrderId,bytes32 linkedPlanId,bytes32 linkHash,uint256 linkNonce,bytes32 signalBindingsHash,string metadataURI,address selector,uint256 deadline)"
     );
 
-    mapping(bytes32 localOrderId => mapping(bytes32 linkedOrderId => ActiveDockedOrderLink link)) private
-        _activeDockedOrderLinks;
+    // 审计 #10：链接存储按 (localPlanId, localOrderId, linkedPlanId,
+    // linkedOrderId) 寻址；不同 plan 下同 id 订单的 docking 链接互不冲突。
     mapping(
-        bytes32 localOrderId
-            => mapping(bytes32 linkedOrderId => mapping(bytes32 linkedSignalKey => ActiveDockedSignalBinding binding))
+        bytes32 localPlanId
+            => mapping(
+                bytes32 localOrderId
+                    => mapping(bytes32 linkedPlanId => mapping(bytes32 linkedOrderId => ActiveDockedOrderLink link))
+            )
+    ) private _activeDockedOrderLinks;
+    mapping(
+        bytes32 localPlanId
+            => mapping(
+                bytes32 localOrderId
+                    => mapping(
+                        bytes32 linkedPlanId
+                            => mapping(
+                                bytes32 linkedOrderId
+                                    => mapping(bytes32 linkedSignalKey => ActiveDockedSignalBinding binding)
+                            )
+                    )
+            )
     ) private _activeDockedSignalBindings;
 
     event DockedOrderLinked(
@@ -123,11 +142,12 @@ contract UVPDockingModule {
         stateMachine = IUVPStateMachineCore(stateMachineAddress);
     }
 
-    function linkDockedOrder(bytes32 localOrderId, DockedOrderLink calldata link) external {
-        _linkDockedOrder(localOrderId, link, msg.sender);
+    function linkDockedOrder(bytes32 localPlanId, bytes32 localOrderId, DockedOrderLink calldata link) external {
+        _linkDockedOrder(localPlanId, localOrderId, link, msg.sender);
     }
 
     function linkDockedOrderFor(
+        bytes32 localPlanId,
         bytes32 localOrderId,
         DockedOrderLink calldata link,
         address selector,
@@ -142,40 +162,44 @@ contract UVPDockingModule {
         }
 
         address recoveredSigner =
-            _recoverDockedOrderLinkSelector(dockedOrderLinkDigest(localOrderId, link, selector, deadline), signature);
+            _recoverDockedOrderLinkSelector(dockedOrderLinkDigest(localPlanId, localOrderId, link, selector, deadline), signature);
         if (recoveredSigner != selector) {
             revert InvalidDockedOrderLinkSignature(selector, recoveredSigner);
         }
 
-        _linkDockedOrder(localOrderId, link, selector);
+        _linkDockedOrder(localPlanId, localOrderId, link, selector);
     }
 
     function submitDockedSignal(
+        bytes32 localPlanId,
         bytes32 localOrderId,
+        bytes32 linkedPlanId,
         bytes32 linkedOrderId,
         bytes32 linkedSourceId,
         bytes32 linkedSignalId,
         bytes32 idempotencyKey
     ) external {
-        ActiveDockedOrderLink storage dockedLink = _activeDockedOrderLinks[localOrderId][linkedOrderId];
+        ActiveDockedOrderLink storage dockedLink =
+            _activeDockedOrderLinks[localPlanId][localOrderId][linkedPlanId][linkedOrderId];
         if (!dockedLink.exists) {
             revert UnknownDockedOrderLink(localOrderId, linkedOrderId);
         }
 
         (bool linkedSignalExists, bytes32 payloadHash,,, address submitter) =
-            stateMachine.getSignal(linkedOrderId, linkedSourceId, linkedSignalId);
+            stateMachine.getSignal(linkedPlanId, linkedOrderId, linkedSourceId, linkedSignalId);
         if (!linkedSignalExists) {
             revert DockedSignalBindingNotFound(localOrderId, linkedOrderId, linkedSourceId, linkedSignalId);
         }
 
-        ActiveDockedSignalBinding storage binding =
-            _activeDockedSignalBindings[localOrderId][linkedOrderId][_signalKey(linkedSourceId, linkedSignalId)];
+        ActiveDockedSignalBinding storage binding = _activeDockedSignalBindings[localPlanId][localOrderId][linkedPlanId][
+            linkedOrderId
+        ][_signalKey(linkedSourceId, linkedSignalId)];
         if (!binding.exists) {
             revert DockedSignalBindingNotFound(localOrderId, linkedOrderId, linkedSourceId, linkedSignalId);
         }
 
         stateMachine.submitSignalFromModule(
-            localOrderId, binding.localSourceId, binding.localSignalId, payloadHash, idempotencyKey, submitter
+            localPlanId, localOrderId, binding.localSourceId, binding.localSignalId, payloadHash, idempotencyKey, submitter
         );
         emit DockedSignalSubmitted(
             localOrderId,
@@ -189,30 +213,40 @@ contract UVPDockingModule {
         );
     }
 
-    function orderDockedOrderLinkNonce(bytes32 localOrderId, bytes32 linkedOrderId) external view returns (uint256) {
-        return _activeDockedOrderLinks[localOrderId][linkedOrderId].linkNonce;
+    function orderDockedOrderLinkNonce(
+        bytes32 localPlanId,
+        bytes32 localOrderId,
+        bytes32 linkedPlanId,
+        bytes32 linkedOrderId
+    ) external view returns (uint256) {
+        return _activeDockedOrderLinks[localPlanId][localOrderId][linkedPlanId][linkedOrderId].linkNonce;
     }
 
-    function getActiveDockedOrderLink(bytes32 localOrderId, bytes32 linkedOrderId)
+    // 返回元组不再重复 linkedPlanId：它已是入参并在存储中校验一致。
+    function getActiveDockedOrderLink(
+        bytes32 localPlanId,
+        bytes32 localOrderId,
+        bytes32 linkedPlanId,
+        bytes32 linkedOrderId
+    )
         external
         view
         returns (
             bool exists,
             bytes32 selectorStageId,
             bytes32 localSourceId,
-            bytes32 linkedPlanId,
             address selector,
             bytes32 linkHash,
             uint256 linkNonce,
             string memory metadataURI
         )
     {
-        ActiveDockedOrderLink storage activeLink = _activeDockedOrderLinks[localOrderId][linkedOrderId];
+        ActiveDockedOrderLink storage activeLink =
+            _activeDockedOrderLinks[localPlanId][localOrderId][linkedPlanId][linkedOrderId];
         return (
             activeLink.exists,
             activeLink.selectorStageId,
             activeLink.localSourceId,
-            activeLink.linkedPlanId,
             activeLink.selector,
             activeLink.linkHash,
             activeLink.linkNonce,
@@ -221,14 +255,16 @@ contract UVPDockingModule {
     }
 
     function getActiveDockedSignalBinding(
+        bytes32 localPlanId,
         bytes32 localOrderId,
+        bytes32 linkedPlanId,
         bytes32 linkedOrderId,
         bytes32 linkedSourceId,
         bytes32 linkedSignalId
     ) external view returns (bool exists, bytes32 localSourceId, bytes32 localSignalId) {
-        ActiveDockedSignalBinding storage binding = _activeDockedSignalBindings[
-            localOrderId
-        ][linkedOrderId][_signalKey(linkedSourceId, linkedSignalId)];
+        ActiveDockedSignalBinding storage binding = _activeDockedSignalBindings[localPlanId][localOrderId][linkedPlanId][
+            linkedOrderId
+        ][_signalKey(linkedSourceId, linkedSignalId)];
         return (binding.exists, binding.localSourceId, binding.localSignalId);
     }
 
@@ -239,6 +275,7 @@ contract UVPDockingModule {
     }
 
     function dockedOrderLinkDigest(
+        bytes32 localPlanId,
         bytes32 localOrderId,
         DockedOrderLink calldata link,
         address selector,
@@ -247,6 +284,7 @@ contract UVPDockingModule {
         bytes32 structHash = keccak256(
             abi.encode(
                 _DOCKED_ORDER_LINK_TYPEHASH,
+                localPlanId,
                 localOrderId,
                 link.selectorStageId,
                 link.localSourceId,
@@ -263,9 +301,14 @@ contract UVPDockingModule {
         return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
     }
 
-    function _linkDockedOrder(bytes32 localOrderId, DockedOrderLink calldata link, address selector) private {
+    function _linkDockedOrder(bytes32 localPlanId, bytes32 localOrderId, DockedOrderLink calldata link, address selector)
+        private
+    {
         if (selector == address(0)) {
             revert ZeroSelector();
+        }
+        if (localOrderId == bytes32(0)) {
+            revert ZeroLocalOrderId();
         }
         if (link.selectorStageId == bytes32(0)) {
             revert ZeroSelectorStageId();
@@ -282,27 +325,26 @@ contract UVPDockingModule {
         if (link.linkHash == bytes32(0)) {
             revert ZeroLinkHash();
         }
-        if (!stateMachine.orderExists(localOrderId)) {
+        // 审计 #10：本地与对端订单都按 (planId, orderId) 复合键验证存在性；
+        // 对端订单存在性检查同时证明其 plan 归属与 link.linkedPlanId 一致。
+        if (!stateMachine.orderExists(localPlanId, localOrderId)) {
             revert UnknownOrder();
         }
-        if (
-            !stateMachine.orderExists(link.linkedOrderId)
-                || stateMachine.orderPlanId(link.linkedOrderId) != link.linkedPlanId
-        ) {
+        if (!stateMachine.orderExists(link.linkedPlanId, link.linkedOrderId)) {
             revert UnknownLinkedOrder(link.linkedOrderId);
         }
 
-        bytes32 localPlanId = stateMachine.orderPlanId(localOrderId);
         if (!_planMetadata().isStageSelectorBound(localPlanId, link.selectorStageId, link.localSourceId)) {
             revert StageSelectorBindingNotFound(localPlanId, link.selectorStageId, link.localSourceId);
         }
         if (!stateMachine.hasExplicitSignalAuthorization(
-                localOrderId, link.selectorStageId, DOCKED_ORDER_LINK_SIGNAL_ID, selector
+                localPlanId, localOrderId, link.selectorStageId, DOCKED_ORDER_LINK_SIGNAL_ID, selector
             )) {
             revert UnauthorizedDockedOrderLinkSelector(localOrderId, link.selectorStageId, selector);
         }
 
-        ActiveDockedOrderLink storage activeLink = _activeDockedOrderLinks[localOrderId][link.linkedOrderId];
+        ActiveDockedOrderLink storage activeLink =
+            _activeDockedOrderLinks[localPlanId][localOrderId][link.linkedPlanId][link.linkedOrderId];
         if (link.linkNonce <= activeLink.linkNonce) {
             revert DockedOrderLinkNonceNotIncreasing(
                 localOrderId, link.linkedOrderId, activeLink.linkNonce, link.linkNonce
@@ -331,12 +373,14 @@ contract UVPDockingModule {
         );
 
         for (uint256 i = 0; i < link.signalBindings.length; i++) {
-            _activateDockedSignalBinding(localOrderId, link.linkedOrderId, link.signalBindings[i]);
+            _activateDockedSignalBinding(localPlanId, localOrderId, link.linkedPlanId, link.linkedOrderId, link.signalBindings[i]);
         }
     }
 
     function _activateDockedSignalBinding(
+        bytes32 localPlanId,
         bytes32 localOrderId,
+        bytes32 linkedPlanId,
         bytes32 linkedOrderId,
         DockedSignalBinding calldata binding
     ) private {
@@ -347,9 +391,10 @@ contract UVPDockingModule {
             revert ZeroSignalId();
         }
 
-        ActiveDockedSignalBinding storage activeBinding = _activeDockedSignalBindings[
-            localOrderId
-        ][linkedOrderId][_signalKey(binding.linkedSourceId, binding.linkedSignalId)];
+        ActiveDockedSignalBinding storage activeBinding =
+            _activeDockedSignalBindings[localPlanId][localOrderId][linkedPlanId][linkedOrderId][
+                _signalKey(binding.linkedSourceId, binding.linkedSignalId)
+            ];
 
         activeBinding.localSourceId = binding.localSourceId;
         activeBinding.localSignalId = binding.localSignalId;

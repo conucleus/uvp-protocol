@@ -9,32 +9,32 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x93788917f2af02dca20c7c9c4263995994dbbee45203a6c4e34900055056b3ab",
-    "bytecodeHash": "0xd7b8ff9aa487b020694e442dcba64a2c5ad70cfe24429127c41a58a099a4128f",
-    "deployedBytecodeHash": "0xa2354ad4fb869b394b689853c36ba7fcb465ce00a57dec65984795a3a58d7c98",
-    "artifactHash": "0x8016cb6e86d75a26c92456aaa48d610df1341bea4ea12a3d27d0d601535904b7"
+    "abiHash": "0x592c5f7e649d5405c63c41882dcba1e1ba3768fd5e85758ecf08f2bed59e2199",
+    "bytecodeHash": "0x26d75f21a347c22239b97c2500a8c1545fda3f5faebdcdc8fd0c51470e12594e",
+    "deployedBytecodeHash": "0x0f9a07b30c00e439b1522ef4a896dadb12f0e07ab7b7a6de222ecaa203dd537d",
+    "artifactHash": "0x5d44bc62a4535978931000b5b6f5e11d35d2be9050c259d87eaaf9a4e802cfda"
   },
   "events": {},
   "functions": {
     "getActiveDockedOrderLink": {
-      "signature": "getActiveDockedOrderLink(bytes32,bytes32)",
-      "selector": "0x1c1579c8"
+      "signature": "getActiveDockedOrderLink(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x5425d832"
     },
     "getActiveDockedSignalBinding": {
-      "signature": "getActiveDockedSignalBinding(bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0x73ca8690"
+      "signature": "getActiveDockedSignalBinding(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x6c13df4e"
     },
     "getActiveStageExecutorPatch": {
-      "signature": "getActiveStageExecutorPatch(bytes32,bytes32)",
-      "selector": "0x6334d2a8"
+      "signature": "getActiveStageExecutorPatch(bytes32,bytes32,bytes32)",
+      "selector": "0x1ae5b35a"
     },
     "getActiveStageResourcePatch": {
-      "signature": "getActiveStageResourcePatch(bytes32,bytes32,bytes32)",
-      "selector": "0x901cfaaf"
+      "signature": "getActiveStageResourcePatch(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0xddfae56d"
     },
     "getTriggerOriginLink": {
-      "signature": "getTriggerOriginLink(bytes32)",
-      "selector": "0x97481ae8"
+      "signature": "getTriggerOriginLink(bytes32,bytes32)",
+      "selector": "0x94e59116"
     },
     "isSelectorTargetStage": {
       "signature": "isSelectorTargetStage(bytes32,bytes32)",
@@ -65,8 +65,8 @@
       "selector": "0x37b416d8"
     },
     "targetOrderRelation": {
-      "signature": "targetOrderRelation(bytes32,bytes32)",
-      "selector": "0x4b019097"
+      "signature": "targetOrderRelation(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x6c4da396"
     }
   }
 }

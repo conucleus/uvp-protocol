@@ -16,7 +16,10 @@ interface IUVPPlanMetadataModuleForDerivedSignal {
 }
 
 interface IUVPOrderLinkModuleForDerivedSignal {
-    function targetOrderRelation(bytes32 fromOrderId, bytes32 targetOrderId) external view returns (uint8);
+    function targetOrderRelation(bytes32 fromPlanId, bytes32 fromOrderId, bytes32 targetPlanId, bytes32 targetOrderId)
+        external
+        view
+        returns (uint8);
 }
 
 contract UVPDerivedSignalModule {
@@ -37,8 +40,10 @@ contract UVPDerivedSignalModule {
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _EIP712_NAME_HASH = keccak256("UVPDerivedSignalModule");
     bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.6");
+    // 审计 #10：摘要新增 fromPlanId / targetPlanId（新版本口径），派生信号
+    // 的两端都绑定 (planId, orderId) 复合身份。
     bytes32 private constant _DERIVED_SIGNAL_TYPEHASH = keccak256(
-        "UVPDerivedSignalModuleSignal(bytes32 fromOrderId,bytes32 fromStageId,bytes32 targetOrderId,bytes32 targetSourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
+        "UVPDerivedSignalModuleSignal(bytes32 fromPlanId,bytes32 fromOrderId,bytes32 fromStageId,bytes32 targetPlanId,bytes32 targetOrderId,bytes32 targetSourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
     );
 
     event DerivedSignalSubmitted(
@@ -52,32 +57,32 @@ contract UVPDerivedSignalModule {
         address submitter
     );
 
+    // 审计 #10 解冻批次（新版本口径）：公开入参收敛为 request 结构体——
+    // 派生信号两端都绑定 (planId, orderId) 复合身份，fromPlanId/targetPlanId
+    // 为新增字段。与 TriggerOrderFromSignalRequest 同构，避免过深函数栈。
+    struct DerivedSignalRequest {
+        bytes32 fromPlanId;
+        bytes32 fromOrderId;
+        bytes32 fromStageId;
+        bytes32 targetPlanId;
+        bytes32 targetOrderId;
+        bytes32 targetSourceId;
+        bytes32 signalId;
+        bytes32 payloadHash;
+        bytes32 idempotencyKey;
+    }
+
     constructor(address stateMachineAddress) {
         stateMachine = IUVPStateMachineCore(stateMachineAddress);
     }
 
-    function submitDerivedSignal(
-        bytes32 fromOrderId,
-        bytes32 fromStageId,
-        bytes32 targetOrderId,
-        bytes32 targetSourceId,
-        bytes32 signalId,
-        bytes32 payloadHash,
-        bytes32 idempotencyKey
-    ) external {
-        _submitDerivedSignal(
-            fromOrderId, fromStageId, targetOrderId, targetSourceId, signalId, payloadHash, idempotencyKey, msg.sender
-        );
+    function submitDerivedSignal(DerivedSignalRequest calldata request, address submitter) external {
+        _validateDerivedSignal(request, submitter);
+        _executeDerivedSignal(request, submitter);
     }
 
     function submitDerivedSignalFor(
-        bytes32 fromOrderId,
-        bytes32 fromStageId,
-        bytes32 targetOrderId,
-        bytes32 targetSourceId,
-        bytes32 signalId,
-        bytes32 payloadHash,
-        bytes32 idempotencyKey,
+        DerivedSignalRequest calldata request,
         address submitter,
         uint256 deadline,
         bytes calldata signature
@@ -89,27 +94,13 @@ contract UVPDerivedSignalModule {
             revert ZeroSubmitter();
         }
 
-        address recoveredSigner = _recoverSignalSubmitter(
-            derivedSignalDigest(
-                fromOrderId,
-                fromStageId,
-                targetOrderId,
-                targetSourceId,
-                signalId,
-                payloadHash,
-                idempotencyKey,
-                submitter,
-                deadline
-            ),
-            signature
-        );
+        address recoveredSigner = _recoverSignalSubmitter(derivedSignalDigest(request, submitter, deadline), signature);
         if (recoveredSigner != submitter) {
             revert InvalidSignalSignature(submitter, recoveredSigner);
         }
 
-        _submitDerivedSignal(
-            fromOrderId, fromStageId, targetOrderId, targetSourceId, signalId, payloadHash, idempotencyKey, submitter
-        );
+        _validateDerivedSignal(request, submitter);
+        _executeDerivedSignal(request, submitter);
     }
 
     function DOMAIN_SEPARATOR() public view returns (bytes32) {
@@ -118,27 +109,23 @@ contract UVPDerivedSignalModule {
         );
     }
 
-    function derivedSignalDigest(
-        bytes32 fromOrderId,
-        bytes32 fromStageId,
-        bytes32 targetOrderId,
-        bytes32 targetSourceId,
-        bytes32 signalId,
-        bytes32 payloadHash,
-        bytes32 idempotencyKey,
-        address submitter,
-        uint256 deadline
-    ) public view returns (bytes32) {
+    function derivedSignalDigest(DerivedSignalRequest calldata request, address submitter, uint256 deadline)
+        public
+        view
+        returns (bytes32)
+    {
         bytes32 structHash = keccak256(
             abi.encode(
                 _DERIVED_SIGNAL_TYPEHASH,
-                fromOrderId,
-                fromStageId,
-                targetOrderId,
-                targetSourceId,
-                signalId,
-                payloadHash,
-                idempotencyKey,
+                request.fromPlanId,
+                request.fromOrderId,
+                request.fromStageId,
+                request.targetPlanId,
+                request.targetOrderId,
+                request.targetSourceId,
+                request.signalId,
+                request.payloadHash,
+                request.idempotencyKey,
                 submitter,
                 deadline
             )
@@ -146,84 +133,86 @@ contract UVPDerivedSignalModule {
         return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
     }
 
-    function _submitDerivedSignal(
-        bytes32 fromOrderId,
-        bytes32 fromStageId,
-        bytes32 targetOrderId,
-        bytes32 targetSourceId,
-        bytes32 signalId,
-        bytes32 payloadHash,
-        bytes32 idempotencyKey,
-        address submitter
-    ) private {
-        if (fromStageId == bytes32(0)) {
+    function _executeDerivedSignal(DerivedSignalRequest calldata request, address submitter) private {
+        stateMachine.submitSignalFromModule(
+            request.targetPlanId, request.targetOrderId, request.targetSourceId, request.signalId, request.payloadHash,
+            request.idempotencyKey, submitter
+        );
+        emit DerivedSignalSubmitted(
+            request.fromOrderId, request.targetOrderId, request.signalId, request.fromStageId, request.targetSourceId,
+            request.payloadHash, request.idempotencyKey, submitter
+        );
+    }
+
+    function _validateDerivedSignal(DerivedSignalRequest calldata request, address submitter) private view {
+        if (request.fromStageId == bytes32(0)) {
             revert ZeroTargetStageId();
         }
-        if (targetSourceId == bytes32(0)) {
+        if (request.targetSourceId == bytes32(0)) {
             revert ZeroSourceId();
         }
-        if (signalId == bytes32(0)) {
+        if (request.signalId == bytes32(0)) {
             revert ZeroSignalId();
         }
-        if (!stateMachine.orderExists(fromOrderId) || !stateMachine.orderExists(targetOrderId)) {
+        // 审计 #10：两端订单都按 (planId, orderId) 复合键验证存在性——
+        // 调用方声明的 plan 归属必须与链上存储一致。
+        if (
+            !stateMachine.orderExists(request.fromPlanId, request.fromOrderId)
+                || !stateMachine.orderExists(request.targetPlanId, request.targetOrderId)
+        ) {
             revert UnknownOrder();
         }
 
-        uint8 relation = _targetOrderRelation(fromOrderId, targetOrderId);
-        bytes32 fromPlanId = stateMachine.orderPlanId(fromOrderId);
-        if (!_planMetadata().isSignalCapabilityRegistered(fromPlanId, fromStageId, targetSourceId, signalId, relation))
         {
-            revert InvalidSignalCapability();
-        }
-        // 审计 #1：capability 只查 from 订单的 plan 时，自版 plan 的攻击者
-        // 可对任意目标订单注入信号。跨订单派生（relation != 0）要求目标
-        // （origin）订单的 plan 声明同一 capability——目标侧的 plan/授权
-        // 必须参与同意。
-        if (relation != 0) {
-            bytes32 targetPlanId = stateMachine.orderPlanId(targetOrderId);
-            if (!_planMetadata().isSignalCapabilityRegistered(targetPlanId, fromStageId, targetSourceId, signalId, relation))
-            {
+            uint8 relation = _targetOrderRelation(request.fromPlanId, request.fromOrderId, request.targetPlanId, request.targetOrderId);
+            if (
+                !_planMetadata().isSignalCapabilityRegistered(
+                    request.fromPlanId, request.fromStageId, request.targetSourceId, request.signalId, relation
+                )
+            ) {
                 revert InvalidSignalCapability();
             }
+            // 审计 #1：capability 只查 from 订单的 plan 时，自版 plan 的攻击者
+            // 可对任意目标订单注入信号。跨订单派生（relation != 0）要求目标
+            // （origin）订单的 plan 声明同一 capability——目标侧的 plan/授权
+            // 必须参与同意。
+            if (relation != 0) {
+                if (
+                    !_planMetadata().isSignalCapabilityRegistered(
+                        request.targetPlanId, request.fromStageId, request.targetSourceId, request.signalId, relation
+                    )
+                ) {
+                    revert InvalidSignalCapability();
+                }
+            }
         }
-        if (!_isDerivedSignalSubmitterAuthorized(
-                fromOrderId, fromStageId, targetOrderId, targetSourceId, signalId, submitter
-            )) {
-            revert UnauthorizedSignalSubmitter(targetOrderId, targetSourceId, signalId, submitter);
+        // 提交者授权：from 侧 active executor，或 from/target 任一侧对
+        // (sourceId, signalId, submitter) 的显式授权（审计 #10：全部按
+        // (planId, orderId) 寻址）。
+        if (
+            stateMachine.activeStageExecutor(request.fromPlanId, request.fromOrderId, request.fromStageId) != submitter
+                && !stateMachine.hasExplicitSignalAuthorization(
+                    request.targetPlanId, request.targetOrderId, request.targetSourceId, request.signalId, submitter
+                )
+                && !stateMachine.hasExplicitSignalAuthorization(
+                    request.fromPlanId, request.fromOrderId, request.fromStageId, request.signalId, submitter
+                )
+        ) {
+            revert UnauthorizedSignalSubmitter(request.targetOrderId, request.targetSourceId, request.signalId, submitter);
         }
-
-        stateMachine.submitSignalFromModule(
-            targetOrderId, targetSourceId, signalId, payloadHash, idempotencyKey, submitter
-        );
-        emit DerivedSignalSubmitted(
-            fromOrderId, targetOrderId, signalId, fromStageId, targetSourceId, payloadHash, idempotencyKey, submitter
-        );
     }
 
-    function _isDerivedSignalSubmitterAuthorized(
+    function _targetOrderRelation(
+        bytes32 fromPlanId,
         bytes32 fromOrderId,
-        bytes32 fromStageId,
-        bytes32 targetOrderId,
-        bytes32 targetSourceId,
-        bytes32 signalId,
-        address submitter
-    ) private view returns (bool) {
-        if (submitter == address(0)) {
-            return false;
-        }
-        if (stateMachine.activeStageExecutor(fromOrderId, fromStageId) == submitter) {
-            return true;
-        }
-        return stateMachine.hasExplicitSignalAuthorization(targetOrderId, targetSourceId, signalId, submitter)
-            || stateMachine.hasExplicitSignalAuthorization(fromOrderId, fromStageId, signalId, submitter);
-    }
-
-    function _targetOrderRelation(bytes32 fromOrderId, bytes32 targetOrderId) private view returns (uint8) {
-        if (fromOrderId == targetOrderId) {
+        bytes32 targetPlanId,
+        bytes32 targetOrderId
+    ) private view returns (uint8) {
+        if (fromPlanId == targetPlanId && fromOrderId == targetOrderId) {
             return 0;
         }
         return IUVPOrderLinkModuleForDerivedSignal(stateMachine.orderLinkModule())
-            .targetOrderRelation(fromOrderId, targetOrderId);
+            .targetOrderRelation(fromPlanId, fromOrderId, targetPlanId, targetOrderId);
     }
 
     function _planMetadata() private view returns (IUVPPlanMetadataModuleForDerivedSignal) {
