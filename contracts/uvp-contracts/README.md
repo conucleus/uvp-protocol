@@ -75,7 +75,7 @@ the TypeScript `statemachine` oracle.
   `submitSignal`, `submitSignalFor`, module configuration, module-only
   writebacks, `signalSubmissionDigest`,
   `signalAuthorizationsHash`, trigger-order digest helpers,
-  `DOMAIN_SEPARATOR`, `pokeTimer`, `orderPlanId`, `getHookStatus`,
+  `DOMAIN_SEPARATOR`, `pokeTimer`, `getHookStatus`,
   `isSignalSubmitterAuthorized`, `getSignalAuthorization`, executor patch mode
   constants, `DOCKED_ORDER_LINK_SIGNAL_ID`, signal target relation constants,
   `sourceSignalCount`, `lastSignalSubmitter`, stage-overlay view helpers,
@@ -201,8 +201,6 @@ Indexer and replay tooling should treat these event names as public interfaces:
 - `HookStatusChanged`
 - `HookReady`
 - `TimerPoked`
-- `DeploymentRecorded`
-- `DeploymentStatusChanged`
 
 ## Hook State Machine
 
