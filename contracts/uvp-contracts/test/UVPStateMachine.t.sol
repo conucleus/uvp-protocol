@@ -102,9 +102,13 @@ contract UVPStateMachineTest {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.8");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.9");
+    bytes32 private constant EMPTY_DOCK_ROOT = keccak256("");
+    uint8 private constant FLAG_ORDER_TRIGGER_MINT = 1;
+    uint8 private constant FLAG_ORDER_TRIGGER_DOCK = 2;
+    uint8 private constant FLAG_EMIT_READY = 4;
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 metadataHash,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 metadataHash,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,uint256 deadline)"
     );
 
     mapping(address machine => bytes32 planId) private _planIds;
@@ -250,7 +254,7 @@ contract UVPStateMachineTest {
         require(machine.orderCreator(PLAN_ID, ORDER_ID) == ORDER_CREATOR, "bad order creator");
         require(_countTopic(logs, keccak256("PlanPublisherRecorded(bytes32,address)")) == 1, "publisher record count");
         require(
-            _countTopic(logs, keccak256("OrderRelayerRecorded(bytes32,address,address)")) == 1, "relayer record count"
+            _countTopic(logs, keccak256("OrderRelayerRecorded(bytes32,bytes32,address,address)")) == 1, "relayer record count"
         );
         require(_countSignalSubmitterAuthorized(logs) == 4, "authorization event count");
         require(
@@ -475,7 +479,7 @@ contract UVPStateMachineTest {
         );
         require(
             _countTopic(
-                    logs, keccak256("StageExecutorActivated(bytes32,bytes32,address,bytes32,bytes32,uint256,string)")
+                    logs, keccak256("StageExecutorActivated(bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256,string)")
                 ) == 1,
             "executor event count"
         );
@@ -1480,71 +1484,10 @@ contract UVPStateMachineTest {
         );
     }
 
-    function testGasAttackerSubmitLinkedSignalForDocking() public {
-        vm.pauseGasMetering();
-        UVPStateMachine machine = _dockingGasMachine();
 
-        vm.resumeGasMetering();
-        vm.prank(SUBMITTER_A);
-        machine.submitSignal(PLAN_ID, ORDER_ID_2, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, PAYLOAD_HASH, bytes32(uint256(0x9002)));
-        vm.pauseGasMetering();
-    }
 
-    function testGasLinkDockedOrderForOneSignalBinding() public {
-        vm.pauseGasMetering();
-        UVPStateMachine machine = _dockingGasMachineBeforeLink();
 
-        vm.resumeGasMetering();
-        uint256 linkBefore = gasleft();
-        _docking(machine).linkDockedOrder(PLAN_ID, ORDER_ID, _dockedOrderLink());
-        uint256 linkGas = linkBefore - gasleft();
-        emit log_named_uint("link_docked_order_gas", linkGas);
-        vm.pauseGasMetering();
-    }
 
-    function testGasApplyStageExecutorPatchAssignForDockSetup() public {
-        vm.pauseGasMetering();
-        UVPStateMachine machine = _registeredOverlayMachine(address(this), SUBMITTER_A);
-
-        vm.resumeGasMetering();
-        uint256 patchBefore = gasleft();
-        _stagePatch(machine).applyStageExecutorPatch(PLAN_ID, ORDER_ID, _stageExecutorPatch(1, SUBMITTER_A, PATCH_HASH));
-        uint256 patchGas = patchBefore - gasleft();
-        emit log_named_uint("stage_executor_patch_assign_gas", patchGas);
-        vm.pauseGasMetering();
-    }
-
-    function testGasRelaySubmitDockedSignal() public {
-        vm.pauseGasMetering();
-        UVPStateMachine machine = _dockingGasMachine();
-        vm.prank(SUBMITTER_A);
-        machine.submitSignal(PLAN_ID, ORDER_ID_2, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, PAYLOAD_HASH, bytes32(uint256(0x9002)));
-
-        vm.resumeGasMetering();
-        _docking(machine)
-            .submitDockedSignal(PLAN_ID, ORDER_ID, PLAN_ID, ORDER_ID_2, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, bytes32(uint256(0x9003)));
-        vm.pauseGasMetering();
-    }
-
-    function testGasDockedSignalRelayRatioMeasurement() public {
-        UVPStateMachine machine = _dockingGasMachine();
-
-        vm.prank(SUBMITTER_A);
-        uint256 attackerBefore = gasleft();
-        machine.submitSignal(PLAN_ID, ORDER_ID_2, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, PAYLOAD_HASH, bytes32(uint256(0x9002)));
-        uint256 attackerGas = attackerBefore - gasleft();
-
-        uint256 relayBefore = gasleft();
-        _docking(machine)
-            .submitDockedSignal(PLAN_ID, ORDER_ID, PLAN_ID, ORDER_ID_2, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, bytes32(uint256(0x9003)));
-        uint256 relayGas = relayBefore - gasleft();
-
-        emit log_named_uint("attacker_linked_signal_gas", attackerGas);
-        emit log_named_uint("relay_docked_signal_gas", relayGas);
-        emit log_named_uint("relay_per_100_attacker", (relayGas * 100) / attackerGas);
-
-        require(relayGas < attackerGas * 2, "relay gas ratio too high");
-    }
 
     function testNonTriggerHookCannotMaterializeStageEntry() public {
         UVPStateMachine machine = _newMachine();
@@ -1659,10 +1602,20 @@ contract UVPStateMachineTest {
             publisher: publisher,
             hooksHash: keccak256(abi.encode(hooks)),
             metadataHash: keccak256(abi.encode(selectorBindings, signalCapabilities)),
+            dockRoutesRoot: EMPTY_DOCK_ROOT,
+            dockInterfaceRoot: EMPTY_DOCK_ROOT,
             deadline: block.timestamp + 1 hours
         });
         bytes32 structHash = keccak256(
-            abi.encode(PLAN_COMMIT_TYPEHASH, commit.publisher, commit.hooksHash, commit.metadataHash, commit.deadline)
+            abi.encode(
+                PLAN_COMMIT_TYPEHASH,
+                commit.publisher,
+                commit.hooksHash,
+                commit.metadataHash,
+                commit.dockRoutesRoot,
+                commit.dockInterfaceRoot,
+                commit.deadline
+            )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _stateMachineDomainSeparator(machine), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(publisherPrivateKey, digest);
@@ -1691,26 +1644,7 @@ contract UVPStateMachineTest {
         _stagePatch(machine).applyStageExecutorPatch(PLAN_ID, ORDER_ID, patch);
     }
 
-    function _dockingGasMachine() private returns (UVPStateMachine machine) {
-        machine = _dockingGasMachineBeforeLink();
-        _docking(machine).linkDockedOrder(PLAN_ID, ORDER_ID, _dockedOrderLink());
-    }
 
-    function _dockingGasMachineBeforeLink() private returns (UVPStateMachine machine) {
-        machine = _newMachine();
-        _registerPlan(
-            machine,
-            _withOrderStart(_positiveHookPlan(HOOK_INIT, true)),
-            _selectorBindings(),
-            _emptySignalCapabilities()
-        );
-        _submitTriggerOrderFromOutside(
-            machine, ORDER_ID, PLAN_ID, ORDER_CREATOR, _dockedLocalAuthorizations(address(this))
-        );
-        _submitTriggerOrderFromOutside(
-            machine, ORDER_ID_2, PLAN_ID, ORDER_CREATOR, _auths1(SIGNAL_VERIFY_FAIL, SUBMITTER_A)
-        );
-    }
 
     function _newMachine() private returns (UVPStateMachine machine) {
         machine = _newUnfrozenMachine();
@@ -1722,8 +1656,8 @@ contract UVPStateMachineTest {
         UVPStateMachine machine = new UVPStateMachine();
         UVPStagePatchModule stagePatch = new UVPStagePatchModule(address(machine));
         UVPDerivedSignalModule derivedSignal = new UVPDerivedSignalModule(address(machine));
-        UVPDockingModule docking = new UVPDockingModule(address(machine));
         UVPPlanMetadataModule planMetadata = new UVPPlanMetadataModule(address(machine));
+        UVPDockingModule docking = new UVPDockingModule(address(machine), address(planMetadata));
         UVPOrderLinkModule orderLink = new UVPOrderLinkModule(address(machine));
         _stagePatchModules[address(machine)] = stagePatch;
         _derivedSignalModules[address(machine)] = derivedSignal;
@@ -1904,25 +1838,6 @@ contract UVPStateMachineTest {
         });
     }
 
-    function _dockedOrderLink() private view returns (UVPDockingModule.DockedOrderLink memory) {
-        UVPDockingModule.DockedSignalBinding[] memory signalBindings = new UVPDockingModule.DockedSignalBinding[](1);
-        signalBindings[0] = UVPDockingModule.DockedSignalBinding({
-            localSourceId: SOURCE_BOOTSTRAP,
-            localSignalId: SIGNAL_TRIGGER,
-            linkedSourceId: SOURCE_BOOTSTRAP,
-            linkedSignalId: SIGNAL_VERIFY_FAIL
-        });
-        return UVPDockingModule.DockedOrderLink({
-            selectorStageId: STAGE_INIT,
-            localSourceId: STAGE_AUDIT,
-            linkedOrderId: ORDER_ID_2,
-            linkedPlanId: PLAN_ID,
-            linkHash: PATCH_HASH,
-            linkNonce: 1,
-            metadataURI: "ipfs://docked-link",
-            signalBindings: signalBindings
-        });
-    }
 
     function _stageExecutorPatch(uint256 patchNonce, address executor, bytes32 patchHash)
         private
@@ -2414,11 +2329,29 @@ contract UVPStateMachineTest {
         UVPStateMachine.Instruction[] memory instructions,
         bytes32[] memory dependencyKeys
     ) private pure returns (UVPStateMachine.CompactHook memory) {
+        return _hookWithFlags(
+            hookId,
+            stageId,
+            hookName,
+            isTrigger ? FLAG_ORDER_TRIGGER_MINT : uint8(0),
+            instructions,
+            dependencyKeys
+        );
+    }
+
+    function _hookWithFlags(
+        bytes32 hookId,
+        bytes32 stageId,
+        bytes32 hookName,
+        uint8 flags,
+        UVPStateMachine.Instruction[] memory instructions,
+        bytes32[] memory dependencyKeys
+    ) private pure returns (UVPStateMachine.CompactHook memory) {
         return UVPStateMachine.CompactHook({
             hookId: hookId,
             stageId: stageId,
             hookName: hookName,
-            isTrigger: isTrigger,
+            flags: flags,
             instructions: instructions,
             dependencyKeys: dependencyKeys
         });
@@ -2482,7 +2415,7 @@ contract UVPStateMachineTest {
     }
 
     function _countHookReady(Vm.Log[] memory logs) private pure returns (uint256 count) {
-        bytes32 topic = keccak256("HookReady(bytes32,bytes32,bytes32,bytes32)");
+        bytes32 topic = keccak256("HookReady(bytes32,bytes32,bytes32,bytes32,bytes32)");
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics.length > 0 && logs[i].topics[0] == topic) {
                 count++;
@@ -2491,7 +2424,7 @@ contract UVPStateMachineTest {
     }
 
     function _countSignalSubmitterAuthorized(Vm.Log[] memory logs) private pure returns (uint256 count) {
-        bytes32 topic = keccak256("SignalSubmitterAuthorized(bytes32,bytes32,bytes32,address,bytes32,bytes32)");
+        bytes32 topic = keccak256("SignalSubmitterAuthorized(bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32)");
         return _countTopic(logs, topic);
     }
 

@@ -3,7 +3,8 @@ import {
   HOOK_PLAN_SCHEMA_VERSION,
   type HookPlanArtifact,
   type ZhixuPlatform,
-  type ZhixuDefinition
+  type ZhixuDefinition,
+  type DockResolutionManifest,
 } from "./types/index.js";
 
 export class HookPlanCompilationError extends Error {
@@ -35,7 +36,10 @@ export function compareByCodeUnit(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-export function compileZhixuHookPlan(definition: ZhixuDefinition): HookPlanArtifact {
+export function compileZhixuHookPlan(
+  definition: ZhixuDefinition,
+  resolutionManifest?: DockResolutionManifest,
+): HookPlanArtifact {
   const issues = validateZhixuShape(definition);
   if (issues.length > 0) {
     throw new HookPlanCompilationError(issues);
@@ -43,7 +47,13 @@ export function compileZhixuHookPlan(definition: ZhixuDefinition): HookPlanArtif
 
   let artifact: unknown;
   try {
-    artifact = compileWithUvpCore({ target: "hook_plan", definition });
+    artifact = compileWithUvpCore({
+      target: "hook_plan",
+      definition,
+      ...(resolutionManifest === undefined
+        ? {}
+        : { resolutionManifest }),
+    });
   } catch (error) {
     throw new HookPlanCompilationError([
       error instanceof Error ? error.message : String(error)
@@ -84,6 +94,11 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
   if (!isRecord(value.executorRoutes)) {
     issues.push("executorRoutes must be an object");
   }
+  if (!Array.isArray(value.dockRoutes)) {
+    issues.push("dockRoutes must be an array");
+  }
+  expectHexHash(value.dockRoutesRoot as unknown, "dockRoutesRoot", issues);
+  expectHexHash(value.dockInterfaceRoot as unknown, "dockInterfaceRoot", issues);
   if (!Array.isArray(value.selectedStageBindings)) {
     issues.push("selectedStageBindings must be an array");
   }
@@ -147,10 +162,16 @@ function validateCompiledHooks(hooks: readonly unknown[]): readonly string[] {
     }
     const prefix = `compiledHooks[${index}]`;
     expectNonEmptyString(hook.hookId, `${prefix}.hookId`, issues);
-    expectOneOf(hook.kind, ["receive", "signalMap"], `${prefix}.kind`, issues);
+    expectOneOf(hook.kind, ["receive"], `${prefix}.kind`, issues);
     expectNonEmptyString(hook.stageIdentifier, `${prefix}.stageIdentifier`, issues);
     expectNonEmptyString(hook.hookName, `${prefix}.hookName`, issues);
-    expectBoolean(hook.isTrigger, `${prefix}.isTrigger`, issues);
+    expectOneOf(
+      hook.orderTriggerKind,
+      ["none", "mint", "dock"],
+      `${prefix}.orderTriggerKind`,
+      issues,
+    );
+    expectBoolean(hook.emitReady, `${prefix}.emitReady`, issues);
     expectNonEmptyString(hook.rawExpression, `${prefix}.rawExpression`, issues);
     expectNonEmptyString(hook.normalizedExpression, `${prefix}.normalizedExpression`, issues);
     if (!isRecord(hook.ast)) {

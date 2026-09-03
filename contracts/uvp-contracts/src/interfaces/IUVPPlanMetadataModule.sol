@@ -17,8 +17,21 @@ interface IUVPPlanMetadataModule {
     function finalizePlanMetadata(
         bytes32 planId,
         StageSelectorBinding[] calldata selectorBindings,
-        SignalCapability[] calldata signalCapabilities
+        SignalCapability[] calldata signalCapabilities,
+        bytes32 dockRoutesRoot,
+        bytes32 dockInterfaceRoot
     ) external;
+
+    function dockRoutesRoot(bytes32 planId) external view returns (bytes32);
+
+    function dockInterfaceRoot(bytes32 planId) external view returns (bytes32);
+
+    function verifyDockRoute(bytes32 planId, bytes32 leaf, bytes32[] calldata proof) external view returns (bool);
+
+    function verifyDockInterfacePort(bytes32 planId, bytes32 leaf, bytes32[] calldata proof)
+        external
+        view
+        returns (bool);
 
     function isSelectorTargetStage(bytes32 planId, bytes32 targetStageId) external view returns (bool);
 }

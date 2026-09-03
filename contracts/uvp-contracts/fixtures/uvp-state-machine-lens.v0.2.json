@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStateMachineLens",
-  "abiVersion": "0.1",
+  "abiVersion": "0.2",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStateMachineLens.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStateMachineLens.sol/UVPStateMachineLens.json",
   "compiler": {
@@ -9,20 +9,24 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x592c5f7e649d5405c63c41882dcba1e1ba3768fd5e85758ecf08f2bed59e2199",
-    "bytecodeHash": "0x26d75f21a347c22239b97c2500a8c1545fda3f5faebdcdc8fd0c51470e12594e",
-    "deployedBytecodeHash": "0x0f9a07b30c00e439b1522ef4a896dadb12f0e07ab7b7a6de222ecaa203dd537d",
-    "artifactHash": "0x5d44bc62a4535978931000b5b6f5e11d35d2be9050c259d87eaaf9a4e802cfda"
+    "abiHash": "0xc6be17ed23b1352cc20171130d5052cf996cd9a276665b380d41775d79f51c3d",
+    "bytecodeHash": "0xe7b84bb803961f2f3466fd87acd0874889855ab1b47a8dd9ae603f1627a2038e",
+    "deployedBytecodeHash": "0x31e03a6d7fe5bf265e4736127eb71373a7aba744a49318484368cb31698ac20d",
+    "artifactHash": "0xb8aaf419d425c049cc25e987c891764ade37a78a395396287a68d1396a09ab31"
   },
   "events": {},
   "functions": {
-    "getActiveDockedOrderLink": {
-      "signature": "getActiveDockedOrderLink(bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0x5425d832"
+    "dockInputDelivered": {
+      "signature": "dockInputDelivered(bytes32,bytes32)",
+      "selector": "0x291da6de"
     },
-    "getActiveDockedSignalBinding": {
-      "signature": "getActiveDockedSignalBinding(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0x6c13df4e"
+    "dockOutputDelivered": {
+      "signature": "dockOutputDelivered(bytes32,bytes32)",
+      "selector": "0x04919a6e"
+    },
+    "getActiveDock": {
+      "signature": "getActiveDock(bytes32)",
+      "selector": "0xc6206738"
     },
     "getActiveStageExecutorPatch": {
       "signature": "getActiveStageExecutorPatch(bytes32,bytes32,bytes32)",
@@ -31,6 +35,14 @@
     "getActiveStageResourcePatch": {
       "signature": "getActiveStageResourcePatch(bytes32,bytes32,bytes32,bytes32)",
       "selector": "0xddfae56d"
+    },
+    "getDockInputBinding": {
+      "signature": "getDockInputBinding(bytes32,bytes32)",
+      "selector": "0x76a55463"
+    },
+    "getDockOutputBinding": {
+      "signature": "getDockOutputBinding(bytes32,bytes32)",
+      "selector": "0xdd6e63ce"
     },
     "getTriggerOriginLink": {
       "signature": "getTriggerOriginLink(bytes32,bytes32)",

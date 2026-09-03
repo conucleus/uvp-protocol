@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPPlanMetadataModule",
-  "abiVersion": "0.1",
+  "abiVersion": "0.2",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPPlanMetadataModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPPlanMetadataModule.sol/UVPPlanMetadataModule.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x11b73b088157df1fa19b4c94c43550898ca3ef358eb702f5bc067c43abbbc9e7",
-    "bytecodeHash": "0xb9b76f64c5ba5f45e489a6c594cef14161d4be04804ae671d152425864717084",
-    "deployedBytecodeHash": "0xbe367ddceefc910c93e34f40a40030f12de723fbec1de54c62b82745bacbc27b",
-    "artifactHash": "0xbd93f37bdc0412c72d57e41851fad9eaf79408f086159ae6028a9a8c068e92d1"
+    "abiHash": "0x45cc96ec1c73b06925173c9db32452fe14481a9c8c3356ae0cd30161eb1bdfa4",
+    "bytecodeHash": "0xcfbe5e23a3a912dc19d3cf616d289df47abb73c4249818e44c4b56d506f29a21",
+    "deployedBytecodeHash": "0x16833c0bfdcc5cb87a93d435ee532dd1bdcaa7655057698cd6649c061a9f508c",
+    "artifactHash": "0x9c5380193375d8786a01ca4c4030bc58a82b60ab9c4948a2c756c9c62bba38da"
   },
   "events": {
     "SignalCapabilityRegistered": {
@@ -33,9 +33,17 @@
       "signature": "SIGNAL_TARGET_TRIGGER_ORIGIN()",
       "selector": "0x909f38ec"
     },
+    "dockInterfaceRoot": {
+      "signature": "dockInterfaceRoot(bytes32)",
+      "selector": "0x1a31626a"
+    },
+    "dockRoutesRoot": {
+      "signature": "dockRoutesRoot(bytes32)",
+      "selector": "0x21d280aa"
+    },
     "finalizePlanMetadata": {
-      "signature": "finalizePlanMetadata(bytes32,(bytes32,bytes32)[],(bytes32,bytes32,bytes32,uint8)[])",
-      "selector": "0x5343b10b"
+      "signature": "finalizePlanMetadata(bytes32,(bytes32,bytes32)[],(bytes32,bytes32,bytes32,uint8)[],bytes32,bytes32)",
+      "selector": "0x5e705fff"
     },
     "isSelectorTargetStage": {
       "signature": "isSelectorTargetStage(bytes32,bytes32)",
@@ -88,6 +96,14 @@
     "stateMachine": {
       "signature": "stateMachine()",
       "selector": "0x37b416d8"
+    },
+    "verifyDockInterfacePort": {
+      "signature": "verifyDockInterfacePort(bytes32,bytes32,bytes32[])",
+      "selector": "0x1624bbb2"
+    },
+    "verifyDockRoute": {
+      "signature": "verifyDockRoute(bytes32,bytes32,bytes32[])",
+      "selector": "0xdc0394b3"
     }
   }
 }

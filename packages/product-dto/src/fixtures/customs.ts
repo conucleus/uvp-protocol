@@ -56,8 +56,8 @@ export const customsWallets = {
 
 export const customsPlanIds = {
   planId: "0x336d9b556f7ffa00c83f49600554819055a4a3b300f82abca70b401f6b161ddc",
-  planHash: "0x38e5dea9a693fae60fbe5f4919dd01667e35afb494026af8753fc189bfea4ae5",
-  artifactHash: "0x0bc785434c6d3208d852937b00408af66b4bd526da57cfa74537699297d28221"
+  planHash: "0xfb496c082967f755145cd0e9473828931fa8ab27b195c22450ca74c968b1ddd6",
+  artifactHash: "0x55cc801d49aab1f7fd4c0f08a84459e40d7281129ef8e956280796f5b67922e6"
 } as const;
 
 export const customsResourceManifest: ProductResourceManifestDTO = {
@@ -612,7 +612,11 @@ export const customsProductCatalog: ProductCatalogDTO = {
 };
 
 export const customsOnchainHookPlanArtifact = {
-  schemaVersion: "uvp.onchainHookPlan.v1",
+  schemaVersion: "uvp.onchainHookPlan.v2",
+  dockInterface: null,
+  dockRoutes: [],
+  dockRoutesRoot: "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+  dockInterfaceRoot: "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
   planId: customsPlanIds.planId,
   zhixuId: CUSTOMS_ZHIXU_ID,
   version: "1",
@@ -629,7 +633,8 @@ export const customsOnchainHookPlanArtifact = {
       stageIdentifier: customsStageIds.buyerPublishCustomsResources,
       hookName: "resource_controller_task_ready",
       kind: "receive",
-      isTrigger: true,
+      orderTriggerKind: "mint",
+      emitReady: true,
       instructions: [
         {
           op: "SIGNAL",
@@ -662,7 +667,8 @@ export const customsOnchainHookPlanArtifact = {
       stageIdentifier: customsStageIds.buyerSelectCustomsExecutor,
       hookName: "selector_task_ready",
       kind: "receive",
-      isTrigger: true,
+      orderTriggerKind: "mint",
+      emitReady: true,
       instructions: [
         {
           op: "SIGNAL",
@@ -695,7 +701,8 @@ export const customsOnchainHookPlanArtifact = {
       stageIdentifier: customsStageIds.customsComplete,
       hookName: "customs_ready",
       kind: "receive",
-      isTrigger: true,
+      orderTriggerKind: "mint",
+      emitReady: true,
       instructions: [
         {
           op: "SIGNAL",

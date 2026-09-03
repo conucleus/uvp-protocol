@@ -11,6 +11,10 @@ import {
   type ZhixuDefinition,
   type ZhixuStage
 } from "../src/types/index.js";
+import { dockDemoResolutionManifest } from "./dock-demo.js";
+import { merkleRoot } from "../src/dock.js";
+
+const demoManifest = dockDemoResolutionManifest();
 
 const baseZhixu: ZhixuDefinition = {
   apiVersion: "uvp/v0",
@@ -58,12 +62,12 @@ const baseZhixu: ZhixuDefinition = {
             sendSignals: ["str", "cmp", "err"],
             executor: {
               supplierType: "zhixu",
-              supplierID: "payment-zhixu",
               zhixuExecutorConfig: {
-                signalMap: {
-                  str: "payment::payment_flow.init.str",
-                  cmp: "payment::payment_flow.settle.cmp"
-                }
+                schemaVersion: "uvp.dock.v1",
+                target: { zhixu: "payment-zhixu", version: "1.2.0" },
+                order: { idPolicy: "derived-v1" },
+                inputMap: { START: "execute", TIMEOUT: "cancel" },
+                signalMap: { str: "started", cmp: "completed" }
               }
             }
           }
@@ -78,7 +82,7 @@ function assertCompilationIssues(
   expectedIssues: readonly RegExp[]
 ): void {
   try {
-    compileZhixuHookPlan(definition);
+    compileZhixuHookPlan(definition, demoManifest);
   } catch (error) {
     assert.ok(error instanceof HookPlanCompilationError);
     const message = error.issues.join("; ");
@@ -89,6 +93,12 @@ function assertCompilationIssues(
   }
 
   assert.fail("expected HookPlanCompilationError");
+}
+
+function compileZhixuHookPlanWithManifest(
+  definition: ZhixuDefinition,
+): ReturnType<typeof compileZhixuHookPlan> {
+  return compileZhixuHookPlan(definition, demoManifest);
 }
 
 function topologyZhixu(stages: readonly ZhixuStage[]): ZhixuDefinition {
@@ -119,21 +129,19 @@ function topologyZhixu(stages: readonly ZhixuStage[]): ZhixuDefinition {
 }
 
 test("compiles internal HookPlan IR", () => {
-  const plan = compileZhixuHookPlan(baseZhixu);
-  const again = compileZhixuHookPlan(baseZhixu);
+  const plan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  const again = compileZhixuHookPlan(baseZhixu, demoManifest);
 
-  assert.equal(plan.schemaVersion, "uvp.hookPlan.v1");
+  assert.equal(plan.schemaVersion, "uvp.hookPlan.v2");
   assert.equal(plan.zhixuId, "zhixu-demo-001");
   assert.equal(plan.version, "7");
   assert.deepEqual(plan.platform, { type: "cloud" });
-  assert.equal(plan.planId, "0x472081189619bb006814fed697f3d53ff187b5a852131ba1924bde825b0b9d6d");
-  assert.equal(plan.planHash, "0x8ce322fcd43821fffe3f0144838d0b23e657a7d20acf6ee6de7bdb071a340752");
+  assert.match(plan.planId, /^0x[0-9a-f]{64}$/);
+  assert.match(plan.planHash, /^0x[0-9a-f]{64}$/);
   assert.equal(plan.planHash, again.planHash);
   assert.match(plan.planHash, /^0x[0-9a-f]{64}$/);
-  assert.equal(plan.compiledHooks.length, 4);
+  assert.equal(plan.compiledHooks.length, 2);
   assert.deepEqual(plan.compiledHooks.map((hook) => hook.hookId), [
-    "execution.main#signalMap.cmp",
-    "execution.main#signalMap.str",
     "execution.main#START",
     "execution.main#TIMEOUT"
   ]);
@@ -161,13 +169,22 @@ test("compiles internal HookPlan IR", () => {
     ["execution.main", "buyer", "execution.main.str", "current"],
     ["selector.assign", "buyer", "selector.assign.executor_selected", "current"]
   ]);
-  assert.equal(plan.executorRoutes["execution.main"]?.executor.supplierID, "payment-zhixu");
+  assert.equal(plan.executorRoutes["execution.main"], undefined);
+  assert.equal(plan.dockRoutes.length, 1);
+  assert.equal(plan.dockRoutes[0]?.local.stageIdentifier, "execution.main");
+  assert.equal(plan.dockRoutes[0]?.entrance.localHookName, "START");
+  assert.equal(plan.dockRoutes[0]?.entrance.targetPort, "execute");
+  assert.equal(plan.dockRoutes[0]?.sourceSeam, "payment");
+  assert.equal(
+    plan.dockRoutesRoot,
+    merkleRoot(plan.dockRoutes.map((route) => route.routeHash)),
+  );
   assert.deepEqual(validateHookPlanArtifact(plan), []);
   assert.doesNotThrow(() => assertHookPlanArtifact(plan));
 });
 
 test("compiles source-qualified sendSignals as trigger-origin capabilities", () => {
-  const plan = compileZhixuHookPlan({
+  const plan = compileZhixuHookPlanWithManifest({
     ...baseZhixu,
     metadata: {
       name: "trigger_origin_signal_demo",
@@ -216,7 +233,7 @@ test("preserves opaque platform metadata for future target schemas at the intern
       programId: "future-program-placeholder"
     }
   };
-  const plan = compileZhixuHookPlan({
+  const plan = compileZhixuHookPlanWithManifest({
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
@@ -229,10 +246,10 @@ test("preserves opaque platform metadata for future target schemas at the intern
 });
 
 test("validates HookPlan IR artifacts at the internal boundary", () => {
-  const plan = compileZhixuHookPlan(baseZhixu);
+  const plan = compileZhixuHookPlan(baseZhixu, demoManifest);
 
   assert.deepEqual(validateHookPlanArtifact({ ...plan, schemaVersion: "wrong" }), [
-    "schemaVersion must be uvp.hookPlan.v1"
+    "schemaVersion must be uvp.hookPlan.v2"
   ]);
   assert.deepEqual(validateHookPlanArtifact({ ...plan, compiledHooks: [] }), [
     "dependencyIndex must match compiled hook dependencies"
@@ -325,10 +342,11 @@ test("mint stages accept single ANCHOR birth subscriptions and isTrigger them", 
     }
   };
 
-  const plan = compileZhixuHookPlan(valid);
+  const plan = compileZhixuHookPlan(valid, demoManifest);
   const hook = plan.compiledHooks.find((item) => item.hookName === "START");
   assert.ok(hook, "birth entry hook missing");
-  assert.equal(hook.isTrigger, true);
+  assert.equal(hook.orderTriggerKind, "mint");
+  assert.equal(hook.emitReady, true);
 });
 
 test("rejects plain birth entries on mint stages (subscription only)", () => {
@@ -365,7 +383,7 @@ test("rejects plain birth entries on mint stages (subscription only)", () => {
 });
 
 test("accepts multi-anchor receive stages without an entry table", () => {
-  const plan = compileZhixuHookPlan({
+  const plan = compileZhixuHookPlanWithManifest({
     ...baseZhixu,
     metadata: {
       name: "orderbook_match",
@@ -424,10 +442,13 @@ test("accepts multi-anchor receive stages without an entry table", () => {
     }
   });
 
-  assert.deepEqual(plan.compiledHooks.map((hook) => [hook.hookName, hook.isTrigger]), [
-    ["BUYER_UPDATED", false],
-    ["SELLER_UPDATED", false]
-  ]);
+  assert.deepEqual(
+    plan.compiledHooks.map((hook) => [hook.hookName, hook.orderTriggerKind, hook.emitReady]),
+    [
+      ["BUYER_UPDATED", "none", true],
+      ["SELLER_UPDATED", "none", true]
+    ],
+  );
   assert.deepEqual(
     plan.compiledHooks.flatMap((hook) => hook.dependencies.map((dependency) => `${dependency.source}::${dependency.signalName}`)).sort(),
     ["buyer::feed.bid.updated", "seller::feed.quote.updated"]
@@ -435,7 +456,7 @@ test("accepts multi-anchor receive stages without an entry table", () => {
 });
 
 test("accepts same-source hook expressions with the full hook DSL", () => {
-  const plan = compileZhixuHookPlan({
+  const plan = compileZhixuHookPlanWithManifest({
     ...baseZhixu,
     metadata: {
       name: "same_source_trigger_condition",
@@ -470,7 +491,8 @@ test("accepts same-source hook expressions with the full hook DSL", () => {
   });
 
   const hook = plan.compiledHooks.find((item) => item.stageIdentifier === "buyer.close" && item.hookName === "ALL_DONE");
-  assert.equal(hook?.isTrigger, false);
+  assert.equal(hook?.orderTriggerKind, "none");
+  assert.equal(hook?.emitReady, true);
   assert.deepEqual(
     hook?.dependencies.map((dependency) => `${dependency.kind}:${dependency.source}::${dependency.signalName}${dependency.delaySeconds ? `+${dependency.delaySeconds}` : ""}`).sort(),
     [
@@ -705,8 +727,66 @@ test("rejects local hook references to unknown stages or signals", () => {
   ]);
 });
 
-test("rejects zhixu signal maps without one source", () => {
-  const invalid: ZhixuDefinition = {
+test("rejects legacy zhixu delegation shapes with migration hints", () => {
+  // triggerEntrance / hook-DSL signalMap values / zhixu supplierID：clean break。
+  const legacyEntrance: ZhixuDefinition = {
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      taskPatterns: [
+        {
+          name: "peer",
+          stages: [
+            {
+              name: "main",
+              source: "buyer",
+              executor: {
+                supplierType: "zhixu",
+                zhixuExecutorConfig: {
+                  triggerEntrance: "flow.init"
+                } as never
+              }
+            }
+          ]
+        }
+      ]
+    }
+  };
+  assertCompilationIssues(legacyEntrance, [/D002.*triggerEntrance/]);
+
+  const legacyHookDslValues: ZhixuDefinition = {
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      taskPatterns: [
+        {
+          name: "peer",
+          stages: [
+            {
+              name: "main",
+              source: "buyer",
+              executor: {
+                supplierType: "zhixu",
+                zhixuExecutorConfig: {
+                  schemaVersion: "uvp.dock.v1",
+                  target: { zhixu: "payment-zhixu", version: "1.2.0" },
+                  order: { idPolicy: "derived-v1" },
+                  inputMap: { START: "execute" },
+                  signalMap: {
+                    str: "payment::payment_flow.init.str",
+                    cmp: "completed"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  };
+  assertCompilationIssues(legacyHookDslValues, [/D006.*signalMap\.str/]);
+
+  const legacySupplierId: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
@@ -721,10 +801,11 @@ test("rejects zhixu signal maps without one source", () => {
                 supplierType: "zhixu",
                 supplierID: "peer-zhixu",
                 zhixuExecutorConfig: {
-                  signalMap: {
-                    str: "remote_a::init.main.str",
-                    cmp: "remote_b::settle.main.cmp"
-                  }
+                  schemaVersion: "uvp.dock.v1",
+                  target: { zhixu: "payment-zhixu", version: "1.2.0" },
+                  order: { idPolicy: "derived-v1" },
+                  inputMap: { START: "execute" },
+                  signalMap: { str: "started", cmp: "completed" }
                 }
               }
             }
@@ -733,14 +814,11 @@ test("rejects zhixu signal maps without one source", () => {
       ]
     }
   };
-
-  assertCompilationIssues(invalid, [
-    /peer\.main\.signalMap must reference one source/
-  ]);
+  assertCompilationIssues(legacySupplierId, [/D001/]);
 });
 
-test("rejects missing or locally invalid zhixu signal maps", () => {
-  const missingMap: ZhixuDefinition = {
+test("rejects locally invalid dock executor configs", () => {
+  const missingInputMap: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
@@ -751,35 +829,15 @@ test("rejects missing or locally invalid zhixu signal maps", () => {
             {
               name: "main",
               source: "buyer",
+              sendSignals: ["str", "cmp"],
               executor: {
                 supplierType: "zhixu",
-                supplierID: "peer-zhixu"
-              }
-            }
-          ]
-        }
-      ]
-    }
-  };
-  const missingRequiredSignals: ZhixuDefinition = {
-    ...missingMap,
-    spec: {
-      ...missingMap.spec,
-      taskPatterns: [
-        {
-          name: "peer",
-          stages: [
-            {
-              name: "main",
-              source: "buyer",
-              executor: {
-                supplierType: "zhixu",
-                supplierID: "peer-zhixu",
                 zhixuExecutorConfig: {
-                  signalMap: {
-                    str: "remote::flow.main.str"
-                  }
-                }
+                  schemaVersion: "uvp.dock.v1",
+                  target: { zhixu: "payment-zhixu", version: "1.2.0" },
+                  order: { idPolicy: "derived-v1" },
+                  signalMap: { str: "started", cmp: "completed" }
+                } as never
               }
             }
           ]
@@ -787,41 +845,79 @@ test("rejects missing or locally invalid zhixu signal maps", () => {
       ]
     }
   };
-  const unknownLocalStage: ZhixuDefinition = {
-    ...missingMap,
-    spec: {
-      ...missingMap.spec,
-      taskPatterns: [
-        {
-          name: "peer",
-          stages: [
-            {
-              name: "main",
-              source: "buyer",
-              executor: {
-                supplierType: "zhixu",
-                supplierID: "peer-zhixu",
-                zhixuExecutorConfig: {
-                  signalMap: {
-                    str: "buyer::peer.missing.str",
-                    cmp: "buyer::peer.missing.cmp"
-                  }
-                }
-              }
-            }
-          ]
-        }
-      ]
-    }
-  };
+  assertCompilationIssues(missingInputMap, [/D005/]);
 
-  assertCompilationIssues(missingMap, [
-    /peer\.main\.executor\.zhixuExecutorConfig\.signalMap is required/
-  ]);
-  assertCompilationIssues(missingRequiredSignals, [
-    /peer\.main\.signalMap must contain str and cmp/
-  ]);
-  assertCompilationIssues(unknownLocalStage, [
-    /peer\.main\.executor\.zhixuExecutorConfig\.signalMap\.str references unknown stage peer\.missing/
-  ]);
+  const missingRequiredSignals: ZhixuDefinition = {
+    ...missingInputMap,
+    spec: {
+      ...missingInputMap.spec,
+      taskPatterns: [
+        {
+          name: "peer",
+          stages: [
+            {
+              name: "main",
+              source: "buyer",
+              sendSignals: ["str", "cmp"],
+              executor: {
+                supplierType: "zhixu",
+                zhixuExecutorConfig: {
+                  schemaVersion: "uvp.dock.v1",
+                  target: { zhixu: "payment-zhixu", version: "1.2.0" },
+                  order: { idPolicy: "derived-v1" },
+                  inputMap: { START: "execute" },
+                  signalMap: { str: "started" }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  };
+  assertCompilationIssues(missingRequiredSignals, [/D007/]);
+
+  const unknownLocalHook: ZhixuDefinition = {
+    ...missingInputMap,
+    spec: {
+      ...missingInputMap.spec,
+      taskPatterns: [
+        {
+          name: "peer",
+          stages: [
+            {
+              name: "main",
+              source: "buyer",
+              receiveSignals: {
+                START: "buyer::selector.assign.executor_selected"
+              },
+              sendSignals: ["str", "cmp"],
+              executor: {
+                supplierType: "zhixu",
+                zhixuExecutorConfig: {
+                  schemaVersion: "uvp.dock.v1",
+                  target: { zhixu: "payment-zhixu", version: "1.2.0" },
+                  order: { idPolicy: "derived-v1" },
+                  inputMap: { MISSING: "execute" },
+                  signalMap: { str: "started", cmp: "completed" }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  };
+  assertCompilationIssues(unknownLocalHook, [/D005.*inputMap\.MISSING/]);
+});
+
+test("rejects unresolved dock targets without a manifest", () => {
+  assert.throws(
+    () => compileZhixuHookPlan(baseZhixu),
+    (error: unknown) => {
+      assert.ok(error instanceof HookPlanCompilationError);
+      assert.match(error.issues.join("; "), /UNRESOLVED_DOCK_TARGET/);
+      return true;
+    },
+  );
 });

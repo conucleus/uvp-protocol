@@ -165,14 +165,15 @@ const signalAuthorizations = [
 ] as const;
 
 describe("protocol bindings", () => {
-  it("exposes frozen v0.8 hook observation events", () => {
+  it("exposes frozen v0.9 plan-scoped hook observation events", () => {
+    // PRD95 §10.1：全部订单级事件补 planId（v0.9 冻结口径）。
     assert.equal(
-      toEventHash("HookStatusChanged(bytes32,bytes32,uint8,uint8,uint64)"),
-      "0x5be89146d09c52d7c340dd4d7e4116db5352f9f46970109c2f0569babf4272ed"
+      toEventHash("HookStatusChanged(bytes32,bytes32,bytes32,uint8,uint8,uint64)"),
+      "0xa0c688f78d307bee6d38b69ad4c19b02d9e1be8c6772327015b60fd21ec38fd2"
     );
     assert.equal(
-      toEventHash("TimerPoked(bytes32,bytes32,uint64)"),
-      "0x0993e0474543bdefb1908d2527dac2fd76cfa2fa6fdb36cbb26aeac167ed5c79"
+      toEventHash("TimerPoked(bytes32,bytes32,bytes32,uint64)"),
+      "0x4662f441e8cd10042e3591b57bbcf10851c0d735032f89690d2cca5d1297fd57"
     );
 
     const decoded = decodeEventLog({
@@ -184,13 +185,15 @@ describe("protocol bindings", () => {
         + "00".repeat(24) + "0000000000000018"
       ) as `0x${string}`,
       topics: [
-        "0x5be89146d09c52d7c340dd4d7e4116db5352f9f46970109c2f0569babf4272ed",
+        "0xa0c688f78d307bee6d38b69ad4c19b02d9e1be8c6772327015b60fd21ec38fd2",
+        `0x${"33".repeat(32)}`,
         `0x${"11".repeat(32)}`,
         `0x${"22".repeat(32)}`
       ] as const
     });
     assert.equal(decoded.eventName, "HookStatusChanged");
     assert.deepEqual(decoded.args, {
+      planId: "0x" + "33".repeat(32),
       orderId: "0x" + "11".repeat(32),
       hookId: "0x" + "22".repeat(32),
       previousStatus: 1,

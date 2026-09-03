@@ -36,6 +36,15 @@ import {
   type ZhixuPlatform,
 } from "./types/index.js";
 import { compileZhixuHookPlan } from "./hook-plan.js";
+import {
+  dockRoutesRootOf,
+  interfaceRootOf,
+} from "./dock.js";
+import type {
+  DockResolutionManifest,
+  DockRouteV1,
+  OrderTriggerKind,
+} from "./types/index.js";
 
 // Mirrors UVPStateMachine.MAX_HOOK_DELAY_SECONDS (30 days): the contract
 // reverts HookDelayTooLong above this bound, so the fail-closed artifact
@@ -49,6 +58,29 @@ const ONCHAIN_SELECTOR_BINDING_HASH_DOMAIN =
   "uvp:onchain-stage-selector-binding:v1";
 const ONCHAIN_SIGNAL_CAPABILITY_HASH_DOMAIN =
   "uvp:onchain-signal-capability:v1";
+const PLAN_RUNTIME_HASH_DOMAIN_V2 = "uvp.plan.runtime.v2";
+
+/** PRD94 §3.4 / PRD95 §5.3：CompactHook flags 位定义。 */
+export const HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
+export const HOOK_FLAG_ORDER_TRIGGER_DOCK = 2;
+export const HOOK_FLAG_EMIT_READY = 4;
+
+export function solidityHookFlags(
+  orderTriggerKind: OrderTriggerKind,
+  emitReady: boolean,
+): number {
+  let flags = 0;
+  if (orderTriggerKind === "mint") {
+    flags |= HOOK_FLAG_ORDER_TRIGGER_MINT;
+  }
+  if (orderTriggerKind === "dock") {
+    flags |= HOOK_FLAG_ORDER_TRIGGER_DOCK;
+  }
+  if (emitReady) {
+    flags |= HOOK_FLAG_EMIT_READY;
+  }
+  return flags;
+}
 
 export class OnchainHookPlanArtifactValidationError extends Error {
   readonly issues: readonly string[];
@@ -72,9 +104,10 @@ export function compileOnchainHookPlan(
       stageIdentifier: hook.stageIdentifier,
       hookName: hook.hookName,
       kind: hook.kind,
-      isTrigger: hook.isTrigger,
+      orderTriggerKind: hook.orderTriggerKind,
+      emitReady: hook.emitReady,
       instructions: compileHookInstructions(hook.ast, hook.stageIdentifier, {
-        isTrigger: hook.isTrigger,
+        orderTriggerKind: hook.orderTriggerKind,
       }),
       dependencies: hook.dependencies.map(compileDependency),
       ...(hook.route ? { routeRef: routeRefForRoute(hook.route) } : {}),
@@ -84,7 +117,7 @@ export function compileOnchainHookPlan(
     compiledHooks.map((hook) => ({
       hookId: hook.hookId,
       stageId: hook.stageId,
-      isTrigger: hook.isTrigger,
+      isOrderTrigger: hook.orderTriggerKind !== "none",
       dependencies: hook.dependencies,
     })),
   );
@@ -101,6 +134,23 @@ export function compileOnchainHookPlan(
   const signalCapabilities = compileSignalCapabilities(
     hookPlanArtifact.signalCapabilities,
   );
+  // fail-closed：dock roots 由 TS 侧从 core 产物重算并断言一致，任何分叉
+  // 都在编译期暴露（PRD96 M2 退出条件）。
+  const dockRoutes = hookPlanArtifact.dockRoutes;
+  const recomputedRoutesRoot = dockRoutesRootOf(dockRoutes);
+  if (recomputedRoutesRoot !== hookPlanArtifact.dockRoutesRoot) {
+    throw new OnchainHookPlanArtifactValidationError([
+      "dockRoutesRoot does not match the recomputed root over dock route hashes",
+    ]);
+  }
+  if (hookPlanArtifact.dockInterface !== null) {
+    const recomputedInterfaceRoot = interfaceRootOf(hookPlanArtifact.dockInterface);
+    if (recomputedInterfaceRoot !== hookPlanArtifact.dockInterfaceRoot) {
+      throw new OnchainHookPlanArtifactValidationError([
+        "dockInterfaceRoot does not match the recomputed root over interface leaves",
+      ]);
+    }
+  }
   const payload = {
     schemaVersion: ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
     planId: hookPlanArtifact.planId,
@@ -112,6 +162,10 @@ export function compileOnchainHookPlan(
     compiledHooks,
     dependencyIndex,
     executorRoutes,
+    dockInterface: hookPlanArtifact.dockInterface,
+    dockRoutes,
+    dockRoutesRoot: hookPlanArtifact.dockRoutesRoot,
+    dockInterfaceRoot: hookPlanArtifact.dockInterfaceRoot,
     selectorBindings,
     signalCapabilities,
   };
@@ -124,8 +178,11 @@ export function compileOnchainHookPlan(
 
 export function compileZhixuOnchainHookPlan(
   definition: ZhixuDefinition,
+  resolutionManifest?: DockResolutionManifest,
 ): OnchainHookPlanArtifact {
-  return compileOnchainHookPlan(compileZhixuHookPlan(definition));
+  return compileOnchainHookPlan(
+    compileZhixuHookPlan(definition, resolutionManifest),
+  );
 }
 
 // The `RegisterPlanArgs` name predates the retired single-step
@@ -134,8 +191,11 @@ export function compileZhixuOnchainHookPlan(
 // breaking change.
 export function compileZhixuRegisterPlanArgs(
   definition: ZhixuDefinition,
+  resolutionManifest?: DockResolutionManifest,
 ): SolidityRegisterPlanArgs {
-  return toSolidityRegisterPlanArgs(compileZhixuOnchainHookPlan(definition));
+  return toSolidityRegisterPlanArgs(
+    compileZhixuOnchainHookPlan(definition, resolutionManifest),
+  );
 }
 
 export function validateOnchainHookPlanArtifact(
@@ -228,6 +288,10 @@ export function validateOnchainHookPlanArtifact(
       compiledHooks: value.compiledHooks,
       dependencyIndex: value.dependencyIndex,
       executorRoutes: value.executorRoutes,
+      dockInterface: value.dockInterface ?? null,
+      dockRoutes: value.dockRoutes ?? [],
+      dockRoutesRoot: value.dockRoutesRoot,
+      dockInterfaceRoot: value.dockInterfaceRoot,
       selectorBindings: value.selectorBindings,
       signalCapabilities: value.signalCapabilities,
     });
@@ -274,7 +338,7 @@ export function toSolidityRegisterPlanArgs(
       stageId: hook.stageId,
       hookName: onchainHookName(hook.hookName),
       kind: hook.kind,
-      isTrigger: hook.isTrigger,
+      flags: solidityHookFlags(hook.orderTriggerKind, hook.emitReady),
       instructions: hook.instructions.map(toSolidityInstructionArg),
       dependencyKeys,
     };
@@ -297,12 +361,19 @@ export function toSolidityRegisterPlanArgs(
     selectorBindings,
     signalCapabilities,
   );
+  // PRD95 §5.1：PlanCommitV2 runtime hash 覆盖 dock roots。
   const planHash = keccak256(
     encodeAbiParameters(
       parseAbiParameters(
-        "bytes32 domain, bytes32 hooksHash, bytes32 metadataHash",
+        "bytes32 domain, bytes32 hooksHash, bytes32 metadataHash, bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot",
       ),
-      [keccak256(stringToHex("uvp.plan.runtime.v1")), hooksHash, metadataHash],
+      [
+        keccak256(stringToHex(PLAN_RUNTIME_HASH_DOMAIN_V2)),
+        hooksHash,
+        metadataHash,
+        artifact.dockRoutesRoot,
+        artifact.dockInterfaceRoot,
+      ],
     ),
   ) as HexString;
 
@@ -315,6 +386,8 @@ export function toSolidityRegisterPlanArgs(
     artifactHash: artifact.planHash,
     hooksHash,
     metadataHash,
+    dockRoutesRoot: artifact.dockRoutesRoot,
+    dockInterfaceRoot: artifact.dockInterfaceRoot,
     hooks,
     dependencyIndex: Object.entries(artifact.dependencyIndex)
       .sort(([left], [right]) => compareByCodeUnit(left, right))
@@ -355,7 +428,7 @@ function hashSolidityHooks(
     hookId: hook.hookId,
     stageId: hook.stageId,
     hookName: hook.hookName,
-    isTrigger: hook.isTrigger,
+    flags: hook.flags,
     instructions: hook.instructions.map((instruction) =>
       solidityInstructionTuple(instruction),
     ),
@@ -364,7 +437,7 @@ function hashSolidityHooks(
   return keccak256(
     encodeAbiParameters(
       parseAbiParameters(
-        "(bytes32 hookId,bytes32 stageId,bytes32 hookName,bool isTrigger,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks",
+        "(bytes32 hookId,bytes32 stageId,bytes32 hookName,uint8 flags,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks",
       ),
       [encodedHooks] as never,
     ),
@@ -435,7 +508,7 @@ const ZERO_HASH = `0x${"00".repeat(32)}` as HexString;
 function compileHookInstructions(
   ast: HookExpressionAst,
   stageIdentifier: string,
-  options: { readonly isTrigger: boolean },
+  options: { readonly orderTriggerKind: OrderTriggerKind },
 ): readonly OnchainHookInstruction[] {
   return compileConditionInstructions(ast.condition, ast.source, stageIdentifier, options);
 }
@@ -444,7 +517,7 @@ function compileConditionInstructions(
   condition: HookConditionAst,
   source: string,
   stageIdentifier: string,
-  options: { readonly isTrigger: boolean },
+  options: { readonly orderTriggerKind: OrderTriggerKind },
 ): readonly OnchainHookInstruction[] {
   switch (condition.kind) {
     case "signal":
@@ -455,9 +528,9 @@ function compileConditionInstructions(
       // 就是出生事实——编译为一条 SIGNAL 指令即可，链上不存在独立的订阅
       // 投递子系统。非出生阶段（route=fanin 按类扇入 / 按单路由）的订阅
       // 是云侧运行时投递语义，仍不上链。
-      if (!options.isTrigger) {
+      if (options.orderTriggerKind === "none") {
         throw new HookPlanCompilationError([
-          `on-chain HookPlan only supports subscription entries on mint birth hooks `
+          `on-chain HookPlan only supports subscription entries on order-trigger hooks `
           + `(::ANCHOR(@${condition.source}::${condition.signal}) in stage "${source}"); `
           + "non-birth subscriptions are cloud-side runtime deliveries "
           + "(see uvp-core docs/specs/subscription-mint-spec.md)"
@@ -831,8 +904,14 @@ function validateOnchainCompiledHooks(
       issues,
     );
     expectNonEmptyString(hook.hookName, `${prefix}.hookName`, issues);
-    expectOneOf(hook.kind, ["receive", "signalMap"], `${prefix}.kind`, issues);
-    expectBoolean(hook.isTrigger, `${prefix}.isTrigger`, issues);
+    expectOneOf(hook.kind, ["receive"], `${prefix}.kind`, issues);
+    expectOneOf(
+      hook.orderTriggerKind,
+      ["none", "mint", "dock"],
+      `${prefix}.orderTriggerKind`,
+      issues,
+    );
+    expectBoolean(hook.emitReady, `${prefix}.emitReady`, issues);
 
     if (
       typeof hook.stageIdentifier === "string" &&
@@ -1121,7 +1200,7 @@ function validateOnchainDependencies(
 function crossStageDependencyIssues(hooks: readonly unknown[]): readonly string[] {
   interface Watcher {
     readonly stageId: string;
-    readonly isTrigger: boolean;
+    readonly isOrderTrigger: boolean;
   }
   const watchersBySignalKey = new Map<string, Set<Watcher>>();
   for (const hook of hooks) {
@@ -1129,7 +1208,7 @@ function crossStageDependencyIssues(hooks: readonly unknown[]): readonly string[
       !isRecord(hook) ||
       typeof hook.hookId !== "string" ||
       typeof hook.stageId !== "string" ||
-      typeof hook.isTrigger !== "boolean" ||
+      typeof hook.isOrderTrigger !== "boolean" ||
       !Array.isArray(hook.dependencies)
     ) {
       continue;
@@ -1140,7 +1219,7 @@ function crossStageDependencyIssues(hooks: readonly unknown[]): readonly string[
       }
       const watchers =
         watchersBySignalKey.get(dependency.signalKey) ?? new Set<Watcher>();
-      watchers.add({ stageId: hook.stageId, isTrigger: hook.isTrigger });
+      watchers.add({ stageId: hook.stageId, isOrderTrigger: hook.isOrderTrigger });
       watchersBySignalKey.set(dependency.signalKey, watchers);
     }
   }
@@ -1152,7 +1231,7 @@ function crossStageDependencyIssues(hooks: readonly unknown[]): readonly string[
     // NON-trigger watcher in a stage that has not materialized yet: it makes
     // the submitting transaction revert forever.
     const hasNonTriggerWatcher = [...watchers].some(
-      (watcher) => !watcher.isTrigger,
+      (watcher) => !watcher.isOrderTrigger,
     );
     if (stages.size > 1 && hasNonTriggerWatcher) {
       issues.push(

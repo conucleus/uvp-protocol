@@ -88,6 +88,40 @@ interface IUVPStateMachineCore {
         external
         view
         returns (uint256);
+    function createDockedOrderFromModule(
+        bytes32 targetPlanId,
+        bytes32 linkedOrderId,
+        address creator,
+        address relayer,
+        bytes32 entranceHookId,
+        bytes32 entranceStageId,
+        bytes32 sourceId,
+        bytes32 signalId,
+        bytes32 payloadHash,
+        bytes32 idempotencyKey,
+        address submitter,
+        SignalAuthorization[] calldata authorizations
+    ) external;
+
+    function recordDockedInputFromModule(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 sourceId,
+        bytes32 signalId,
+        bytes32 payloadHash,
+        bytes32 idempotencyKey,
+        address submitter
+    ) external;
+
+    function planHookFlags(bytes32 planId, bytes32 hookId) external view returns (uint8);
+
+    function getHookStatus(bytes32 planId, bytes32 orderId, bytes32 hookId)
+        external
+        view
+        returns (uint8 status, uint64 dueAt, bool readyEmitted);
+
+    function planHookStageId(bytes32 planId, bytes32 hookId) external view returns (bytes32);
+
     function submitSignalFromModule(
         bytes32 planId,
         bytes32 orderId,

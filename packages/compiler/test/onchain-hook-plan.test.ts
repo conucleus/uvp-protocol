@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { dockDemoResolutionManifest } from "./dock-demo.js";
+import { EMPTY_MERKLE_ROOT } from "../src/dock.js";
 import test from "node:test";
 import {
   assertOnchainHookPlanArtifact,
@@ -15,6 +17,20 @@ import {
 import { compileZhixuHookPlan, HookPlanCompilationError } from "../src/hook-plan.js";
 import { compileOnchainHookPlan, hashOnchainPlanPayload, onchainSignalId, onchainSourceId } from "../src/onchain-hook-plan.js";
 import type { HookPlanArtifact } from "../src/types/index.js";
+
+const demoManifest = dockDemoResolutionManifest();
+
+function compileZhixuHookPlanWithManifest(
+  definition: ZhixuDefinition,
+): ReturnType<typeof compileZhixuHookPlan> {
+  return compileZhixuHookPlan(definition, demoManifest);
+}
+
+function compileZhixuOnchainHookPlanWithManifest(
+  definition: ZhixuDefinition,
+): ReturnType<typeof compileZhixuOnchainHookPlan> {
+  return compileZhixuOnchainHookPlan(definition, demoManifest);
+}
 
 const baseZhixu: ZhixuDefinition = {
   apiVersion: "uvp/v0",
@@ -63,12 +79,12 @@ const baseZhixu: ZhixuDefinition = {
             sendSignals: ["str", "cmp", "err"],
             executor: {
               supplierType: "zhixu",
-              supplierID: "payment-zhixu",
               zhixuExecutorConfig: {
-                signalMap: {
-                  str: "payment::payment_flow.init.str",
-                  cmp: "payment::payment_flow.settle.cmp",
-                },
+                schemaVersion: "uvp.dock.v1",
+                target: { zhixu: "payment-zhixu", version: "1.2.0" },
+                order: { idPolicy: "derived-v1" },
+                inputMap: { START: "execute", TIMEOUT: "cancel" },
+                signalMap: { str: "started", cmp: "completed" },
               },
             },
           },
@@ -79,18 +95,18 @@ const baseZhixu: ZhixuDefinition = {
 };
 
 test("compiles a stable compact on-chain HookPlan artifact", () => {
-  const sourcePlan = compileZhixuHookPlan(baseZhixu);
+  const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
   const onchain = compileOnchainHookPlan(sourcePlan);
-  const again = compileZhixuOnchainHookPlan(baseZhixu);
+  const again = compileZhixuOnchainHookPlan(baseZhixu, demoManifest);
 
   assert.deepEqual(onchain, again);
-  assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v1");
+  assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v2");
   assert.equal(onchain.planId, sourcePlan.planId);
   assert.deepEqual(onchain.platform, sourcePlan.platform);
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
   assert.equal(
     onchain.planHash,
-    "0xa0d933660fdd1130410931194eef6b48a868ed747fd62febfaa0d0e1b735e9bf",
+    "0xfe5161562407f92adce4a91beffad756505f11d20a8cb2941e8fdeafb4c23b25",
   );
   assert.deepEqual(onchain.selectorBindings, [
     {
@@ -128,8 +144,6 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
     [
       "0x07fec9e5326c8025bd807a2d26a55476168f38f6b9b1d3ef3af9df18f758da96",
       "0x2a799fd6d3c55a26d5b940bc8fedc135a5feae293bce3e0c6cd375c4a946fc89",
-      "0x4192cb3bc76e04ab3c8f9a95ead3b20e86b5af753ac911791d20249e19a81e5a",
-      "0x1c89ab49405588dd2aa212acd1bdcccbf18ed9828e3cb14fa678aeb3509f02d3",
     ],
   );
   assert.equal(
@@ -158,7 +172,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
 });
 
 test("serializes trigger-origin signal capabilities to Solidity relation 1", () => {
-  const onchain = compileZhixuOnchainHookPlan({
+  const onchain = compileZhixuOnchainHookPlanWithManifest({
     ...baseZhixu,
     metadata: {
       name: "trigger_origin_signal_demo",
@@ -203,7 +217,7 @@ test("serializes trigger-origin signal capabilities to Solidity relation 1", () 
 });
 
 test("compiles Hook AST nodes to stable on-chain instruction arrays", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   const timeoutHook = onchain.compiledHooks.find(
     (hook) => hook.hookName === "TIMEOUT",
   );
@@ -265,7 +279,7 @@ test("compiles Hook AST nodes to stable on-chain instruction arrays", () => {
     },
   };
   const orHook = compileOnchainHookPlan(
-    compileZhixuHookPlan(orZhixu),
+    compileZhixuHookPlan(orZhixu, demoManifest),
   ).compiledHooks.find((hook) => hook.hookName === "ALT");
 
   assert.deepEqual(
@@ -276,18 +290,14 @@ test("compiles Hook AST nodes to stable on-chain instruction arrays", () => {
 });
 
 test("builds a stable on-chain dependency index and route references", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
 
   assert.deepEqual(onchain.dependencyIndex, {
     "0x1845455a34645910fcbc7220c18dcb6661ad3f045893d3694d22a99a1a5dcc11": [
       "0x2a799fd6d3c55a26d5b940bc8fedc135a5feae293bce3e0c6cd375c4a946fc89",
     ],
-    "0x8553bcf44b2604c2d6ba8083e354d082f7e91254eba8a3034e5ac6930923a957": [
-      "0x1c89ab49405588dd2aa212acd1bdcccbf18ed9828e3cb14fa678aeb3509f02d3",
-    ],
-    "0xcc82a6048b0604736991482236464a3565da6e76b077288386298d4420134a8b": [
-      "0x4192cb3bc76e04ab3c8f9a95ead3b20e86b5af753ac911791d20249e19a81e5a",
-    ],
+
+
     "0xcf7c8f26d55e2223a316d1220b6f7c902d1654622e82b458a98871bdf4c4e433": [
       "0x07fec9e5326c8025bd807a2d26a55476168f38f6b9b1d3ef3af9df18f758da96",
       "0x2a799fd6d3c55a26d5b940bc8fedc135a5feae293bce3e0c6cd375c4a946fc89",
@@ -296,23 +306,20 @@ test("builds a stable on-chain dependency index and route references", () => {
 
   assert.deepEqual(
     onchain.executorRoutes.map((route) => route.routeId),
-    [
-      "0x24e3b5a8ab000691a715e1ee367fc5fa8136fbe55b342008c62527e0dccea4a4",
-      "0x50a98fb0b72e21bff21f57c8269a01953f1400a33ee2a92483825ea897feb09a",
-    ],
+    ["0x50a98fb0b72e21bff21f57c8269a01953f1400a33ee2a92483825ea897feb09a"],
   );
+  // zhixu 委托 stage 不再挂静态 executor route（routeRef 只属于静态执行者）。
   assert.equal(
-    onchain.compiledHooks.find((hook) => hook.hookName === "START")?.routeRef
-      ?.routeId,
-    "0x24e3b5a8ab000691a715e1ee367fc5fa8136fbe55b342008c62527e0dccea4a4",
+    onchain.compiledHooks.find((hook) => hook.hookName === "START")?.routeRef,
+    undefined,
   );
 });
 
 test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   const args = toSolidityRegisterPlanArgs(onchain);
 
-  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v1");
+  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v2");
   assert.equal(args.sourcePlanId, onchain.planId);
   assert.equal(args.artifactHash, onchain.planHash);
   assert.notEqual(args.planHash, args.artifactHash);
@@ -327,8 +334,13 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
     "0x1845455a34645910fcbc7220c18dcb6661ad3f045893d3694d22a99a1a5dcc11",
     "0xcf7c8f26d55e2223a316d1220b6f7c902d1654622e82b458a98871bdf4c4e433",
   ]);
-  assert.equal(args.dependencyIndex.length, 4);
-  assert.equal(args.executorRoutes[0]?.executorId, "payment-zhixu");
+  assert.equal(args.dependencyIndex.length, 2);
+  assert.equal(
+    args.executorRoutes.every((route) => route.executorId !== "payment-zhixu"),
+    true,
+  );
+  assert.match(args.dockRoutesRoot, /^0x[0-9a-f]{64}$/);
+  assert.notEqual(args.dockRoutesRoot, EMPTY_MERKLE_ROOT);
   assert.deepEqual(args.selectorBindings, [
     {
       selectorStageId: keccak256Hex("selector.assign"),
@@ -342,7 +354,7 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
 });
 
 test("includes selector bindings in on-chain plan hash", () => {
-  const withBinding = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
+  const withBinding = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   const withoutSelectedStages: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
@@ -361,7 +373,7 @@ test("includes selector bindings in on-chain plan hash", () => {
     },
   };
   const withoutBinding = compileOnchainHookPlan(
-    compileZhixuHookPlan(withoutSelectedStages),
+    compileZhixuHookPlan(withoutSelectedStages, demoManifest),
   );
 
   assert.deepEqual(withoutBinding.selectorBindings, []);
@@ -369,7 +381,7 @@ test("includes selector bindings in on-chain plan hash", () => {
 });
 
 test("rejects duplicate on-chain selector bindings", () => {
-  const sourcePlan = compileZhixuHookPlan(baseZhixu);
+  const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
 
   assert.throws(
     () =>
@@ -385,11 +397,11 @@ test("rejects duplicate on-chain selector bindings", () => {
 });
 
 test("rejects invalid on-chain HookPlan artifact shapes", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
 
   assert.deepEqual(
     validateOnchainHookPlanArtifact({ ...onchain, schemaVersion: "wrong" }),
-    ["schemaVersion must be uvp.onchainHookPlan.v1"],
+    ["schemaVersion must be uvp.onchainHookPlan.v2"],
   );
   assert.match(
     validateOnchainHookPlanArtifact({
@@ -427,7 +439,20 @@ test("rejects non-birth subscription receive hooks with the typed compilation er
           ...pattern,
           stages: pattern.stages.map((stage) =>
             stage.name === "main"
-              ? { ...stage, receiveSignals: { [hookName]: expression } }
+              ? {
+                  ...stage,
+                  receiveSignals: { [hookName]: expression },
+                  executor: {
+                    supplierType: "zhixu",
+                    zhixuExecutorConfig: {
+                      schemaVersion: "uvp.dock.v1",
+                      target: { zhixu: "payment-zhixu", version: "1.2.0" },
+                      order: { idPolicy: "derived-v1" },
+                      inputMap: { [hookName]: "execute" },
+                      signalMap: { str: "started", cmp: "completed" }
+                    }
+                  }
+                }
               : stage
           )
         }))
@@ -435,12 +460,12 @@ test("rejects non-birth subscription receive hooks with the typed compilation er
     };
 
     assert.throws(
-      () => compileOnchainHookPlan(compileZhixuHookPlan(zhixu)),
+      () => compileOnchainHookPlan(compileZhixuHookPlan(zhixu, demoManifest)),
       (error: unknown) =>
         error instanceof HookPlanCompilationError &&
         error.issues.some(
           (issue) =>
-            /only supports subscription entries on mint birth hooks/.test(issue) &&
+            /only supports subscription entries on order-trigger hooks/.test(issue) &&
             /subscription-mint-spec\.md/.test(issue)
         )
     );
@@ -495,10 +520,11 @@ test("compiles mint birth subscriptions into isTrigger SIGNAL hooks", () => {
     },
   };
 
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(zhixu));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(zhixu, demoManifest));
   const hook = onchain.compiledHooks.find((item) => item.hookName === "BIRTH");
   assert.ok(hook, "birth hook missing from compiled plan");
-  assert.equal(hook.isTrigger, true);
+  assert.equal(hook.orderTriggerKind, "mint");
+  assert.equal(hook.emitReady, true);
   assert.equal(hook.instructions.length, 1);
   // 出生订阅编译为一条 SIGNAL 指令：提交的 (sourceId, signalId) 即出生事实。
   const birth = hook.instructions[0] as OnchainSignalInstruction;
@@ -508,7 +534,7 @@ test("compiles mint birth subscriptions into isTrigger SIGNAL hooks", () => {
 });
 
 test("rejects empty instructions the way the contract reverts InvalidHook", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   // 正例：现状（每条 hook 至少一条指令）仍全量通过预检。
   assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
 
@@ -527,7 +553,7 @@ test("rejects empty instructions the way the contract reverts InvalidHook", () =
 });
 
 test("rejects empty dependency keys the way the contract reverts InvalidHook", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   // 正例：带依赖的 hook 仍通过预检与 Solidity 参数转换。
   assert.doesNotThrow(() => toSolidityRegisterPlanArgs(onchain));
 
@@ -555,7 +581,7 @@ test("rejects empty dependency keys the way the contract reverts InvalidHook", (
 });
 
 test("rejects DELAY seconds beyond the 30-day contract bound", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   const withDelay = (
     delaySeconds: number
   ): OnchainHookPlanArtifact => ({
@@ -606,7 +632,20 @@ test("rejects retired cross-source headers at hook-plan compilation", () => {
         ...pattern,
         stages: pattern.stages.map((stage) =>
           stage.name === "main"
-            ? { ...stage, receiveSignals: { START: expression } }
+            ? {
+                ...stage,
+                receiveSignals: { START: expression },
+                executor: {
+                  supplierType: "zhixu",
+                  zhixuExecutorConfig: {
+                    schemaVersion: "uvp.dock.v1",
+                    target: { zhixu: "payment-zhixu", version: "1.2.0" },
+                    order: { idPolicy: "derived-v1" },
+                    inputMap: { START: "execute" },
+                    signalMap: { str: "started", cmp: "completed" }
+                  }
+                }
+              }
             : stage
         )
       }))
@@ -614,13 +653,13 @@ test("rejects retired cross-source headers at hook-plan compilation", () => {
   });
 
   assert.throws(
-    () => compileZhixuHookPlan(withReceive("::MERGE@(buyer::selector.assign.executor_selected, buyer::execution.main.cmp)")),
+    () => compileZhixuHookPlanWithManifest(withReceive("::MERGE@(buyer::selector.assign.executor_selected, buyer::execution.main.cmp)")),
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
       error.issues.some((issue) => /retired in uvp\.semantic\.v1/.test(issue))
   );
   assert.throws(
-    () => compileZhixuHookPlan(withReceive("::ANCHOR@(execution.main.cmp)")),
+    () => compileZhixuHookPlanWithManifest(withReceive("::ANCHOR@(execution.main.cmp)")),
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
       error.issues.some((issue) => /retired in uvp\.semantic\.v1/.test(issue))
@@ -649,7 +688,7 @@ test("rejects a dependency key shared across stages", () => {
   };
 
   assert.throws(
-    () => compileOnchainHookPlan(compileZhixuHookPlan(sharedZhixu)),
+    () => compileOnchainHookPlan(compileZhixuHookPlan(sharedZhixu, demoManifest)),
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
       error.issues.some((issue) => /shared across stages/.test(issue))

@@ -10,9 +10,9 @@
   },
   "hashes": {
     "abiHash": "0x8a894c7d938f1589a0f3bb22cff05994f191a3e454956bbecf55bb7ff70022b1",
-    "bytecodeHash": "0xc3a79a6d07ad98cc880b2aa34ce2f94eea9b28d954fe34c380c6cbf66791cee6",
-    "deployedBytecodeHash": "0xe8e72efa6bb78cac9828c551ca79c8f35ad6f3813ce5f2253aaaa30bd6bb89f8",
-    "artifactHash": "0x4d194250997494a1d4779b09c0133926fb92abba3125e267bc1c9cd10c4b1f9e"
+    "bytecodeHash": "0x1fc03a55ccbec1b3cad4065148c0e2f968cf6b30b376f8bef12a3e9a16669135",
+    "deployedBytecodeHash": "0xb21ed6abf20f8354ac02810276bf39d79e0244f2d89bed373465b2cb59ae1bcf",
+    "artifactHash": "0xc4876563554423e1372a615017821b563d4bfe9c4646fa92fc27d8a3d9628e1b"
   },
   "events": {
     "OwnershipTransferred": {
@@ -95,4 +95,3 @@
     }
   }
 }
-

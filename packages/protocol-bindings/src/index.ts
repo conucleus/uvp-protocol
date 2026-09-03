@@ -17,22 +17,22 @@ export const STATE_MACHINE_ABI = parseAbi([
   "event OwnershipTransferred(address indexed previousOwner,address indexed newOwner)",
   "event StateMachineModuleSet(bytes32 indexed moduleId,address indexed previousModule,address indexed newModule)",
   "event StateMachineModulesFrozen(bytes32 indexed moduleSetHash)",
-  "event HookReady(bytes32 indexed orderId,bytes32 indexed hookId,bytes32 indexed stageId,bytes32 hookName)",
-  "event HookStatusChanged(bytes32 indexed orderId,bytes32 indexed hookId,uint8 previousStatus,uint8 newStatus,uint64 dueAt)",
-  "event TimerPoked(bytes32 indexed orderId,bytes32 indexed hookId,uint64 dueAt)",
-  "event SignalSubmitted(bytes32 indexed orderId,bytes32 indexed sourceId,bytes32 indexed signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter)",
-  "event PlanCommitted(bytes32 indexed planId,bytes32 indexed planHash,address indexed publisher,bytes32 hooksHash,bytes32 metadataHash,uint256 hookCount)",
+  "event HookReady(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed hookId,bytes32 stageId,bytes32 hookName)",
+  "event HookStatusChanged(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed hookId,uint8 previousStatus,uint8 newStatus,uint64 dueAt)",
+  "event TimerPoked(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed hookId,uint64 dueAt)",
+  "event SignalSubmitted(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter)",
+  "event PlanCommitted(bytes32 indexed planId,bytes32 indexed planHash,address indexed publisher,bytes32 hooksHash,bytes32 metadataHash,uint256 hookCount,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot)",
   "event PlanFinalized(bytes32 indexed planId,bytes32 indexed planHash,bytes32 metadataHash)",
   "event PlanRegistered(bytes32 indexed planId,bytes32 planHash,uint256 hookCount)",
   "event PlanPublisherRecorded(bytes32 indexed planId,address indexed publisher)",
   "event OrderRegistered(bytes32 indexed orderId,bytes32 indexed planId)",
   "event OrderMaterialized(bytes32 indexed orderId,bytes32 indexed planId,bytes32 indexed stageId)",
-  "event OrderRelayerRecorded(bytes32 indexed orderId,address indexed relayer,address indexed creator)",
-  "event SignalSubmitterAuthorized(bytes32 indexed orderId,bytes32 indexed sourceId,bytes32 indexed signalId,address submitter,bytes32 role,bytes32 metadataHash)",
-  "event StageMaterialized(bytes32 indexed orderId,bytes32 indexed stageId,bytes32 indexed triggerHookId,bytes32 sourceId,bytes32 signalId)",
+  "event OrderRelayerRecorded(bytes32 indexed planId,bytes32 indexed orderId,address indexed relayer,address creator)",
+  "event SignalSubmitterAuthorized(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)",
+  "event StageMaterialized(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed stageId,bytes32 triggerHookId,bytes32 sourceId,bytes32 signalId)",
   "event OrderTriggered(bytes32 indexed orderId,bytes32 indexed planId,bytes32 indexed triggerStageId,bytes32 sourceId,bytes32 signalId,address submitter)",
-  "event StageExecutorActivated(bytes32 indexed orderId,bytes32 indexed targetStageId,address indexed executor,bytes32 role,bytes32 metadataHash,uint256 patchNonce,string metadataURI)",
-  "event StageExecutorSignalDelegated(bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 indexed sourceId,bytes32 signalId,address executor,bytes32 role,bytes32 metadataHash,uint256 patchNonce)",
+  "event StageExecutorActivated(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,address executor,bytes32 role,bytes32 metadataHash,uint256 patchNonce,string metadataURI)",
+  "event StageExecutorSignalDelegated(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 sourceId,bytes32 signalId,address executor,bytes32 role,bytes32 metadataHash,uint256 patchNonce)",
   "function owner() view returns (address)",
   "function stagePatchModule() view returns (address)",
   "function derivedSignalModule() view returns (address)",
@@ -50,14 +50,19 @@ export const STATE_MACHINE_ABI = parseAbi([
   "function setOrderLinkModule(address moduleAddress)",
   "function setLens(address moduleAddress)",
   "function freezeModules()",
-  "function commitPlan((address publisher,bytes32 hooksHash,bytes32 metadataHash,uint256 deadline) commit,(bytes32 hookId,bytes32 stageId,bytes32 hookName,bool isTrigger,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks,bytes signature) returns (bytes32 planId)",
+  "function commitPlan((address publisher,bytes32 hooksHash,bytes32 metadataHash,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,uint256 deadline) commit,(bytes32 hookId,bytes32 stageId,bytes32 hookName,uint8 flags,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks,bytes signature) returns (bytes32 planId)",
   "function finalizePlan(bytes32 planId,(bytes32 selectorStageId,bytes32 targetStageId)[] selectorBindings,(bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation)[] signalCapabilities)",
-  "function planRuntimeHash(bytes32 hooksHash,bytes32 metadataHash) pure returns (bytes32)",
+  "function planRuntimeHash(bytes32 hooksHash,bytes32 metadataHash,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot) pure returns (bytes32)",
   "function planIdFor(address publisher,bytes32 planHash) pure returns (bytes32)",
   "function triggerOrderFromOutsideFor((bytes32 orderId,bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) trigger,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations,bytes signature)",
   "function submitSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey)",
   "function submitSignalFor(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline,bytes signature)",
   "function submitSignalFromModule(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter)",
+  "function createDockedOrderFromModule(bytes32 targetPlanId,bytes32 linkedOrderId,address creator,address relayer,bytes32 entranceHookId,bytes32 entranceStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations)",
+  "function recordDockedInputFromModule(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter)",
+  "function planHookFlags(bytes32 planId,bytes32 hookId) view returns (uint8)",
+  "function planHookStageId(bytes32 planId,bytes32 hookId) view returns (bytes32)",
+  "function planDockRoots(bytes32 planId) view returns (bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot)",
   "function triggerOrderFromSignalFromModule((bytes32 orderId,bytes32 planId,address creator,bytes32 triggerOriginOrderId,bytes32 originPlanId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) trigger,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations,address relayer)",
   "function activateStageExecutorFromModule(bytes32 planId,bytes32 orderId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 patchHash,uint256 patchNonce,string metadataURI)",
   "function delegateStageExecutorSignalFromModule(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 sourceId,bytes32 signalId,address executor,bytes32 role,bytes32 metadataHash,uint256 patchNonce)",
@@ -113,24 +118,37 @@ export const DERIVED_SIGNAL_MODULE_ABI = parseAbi([
 ]);
 
 export const DOCKING_MODULE_ABI = parseAbi([
-  "event DockedOrderLinked(bytes32 indexed localOrderId,bytes32 indexed linkedOrderId,bytes32 indexed localSourceId,bytes32 selectorStageId,bytes32 linkedPlanId,address selector,bytes32 linkHash,uint256 linkNonce,string metadataURI)",
-  "event DockedSignalMapped(bytes32 indexed localOrderId,bytes32 indexed linkedOrderId,bytes32 indexed linkedSourceId,bytes32 linkedSignalId,bytes32 localSourceId,bytes32 localSignalId)",
-  "event DockedSignalSubmitted(bytes32 indexed localOrderId,bytes32 indexed linkedOrderId,bytes32 indexed linkedSourceId,bytes32 linkedSignalId,bytes32 localSourceId,bytes32 localSignalId,bytes32 payloadHash,address submitter)",
-  "function DOCKED_ORDER_LINK_SIGNAL_ID() view returns (bytes32)",
-  "function linkDockedOrder(bytes32 localPlanId,bytes32 localOrderId,(bytes32 selectorStageId,bytes32 localSourceId,bytes32 linkedOrderId,bytes32 linkedPlanId,bytes32 linkHash,uint256 linkNonce,string metadataURI,(bytes32 localSourceId,bytes32 localSignalId,bytes32 linkedSourceId,bytes32 linkedSignalId)[] signalBindings) link)",
-  "function linkDockedOrderFor(bytes32 localPlanId,bytes32 localOrderId,(bytes32 selectorStageId,bytes32 localSourceId,bytes32 linkedOrderId,bytes32 linkedPlanId,bytes32 linkHash,uint256 linkNonce,string metadataURI,(bytes32 localSourceId,bytes32 localSignalId,bytes32 linkedSourceId,bytes32 linkedSignalId)[] signalBindings) link,address selector,uint256 deadline,bytes signature)",
-  "function submitDockedSignal(bytes32 localPlanId,bytes32 localOrderId,bytes32 linkedPlanId,bytes32 linkedOrderId,bytes32 linkedSourceId,bytes32 linkedSignalId,bytes32 idempotencyKey)",
-  "function dockedOrderLinkDigest(bytes32 localPlanId,bytes32 localOrderId,(bytes32 selectorStageId,bytes32 localSourceId,bytes32 linkedOrderId,bytes32 linkedPlanId,bytes32 linkHash,uint256 linkNonce,string metadataURI,(bytes32 localSourceId,bytes32 localSignalId,bytes32 linkedSourceId,bytes32 linkedSignalId)[] signalBindings) link,address selector,uint256 deadline) view returns (bytes32)",
-  "function getActiveDockedOrderLink(bytes32 localPlanId,bytes32 localOrderId,bytes32 linkedPlanId,bytes32 linkedOrderId) view returns (bool exists,bytes32 selectorStageId,bytes32 localSourceId,address selector,bytes32 linkHash,uint256 linkNonce,string metadataURI)",
-  "function getActiveDockedSignalBinding(bytes32 localPlanId,bytes32 localOrderId,bytes32 linkedPlanId,bytes32 linkedOrderId,bytes32 linkedSourceId,bytes32 linkedSignalId) view returns (bool exists,bytes32 localSourceId,bytes32 localSignalId)",
+  "event DockOpened(bytes32 indexed dockInstanceId,bytes32 indexed localOrderId,bytes32 indexed linkedOrderId,bytes32 localPlanId,bytes32 targetPlanId,bytes32 routeId,bytes32 routeHash,uint8 depth,address opener)",
+  "event DockInputSubmitted(bytes32 indexed dockInstanceId,bytes32 indexed linkedOrderId,bytes32 indexed inputBindingHash,bytes32 localPlanId,bytes32 localOrderId,bytes32 targetPlanId,bytes32 targetSignalId,bytes32 payloadHash,address submitter)",
+  "event DockOutputSubmitted(bytes32 indexed dockInstanceId,bytes32 indexed linkedOrderId,bytes32 indexed outputBindingHash,bytes32 localPlanId,bytes32 localOrderId,bytes32 targetPlanId,bytes32 targetSignalId,bytes32 localSignalId,bytes32 payloadHash,address submitter)",
+  "event DockTerminal(bytes32 indexed dockInstanceId,uint8 terminal)",
+  "function openDockedOrder((bytes32 dockInstanceId,bytes32 localPlanId,bytes32 localOrderId,bytes32 localStageId,bytes32 localHookId,bytes32 localDefinitionRefHash,bytes32 routeId,bytes32 routeHash,bytes32 targetDefinitionRefHash,bytes32 targetArtifactHash,bytes32 targetInterfaceRoot,bytes32 sourceSeamId,bytes32 entrancePortKey,bytes32 entranceBindingHash,uint8 accessPolicy,bytes32 inputsRoot,bytes32 outputsRoot,bytes32 targetPlanId,bytes32 linkedOrderId,bytes32 targetStageId,bytes32 targetHookId,bytes32 targetSourceId,bytes32 targetSignalId,bytes32 sourceFactSetHash,uint8 parentDepth,address creator) request,bytes32[] routeProof,(bytes32 leafHash,bytes32 portKey,uint8 kind,bytes32 hookKey,bytes32 sourceId,bytes32 signalId,uint8 accessPolicy) entranceLeaf,bytes32[] interfaceProof,(bytes32 localHookId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,uint8 kind,bytes32 bindingHash)[] inputs,(bytes32 localSourceId,bytes32 localSignalId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,uint8 terminal,bytes32 bindingHash)[] outputs,(uint256 nonce,uint256 deadline,bytes signature) permit,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] childAuthorizations) returns (bool opened)",
+  "function submitDockedInput(bytes32 dockInstanceId,bytes32 localHookId,bytes32 inputBindingHash,bytes32 sourceFactSetHash) returns (bool submitted)",
+  "function submitDockedSignal(bytes32 dockInstanceId,bytes32 outputBindingHash) returns (bool submitted)",
+  "function getActiveDock(bytes32 dockInstanceId) view returns (bytes32 localPlanId,bytes32 localOrderId,bytes32 localStageId,bytes32 routeId,bytes32 routeHash,bytes32 targetPlanId,bytes32 linkedOrderId,uint8 depth,uint8 status,bool exists)",
+  "function getDockInputBinding(bytes32 dockInstanceId,bytes32 inputBindingHash) view returns (bytes32 localHookId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,uint8 kind,bool exists)",
+  "function getDockOutputBinding(bytes32 dockInstanceId,bytes32 outputBindingHash) view returns (bytes32 localSourceId,bytes32 localSignalId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,uint8 terminal,bool exists)",
+  "function dockInputDelivered(bytes32 dockInstanceId,bytes32 inputBindingHash) view returns (bool)",
+  "function dockOutputDelivered(bytes32 dockInstanceId,bytes32 outputBindingHash) view returns (bool)",
+  "function dockByLocalRoute(bytes32 localRouteInstanceKey) view returns (bytes32)",
+  "function dockByTargetOrder(bytes32 targetEndpointKey) view returns (bytes32)",
+  "function dockDepthOfOrder(bytes32 planId,bytes32 orderId) view returns (uint8)",
+  "function usedEntrancePermitNonce(bytes32 dockInstanceId) view returns (uint256)",
+  "function entrancePermitDigest(bytes32 targetPlanId,bytes32 targetEntrancePortId,bytes32 localPlanId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,address creator,uint256 nonce,uint256 deadline) view returns (bytes32)",
+  "function DOMAIN_SEPARATOR() view returns (bytes32)",
+  "function stateMachine() view returns (address)",
+  "function planMetadataModule() view returns (address)",
 ]);
 
 export const STATE_MACHINE_LENS_ABI = parseAbi([
   "function stateMachine() view returns (address)",
   "function getActiveStageExecutorPatch(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bool exists,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 patchHash,uint256 patchNonce,string metadataURI)",
   "function getActiveStageResourcePatch(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 resourceKey) view returns (bool exists,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI)",
-  "function getActiveDockedOrderLink(bytes32 localPlanId,bytes32 localOrderId,bytes32 linkedPlanId,bytes32 linkedOrderId) view returns (bool exists,bytes32 selectorStageId,bytes32 localSourceId,address selector,bytes32 linkHash,uint256 linkNonce,string metadataURI)",
-  "function getActiveDockedSignalBinding(bytes32 localPlanId,bytes32 localOrderId,bytes32 linkedPlanId,bytes32 linkedOrderId,bytes32 linkedSourceId,bytes32 linkedSignalId) view returns (bool exists,bytes32 localSourceId,bytes32 localSignalId)",
+  "function getActiveDock(bytes32 dockInstanceId) view returns (bytes32 localPlanId,bytes32 localOrderId,bytes32 localStageId,bytes32 routeId,bytes32 routeHash,bytes32 targetPlanId,bytes32 linkedOrderId,uint8 depth,uint8 status,bool exists)",
+  "function getDockInputBinding(bytes32 dockInstanceId,bytes32 inputBindingHash) view returns (bytes32 localHookId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,uint8 kind,bool exists)",
+  "function getDockOutputBinding(bytes32 dockInstanceId,bytes32 outputBindingHash) view returns (bytes32 localSourceId,bytes32 localSignalId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,uint8 terminal,bool exists)",
+  "function dockInputDelivered(bytes32 dockInstanceId,bytes32 inputBindingHash) view returns (bool)",
+  "function dockOutputDelivered(bytes32 dockInstanceId,bytes32 outputBindingHash) view returns (bool)",
   "function planSelectorBindingCount(bytes32 planId) view returns (uint256)",
   "function planSelectorBindingAt(bytes32 planId,uint256 index) view returns (bytes32 selectorStageId,bytes32 targetStageId)",
   "function planSignalCapabilityCount(bytes32 planId) view returns (uint256)",
@@ -164,20 +182,12 @@ export const STAGE_RESOURCE_PATCH_DOMAIN_VERSION =
   STAGE_EXECUTOR_PATCH_DOMAIN_VERSION;
 export const STAGE_RESOURCE_PATCH_PRIMARY_TYPE =
   "UVPStagePatchModuleStageResourcePatch";
-export const DOCKED_ORDER_LINK_DOMAIN_NAME = "UVPDockingModule";
-export const DOCKED_ORDER_LINK_DOMAIN_VERSION = "0.1";
-export const DOCKED_ORDER_LINK_PRIMARY_TYPE = "UVPDockingModuleDockedOrderLink";
 export const STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN =
   "uvp:stage-executor-patch-payload:v1";
 export const STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN =
   "uvp:stage-resource-patch-payload:v1";
-export const DOCKED_ORDER_LINK_PAYLOAD_HASH_DOMAIN =
-  "uvp:docked-order-link-payload:v1";
 export const RESOURCE_MANIFEST_V1_SCHEMA_VERSION = "uvp-resource-manifest-v1";
 export const RESOURCE_MANIFEST_HASH_DOMAIN = "uvp:resource-manifest:v1";
-export const DOCKED_ORDER_LINK_SIGNAL_ID = keccak256(
-  stringToHex("uvp.docked_order_link.v1"),
-);
 export const EXECUTOR_PATCH_MODE_ASSIGN = stringToHex("assign", {
   size: 32,
 }) as Hex;
@@ -285,21 +295,6 @@ export const STAGE_RESOURCE_PATCH_TYPED_DATA_FIELDS: readonly ProductSubmitTyped
     { name: "deadline", type: "uint256" },
   ];
 
-export const DOCKED_ORDER_LINK_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] =
-  [
-    { name: "localPlanId", type: "bytes32" },
-    { name: "localOrderId", type: "bytes32" },
-    { name: "selectorStageId", type: "bytes32" },
-    { name: "localSourceId", type: "bytes32" },
-    { name: "linkedOrderId", type: "bytes32" },
-    { name: "linkedPlanId", type: "bytes32" },
-    { name: "linkHash", type: "bytes32" },
-    { name: "linkNonce", type: "uint256" },
-    { name: "signalBindingsHash", type: "bytes32" },
-    { name: "metadataURI", type: "string" },
-    { name: "selector", type: "address" },
-    { name: "deadline", type: "uint256" },
-  ];
 
 export interface ProductSubmitTypedData {
   readonly domain: {
@@ -524,53 +519,9 @@ export interface StageResourcePatchTypedData {
   };
 }
 
-export interface DockedSignalBindingPayload {
-  readonly localSourceId: Hex | string;
-  readonly localSignalId: Hex | string;
-  readonly linkedSourceId: Hex | string;
-  readonly linkedSignalId: Hex | string;
-}
 
-export interface DockedOrderLinkPayload {
-  readonly selectorStageId: Hex | string;
-  readonly localSourceId: Hex | string;
-  readonly linkedOrderId: Hex | string;
-  readonly linkedPlanId: Hex | string;
-  readonly linkNonce: bigint | number | string;
-  readonly metadataURI: string;
-  readonly signalBindings: readonly DockedSignalBindingPayload[];
-}
 
-export interface DockedOrderLinkCallLink extends DockedOrderLinkPayload {
-  readonly linkHash: Hex | string;
-}
 
-export interface DockedOrderLinkTypedData {
-  readonly domain: {
-    readonly name: typeof DOCKED_ORDER_LINK_DOMAIN_NAME;
-    readonly version: typeof DOCKED_ORDER_LINK_DOMAIN_VERSION;
-    readonly chainId: number;
-    readonly verifyingContract: Address;
-  };
-  readonly types: {
-    readonly UVPDockingModuleDockedOrderLink: readonly ProductSubmitTypedDataField[];
-  };
-  readonly primaryType: typeof DOCKED_ORDER_LINK_PRIMARY_TYPE;
-  readonly message: {
-    readonly localPlanId: Hex;
-    readonly localOrderId: Hex;
-    readonly selectorStageId: Hex;
-    readonly localSourceId: Hex;
-    readonly linkedOrderId: Hex;
-    readonly linkedPlanId: Hex;
-    readonly linkHash: Hex;
-    readonly linkNonce: string;
-    readonly signalBindingsHash: Hex;
-    readonly metadataURI: string;
-    readonly selector: Address;
-    readonly deadline: string;
-  };
-}
 
 export type ResourceVisibility = "public" | "protected" | "private";
 
@@ -664,15 +615,6 @@ export interface BuildStageResourcePatchTypedDataInput
   readonly deadline: bigint | number | string;
 }
 
-export interface BuildDockedOrderLinkTypedDataInput
-  extends DockedOrderLinkCallLink {
-  readonly chainId: number;
-  readonly verifyingContract: Address | string;
-  readonly localPlanId: Hex | string;
-  readonly localOrderId: Hex | string;
-  readonly selector: Address | string;
-  readonly deadline: bigint | number | string;
-}
 
 export interface SubmitSignalForCallArgs {
   readonly planId: Hex | string;
@@ -756,24 +698,6 @@ export interface ApplyStageResourcePatchForCallArgs {
   readonly signature: Hex | string;
 }
 
-export interface LinkDockedOrderForCallArgs {
-  readonly localPlanId: Hex | string;
-  readonly localOrderId: Hex | string;
-  readonly link: DockedOrderLinkCallLink;
-  readonly selector: Address | string;
-  readonly deadline: bigint | number | string;
-  readonly signature: Hex | string;
-}
-
-export interface SubmitDockedSignalCallArgs {
-  readonly localPlanId: Hex | string;
-  readonly localOrderId: Hex | string;
-  readonly linkedPlanId: Hex | string;
-  readonly linkedOrderId: Hex | string;
-  readonly linkedSourceId: Hex | string;
-  readonly linkedSignalId: Hex | string;
-  readonly idempotencyKey: Hex | string;
-}
 
 export interface SubmitSignalForCallConfig {
   readonly stateMachineAddress: Address | string;
@@ -802,7 +726,6 @@ export interface OrderLinkModuleCallConfig {
 
 export type ApplyStageExecutorPatchForCallConfig = StagePatchModuleCallConfig;
 export type ApplyStageResourcePatchForCallConfig = StagePatchModuleCallConfig;
-export type LinkDockedOrderForCallConfig = DockingModuleCallConfig;
 export type SubmitDockedSignalCallConfig = DockingModuleCallConfig;
 export type SubmitDerivedSignalForCallConfig = DerivedSignalModuleCallConfig;
 export type TriggerOrderFromOutsideForCallConfig = SubmitSignalForCallConfig;
@@ -978,43 +901,8 @@ export interface ApplyStageResourcePatchForCall {
   readonly chainId?: number;
 }
 
-export type DockedSignalBindingCallTuple = readonly [Hex, Hex, Hex, Hex];
 
-export type DockedOrderLinkCallTuple = readonly [
-  Hex,
-  Hex,
-  Hex,
-  Hex,
-  Hex,
-  bigint,
-  string,
-  readonly DockedSignalBindingCallTuple[],
-];
 
-export interface LinkDockedOrderForCall {
-  readonly address: Address;
-  readonly abi: typeof DOCKING_MODULE_ABI;
-  readonly functionName: "linkDockedOrderFor";
-  readonly args: readonly [
-    Hex,
-    Hex,
-    DockedOrderLinkCallTuple,
-    Address,
-    bigint,
-    Hex,
-  ];
-  readonly data: Hex;
-  readonly chainId?: number;
-}
-
-export interface SubmitDockedSignalCall {
-  readonly address: Address;
-  readonly abi: typeof DOCKING_MODULE_ABI;
-  readonly functionName: "submitDockedSignal";
-  readonly args: readonly [Hex, Hex, Hex, Hex, Hex, Hex, Hex];
-  readonly data: Hex;
-  readonly chainId?: number;
-}
 
 export interface EvidenceHashResult {
   readonly algorithm: "keccak256";
@@ -1258,40 +1146,6 @@ export function buildStageResourcePatchTypedData(
   };
 }
 
-export function buildDockedOrderLinkTypedData(
-  input: BuildDockedOrderLinkTypedDataInput,
-): DockedOrderLinkTypedData {
-  const link = normalizeDockedOrderLink(input);
-  return {
-    domain: {
-      name: DOCKED_ORDER_LINK_DOMAIN_NAME,
-      version: DOCKED_ORDER_LINK_DOMAIN_VERSION,
-      chainId: normalizeChainId(input.chainId),
-      verifyingContract: normalizeAddress(
-        input.verifyingContract,
-        "verifyingContract",
-      ),
-    },
-    types: {
-      UVPDockingModuleDockedOrderLink: DOCKED_ORDER_LINK_TYPED_DATA_FIELDS,
-    },
-    primaryType: DOCKED_ORDER_LINK_PRIMARY_TYPE,
-    message: {
-      localPlanId: normalizeBytes32(input.localPlanId, "localPlanId"),
-      localOrderId: normalizeBytes32(input.localOrderId, "localOrderId"),
-      selectorStageId: link[0],
-      localSourceId: link[1],
-      linkedOrderId: link[2],
-      linkedPlanId: link[3],
-      linkHash: link[4],
-      linkNonce: link[5].toString(10),
-      signalBindingsHash: hashDockedSignalBindings(link[7]),
-      metadataURI: link[6],
-      selector: normalizeAddress(input.selector, "selector"),
-      deadline: normalizeUintString(input.deadline, "deadline"),
-    },
-  };
-}
 
 export async function recoverProductSubmitSigner(
   typedData: ProductSubmitTypedData,
@@ -1363,19 +1217,6 @@ export async function recoverStageResourcePatchSigner(
   return normalizeAddress(recovered, "recoveredSelector");
 }
 
-export async function recoverDockedOrderLinkSigner(
-  typedData: DockedOrderLinkTypedData,
-  signature: Hex | string,
-): Promise<Address> {
-  const recovered = await recoverTypedDataAddress({
-    domain: typedData.domain,
-    types: typedData.types,
-    primaryType: typedData.primaryType,
-    message: typedData.message,
-    signature: normalizeHex(signature, "signature"),
-  } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
-  return normalizeAddress(recovered, "recoveredDockedOrderLinkSelector");
-}
 
 export function buildSubmitSignalForCall(
   config: SubmitSignalForCallConfig,
@@ -1571,69 +1412,99 @@ export function buildApplyStageResourcePatchForCall(
   };
 }
 
-export function buildLinkDockedOrderForCall(
-  config: LinkDockedOrderForCallConfig,
-  args: LinkDockedOrderForCallArgs,
-): LinkDockedOrderForCall {
-  const normalizedArgs = [
-    normalizeBytes32(args.localPlanId, "localPlanId"),
-    normalizeBytes32(args.localOrderId, "localOrderId"),
-    normalizeDockedOrderLink(args.link),
-    normalizeAddress(args.selector, "selector"),
-    normalizeUintBigInt(args.deadline, "deadline"),
-    normalizeHex(args.signature, "signature"),
-  ] as const;
-
-  return {
-    address: normalizeAddress(
-      config.dockingModuleAddress,
-      "dockingModuleAddress",
-    ),
-    abi: DOCKING_MODULE_ABI,
-    functionName: "linkDockedOrderFor",
-    args: normalizedArgs,
-    data: encodeFunctionData({
-      abi: DOCKING_MODULE_ABI,
-      functionName: "linkDockedOrderFor",
-      args: normalizedArgs as never,
-    }),
-    ...(config.chainId !== undefined
-      ? { chainId: normalizeChainId(config.chainId) }
-      : {}),
-  };
+export interface SubmitDockedSignalCallArgs {
+  readonly dockInstanceId: Hex | string;
+  readonly outputBindingHash: Hex | string;
 }
+
+export interface SubmitDockedInputCallArgs {
+  readonly dockInstanceId: Hex | string;
+  readonly localHookId: Hex | string;
+  readonly inputBindingHash: Hex | string;
+  readonly sourceFactSetHash: Hex | string;
+}
+
+export interface SubmitDockedSignalCall {
+  readonly address: Address;
+  readonly abi: typeof DOCKING_MODULE_ABI;
+  readonly functionName: "submitDockedSignal";
+  readonly args: readonly [Hex, Hex];
+  readonly data: Hex;
+  readonly chainId?: number;
+}
+
+export interface SubmitDockedInputCall {
+  readonly address: Address;
+  readonly abi: typeof DOCKING_MODULE_ABI;
+  readonly functionName: "submitDockedInput";
+  readonly args: readonly [Hex, Hex, Hex, Hex];
+  readonly data: Hex;
+  readonly chainId?: number;
+}
+
+// openDockedOrder 的嵌套 tuple 会让 viem 对完整 DOCKING_MODULE_ABI 的类型推断
+// 超过 TS 递归上限；编码层用等价的最小 ABI（selector 相同，calldata 逐字节一致）。
+const DOCK_SUBMIT_SIGNAL_ABI = parseAbi([
+  "function submitDockedSignal(bytes32 dockInstanceId,bytes32 outputBindingHash) returns (bool)",
+]);
+const DOCK_SUBMIT_INPUT_ABI = parseAbi([
+  "function submitDockedInput(bytes32 dockInstanceId,bytes32 localHookId,bytes32 inputBindingHash,bytes32 sourceFactSetHash) returns (bool)",
+]);
 
 export function buildSubmitDockedSignalCall(
   config: SubmitDockedSignalCallConfig,
   args: SubmitDockedSignalCallArgs,
 ): SubmitDockedSignalCall {
   const normalizedArgs = [
-    normalizeBytes32(args.localPlanId, "localPlanId"),
-    normalizeBytes32(args.localOrderId, "localOrderId"),
-    normalizeBytes32(args.linkedPlanId, "linkedPlanId"),
-    normalizeBytes32(args.linkedOrderId, "linkedOrderId"),
-    normalizeBytes32(args.linkedSourceId, "linkedSourceId"),
-    normalizeBytes32(args.linkedSignalId, "linkedSignalId"),
-    normalizeBytes32(args.idempotencyKey, "idempotencyKey"),
+    normalizeBytes32(args.dockInstanceId, "dockInstanceId"),
+    normalizeBytes32(args.outputBindingHash, "outputBindingHash"),
   ] as const;
 
-  return {
-    address: normalizeAddress(
-      config.dockingModuleAddress,
-      "dockingModuleAddress",
-    ),
+  const data = encodeFunctionData({
+    abi: DOCK_SUBMIT_SIGNAL_ABI,
+    functionName: "submitDockedSignal",
+    args: normalizedArgs,
+  });
+  const call: SubmitDockedSignalCall = {
+    address: normalizeAddress(config.dockingModuleAddress, "dockingModuleAddress"),
     abi: DOCKING_MODULE_ABI,
     functionName: "submitDockedSignal",
     args: normalizedArgs,
-    data: encodeFunctionData({
-      abi: DOCKING_MODULE_ABI,
-      functionName: "submitDockedSignal",
-      args: normalizedArgs,
-    }),
+    data,
     ...(config.chainId !== undefined
       ? { chainId: normalizeChainId(config.chainId) }
       : {}),
   };
+  return call;
+}
+
+export function buildSubmitDockedInputCall(
+  config: SubmitDockedSignalCallConfig,
+  args: SubmitDockedInputCallArgs,
+): SubmitDockedInputCall {
+  const normalizedArgs = [
+    normalizeBytes32(args.dockInstanceId, "dockInstanceId"),
+    normalizeBytes32(args.localHookId, "localHookId"),
+    normalizeBytes32(args.inputBindingHash, "inputBindingHash"),
+    normalizeBytes32(args.sourceFactSetHash, "sourceFactSetHash"),
+  ] as const;
+
+  const data = encodeFunctionData({
+    abi: DOCK_SUBMIT_INPUT_ABI,
+    functionName: "submitDockedInput",
+    args: normalizedArgs,
+  });
+  const call: SubmitDockedInputCall = {
+    address: normalizeAddress(config.dockingModuleAddress, "dockingModuleAddress"),
+    abi: DOCKING_MODULE_ABI,
+    functionName: "submitDockedInput",
+    args: normalizedArgs,
+    data,
+    ...(config.chainId !== undefined
+      ? { chainId: normalizeChainId(config.chainId) }
+      : {}),
+  };
+  return call;
 }
 
 export function canonicalJson(value: unknown): string {
@@ -1771,59 +1642,7 @@ export function hashStageResourcePatchPayload(
   );
 }
 
-export function hashDockedOrderLinkPayload(
-  payload: DockedOrderLinkPayload,
-): Hex {
-  const normalized = normalizeDockedOrderLinkPayload(payload);
-  return keccak256(
-    encodeAbiParameters(
-      [
-        { name: "selectorStageId", type: "bytes32" },
-        { name: "localSourceId", type: "bytes32" },
-        { name: "linkedOrderId", type: "bytes32" },
-        { name: "linkedPlanId", type: "bytes32" },
-        { name: "linkNonce", type: "uint256" },
-        { name: "metadataURI", type: "string" },
-        { name: "signalBindingsHash", type: "bytes32" },
-      ],
-      [
-        normalized.selectorStageId,
-        normalized.localSourceId,
-        normalized.linkedOrderId,
-        normalized.linkedPlanId,
-        BigInt(normalized.linkNonce),
-        normalized.metadataURI,
-        hashDockedSignalBindings(normalized.signalBindings),
-      ],
-    ),
-  );
-}
 
-export function hashDockedSignalBindings(
-  bindings: readonly DockedSignalBindingCallTuple[],
-): Hex {
-  let rollingHash = keccak256(
-    encodeAbiParameters(
-      [{ name: "length", type: "uint256" }],
-      [BigInt(bindings.length)],
-    ),
-  );
-  for (const binding of bindings) {
-    rollingHash = keccak256(
-      encodeAbiParameters(
-        [
-          { name: "rollingHash", type: "bytes32" },
-          { name: "localSourceId", type: "bytes32" },
-          { name: "localSignalId", type: "bytes32" },
-          { name: "linkedSourceId", type: "bytes32" },
-          { name: "linkedSignalId", type: "bytes32" },
-        ],
-        [rollingHash, binding[0], binding[1], binding[2], binding[3]],
-      ),
-    );
-  }
-  return rollingHash;
-}
 
 export function hashSignalAuthorizations(
   authorizations: readonly SignalAuthorizationPayload[],
@@ -2062,38 +1881,6 @@ function normalizeStageResourcePatch(
   ] as const;
 }
 
-function normalizeDockedSignalBinding(
-  binding: DockedSignalBindingPayload,
-): DockedSignalBindingCallTuple {
-  return [
-    normalizeNonZeroBytes32(binding.localSourceId, "localSourceId"),
-    normalizeNonZeroBytes32(binding.localSignalId, "localSignalId"),
-    normalizeNonZeroBytes32(binding.linkedSourceId, "linkedSourceId"),
-    normalizeNonZeroBytes32(binding.linkedSignalId, "linkedSignalId"),
-  ] as const;
-}
-
-function normalizeDockedOrderLink(
-  link: DockedOrderLinkCallLink,
-): DockedOrderLinkCallTuple {
-  if (typeof link.metadataURI !== "string") {
-    throw new Error("metadataURI must be a string");
-  }
-  if (!Array.isArray(link.signalBindings) || link.signalBindings.length === 0) {
-    throw new Error("signalBindings must contain at least one binding");
-  }
-  return [
-    normalizeNonZeroBytes32(link.selectorStageId, "selectorStageId"),
-    normalizeNonZeroBytes32(link.localSourceId, "localSourceId"),
-    normalizeNonZeroBytes32(link.linkedOrderId, "linkedOrderId"),
-    normalizeNonZeroBytes32(link.linkedPlanId, "linkedPlanId"),
-    normalizeNonZeroBytes32(link.linkHash, "linkHash"),
-    normalizeUintBigInt(link.linkNonce, "linkNonce"),
-    link.metadataURI,
-    link.signalBindings.map((binding) => normalizeDockedSignalBinding(binding)),
-  ] as const;
-}
-
 function normalizeStageExecutorPatchPayload(
   payload: StageExecutorPatchPayload,
 ): {
@@ -2183,45 +1970,6 @@ function normalizeStageResourcePatchPayload(
   };
 }
 
-function normalizeDockedOrderLinkPayload(payload: DockedOrderLinkPayload): {
-  readonly selectorStageId: Hex;
-  readonly localSourceId: Hex;
-  readonly linkedOrderId: Hex;
-  readonly linkedPlanId: Hex;
-  readonly linkNonce: string;
-  readonly metadataURI: string;
-  readonly signalBindings: readonly DockedSignalBindingCallTuple[];
-} {
-  if (typeof payload.metadataURI !== "string") {
-    throw new Error("metadataURI must be a string");
-  }
-  if (
-    !Array.isArray(payload.signalBindings) ||
-    payload.signalBindings.length === 0
-  ) {
-    throw new Error("signalBindings must contain at least one binding");
-  }
-  return {
-    selectorStageId: normalizeNonZeroBytes32(
-      payload.selectorStageId,
-      "selectorStageId",
-    ),
-    localSourceId: normalizeNonZeroBytes32(
-      payload.localSourceId,
-      "localSourceId",
-    ),
-    linkedOrderId: normalizeNonZeroBytes32(
-      payload.linkedOrderId,
-      "linkedOrderId",
-    ),
-    linkedPlanId: normalizeNonZeroBytes32(payload.linkedPlanId, "linkedPlanId"),
-    linkNonce: normalizeUintString(payload.linkNonce, "linkNonce"),
-    metadataURI: payload.metadataURI,
-    signalBindings: payload.signalBindings.map((binding) =>
-      normalizeDockedSignalBinding(binding),
-    ),
-  };
-}
 
 function normalizeResourceManifestV1(
   manifest: ResourceManifestV1,

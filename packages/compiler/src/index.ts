@@ -29,6 +29,35 @@ export {
 } from "./onchain-hook-plan.js";
 export { hashCanonical, keccak256Hex } from "./hash.js";
 export {
+  canonicalSignalHash,
+  cloudRuntimeDomain,
+  definitionRefHash,
+  dockInstanceId,
+  dockOutputIdempotencyKey,
+  dockInputIdempotencyKey,
+  dockRouteId,
+  dockRoutesRootOf,
+  EMPTY_MERKLE_ROOT,
+  evmRuntimeDomain,
+  hookKey,
+  interfaceRootOf,
+  linkedOrderId,
+  localOrderKey,
+  merkleProof,
+  merkleRoot,
+  portKey,
+  sourceFactSetHash,
+  stageKey,
+  u64Word,
+  verifyMerkleProof,
+} from "./dock.js";
+export {
+  HOOK_FLAG_EMIT_READY,
+  HOOK_FLAG_ORDER_TRIGGER_DOCK,
+  HOOK_FLAG_ORDER_TRIGGER_MINT,
+  solidityHookFlags,
+} from "./onchain-hook-plan.js";
+export {
   COMPILER_NAME,
   COMPILER_VERSION,
   HOOK_PLAN_SCHEMA_VERSION,
@@ -36,7 +65,15 @@ export {
 } from "./types/index.js";
 export type {
   Address,
+  DockInputPortSource,
+  DockInterfaceArtifact,
+  DockInterfaceSource,
+  DockOutputPortSource,
+  DockResolutionManifest,
+  DockResolutionTarget,
+  DockRouteV1,
   ExecuteConfigs,
+  OrderTriggerKind,
   FileResourceLike,
   HexString,
   ObjectMeta,

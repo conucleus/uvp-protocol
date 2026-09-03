@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {ECDSA} from "./libraries/ECDSA.sol";
+import {DockMerkle} from "./libraries/DockMerkle.sol";
 import {UVPSignatures} from "./libraries/UVPSignatures.sol";
 import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 
@@ -34,7 +35,9 @@ contract UVPStateMachine {
         bytes32 hookId;
         bytes32 stageId;
         bytes32 hookName;
-        bool isTrigger;
+        // PRD94 §3.4 / PRD95 §5.3：单一 isTrigger 拆为位标志。
+        // 1 = ORDER_TRIGGER_MINT；2 = ORDER_TRIGGER_DOCK；4 = EMIT_READY。
+        uint8 flags;
         Instruction[] instructions;
         bytes32[] dependencyKeys;
     }
@@ -98,10 +101,14 @@ contract UVPStateMachine {
         uint256 deadline;
     }
 
+    // PRD95 §5.1：PlanCommitV2 显式提交 dock roots；runtime hash 覆盖全部
+    // 五个域，executorRoutes 不再有"产物有、commitment 无"的悬空状态。
     struct PlanCommit {
         address publisher;
         bytes32 hooksHash;
         bytes32 metadataHash;
+        bytes32 dockRoutesRoot;
+        bytes32 dockInterfaceRoot;
         uint256 deadline;
     }
 
@@ -124,7 +131,7 @@ contract UVPStateMachine {
         bytes32 hookId;
         bytes32 stageId;
         bytes32 hookName;
-        bool isTrigger;
+        uint8 flags;
         Instruction[] instructions;
         bytes32[] dependencyKeys;
         bool exists;
@@ -134,6 +141,8 @@ contract UVPStateMachine {
         bytes32 planHash;
         bytes32 hooksHash;
         bytes32 metadataHash;
+        bytes32 dockRoutesRoot;
+        bytes32 dockInterfaceRoot;
         address publisher;
         bytes32[] hookIds;
         mapping(bytes32 hookId => StoredHook hook) hooks;
@@ -241,13 +250,16 @@ contract UVPStateMachine {
     uint8 public constant SIGNAL_TARGET_CURRENT_ORDER = 0;
     uint8 public constant SIGNAL_TARGET_TRIGGER_ORIGIN = 1;
 
-    bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.8");
-    bytes32 private constant _PLAN_RUNTIME_HASH_DOMAIN = keccak256("uvp.plan.runtime.v1");
+    bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.9");
+    bytes32 private constant _PLAN_RUNTIME_HASH_DOMAIN = keccak256("uvp.plan.runtime.v2");
+    uint8 public constant HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
+    uint8 public constant HOOK_FLAG_ORDER_TRIGGER_DOCK = 2;
+    uint8 public constant HOOK_FLAG_EMIT_READY = 4;
     bytes32 private constant _PLAN_ID_HASH_DOMAIN = keccak256("uvp.plan.id.v1");
     uint64 public constant MAX_HOOK_DELAY_SECONDS = 30 days;
     uint256 public constant MAX_PLAN_DEPENDENCIES = 1024;
     bytes32 private constant _PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 metadataHash,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 metadataHash,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,uint256 deadline)"
     );
     bytes32 private constant _SIGNAL_SUBMISSION_TYPEHASH = keccak256(
         // 审计 #10：signal 提交摘要并入 planId（新版本口径），签名绑定
@@ -299,26 +311,30 @@ contract UVPStateMachine {
         address indexed publisher,
         bytes32 hooksHash,
         bytes32 metadataHash,
-        uint256 hookCount
+        uint256 hookCount,
+        bytes32 dockRoutesRoot,
+        bytes32 dockInterfaceRoot
     );
     event PlanFinalized(bytes32 indexed planId, bytes32 indexed planHash, bytes32 metadataHash);
     event PlanRegistered(bytes32 indexed planId, bytes32 planHash, uint256 hookCount);
     event PlanPublisherRecorded(bytes32 indexed planId, address indexed publisher);
     event OrderRegistered(bytes32 indexed orderId, bytes32 indexed planId);
     event OrderMaterialized(bytes32 indexed orderId, bytes32 indexed planId, bytes32 indexed stageId);
-    event OrderRelayerRecorded(bytes32 indexed orderId, address indexed relayer, address indexed creator);
+    event OrderRelayerRecorded(bytes32 indexed planId, bytes32 indexed orderId, address indexed relayer, address creator);
     event SignalSubmitterAuthorized(
+        bytes32 indexed planId,
         bytes32 indexed orderId,
         bytes32 indexed sourceId,
-        bytes32 indexed signalId,
+        bytes32 signalId,
         address submitter,
         bytes32 role,
         bytes32 metadataHash
     );
     event StageExecutorSignalDelegated(
+        bytes32 indexed planId,
         bytes32 indexed orderId,
         bytes32 indexed targetStageId,
-        bytes32 indexed sourceId,
+        bytes32 sourceId,
         bytes32 signalId,
         address executor,
         bytes32 role,
@@ -326,17 +342,19 @@ contract UVPStateMachine {
         uint256 patchNonce
     );
     event SignalSubmitted(
+        bytes32 indexed planId,
         bytes32 indexed orderId,
         bytes32 indexed sourceId,
-        bytes32 indexed signalId,
+        bytes32 signalId,
         bytes32 payloadHash,
         bytes32 idempotencyKey,
         address submitter
     );
     event StageMaterialized(
+        bytes32 indexed planId,
         bytes32 indexed orderId,
         bytes32 indexed stageId,
-        bytes32 indexed triggerHookId,
+        bytes32 triggerHookId,
         bytes32 sourceId,
         bytes32 signalId
     );
@@ -349,19 +367,27 @@ contract UVPStateMachine {
         address submitter
     );
     event StageExecutorActivated(
+        bytes32 indexed planId,
         bytes32 indexed orderId,
         bytes32 indexed targetStageId,
-        address indexed executor,
+        address executor,
         bytes32 role,
         bytes32 metadataHash,
         uint256 patchNonce,
         string metadataURI
     );
     event HookStatusChanged(
-        bytes32 indexed orderId, bytes32 indexed hookId, HookStatus previousStatus, HookStatus newStatus, uint64 dueAt
+        bytes32 indexed planId,
+        bytes32 indexed orderId,
+        bytes32 indexed hookId,
+        HookStatus previousStatus,
+        HookStatus newStatus,
+        uint64 dueAt
     );
-    event HookReady(bytes32 indexed orderId, bytes32 indexed hookId, bytes32 indexed stageId, bytes32 hookName);
-    event TimerPoked(bytes32 indexed orderId, bytes32 indexed hookId, uint64 dueAt);
+    event HookReady(
+        bytes32 indexed planId, bytes32 indexed orderId, bytes32 indexed hookId, bytes32 stageId, bytes32 hookName
+    );
+    event TimerPoked(bytes32 indexed planId, bytes32 indexed orderId, bytes32 indexed hookId, uint64 dueAt);
 
     bytes32 public constant STAGE_PATCH_MODULE_ID = keccak256("uvp.module.stage_patch.v1");
     bytes32 public constant DERIVED_SIGNAL_MODULE_ID = keccak256("uvp.module.derived_signal.v1");
@@ -472,7 +498,14 @@ contract UVPStateMachine {
             revert InvalidPlanSignature(commit.publisher, recoveredSigner);
         }
 
-        bytes32 runtimePlanHash = planRuntimeHash(commit.hooksHash, commit.metadataHash);
+        bytes32 dockRoutesRoot = commit.dockRoutesRoot == bytes32(0)
+            ? DockMerkle.EMPTY_ROOT
+            : commit.dockRoutesRoot;
+        bytes32 dockInterfaceRoot = commit.dockInterfaceRoot == bytes32(0)
+            ? DockMerkle.EMPTY_ROOT
+            : commit.dockInterfaceRoot;
+        bytes32 runtimePlanHash =
+            planRuntimeHash(commit.hooksHash, commit.metadataHash, dockRoutesRoot, dockInterfaceRoot);
         planId = planIdFor(commit.publisher, runtimePlanHash);
         Plan storage plan = _plans[planId];
         if (plan.committed) {
@@ -481,6 +514,8 @@ contract UVPStateMachine {
         plan.planHash = runtimePlanHash;
         plan.hooksHash = commit.hooksHash;
         plan.metadataHash = commit.metadataHash;
+        plan.dockRoutesRoot = dockRoutesRoot;
+        plan.dockInterfaceRoot = dockInterfaceRoot;
         plan.publisher = commit.publisher;
         plan.committed = true;
 
@@ -498,7 +533,14 @@ contract UVPStateMachine {
         }
 
         emit PlanCommitted(
-            planId, runtimePlanHash, commit.publisher, commit.hooksHash, commit.metadataHash, hooks.length
+            planId,
+            runtimePlanHash,
+            commit.publisher,
+            commit.hooksHash,
+            commit.metadataHash,
+            hooks.length,
+            dockRoutesRoot,
+            dockInterfaceRoot
         );
         emit PlanPublisherRecorded(planId, commit.publisher);
     }
@@ -520,15 +562,24 @@ contract UVPStateMachine {
             revert PlanMetadataHashMismatch(plan.metadataHash, actualMetadataHash);
         }
 
-        IUVPPlanMetadataModule(planMetadataModule).finalizePlanMetadata(planId, selectorBindings, signalCapabilities);
+        IUVPPlanMetadataModule(planMetadataModule).finalizePlanMetadata(
+            planId, selectorBindings, signalCapabilities, plan.dockRoutesRoot, plan.dockInterfaceRoot
+        );
         plan.finalized = true;
 
         emit PlanFinalized(planId, plan.planHash, plan.metadataHash);
         emit PlanRegistered(planId, plan.planHash, plan.hookIds.length);
     }
 
-    function planRuntimeHash(bytes32 hooksHash, bytes32 metadataHash) public pure returns (bytes32) {
-        return keccak256(abi.encode(_PLAN_RUNTIME_HASH_DOMAIN, hooksHash, metadataHash));
+    function planRuntimeHash(
+        bytes32 hooksHash,
+        bytes32 metadataHash,
+        bytes32 dockRoutesRoot,
+        bytes32 dockInterfaceRoot
+    ) public pure returns (bytes32) {
+        return keccak256(
+            abi.encode(_PLAN_RUNTIME_HASH_DOMAIN, hooksHash, metadataHash, dockRoutesRoot, dockInterfaceRoot)
+        );
     }
 
     function planIdFor(address publisher, bytes32 runtimePlanHash) public pure returns (bytes32) {
@@ -662,13 +713,13 @@ contract UVPStateMachine {
 
         for (uint256 i = 0; i < plan.hookIds.length; i++) {
             StoredHook storage hook = plan.hooks[plan.hookIds[i]];
-            if (hook.isTrigger) {
+            if (_isOrderTrigger(hook.flags)) {
                 _initializeHookRuntime(order, hook.hookId);
             }
         }
 
         emit OrderRegistered(orderId, planId);
-        emit OrderRelayerRecorded(orderId, relayer, creator);
+        emit OrderRelayerRecorded(planId, orderId, relayer, creator);
     }
 
     function _authorizeSignalSubmitters(bytes32 planId, bytes32 orderId, SignalAuthorization[] calldata authorizations)
@@ -702,6 +753,7 @@ contract UVPStateMachine {
         stored.exists = true;
 
         emit SignalSubmitterAuthorized(
+            planId,
             orderId,
             authorization.sourceId,
             authorization.signalId,
@@ -795,7 +847,7 @@ contract UVPStateMachine {
         activePatch.exists = true;
 
         emit StageExecutorActivated(
-            orderId, targetStageId, executor, role, executorMetadataHash, patchNonce, metadataURI
+            planId, orderId, targetStageId, executor, role, executorMetadataHash, patchNonce, metadataURI
         );
     }
 
@@ -846,10 +898,73 @@ contract UVPStateMachine {
         delegated.patchNonce = patchNonce;
         delegated.exists = true;
 
-        emit SignalSubmitterAuthorized(orderId, sourceId, signalId, executor, role, metadataHash);
+        emit SignalSubmitterAuthorized(planId, orderId, sourceId, signalId, executor, role, metadataHash);
         emit StageExecutorSignalDelegated(
-            orderId, targetStageId, sourceId, signalId, executor, role, metadataHash, patchNonce
+            planId, orderId, targetStageId, sourceId, signalId, executor, role, metadataHash, patchNonce
         );
+    }
+
+    /// PRD95 §7.4：仅 docking module 可调用。创建独立 linkedOrderId 子订单、
+    /// 授权子订单信号提交者、写入 entrance canonical fact（绕过源阶段
+    /// materialization 检查——该事实正是出生事实），再把 entrance hook
+    /// （ORDER_TRIGGER_DOCK）标记 Ready 并物化目标 stage。
+    function createDockedOrderFromModule(
+        bytes32 targetPlanId,
+        bytes32 linkedOrderId,
+        address creator,
+        address relayer,
+        bytes32 entranceHookId,
+        bytes32 entranceStageId,
+        bytes32 sourceId,
+        bytes32 signalId,
+        bytes32 payloadHash,
+        bytes32 idempotencyKey,
+        address submitter,
+        SignalAuthorization[] calldata authorizations
+    ) external {
+        if (msg.sender != dockingModule) {
+            revert UnauthorizedStateMachineModule(msg.sender);
+        }
+        _createOrder(targetPlanId, linkedOrderId, creator, relayer);
+        _authorizeSignalSubmitters(targetPlanId, linkedOrderId, authorizations);
+        _recordSignal(
+            targetPlanId, linkedOrderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false
+        );
+        _markDockTriggerHookReady(
+            targetPlanId, linkedOrderId, entranceHookId, entranceStageId, sourceId, signalId
+        );
+    }
+
+    /// PRD95 §8：非 entrance 的 dock input 事实写入（kind: signal 端口）。
+    /// 目标内部 hook 正常求值；模块不得直接把 hook 标为 Ready。
+    function recordDockedInputFromModule(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 sourceId,
+        bytes32 signalId,
+        bytes32 payloadHash,
+        bytes32 idempotencyKey,
+        address submitter
+    ) external {
+        if (msg.sender != dockingModule) {
+            revert UnauthorizedStateMachineModule(msg.sender);
+        }
+        _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false);
+    }
+
+    function planHookFlags(bytes32 planId, bytes32 hookId) external view returns (uint8) {
+        StoredHook storage hook = _plans[planId].hooks[hookId];
+        return hook.exists ? hook.flags : 0;
+    }
+
+    function planHookStageId(bytes32 planId, bytes32 hookId) external view returns (bytes32) {
+        StoredHook storage hook = _plans[planId].hooks[hookId];
+        return hook.stageId;
+    }
+
+    function planDockRoots(bytes32 planId) external view returns (bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot) {
+        Plan storage plan = _plans[planId];
+        return (plan.dockRoutesRoot, plan.dockInterfaceRoot);
     }
 
     function submitSignalFromModule(
@@ -934,7 +1049,7 @@ contract UVPStateMachine {
         sourceSignalCount[planId][orderId][sourceId] += 1;
         lastSignalSubmitter[planId][orderId][sourceId] = submitter;
 
-        emit SignalSubmitted(orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter);
+        emit SignalSubmitted(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter);
         _evaluateAffectedHooks(planId, orderId, key, sourceId, signalId);
     }
 
@@ -956,7 +1071,7 @@ contract UVPStateMachine {
         }
 
         uint64 dueAt = runtime.dueAt;
-        emit TimerPoked(orderId, hookId, dueAt);
+        emit TimerPoked(planId, orderId, hookId, dueAt);
         _evaluateHook(planId, orderId, hookId, bytes32(0), bytes32(0));
     }
 
@@ -1155,6 +1270,10 @@ contract UVPStateMachine {
         return keccak256(abi.encode(sourceId, signalId));
     }
 
+    function _isOrderTrigger(uint8 flags) private pure returns (bool) {
+        return flags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK) != 0;
+    }
+
     /// 审计 #1 残余：origin 侧同意判定。
     ///
     /// 同意集合（party 持有 origin 订单上的任一身份即算同意）：
@@ -1211,7 +1330,15 @@ contract UVPStateMachine {
 
     function _planCommitDigest(PlanCommit calldata commit) private view returns (bytes32) {
         bytes32 structHash = keccak256(
-            abi.encode(_PLAN_COMMIT_TYPEHASH, commit.publisher, commit.hooksHash, commit.metadataHash, commit.deadline)
+            abi.encode(
+                _PLAN_COMMIT_TYPEHASH,
+                commit.publisher,
+                commit.hooksHash,
+                commit.metadataHash,
+                commit.dockRoutesRoot,
+                commit.dockInterfaceRoot,
+                commit.deadline
+            )
         );
         return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
     }
@@ -1225,6 +1352,11 @@ contract UVPStateMachine {
         uint256 seenCount
     ) private returns (uint256) {
         _validateHook(input);
+        // PRD94 §3.4：出生语义互斥——MINT 与 DOCK 不可同挂一个 hook。
+        if (input.flags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK) ==
+            (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK)) {
+            revert InvalidHook();
+        }
         if (plan.hooks[input.hookId].exists) {
             revert HookAlreadyRegistered();
         }
@@ -1233,7 +1365,7 @@ contract UVPStateMachine {
         hook.hookId = input.hookId;
         hook.stageId = input.stageId;
         hook.hookName = input.hookName;
-        hook.isTrigger = input.isTrigger;
+        hook.flags = input.flags;
         hook.exists = true;
 
         for (uint256 j = 0; j < input.instructions.length; j++) {
@@ -1273,10 +1405,10 @@ contract UVPStateMachine {
                 }
                 seenKeys[updatedCount] = dependencyKey;
                 seenStages[updatedCount] = input.stageId;
-                seenTriggerOnly[updatedCount] = input.isTrigger;
+                seenTriggerOnly[updatedCount] = _isOrderTrigger(input.flags);
                 updatedCount += 1;
             } else {
-                bool triggerOnly = seenTriggerOnly[watcherIndex] && input.isTrigger;
+                bool triggerOnly = seenTriggerOnly[watcherIndex] && _isOrderTrigger(input.flags);
                 if (seenStages[watcherIndex] != input.stageId && !triggerOnly) {
                     revert CrossStageDependency(dependencyKey);
                 }
@@ -1363,13 +1495,13 @@ contract UVPStateMachine {
         bytes32[] storage hookIds = plan.dependencyIndex[dependencyKey];
         for (uint256 i = 0; i < hookIds.length; i++) {
             StoredHook storage hook = plan.hooks[hookIds[i]];
-            if (hook.isTrigger) {
+            if (_isOrderTrigger(hook.flags)) {
                 _evaluateHook(planId, orderId, hookIds[i], triggerSourceId, triggerSignalId);
             }
         }
         for (uint256 i = 0; i < hookIds.length; i++) {
             StoredHook storage hook = plan.hooks[hookIds[i]];
-            if (!hook.isTrigger) {
+            if (!_isOrderTrigger(hook.flags)) {
                 _evaluateHook(planId, orderId, hookIds[i], triggerSourceId, triggerSignalId);
             }
         }
@@ -1412,6 +1544,34 @@ contract UVPStateMachine {
         bytes32 triggerSignalId
     ) private {
         StoredHook storage hook = _validatedTriggerHook(planId, triggerHookId, triggerStageId);
+        _markOrderTriggerHookReady(
+            planId, orderId, hook, triggerHookId, triggerStageId, triggerSourceId, triggerSignalId
+        );
+    }
+
+    function _markDockTriggerHookReady(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 triggerHookId,
+        bytes32 triggerStageId,
+        bytes32 triggerSourceId,
+        bytes32 triggerSignalId
+    ) private {
+        StoredHook storage hook = _validatedDockTriggerHook(planId, triggerHookId, triggerStageId);
+        _markOrderTriggerHookReady(
+            planId, orderId, hook, triggerHookId, triggerStageId, triggerSourceId, triggerSignalId
+        );
+    }
+
+    function _markOrderTriggerHookReady(
+        bytes32 planId,
+        bytes32 orderId,
+        StoredHook storage hook,
+        bytes32 triggerHookId,
+        bytes32 triggerStageId,
+        bytes32 triggerSourceId,
+        bytes32 triggerSignalId
+    ) private {
         Order storage order = _orders[planId][orderId];
         HookRuntime storage runtime = order.hookRuntimes[triggerHookId];
         if (!runtime.exists) {
@@ -1424,13 +1584,13 @@ contract UVPStateMachine {
         runtime.dueAt = 0;
 
         if (previousStatus != HookStatus.Ready || previousDueAt != 0) {
-            emit HookStatusChanged(orderId, triggerHookId, previousStatus, HookStatus.Ready, 0);
+            emit HookStatusChanged(planId, orderId, triggerHookId, previousStatus, HookStatus.Ready, 0);
         }
 
         if (!runtime.readyEmitted) {
             runtime.readyEmitted = true;
             _materializeStage(planId, orderId, triggerStageId, triggerHookId, triggerSourceId, triggerSignalId);
-            emit HookReady(orderId, triggerHookId, hook.stageId, hook.hookName);
+            emit HookReady(planId, orderId, triggerHookId, hook.stageId, hook.hookName);
         }
     }
 
@@ -1439,13 +1599,32 @@ contract UVPStateMachine {
         view
         returns (StoredHook storage hook)
     {
+        // mint 出生路径（triggerOrderFromOutsideFor / order-link）只接受
+        // MINT 触发器；DOCK 出生必须走 openDockedOrder 的 proof 链。
+        hook = _validatedOrderTriggerHook(planId, triggerHookId, triggerStageId, HOOK_FLAG_ORDER_TRIGGER_MINT);
+    }
+
+    function _validatedDockTriggerHook(bytes32 planId, bytes32 triggerHookId, bytes32 triggerStageId)
+        private
+        view
+        returns (StoredHook storage hook)
+    {
+        hook = _validatedOrderTriggerHook(planId, triggerHookId, triggerStageId, HOOK_FLAG_ORDER_TRIGGER_DOCK);
+    }
+
+    function _validatedOrderTriggerHook(
+        bytes32 planId,
+        bytes32 triggerHookId,
+        bytes32 triggerStageId,
+        uint8 requiredFlag
+    ) private view returns (StoredHook storage hook) {
         Plan storage plan = _plans[planId];
         if (!plan.finalized) {
             revert UnknownPlan();
         }
 
         hook = plan.hooks[triggerHookId];
-        if (!hook.exists || !hook.isTrigger || hook.stageId != triggerStageId) {
+        if (!hook.exists || hook.flags & requiredFlag == 0 || hook.stageId != triggerStageId) {
             revert InvalidTriggerHook(triggerHookId);
         }
     }
@@ -1466,7 +1645,13 @@ contract UVPStateMachine {
         Order storage order = _orders[planId][orderId];
         HookRuntime storage runtime = order.hookRuntimes[hookId];
         if (!runtime.exists) {
-            if (!hook.isTrigger && !order.materializedStages[hook.stageId]) {
+            // 出生 hook（mint/dock）在任何时刻可初始化；EMIT_READY hook 是
+            // executor dispatch 边（PRD94 §3.4），其 runtime 允许先于阶段
+            // materialization 初始化——Ready 时会物化自身阶段。
+            if (
+                !_isOrderTrigger(hook.flags) && hook.flags & HOOK_FLAG_EMIT_READY == 0
+                    && !order.materializedStages[hook.stageId]
+            ) {
                 revert UnknownHook();
             }
             _initializeHookRuntime(order, hookId);
@@ -1493,13 +1678,22 @@ contract UVPStateMachine {
         runtime.dueAt = nextDueAt;
 
         if (previousStatus != nextStatus || previousDueAt != nextDueAt) {
-            emit HookStatusChanged(orderId, hookId, previousStatus, nextStatus, nextDueAt);
+            emit HookStatusChanged(planId, orderId, hookId, previousStatus, nextStatus, nextDueAt);
         }
 
-        if (nextStatus == HookStatus.Ready && hook.isTrigger && !runtime.readyEmitted) {
-            runtime.readyEmitted = true;
-            _materializeStage(planId, orderId, hook.stageId, hookId, triggerSourceId, triggerSignalId);
-            emit HookReady(orderId, hookId, hook.stageId, hook.hookName);
+        if (nextStatus == HookStatus.Ready && !runtime.readyEmitted) {
+            if (_isOrderTrigger(hook.flags)) {
+                runtime.readyEmitted = true;
+                _materializeStage(planId, orderId, hook.stageId, hookId, triggerSourceId, triggerSignalId);
+                emit HookReady(planId, orderId, hookId, hook.stageId, hook.hookName);
+            } else if (hook.flags & HOOK_FLAG_EMIT_READY != 0) {
+                // EMIT_READY 只决定"发可消费事件"，不授予订单创建能力；
+                // 阶段物化仍发生（executor 激活面），出生 API 依旧检查
+                // order-trigger flag。
+                runtime.readyEmitted = true;
+                _materializeStage(planId, orderId, hook.stageId, hookId, triggerSourceId, triggerSignalId);
+                emit HookReady(planId, orderId, hookId, hook.stageId, hook.hookName);
+            }
         }
     }
 
@@ -1540,7 +1734,7 @@ contract UVPStateMachine {
             }
         }
 
-        emit StageMaterialized(orderId, stageId, triggerHookId, triggerSourceId, triggerSignalId);
+        emit StageMaterialized(planId, orderId, stageId, triggerHookId, triggerSourceId, triggerSignalId);
     }
 
     function _evaluateInstructions(bytes32 planId, bytes32 orderId, StoredHook storage hook)

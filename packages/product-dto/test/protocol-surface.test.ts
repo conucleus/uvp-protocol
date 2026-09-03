@@ -207,24 +207,35 @@ describe("Product DTO protocol surface", () => {
     }
   });
 
-  it("keeps docked order link on the docking module surface", async () => {
+  it("keeps the committed-route docking surface (v2, PRD95)", async () => {
     const protocol = await loadProtocolBindings();
 
-    assert.equal(protocol.DOCKED_ORDER_LINK_DOMAIN_NAME, "UVPDockingModule");
-    assert.equal(protocol.DOCKED_ORDER_LINK_DOMAIN_VERSION, "0.1");
-    assert.equal(protocol.DOCKED_ORDER_LINK_PRIMARY_TYPE, "UVPDockingModuleDockedOrderLink");
-    assert.deepEqual(fieldNames(protocol.DOCKED_ORDER_LINK_TYPED_DATA_FIELDS), [...dockedOrderLinkFieldNames]);
-    assertAbiNames(protocol.DOCKING_MODULE_ABI, "function", ["linkDockedOrderFor", "submitDockedSignal"]);
-    assertAbiNames(protocol.DOCKING_MODULE_ABI, "event", [
-      "DockedOrderLinked",
-      "DockedSignalMapped",
-      "DockedSignalSubmitted"
+    // v1 手工 link 面（linkDockedOrder/linkDockedOrderFor）已删除；
+    // 全部 dock 走 committed route：openDockedOrder 原子 open。
+    assertAbiNames(protocol.DOCKING_MODULE_ABI, "function", [
+      "openDockedOrder",
+      "submitDockedInput",
+      "submitDockedSignal",
+      "getActiveDock"
     ]);
+    assertAbiNames(protocol.DOCKING_MODULE_ABI, "event", [
+      "DockOpened",
+      "DockInputSubmitted",
+      "DockOutputSubmitted"
+    ]);
+    assert.equal(
+      protocol.DOCKING_MODULE_ABI.some(
+        (item) => "name" in item && (item.name === "linkDockedOrder" || item.name === "linkDockedOrderFor")
+      ),
+      false,
+      "manual link entrypoints must stay deleted"
+    );
     assertAbiNames(protocol.STATE_MACHINE_LENS_ABI, "function", [
       "getActiveStageExecutorPatch",
       "getActiveStageResourcePatch",
-      "getActiveDockedOrderLink",
-      "getActiveDockedSignalBinding"
+      "getActiveDock",
+      "getDockInputBinding",
+      "getDockOutputBinding"
     ]);
   });
 

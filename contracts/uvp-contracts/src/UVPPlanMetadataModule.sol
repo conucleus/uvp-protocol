@@ -3,9 +3,12 @@ pragma solidity ^0.8.24;
 
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
 import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
+import {DockMerkle} from "./libraries/DockMerkle.sol";
 
 contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     struct PlanMetadata {
+        bytes32 dockRoutesRoot;
+        bytes32 dockInterfaceRoot;
         bytes32[] selectorBindingKeys;
         bytes32[] signalCapabilityKeys;
         mapping(bytes32 stageId => bytes32[] capabilityKeys) stageSignalCapabilityKeys;
@@ -51,7 +54,9 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     function finalizePlanMetadata(
         bytes32 planId,
         StageSelectorBinding[] calldata selectorBindings,
-        SignalCapability[] calldata signalCapabilities
+        SignalCapability[] calldata signalCapabilities,
+        bytes32 routesRoot,
+        bytes32 interfaceRoot
     ) external {
         if (msg.sender != address(stateMachine)) {
             revert UnauthorizedStateMachine(msg.sender);
@@ -59,9 +64,35 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
         if (planMetadataFinalized[planId]) {
             revert PlanMetadataAlreadyFinalized(planId);
         }
+        _metadata[planId].dockRoutesRoot = routesRoot;
+        _metadata[planId].dockInterfaceRoot = interfaceRoot;
         _registerStageSelectorBindings(planId, selectorBindings);
         _registerSignalCapabilities(planId, signalCapabilities);
         planMetadataFinalized[planId] = true;
+    }
+
+    function dockRoutesRoot(bytes32 planId) external view returns (bytes32) {
+        _requireKnownPlan(planId);
+        return _metadata[planId].dockRoutesRoot;
+    }
+
+    function dockInterfaceRoot(bytes32 planId) external view returns (bytes32) {
+        _requireKnownPlan(planId);
+        return _metadata[planId].dockInterfaceRoot;
+    }
+
+    function verifyDockRoute(bytes32 planId, bytes32 leaf, bytes32[] calldata proof) external view returns (bool) {
+        _requireKnownPlan(planId);
+        return DockMerkle.verify(_metadata[planId].dockRoutesRoot, leaf, proof);
+    }
+
+    function verifyDockInterfacePort(bytes32 planId, bytes32 leaf, bytes32[] calldata proof)
+        external
+        view
+        returns (bool)
+    {
+        _requireKnownPlan(planId);
+        return DockMerkle.verify(_metadata[planId].dockInterfaceRoot, leaf, proof);
     }
 
     function planSelectorBindingCount(bytes32 planId) external view returns (uint256) {
