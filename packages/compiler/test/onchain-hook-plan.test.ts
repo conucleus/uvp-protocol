@@ -8,11 +8,12 @@ import {
   OnchainHookPlanArtifactValidationError,
   toSolidityRegisterPlanArgs,
   validateOnchainHookPlanArtifact,
+  type OnchainHookPlanArtifact,
   type OnchainSignalInstruction,
   type ZhixuDefinition,
 } from "../src/index.js";
 import { compileZhixuHookPlan, HookPlanCompilationError } from "../src/hook-plan.js";
-import { compileOnchainHookPlan, onchainSignalId, onchainSourceId } from "../src/onchain-hook-plan.js";
+import { compileOnchainHookPlan, hashOnchainPlanPayload, onchainSignalId, onchainSourceId } from "../src/onchain-hook-plan.js";
 import type { HookPlanArtifact } from "../src/types/index.js";
 
 const baseZhixu: ZhixuDefinition = {
@@ -504,6 +505,96 @@ test("compiles mint birth subscriptions into isTrigger SIGNAL hooks", () => {
   assert.equal(birth.op, "SIGNAL");
   assert.equal(birth.sourceId, onchainSourceId("buyer"));
   assert.equal(birth.signalId, onchainSignalId("intake.post.posted"));
+});
+
+test("rejects empty instructions the way the contract reverts InvalidHook", () => {
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
+  // 正例：现状（每条 hook 至少一条指令）仍全量通过预检。
+  assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
+
+  // 反例：instructions 为空在链上等价于 hook.instructions.length == 0 的
+  // InvalidHook revert，预检必须同样拒绝（而不是被 length > 0 前置条件吞掉）。
+  assert.match(
+    validateOnchainHookPlanArtifact({
+      ...onchain,
+      compiledHooks: [
+        { ...onchain.compiledHooks[0]!, instructions: [] },
+        ...onchain.compiledHooks.slice(1),
+      ],
+    }).join("; "),
+    /compiledHooks\[0\]\.instructions must leave exactly one stack item/,
+  );
+});
+
+test("rejects empty dependency keys the way the contract reverts InvalidHook", () => {
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
+  // 正例：带依赖的 hook 仍通过预检与 Solidity 参数转换。
+  assert.doesNotThrow(() => toSolidityRegisterPlanArgs(onchain));
+
+  const withEmptyDependencies = {
+    ...onchain,
+    compiledHooks: [
+      { ...onchain.compiledHooks[0]!, dependencies: [] },
+      ...onchain.compiledHooks.slice(1),
+    ],
+  };
+  // 反例：dependencyKeys 为空在链上等价于 hook.dependencyKeys.length == 0
+  // 的 InvalidHook revert；制品校验与 Solidity 参数转换都要拒绝。
+  assert.match(
+    validateOnchainHookPlanArtifact(withEmptyDependencies).join("; "),
+    /compiledHooks\[0\]\.dependencies must not be empty/,
+  );
+  assert.throws(
+    () => toSolidityRegisterPlanArgs(withEmptyDependencies),
+    (error: unknown) =>
+      error instanceof OnchainHookPlanArtifactValidationError &&
+      error.issues.some((issue) =>
+        /dependencies must not be empty/.test(issue)
+      )
+  );
+});
+
+test("rejects DELAY seconds beyond the 30-day contract bound", () => {
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
+  const withDelay = (
+    delaySeconds: number
+  ): OnchainHookPlanArtifact => ({
+    ...onchain,
+    compiledHooks: onchain.compiledHooks.map((hook) =>
+      hook.hookName === "TIMEOUT"
+        ? {
+            ...hook,
+            instructions: hook.instructions.map((instruction) =>
+              instruction.op === "DELAY"
+                ? { op: "DELAY", delaySeconds }
+                : instruction
+            ),
+          }
+        : hook
+    ),
+  });
+
+  // 反例：> 30 天在链上触发 HookDelayTooLong，预检必须先行拒绝。
+  assert.match(
+    validateOnchainHookPlanArtifact(withDelay(2_592_001)).join("; "),
+    /delaySeconds must not exceed 2592000.*HookDelayTooLong/,
+  );
+
+  // 正例：恰好 30 天（MAX_HOOK_DELAY_SECONDS）仍是合法制品。
+  const atBound = withDelay(2_592_000);
+  const { planHash: staleHash, ...payload } = atBound;
+  void staleHash;
+  const repinned = {
+    ...payload,
+    planHash: hashOnchainPlanPayload(payload),
+  };
+  assert.deepEqual(validateOnchainHookPlanArtifact(repinned), []);
+  assert.deepEqual(
+    toSolidityRegisterPlanArgs(repinned)
+      .hooks.find((hook) => hook.hookName === keccak256Hex("TIMEOUT"))
+      ?.instructions.filter((instruction) => instruction.op === "DELAY"),
+    [{ op: "DELAY", delaySeconds: 2_592_000 }],
+  );
 });
 
 test("rejects retired cross-source headers at hook-plan compilation", () => {

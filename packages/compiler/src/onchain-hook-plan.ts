@@ -37,6 +37,12 @@ import {
 } from "./types/index.js";
 import { compileZhixuHookPlan } from "./hook-plan.js";
 
+// Mirrors UVPStateMachine.MAX_HOOK_DELAY_SECONDS (30 days): the contract
+// reverts HookDelayTooLong above this bound, so the fail-closed artifact
+// preflight must reject the same inputs instead of letting the transaction
+// revert on-chain.
+const MAX_ONCHAIN_HOOK_DELAY_SECONDS = 2_592_000;
+
 const ONCHAIN_PLAN_HASH_DOMAIN = "uvp:onchain-hook-plan-artifact:v1";
 const ONCHAIN_ROUTE_HASH_DOMAIN = "uvp:onchain-hook-route:v1";
 const ONCHAIN_SELECTOR_BINDING_HASH_DOMAIN =
@@ -252,6 +258,17 @@ export function toSolidityRegisterPlanArgs(
   assertOnchainHookPlanArtifact(artifact);
 
   const hooks = artifact.compiledHooks.map((hook) => {
+    const dependencyKeys = uniqueSorted(
+      hook.dependencies.map((dependency) => dependency.signalKey),
+    );
+    if (dependencyKeys.length === 0) {
+      // Fail-closed mirror of UVPStateMachine._validateHook, which reverts
+      // InvalidHook when hook.dependencyKeys is empty.
+      throw new OnchainHookPlanArtifactValidationError([
+        `compiledHooks ${hook.hookId} dependencyKeys must not be empty `
+        + "(contract reverts InvalidHook for empty dependencyKeys)",
+      ]);
+    }
     const base = {
       hookId: hook.hookId,
       stageId: hook.stageId,
@@ -259,9 +276,7 @@ export function toSolidityRegisterPlanArgs(
       kind: hook.kind,
       isTrigger: hook.isTrigger,
       instructions: hook.instructions.map(toSolidityInstructionArg),
-      dependencyKeys: uniqueSorted(
-        hook.dependencies.map((dependency) => dependency.signalKey),
-      ),
+      dependencyKeys,
     };
     return hook.routeRef ? { ...base, routeId: hook.routeRef.routeId } : base;
   });
@@ -1000,6 +1015,13 @@ function validateInstructions(
           Number(instruction.delaySeconds) <= 0
         ) {
           issues.push(`${prefix}.delaySeconds must be a positive safe integer`);
+        } else if (
+          Number(instruction.delaySeconds) > MAX_ONCHAIN_HOOK_DELAY_SECONDS
+        ) {
+          issues.push(
+            `${prefix}.delaySeconds must not exceed ${MAX_ONCHAIN_HOOK_DELAY_SECONDS} `
+            + "(contract MAX_HOOK_DELAY_SECONDS = 30 days, reverts HookDelayTooLong)",
+          );
         }
         if (stackDepth < 1) {
           issues.push(`${prefix}.op requires one stack item`);
@@ -1010,7 +1032,10 @@ function validateInstructions(
     }
   }
 
-  if (instructions.length > 0 && stackDepth !== 1) {
+  // Aligned with UVPStateMachine._validateHook: `hook.instructions.length == 0`
+  // reverts InvalidHook on-chain, so an empty instruction array must fail the
+  // preflight too (stack depth 0 !== 1 below).
+  if (stackDepth !== 1) {
     issues.push(`${path} must leave exactly one stack item`);
   }
 
@@ -1022,6 +1047,15 @@ function validateOnchainDependencies(
   path: string,
 ): readonly string[] {
   const issues: string[] = [];
+  // Aligned with UVPStateMachine._validateHook: `hook.dependencyKeys.length == 0`
+  // reverts InvalidHook on-chain, so a hook without dependencies is invalid
+  // at the artifact boundary as well.
+  if (dependencies.length === 0) {
+    issues.push(
+      `${path} must not be empty `
+      + "(contract reverts InvalidHook for empty dependencyKeys)",
+    );
+  }
   for (const [index, dependency] of dependencies.entries()) {
     if (!isRecord(dependency)) {
       issues.push(`${path}[${index}] must be an object`);
