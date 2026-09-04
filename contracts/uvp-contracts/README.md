@@ -28,7 +28,7 @@ under this folder; repository-level deployment scripts live under
 - `src/libraries/ECDSA.sol`: minimal signature recovery helper.
 - `src/libraries/UVPSignatures.sol`: shared signature struct used by relayed
   state-machine signal submission.
-- `fixtures/uvp-state-machine.v0.8.json` and module fixture JSON files:
+- `fixtures/uvp-state-machine.v0.9.json` and module fixture JSON files:
   pinned ABI/hash fixtures for the current core and module public interfaces.
 - `fixtures/uvp-identity-registry.v0.1.json`: pinned ABI/hash fixture for the
   identity registry public interface.
@@ -66,7 +66,7 @@ the TypeScript `statemachine` oracle.
 
 ## ABI Fixture
 
-`UVPStateMachine v0.8` treats these as public interfaces:
+`UVPStateMachine v0.9` treats these as public interfaces:
 
 - its no-argument constructor;
 - one-time module configuration followed by irreversible `freezeModules`;
@@ -85,12 +85,18 @@ the TypeScript `statemachine` oracle.
 - event topics for ownership, module configuration/freeze,
   `PlanCommitted`, `PlanFinalized`, `PlanRegistered`,
   `PlanPublisherRecorded`, `OrderRegistered`, `OrderMaterialized`,
-  `OrderRelayerRecorded`, `SignalCapabilityRegistered`, `OrderTriggered`,
-  `OrderLinked`, `SignalSubmitterAuthorized`, `SignalSubmitted`,
+  `OrderRelayerRecorded`, `OrderTriggered`, `SignalSubmitterAuthorized`, `SignalSubmitted`,
   `StageMaterialized`, `HookStatusChanged`, `HookReady`, `TimerPoked`,
   `StageExecutorPatchApplied`,
-  `StageResourcePatchApplied`, `StageExecutorActivated`, `DockedOrderLinked`,
-  `DockedSignalMapped`, and `DockedSignalSubmitted`;
+  `StageResourcePatchApplied`, `StageExecutorActivated`, and
+  `StageExecutorSignalDelegated`;
+- docking module event topics for `DockOpened`, `DockInputSubmitted`,
+  `DockOutputSubmitted`, and `DockTerminal`; order-link module event topics for
+  `OrderLinked`; plan-metadata module event topics for
+  `StageSelectorBindingRegistered` and `SignalCapabilityRegistered`; derived
+  signal module event topics for `DerivedSignalSubmitted`; and deployment
+  registry event topics for `DeploymentRegistered`, `DeploymentCanaryMarked`,
+  `DeploymentActivated`, `DeploymentDeprecated`, and `DeploymentRetired`;
 - ABI hash, bytecode hash, deployed bytecode hash, canonical artifact hash, and
   solc version.
 
@@ -155,7 +161,7 @@ code do not silently drift away from the contract ABI.
     `HookStatusChanged`, `HookReady`, and `TimerPoked`, and can be replayed from
     events by `statemachine` and `chain-services`.
 
-`registerOrder` is not a public business ABI in v0.8. New order creation
+`registerOrder` is not a public business ABI in v0.9. New order creation
 must pass through a trigger-order entrypoint so order materialization and the
 first trigger fact share one chain transaction and one business signer.
 
@@ -172,8 +178,9 @@ second registration of the same `orderId` still reverts with
 `planId` into their domain so derived order ids are plan-scoped by
 construction. Function signatures gained a leading `planId` parameter (and
 the from-signal trigger request gained `originPlanId`); this is the
-new-version surface of the unfreeze batch, while event signatures and their
-semantics are unchanged.
+new-version surface of the unfreeze batch. Event signatures are pinned in
+the v0.9 and module fixtures; indexers must consume the composite identity in
+every event and projection rather than treating `orderId` as globally unique.
 
 ## Stable Events
 
@@ -189,18 +196,27 @@ Indexer and replay tooling should treat these event names as public interfaces:
 - `SignalCapabilityRegistered`
 - `SignalSubmitterAuthorized`
 - `OrderRegistered`
+- `OrderMaterialized`
+- `OrderRelayerRecorded`
 - `OrderTriggered`
-- `OrderLinked`
 - `SignalSubmitted`
+- `StageMaterialized`
 - `StageExecutorPatchApplied`
+- `StageExecutorSignalDelegated`
 - `StageResourcePatchApplied`
 - `StageExecutorActivated`
-- `DockedOrderLinked`
-- `DockedSignalMapped`
-- `DockedSignalSubmitted`
 - `HookStatusChanged`
 - `HookReady`
 - `TimerPoked`
+
+The module fixtures add these public events:
+
+- `OrderLinked` (order-link module);
+- `StageSelectorBindingRegistered` and `SignalCapabilityRegistered`
+  (plan-metadata module);
+- `DerivedSignalSubmitted` (derived-signal module);
+- `DockOpened`, `DockInputSubmitted`, `DockOutputSubmitted`, and `DockTerminal`
+  (docking module).
 
 ## Hook State Machine
 

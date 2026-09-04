@@ -12,6 +12,8 @@ args for the two-step `UVPStateMachine.commitPlan` + `finalizePlan` flow.
 - `apiVersion: uvp/v0`, `kind: Zhixu` YAML/JSON definitions;
 - Hook DSL expressions under `receiveSignals`;
 - selected-stage executor bindings and supplier `signalMap` data;
+- the target-side `spec.dockInterface` and, for a `supplierType=zhixu`
+  route, a `uvp.dock.resolution.v1` resolution manifest;
 - target platform metadata, currently `platform.type=blockchain`,
   `platform.provider=eth`, and optional `platform.network` such as `base` for
   this track.
@@ -95,7 +97,7 @@ Use these root-package entrypoints:
 - `toSolidityRegisterPlanArgs(onchainHookPlanArtifact)`.
 
 `compileZhixuOnchainHookPlan(zhixu)` emits schema
-`uvp.onchainHookPlan.v1`. It:
+`uvp.onchainHookPlan.v2`. It:
 
 - emits stable `planId` and `planHash`;
 - carries target `platform` from Zhixu YAML as a protocol field
@@ -104,6 +106,7 @@ Use these root-package entrypoints:
 - replaces hook expressions with postfix instruction arrays;
 - indexes dependencies by packed signal key;
 - exposes executor routes through route references;
+- carries `dockInterface`, resolved `dockRoutes`, and their committed roots;
 - compiles `selectedStageBindings` into sorted `selectorBindings` for
   `StageSelectorBinding` registration;
 - includes selector bindings in the canonical on-chain `planHash`.
