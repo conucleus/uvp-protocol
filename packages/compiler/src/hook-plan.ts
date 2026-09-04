@@ -6,6 +6,7 @@ import {
   type ZhixuDefinition,
   type DockResolutionManifest,
 } from "./types/index.js";
+import { validateDockCommitments } from "./dock-validation.js";
 
 export class HookPlanCompilationError extends Error {
   readonly issues: readonly string[];
@@ -99,6 +100,7 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
   }
   expectHexHash(value.dockRoutesRoot as unknown, "dockRoutesRoot", issues);
   expectHexHash(value.dockInterfaceRoot as unknown, "dockInterfaceRoot", issues);
+  issues.push(...validateDockCommitments(value));
   if (!Array.isArray(value.selectedStageBindings)) {
     issues.push("selectedStageBindings must be an array");
   }

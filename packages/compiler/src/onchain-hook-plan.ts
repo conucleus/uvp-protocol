@@ -40,6 +40,7 @@ import {
   dockRoutesRootOf,
   interfaceRootOf,
 } from "./dock.js";
+import { validateDockCommitments } from "./dock-validation.js";
 import type {
   DockResolutionManifest,
   DockRouteV1,
@@ -221,6 +222,7 @@ export function validateOnchainHookPlanArtifact(
   }
   expectHexHash(value.sourcePlanHash, "sourcePlanHash", issues);
   expectHexHash(value.planHash, "planHash", issues);
+  issues.push(...validateDockCommitments(value));
 
   const compiledHooks = Array.isArray(value.compiledHooks)
     ? value.compiledHooks
