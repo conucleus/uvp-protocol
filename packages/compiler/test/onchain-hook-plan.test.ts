@@ -106,7 +106,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
   assert.equal(
     onchain.planHash,
-    "0xfe5161562407f92adce4a91beffad756505f11d20a8cb2941e8fdeafb4c23b25",
+    "0xb7eb40dfa4bd961476565b18d52ee3842d1aaf9469d32385f23c681490678e43",
   );
   assert.deepEqual(onchain.selectorBindings, [
     {

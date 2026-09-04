@@ -42,6 +42,9 @@ export const MAX_DOCK_INPUTS = 8;
 export const MAX_DOCK_OUTPUTS = 16;
 export const MAX_DOCK_DEPTH = 8;
 
+/** payload preimage 中 sourceFactSetHash 槽位的固定零字（与 Solidity `_DOMAIN_SOURCE_FACT_SET_ZERO` 对齐）。 */
+export const ZERO_WORD = `0x${"0".repeat(64)}` as HexString;
+
 export function keccakWord(data: string | Uint8Array): HexString {
   return keccak256Hex(data);
 }
@@ -363,13 +366,16 @@ export function dockInputBindingHash(input: {
   readonly targetPort: string;
   readonly targetSourceId: HexString;
   readonly targetSignalId: HexString;
+  readonly kind: "entrance" | "signal";
 }): HexString {
+  const kindWord = input.kind === "entrance" ? u8Word(1) : u8Word(0);
   return keccakWords(DOMAIN_INPUT_BINDING, [
     input.routeId,
     input.localHookId,
     portKey(input.targetPort),
     input.targetSourceId,
     input.targetSignalId,
+    kindWord,
   ]);
 }
 
@@ -380,7 +386,16 @@ export function dockOutputBindingHash(input: {
   readonly targetPort: string;
   readonly targetSourceId: HexString;
   readonly targetSignalId: HexString;
+  readonly terminal: "none" | "success" | "failure" | "cancelled";
 }): HexString {
+  const terminalWord =
+    input.terminal === "success"
+      ? u8Word(1)
+      : input.terminal === "failure"
+        ? u8Word(2)
+        : input.terminal === "cancelled"
+          ? u8Word(3)
+          : u8Word(0);
   return keccakWords(DOMAIN_OUTPUT_BINDING, [
     input.routeId,
     input.localSourceId,
@@ -388,6 +403,7 @@ export function dockOutputBindingHash(input: {
     portKey(input.targetPort),
     input.targetSourceId,
     input.targetSignalId,
+    terminalWord,
   ]);
 }
 
@@ -429,7 +445,6 @@ export function dockInputPayloadHash(input: {
   readonly linkedOrderId: HexString;
   readonly targetPort: string;
   readonly targetSignalId: HexString;
-  readonly sourceFactSetHash: HexString;
 }): HexString {
   return keccakWords(DOMAIN_INPUT_PAYLOAD, [
     input.dockInstanceId,
@@ -443,6 +458,6 @@ export function dockInputPayloadHash(input: {
     portKey(input.targetPort),
     input.targetSignalId,
     u64Word(0),
-    input.sourceFactSetHash,
+    ZERO_WORD,
   ]);
 }

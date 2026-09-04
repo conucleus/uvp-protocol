@@ -97,6 +97,7 @@ interface DockCompatFixture {
         readonly targetPort: string;
         readonly targetSourceId: `0x${string}`;
         readonly targetSignalId: `0x${string}`;
+        readonly terminal: "none" | "success" | "failure" | "cancelled";
       }[];
     }[];
     readonly dockRoutesRoot: `0x${string}`;
@@ -155,6 +156,7 @@ test("golden fixture compiles to identical routes, roots, and hashes", () => {
       targetPort: actual.targetPort,
       targetSourceId: actual.targetSourceId,
       targetSignalId: actual.targetSignalId,
+      kind: actual.kind as "entrance" | "signal",
     });
     assert.equal(recomputed, want.bindingHash);
     assert.equal(actual.bindingHash, want.bindingHash);
@@ -168,6 +170,7 @@ test("golden fixture compiles to identical routes, roots, and hashes", () => {
       targetPort: actual.targetPort,
       targetSourceId: actual.targetSourceId,
       targetSignalId: actual.targetSignalId,
+      terminal: actual.terminal,
     });
     assert.equal(recomputed, want.bindingHash);
     assert.equal(actual.bindingHash, want.bindingHash);
@@ -232,7 +235,6 @@ test("golden fixture compiles to identical routes, roots, and hashes", () => {
       linkedOrderId: expected.linkedOrderId,
       targetPort: route.entrance.targetPort,
       targetSignalId: entranceInput0.targetSignalId,
-      sourceFactSetHash: expected.sourceFactSetHash,
     }),
     expected.inputPayloadHash,
   );
@@ -361,7 +363,7 @@ test("EIP-712 entrance permit digest matches the golden vector", () => {
     concat([
       keccak256(
         stringToHex(
-          "UVPDockEntrancePermitV1(bytes32 targetPlanId,bytes32 targetEntrancePortId,bytes32 localPlanId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,address creator,uint256 feeLimit,uint256 nonce,uint256 deadline)",
+          "UVPDockEntrancePermitV1(bytes32 targetPlanId,bytes32 targetEntrancePortId,bytes32 localPlanId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,uint256 feeLimit,uint256 nonce,uint256 deadline)",
         ),
       ),
       pad(fixture.expected.targetPlanId, { size: 32 }),
@@ -370,7 +372,6 @@ test("EIP-712 entrance permit digest matches the golden vector", () => {
       route.routeHash,
       expected.dockInstanceId,
       expected.linkedOrderId,
-      pad("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" as `0x${string}`, { size: 32 }),
       toHex(0n, { size: 32 }),
       toHex(1n, { size: 32 }),
       toHex(2000000000n, { size: 32 }),

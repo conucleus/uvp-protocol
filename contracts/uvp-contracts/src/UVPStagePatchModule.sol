@@ -462,9 +462,14 @@ contract UVPStagePatchModule {
         if (!_planMetadata().isStageSelectorBound(planId, patch.selectorStageId, patch.targetStageId)) {
             revert StageSelectorBindingNotFound(planId, patch.selectorStageId, patch.targetStageId);
         }
-        if (!stateMachine.hasExplicitSignalAuthorization(
+        // selector 权：显式 EXECUTOR_PATCH_SIGNAL 授权，或订单 creator 自身。
+        // docked 订单 creator = 目标 plan publisher（DockingModule 派生），
+        // 引导权随订单创建派生，keeper 不经此获得任何权利。
+        if (
+            !stateMachine.hasExplicitSignalAuthorization(
                 planId, orderId, patch.selectorStageId, EXECUTOR_PATCH_SIGNAL_ID, selector
-            )) {
+            ) && selector != stateMachine.orderCreator(planId, orderId)
+        ) {
             revert UnauthorizedStageExecutorPatchSelector(orderId, patch.selectorStageId, selector);
         }
     }

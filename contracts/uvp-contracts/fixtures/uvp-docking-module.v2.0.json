@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x922eee247142706b6ac599034430c6813292b294df0e45d3577523f0cda8f8e8",
-    "bytecodeHash": "0x56164a80d66d108df358e0d98a2cf8527dcb92522033cd818885270a8c01d5db",
-    "deployedBytecodeHash": "0x9c7f9696c8d38d04e77829ff3b15024e3c8370dfcf45efaedd893bba39745334",
-    "artifactHash": "0x9d0335e2fc779ced2f0e917d9bb512287dba43cadb5f79b0d6777dae4cd1b497"
+    "abiHash": "0x5028ace5aeed0235952813895376121bd73a982a433baa91c769b076bdf90e9c",
+    "bytecodeHash": "0x65bbad56037d3ad61921d4fc5606de543c30526717188629731d0e01cc62c823",
+    "deployedBytecodeHash": "0xb742840e2005f8f85084a70f3c006fea1984694137f2163538dc8a23468d023a",
+    "artifactHash": "0x1efd1cb0a0738f2c8dc4264dd95f97a0a65d07e6898f24d10ae8c760c976e97a"
   },
   "events": {
     "DockInputSubmitted": {
@@ -90,8 +90,8 @@
       "selector": "0x04919a6e"
     },
     "entrancePermitDigest": {
-      "signature": "entrancePermitDigest(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256,uint256)",
-      "selector": "0x6cda785b"
+      "signature": "entrancePermitDigest(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,uint256)",
+      "selector": "0x5986ec61"
     },
     "getActiveDock": {
       "signature": "getActiveDock(bytes32)",
@@ -106,8 +106,8 @@
       "selector": "0xdd6e63ce"
     },
     "openDockedOrder": {
-      "signature": "openDockedOrder((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint8,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint8,address),bytes32[],(bytes32,bytes32,uint8,bytes32,bytes32,bytes32,uint8),bytes32[],(bytes32,bytes32,bytes32,bytes32,uint8,bytes32)[],(bytes32,bytes32,bytes32,bytes32,bytes32,uint8,bytes32)[],(uint256,uint256,bytes),(bytes32,bytes32,address,bytes32,bytes32)[])",
-      "selector": "0x7335f0c2"
+      "signature": "openDockedOrder((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint8,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint8),bytes32[],(bytes32,bytes32,uint8,bytes32,bytes32,bytes32,uint8),bytes32[],(bytes32,bytes32,bytes32,bytes32,uint8,bytes32)[],(bytes32,bytes32,bytes32,bytes32,bytes32,uint8,bytes32)[],(uint256,uint256,bytes))",
+      "selector": "0x051fbe4a"
     },
     "planMetadataModule": {
       "signature": "planMetadataModule()",
@@ -118,8 +118,8 @@
       "selector": "0x37b416d8"
     },
     "submitDockedInput": {
-      "signature": "submitDockedInput(bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0xebba8e02"
+      "signature": "submitDockedInput(bytes32,bytes32,bytes32)",
+      "selector": "0x86f005f9"
     },
     "submitDockedSignal": {
       "signature": "submitDockedSignal(bytes32,bytes32)",

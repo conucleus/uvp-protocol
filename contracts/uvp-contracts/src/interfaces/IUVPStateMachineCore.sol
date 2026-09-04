@@ -79,6 +79,7 @@ interface IUVPStateMachineCore {
         external
         view
         returns (address);
+    function orderCreator(bytes32 planId, bytes32 orderId) external view returns (address);
     function orderExists(bytes32 planId, bytes32 orderId) external view returns (bool);
     function orderLinkModule() external view returns (address);
     function planExists(bytes32 planId) external view returns (bool);

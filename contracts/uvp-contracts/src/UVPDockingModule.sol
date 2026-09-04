@@ -56,12 +56,10 @@ contract UVPDockingModule {
         bytes32 targetHookId;
         bytes32 targetSourceId;
         bytes32 targetSignalId;
-        // PRD95 §3.1：payload/idempotency 不接受调用方自报——由 committed
-        // route/binding + envelope word 重算（keeper 无法替换事实内容，
-        // sourceFactSetHash 仍为链下审计输入，见 PRD §3.1 说明）。
-        bytes32 sourceFactSetHash;
+        // PRD95 §3.1：payload/idempotency 不接受调用方自报——全部由
+        // committed route/binding + envelope word 重算，keeper 无法替换
+        // 事实内容。
         uint8 parentDepth;
-        address creator;
     }
 
     /// 目标接口 entrance 叶子（内容 + membership proof 分开提供）。
@@ -220,6 +218,7 @@ contract UVPDockingModule {
 
     bytes32 private constant _DOMAIN_INTERFACE_INPUT = keccak256("UVP_DOCK_INTERFACE_INPUT_V1");
     bytes32 private constant _DOMAIN_ROUTE_ID = keccak256("UVP_DOCK_ROUTE_ID_V1");
+    bytes32 private constant _DOMAIN_SOURCE_FACT_SET_ZERO = bytes32(0);
     bytes32 private constant _DOMAIN_INPUT_BINDING = keccak256("UVP_DOCK_INPUT_BINDING_V1");
     bytes32 private constant _DOMAIN_OUTPUT_BINDING = keccak256("UVP_DOCK_OUTPUT_BINDING_V1");
     bytes32 private constant _DOMAIN_ROUTE = keccak256("UVP_DOCK_ROUTE_V1");
@@ -233,8 +232,10 @@ contract UVPDockingModule {
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _EIP712_NAME_HASH = keccak256("UVPDockingModule");
     bytes32 private constant _EIP712_VERSION_HASH = keccak256("2");
+    // creator 不进 permit：open 路由 creator 恒等于目标 plan publisher，
+    // 与 permit 验签权威同源（planPublisher(targetPlanId)）。
     bytes32 private constant _PERMIT_TYPEHASH = keccak256(
-        "UVPDockEntrancePermitV1(bytes32 targetPlanId,bytes32 targetEntrancePortId,bytes32 localPlanId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,address creator,uint256 feeLimit,uint256 nonce,uint256 deadline)"
+        "UVPDockEntrancePermitV1(bytes32 targetPlanId,bytes32 targetEntrancePortId,bytes32 localPlanId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,uint256 feeLimit,uint256 nonce,uint256 deadline)"
     );
 
     IUVPStateMachineCore public immutable stateMachine;
@@ -270,8 +271,7 @@ contract UVPDockingModule {
         bytes32[] calldata interfaceProof,
         DockInputBindingArg[] calldata inputs,
         DockOutputBindingArg[] calldata outputs,
-        EntrancePermitV1 calldata permit,
-        IUVPStateMachineCore.SignalAuthorization[] calldata childAuthorizations
+        EntrancePermitV1 calldata permit
     ) external returns (bool opened) {
         // 1. 父订单存在。
         if (!stateMachine.orderExists(request.localPlanId, request.localOrderId)) {
@@ -291,13 +291,21 @@ contract UVPDockingModule {
             revert DockInputHookNotReady(request.localPlanId, request.localOrderId, request.localHookId);
         }
 
+        // routeId 重算：H(UVP_DOCK_ROUTE_ID_V1, localDefRef, stageKey)。
+        bytes32 recomputedRouteId =
+            keccak256(abi.encode(_DOMAIN_ROUTE_ID, request.localDefinitionRefHash, request.localStageId));
+        if (recomputedRouteId != request.routeId) {
+            revert DockRouteLeafMismatch(request.routeId, recomputedRouteId);
+        }
+
         // 3/4. routeHash 重算 + membership proof（父 plan 的 dockRoutesRoot）。
         bytes32 recomputedEntranceBinding = _inputBindingHash(
             request.routeId,
             request.localHookId,
             request.entrancePortKey,
             request.targetSourceId,
-            request.targetSignalId
+            request.targetSignalId,
+            DOCK_KIND_ENTRANCE
         );
         if (recomputedEntranceBinding != request.entranceBindingHash) {
             revert DockRouteLeafMismatch(request.entranceBindingHash, recomputedEntranceBinding);
@@ -432,7 +440,8 @@ contract UVPDockingModule {
                 inputs[i].localHookId,
                 inputs[i].portKey,
                 inputs[i].targetSourceId,
-                inputs[i].targetSignalId
+                inputs[i].targetSignalId,
+                inputs[i].kind
             );
             if (recomputed != inputs[i].bindingHash) {
                 revert DockRouteLeafMismatch(inputs[i].bindingHash, recomputed);
@@ -451,7 +460,8 @@ contract UVPDockingModule {
                 outputs[i].localSignalId,
                 outputs[i].portKey,
                 outputs[i].targetSourceId,
-                outputs[i].targetSignalId
+                outputs[i].targetSignalId,
+                outputs[i].terminal
             );
             if (recomputed != outputs[i].bindingHash) {
                 revert DockRouteLeafMismatch(outputs[i].bindingHash, recomputed);
@@ -509,16 +519,20 @@ contract UVPDockingModule {
             request.targetPlanId,
             request.linkedOrderId,
             request.entrancePortKey,
-            request.targetSignalId,
-            request.sourceFactSetHash
+            request.targetSignalId
         );
         bytes32 entranceIdempotencyKey =
             keccak256(abi.encode(_DOMAIN_INPUT_IDEMPOTENCY, request.dockInstanceId, request.entranceBindingHash, uint256(0)));
 
+        // PRD95 §18：keeper 只提供活性。creator 与子订单授权不得由 keeper
+        // 自选——open 路由 creator = 目标 plan publisher；permit 路由
+        // creator = permit 签名者。子订单信号授权随后按目标定义自身的
+        // 授权流（executor patch/submitSignalFor）建立，不经 open 注入。
+        address creator = stateMachine.planPublisher(request.targetPlanId);
         stateMachine.createDockedOrderFromModule(
             request.targetPlanId,
             request.linkedOrderId,
-            request.creator,
+            creator,
             msg.sender,
             request.targetHookId,
             request.targetStageId,
@@ -527,7 +541,7 @@ contract UVPDockingModule {
             entrancePayloadHash,
             entranceIdempotencyKey,
             msg.sender,
-            childAuthorizations
+            new IUVPStateMachineCore.SignalAuthorization[](0)
         );
 
         emit DockOpened(
@@ -562,8 +576,7 @@ contract UVPDockingModule {
     function submitDockedInput(
         bytes32 dockInstanceId,
         bytes32 localHookId,
-        bytes32 inputBindingHash,
-        bytes32 sourceFactSetHash
+        bytes32 inputBindingHash
     ) external returns (bool submitted) {
         ActiveDockV1 storage dock = _docks[dockInstanceId];
         if (!dock.exists) {
@@ -614,8 +627,7 @@ contract UVPDockingModule {
             dock.targetPlanId,
             dock.linkedOrderId,
             binding.portKey,
-            binding.targetSignalId,
-            sourceFactSetHash
+            binding.targetSignalId
         );
 
         _inputDelivered[dockInstanceId][inputBindingHash] = true;
@@ -808,7 +820,6 @@ contract UVPDockingModule {
         bytes32 routeHash,
         bytes32 dockInstanceId,
         bytes32 linkedOrderId,
-        address creator,
         uint256 nonce,
         uint256 deadline
     ) external view returns (bytes32) {
@@ -821,7 +832,6 @@ contract UVPDockingModule {
                 routeHash,
                 dockInstanceId,
                 linkedOrderId,
-                creator,
                 uint256(0),
                 nonce,
                 deadline
@@ -847,6 +857,7 @@ contract UVPDockingModule {
         if (usedEntrancePermitNonce[request.dockInstanceId] >= permit.nonce) {
             revert DockPermitNonceAlreadyUsed(request.dockInstanceId, permit.nonce);
         }
+        address authority = stateMachine.planPublisher(request.targetPlanId);
         bytes32 structHash = keccak256(
             abi.encode(
                 _PERMIT_TYPEHASH,
@@ -856,14 +867,12 @@ contract UVPDockingModule {
                 request.routeHash,
                 request.dockInstanceId,
                 request.linkedOrderId,
-                request.creator,
                 uint256(0), // feeLimit：无费用机制时固定 0（PRD96 §15.5）
                 permit.nonce,
                 permit.deadline
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
-        address authority = stateMachine.planPublisher(request.targetPlanId);
         if (permit.signature.length != 65) {
             revert DockPermitInvalidSigner(authority, address(0));
         }
@@ -887,7 +896,7 @@ contract UVPDockingModule {
     }
 
     /// PRD95 §3.1 envelope：全部 word 来自 committed route/binding/dock
-    /// 存储 + 请求中的 sourceFactSetHash（链下审计输入）。sequence 固定 0。
+    /// 存储。sequence 固定 0。
     function _inputPayloadHash(
         bytes32 dockInstanceId,
         bytes32 routeHash,
@@ -898,8 +907,7 @@ contract UVPDockingModule {
         bytes32 targetPlanId,
         bytes32 linkedOrderId,
         bytes32 targetPortKey,
-        bytes32 targetSignalId,
-        bytes32 sourceFactSetHash
+        bytes32 targetSignalId
     ) private pure returns (bytes32) {
         return keccak256(
             abi.encode(
@@ -915,7 +923,7 @@ contract UVPDockingModule {
                 targetPortKey,
                 targetSignalId,
                 uint256(0),
-                sourceFactSetHash
+                _DOMAIN_SOURCE_FACT_SET_ZERO
             )
         );
     }
@@ -925,10 +933,11 @@ contract UVPDockingModule {
         bytes32 localHookId,
         bytes32 portKey,
         bytes32 targetSourceId,
-        bytes32 targetSignalId
+        bytes32 targetSignalId,
+        uint8 kind
     ) private pure returns (bytes32) {
         return keccak256(
-            abi.encode(_DOMAIN_INPUT_BINDING, routeId, localHookId, portKey, targetSourceId, targetSignalId)
+            abi.encode(_DOMAIN_INPUT_BINDING, routeId, localHookId, portKey, targetSourceId, targetSignalId, uint256(kind))
         );
     }
 
@@ -938,11 +947,13 @@ contract UVPDockingModule {
         bytes32 localSignalId,
         bytes32 portKey,
         bytes32 targetSourceId,
-        bytes32 targetSignalId
+        bytes32 targetSignalId,
+        uint8 terminal
     ) private pure returns (bytes32) {
         return keccak256(
             abi.encode(
-                _DOMAIN_OUTPUT_BINDING, routeId, localSourceId, localSignalId, portKey, targetSourceId, targetSignalId
+                _DOMAIN_OUTPUT_BINDING, routeId, localSourceId, localSignalId, portKey, targetSourceId,
+                targetSignalId, uint256(terminal)
             )
         );
     }
