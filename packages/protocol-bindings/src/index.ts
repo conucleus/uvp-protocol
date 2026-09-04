@@ -122,8 +122,8 @@ export const DOCKING_MODULE_ABI = parseAbi([
   "event DockInputSubmitted(bytes32 indexed dockInstanceId,bytes32 indexed linkedOrderId,bytes32 indexed inputBindingHash,bytes32 localPlanId,bytes32 localOrderId,bytes32 targetPlanId,bytes32 targetSignalId,bytes32 payloadHash,address submitter)",
   "event DockOutputSubmitted(bytes32 indexed dockInstanceId,bytes32 indexed linkedOrderId,bytes32 indexed outputBindingHash,bytes32 localPlanId,bytes32 localOrderId,bytes32 targetPlanId,bytes32 targetSignalId,bytes32 localSignalId,bytes32 payloadHash,address submitter)",
   "event DockTerminal(bytes32 indexed dockInstanceId,uint8 terminal)",
-  "function openDockedOrder((bytes32 dockInstanceId,bytes32 localPlanId,bytes32 localOrderId,bytes32 localStageId,bytes32 localHookId,bytes32 localDefinitionRefHash,bytes32 routeId,bytes32 routeHash,bytes32 targetDefinitionRefHash,bytes32 targetArtifactHash,bytes32 targetInterfaceRoot,bytes32 sourceSeamId,bytes32 entrancePortKey,bytes32 entranceBindingHash,uint8 accessPolicy,bytes32 inputsRoot,bytes32 outputsRoot,bytes32 targetPlanId,bytes32 linkedOrderId,bytes32 targetStageId,bytes32 targetHookId,bytes32 targetSourceId,bytes32 targetSignalId,bytes32 sourceFactSetHash,uint8 parentDepth,address creator) request,bytes32[] routeProof,(bytes32 leafHash,bytes32 portKey,uint8 kind,bytes32 hookKey,bytes32 sourceId,bytes32 signalId,uint8 accessPolicy) entranceLeaf,bytes32[] interfaceProof,(bytes32 localHookId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,uint8 kind,bytes32 bindingHash)[] inputs,(bytes32 localSourceId,bytes32 localSignalId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,uint8 terminal,bytes32 bindingHash)[] outputs,(uint256 nonce,uint256 deadline,bytes signature) permit,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] childAuthorizations) returns (bool opened)",
-  "function submitDockedInput(bytes32 dockInstanceId,bytes32 localHookId,bytes32 inputBindingHash,bytes32 sourceFactSetHash) returns (bool submitted)",
+  "function openDockedOrder((bytes32 dockInstanceId,bytes32 localPlanId,bytes32 localOrderId,bytes32 localStageId,bytes32 localHookId,bytes32 localDefinitionRefHash,bytes32 routeId,bytes32 routeHash,bytes32 targetDefinitionRefHash,bytes32 targetArtifactHash,bytes32 targetInterfaceRoot,bytes32 sourceSeamId,bytes32 entrancePortKey,bytes32 entranceBindingHash,uint8 accessPolicy,bytes32 inputsRoot,bytes32 outputsRoot,bytes32 targetPlanId,bytes32 linkedOrderId,bytes32 targetStageId,bytes32 targetHookId,bytes32 targetSourceId,bytes32 targetSignalId,uint8 parentDepth) request,bytes32[] routeProof,(bytes32 leafHash,bytes32 portKey,uint8 kind,bytes32 hookKey,bytes32 sourceId,bytes32 signalId,uint8 accessPolicy) entranceLeaf,bytes32[] interfaceProof,(bytes32 localHookId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,uint8 kind,bytes32 bindingHash)[] inputs,(bytes32 localSourceId,bytes32 localSignalId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,uint8 terminal,bytes32 bindingHash)[] outputs,(uint256 nonce,uint256 deadline,bytes signature) permit) returns (bool opened)",
+  "function submitDockedInput(bytes32 dockInstanceId,bytes32 localHookId,bytes32 inputBindingHash) returns (bool submitted)",
   "function submitDockedSignal(bytes32 dockInstanceId,bytes32 outputBindingHash) returns (bool submitted)",
   "function getActiveDock(bytes32 dockInstanceId) view returns (bytes32 localPlanId,bytes32 localOrderId,bytes32 localStageId,bytes32 routeId,bytes32 routeHash,bytes32 targetPlanId,bytes32 linkedOrderId,uint8 depth,uint8 status,bool exists)",
   "function getDockInputBinding(bytes32 dockInstanceId,bytes32 inputBindingHash) view returns (bytes32 localHookId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,uint8 kind,bool exists)",
@@ -134,7 +134,7 @@ export const DOCKING_MODULE_ABI = parseAbi([
   "function dockByTargetOrder(bytes32 targetEndpointKey) view returns (bytes32)",
   "function dockDepthOfOrder(bytes32 planId,bytes32 orderId) view returns (uint8)",
   "function usedEntrancePermitNonce(bytes32 dockInstanceId) view returns (uint256)",
-  "function entrancePermitDigest(bytes32 targetPlanId,bytes32 targetEntrancePortId,bytes32 localPlanId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,address creator,uint256 nonce,uint256 deadline) view returns (bytes32)",
+  "function entrancePermitDigest(bytes32 targetPlanId,bytes32 targetEntrancePortId,bytes32 localPlanId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,uint256 nonce,uint256 deadline) view returns (bytes32)",
   "function DOMAIN_SEPARATOR() view returns (bytes32)",
   "function stateMachine() view returns (address)",
   "function planMetadataModule() view returns (address)",
@@ -160,7 +160,7 @@ export const STATE_MACHINE_LENS_ABI = parseAbi([
 ]);
 
 export const PRODUCT_SUBMIT_DOMAIN_NAME = "UVPStateMachine";
-export const PRODUCT_SUBMIT_DOMAIN_VERSION = "0.8";
+export const PRODUCT_SUBMIT_DOMAIN_VERSION = "0.9";
 export const PRODUCT_SUBMIT_PRIMARY_TYPE = "UVPStateMachineSignal";
 export const PLAN_COMMIT_PRIMARY_TYPE = "UVPStateMachinePlanCommit";
 export const TRIGGER_ORDER_FROM_OUTSIDE_PRIMARY_TYPE =
@@ -222,6 +222,8 @@ export const PLAN_COMMIT_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField
     { name: "publisher", type: "address" },
     { name: "hooksHash", type: "bytes32" },
     { name: "metadataHash", type: "bytes32" },
+    { name: "dockRoutesRoot", type: "bytes32" },
+    { name: "dockInterfaceRoot", type: "bytes32" },
     { name: "deadline", type: "uint256" },
   ];
 
@@ -323,6 +325,8 @@ export interface PlanCommitPayload {
   readonly publisher: Address | string;
   readonly hooksHash: Hex | string;
   readonly metadataHash: Hex | string;
+  readonly dockRoutesRoot: Hex | string;
+  readonly dockInterfaceRoot: Hex | string;
   readonly deadline: bigint | number | string;
 }
 
@@ -336,6 +340,8 @@ export interface PlanCommitTypedData {
     readonly publisher: Address;
     readonly hooksHash: Hex;
     readonly metadataHash: Hex;
+    readonly dockRoutesRoot: Hex;
+    readonly dockInterfaceRoot: Hex;
     readonly deadline: string;
   };
 }
@@ -991,6 +997,8 @@ export function buildPlanCommitTypedData(
       publisher: normalizeAddress(input.publisher, "publisher"),
       hooksHash: normalizeBytes32(input.hooksHash, "hooksHash"),
       metadataHash: normalizeBytes32(input.metadataHash, "metadataHash"),
+      dockRoutesRoot: normalizeBytes32(input.dockRoutesRoot, "dockRoutesRoot"),
+      dockInterfaceRoot: normalizeBytes32(input.dockInterfaceRoot, "dockInterfaceRoot"),
       deadline: normalizeUintString(input.deadline, "deadline"),
     },
   };
@@ -1421,7 +1429,6 @@ export interface SubmitDockedInputCallArgs {
   readonly dockInstanceId: Hex | string;
   readonly localHookId: Hex | string;
   readonly inputBindingHash: Hex | string;
-  readonly sourceFactSetHash: Hex | string;
 }
 
 export interface SubmitDockedSignalCall {
@@ -1437,7 +1444,7 @@ export interface SubmitDockedInputCall {
   readonly address: Address;
   readonly abi: typeof DOCKING_MODULE_ABI;
   readonly functionName: "submitDockedInput";
-  readonly args: readonly [Hex, Hex, Hex, Hex];
+  readonly args: readonly [Hex, Hex, Hex];
   readonly data: Hex;
   readonly chainId?: number;
 }
@@ -1448,7 +1455,7 @@ const DOCK_SUBMIT_SIGNAL_ABI = parseAbi([
   "function submitDockedSignal(bytes32 dockInstanceId,bytes32 outputBindingHash) returns (bool)",
 ]);
 const DOCK_SUBMIT_INPUT_ABI = parseAbi([
-  "function submitDockedInput(bytes32 dockInstanceId,bytes32 localHookId,bytes32 inputBindingHash,bytes32 sourceFactSetHash) returns (bool)",
+  "function submitDockedInput(bytes32 dockInstanceId,bytes32 localHookId,bytes32 inputBindingHash) returns (bool)",
 ]);
 
 export function buildSubmitDockedSignalCall(
@@ -1486,7 +1493,6 @@ export function buildSubmitDockedInputCall(
     normalizeBytes32(args.dockInstanceId, "dockInstanceId"),
     normalizeBytes32(args.localHookId, "localHookId"),
     normalizeBytes32(args.inputBindingHash, "inputBindingHash"),
-    normalizeBytes32(args.sourceFactSetHash, "sourceFactSetHash"),
   ] as const;
 
   const data = encodeFunctionData({

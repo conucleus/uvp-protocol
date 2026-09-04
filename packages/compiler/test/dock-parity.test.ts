@@ -125,6 +125,23 @@ test("golden fixture compiles to identical routes, roots, and hashes", () => {
   const targetPlan = compileZhixuHookPlan(fixture.targetDefinition);
   const expected = fixture.expected;
 
+  // The target identity must be freshly compiled from the fixture definition,
+  // then matched back to the exact resolution-manifest artifact consumed by
+  // the parent linker.  Comparing only route fields would allow a stale
+  // target planId/planHash to remain hidden in an otherwise valid route.
+  const targetResolution = fixture.resolutionManifest.definitions.find(
+    (definition) =>
+      definition.zhixu === fixture.targetDefinition.metadata.uid &&
+      definition.version === fixture.targetDefinition.metadata.annotations?.version,
+  );
+  assert.ok(targetResolution, "golden fixture is missing its target resolution entry");
+  assert.equal(targetPlan.planId, expected.targetPlanId);
+  assert.equal(targetPlan.planHash, expected.targetArtifactHash);
+  assert.equal(targetResolution.evmPlanId, targetPlan.planId);
+  assert.equal(targetResolution.artifactHash, targetPlan.planHash);
+  assert.equal(targetResolution.definitionRefHash, targetPlan.dockInterface?.definition.definitionRefHash);
+  assert.deepEqual(targetResolution.interface, targetPlan.dockInterface);
+
   assert.equal(targetPlan.dockInterface?.definition.definitionRefHash, expected.targetDefinitionRefHash);
   assert.equal(
     definitionRefHash("zx-payment-execution", "1.2.0"),
@@ -262,6 +279,7 @@ test("runtime domains and derived identities match the golden vectors", () => {
   const route = fixture.expected.dockRoutes[0]!;
   const instance = dockInstanceId({
     runtimeDomain: expected.evmRuntimeDomain,
+    localPlanId: pad(fixture.inputs.parentPlanIdWord, { size: 32 }),
     localDefinitionRefHash: expected.parentDefinitionRefHash,
     localOrderKey: expected.localOrderKey,
     routeId: route.routeId,

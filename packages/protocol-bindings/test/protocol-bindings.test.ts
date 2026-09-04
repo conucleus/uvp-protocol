@@ -229,7 +229,7 @@ describe("protocol bindings", () => {
     assert.deepEqual(typedData, {
       domain: {
         name: "UVPStateMachine",
-        version: "0.8",
+        version: "0.9",
         chainId: 31337,
         verifyingContract,
       },

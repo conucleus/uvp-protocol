@@ -226,6 +226,7 @@ export function localOrderKey(orderId: string): HexString {
 
 export function dockInstanceId(input: {
   readonly runtimeDomain: HexString;
+  readonly localPlanId: HexString;
   readonly localDefinitionRefHash: HexString;
   readonly localOrderKey: HexString;
   readonly routeId: HexString;
@@ -233,6 +234,7 @@ export function dockInstanceId(input: {
 }): HexString {
   return keccakWords(DOMAIN_DOCK_INSTANCE, [
     input.runtimeDomain,
+    input.localPlanId,
     input.localDefinitionRefHash,
     input.localOrderKey,
     input.routeId,

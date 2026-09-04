@@ -27,6 +27,7 @@ contract UVPDerivedSignalModule {
     error InvalidSignalCapability();
     error InvalidSignalSignature(address expectedSigner, address recoveredSigner);
     error InvalidSignalSignatureLength(uint256 length);
+    error UnauthorizedSignalCaller(address expectedCaller, address actualCaller);
     error UnauthorizedSignalSubmitter(bytes32 orderId, bytes32 sourceId, bytes32 signalId, address submitter);
     error UnknownOrder();
     error ZeroSignalId();
@@ -77,6 +78,12 @@ contract UVPDerivedSignalModule {
     }
 
     function submitDerivedSignal(DerivedSignalRequest calldata request, address submitter) external {
+        if (submitter == address(0)) {
+            revert ZeroSubmitter();
+        }
+        if (msg.sender != submitter) {
+            revert UnauthorizedSignalCaller(submitter, msg.sender);
+        }
         _validateDerivedSignal(request, submitter);
         _executeDerivedSignal(request, submitter);
     }
