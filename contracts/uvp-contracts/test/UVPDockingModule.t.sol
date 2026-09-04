@@ -81,6 +81,7 @@ contract UVPDockingModuleTest {
     bytes32 private constant DOMAIN_INTERFACE_INPUT = keccak256("UVP_DOCK_INTERFACE_INPUT_V1");
     bytes32 private constant DOMAIN_DOCK_INSTANCE = keccak256("UVP_DOCK_INSTANCE_V1");
     bytes32 private constant DOMAIN_DOCK_ORDER = keccak256("UVP_DOCK_ORDER_V1");
+    bytes32 private constant DOCK_ORDER_NAMESPACE_MASK = bytes32(uint256(1) << 255);
     bytes32 private constant DOMAIN_RUNTIME_EIP155 = keccak256("UVP_RUNTIME_EIP155_V1");
     bytes32 private constant EMPTY_DOCK_ROOT = keccak256("");
 
@@ -93,6 +94,7 @@ contract UVPDockingModuleTest {
     bytes32 private constant SIGNAL_EXEC = keccak256("exec");
 
     bytes32 private constant TARGET_ENTRANCE_HOOK = keccak256("pay.init#DOCK_EXECUTE");
+    bytes32 private constant TARGET_MINT_HOOK = keccak256("pay.init#MINT");
     bytes32 private constant TARGET_STAGE = keccak256("pay.init");
     bytes32 private constant TARGET_HOOK_NAME = keccak256("DOCK_EXECUTE");
     bytes32 private constant TARGET_SOURCE = keccak256("payment");
@@ -160,6 +162,9 @@ contract UVPDockingModuleTest {
         _rebindRouteHashes();
         // 父 plan 的 dockRoutesRoot 必须提交重绑后的 routeHash。
         parentPlanId = _registerParentPlan();
+        // dockInstanceId 的身份域包含 localPlanId，只有父 plan 注册后才能
+        // 计算最终的实例 ID。
+        _rebindDockInstanceIds();
         _spawnParentOrder();
     }
 
@@ -170,7 +175,12 @@ contract UVPDockingModuleTest {
     function testOpenCreatesIndependentChildAtomically() public {
         assertTrue(
             docking.openDockedOrder(
-                _openRequest(0), _openRouteProof(), _openLeafData(), _openInterfaceProof(), _inputs(), _outputs(),
+                _openRequest(0),
+                _openRouteProof(),
+                _openLeafData(),
+                _openInterfaceProof(),
+                _inputs(),
+                _outputs(),
                 _permitEmpty()
             )
         );
@@ -190,16 +200,61 @@ contract UVPDockingModuleTest {
         assertTrue(readyEmitted);
     }
 
+    /// A linkedOrderId is disclosed in the open calldata.  A target plan may
+    /// also expose a permissionless MINT trigger, so the state machine must
+    /// reserve a disjoint namespace rather than relying on transaction order.
+    function testLinkedOrderNamespaceCannotBeSquatted() public {
+        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = _outsideTrigger(TARGET_SIGNAL);
+        trigger.planId = targetPlanId;
+        trigger.orderId = linkedOrderId;
+        trigger.creator = vm.addr(TARGET_PUBLISHER_KEY);
+        trigger.triggerHookId = TARGET_MINT_HOOK;
+        trigger.triggerStageId = TARGET_STAGE;
+        trigger.sourceId = TARGET_SOURCE;
+        trigger.idempotencyKey = keccak256("squat-attempt");
+
+        UVPStateMachine.SignalAuthorization[] memory auths = new UVPStateMachine.SignalAuthorization[](1);
+        auths[0] = _auth(TARGET_SOURCE, TARGET_SIGNAL, trigger.submitter);
+        _expect(abi.encodeWithSelector(UVPStateMachine.InvalidDockOrderNamespace.selector, linkedOrderId));
+        machine.triggerOrderFromOutsideFor(trigger, auths, _sign(SUBMITTER_KEY, _outsideDigestFor(trigger, auths)));
+        assertFalse(machine.orderExists(targetPlanId, linkedOrderId));
+
+        // The legitimate module path remains the only creator of a dock
+        // namespace order and succeeds after the rejected front-run attempt.
+        assertTrue(
+            docking.openDockedOrder(
+                _openRequest(0),
+                _openRouteProof(),
+                _openLeafData(),
+                _openInterfaceProof(),
+                _inputs(),
+                _outputs(),
+                _permitEmpty()
+            )
+        );
+        assertTrue(machine.orderExists(targetPlanId, linkedOrderId));
+    }
+
     function testOpenIsIdempotentForSameInstance() public {
         assertTrue(
             docking.openDockedOrder(
-                _openRequest(0), _openRouteProof(), _openLeafData(), _openInterfaceProof(), _inputs(), _outputs(),
+                _openRequest(0),
+                _openRouteProof(),
+                _openLeafData(),
+                _openInterfaceProof(),
+                _inputs(),
+                _outputs(),
                 _permitEmpty()
             )
         );
         assertFalse(
             docking.openDockedOrder(
-                _openRequest(0), _openRouteProof(), _openLeafData(), _openInterfaceProof(), _inputs(), _outputs(),
+                _openRequest(0),
+                _openRouteProof(),
+                _openLeafData(),
+                _openInterfaceProof(),
+                _inputs(),
+                _outputs(),
                 _permitEmpty()
             )
         );
@@ -210,14 +265,18 @@ contract UVPDockingModuleTest {
     function testSignalInputDeliversCancelAndIsIdempotent() public {
         assertTrue(
             docking.openDockedOrder(
-                _openRequest(0), _openRouteProof(), _openLeafData(), _openInterfaceProof(), _inputs(), _outputs(),
+                _openRequest(0),
+                _openRouteProof(),
+                _openLeafData(),
+                _openInterfaceProof(),
+                _inputs(),
+                _outputs(),
                 _permitEmpty()
             )
         );
         _makeCancelHookReady();
         assertTrue(docking.submitDockedInput(dockInstanceId, PARENT_CANCEL_HOOK, cancelBinding));
-        (bool cancelWritten,,,,) =
-            machine.getSignal(targetPlanId, linkedOrderId, TARGET_SOURCE, TARGET_CANCEL_SIGNAL);
+        (bool cancelWritten,,,,) = machine.getSignal(targetPlanId, linkedOrderId, TARGET_SOURCE, TARGET_CANCEL_SIGNAL);
         assertTrue(cancelWritten);
         assertTrue(docking.dockInputDelivered(dockInstanceId, cancelBinding));
         assertFalse(docking.submitDockedInput(dockInstanceId, PARENT_CANCEL_HOOK, cancelBinding));
@@ -226,7 +285,12 @@ contract UVPDockingModuleTest {
     function testPermissionlessCallbackWritesParentMappedFact() public {
         assertTrue(
             docking.openDockedOrder(
-                _openRequest(0), _openRouteProof(), _openLeafData(), _openInterfaceProof(), _inputs(), _outputs(),
+                _openRequest(0),
+                _openRouteProof(),
+                _openLeafData(),
+                _openInterfaceProof(),
+                _inputs(),
+                _outputs(),
                 _permitEmpty()
             )
         );
@@ -239,10 +303,16 @@ contract UVPDockingModuleTest {
         assertFalse(docking.submitDockedSignal(dockInstanceId, outputBinding));
     }
 
-    function testCallbackBeforeTargetFactReverts() public {  // noqa
+    function testCallbackBeforeTargetFactReverts() public {
+        // noqa
         assertTrue(
             docking.openDockedOrder(
-                _openRequest(0), _openRouteProof(), _openLeafData(), _openInterfaceProof(), _inputs(), _outputs(),
+                _openRequest(0),
+                _openRouteProof(),
+                _openLeafData(),
+                _openInterfaceProof(),
+                _inputs(),
+                _outputs(),
                 _permitEmpty()
             )
         );
@@ -283,7 +353,9 @@ contract UVPDockingModuleTest {
                 outputsRoot
             )
         );
-        _expect(abi.encodeWithSelector(UVPDockingModule.DockRouteLeafMismatch.selector, openRouteHash, tamperedRouteHash));
+        _expect(
+            abi.encodeWithSelector(UVPDockingModule.DockRouteLeafMismatch.selector, openRouteHash, tamperedRouteHash)
+        );
         docking.openDockedOrder(
             request, _openRouteProof(), _openLeafData(), _openInterfaceProof(), _inputs(), _outputs(), _permitEmpty()
         );
@@ -292,7 +364,10 @@ contract UVPDockingModuleTest {
     function testRejectsTamperedChildId() public {
         UVPDockingModule.OpenDockRequestV1 memory request = _openRequest(0);
         request.linkedOrderId = bytes32(uint256(0xE711));
-        bytes32 recomputedLinked = keccak256(abi.encode(DOMAIN_DOCK_ORDER, dockInstanceId, targetDefinitionRef));
+        bytes32 recomputedLinked = bytes32(
+            uint256(keccak256(abi.encode(DOMAIN_DOCK_ORDER, dockInstanceId, targetDefinitionRef)))
+                | uint256(DOCK_ORDER_NAMESPACE_MASK)
+        );
         _expect(
             abi.encodeWithSelector(
                 UVPDockingModule.DockRouteLeafMismatch.selector, bytes32(uint256(0xE711)), recomputedLinked
@@ -325,11 +400,7 @@ contract UVPDockingModuleTest {
                 outputsRoot
             )
         );
-        _expect(
-            abi.encodeWithSelector(
-                UVPDockingModule.DockRouteLeafMismatch.selector, openRouteHash, substitutedHash
-            )
-        );
+        _expect(abi.encodeWithSelector(UVPDockingModule.DockRouteLeafMismatch.selector, openRouteHash, substitutedHash));
         docking.openDockedOrder(
             request, _openRouteProof(), _openLeafData(), _openInterfaceProof(), _inputs(), _outputs(), _permitEmpty()
         );
@@ -340,11 +411,19 @@ contract UVPDockingModuleTest {
         leaf.kind = 0;
         bytes32 recomputedKindLeaf = keccak256(
             abi.encode(
-                DOMAIN_INTERFACE_INPUT, targetDefinitionRef, leaf.portKey, uint256(0), leaf.hookKey, leaf.sourceId,
-                leaf.signalId, uint256(0)
+                DOMAIN_INTERFACE_INPUT,
+                targetDefinitionRef,
+                leaf.portKey,
+                uint256(0),
+                leaf.hookKey,
+                leaf.sourceId,
+                leaf.signalId,
+                uint256(0)
             )
         );
-        _expect(abi.encodeWithSelector(UVPDockingModule.DockInterfaceLeafMismatch.selector, openLeaf, recomputedKindLeaf));
+        _expect(
+            abi.encodeWithSelector(UVPDockingModule.DockInterfaceLeafMismatch.selector, openLeaf, recomputedKindLeaf)
+        );
         docking.openDockedOrder(
             _openRequest(0), _openRouteProof(), leaf, _openInterfaceProof(), _inputs(), _outputs(), _permitEmpty()
         );
@@ -353,7 +432,12 @@ contract UVPDockingModuleTest {
     function testRejectsDepthBeyondLimit() public {
         _expect(abi.encodeWithSelector(UVPDockingModule.DockDepthMismatch.selector, 8, 0));
         docking.openDockedOrder(
-            _openRequest(8), _openRouteProof(), _openLeafData(), _openInterfaceProof(), _inputs(), _outputs(),
+            _openRequest(8),
+            _openRouteProof(),
+            _openLeafData(),
+            _openInterfaceProof(),
+            _inputs(),
+            _outputs(),
             _permitEmpty()
         );
     }
@@ -361,7 +445,12 @@ contract UVPDockingModuleTest {
     function testRejectsParentDepthMismatch() public {
         _expect(abi.encodeWithSelector(UVPDockingModule.DockDepthMismatch.selector, 3, 0));
         docking.openDockedOrder(
-            _openRequest(3), _openRouteProof(), _openLeafData(), _openInterfaceProof(), _inputs(), _outputs(),
+            _openRequest(3),
+            _openRouteProof(),
+            _openLeafData(),
+            _openInterfaceProof(),
+            _inputs(),
+            _outputs(),
             _permitEmpty()
         );
     }
@@ -369,7 +458,12 @@ contract UVPDockingModuleTest {
     function testRejectsSecondChildForSameRouteInstance() public {
         assertTrue(
             docking.openDockedOrder(
-                _openRequest(0), _openRouteProof(), _openLeafData(), _openInterfaceProof(), _inputs(), _outputs(),
+                _openRequest(0),
+                _openRouteProof(),
+                _openLeafData(),
+                _openInterfaceProof(),
+                _inputs(),
+                _outputs(),
                 _permitEmpty()
             )
         );
@@ -379,7 +473,13 @@ contract UVPDockingModuleTest {
         bytes32 runtimeDomainLocal = keccak256(abi.encode(DOMAIN_RUNTIME_EIP155, block.chainid, address(machine)));
         bytes32 recomputedInstance = keccak256(
             abi.encode(
-                DOMAIN_DOCK_INSTANCE, runtimeDomainLocal, localDefinitionRef, PARENT_ORDER_ID, routeId, openRouteHash
+                DOMAIN_DOCK_INSTANCE,
+                runtimeDomainLocal,
+                parentPlanId,
+                localDefinitionRef,
+                PARENT_ORDER_ID,
+                routeId,
+                openRouteHash
             )
         );
         _expect(
@@ -408,6 +508,26 @@ contract UVPDockingModuleTest {
         assertTrue(machine.orderExists(permitTargetPlanId, permitLinkedOrderId));
     }
 
+    function testPermitReplayReturnsFalseAfterDockExists() public {
+        UVPDockingModule.OpenDockRequestV1 memory request = _permitRequest();
+        UVPDockingModule.EntrancePermitV1 memory permit = _permitSigned(1);
+        assertTrue(
+            docking.openDockedOrder(
+                request, _permitRouteProof(), _permitLeafData(), _permitInterfaceProof(), _inputs(), _outputs(), permit
+            )
+        );
+
+        // The idempotent path is checked before permit nonce validation. A
+        // replay therefore returns false instead of reverting on the consumed
+        // nonce.
+        assertFalse(
+            docking.openDockedOrder(
+                request, _permitRouteProof(), _permitLeafData(), _permitInterfaceProof(), _inputs(), _outputs(), permit
+            )
+        );
+        assertEq(docking.usedEntrancePermitNonce(request.dockInstanceId), 1);
+    }
+
     function testPermitWrongSignerRejected() public {
         UVPDockingModule.OpenDockRequestV1 memory request = _permitRequest();
         UVPDockingModule.DockInterfaceLeafV1 memory leaf = _permitLeafData();
@@ -417,9 +537,7 @@ contract UVPDockingModuleTest {
         permit.signature = abi.encodePacked(r, s, v);
         _expect(
             abi.encodeWithSelector(
-                UVPDockingModule.DockPermitInvalidSigner.selector,
-                vm.addr(TARGET_PUBLISHER_KEY),
-                vm.addr(0xDEAD)
+                UVPDockingModule.DockPermitInvalidSigner.selector, vm.addr(TARGET_PUBLISHER_KEY), vm.addr(0xDEAD)
             )
         );
         docking.openDockedOrder(
@@ -444,7 +562,12 @@ contract UVPDockingModuleTest {
     function testCrossPlanBareOrderIdCollisionIsolated() public {
         assertTrue(
             docking.openDockedOrder(
-                _openRequest(0), _openRouteProof(), _openLeafData(), _openInterfaceProof(), _inputs(), _outputs(),
+                _openRequest(0),
+                _openRouteProof(),
+                _openLeafData(),
+                _openInterfaceProof(),
+                _inputs(),
+                _outputs(),
                 _permitEmpty()
             )
         );
@@ -455,7 +578,12 @@ contract UVPDockingModuleTest {
 
     function testGasOpenDockedOrder() public {
         docking.openDockedOrder(
-            _openRequest(0), _openRouteProof(), _openLeafData(), _openInterfaceProof(), _inputs(), _outputs(),
+            _openRequest(0),
+            _openRouteProof(),
+            _openLeafData(),
+            _openInterfaceProof(),
+            _inputs(),
+            _outputs(),
             _permitEmpty()
         );
     }
@@ -463,7 +591,12 @@ contract UVPDockingModuleTest {
     function testGasSubmitDockedInput() public {
         assertTrue(
             docking.openDockedOrder(
-                _openRequest(0), _openRouteProof(), _openLeafData(), _openInterfaceProof(), _inputs(), _outputs(),
+                _openRequest(0),
+                _openRouteProof(),
+                _openLeafData(),
+                _openInterfaceProof(),
+                _inputs(),
+                _outputs(),
                 _permitEmpty()
             )
         );
@@ -474,7 +607,12 @@ contract UVPDockingModuleTest {
     function testGasSubmitDockedSignal() public {
         assertTrue(
             docking.openDockedOrder(
-                _openRequest(0), _openRouteProof(), _openLeafData(), _openInterfaceProof(), _inputs(), _outputs(),
+                _openRequest(0),
+                _openRouteProof(),
+                _openLeafData(),
+                _openInterfaceProof(),
+                _inputs(),
+                _outputs(),
                 _permitEmpty()
             )
         );
@@ -517,13 +655,31 @@ contract UVPDockingModuleTest {
     function _computeStaticRouteParts() private {
         routeId = keccak256(abi.encode(DOMAIN_ROUTE_ID, localDefinitionRef, PARENT_EXEC_STAGE));
         entranceBinding = keccak256(
-            abi.encode(DOMAIN_INPUT_BINDING, routeId, PARENT_EXEC_HOOK, ENTRANCE_PORT, TARGET_SOURCE, TARGET_SIGNAL, uint256(1)));
+            abi.encode(
+                DOMAIN_INPUT_BINDING, routeId, PARENT_EXEC_HOOK, ENTRANCE_PORT, TARGET_SOURCE, TARGET_SIGNAL, uint256(1)
+            )
+        );
         cancelBinding = keccak256(
-            abi.encode(DOMAIN_INPUT_BINDING, routeId, PARENT_CANCEL_HOOK, CANCEL_PORT, TARGET_SOURCE, TARGET_CANCEL_SIGNAL, uint256(0)));
+            abi.encode(
+                DOMAIN_INPUT_BINDING,
+                routeId,
+                PARENT_CANCEL_HOOK,
+                CANCEL_PORT,
+                TARGET_SOURCE,
+                TARGET_CANCEL_SIGNAL,
+                uint256(0)
+            )
+        );
         outputBinding = keccak256(
             abi.encode(
-                DOMAIN_OUTPUT_BINDING, routeId, LOCAL_MAPPED_SOURCE, LOCAL_MAPPED_SIGNAL, DONE_PORT, TARGET_OUT_SOURCE,
-                TARGET_OUT_SIGNAL, uint256(1)
+                DOMAIN_OUTPUT_BINDING,
+                routeId,
+                LOCAL_MAPPED_SOURCE,
+                LOCAL_MAPPED_SIGNAL,
+                DONE_PORT,
+                TARGET_OUT_SOURCE,
+                TARGET_OUT_SIGNAL,
+                uint256(1)
             )
         );
         bytes32[] memory inputLeaves = new bytes32[](2);
@@ -534,14 +690,26 @@ contract UVPDockingModuleTest {
 
         openLeaf = keccak256(
             abi.encode(
-                DOMAIN_INTERFACE_INPUT, targetDefinitionRef, ENTRANCE_PORT, uint256(1), TARGET_ENTRANCE_HOOK,
-                TARGET_SOURCE, TARGET_SIGNAL, uint256(0)
+                DOMAIN_INTERFACE_INPUT,
+                targetDefinitionRef,
+                ENTRANCE_PORT,
+                uint256(1),
+                TARGET_ENTRANCE_HOOK,
+                TARGET_SOURCE,
+                TARGET_SIGNAL,
+                uint256(0)
             )
         );
         permitLeaf = keccak256(
             abi.encode(
-                DOMAIN_INTERFACE_INPUT, targetDefinitionRef, ENTRANCE_PORT, uint256(1), TARGET_ENTRANCE_HOOK,
-                TARGET_SOURCE, TARGET_SIGNAL, uint256(1)
+                DOMAIN_INTERFACE_INPUT,
+                targetDefinitionRef,
+                ENTRANCE_PORT,
+                uint256(1),
+                TARGET_ENTRANCE_HOOK,
+                TARGET_SOURCE,
+                TARGET_SIGNAL,
+                uint256(1)
             )
         );
         openInterfaceRoot = DockMerkle.root(_single(openLeaf));
@@ -579,16 +747,40 @@ contract UVPDockingModuleTest {
                 outputsRoot
             )
         );
-        dockInstanceId =
-            keccak256(abi.encode(DOMAIN_DOCK_INSTANCE, runtimeDomain, localDefinitionRef, PARENT_ORDER_ID, routeId, openRouteHash));
-        linkedOrderId = keccak256(abi.encode(DOMAIN_DOCK_ORDER, dockInstanceId, targetDefinitionRef));
-        permitDockInstanceId =
-            keccak256(abi.encode(DOMAIN_DOCK_INSTANCE, runtimeDomain, localDefinitionRef, PARENT_ORDER_ID, routeId, permitRouteHash));
-        permitLinkedOrderId = keccak256(abi.encode(DOMAIN_DOCK_ORDER, permitDockInstanceId, targetDefinitionRef));
+        dockInstanceId = keccak256(
+            abi.encode(
+                DOMAIN_DOCK_INSTANCE,
+                runtimeDomain,
+                bytes32(0),
+                localDefinitionRef,
+                PARENT_ORDER_ID,
+                routeId,
+                openRouteHash
+            )
+        );
+        linkedOrderId = bytes32(
+            uint256(keccak256(abi.encode(DOMAIN_DOCK_ORDER, dockInstanceId, targetDefinitionRef)))
+                | uint256(DOCK_ORDER_NAMESPACE_MASK)
+        );
+        permitDockInstanceId = keccak256(
+            abi.encode(
+                DOMAIN_DOCK_INSTANCE,
+                runtimeDomain,
+                bytes32(0),
+                localDefinitionRef,
+                PARENT_ORDER_ID,
+                routeId,
+                permitRouteHash
+            )
+        );
+        permitLinkedOrderId = bytes32(
+            uint256(keccak256(abi.encode(DOMAIN_DOCK_ORDER, permitDockInstanceId, targetDefinitionRef)))
+                | uint256(DOCK_ORDER_NAMESPACE_MASK)
+        );
     }
 
     function _registerTargetPlan(bytes32 interfaceRoot) private returns (bytes32) {
-        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
         UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](1);
         instructions[0] = UVPStateMachine.Instruction({
             op: UVPStateMachine.InstructionOp.Signal,
@@ -607,16 +799,33 @@ contract UVPDockingModuleTest {
             instructions: instructions,
             dependencyKeys: deps
         });
+        // Keep a MINT trigger in the target plan so the namespace regression
+        // test exercises the real permissionless front-run surface.
+        UVPStateMachine.Instruction[] memory mintInstructions = new UVPStateMachine.Instruction[](1);
+        mintInstructions[0] = UVPStateMachine.Instruction({
+            op: UVPStateMachine.InstructionOp.Signal,
+            sourceId: TARGET_SOURCE,
+            signalId: TARGET_SIGNAL,
+            arity: 0,
+            delaySeconds: 0
+        });
+        bytes32[] memory mintDeps = new bytes32[](1);
+        mintDeps[0] = keccak256(abi.encode(TARGET_SOURCE, TARGET_SIGNAL));
+        hooks[1] = UVPStateMachine.CompactHook({
+            hookId: TARGET_MINT_HOOK,
+            stageId: TARGET_STAGE,
+            hookName: bytes32("MINT"),
+            flags: FLAG_MINT,
+            instructions: mintInstructions,
+            dependencyKeys: mintDeps
+        });
         // 目标定义自身治理：selector 自绑定 + 输出能力（子订单 executor
         // 经 executor patch 获得输出提交权，不经 open 注入授权）。
         IUVPPlanMetadataModule.StageSelectorBinding[] memory bindings =
             new IUVPPlanMetadataModule.StageSelectorBinding[](1);
-        bindings[0] = IUVPPlanMetadataModule.StageSelectorBinding({
-            selectorStageId: TARGET_STAGE,
-            targetStageId: TARGET_STAGE
-        });
-        IUVPPlanMetadataModule.SignalCapability[] memory capabilities =
-            new IUVPPlanMetadataModule.SignalCapability[](1);
+        bindings[0] =
+            IUVPPlanMetadataModule.StageSelectorBinding({selectorStageId: TARGET_STAGE, targetStageId: TARGET_STAGE});
+        IUVPPlanMetadataModule.SignalCapability[] memory capabilities = new IUVPPlanMetadataModule.SignalCapability[](1);
         capabilities[0] = IUVPPlanMetadataModule.SignalCapability({
             stageId: TARGET_STAGE,
             targetSourceId: TARGET_OUT_SOURCE,
@@ -628,11 +837,19 @@ contract UVPDockingModuleTest {
 
     function _registerParentPlan() private returns (bytes32) {
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](3);
-        hooks[0] = _parentHook(PARENT_START_HOOK, PARENT_STAGE, keccak256("START"), FLAG_MINT, PARENT_STAGE, SIGNAL_START);
-        hooks[1] =
-            _parentHook(PARENT_EXEC_HOOK, PARENT_EXEC_STAGE, keccak256("EXECUTE"), FLAG_EMIT_READY, PARENT_STAGE, SIGNAL_EXEC);
-        hooks[2] =
-            _parentHook(PARENT_CANCEL_HOOK, PARENT_EXEC_STAGE, keccak256("CANCEL"), FLAG_EMIT_READY, PARENT_STAGE, keccak256("cancel"));
+        hooks[0] =
+            _parentHook(PARENT_START_HOOK, PARENT_STAGE, keccak256("START"), FLAG_MINT, PARENT_STAGE, SIGNAL_START);
+        hooks[1] = _parentHook(
+            PARENT_EXEC_HOOK, PARENT_EXEC_STAGE, keccak256("EXECUTE"), FLAG_EMIT_READY, PARENT_STAGE, SIGNAL_EXEC
+        );
+        hooks[2] = _parentHook(
+            PARENT_CANCEL_HOOK,
+            PARENT_EXEC_STAGE,
+            keccak256("CANCEL"),
+            FLAG_EMIT_READY,
+            PARENT_STAGE,
+            keccak256("cancel")
+        );
         bytes32[] memory routeLeaves = new bytes32[](2);
         routeLeaves[0] = openRouteHash;
         routeLeaves[1] = permitRouteHash;
@@ -656,11 +873,7 @@ contract UVPDockingModuleTest {
     ) private pure returns (UVPStateMachine.CompactHook memory) {
         UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](1);
         instructions[0] = UVPStateMachine.Instruction({
-            op: UVPStateMachine.InstructionOp.Signal,
-            sourceId: sourceId,
-            signalId: signalId,
-            arity: 0,
-            delaySeconds: 0
+            op: UVPStateMachine.InstructionOp.Signal, sourceId: sourceId, signalId: signalId, arity: 0, delaySeconds: 0
         });
         bytes32[] memory deps = new bytes32[](1);
         deps[0] = keccak256(abi.encode(sourceId, signalId));
@@ -709,13 +922,68 @@ contract UVPDockingModuleTest {
             )
         );
         dockInstanceId = keccak256(
-            abi.encode(DOMAIN_DOCK_INSTANCE, runtimeDomain, localDefinitionRef, PARENT_ORDER_ID, routeId, openRouteHash)
+            abi.encode(
+                DOMAIN_DOCK_INSTANCE,
+                runtimeDomain,
+                parentPlanId,
+                localDefinitionRef,
+                PARENT_ORDER_ID,
+                routeId,
+                openRouteHash
+            )
         );
-        linkedOrderId = keccak256(abi.encode(DOMAIN_DOCK_ORDER, dockInstanceId, targetDefinitionRef));
+        linkedOrderId = bytes32(
+            uint256(keccak256(abi.encode(DOMAIN_DOCK_ORDER, dockInstanceId, targetDefinitionRef)))
+                | uint256(DOCK_ORDER_NAMESPACE_MASK)
+        );
         permitDockInstanceId = keccak256(
-            abi.encode(DOMAIN_DOCK_INSTANCE, runtimeDomain, localDefinitionRef, PARENT_ORDER_ID, routeId, permitRouteHash)
+            abi.encode(
+                DOMAIN_DOCK_INSTANCE,
+                runtimeDomain,
+                parentPlanId,
+                localDefinitionRef,
+                PARENT_ORDER_ID,
+                routeId,
+                permitRouteHash
+            )
         );
-        permitLinkedOrderId = keccak256(abi.encode(DOMAIN_DOCK_ORDER, permitDockInstanceId, targetDefinitionRef));
+        permitLinkedOrderId = bytes32(
+            uint256(keccak256(abi.encode(DOMAIN_DOCK_ORDER, permitDockInstanceId, targetDefinitionRef)))
+                | uint256(DOCK_ORDER_NAMESPACE_MASK)
+        );
+    }
+
+    function _rebindDockInstanceIds() private {
+        dockInstanceId = keccak256(
+            abi.encode(
+                DOMAIN_DOCK_INSTANCE,
+                runtimeDomain,
+                parentPlanId,
+                localDefinitionRef,
+                PARENT_ORDER_ID,
+                routeId,
+                openRouteHash
+            )
+        );
+        linkedOrderId = bytes32(
+            uint256(keccak256(abi.encode(DOMAIN_DOCK_ORDER, dockInstanceId, targetDefinitionRef)))
+                | uint256(DOCK_ORDER_NAMESPACE_MASK)
+        );
+        permitDockInstanceId = keccak256(
+            abi.encode(
+                DOMAIN_DOCK_INSTANCE,
+                runtimeDomain,
+                parentPlanId,
+                localDefinitionRef,
+                PARENT_ORDER_ID,
+                routeId,
+                permitRouteHash
+            )
+        );
+        permitLinkedOrderId = bytes32(
+            uint256(keccak256(abi.encode(DOMAIN_DOCK_ORDER, permitDockInstanceId, targetDefinitionRef)))
+                | uint256(DOCK_ORDER_NAMESPACE_MASK)
+        );
     }
 
     function _spawnParentOrder() private {
@@ -726,9 +994,7 @@ contract UVPDockingModuleTest {
         UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = _outsideTrigger(SIGNAL_START);
         trigger.planId = parentPlanId;
         machine.triggerOrderFromOutsideFor(trigger, auths, _sign(SUBMITTER_KEY, _outsideDigest(auths)));
-        machine.submitSignal(
-            parentPlanId, PARENT_ORDER_ID, PARENT_STAGE, SIGNAL_EXEC, PAYLOAD, bytes32(uint256(0x77))
-        );
+        machine.submitSignal(parentPlanId, PARENT_ORDER_ID, PARENT_STAGE, SIGNAL_EXEC, PAYLOAD, bytes32(uint256(0x77)));
     }
 
     function _makeCancelHookReady() private {
@@ -918,10 +1184,7 @@ contract UVPDockingModuleTest {
         return UVPDockingModule.EntrancePermitV1({nonce: 0, deadline: 0, signature: ""});
     }
 
-    function _permitSigned(uint256 nonce)
-        private
-        returns (UVPDockingModule.EntrancePermitV1 memory)
-    {
+    function _permitSigned(uint256 nonce) private returns (UVPDockingModule.EntrancePermitV1 memory) {
         UVPDockingModule.OpenDockRequestV1 memory request = _permitRequest();
         UVPDockingModule.EntrancePermitV1 memory permit;
         permit.nonce = nonce;
@@ -962,10 +1225,7 @@ contract UVPDockingModuleTest {
         });
     }
 
-    function _outsideTrigger(bytes32 signalId)
-        private
-        returns (UVPStateMachine.TriggerOrderFromOutsideRequest memory)
-    {
+    function _outsideTrigger(bytes32 signalId) private returns (UVPStateMachine.TriggerOrderFromOutsideRequest memory) {
         return UVPStateMachine.TriggerOrderFromOutsideRequest({
             orderId: PARENT_ORDER_ID,
             planId: bytes32(0), // 由调用方覆盖
@@ -984,6 +1244,13 @@ contract UVPDockingModuleTest {
     function _outsideDigest(UVPStateMachine.SignalAuthorization[] memory auths) private returns (bytes32) {
         UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = _outsideTrigger(SIGNAL_START);
         trigger.planId = parentPlanId;
+        return _outsideDigestFor(trigger, auths);
+    }
+
+    function _outsideDigestFor(
+        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger,
+        UVPStateMachine.SignalAuthorization[] memory auths
+    ) private view returns (bytes32) {
         bytes32 authorizationsHash = _authorizationsHash(auths);
         bytes32 structHash = keccak256(
             abi.encode(
@@ -1005,15 +1272,18 @@ contract UVPDockingModuleTest {
         return keccak256(abi.encodePacked("\x19\x01", _domainSeparator(), structHash));
     }
 
-    function _authorizationsHash(UVPStateMachine.SignalAuthorization[] memory auths)
-        private
-        pure
-        returns (bytes32)
-    {
+    function _authorizationsHash(UVPStateMachine.SignalAuthorization[] memory auths) private pure returns (bytes32) {
         bytes32 rolling = keccak256(abi.encode(auths.length));
         for (uint256 i = 0; i < auths.length; i++) {
             rolling = keccak256(
-                abi.encode(rolling, auths[i].sourceId, auths[i].signalId, auths[i].submitter, auths[i].role, auths[i].metadataHash)
+                abi.encode(
+                    rolling,
+                    auths[i].sourceId,
+                    auths[i].signalId,
+                    auths[i].submitter,
+                    auths[i].role,
+                    auths[i].metadataHash
+                )
             );
         }
         return rolling;

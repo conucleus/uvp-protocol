@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x8eb315a573f4b628842a307175e577939f0c3f802ce5a592e11d9706c52f2857",
-    "bytecodeHash": "0xb2878dc24f9a6f735a60a149a8774d4502d0dcc0ba9858fdedcab6132c3e880f",
-    "deployedBytecodeHash": "0xb1a2270ee93806ede7914c768f0442083cb292165018fed264635ce606a5030f",
-    "artifactHash": "0x6f6d735d598f5d6229256a6a8206f023693753b024c97d17b0fbef52792fefa9"
+    "abiHash": "0x374fa889faf0a294c021f0511a8cd0de63d7ed73b1892d1d343741012aead6a5",
+    "bytecodeHash": "0x24f9f15c90307ea07e97f597a8be5201fe1cf3c9939a764da1f9d68be63a12a2",
+    "deployedBytecodeHash": "0xd9cb0f9305813cc6bcc4bbde44ccc4eb2be49e47af0bc88a96c8a078dbb1faf3",
+    "artifactHash": "0x556c9dc3706a2a93a49c9d4b98673bf1f5e023b543390a104bec2907be8a20d5"
   },
   "events": {
     "HookReady": {
@@ -100,6 +100,10 @@
     "DOCKING_MODULE_ID": {
       "signature": "DOCKING_MODULE_ID()",
       "selector": "0x81e532b1"
+    },
+    "DOCK_ORDER_NAMESPACE_MASK": {
+      "signature": "DOCK_ORDER_NAMESPACE_MASK()",
+      "selector": "0x916c3870"
     },
     "DOMAIN_SEPARATOR": {
       "signature": "DOMAIN_SEPARATOR()",
@@ -336,6 +340,10 @@
     "stagePatchModule": {
       "signature": "stagePatchModule()",
       "selector": "0xfa894dec"
+    },
+    "submitDerivedSignalFromModule": {
+      "signature": "submitDerivedSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
+      "selector": "0x0c5681c2"
     },
     "submitSignal": {
       "signature": "submitSignal(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",

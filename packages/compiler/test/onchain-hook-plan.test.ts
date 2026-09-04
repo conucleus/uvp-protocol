@@ -106,7 +106,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
   assert.equal(
     onchain.planHash,
-    "0xb7eb40dfa4bd961476565b18d52ee3842d1aaf9469d32385f23c681490678e43",
+    "0x9b5f1fbd3af5c982dcba9c2cf8145a90d91804e789cc7e76a214e7aed07dcc12",
   );
   assert.deepEqual(onchain.selectorBindings, [
     {
@@ -189,7 +189,10 @@ test("serializes trigger-origin signal capabilities to Solidity relation 1", () 
             {
               name: "close",
               source: "trade",
-              sendSignals: ["book::book.settlement_wait.cmp"],
+              receiveSignals: {
+                START: "trade::settlement.close.start",
+              },
+              sendSignals: ["start", "book::book.settlement_wait.cmp"],
               executor: {
                 supplierType: "organization",
                 supplierID: "settlement-operator",
@@ -202,8 +205,11 @@ test("serializes trigger-origin signal capabilities to Solidity relation 1", () 
   });
   const args = toSolidityRegisterPlanArgs(onchain);
 
+  const triggerOriginCapabilities = onchain.signalCapabilities.filter(
+    (capability) => capability.targetOrderRelation === "triggerOrigin",
+  );
   assert.deepEqual(
-    onchain.signalCapabilities.map((capability) => [
+    triggerOriginCapabilities.map((capability) => [
       capability.targetSource,
       capability.targetSignalName,
       capability.targetOrderRelation,
@@ -211,7 +217,9 @@ test("serializes trigger-origin signal capabilities to Solidity relation 1", () 
     [["book", "book.settlement_wait.cmp", "triggerOrigin"]],
   );
   assert.deepEqual(
-    args.signalCapabilities.map((capability) => capability.targetOrderRelation),
+    args.signalCapabilities
+      .filter((capability) => capability.targetOrderRelation === 1)
+      .map((capability) => capability.targetOrderRelation),
     [1],
   );
 });

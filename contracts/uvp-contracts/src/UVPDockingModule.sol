@@ -23,7 +23,7 @@ import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 ///                    targetSourceId, targetSignalId)
 ///   routeHash   = H("UVP_DOCK_ROUTE_V1", routeId, targetDefRef, targetArtifactHash, targetInterfaceRoot,
 ///                    targetPlanId, idPolicy(0), sourceSeam, entranceBinding, access, inputsRoot, outputsRoot)
-///   dockInst    = H("UVP_DOCK_INSTANCE_V1", runtimeDomain, localDefRef, localOrderKey, routeId, routeHash)
+///   dockInst    = H("UVP_DOCK_INSTANCE_V1", runtimeDomain, localPlanId, localDefRef, localOrderKey, routeId, routeHash)
 ///   linkedOrder = H("UVP_DOCK_ORDER_V1", dockInstanceId, targetDefRef)
 ///   inputIdem   = H("UVP_DOCK_INPUT_IDEMPOTENCY_V1", dockInstanceId, inputBindingHash, occurrence(0))
 ///   outputIdem  = H("UVP_DOCK_OUTPUT_IDEMPOTENCY_V1", dockInstanceId, outputBindingHash, targetFactId)
@@ -224,6 +224,10 @@ contract UVPDockingModule {
     bytes32 private constant _DOMAIN_ROUTE = keccak256("UVP_DOCK_ROUTE_V1");
     bytes32 private constant _DOMAIN_DOCK_INSTANCE = keccak256("UVP_DOCK_INSTANCE_V1");
     bytes32 private constant _DOMAIN_DOCK_ORDER = keccak256("UVP_DOCK_ORDER_V1");
+    // Highest bit is reserved for deterministically-derived dock child
+    // orders.  Public MINT/trigger-origin order creation rejects this
+    // namespace, so a disclosed linkedOrderId cannot be front-run.
+    bytes32 private constant _DOCK_ORDER_NAMESPACE_MASK = bytes32(uint256(1) << 255);
     bytes32 private constant _DOMAIN_INPUT_IDEMPOTENCY = keccak256("UVP_DOCK_INPUT_IDEMPOTENCY_V1");
     bytes32 private constant _DOMAIN_INPUT_PAYLOAD = keccak256("UVP_DOCK_INPUT_PAYLOAD_V1");
     bytes32 private constant _DOMAIN_OUTPUT_IDEMPOTENCY = keccak256("UVP_DOCK_OUTPUT_IDEMPOTENCY_V1");
@@ -242,10 +246,10 @@ contract UVPDockingModule {
     IUVPPlanMetadataModule public immutable planMetadataModule;
 
     mapping(bytes32 dockInstanceId => ActiveDockV1 dock) private _docks;
-    mapping(bytes32 dockInstanceId => mapping(bytes32 inputBindingHash => ActiveDockInputBindingV1 binding))
-        private _inputBindings;
-    mapping(bytes32 dockInstanceId => mapping(bytes32 outputBindingHash => ActiveDockOutputBindingV1 binding))
-        private _outputBindings;
+    mapping(bytes32 dockInstanceId => mapping(bytes32 inputBindingHash => ActiveDockInputBindingV1 binding)) private
+        _inputBindings;
+    mapping(bytes32 dockInstanceId => mapping(bytes32 outputBindingHash => ActiveDockOutputBindingV1 binding)) private
+        _outputBindings;
     mapping(bytes32 dockInstanceId => mapping(bytes32 inputBindingHash => bool delivered)) private _inputDelivered;
     mapping(bytes32 dockInstanceId => mapping(bytes32 outputBindingHash => bool delivered)) private _outputDelivered;
     // unique(localPlanId, localOrderId, localStageId, routeId)
@@ -285,7 +289,7 @@ contract UVPDockingModule {
         if (stateMachine.planHookStageId(request.localPlanId, request.localHookId) != request.localStageId) {
             revert DockHookNotInputBound(request.localPlanId, request.localOrderId, request.localHookId);
         }
-        (, , bool readyEmitted) =
+        (,, bool readyEmitted) =
             stateMachine.getHookStatus(request.localPlanId, request.localOrderId, request.localHookId);
         if (!readyEmitted) {
             revert DockInputHookNotReady(request.localPlanId, request.localOrderId, request.localHookId);
@@ -362,8 +366,7 @@ contract UVPDockingModule {
         if (recomputedLeaf != entranceLeaf.leafHash) {
             revert DockInterfaceLeafMismatch(entranceLeaf.leafHash, recomputedLeaf);
         }
-        if (!planMetadataModule.verifyDockInterfacePort(request.targetPlanId, entranceLeaf.leafHash, interfaceProof))
-        {
+        if (!planMetadataModule.verifyDockInterfacePort(request.targetPlanId, entranceLeaf.leafHash, interfaceProof)) {
             revert DockInterfaceLeafMismatch(entranceLeaf.leafHash, bytes32(0));
         }
         if (entranceLeaf.kind != DOCK_KIND_ENTRANCE || entranceLeaf.accessPolicy != request.accessPolicy) {
@@ -376,20 +379,14 @@ contract UVPDockingModule {
             revert DockEntranceLeafMismatch(entranceLeaf.portKey);
         }
 
-        // 8. permit（open 无需签名；permit 校验目标 entrance authority）。
-        if (request.accessPolicy == DOCK_ACCESS_PERMIT) {
-            _verifyEntrancePermit(request, permit);
-        } else if (request.accessPolicy != DOCK_ACCESS_OPEN) {
-            revert DockEntranceLeafMismatch(bytes32(uint256(request.accessPolicy)));
-        }
-
-        // 9. 身份推导重算（keeper 不可自报 ID）。localOrderKey 为 bytes32
+        // 8. 身份推导重算（keeper 不可自报 ID）。localOrderKey 为 bytes32
         //    order id 本身（EVM 轨订单键即 word）。
         bytes32 runtimeDomain = keccak256(abi.encode(_DOMAIN_RUNTIME_EIP155, block.chainid, address(stateMachine)));
         bytes32 recomputedDockInstance = keccak256(
             abi.encode(
                 _DOMAIN_DOCK_INSTANCE,
                 runtimeDomain,
+                request.localPlanId,
                 request.localDefinitionRefHash,
                 request.localOrderId,
                 request.routeId,
@@ -399,13 +396,24 @@ contract UVPDockingModule {
         if (recomputedDockInstance != request.dockInstanceId) {
             revert DockRouteLeafMismatch(request.dockInstanceId, recomputedDockInstance);
         }
-        bytes32 recomputedLinkedOrder =
-            keccak256(abi.encode(_DOMAIN_DOCK_ORDER, request.dockInstanceId, request.targetDefinitionRefHash));
+        bytes32 recomputedLinkedOrder = bytes32(
+            uint256(keccak256(abi.encode(_DOMAIN_DOCK_ORDER, request.dockInstanceId, request.targetDefinitionRefHash)))
+                | uint256(_DOCK_ORDER_NAMESPACE_MASK)
+        );
         if (recomputedLinkedOrder != request.linkedOrderId) {
             revert DockRouteLeafMismatch(request.linkedOrderId, recomputedLinkedOrder);
         }
         if (_docks[request.dockInstanceId].exists) {
             return false; // 幂等重放：同一 dock 重复 open 无副作用
+        }
+
+        // 9. permit（open 无需签名；permit 校验目标 entrance authority）。
+        //    必须在 dock 幂等检查之后，避免重放已成功的 permit 因 nonce
+        //    已消费而回退，而不是按接口约定返回 false。
+        if (request.accessPolicy == DOCK_ACCESS_PERMIT) {
+            _verifyEntrancePermit(request, permit);
+        } else if (request.accessPolicy != DOCK_ACCESS_OPEN) {
+            revert DockEntranceLeafMismatch(bytes32(uint256(request.accessPolicy)));
         }
 
         // 10. 深度（父订单真实 dock 深度为权威，不信任请求自报值）。
@@ -421,11 +429,6 @@ contract UVPDockingModule {
         bytes32 localRouteInstanceKey =
             keccak256(abi.encode(request.localPlanId, request.localOrderId, request.localStageId, request.routeId));
         bytes32 targetEndpointKey = keccak256(abi.encode(request.targetPlanId, request.linkedOrderId));
-        // 幂等重放检查在 permit 消耗之前：同一 dock 重放（含 permit 路由）
-        // 统一返回 false，已消耗的 nonce 不再触发 revert。
-        if (_docks[request.dockInstanceId].exists) {
-            return false;
-        }
         if (dockByLocalRoute[localRouteInstanceKey] != bytes32(0)) {
             revert DockEndpointOccupied(localRouteInstanceKey);
         }
@@ -521,8 +524,9 @@ contract UVPDockingModule {
             request.entrancePortKey,
             request.targetSignalId
         );
-        bytes32 entranceIdempotencyKey =
-            keccak256(abi.encode(_DOMAIN_INPUT_IDEMPOTENCY, request.dockInstanceId, request.entranceBindingHash, uint256(0)));
+        bytes32 entranceIdempotencyKey = keccak256(
+            abi.encode(_DOMAIN_INPUT_IDEMPOTENCY, request.dockInstanceId, request.entranceBindingHash, uint256(0))
+        );
 
         // PRD95 §18：keeper 只提供活性。creator 与子订单授权不得由 keeper
         // 自选——open 路由 creator = 目标 plan publisher；permit 路由
@@ -573,11 +577,10 @@ contract UVPDockingModule {
     // submitDockedInput（PRD95 §8）
     // ------------------------------------------------------------------
 
-    function submitDockedInput(
-        bytes32 dockInstanceId,
-        bytes32 localHookId,
-        bytes32 inputBindingHash
-    ) external returns (bool submitted) {
+    function submitDockedInput(bytes32 dockInstanceId, bytes32 localHookId, bytes32 inputBindingHash)
+        external
+        returns (bool submitted)
+    {
         ActiveDockV1 storage dock = _docks[dockInstanceId];
         if (!dock.exists) {
             revert DockNotOpened(dockInstanceId);
@@ -603,16 +606,14 @@ contract UVPDockingModule {
         if (hookFlags & SM_FLAG_EMIT_READY == 0) {
             revert DockHookNotInputBound(dock.localPlanId, dock.localOrderId, localHookId);
         }
-        (, , bool readyEmitted) = stateMachine.getHookStatus(dock.localPlanId, dock.localOrderId, localHookId);
+        (,, bool readyEmitted) = stateMachine.getHookStatus(dock.localPlanId, dock.localOrderId, localHookId);
         if (!readyEmitted) {
             revert DockInputHookNotReady(dock.localPlanId, dock.localOrderId, localHookId);
         }
         // 目标 mailbox fact 尚未写入；冲突 = 不同 provenance 的既有事实。
-        if (
-            stateMachine.hasSignal(
+        if (stateMachine.hasSignal(
                 dock.targetPlanId, dock.linkedOrderId, binding.targetSourceId, binding.targetSignalId
-            )
-        ) {
+            )) {
             revert DockInputConflict(dockInstanceId, inputBindingHash);
         }
         bytes32 idempotencyKey =
@@ -659,10 +660,7 @@ contract UVPDockingModule {
     // submitDockedSignal（PRD95 §9）
     // ------------------------------------------------------------------
 
-    function submitDockedSignal(bytes32 dockInstanceId, bytes32 outputBindingHash)
-        external
-        returns (bool submitted)
-    {
+    function submitDockedSignal(bytes32 dockInstanceId, bytes32 outputBindingHash) external returns (bool submitted) {
         ActiveDockV1 storage dock = _docks[dockInstanceId];
         if (!dock.exists) {
             revert DockNotOpened(dockInstanceId);
@@ -676,13 +674,7 @@ contract UVPDockingModule {
         }
         // 目标事实必须真实存在；payload/submitter 全部读取自 StateMachine
         // 存储，keeper 无法替换（PRD95 §21 安全清单）。
-        (
-            bool exists,
-            bytes32 payloadHash,
-            ,
-            ,
-            address originalSubmitter
-        ) = stateMachine.getSignal(
+        (bool exists, bytes32 payloadHash,,, address originalSubmitter) = stateMachine.getSignal(
             dock.targetPlanId, dock.linkedOrderId, binding.targetSourceId, binding.targetSignalId
         );
         if (!exists) {
@@ -937,7 +929,9 @@ contract UVPDockingModule {
         uint8 kind
     ) private pure returns (bytes32) {
         return keccak256(
-            abi.encode(_DOMAIN_INPUT_BINDING, routeId, localHookId, portKey, targetSourceId, targetSignalId, uint256(kind))
+            abi.encode(
+                _DOMAIN_INPUT_BINDING, routeId, localHookId, portKey, targetSourceId, targetSignalId, uint256(kind)
+            )
         );
     }
 
@@ -952,8 +946,14 @@ contract UVPDockingModule {
     ) private pure returns (bytes32) {
         return keccak256(
             abi.encode(
-                _DOMAIN_OUTPUT_BINDING, routeId, localSourceId, localSignalId, portKey, targetSourceId,
-                targetSignalId, uint256(terminal)
+                _DOMAIN_OUTPUT_BINDING,
+                routeId,
+                localSourceId,
+                localSignalId,
+                portKey,
+                targetSourceId,
+                targetSignalId,
+                uint256(terminal)
             )
         );
     }

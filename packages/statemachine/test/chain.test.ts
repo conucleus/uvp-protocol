@@ -31,7 +31,9 @@ test("chain-mode replay matches hook expectations from stable chain events", asy
   assert.deepEqual(result.mismatches, []);
   assert.deepEqual(result.observed, result.expected);
 
-  const cancelOrder = result.state.orders["chain-oracle::order-cancel"];
+  const cancelOrder = result.state.orders[
+    "0x312bed89090d5be24d38a236e312f8734d64dff50f8da3376542bee659dbb35d::order-cancel"
+  ];
   assert.equal(
     cancelOrder?.signals["0x0000000000000000000000000000000000000000000000000000000000002001"]?.senderId,
     "init-executor-a"
@@ -51,7 +53,9 @@ test("chain-mode replay matches hook expectations from stable chain events", asy
   ).length;
   assert.equal(cancelStartReadyCount, 1);
 
-  const timerOrder = result.state.orders["chain-oracle::order-timer"];
+  const timerOrder = result.state.orders[
+    "0x312bed89090d5be24d38a236e312f8734d64dff50f8da3376542bee659dbb35d::order-timer"
+  ];
   assert.equal(timerOrder?.hookStatuses["0x0000000000000000000000000000000000000000000000000000000000003001"]?.status, "reg");
   assert.equal(timerOrder?.hookStatuses["0x0000000000000000000000000000000000000000000000000000000000003002"]?.status, "reg");
   assert.equal(
@@ -168,6 +172,7 @@ test("chain-mode keeps AND delayed branches waiting until the latest live timer"
       blockNumber: 3,
       logIndex: 0,
       transactionHash: "0x03",
+      planId: andLatestWaitPlanId,
       zhixuId: "chain-parity",
       orderId: "and-latest-wait",
       sourceId: andLatestWaitSourceA,
@@ -181,6 +186,7 @@ test("chain-mode keeps AND delayed branches waiting until the latest live timer"
       blockNumber: 4,
       logIndex: 0,
       transactionHash: "0x04",
+      planId: andLatestWaitPlanId,
       zhixuId: "chain-parity",
       orderId: "and-latest-wait",
       sourceId: andLatestWaitSourceB,
@@ -194,6 +200,7 @@ test("chain-mode keeps AND delayed branches waiting until the latest live timer"
       blockNumber: 5,
       logIndex: 0,
       transactionHash: "0x05",
+      planId: andLatestWaitPlanId,
       zhixuId: "chain-parity",
       orderId: "and-latest-wait",
       hookId: andLatestWaitHookId,

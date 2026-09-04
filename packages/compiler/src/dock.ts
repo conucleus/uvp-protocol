@@ -31,6 +31,8 @@ export const DOMAIN_OUTPUT_BINDING = "UVP_DOCK_OUTPUT_BINDING_V1";
 export const DOMAIN_ROUTE = "UVP_DOCK_ROUTE_V1";
 export const DOMAIN_DOCK_INSTANCE = "UVP_DOCK_INSTANCE_V1";
 export const DOMAIN_DOCK_ORDER = "UVP_DOCK_ORDER_V1";
+/** Highest bit marks a derived dock child-order namespace. */
+export const DOCK_ORDER_NAMESPACE_MASK = 1n << 255n;
 export const DOMAIN_RUNTIME_EIP155 = "UVP_RUNTIME_EIP155_V1";
 export const DOMAIN_RUNTIME_CLOUD = "UVP_RUNTIME_CLOUD_V1";
 export const DOMAIN_INPUT_PAYLOAD = "UVP_DOCK_INPUT_PAYLOAD_V1";
@@ -246,10 +248,13 @@ export function linkedOrderId(
   dockInstanceIdWord: HexString,
   targetDefinitionRefHash: HexString,
 ): HexString {
-  return keccakWords(DOMAIN_DOCK_ORDER, [
+  const digest = keccakWords(DOMAIN_DOCK_ORDER, [
     dockInstanceIdWord,
     targetDefinitionRefHash,
   ]);
+  return `0x${(BigInt(digest) | DOCK_ORDER_NAMESPACE_MASK)
+    .toString(16)
+    .padStart(64, "0")}` as HexString;
 }
 
 // ---------------------------------------------------------------------------

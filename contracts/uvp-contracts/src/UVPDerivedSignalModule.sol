@@ -141,9 +141,15 @@ contract UVPDerivedSignalModule {
     }
 
     function _executeDerivedSignal(DerivedSignalRequest calldata request, address submitter) private {
-        stateMachine.submitSignalFromModule(
-            request.targetPlanId, request.targetOrderId, request.targetSourceId, request.signalId, request.payloadHash,
-            request.idempotencyKey, submitter
+        stateMachine.submitDerivedSignalFromModule(
+            request.targetPlanId,
+            request.targetOrderId,
+            request.fromStageId,
+            request.targetSourceId,
+            request.signalId,
+            request.payloadHash,
+            request.idempotencyKey,
+            submitter
         );
         emit DerivedSignalSubmitted(
             request.fromOrderId, request.targetOrderId, request.signalId, request.fromStageId, request.targetSourceId,

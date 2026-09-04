@@ -21,6 +21,7 @@ contract DockManifestParityTest {
 
     bytes32 private constant DOMAIN_DOCK_INSTANCE = keccak256("UVP_DOCK_INSTANCE_V1");
     bytes32 private constant DOMAIN_DOCK_ORDER = keccak256("UVP_DOCK_ORDER_V1");
+    bytes32 private constant DOCK_ORDER_NAMESPACE_MASK = bytes32(uint256(1) << 255);
     bytes32 private constant DOMAIN_RUNTIME_CLOUD = keccak256("UVP_RUNTIME_CLOUD_V1");
     bytes32 private constant DOMAIN_RUNTIME_EIP155 = keccak256("UVP_RUNTIME_EIP155_V1");
     bytes32 private constant DOMAIN_DEFINITION_REF = keccak256("UVP_DEFINITION_REF_V1");
@@ -103,7 +104,10 @@ contract DockManifestParityTest {
         );
         assertEq(dockInstanceId, vm.parseJsonBytes32(manifest, ".expected.dockInstanceId"));
 
-        bytes32 linkedOrderId = keccak256(abi.encode(DOMAIN_DOCK_ORDER, dockInstanceId, targetDefinitionRef));
+        bytes32 linkedOrderId = bytes32(
+            uint256(keccak256(abi.encode(DOMAIN_DOCK_ORDER, dockInstanceId, targetDefinitionRef)))
+                | uint256(DOCK_ORDER_NAMESPACE_MASK)
+        );
         assertEq(linkedOrderId, vm.parseJsonBytes32(manifest, ".expected.linkedOrderId"));
     }
 }

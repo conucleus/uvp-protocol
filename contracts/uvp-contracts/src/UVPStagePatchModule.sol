@@ -119,7 +119,7 @@ contract UVPStagePatchModule {
         "UVPStagePatchModuleStageResourcePatch(bytes32 planId,bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,bytes32 resourceKey,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI,address selector,uint256 deadline)"
     );
     bytes32 private constant _STAGE_EXECUTOR_PATCH_APPLIED_TOPIC = keccak256(
-        "StageExecutorPatchApplied(bytes32,bytes32,bytes32,address,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string)"
+        "StageExecutorPatchApplied(bytes32,bytes32,bytes32,bytes32,address,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string)"
     );
 
     // 审计 #10：patch 存储按 (planId, orderId) 复合键寻址。
@@ -129,15 +129,16 @@ contract UVPStagePatchModule {
     mapping(
         bytes32 planId
             => mapping(
-                bytes32 orderId
-                    => mapping(bytes32 targetStageId => mapping(bytes32 resourceKey => ActiveStageResourcePatch patch))
-            )
+            bytes32 orderId
+                => mapping(bytes32 targetStageId => mapping(bytes32 resourceKey => ActiveStageResourcePatch patch))
+        )
     ) private _activeStageResourcePatches;
 
     event StageExecutorPatchApplied(
         bytes32 indexed orderId,
         bytes32 indexed selectorStageId,
         bytes32 indexed targetStageId,
+        bytes32 planId,
         address selector,
         address executor,
         bytes32 role,
@@ -318,7 +319,9 @@ contract UVPStagePatchModule {
     ) public view returns (bytes32) {
         return keccak256(
             abi.encodePacked(
-                "\x19\x01", DOMAIN_SEPARATOR(), _stageExecutorPatchStructHash(planId, orderId, patch, selector, deadline)
+                "\x19\x01",
+                DOMAIN_SEPARATOR(),
+                _stageExecutorPatchStructHash(planId, orderId, patch, selector, deadline)
             )
         );
     }
@@ -375,7 +378,7 @@ contract UVPStagePatchModule {
         activePatch.metadataURI = patch.metadataURI;
         activePatch.exists = true;
 
-        _emitStageExecutorPatchApplied(orderId, patch, selector);
+        _emitStageExecutorPatchApplied(planId, orderId, patch, selector);
         stateMachine.activateStageExecutorFromModule(
             planId,
             orderId,
@@ -390,9 +393,7 @@ contract UVPStagePatchModule {
         _delegateStageExecutorSignals(planId, orderId, patch);
     }
 
-    function _delegateStageExecutorSignals(bytes32 planId, bytes32 orderId, StageExecutorPatch calldata patch)
-        private
-    {
+    function _delegateStageExecutorSignals(bytes32 planId, bytes32 orderId, StageExecutorPatch calldata patch) private {
         IUVPPlanMetadataModuleForStagePatch metadata = _planMetadata();
         uint256 capabilityCount = metadata.stageSignalCapabilityCount(planId, patch.targetStageId);
         uint256 delegatedCount;
@@ -467,8 +468,8 @@ contract UVPStagePatchModule {
         // 引导权随订单创建派生，keeper 不经此获得任何权利。
         if (
             !stateMachine.hasExplicitSignalAuthorization(
-                planId, orderId, patch.selectorStageId, EXECUTOR_PATCH_SIGNAL_ID, selector
-            ) && selector != stateMachine.orderCreator(planId, orderId)
+                    planId, orderId, patch.selectorStageId, EXECUTOR_PATCH_SIGNAL_ID, selector
+                ) && selector != stateMachine.orderCreator(planId, orderId)
         ) {
             revert UnauthorizedStageExecutorPatchSelector(orderId, patch.selectorStageId, selector);
         }
@@ -481,7 +482,7 @@ contract UVPStagePatchModule {
         ActiveStageExecutorPatch storage activePatch,
         address previousExecutorSigner
     ) private view {
-        uint256 signalCount = stateMachine.sourceSignalCount(planId, orderId, patch.targetStageId);
+        (uint256 signalCount, address latestSignalSubmitter) = _stageSignalState(planId, orderId, patch.targetStageId);
         if (patch.mode == EXECUTOR_PATCH_MODE_ASSIGN) {
             if (patch.previousExecutor != address(0)) {
                 revert StageExecutorPatchPreviousExecutorMismatch(
@@ -501,9 +502,7 @@ contract UVPStagePatchModule {
             revert StageHasNoSignal(orderId, patch.targetStageId);
         }
 
-        address expectedPreviousExecutor = activePatch.exists
-            ? activePatch.executor
-            : stateMachine.lastSignalSubmitter(planId, orderId, patch.targetStageId);
+        address expectedPreviousExecutor = activePatch.exists ? activePatch.executor : latestSignalSubmitter;
         if (patch.previousExecutor != expectedPreviousExecutor) {
             revert StageExecutorPatchPreviousExecutorMismatch(
                 orderId, patch.targetStageId, expectedPreviousExecutor, patch.previousExecutor
@@ -564,7 +563,8 @@ contract UVPStagePatchModule {
             )) {
             revert UnauthorizedStageResourcePatchSelector(orderId, patch.selectorStageId, selector);
         }
-        if (stateMachine.sourceSignalCount(planId, orderId, patch.targetStageId) != 0) {
+        (uint256 signalCount,) = _stageSignalState(planId, orderId, patch.targetStageId);
+        if (signalCount != 0) {
             revert StageAlreadyHasSignal(orderId, patch.targetStageId);
         }
 
@@ -602,6 +602,38 @@ contract UVPStagePatchModule {
             || mode == EXECUTOR_PATCH_MODE_REPLACEMENT;
     }
 
+    /// Count signals belonging to the target stage by its compiled capability
+    /// declarations. A production source id is not the stage id: the former
+    /// identifies a business source/class while the latter identifies the
+    /// stage path. Looking up sourceSignalCount with targetStageId therefore
+    /// lets assign patches through after a real stage signal and makes
+    /// handoff/replacement read the wrong previous submitter.
+    function _stageSignalState(bytes32 planId, bytes32 orderId, bytes32 stageId)
+        private
+        view
+        returns (uint256 count, address latestSubmitter)
+    {
+        IUVPPlanMetadataModuleForStagePatch metadata = _planMetadata();
+        uint256 capabilityCount = metadata.stageSignalCapabilityCount(planId, stageId);
+        uint64 latestSubmittedAt;
+        for (uint256 i = 0; i < capabilityCount; i++) {
+            (bytes32 sourceId, bytes32 signalId, uint8 relation) = metadata.stageSignalCapabilityAt(planId, stageId, i);
+            if (relation != 0) {
+                continue;
+            }
+            (bool exists,,, uint64 submittedAt, address submitter) =
+                stateMachine.getSignal(planId, orderId, sourceId, signalId);
+            if (!exists) {
+                continue;
+            }
+            count += 1;
+            if (submittedAt >= latestSubmittedAt) {
+                latestSubmittedAt = submittedAt;
+                latestSubmitter = submitter;
+            }
+        }
+    }
+
     function _planMetadata() private view returns (IUVPPlanMetadataModuleForStagePatch) {
         return IUVPPlanMetadataModuleForStagePatch(stateMachine.planMetadataModule());
     }
@@ -634,24 +666,28 @@ contract UVPStagePatchModule {
         return keccak256(encoded);
     }
 
-    function _emitStageExecutorPatchApplied(bytes32 orderId, StageExecutorPatch calldata patch, address selector)
-        private
-    {
+    function _emitStageExecutorPatchApplied(
+        bytes32 planId,
+        bytes32 orderId,
+        StageExecutorPatch calldata patch,
+        address selector
+    ) private {
         bytes memory metadataURI = bytes(patch.metadataURI);
-        bytes memory eventData = new bytes(0x180 + _paddedLength(metadataURI.length));
-        _writeAddress(eventData, 0x00, selector);
-        _writeAddress(eventData, 0x20, patch.executor);
-        _writeWord(eventData, 0x40, patch.role);
-        _writeWord(eventData, 0x60, patch.executorMetadataHash);
-        _writeWord(eventData, 0x80, patch.mode);
-        _writeAddress(eventData, 0xa0, patch.previousExecutor);
-        _writeWord(eventData, 0xc0, patch.approvalSourceId);
-        _writeWord(eventData, 0xe0, patch.approvalSignalId);
-        _writeWord(eventData, 0x100, patch.patchHash);
-        _writeWord(eventData, 0x120, bytes32(patch.patchNonce));
-        _writeWord(eventData, 0x140, bytes32(uint256(0x160)));
-        _writeWord(eventData, 0x160, bytes32(metadataURI.length));
-        _copyBytes(eventData, 0x180, metadataURI);
+        bytes memory eventData = new bytes(0x1a0 + _paddedLength(metadataURI.length));
+        _writeWord(eventData, 0x00, planId);
+        _writeAddress(eventData, 0x20, selector);
+        _writeAddress(eventData, 0x40, patch.executor);
+        _writeWord(eventData, 0x60, patch.role);
+        _writeWord(eventData, 0x80, patch.executorMetadataHash);
+        _writeWord(eventData, 0xa0, patch.mode);
+        _writeAddress(eventData, 0xc0, patch.previousExecutor);
+        _writeWord(eventData, 0xe0, patch.approvalSourceId);
+        _writeWord(eventData, 0x100, patch.approvalSignalId);
+        _writeWord(eventData, 0x120, patch.patchHash);
+        _writeWord(eventData, 0x140, bytes32(patch.patchNonce));
+        _writeWord(eventData, 0x160, bytes32(uint256(0x180)));
+        _writeWord(eventData, 0x180, bytes32(metadataURI.length));
+        _copyBytes(eventData, 0x1a0, metadataURI);
 
         bytes32 selectorStageId = patch.selectorStageId;
         bytes32 targetStageId = patch.targetStageId;

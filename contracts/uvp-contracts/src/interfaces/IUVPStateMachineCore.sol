@@ -132,6 +132,19 @@ interface IUVPStateMachineCore {
         bytes32 idempotencyKey,
         address submitter
     ) external;
+    /// Derived signals carry the stage that authorizes the originating path
+    /// separately from the target signal source. The target order receives the
+    /// fact, while its active executor (if any) still gates the write.
+    function submitDerivedSignalFromModule(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 stageId,
+        bytes32 sourceId,
+        bytes32 signalId,
+        bytes32 payloadHash,
+        bytes32 idempotencyKey,
+        address submitter
+    ) external;
     function triggerOrderFromSignalFromModule(
         TriggerOrderFromSignalRequest calldata trigger,
         SignalAuthorization[] calldata authorizations,

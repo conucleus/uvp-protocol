@@ -28,11 +28,10 @@ async function loadCorpus(): Promise<Corpus> {
 
 /**
  * The shared semantic corpus pins native-core semantics and predates the
- * frozen v0.8 chain-event contract: its replayCases carry the projected
- * pre-v0.8 HookStatusChanged shape (single `status`). replayChainEvents only
- * accepts frozen v0.8 events carrying previousStatus/newStatus, so this
- * test-side adapter lifts `status` onto `newStatus` before replaying; the
- * fixture JSON itself stays untouched.
+ * frozen v0.9 chain-event contract: its replayCases carry the projected
+ * pre-v0.9 HookStatusChanged shape (single `status`). replayChainEvents only
+ * accepts frozen v0.9 events carrying previousStatus/newStatus, so this
+ * test-side adapter lifts `status` onto `newStatus` before replaying.
  */
 function liftCorpusEventToFrozenV08(event: ChainModeEvent): ChainModeEvent {
   const raw = event as unknown as Record<string, unknown>;

@@ -187,7 +187,7 @@ export function compileZhixuOnchainHookPlan(
 }
 
 // The `RegisterPlanArgs` name predates the retired single-step
-// `registerPlan` entrypoint: since v0.8 these args feed the two-step
+// `registerPlan` entrypoint: since the v0.9 freeze these args feed the two-step
 // `commitPlan` + `finalizePlan` flow. Kept for API stability; renaming is a
 // breaking change.
 export function compileZhixuRegisterPlanArgs(
@@ -229,6 +229,8 @@ export function validateOnchainHookPlanArtifact(
     : undefined;
   if (!compiledHooks) {
     issues.push("compiledHooks must be an array");
+  } else if (compiledHooks.length === 0) {
+    issues.push("compiledHooks must not be empty (contract reverts EmptyPlan)");
   }
 
   const dependencyIndex = isHexArrayRecord(value.dependencyIndex)

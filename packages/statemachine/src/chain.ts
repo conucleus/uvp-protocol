@@ -110,6 +110,8 @@ export interface ChainOrderLinkedEvent extends ChainEventBase {
 
 export interface ChainSignalSubmittedEvent extends ChainEventBase {
   readonly eventName: "SignalSubmitted";
+  /** Frozen v0.9 identity: signal ownership is scoped by plan and order. */
+  readonly planId: HexString;
   readonly zhixuId: string;
   readonly orderId: string;
   readonly sourceId: HexString;
@@ -127,6 +129,7 @@ export interface ChainSignalSubmittedEvent extends ChainEventBase {
 
 export interface ChainStageMaterializedEvent extends ChainEventBase {
   readonly eventName: "StageMaterialized";
+  readonly planId: HexString;
   readonly orderId: string;
   readonly stageId: string;
   readonly triggerHookId: string;
@@ -142,6 +145,7 @@ export interface ChainHookStatusChangedEvent extends ChainEventBase {
    * zhixuId below is indexer enrichment joined from the order registration,
    * never part of the emitted event.
    */
+  readonly planId: HexString;
   readonly zhixuId: string;
   readonly orderId: string;
   readonly hookId: string;
@@ -152,6 +156,7 @@ export interface ChainHookStatusChangedEvent extends ChainEventBase {
 
 export interface ChainHookReadyEvent extends ChainEventBase {
   readonly eventName: "HookReady";
+  readonly planId: HexString;
   readonly zhixuId: string;
   readonly orderId: string;
   readonly hookId: string;
@@ -167,6 +172,7 @@ export interface ChainTimerPokedEvent extends ChainEventBase {
    * block timestamp of the poke transaction (also enrichment); the replay
    * oracle consumes it as the evaluation clock for this tick.
    */
+  readonly planId: HexString;
   readonly zhixuId: string;
   readonly orderId: string;
   readonly hookId: string;
@@ -178,6 +184,7 @@ export type ChainHookObservation = ChainHookReadyObservation | ChainHookStatusCh
 
 export interface ChainHookReadyObservation {
   readonly eventName: "HookReady";
+  readonly planId: HexString;
   readonly zhixuId: string;
   readonly orderId: string;
   readonly hookId: string;
@@ -187,6 +194,7 @@ export interface ChainHookReadyObservation {
 
 export interface ChainHookStatusChangedObservation {
   readonly eventName: "HookStatusChanged";
+  readonly planId: HexString;
   readonly zhixuId: string;
   readonly orderId: string;
   readonly hookId: string;
@@ -286,17 +294,17 @@ export function chainEventId(event: ChainEventBase): string {
 
 /**
  * The replay oracle consumes the projected observation shape (single
- * `status`), while the frozen v0.8 chain event carries
+ * `status`), while the frozen v0.9 chain event carries
  * previousStatus/newStatus. This adapter is the formal boundary between the
- * two contracts: v0.8 events are projected onto newStatus. A HookStatusChanged
- * event without a valid newStatus violates the frozen v0.8 contract and fails
+ * two contracts: v0.9 events are projected onto newStatus. A HookStatusChanged
+ * event without a valid newStatus violates the frozen v0.9 contract and fails
  * loudly instead of passing through untouched.
  */
 function normalizeChainEventForOracle(event: ChainModeEvent): Record<string, unknown> {
   if (event.eventName === "HookStatusChanged") {
     if (!("newStatus" in event) || typeof event.newStatus !== "string") {
       throw new Error(
-        `HookStatusChanged ${event.hookId} is missing a valid newStatus; frozen v0.8 events must carry previousStatus/newStatus`
+        `HookStatusChanged ${event.hookId} is missing a valid newStatus; frozen v0.9 events must carry previousStatus/newStatus`
       );
     }
     const { previousStatus: _previousStatus, ...rest } = event;
@@ -321,6 +329,7 @@ export function chainEventToExpectedObservation(event: ChainModeExpectedEvent): 
     case "HookReady":
       return {
         eventName: "HookReady",
+        planId: event.planId,
         zhixuId: event.zhixuId,
         orderId: event.orderId,
         hookId: event.hookId,
@@ -335,6 +344,7 @@ export function chainEventToExpectedObservation(event: ChainModeExpectedEvent): 
       }
       return {
         eventName: "HookStatusChanged",
+        planId: event.planId,
         zhixuId: event.zhixuId,
         orderId: event.orderId,
         hookId: event.hookId,
@@ -387,6 +397,7 @@ function sameHookObservation(expected: ChainHookObservation, observed: ChainHook
     case "HookReady":
       return (
         observed.eventName === "HookReady" &&
+        expected.planId.toLowerCase() === observed.planId.toLowerCase() &&
         expected.zhixuId === observed.zhixuId &&
         expected.orderId === observed.orderId &&
         expected.hookId.toLowerCase() === observed.hookId.toLowerCase() &&
@@ -396,6 +407,7 @@ function sameHookObservation(expected: ChainHookObservation, observed: ChainHook
     case "HookStatusChanged":
       return (
         observed.eventName === "HookStatusChanged" &&
+        expected.planId.toLowerCase() === observed.planId.toLowerCase() &&
         expected.zhixuId === observed.zhixuId &&
         expected.orderId === observed.orderId &&
         expected.hookId.toLowerCase() === observed.hookId.toLowerCase() &&

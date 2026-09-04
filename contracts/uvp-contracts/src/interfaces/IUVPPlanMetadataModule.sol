@@ -34,4 +34,18 @@ interface IUVPPlanMetadataModule {
         returns (bool);
 
     function isSelectorTargetStage(bytes32 planId, bytes32 targetStageId) external view returns (bool);
+
+    function planSignalCapabilityCount(bytes32 planId) external view returns (uint256);
+
+    function planSignalCapabilityAt(bytes32 planId, uint256 index)
+        external
+        view
+        returns (bytes32 stageId, bytes32 targetSourceId, bytes32 signalId, uint8 targetOrderRelation);
+
+    function stageSignalCapabilityCount(bytes32 planId, bytes32 stageId) external view returns (uint256);
+
+    function stageSignalCapabilityAt(bytes32 planId, bytes32 stageId, uint256 index)
+        external
+        view
+        returns (bytes32 targetSourceId, bytes32 signalId, uint8 targetOrderRelation);
 }

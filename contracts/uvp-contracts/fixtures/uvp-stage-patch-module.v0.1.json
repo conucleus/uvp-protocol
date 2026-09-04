@@ -9,15 +9,15 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x21f846706c42e64f88717b585c0f30416ff760ba485f7fb528f89724d21d4aa6",
-    "bytecodeHash": "0xf9ca027051dc85e343bd1dcd91d729ced3a822cf2b40ba0a480939bc0f846cfb",
-    "deployedBytecodeHash": "0x66f4f2f45a8b82ca8a9e9168e462d9ba9051ee06c343818248ee7a1f5f9b0f8e",
-    "artifactHash": "0x9f5935fdb158c7c18813ade80e88d5fd5f0c64076b1ccb00c36980e24639c55c"
+    "abiHash": "0xb25a03ac057b93f766c993cd8b8fa96ad62e239e69d70ee7515e019809a2a1c0",
+    "bytecodeHash": "0x686b707e170a04bced3e53eaae69116fa727b9cc92cc555b5fe2c4a6953ab259",
+    "deployedBytecodeHash": "0x8ef35258cf9a5823a7305d71a01c4350d8eaf18b2a483222e4d9e1f6b98fd32a",
+    "artifactHash": "0x0a5d0c9e65c7eb03adb74dc8345266d9459d7d1bf4ca0ad3ae250277a438d11f"
   },
   "events": {
     "StageExecutorPatchApplied": {
-      "signature": "StageExecutorPatchApplied(bytes32,bytes32,bytes32,address,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string)",
-      "topic": "0xe905e100cc72bc7f5c43d9352a70e249f8fdd2697f1fa346dd93a955679f1d9d"
+      "signature": "StageExecutorPatchApplied(bytes32,bytes32,bytes32,bytes32,address,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string)",
+      "topic": "0x2805d503cb78bb6d500e56f98091161029cf83c70fd1877061344596be2ed094"
     },
     "StageResourcePatchApplied": {
       "signature": "StageResourcePatchApplied(bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,uint256,string)",

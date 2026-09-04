@@ -193,6 +193,10 @@ contract UVPStateMachine {
     error InvalidInstruction();
     error InvalidHook();
     error InvalidModuleAddress();
+    /// Dock child order IDs use a reserved namespace. Public MINT and
+    /// trigger-origin paths must not be able to front-run a deterministic
+    /// linkedOrderId.
+    error InvalidDockOrderNamespace(bytes32 orderId);
     error InvalidPlanSignature(address expectedSigner, address recoveredSigner);
     error IncompleteModuleConfiguration();
     error InvalidTriggerHook(bytes32 hookId);
@@ -256,6 +260,7 @@ contract UVPStateMachine {
     uint8 public constant HOOK_FLAG_ORDER_TRIGGER_DOCK = 2;
     uint8 public constant HOOK_FLAG_EMIT_READY = 4;
     bytes32 private constant _PLAN_ID_HASH_DOMAIN = keccak256("uvp.plan.id.v1");
+    bytes32 public constant DOCK_ORDER_NAMESPACE_MASK = bytes32(uint256(1) << 255);
     uint64 public constant MAX_HOOK_DELAY_SECONDS = 30 days;
     uint256 public constant MAX_PLAN_DEPENDENCIES = 1024;
     bytes32 private constant _PLAN_COMMIT_TYPEHASH = keccak256(
@@ -276,30 +281,25 @@ contract UVPStateMachine {
     // （OrderAlreadyRegistered），"同 plan 同事实同单"的重放语义不变。
     // 订单 id 派生公式必须在链下并入 planId 域，使派生单号天然绑定 plan。
     mapping(bytes32 planId => mapping(bytes32 orderId => Order order)) private _orders;
-    mapping(
-        bytes32 planId
-            => mapping(bytes32 orderId => mapping(bytes32 signalKey => SignalRecord signal))
-    ) private _signals;
+    mapping(bytes32 planId => mapping(bytes32 orderId => mapping(bytes32 signalKey => SignalRecord signal))) private
+        _signals;
     mapping(
         bytes32 planId
             => mapping(
-                bytes32 orderId
-                    => mapping(bytes32 signalKey => mapping(address submitter => StoredSignalAuthorization authorization))
-            )
+            bytes32 orderId
+                => mapping(bytes32 signalKey => mapping(address submitter => StoredSignalAuthorization authorization))
+        )
     ) private _signalAuthorizations;
     mapping(
         bytes32 planId
-            => mapping(
-                bytes32 orderId => mapping(bytes32 signalKey => DelegatedStageSignalAuthorization authorization)
-            )
+            => mapping(bytes32 orderId => mapping(bytes32 signalKey => DelegatedStageSignalAuthorization authorization))
     ) private _delegatedStageSignalAuthorizations;
-    mapping(bytes32 planId => mapping(bytes32 orderId => mapping(bytes32 sourceId => uint256 count)))
-        public sourceSignalCount;
-    mapping(bytes32 planId => mapping(bytes32 orderId => mapping(bytes32 sourceId => address submitter)))
-        public lastSignalSubmitter;
+    mapping(bytes32 planId => mapping(bytes32 orderId => mapping(bytes32 sourceId => uint256 count))) public
+        sourceSignalCount;
+    mapping(bytes32 planId => mapping(bytes32 orderId => mapping(bytes32 sourceId => address submitter))) public
+        lastSignalSubmitter;
     mapping(
-        bytes32 planId
-            => mapping(bytes32 orderId => mapping(bytes32 targetStageId => ActiveStageExecutorPatch patch))
+        bytes32 planId => mapping(bytes32 orderId => mapping(bytes32 targetStageId => ActiveStageExecutorPatch patch))
     ) private _activeStageExecutorPatches;
 
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
@@ -320,7 +320,9 @@ contract UVPStateMachine {
     event PlanPublisherRecorded(bytes32 indexed planId, address indexed publisher);
     event OrderRegistered(bytes32 indexed orderId, bytes32 indexed planId);
     event OrderMaterialized(bytes32 indexed orderId, bytes32 indexed planId, bytes32 indexed stageId);
-    event OrderRelayerRecorded(bytes32 indexed planId, bytes32 indexed orderId, address indexed relayer, address creator);
+    event OrderRelayerRecorded(
+        bytes32 indexed planId, bytes32 indexed orderId, address indexed relayer, address creator
+    );
     event SignalSubmitterAuthorized(
         bytes32 indexed planId,
         bytes32 indexed orderId,
@@ -498,12 +500,9 @@ contract UVPStateMachine {
             revert InvalidPlanSignature(commit.publisher, recoveredSigner);
         }
 
-        bytes32 dockRoutesRoot = commit.dockRoutesRoot == bytes32(0)
-            ? DockMerkle.EMPTY_ROOT
-            : commit.dockRoutesRoot;
-        bytes32 dockInterfaceRoot = commit.dockInterfaceRoot == bytes32(0)
-            ? DockMerkle.EMPTY_ROOT
-            : commit.dockInterfaceRoot;
+        bytes32 dockRoutesRoot = commit.dockRoutesRoot == bytes32(0) ? DockMerkle.EMPTY_ROOT : commit.dockRoutesRoot;
+        bytes32 dockInterfaceRoot =
+            commit.dockInterfaceRoot == bytes32(0) ? DockMerkle.EMPTY_ROOT : commit.dockInterfaceRoot;
         bytes32 runtimePlanHash =
             planRuntimeHash(commit.hooksHash, commit.metadataHash, dockRoutesRoot, dockInterfaceRoot);
         planId = planIdFor(commit.publisher, runtimePlanHash);
@@ -527,8 +526,7 @@ contract UVPStateMachine {
             bool[] memory seenTriggerOnly = new bool[](MAX_PLAN_DEPENDENCIES);
             uint256 seenCount;
             for (uint256 i = 0; i < hooks.length; i++) {
-                seenCount =
-                _registerPlanHook(plan, hooks[i], seenKeys, seenStages, seenTriggerOnly, seenCount);
+                seenCount = _registerPlanHook(plan, hooks[i], seenKeys, seenStages, seenTriggerOnly, seenCount);
             }
         }
 
@@ -562,24 +560,23 @@ contract UVPStateMachine {
             revert PlanMetadataHashMismatch(plan.metadataHash, actualMetadataHash);
         }
 
-        IUVPPlanMetadataModule(planMetadataModule).finalizePlanMetadata(
-            planId, selectorBindings, signalCapabilities, plan.dockRoutesRoot, plan.dockInterfaceRoot
-        );
+        IUVPPlanMetadataModule(planMetadataModule)
+            .finalizePlanMetadata(
+                planId, selectorBindings, signalCapabilities, plan.dockRoutesRoot, plan.dockInterfaceRoot
+            );
         plan.finalized = true;
 
         emit PlanFinalized(planId, plan.planHash, plan.metadataHash);
         emit PlanRegistered(planId, plan.planHash, plan.hookIds.length);
     }
 
-    function planRuntimeHash(
-        bytes32 hooksHash,
-        bytes32 metadataHash,
-        bytes32 dockRoutesRoot,
-        bytes32 dockInterfaceRoot
-    ) public pure returns (bytes32) {
-        return keccak256(
-            abi.encode(_PLAN_RUNTIME_HASH_DOMAIN, hooksHash, metadataHash, dockRoutesRoot, dockInterfaceRoot)
-        );
+    function planRuntimeHash(bytes32 hooksHash, bytes32 metadataHash, bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot)
+        public
+        pure
+        returns (bytes32)
+    {
+        return
+            keccak256(abi.encode(_PLAN_RUNTIME_HASH_DOMAIN, hooksHash, metadataHash, dockRoutesRoot, dockInterfaceRoot));
     }
 
     function planIdFor(address publisher, bytes32 runtimePlanHash) public pure returns (bytes32) {
@@ -603,6 +600,13 @@ contract UVPStateMachine {
             _recoverSignalSubmitter(_triggerOrderFromOutsideDigest(trigger, authorizationsHash), signature);
         if (recoveredSigner != trigger.submitter) {
             revert InvalidTriggerOrderSignature(trigger.submitter, recoveredSigner);
+        }
+
+        // The high-bit namespace is reserved for deterministic dock child
+        // orders. Without this guard an attacker could front-run the public
+        // linkedOrderId visible in an openDockedOrder calldata payload.
+        if (_isDockOrderId(trigger.orderId)) {
+            revert InvalidDockOrderNamespace(trigger.orderId);
         }
 
         _createOrder(trigger.planId, trigger.orderId, trigger.creator, msg.sender);
@@ -646,7 +650,9 @@ contract UVPStateMachine {
         if (!triggerOriginOrder.exists) {
             revert UnknownOrder();
         }
-        if (!_hasSignal(trigger.originPlanId, trigger.triggerOriginOrderId, trigger.originSourceId, trigger.originSignalId)) {
+        if (!_hasSignal(
+                trigger.originPlanId, trigger.triggerOriginOrderId, trigger.originSourceId, trigger.originSignalId
+            )) {
             revert UnknownOrder();
         }
         // 审计 #1 残余：trigger link 建立需要 origin 侧同意。执行 relayer 或
@@ -657,10 +663,19 @@ contract UVPStateMachine {
         // 这封死 capability 镜像攻击链（镜像 plan → 镜像 link → 回写注入）。
         if (
             !hasTriggerOriginConsent(
-                trigger.originPlanId, trigger.triggerOriginOrderId, trigger.originSourceId, trigger.originSignalId, trigger.submitter
-            ) && !hasTriggerOriginConsent(
-                trigger.originPlanId, trigger.triggerOriginOrderId, trigger.originSourceId, trigger.originSignalId, relayer
-            )
+                    trigger.originPlanId,
+                    trigger.triggerOriginOrderId,
+                    trigger.originSourceId,
+                    trigger.originSignalId,
+                    trigger.submitter
+                )
+                && !hasTriggerOriginConsent(
+                    trigger.originPlanId,
+                    trigger.triggerOriginOrderId,
+                    trigger.originSourceId,
+                    trigger.originSignalId,
+                    relayer
+                )
         ) {
             revert UnauthorizedTriggerOrigin(trigger.originPlanId, trigger.triggerOriginOrderId, trigger.submitter);
         }
@@ -671,6 +686,10 @@ contract UVPStateMachine {
             trigger.triggerHookId,
             trigger.triggerStageId
         );
+
+        if (_isDockOrderId(trigger.orderId)) {
+            revert InvalidDockOrderNamespace(trigger.orderId);
+        }
 
         _createOrder(trigger.planId, trigger.orderId, trigger.creator, relayer);
         _authorizeSignalSubmitters(trigger.planId, trigger.orderId, authorizations);
@@ -793,7 +812,9 @@ contract UVPStateMachine {
         }
 
         address recoveredSigner = _recoverSignalSubmitter(
-            _signalSubmissionDigest(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, deadline),
+            _signalSubmissionDigest(
+                planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, deadline
+            ),
             signature
         );
         if (recoveredSigner != submitter) {
@@ -925,14 +946,13 @@ contract UVPStateMachine {
         if (msg.sender != dockingModule) {
             revert UnauthorizedStateMachineModule(msg.sender);
         }
+        if (!_isDockOrderId(linkedOrderId)) {
+            revert InvalidDockOrderNamespace(linkedOrderId);
+        }
         _createOrder(targetPlanId, linkedOrderId, creator, relayer);
         _authorizeSignalSubmitters(targetPlanId, linkedOrderId, authorizations);
-        _recordSignal(
-            targetPlanId, linkedOrderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false
-        );
-        _markDockTriggerHookReady(
-            targetPlanId, linkedOrderId, entranceHookId, entranceStageId, sourceId, signalId
-        );
+        _recordSignal(targetPlanId, linkedOrderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false);
+        _markDockTriggerHookReady(targetPlanId, linkedOrderId, entranceHookId, entranceStageId, sourceId, signalId);
     }
 
     /// PRD95 §8：非 entrance 的 dock input 事实写入（kind: signal 端口）。
@@ -985,6 +1005,32 @@ contract UVPStateMachine {
         _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, true);
     }
 
+    /// Derived signals write a fact to a target/origin order while the
+    /// capability's stage belongs to the originating path. Keep that stage
+    /// explicit so an active executor patch on the target order cannot be
+    /// bypassed by conflating the business source id with the stage id.
+    function submitDerivedSignalFromModule(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 stageId,
+        bytes32 sourceId,
+        bytes32 signalId,
+        bytes32 payloadHash,
+        bytes32 idempotencyKey,
+        address submitter
+    ) external {
+        if (msg.sender != derivedSignalModule) {
+            revert UnauthorizedStateMachineModule(msg.sender);
+        }
+        if (submitter == address(0)) {
+            revert ZeroSubmitter();
+        }
+        _requireActiveStageExecutorByStage(planId, orderId, stageId, submitter);
+        // The target/origin order may not have materialized the source stage;
+        // relation-1 capabilities intentionally write back to that order.
+        _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false);
+    }
+
     function _submitSignal(
         bytes32 planId,
         bytes32 orderId,
@@ -1005,7 +1051,7 @@ contract UVPStateMachine {
         if (!_isSignalSubmitterAuthorized(planId, orderId, sourceId, signalId, submitter)) {
             revert UnauthorizedSignalSubmitter(orderId, sourceId, signalId, submitter);
         }
-        _requireActiveStageExecutor(planId, orderId, sourceId, submitter);
+        _requireActiveStageExecutor(planId, orderId, sourceId, signalId, submitter);
 
         _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, true);
     }
@@ -1025,12 +1071,17 @@ contract UVPStateMachine {
             revert UnknownOrder();
         }
         if (requireSourceStageMaterialized) {
-            bool sourceIsPlanStage = _isPlanStage(planId, sourceId);
-            if (sourceIsPlanStage && !order.materializedStages[sourceId]) {
+            bytes32 sourceStageId = _signalStageId(planId, sourceId, signalId);
+            // Preserve the legacy source==stage behavior for plans that do
+            // not carry a metadata capability (e.g. trigger/manual plans).
+            if (sourceStageId == bytes32(0) && _isPlanStage(planId, sourceId)) {
+                sourceStageId = sourceId;
+            }
+            if (sourceStageId != bytes32(0) && !order.materializedStages[sourceStageId]) {
                 revert UnknownHook();
             }
-            if (sourceIsPlanStage) {
-                _requireStageExecutorAssigned(planId, orderId, sourceId);
+            if (sourceStageId != bytes32(0)) {
+                _requireStageExecutorAssigned(planId, orderId, sourceStageId);
             }
         }
         bytes32 key = _signalKey(sourceId, signalId);
@@ -1175,14 +1226,14 @@ contract UVPStateMachine {
         bytes32 signalId,
         address submitter
     ) external view returns (bool exists, bytes32 role, bytes32 metadataHash) {
-        DelegatedStageSignalAuthorization storage delegated =
-            _delegatedStageSignalAuthorizations[planId][orderId][_signalKey(sourceId, signalId)];
-        if (delegated.exists) {
-            return (delegated.executor == submitter, delegated.role, delegated.metadataHash);
-        }
         StoredSignalAuthorization storage authorization =
             _signalAuthorizations[planId][orderId][_signalKey(sourceId, signalId)][submitter];
-        return (authorization.exists, authorization.role, authorization.metadataHash);
+        if (authorization.exists) {
+            return (true, authorization.role, authorization.metadataHash);
+        }
+        DelegatedStageSignalAuthorization storage delegated =
+            _delegatedStageSignalAuthorizations[planId][orderId][_signalKey(sourceId, signalId)];
+        return (delegated.exists && delegated.executor == submitter, delegated.role, delegated.metadataHash);
     }
 
     function activeStageExecutor(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
@@ -1274,6 +1325,10 @@ contract UVPStateMachine {
         return flags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK) != 0;
     }
 
+    function _isDockOrderId(bytes32 orderId) private pure returns (bool) {
+        return uint256(orderId) & uint256(DOCK_ORDER_NAMESPACE_MASK) != 0;
+    }
+
     /// 审计 #1 残余：origin 侧同意判定。
     ///
     /// 同意集合（party 持有 origin 订单上的任一身份即算同意）：
@@ -1304,9 +1359,19 @@ contract UVPStateMachine {
         if (originOrder.creator == party) {
             return true;
         }
+        // An active executor patch must not revoke an explicit order-level
+        // authorization. Explicit grants are independent business
+        // authorization and remain valid throughout executor handoffs.
+        if (_hasExplicitSignalAuthorization(originPlanId, originOrderId, originSourceId, originSignalId, party)) {
+            return true;
+        }
+        bytes32 originStageId = _signalStageId(originPlanId, originSourceId, originSignalId);
+        if (originStageId == bytes32(0) && _isPlanStage(originPlanId, originSourceId)) {
+            originStageId = originSourceId;
+        }
         ActiveStageExecutorPatch storage activePatch =
-            _activeStageExecutorPatches[originPlanId][originOrderId][originSourceId];
-        if (activePatch.exists) {
+            _activeStageExecutorPatches[originPlanId][originOrderId][originStageId];
+        if (originStageId != bytes32(0) && activePatch.exists) {
             return activePatch.executor == party;
         }
         return _isSignalSubmitterAuthorized(originPlanId, originOrderId, originSourceId, originSignalId, party);
@@ -1353,8 +1418,10 @@ contract UVPStateMachine {
     ) private returns (uint256) {
         _validateHook(input);
         // PRD94 §3.4：出生语义互斥——MINT 与 DOCK 不可同挂一个 hook。
-        if (input.flags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK) ==
-            (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK)) {
+        if (
+            input.flags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK)
+                == (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK)
+        ) {
             revert InvalidHook();
         }
         if (plan.hooks[input.hookId].exists) {
@@ -1424,11 +1491,11 @@ contract UVPStateMachine {
         return updatedCount;
     }
 
-    function _seenDependencyIndex(
-        bytes32[] memory seenKeys,
-        uint256 seenCount,
-        bytes32 dependencyKey
-    ) private pure returns (uint256) {
+    function _seenDependencyIndex(bytes32[] memory seenKeys, uint256 seenCount, bytes32 dependencyKey)
+        private
+        pure
+        returns (uint256)
+    {
         for (uint256 k = 0; k < seenCount; k++) {
             if (seenKeys[k] == dependencyKey) {
                 return k;
@@ -1853,17 +1920,16 @@ contract UVPStateMachine {
         return EvalValue({value: false, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
     }
 
-    function _orValue(EvalValue memory left, EvalValue memory right) private pure returns (EvalValue memory) {        // Arrival-time causality (semantic 0.5): merge keeps the EARLIEST
-        // received signal as the cause so trailing delays anchor on first
+    function _orValue(EvalValue memory left, EvalValue memory right) private pure returns (EvalValue memory) {
+        // Arrival-time causality (semantic 0.5): merge keeps the EARLIEST
+    // received signal as the cause so trailing delays anchor on first
         // arrival, matching the core evaluator and replay oracle.
         if (left.value || right.value) {
             // Only READY branches compete for the anchor; a waiting branch's
             // stale anchor must not win (matches the core evaluator).
             uint64 anchor = left.value && right.value
                 ? _minAnchor(left.anchorAt, right.anchorAt)
-                : left.value
-                    ? left.anchorAt
-                    : right.anchorAt;
+                : left.value ? left.anchorAt : right.anchorAt;
             return EvalValue({value: true, wait: false, cancel: false, dueAt: 0, anchorAt: anchor});
         }
         if (left.wait || right.wait) {
@@ -1909,12 +1975,15 @@ contract UVPStateMachine {
         if (signalId == bytes32(0) || submitter == address(0)) {
             return false;
         }
+        if (_hasExplicitSignalAuthorization(planId, orderId, sourceId, signalId, submitter)) {
+            return true;
+        }
         DelegatedStageSignalAuthorization storage delegated =
             _delegatedStageSignalAuthorizations[planId][orderId][_signalKey(sourceId, signalId)];
         if (delegated.exists) {
             return delegated.executor == submitter;
         }
-        return _hasExplicitSignalAuthorization(planId, orderId, sourceId, signalId, submitter);
+        return false;
     }
 
     function _hasExplicitSignalAuthorization(
@@ -1930,14 +1999,72 @@ contract UVPStateMachine {
         return _signalAuthorizations[planId][orderId][_signalKey(sourceId, signalId)][submitter].exists;
     }
 
-    function _requireActiveStageExecutor(bytes32 planId, bytes32 orderId, bytes32 sourceId, address submitter)
-        private
-        view
-    {
-        ActiveStageExecutorPatch storage activePatch = _activeStageExecutorPatches[planId][orderId][sourceId];
-        if (activePatch.exists && submitter != activePatch.executor) {
-            revert UnauthorizedStageExecutor(orderId, sourceId, submitter, activePatch.executor);
+    function _requireActiveStageExecutor(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 sourceId,
+        bytes32 signalId,
+        address submitter
+    ) private view {
+        // Explicit order-level authorization is deliberately independent from
+        // executor delegation. An active patch only supersedes the implicit
+        // stage-executor submitter path.
+        if (_hasExplicitSignalAuthorization(planId, orderId, sourceId, signalId, submitter)) {
+            return;
         }
+        bytes32 stageId = _signalStageId(planId, sourceId, signalId);
+        if (stageId == bytes32(0) && _isPlanStage(planId, sourceId)) {
+            stageId = sourceId;
+        }
+        if (stageId == bytes32(0)) {
+            return;
+        }
+        ActiveStageExecutorPatch storage activePatch = _activeStageExecutorPatches[planId][orderId][stageId];
+        if (activePatch.exists && submitter != activePatch.executor) {
+            revert UnauthorizedStageExecutor(orderId, stageId, submitter, activePatch.executor);
+        }
+    }
+
+    function _requireActiveStageExecutorByStage(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 stageId,
+        address submitter
+    ) private view {
+        if (stageId == bytes32(0)) {
+            return;
+        }
+        ActiveStageExecutorPatch storage activePatch = _activeStageExecutorPatches[planId][orderId][stageId];
+        if (activePatch.exists && submitter != activePatch.executor) {
+            revert UnauthorizedStageExecutor(orderId, stageId, submitter, activePatch.executor);
+        }
+    }
+
+    /// Resolve the stage that owns a production signal. Compiler artifacts use
+    /// a stage identifier (hash of the stage path) separately from the source
+    /// identifier (hash of the business source/class); treating sourceId as a
+    /// stage key makes materialization and executor patches silently bypass
+    /// their intended gate. Only a current-order capability (relation 0)
+    /// owns a stage in the order being written. Trigger-origin capabilities
+    /// (relation 1) are deliberately resolved by the derived-signal module and
+    /// must not make the target origin order pass a stage-materialization gate.
+    function _signalStageId(bytes32 planId, bytes32 sourceId, bytes32 signalId) private view returns (bytes32 stageId) {
+        if (planMetadataModule == address(0) || sourceId == bytes32(0) || signalId == bytes32(0)) {
+            return bytes32(0);
+        }
+        IUVPPlanMetadataModule metadata = IUVPPlanMetadataModule(planMetadataModule);
+        uint256 capabilityCount = metadata.planSignalCapabilityCount(planId);
+        for (uint256 i = 0; i < capabilityCount; i++) {
+            (bytes32 candidateStageId, bytes32 candidateSourceId, bytes32 candidateSignalId, uint8 relation) =
+                metadata.planSignalCapabilityAt(planId, i);
+            if (candidateSourceId != sourceId || candidateSignalId != signalId) {
+                continue;
+            }
+            if (relation == SIGNAL_TARGET_CURRENT_ORDER) {
+                return candidateStageId;
+            }
+        }
+        return bytes32(0);
     }
 
     function _recoverSignalSubmitter(bytes32 digest, bytes calldata signature) private pure returns (address) {
