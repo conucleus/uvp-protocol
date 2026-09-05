@@ -2842,6 +2842,13 @@ contract UVPStateMachineTest {
         deps[1] = keccak256(abi.encode(SOURCE_BOOTSTRAP, right));
     }
 
+    function _deps3(bytes32 a, bytes32 b, bytes32 c) private pure returns (bytes32[] memory deps) {
+        deps = new bytes32[](3);
+        deps[0] = keccak256(abi.encode(SOURCE_BOOTSTRAP, a));
+        deps[1] = keccak256(abi.encode(SOURCE_BOOTSTRAP, b));
+        deps[2] = keccak256(abi.encode(SOURCE_BOOTSTRAP, c));
+    }
+
     function _countHookReady(Vm.Log[] memory logs) private pure returns (uint256 count) {
         bytes32 topic = keccak256("HookReady(bytes32,bytes32,bytes32,bytes32,bytes32)");
         for (uint256 i = 0; i < logs.length; i++) {
@@ -2905,6 +2912,84 @@ contract UVPStateMachineTest {
         );
         (status,,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
         require(status == UVPStateMachine.HookStatus.Ready, "late branch must not regress ready");
+    }
+
+    function testOrCompositeDelayAnchorsOnEarliestMaturingBranch() public {
+        // 簇 B 裁定的 OR 分歧形态（对齐 uvp-core 单测
+        // or_composite_delay_anchors_on_earliest_maturing_branch 与语料
+        // evalCases）：`(A & B) | C` 且 min(A,B) 接收 < C 接收 ≤ max(A,B)
+        // 接收时，AND 分支的成熟时刻 = max(A,B)，最早成熟的是 C 分支——外层
+        // Delay 必须锚定 C 的成熟时刻（C 到达时刻）。按"最早接收"选支的旧
+        // 语义会选 A 所在的 AND 分支、以 max(A,B) 计时，给出更晚的 dueAt。
+        //
+        // 时序镜像 Rust 侧数值：A@10、C@40、B@60，+10s → dueAt=50，
+        // 在 B 到来前（AND 分支最早 60 才成熟）就必须 ready。
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](6);
+        instructions[0] = _signal(SIGNAL_TRIGGER); // A
+        instructions[1] = _signal(SIGNAL_INIT_CMP); // B
+        instructions[2] = _and(2);
+        instructions[3] = _signal(SIGNAL_AUDIT_PASS); // C
+        instructions[4] = _or(2);
+        instructions[5] = _delay(10);
+
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hook(
+            HOOK_TIMEOUT,
+            STAGE_INIT,
+            HOOK_NAME_TIMEOUT,
+            true,
+            instructions,
+            _deps3(SIGNAL_TRIGGER, SIGNAL_INIT_CMP, SIGNAL_AUDIT_PASS)
+        );
+
+        UVPStateMachine machine = _registeredMachine(hooks);
+
+        // A（最早接收）先到：AND 分支未成熟（B 缺席），C 亦缺席——无锚点。
+        vm.warp(10);
+        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY);
+        (UVPStateMachine.HookStatus status, uint64 dueAt,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
+        require(status == UVPStateMachine.HookStatus.Init, "no mature branch before C arrives");
+        require(dueAt == 0, "no due date before any branch matures");
+
+        // C@40 到达：只有 C 分支成熟（AND 仍等 B），OR 取 C 的成熟时刻，
+        // +10s → dueAt=50。若按"最早接收"选 A/AND 支，dueAt 最早也得
+        // max(A,B)+10 ≥ 70——50 是分歧锚点。
+        vm.warp(40);
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_AUDIT_PASS,
+            PAYLOAD_HASH,
+            bytes32(uint256(0x4005))
+        );
+        (status, dueAt,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
+        require(status == UVPStateMachine.HookStatus.Wait, "must wait on C maturity + delay");
+        require(dueAt == 50, "delay must anchor on C maturity: 40+10");
+
+        // 观察时刻 45（镜像 Rust 侧 00:00:45 的 Wait 断言）：未到 50 不放行。
+        vm.warp(45);
+        vm.expectRevert(UVPStateMachine.TimerNotDue.selector);
+        machine.pokeTimer(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
+
+        // 50 就绪——早于 AND 分支任何可能的成熟时刻（B 60 才到）。
+        vm.warp(50);
+        machine.pokeTimer(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
+        (status,,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
+        require(status == UVPStateMachine.HookStatus.Ready, "ready at C maturity + delay");
+
+        // B@60 迟到：AND 分支此刻成熟（max=60），但不得回归已就绪状态。
+        vm.warp(60);
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_INIT_CMP,
+            PAYLOAD_HASH,
+            bytes32(uint256(0x4004))
+        );
+        (status,,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
+        require(status == UVPStateMachine.HookStatus.Ready, "late AND maturity must not regress ready");
     }
 
     function testChainedDelayAnchorsOnMaturityMoment() public {
@@ -3096,6 +3181,54 @@ contract UVPStateMachineTest {
         vm.expectRevert(UVPStateMachine.OrderAlreadyRegistered.selector);
         _submitTriggerOrderFromOutsideWithKey(
             machine, victimPlanId, victimSubmitter, _auths1(SIGNAL_TRIGGER, victimSubmitter), SUBMITTER_PRIVATE_KEY
+        );
+    }
+
+    /// pinned 向量：合约 triggerOrderIdFor 与 TS 镜像
+    /// deriveTriggerOrderId（protocol-bindings/src/index.ts）必须逐字节一致。
+    /// 向量由 `cast keccak` 对 abi.encode(planId, sourceId, signalId,
+    /// payloadHash)（四 bytes32 即原样拼接）生成，再按合约同口径清除 dock
+    /// 子单命名空间保留位（最高位）；V3 的原始 digest 最高位为 1，专门钉住
+    /// 清位语义；TS 侧单测钉同一组向量，两侧任一漂移即红。
+    function testTriggerOrderIdForMatchesPinnedMirrorVector() public {
+        UVPStateMachine machine = _newMachine();
+
+        // V1：小词输入。
+        require(
+            machine.triggerOrderIdFor(bytes32(uint256(1)), bytes32(uint256(2)), bytes32(uint256(3)), bytes32(uint256(4)))
+                == 0x392791df626408017a264f53fde61065d5a93a32b60171df9d8a46afdf82992d,
+            "V1 mirror vector drifted"
+        );
+
+        // V2：keccak 产物资（planId=keccak("plan")、sourceId=keccak("payment")、
+        // signalId=keccak("payment.ready")、payloadHash=keccak("payload")）。
+        require(
+            machine.triggerOrderIdFor(
+                0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161,
+                0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770,
+                0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da,
+                0xebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7
+            ) == 0x5ea3f67d172d893746b323173444e0dff190f5a4d4d91db58776692ad483009a,
+            "V2 mirror vector drifted"
+        );
+
+        // V3：同 V2 前三参，payloadHash=keccak("payload-3")——原始 digest
+        // 0xfadbfa9e…最高位为 1，清位后首字节 0xfa→0x7a。
+        require(
+            machine.triggerOrderIdFor(
+                0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161,
+                0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770,
+                0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da,
+                0x7ddb57e56bc008d7f232156ac0c4a9be3da0582cbda6ae545fb75e0b912ee6fa
+            ) == 0x7adbfa9eb5e66f4bda59ce36fa07abdf9979eb14222e023ed9480d0adb8d2c0a,
+            "V3 mask vector drifted"
+        );
+
+        // V4：全零边界。
+        require(
+            machine.triggerOrderIdFor(bytes32(0), bytes32(0), bytes32(0), bytes32(0))
+                == 0x012893657d8eb2efad4de0a91bcd0e39ad9837745dec3ea923737ea803fc8e3d,
+            "V4 zero vector drifted"
         );
     }
 

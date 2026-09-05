@@ -36,8 +36,9 @@ spec:
         - name: init
           source: registrar
           # 出生阶段（mint）：订阅 bootstrap 域的注册提交事实即出生
-          # （triggerOrderFromOutsideFor），链上 isTrigger 出生钩子；出生
-          # 只接受订阅通道，ANCHOR 编译为单条 SIGNAL 指令。
+          # （triggerOrderFromOutsideFor），链上 order-trigger 出生钩子
+          # （emitReady=true）；出生只接受订阅通道，ANCHOR 编译为单条
+          # SIGNAL 指令。
           mint: per-fact
           receiveSignals:
             TRIGGER: "::ANCHOR(@bootstrap::intake.submission.submitted)"

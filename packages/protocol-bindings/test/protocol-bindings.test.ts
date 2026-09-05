@@ -24,6 +24,7 @@ import {
   buildTriggerOrderFromSignalForCall,
   buildTriggerOrderFromSignalTypedData,
   canonicalJson,
+  deriveTriggerOrderId,
   hashEvidenceJson,
   hashResourceManifest,
   hashStageExecutorPatchPayload,
@@ -876,6 +877,59 @@ describe("protocol bindings", () => {
           plaintext: "invoice bytes",
         } as ResourceManifestV1),
       /plaintext is not part of ResourceManifestV1/,
+    );
+  });
+
+  // pinned 向量与 forge 测试 testTriggerOrderIdForMatchesPinnedMirrorVector
+  // （UVPStateMachine.t.sol）同源：向量由 `cast keccak` 对
+  // abi.encode(planId, sourceId, signalId, payloadHash) 生成后按合约
+  // triggerOrderIdFor 同口径清除 dock 子单命名空间保留位（最高位）。
+  // V3 的原始 digest 最高位为 1，专门钉住清位语义；两侧任一漂移即红。
+  it("derives trigger order ids matching the pinned contract vectors", () => {
+    // V1：小词输入。
+    assert.equal(
+      deriveTriggerOrderId(
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x0000000000000000000000000000000000000000000000000000000000000002",
+        "0x0000000000000000000000000000000000000000000000000000000000000003",
+        "0x0000000000000000000000000000000000000000000000000000000000000004",
+      ),
+      "0x392791df626408017a264f53fde61065d5a93a32b60171df9d8a46afdf82992d",
+    );
+
+    // V2：keccak 产物资（planId=keccak("plan")、sourceId=keccak("payment")、
+    // signalId=keccak("payment.ready")、payloadHash=keccak("payload")）。
+    assert.equal(
+      deriveTriggerOrderId(
+        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
+        "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
+        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
+        "0xebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7",
+      ),
+      "0x5ea3f67d172d893746b323173444e0dff190f5a4d4d91db58776692ad483009a",
+    );
+
+    // V3：同 V2 前三参，payloadHash=keccak("payload-3")——原始 digest
+    // 0xfadbfa9e…最高位为 1，清位后首字节 0xfa→0x7a。
+    assert.equal(
+      deriveTriggerOrderId(
+        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
+        "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
+        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
+        "0x7ddb57e56bc008d7f232156ac0c4a9be3da0582cbda6ae545fb75e0b912ee6fa",
+      ),
+      "0x7adbfa9eb5e66f4bda59ce36fa07abdf9979eb14222e023ed9480d0adb8d2c0a",
+    );
+
+    // V4：全零边界。
+    assert.equal(
+      deriveTriggerOrderId(
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+      ),
+      "0x012893657d8eb2efad4de0a91bcd0e39ad9837745dec3ea923737ea803fc8e3d",
     );
   });
 });

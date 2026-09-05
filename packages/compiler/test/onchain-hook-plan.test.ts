@@ -699,3 +699,120 @@ test("rejects a dependency key shared across stages", () => {
       error.issues.some((issue) => /shared across stages/.test(issue))
   );
 });
+
+test("flags stages whose hooks can never materialize on-chain", () => {
+  const materializationIssues = (issues: readonly string[]): readonly string[] =>
+    issues.filter((issue) => /no order-trigger or EMIT_READY hook/.test(issue));
+
+  // 正例 1（mint trigger 形态）：出生订阅编译为 orderTriggerKind=mint、
+  // emitReady=true 的 hook——阶段可物化，零 issue（口径对照 Rust
+  // validate_onchain_stage_materialization：有出生边的阶段不受限）。
+  const mintZhixu: ZhixuDefinition = {
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      taskPatterns: [
+        ...baseZhixu.spec.taskPatterns,
+        {
+          name: "intake",
+          stages: [
+            {
+              name: "post",
+              source: "buyer",
+              sendSignals: ["posted"],
+              executor: {
+                supplierType: "organization",
+                supplierID: "intake-exec",
+              },
+            },
+          ],
+        },
+        {
+          name: "fulfillment",
+          stages: [
+            {
+              name: "birth",
+              source: "fulfiller",
+              mint: "per-fact",
+              receiveSignals: {
+                BIRTH: "::ANCHOR(@buyer::intake.post.posted)",
+              },
+              sendSignals: ["str", "cmp", "err"],
+              executor: {
+                supplierType: "organization",
+                supplierID: "fulfiller-exec",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const mintOnchain = compileOnchainHookPlan(
+    compileZhixuHookPlan(mintZhixu, demoManifest),
+  );
+  assert.deepEqual(materializationIssues(validateOnchainHookPlanArtifact(mintOnchain)), []);
+
+  // 正例 2（EMIT_READY receive hook 形态）：有静态 executor 的阶段其
+  // receive hook 恒 emitReady=true（executor dispatch 边），同样可物化。
+  const baseOnchain = compileOnchainHookPlan(
+    compileZhixuHookPlan(baseZhixu, demoManifest),
+  );
+  assert.deepEqual(materializationIssues(validateOnchainHookPlanArtifact(baseOnchain)), []);
+
+  // 正例 3（dock trigger 形态）：dock 出生边 orderTriggerKind=dock 同样
+  // 是合法物化者。
+  const dockOnchain: OnchainHookPlanArtifact = {
+    ...baseOnchain,
+    compiledHooks: baseOnchain.compiledHooks.map((hook) =>
+      hook.stageIdentifier === "execution.main"
+        ? { ...hook, orderTriggerKind: "dock" as const }
+        : hook,
+    ),
+  };
+  assert.deepEqual(materializationIssues(validateOnchainHookPlanArtifact(dockOnchain)), []);
+
+  // 反例（纯 receive hook 形态）：把 execution.main 的全部 hook 压成
+  // orderTriggerKind=none、emitReady=false 的 flags=0 纯 watcher——该阶段
+  // 永不可物化，正是 Rust validate_onchain_stage_materialization 在定义层
+  // 拒绝的形态；artifact 边界（第二道门）必须同样拒绝。
+  const watcherOnly: OnchainHookPlanArtifact = {
+    ...baseOnchain,
+    compiledHooks: baseOnchain.compiledHooks.map((hook) =>
+      hook.stageIdentifier === "execution.main"
+        ? { ...hook, orderTriggerKind: "none" as const, emitReady: false }
+        : hook,
+    ),
+  };
+  const watcherIssues = materializationIssues(
+    validateOnchainHookPlanArtifact(watcherOnly),
+  );
+  // 阶段内每条 hook 各报一条（START/TIMEOUT 两条），其余校验零噪声。
+  assert.equal(watcherIssues.length, 2);
+  for (const issue of watcherIssues) {
+    assert.match(
+      issue,
+      /^stage execution\.main has no order-trigger or EMIT_READY hook; its hooks compile to flags=0 watchers which can never materialize the stage on-chain \(deadlock, no recovery path\) — the Rust compiler must reject this shape$/,
+    );
+  }
+
+  // 编译入口同口径：该形态在 compileOnchainHookPlan 预检即抛
+  // HookPlanCompilationError，不产出制品。
+  const watcherSourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  const mutatedSourcePlan = {
+    ...watcherSourcePlan,
+    compiledHooks: watcherSourcePlan.compiledHooks.map((hook) =>
+      hook.stageIdentifier === "execution.main"
+        ? { ...hook, orderTriggerKind: "none" as const, emitReady: false }
+        : hook,
+    ),
+  };
+  assert.throws(
+    () => compileOnchainHookPlan(mutatedSourcePlan),
+    (error: unknown) =>
+      error instanceof HookPlanCompilationError &&
+      error.issues.some((issue) =>
+        /stage execution\.main has no order-trigger or EMIT_READY hook/.test(issue),
+      ),
+  );
+});
