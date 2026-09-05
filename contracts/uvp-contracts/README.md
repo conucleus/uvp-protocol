@@ -260,5 +260,5 @@ Known limits:
 - Role administration is owner-managed and intentionally minimal.
 - The state-machine authorization model has explicit submitter records but no
   revocation event yet; existing signals remain immutable.
-- The no-authorization order overloads are compatibility paths; they create
-  closed orders with no submitters and should not be used by the product flow.
+- Creating an order with an empty authorization list creates closed orders
+  with no submitters; this shape should not be used by the product flow.

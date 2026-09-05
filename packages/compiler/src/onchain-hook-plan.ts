@@ -343,8 +343,9 @@ export function assertOnchainHookPlanArtifact(
   }
 }
 
-// Legacy name, see compileZhixuRegisterPlanArgs: returns args for the
-// two-step commitPlan + finalizePlan registration flow.
+// Solidity boundary builder: returns args for the two-step
+// commitPlan + finalizePlan registration flow. compileZhixuRegisterPlanArgs
+// wraps this for direct Zhixu definitions.
 export function toSolidityRegisterPlanArgs(
   artifact: OnchainHookPlanArtifact,
 ): SolidityRegisterPlanArgs {
