@@ -11,7 +11,7 @@ import {DockMerkle} from "../src/libraries/DockMerkle.sol";
 import {IUVPPlanMetadataModule} from "../src/interfaces/IUVPPlanMetadataModule.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 
-/// @title Zhixu Dock v2 committed-route 测试（PRD96 §6.3 矩阵）
+/// @title Zhixu Dock committed-route 测试
 /// @dev 覆盖：happy path（open→input→callback）、身份确定性、错误 proof
 ///      拒绝、原子性/幂等、碰撞隔离、permissionless liveness、深度上限、
 ///      permit 签名/错签者拒绝。
@@ -191,7 +191,7 @@ contract UVPDockingModuleTest {
         assertTrue(exists);
         assertEq(localOrder, PARENT_ORDER_ID);
         assertTrue(machine.orderExists(targetPlanId, linkedOrderId));
-        // 独立子订单身份（PRD93 §6.2）。
+        // 独立子订单身份。
         assertFalse(linkedOrderId == PARENT_ORDER_ID);
         // entrance fact 写入 + 目标 dock 出生 hook Ready。
         (bool signalExists,,,,) = machine.getSignal(targetPlanId, linkedOrderId, TARGET_SOURCE, TARGET_SIGNAL);
@@ -391,7 +391,7 @@ contract UVPDockingModuleTest {
     }
 
     function testRejectsTargetPlanSubstitution() public {
-        // targetPlanId 参与 routeHash preimage（PRD95 §5.2）：keeper 把 child
+        // targetPlanId 参与 routeHash preimage：keeper 把 child
         // 换挂到任何别的 plan（即使复制了同样的 interface root），routeHash
         // 重算立即失配——目标替换在 proof 层就被拒绝。
         UVPDockingModule.OpenDockRequestV1 memory request = _openRequest(0);

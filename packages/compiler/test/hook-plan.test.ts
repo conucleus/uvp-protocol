@@ -296,9 +296,9 @@ test("rejects invalid mint declarations", () => {
   ]);
 });
 
-test("mint stages accept single ANCHOR birth subscriptions and isTrigger them", () => {
+test("mint stages accept single ANCHOR birth subscriptions and mark them order-trigger", () => {
   // 出生入口 hook：ANCHOR 订阅（出生事实由 registrar 命名空间提交，本身即判定），
-  // 订阅编译为单条 SIGNAL 指令，链上 isTrigger=true。
+  // 订阅编译为单条 SIGNAL 指令，链上带 order-trigger flag。
   const valid: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
@@ -727,9 +727,10 @@ test("rejects local hook references to unknown stages or signals", () => {
   ]);
 });
 
-test("rejects legacy zhixu delegation shapes with migration hints", () => {
-  // triggerEntrance / hook-DSL signalMap values / zhixu supplierID：clean break。
-  const legacyEntrance: ZhixuDefinition = {
+test("rejects non-canonical zhixu executor config shapes", () => {
+  // triggerEntrance 不是合法字段；signalMap 值必须是目标 signal 名而非
+  // hook DSL 表达式；zhixu 类型 supplierID 不得指向另一个 Zhixu。
+  const entranceConfig: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
@@ -752,9 +753,9 @@ test("rejects legacy zhixu delegation shapes with migration hints", () => {
       ]
     }
   };
-  assertCompilationIssues(legacyEntrance, [/D002.*triggerEntrance/]);
+  assertCompilationIssues(entranceConfig, [/D002.*triggerEntrance/]);
 
-  const legacyHookDslValues: ZhixuDefinition = {
+  const hookDslSignalMap: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
@@ -784,9 +785,9 @@ test("rejects legacy zhixu delegation shapes with migration hints", () => {
       ]
     }
   };
-  assertCompilationIssues(legacyHookDslValues, [/D006.*signalMap\.str/]);
+  assertCompilationIssues(hookDslSignalMap, [/D006.*signalMap\.str/]);
 
-  const legacySupplierId: ZhixuDefinition = {
+  const crossZhixuSupplierId: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
@@ -814,7 +815,7 @@ test("rejects legacy zhixu delegation shapes with migration hints", () => {
       ]
     }
   };
-  assertCompilationIssues(legacySupplierId, [/D001/]);
+  assertCompilationIssues(crossZhixuSupplierId, [/D001/]);
 });
 
 test("rejects locally invalid dock executor configs", () => {

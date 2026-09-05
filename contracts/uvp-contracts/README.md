@@ -79,10 +79,7 @@ the TypeScript `statemachine` oracle.
   `isSignalSubmitterAuthorized`, `getSignalAuthorization`, dock order
   namespace mask, signal target relation constants,
   `sourceSignalCount`, `lastSignalSubmitter`, stage-overlay view helpers,
-  trigger-link view helpers, and signal capability helpers (the retired
-  digest-helper surface `signalSubmissionDigest`/`signalAuthorizationsHash`/
-  trigger-order digest helpers on the core and the
-  `DOCKED_ORDER_LINK_SIGNAL_ID` constant no longer exist anywhere);
+  trigger-link view helpers, and signal capability helpers;
 - module function selectors for stage patch, derived signal, docking, and lens
   entrypoints/digest helpers/views;
 - event topics for ownership, module configuration/freeze,
@@ -143,8 +140,7 @@ code do not silently drift away from the contract ABI.
     independent resource-manifest patch through `UVPStagePatchModule` for a
     target stage and resource key. The chain stores hashes, nonces, and manifest
     URIs, not plaintext business documents.
-12. Docking is v2 committed-route only (the manual `linkDockedOrder` surface
-    and `DOCKED_ORDER_LINK_SIGNAL_ID` are retired): a local entrance hook that
+12. Docking is committed-route only: a local entrance hook that
     is Ready (`EMIT_READY`) plus a Merkle-proved `dockRoutesRoot` route lets a
     keeper call `openDockedOrder`, which atomically derives the dock instance
     id and high-bit-namespaced child order id, creates the child, records the
@@ -166,26 +162,25 @@ code do not silently drift away from the contract ABI.
     `HookStatusChanged`, `HookReady`, and `TimerPoked`, and can be replayed from
     events by `statemachine` and `chain-services`.
 
-`registerOrder` is not a public business ABI in v0.10. New order creation
+`registerOrder` is not a public business ABI. New order creation
 must pass through a trigger-order entrypoint so order materialization and the
 first trigger fact share one chain transaction and one business signer.
 
 ### Order identity is (planId, orderId)
 
-Since the audit-unfreeze batch, order storage is addressed by the composite
-`(planId, orderId)` key across the state machine and every module
-(order-link, docking, stage-patch views included). An `orderId` alone is not
-a global key: two plans can each own an order with the same `orderId` without
-colliding, and no entry point can address one plan's order by presenting
-another plan's id. Replay idempotency is unchanged — within one plan, a
-second registration of the same `orderId` still reverts with
+Order storage is addressed by the composite `(planId, orderId)` key across
+the state machine and every module (order-link, docking, stage-patch views
+included). An `orderId` alone is not a global key: two plans can each own an
+order with the same `orderId` without colliding, and no entry point can
+address one plan's order by presenting another plan's id. Within one plan, a
+second registration of the same `orderId` reverts with
 `OrderAlreadyRegistered`. Off-chain order-id derivation formulas must fold
 `planId` into their domain so derived order ids are plan-scoped by
-construction. Function signatures gained a leading `planId` parameter (and
-the from-signal trigger request gained `originPlanId`); this is the
-new-version surface of the unfreeze batch. Event signatures are pinned in
-the v0.10 and module fixtures; indexers must consume the composite identity in
-every event and projection rather than treating `orderId` as globally unique.
+construction. Function signatures take a leading `planId` parameter, and the
+from-signal trigger request carries `originPlanId`. Event signatures are
+pinned in the v0.10 and module fixtures; indexers must consume the composite
+identity in every event and projection rather than treating `orderId` as
+globally unique.
 
 ## Stable Events
 
@@ -228,7 +223,7 @@ The module fixtures add these public events:
   (docking module).
 
 All of these module events carry the composite `(planId, orderId)` identity:
-two plans owning same-id orders no longer collide byte-for-byte, and indexers
+same-id orders in different plans do not collide byte-for-byte, and indexers
 must key projections on both ids.
 
 ## Hook State Machine

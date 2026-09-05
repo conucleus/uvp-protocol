@@ -39,7 +39,7 @@ The supported compiler surface is the chain artifact path:
 - static executor route extraction;
 - `supplierType=zhixu` `signalMap` compilation and same-source validation.
 
-Executor topology follows the original UVP closure rule: a stage without a
+Executor topology follows the UVP closure rule: a stage without a
 fixed `executor.supplierID` is valid only when it can be reached through
 `selectedStages` from a stage that does name a fixed executor. Selector loops or
 selector chains with no fixed executor anchor are rejected, so product flows

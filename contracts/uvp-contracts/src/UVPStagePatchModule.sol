@@ -110,7 +110,7 @@ contract UVPStagePatchModule {
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _EIP712_NAME_HASH = keccak256("UVPStagePatchModule");
     bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.1");
-    // 审计 #10：摘要新增 planId 字段（新版本口径），patch 签名绑定订单的
+    // patch 签名绑定订单的
     // (planId, orderId) 复合身份。
     bytes32 private constant _STAGE_EXECUTOR_PATCH_TYPEHASH = keccak256(
         "UVPStagePatchModuleStageExecutorPatch(bytes32 planId,bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 approvalSourceId,bytes32 approvalSignalId,bytes32 patchHash,uint256 patchNonce,string metadataURI,address selector,uint256 deadline)"
@@ -122,7 +122,7 @@ contract UVPStagePatchModule {
         "StageExecutorPatchApplied(bytes32,bytes32,bytes32,bytes32,address,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string)"
     );
 
-    // 审计 #10：patch 存储按 (planId, orderId) 复合键寻址。
+    // patch 存储按 (planId, orderId) 复合键寻址。
     mapping(
         bytes32 planId => mapping(bytes32 orderId => mapping(bytes32 targetStageId => ActiveStageExecutorPatch patch))
     ) private _activeStageExecutorPatches;
@@ -152,8 +152,8 @@ contract UVPStagePatchModule {
         string metadataURI
     );
     event StageResourcePatchApplied(
-        // 审计批次（事件复合身份）：与同合约 ExecutorPatchApplied 对齐携带
-        // planId——两 plan 同号订单时不再字节级相同。
+        // 与同合约 ExecutorPatchApplied 对齐携带
+        // planId——两 plan 同号订单的事件字节级不同。
         bytes32 indexed orderId,
         bytes32 indexed selectorStageId,
         bytes32 indexed targetStageId,

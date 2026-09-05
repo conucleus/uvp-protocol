@@ -207,8 +207,7 @@ export interface ProductSubmitTypedDataField {
   readonly type: string;
 }
 
-// 审计 #10：UVPStateMachineSignal 摘要并入 planId（新版本口径），签名绑定
-// (planId, orderId)。
+// UVPStateMachineSignal 签名绑定 (planId, orderId)。
 export const PRODUCT_SUBMIT_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] =
   [
     { name: "planId", type: "bytes32" },
@@ -357,7 +356,7 @@ export interface SignalAuthorizationPayload {
   readonly metadataHash: Hex | string;
 }
 
-// 一事一单：orderId 不再自报——由合约 triggerOrderIdFor(planId, sourceId,
+// 一事一单：orderId 由合约 triggerOrderIdFor(planId, sourceId,
 // signalId, payloadHash) 纯函数派生（本包导出同公式镜像 deriveTriggerOrderId）。
 export interface TriggerOrderFromOutsidePayload {
   readonly planId: Hex | string;
@@ -570,7 +569,7 @@ export interface BuildProductSubmitTypedDataInput {
   readonly chainId: number;
   readonly verifyingContract: Address | string;
   /**
-   * 审计 #10：签名域并入 planId。真实签署方必须提供订单的 planId；
+   * 签名域并入 planId。真实签署方必须提供订单的 planId；
    * 允许缺省（零占位）仅为兼容只校验 surface 形状的下游 gate
    * （如 uvp-deploy 的 verify-product-signal-map），零占位签名无法
    * 通过链上 (planId, orderId) 存在性校验，不构成重放面。

@@ -257,7 +257,7 @@ contract UVPStateMachineTest {
 
         require(machine.planExists(planId), "plan not registered");
         require(machine.orderExists(PLAN_ID, ORDER_ID), "order not registered");
-        // 审计 #10：订单身份即 (planId, orderId)，plan 归属由寻址键保证。
+        // 订单身份即 (planId, orderId)，plan 归属由寻址键保证。
         require(machine.planPublisher(planId) == vm.addr(PUBLISHER_PRIVATE_KEY), "bad plan publisher");
         require(machine.orderRelayer(PLAN_ID, ORDER_ID) == address(this), "bad order relayer");
         require(machine.orderCreator(PLAN_ID, ORDER_ID) == ORDER_CREATOR, "bad order creator");
@@ -1632,7 +1632,7 @@ contract UVPStateMachineTest {
         );
     }
 
-    /// 簇 A2：纯 flags=0 watcher 阶段在注册边界直接拒绝——该阶段永远无法
+    /// 纯 flags=0 watcher 阶段在注册边界直接拒绝——该阶段永远无法
     /// 物化（物化只由本阶段 order-trigger / EMIT_READY hook Ready 触发）。
     function testStageWithoutMaterializingHookIsRejectedAtCommit() public {
         UVPStateMachine machine = _newMachine();
@@ -1716,9 +1716,9 @@ contract UVPStateMachineTest {
         require(machine.planExists(planId), "compiler-shaped plan not registered");
     }
 
-    /// 簇 A3：flags=0 watcher 所在阶段未物化时，模块写事实路径不再稳定
-    /// 回滚——求值循环跳过（与回放 oracle 对齐）。阶段挂一条 EMIT_READY
-    /// hook（依赖另一未到达信号）满足 A2 注册守卫，但阶段尚未物化。
+    /// flags=0 watcher 所在阶段未物化时，模块写事实路径不回滚——
+    /// 求值循环跳过（与回放 oracle 对齐）。阶段挂一条 EMIT_READY
+    /// hook（依赖另一未到达信号）满足注册守卫，但阶段尚未物化。
     function testUnmaterializedStageWatcherIsSkippedNotBricked() public {
         UVPStateMachine machine = _newMachine();
         // STAGE_AUDIT：EMIT_READY 观察 hook（依赖 SIGNAL_AUDIT_PASS，未到达）
@@ -1752,9 +1752,9 @@ contract UVPStateMachineTest {
         // 本身会 UnknownHook，这正是"跳过"而非"求值"的证据；交易成功即断言。
     }
 
-    /// 簇 C6：显式授权与 active executor patch 两维度独立——同一事实经
+    /// 显式授权与 active executor patch 两维度独立——同一事实经
     /// 普通 submitSignal 与派生 submitDerivedSignalFromModule 两条路径都
-    /// 放行（修复前派生路径缺显式授权豁免，同一事实两条入口结论相反）。
+    /// 放行（两条入口对同一事实结论一致）。
     function testExplicitAuthorizationExemptsExecutorPatchOnBothPaths() public {
         UVPStateMachine machine = _newMachine();
         // STAGE_AUDIT 需要是 plan 阶段（executor patch 目标），并持有两个
@@ -1825,7 +1825,7 @@ contract UVPStateMachineTest {
         );
     }
 
-    /// 簇 C5：from 侧显式授权按业务事实键 (targetSourceId, signalId) 查
+    /// from 侧显式授权按业务事实键 (targetSourceId, signalId) 查
     /// 询——持有合法显式授权的提交者不得被错误塞 stageId 进 sourceId 槽
     /// 而拒绝。
     function testDerivedSignalFromSideExplicitAuthorizationUsesSourceKey() public {
@@ -1863,7 +1863,7 @@ contract UVPStateMachineTest {
         );
     }
 
-    /// 一事一单（D8）：事实不在本 plan capability 词表内时拒绝铸单。
+    /// 一事一单：事实不在本 plan capability 词表内时拒绝铸单。
     function testTriggerOrderFromOutsideRejectsForeignFact() public {
         UVPStateMachine machine = _newMachine();
         _registerPlan(
@@ -1885,8 +1885,8 @@ contract UVPStateMachineTest {
         machine.triggerOrderFromOutsideFor(trigger, authorizations, signature);
     }
 
-    /// E16：同一 (sourceId, signalId) 被两个阶段以 relation=0 重复声明时，
-    /// 注册边界直接拒绝（不再按数组序取首个匹配）。
+    /// 同一 (sourceId, signalId) 被两个阶段以 relation=0 重复声明时，
+    /// 注册边界直接拒绝。
     function testDuplicateCurrentOrderFactCapabilityAcrossStagesIsRejected() public {
         UVPStateMachine machine = _newMachine();
         UVPStateMachine.CompactHook[] memory hooks = _withOrderStart(_positiveHookPlan(HOOK_INIT, true));
@@ -1913,8 +1913,8 @@ contract UVPStateMachineTest {
         machine.finalizePlan(planId, bindings, capabilities);
     }
 
-    /// E15：委托授权的 executor 与查询 submitter 不匹配时返回空值
-    /// （不再残留委托 role/metadataHash）。
+    /// 委托授权的 executor 与查询 submitter 不匹配时返回空值，
+    /// 不回退到委托记录的 role/metadataHash。
     function testGetSignalAuthorizationReturnsEmptyForDelegatedExecutorMismatch() public {
         UVPStateMachine machine = _newMachine();
         _registerPlan(machine, _withOrderStart(_positiveHookPlan(HOOK_INIT, true)));
@@ -2995,12 +2995,12 @@ contract UVPStateMachineTest {
     }
 
     function testOrCompositeDelayAnchorsOnEarliestMaturingBranch() public {
-        // 簇 B 裁定的 OR 分歧形态（对齐 uvp-core 单测
+        // OR 分歧形态（对齐 uvp-core 单测
         // or_composite_delay_anchors_on_earliest_maturing_branch 与语料
         // evalCases）：`(A & B) | C` 且 min(A,B) 接收 < C 接收 ≤ max(A,B)
         // 接收时，AND 分支的成熟时刻 = max(A,B)，最早成熟的是 C 分支——外层
-        // Delay 必须锚定 C 的成熟时刻（C 到达时刻）。按"最早接收"选支的旧
-        // 语义会选 A 所在的 AND 分支、以 max(A,B) 计时，给出更晚的 dueAt。
+        // Delay 必须锚定 C 的成熟时刻（C 到达时刻）。若按"最早接收"选支，
+        // 会选 A 所在的 AND 分支、以 max(A,B) 计时，给出更晚的 dueAt。
         //
         // 时序镜像 Rust 侧数值：A@10、C@40、B@60，+10s → dueAt=50，
         // 在 B 到来前（AND 分支最早 60 才成熟）就必须 ready。
@@ -3183,14 +3183,13 @@ contract UVPStateMachineTest {
     }
 
     // ------------------------------------------------------------------
-    // 审计 #10 / #1 残余：跨 plan 攻击负例。每个用例先复现攻击前提，
+    // 跨 plan 攻击负例。每个用例先复现攻击前提，
     // 再断言隔离或 revert。
     // ------------------------------------------------------------------
 
-    /// 审计 #10 抢注场景：攻击者先在自己的 plan 下注册受害方将要派生的
-    /// orderId。修复前全局 `_orders[orderId]` 会让受害方的合法铸单永久
-    /// OrderAlreadyRegistered（DoS + 身份伪装）；修复后 (planId, orderId)
-    /// 复合寻址使两个订单共存且互不可见。
+    /// 跨 plan 抢单场景：攻击者先在自己的 plan 下注册受害方将要派生的
+    /// orderId。(planId, orderId) 复合寻址使两个订单共存且互不可见，
+    /// 受害方的合法铸单不受影响。
     function testCrossPlanOrderIdSquattingIsIsolated() public {
         UVPStateMachine machine = _newMachine();
         UVPStateMachine.CompactHook[] memory hooks = _withOrderStart(_positiveHookPlan(HOOK_INIT, true));
@@ -3312,7 +3311,7 @@ contract UVPStateMachineTest {
         );
     }
 
-    /// 审计 #1 残余 capability 镜像场景：攻击者 plan 完整镜像受害方 plan
+    /// capability 镜像场景：攻击者 plan 完整镜像受害方 plan
     /// 的公开 trigger hook 与 capability 声明后，仍不得把受害方订单当作
     /// trigger-origin 建链（origin 侧同意缺失）。
     function testCrossPlanCapabilityMirrorIsRejected() public {
@@ -3414,7 +3413,7 @@ contract UVPStateMachineTest {
             );
     }
 
-    /// 审计 #1 残余 origin 同意的正向面：origin 事实授权的提交者、origin
+    /// origin 同意的正向面：origin 事实授权的提交者、origin
     /// 订单创建者、以及持有 origin 事实授权的执行 relayer 均可建立链接；
     /// 完全无身份的一方被拒绝。
     function testTriggerLinkOriginConsentPaths() public {

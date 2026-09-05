@@ -10,9 +10,8 @@ interface IUVPStateMachineCore {
         bytes32 metadataHash;
     }
 
-    // 审计 #10 解冻批次：订单身份从全局 orderId 收紧为 (planId, orderId)。
-    // 结构体新增 originPlanId 字段（新版本口径）：trigger-origin 订单按
-    // (originPlanId, triggerOriginOrderId) 复合键寻址，跨 plan 链接必须
+    // trigger-origin 订单按 (originPlanId, triggerOriginOrderId) 复合键
+    // 寻址：派生单与 origin 单可以分属不同 plan，跨 plan 链接必须
     // 显式声明 origin 的 plan。
     struct TriggerOrderFromSignalRequest {
         bytes32 orderId;
@@ -30,7 +29,7 @@ interface IUVPStateMachineCore {
         uint256 deadline;
     }
 
-    // 审计 #1 残余：trigger link 建立需要 origin 侧同意。
+    // trigger link 建立需要 origin 侧同意。
     function hasTriggerOriginConsent(
         bytes32 originPlanId,
         bytes32 originOrderId,

@@ -7,7 +7,7 @@ import type {
 } from "./types/index.js";
 
 /**
- * Zhixu Dock v1 跨运行时哈希库（PRD94 §7、PRD96 M0）。
+ * Zhixu Dock v1 跨运行时哈希库。
  *
  * 与 Rust `uvp-compiler::dock` 逐字节对齐：
  * - 所有 commitment = `keccak256(keccak256(domain) ‖ words…)`，等价于
@@ -164,7 +164,7 @@ export function verifyMerkleProof(
 }
 
 // ---------------------------------------------------------------------------
-// 身份推导（PRD94 §7.3-§7.5）
+// 身份推导
 // ---------------------------------------------------------------------------
 
 export function definitionRefHash(uid: string, version: string): HexString {
@@ -258,7 +258,7 @@ export function linkedOrderId(
 }
 
 // ---------------------------------------------------------------------------
-// Envelope / 幂等键（PRD95 §3）
+// Envelope / 幂等键
 // ---------------------------------------------------------------------------
 
 export function sourceFactSetHash(factWords: readonly HexString[]): HexString {
@@ -313,7 +313,7 @@ export function dockRoutesRootOf(routes: readonly DockRouteV1[]): HexString {
 
 // ---------------------------------------------------------------------------
 // leaf / binding / routeHash / input payload 推导（与 Rust dock.rs 同公式；
-// 供 TS 侧独立重算 golden vectors，不再只消费 Rust 产物）
+// 供 TS 侧独立重算 golden vectors）
 // ---------------------------------------------------------------------------
 
 export function dockInterfaceInputLeaf(input: {

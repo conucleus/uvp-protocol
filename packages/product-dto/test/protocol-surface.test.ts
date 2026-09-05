@@ -35,10 +35,6 @@ type ProtocolBindings = {
   readonly STAGE_RESOURCE_PATCH_DOMAIN_VERSION: string;
   readonly STAGE_RESOURCE_PATCH_PRIMARY_TYPE: string;
   readonly STAGE_RESOURCE_PATCH_TYPED_DATA_FIELDS: readonly ProtocolTypedDataField[];
-  readonly DOCKED_ORDER_LINK_DOMAIN_NAME: string;
-  readonly DOCKED_ORDER_LINK_DOMAIN_VERSION: string;
-  readonly DOCKED_ORDER_LINK_PRIMARY_TYPE: string;
-  readonly DOCKED_ORDER_LINK_TYPED_DATA_FIELDS: readonly ProtocolTypedDataField[];
 };
 
 type ProtocolTypedDataField = {
@@ -92,21 +88,6 @@ const stageResourcePatchFieldNames = [
   "patchHash",
   "patchNonce",
   "manifestURI",
-  "selector",
-  "deadline"
-] as const;
-
-const dockedOrderLinkFieldNames = [
-  "localPlanId",
-  "localOrderId",
-  "selectorStageId",
-  "localSourceId",
-  "linkedOrderId",
-  "linkedPlanId",
-  "linkHash",
-  "linkNonce",
-  "signalBindingsHash",
-  "metadataURI",
   "selector",
   "deadline"
 ] as const;
@@ -207,10 +188,9 @@ describe("Product DTO protocol surface", () => {
     }
   });
 
-  it("keeps the committed-route docking surface (v2, PRD95)", async () => {
+  it("keeps the committed-route docking surface", async () => {
     const protocol = await loadProtocolBindings();
 
-    // v1 手工 link 面（linkDockedOrder/linkDockedOrderFor）已删除；
     // 全部 dock 走 committed route：openDockedOrder 原子 open。
     assertAbiNames(protocol.DOCKING_MODULE_ABI, "function", [
       "openDockedOrder",
@@ -223,13 +203,6 @@ describe("Product DTO protocol surface", () => {
       "DockInputSubmitted",
       "DockOutputSubmitted"
     ]);
-    assert.equal(
-      protocol.DOCKING_MODULE_ABI.some(
-        (item) => "name" in item && (item.name === "linkDockedOrder" || item.name === "linkDockedOrderFor")
-      ),
-      false,
-      "manual link entrypoints must stay deleted"
-    );
     assertAbiNames(protocol.STATE_MACHINE_LENS_ABI, "function", [
       "getActiveStageExecutorPatch",
       "getActiveStageResourcePatch",
@@ -282,9 +255,8 @@ describe("Product DTO protocol surface", () => {
   it("fails Product signal map gate when schema source, signal, action or permission rows drift", async () => {
     const gate = await loadProductSignalMapGate();
 
-    // uvp-deploy 的 verify-product-signal-map 已同步审计 #10 解冻批次后的
-    // typed-data 字段清单（planId / localPlanId），门禁断言全量生效，
-    // 不再对任何已知漂移放行。
+    // uvp-deploy 的 verify-product-signal-map 门禁断言 typed-data 字段清单
+    // （planId / localPlanId）全量生效。
     assert.deepEqual(gate.verifyCustomsProductSignalMap().failures, []);
 
     assert.match(

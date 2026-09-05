@@ -65,7 +65,7 @@ const ONCHAIN_SIGNAL_CAPABILITY_HASH_DOMAIN =
   "uvp:onchain-signal-capability:v1";
 const PLAN_RUNTIME_HASH_DOMAIN_V2 = "uvp.plan.runtime.v2";
 
-/** PRD94 §3.4 / PRD95 §5.3：CompactHook flags 位定义。 */
+/** CompactHook flags 位定义。 */
 export const HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
 export const HOOK_FLAG_ORDER_TRIGGER_DOCK = 2;
 export const HOOK_FLAG_EMIT_READY = 4;
@@ -126,7 +126,7 @@ export function compileOnchainHookPlan(
       dependencies: hook.dependencies,
     })),
   );
-  // 簇 A1 镜像：不可物化阶段（无 order-trigger / EMIT_READY hook 的阶段）
+  // 不可物化阶段（无 order-trigger / EMIT_READY hook 的阶段）
   // 不得挂任何 receive hook——纯 flags=0 watcher 不物化阶段，链上对该阶段
   // 的任何求值都是不可恢复死锁（Rust 编译器是第一道，这里是 artifact
   // 边界的第二道）。
@@ -153,7 +153,7 @@ export function compileOnchainHookPlan(
     hookPlanArtifact.signalCapabilities,
   );
   // fail-closed：dock roots 由 TS 侧从 core 产物重算并断言一致，任何分叉
-  // 都在编译期暴露（PRD96 M2 退出条件）。
+  // 都在编译期暴露。
   const dockRoutes = hookPlanArtifact.dockRoutes;
   const recomputedRoutesRoot = dockRoutesRootOf(dockRoutes);
   if (recomputedRoutesRoot !== hookPlanArtifact.dockRoutesRoot) {
@@ -203,10 +203,9 @@ export function compileZhixuOnchainHookPlan(
   );
 }
 
-// The `RegisterPlanArgs` name predates the retired single-step
-// `registerPlan` entrypoint: since the v0.9 freeze these args feed the two-step
-// `commitPlan` + `finalizePlan` flow. Kept for API stability; renaming is a
-// breaking change.
+// These args feed the two-step `commitPlan` + `finalizePlan` flow. The
+// `RegisterPlanArgs` name is kept for API stability; renaming is a breaking
+// change.
 export function compileZhixuRegisterPlanArgs(
   definition: ZhixuDefinition,
   resolutionManifest?: DockResolutionManifest,
@@ -285,7 +284,7 @@ export function validateOnchainHookPlanArtifact(
         ...validateOnchainDependencyIndex(compiledHooks, dependencyIndex),
       );
     }
-    // 簇 A1 / E12 镜像同样作用于反序列化 artifact 边界。
+    // 同一守卫同样作用于反序列化 artifact 边界。
     issues.push(
       ...unmaterializableStageIssues(compiledHooks as readonly OnchainCompiledHook[]),
     );
@@ -391,7 +390,7 @@ export function toSolidityRegisterPlanArgs(
     selectorBindings,
     signalCapabilities,
   );
-  // PRD95 §5.1：PlanCommitV2 runtime hash 覆盖 dock roots。
+  // PlanCommit runtime hash 覆盖 dock roots。
   const planHash = keccak256(
     encodeAbiParameters(
       parseAbiParameters(
@@ -1236,7 +1235,7 @@ function validateOnchainDependencies(
 }
 
 /**
- * 簇 A1 镜像：每个出现在 compiledHooks 的阶段必须至少有一个 order-trigger
+ * 每个出现在 compiledHooks 的阶段必须至少有一个 order-trigger
  * 或 EMIT_READY hook（能物化自身阶段的 hook）。纯 flags=0 watcher 阶段在
  * 链上永远无法物化——挂在其上的任何 hook 都构成不可恢复死锁。
  */

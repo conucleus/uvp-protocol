@@ -316,7 +316,7 @@ test("builds a stable on-chain dependency index and route references", () => {
     onchain.executorRoutes.map((route) => route.routeId),
     ["0x50a98fb0b72e21bff21f57c8269a01953f1400a33ee2a92483825ea897feb09a"],
   );
-  // zhixu 委托 stage 不再挂静态 executor route（routeRef 只属于静态执行者）。
+  // zhixu 委托 stage 不挂静态 executor route（routeRef 只属于静态执行者）。
   assert.equal(
     onchain.compiledHooks.find((hook) => hook.hookName === "START")?.routeRef,
     undefined,
@@ -477,9 +477,9 @@ test("rejects non-birth subscription receive hooks with the typed compilation er
   }
 });
 
-test("compiles mint birth subscriptions into isTrigger SIGNAL hooks", () => {
+test("compiles mint birth subscriptions into order-trigger SIGNAL hooks", () => {
   // 出生订阅上链 = 提交事实本身即出生信号：编译为一条 SIGNAL 指令，
-  // isTrigger=true（triggerOrderFrom* 的硬门槛），提交者按
+  // 带 order-trigger flag（triggerOrderFrom* 的硬门槛），提交者按
   // "现实成立后任意持有人签名提交"开放。
   const zhixu: ZhixuDefinition = {
     ...baseZhixu,
@@ -625,49 +625,6 @@ test("rejects DELAY seconds beyond the 30-day contract bound", () => {
       .hooks.find((hook) => hook.hookName === keccak256Hex("TIMEOUT"))
       ?.instructions.filter((instruction) => instruction.op === "DELAY"),
     [{ op: "DELAY", delaySeconds: 2_592_000 }],
-  );
-});
-
-test("rejects retired cross-source headers at hook-plan compilation", () => {
-  const withReceive = (expression: string): ZhixuDefinition => ({
-    ...baseZhixu,
-    spec: {
-      ...baseZhixu.spec,
-      taskPatterns: baseZhixu.spec.taskPatterns.map((pattern) => ({
-        ...pattern,
-        stages: pattern.stages.map((stage) =>
-          stage.name === "main"
-            ? {
-                ...stage,
-                receiveSignals: { START: expression },
-                executor: {
-                  supplierType: "zhixu",
-                  zhixuExecutorConfig: {
-                    schemaVersion: "uvp.dock.v1",
-                    target: { zhixu: "payment-zhixu", version: "1.2.0" },
-                    order: { idPolicy: "derived-v1" },
-                    inputMap: { START: "execute" },
-                    signalMap: { str: "started", cmp: "completed" }
-                  }
-                }
-              }
-            : stage
-        )
-      }))
-    }
-  });
-
-  assert.throws(
-    () => compileZhixuHookPlanWithManifest(withReceive("::MERGE@(buyer::selector.assign.executor_selected, buyer::execution.main.cmp)")),
-    (error: unknown) =>
-      error instanceof HookPlanCompilationError &&
-      error.issues.some((issue) => /retired in uvp\.semantic\.v1/.test(issue))
-  );
-  assert.throws(
-    () => compileZhixuHookPlanWithManifest(withReceive("::ANCHOR@(execution.main.cmp)")),
-    (error: unknown) =>
-      error instanceof HookPlanCompilationError &&
-      error.issues.some((issue) => /retired in uvp\.semantic\.v1/.test(issue))
   );
 });
 

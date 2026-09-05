@@ -242,7 +242,7 @@ test("defers subscription entries to per-event delivery without expression verdi
   });
 });
 
-test("rejects retired cross-source hook entries", () => {
+test("rejects non-canonical cross-source header forms", () => {
   assert.throws(() => parseHookExpression("::OUTSIDE"), /retired in uvp\.semantic\.v1/);
   assert.throws(() => parseHookExpression("buyer::OUTSOURCE"), /retired in uvp\.semantic\.v1/);
   assert.throws(() => parseHookExpression("buyer::MERGE@(peer::a.b.c)"), /retired in uvp\.semantic\.v1/);

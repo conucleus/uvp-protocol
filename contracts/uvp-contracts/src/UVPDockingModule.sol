@@ -7,13 +7,11 @@ import {DockMerkle} from "./libraries/DockMerkle.sol";
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
 import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 
-/// @title UVPDockingModule v2 — 统一 Zhixu DockRoute（PRD93-95）
-/// @notice v2 是破坏性重构（系统未上线，clean break）：
-///          - 删除 linkDockedOrder/linkDockedOrderFor 手工 link；
-///          - 所有 Zhixu dock 来自 committed route：openDockedOrder 在一笔
-///            交易内原子完成 child 创建、link 登记、entrance fact 写入；
-///          - submitDockedInput / submitDockedSignal permissionless：keeper
-///            只提交可从链上 committed 状态推导的数据，无法自选内容。
+/// @title UVPDockingModule — 统一 Zhixu DockRoute
+/// @notice 所有 Zhixu dock 来自 committed route：openDockedOrder 在一笔
+///          交易内原子完成 child 创建、link 登记、entrance fact 写入；
+///          submitDockedInput / submitDockedSignal permissionless：keeper
+///          只提交可从链上 committed 状态推导的数据，无法自选内容。
 ///
 /// 哈希域（与 Rust uvp-compiler::dock / TS compiler/src/dock.ts 逐字节一致）：
 ///   inputLeaf   = H("UVP_DOCK_INTERFACE_INPUT_V1",  defRef, portKey, kind, hookKey, sourceId, signalId, access)
@@ -56,7 +54,7 @@ contract UVPDockingModule {
         bytes32 targetHookId;
         bytes32 targetSourceId;
         bytes32 targetSignalId;
-        // PRD95 §3.1：payload/idempotency 不接受调用方自报——全部由
+        // payload/idempotency 不接受调用方自报——全部由
         // committed route/binding + envelope word 重算，keeper 无法替换
         // 事实内容。
         uint8 parentDepth;
@@ -165,7 +163,7 @@ contract UVPDockingModule {
     error InvalidHookFlags(uint8 flags);
 
     // ------------------------------------------------------------------
-    // 事件（PRD95 §10.2，全部端点 plan/order + dockInstanceId 可恢复）
+    // 事件（全部端点 plan/order + dockInstanceId 可恢复）
     // ------------------------------------------------------------------
 
     event DockOpened(
@@ -205,7 +203,7 @@ contract UVPDockingModule {
     event DockTerminal(bytes32 indexed dockInstanceId, uint8 terminal);
 
     // ------------------------------------------------------------------
-    // 常量（PRD96 §3.2 compatibility manifest 冻结）
+    // 常量（compatibility manifest 冻结）
     // ------------------------------------------------------------------
 
     uint8 public constant MAX_DOCK_INPUTS = 8;
@@ -266,7 +264,7 @@ contract UVPDockingModule {
     }
 
     // ------------------------------------------------------------------
-    // openDockedOrder（PRD95 §7）
+    // openDockedOrder
     // ------------------------------------------------------------------
 
     function openDockedOrder(
@@ -483,7 +481,7 @@ contract UVPDockingModule {
             }
         }
 
-        // ---- 原子效果（PRD95 §7.3）：任一步 revert 全部回滚 ----
+        // ---- 原子效果：任一步 revert 全部回滚 ----
         _docks[request.dockInstanceId] = ActiveDockV1({
             localPlanId: request.localPlanId,
             localOrderId: request.localOrderId,
@@ -540,7 +538,7 @@ contract UVPDockingModule {
             abi.encode(_DOMAIN_INPUT_IDEMPOTENCY, request.dockInstanceId, request.entranceBindingHash, uint256(0))
         );
 
-        // PRD95 §18：keeper 只提供活性。creator 与子订单授权不得由 keeper
+        // keeper 只提供活性。creator 与子订单授权不得由 keeper
         // 自选——open 路由 creator = 目标 plan publisher；permit 路由
         // creator = permit 签名者。子订单信号授权随后按目标定义自身的
         // 授权流（executor patch/submitSignalFor）建立，不经 open 注入。
@@ -586,7 +584,7 @@ contract UVPDockingModule {
     }
 
     // ------------------------------------------------------------------
-    // submitDockedInput（PRD95 §8）
+    // submitDockedInput
     // ------------------------------------------------------------------
 
     function submitDockedInput(bytes32 dockInstanceId, bytes32 localHookId, bytes32 inputBindingHash)
@@ -669,7 +667,7 @@ contract UVPDockingModule {
     }
 
     // ------------------------------------------------------------------
-    // submitDockedSignal（PRD95 §9）
+    // submitDockedSignal
     // ------------------------------------------------------------------
 
     function submitDockedSignal(bytes32 dockInstanceId, bytes32 outputBindingHash) external returns (bool submitted) {
@@ -685,7 +683,7 @@ contract UVPDockingModule {
             revert DockOutputBindingNotFound(dockInstanceId, outputBindingHash);
         }
         // 目标事实必须真实存在；payload/submitter 全部读取自 StateMachine
-        // 存储，keeper 无法替换（PRD95 §21 安全清单）。
+        // 存储，keeper 无法替换。
         (bool exists, bytes32 payloadHash,,, address originalSubmitter) = stateMachine.getSignal(
             dock.targetPlanId, dock.linkedOrderId, binding.targetSourceId, binding.targetSignalId
         );
@@ -871,7 +869,7 @@ contract UVPDockingModule {
                 request.routeHash,
                 request.dockInstanceId,
                 request.linkedOrderId,
-                uint256(0), // feeLimit：无费用机制时固定 0（PRD96 §15.5）
+                uint256(0), // feeLimit：无费用机制时固定 0
                 permit.nonce,
                 permit.deadline
             )
@@ -899,7 +897,7 @@ contract UVPDockingModule {
         usedEntrancePermitNonce[request.dockInstanceId] = permit.nonce;
     }
 
-    /// PRD95 §3.1 envelope：全部 word 来自 committed route/binding/dock
+    /// envelope：全部 word 来自 committed route/binding/dock
     /// 存储。sequence 固定 0。
     function _inputPayloadHash(
         bytes32 dockInstanceId,
@@ -982,7 +980,7 @@ contract UVPDockingModule {
         bytes32 inputsRoot,
         bytes32 outputsRoot
     ) private pure returns (bytes32) {
-        // PRD95 §5.2：route leaf 提交目标 plan。targetPlanId 参与 preimage，
+        // route leaf 提交目标 plan。targetPlanId 参与 preimage，
         // 使 openDockedOrder 的 routeHash 重算绑定 target plan——keeper 无法
         // 把 child 开到别的 plan（即使该 plan 复制了同样的 interface root）。
         return keccak256(

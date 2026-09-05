@@ -35,7 +35,7 @@ import {
 import type { DockResolutionManifest, ZhixuDefinition } from "../src/types/index.js";
 
 /**
- * M0 跨语言 golden vectors（PRD96 §3.3）：本测试与 Rust
+ * M0 跨语言 golden vectors：本测试与 Rust
  * `uvp-compiler` 的 `gen_dock_fixtures`、Solidity Foundry 测试消费同一份
  * `uvp-core/fixtures/dock/v1/manifest.json`；任何一侧的哈希/ID/编码分叉
  * 都会在这里失败。

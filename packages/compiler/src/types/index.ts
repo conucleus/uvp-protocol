@@ -35,7 +35,7 @@ export interface ZhixuDefinition {
       readonly params?: Record<string, string>;
     };
     readonly taskPatterns: readonly ZhixuTaskPattern[];
-    /** 目标侧公开的版本化对接接口（PRD94 §3，uvp.dock.v1）。 */
+    /** 目标侧公开的版本化对接接口（uvp.dock.v1）。 */
     readonly dockInterface?: DockInterfaceSource;
   };
 }
@@ -81,7 +81,7 @@ export interface ExecuteConfigs {
   readonly [key: string]: unknown;
 }
 
-/** `spec.dockInterface` source 形状（PRD94 §3.2）。 */
+/** `spec.dockInterface` source 形状。 */
 export interface DockInterfaceSource {
   readonly schemaVersion: "uvp.dock.v1";
   readonly inputs: Record<string, DockInputPortSource>;
@@ -101,7 +101,7 @@ export interface DockOutputPortSource {
   readonly terminal?: "success" | "failure" | "cancelled";
 }
 
-/** 调用方 `executor.zhixuExecutorConfig`（PRD94 §4.2）。 */
+/** 调用方 `executor.zhixuExecutorConfig`。 */
 export interface ZhixuExecutorConfigSource {
   readonly schemaVersion: "uvp.dock.v1";
   readonly target: {
@@ -113,7 +113,7 @@ export interface ZhixuExecutorConfigSource {
   readonly signalMap: Record<string, string>;
 }
 
-/** Resolution manifest（PRD94 §5.2）：由 Store/发布系统提供。 */
+/** Resolution manifest：由 Store/发布系统提供。 */
 export interface DockResolutionManifest {
   readonly schemaVersion: "uvp.dock.resolution.v1";
   readonly definitions: readonly DockResolutionTarget[];
@@ -131,7 +131,7 @@ export interface DockResolutionTarget {
   readonly dockEdges?: readonly { zhixu: string; version: string }[];
 }
 
-/** 目标接口编译产物（PRD94 §6，数组按端口名升序）。 */
+/** 目标接口编译产物（数组按端口名升序）。 */
 export interface DockInterfaceArtifact {
   readonly schemaVersion: "uvp.dockInterfaceArtifact.v1";
   readonly definition: {
@@ -166,7 +166,7 @@ export interface DockInterfaceArtifact {
   readonly interfaceRoot: HexString;
 }
 
-/** 已解析 DockRouteV1（PRD94 §7.1，Rust core 权威产出）。 */
+/** 已解析 DockRouteV1（Rust core 权威产出）。 */
 export interface DockRouteV1 {
   readonly schemaVersion: "uvp.dockRoute.v1";
   readonly routeId: HexString;
@@ -238,7 +238,7 @@ export interface HookPlanArtifact {
   readonly planHash: HexString;
 }
 
-/** PRD94 §3.4：`isTrigger` 拆分为 orderTriggerKind 与 emitReady。 */
+/** order-trigger 种类：none / mint / dock；HookReady 发出由 emitReady 表达。 */
 export type OrderTriggerKind = "none" | "mint" | "dock";
 
 export interface CompiledHookPlanHook {

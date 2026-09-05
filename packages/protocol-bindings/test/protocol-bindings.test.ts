@@ -167,7 +167,7 @@ const signalAuthorizations = [
 
 describe("protocol bindings", () => {
   it("exposes frozen v0.9 plan-scoped hook observation events", () => {
-    // PRD95 §10.1：全部订单级事件补 planId（v0.9 冻结口径）。
+    // 全部订单级事件补 planId（v0.9 冻结口径）。
     assert.equal(
       toEventHash("HookStatusChanged(bytes32,bytes32,bytes32,uint8,uint8,uint64)"),
       "0xa0c688f78d307bee6d38b69ad4c19b02d9e1be8c6772327015b60fd21ec38fd2"

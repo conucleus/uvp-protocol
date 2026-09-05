@@ -51,7 +51,7 @@ export interface ChainOracleHook {
   readonly stageId: HexString;
   readonly stageIdentifier: string;
   readonly hookName: string;
-  /** PRD94 §3.4：单一 isTrigger 已拆分为 orderTriggerKind + emitReady。 */
+  /** order birth 触发种类；HookReady 发出由 emitReady 表达。 */
   readonly orderTriggerKind: "none" | "mint" | "dock";
   readonly emitReady: boolean;
   readonly instructions: readonly ChainOracleInstruction[];

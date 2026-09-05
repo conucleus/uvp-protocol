@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @title Zhixu Dock Merkle 原语（PRD94 §7.2 / PRD96 M0）
+/// @title Zhixu Dock Merkle 原语
 /// @dev 与 Rust `uvp-compiler::dock`、TS `compiler/src/dock.ts` 逐字节一致：
 ///      叶子列表先按字节升序去重排序；配对合并
 ///      `keccak256(min(a,b) ‖ max(a,b))`；奇数尾叶直接提升；
