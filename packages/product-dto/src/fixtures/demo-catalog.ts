@@ -1053,7 +1053,7 @@ export const demoFundingGuaranteeSignalContainers = [
     },
     prepare: {
       typedData: {
-        stateMachineLabel: "UVPStateMachine 0.9",
+        stateMachineLabel: "UVPStateMachine 0.10",
         primaryType: "SubmitSignal",
         messageHint: "funding_condition_satisfied"
       },
@@ -1111,7 +1111,7 @@ export const demoFundingGuaranteeSignalContainers = [
     },
     prepare: {
       typedData: {
-        stateMachineLabel: "UVPStateMachine 0.9",
+        stateMachineLabel: "UVPStateMachine 0.10",
         primaryType: "SubmitSignal",
         messageHint: "funding_condition_satisfied"
       },
@@ -1169,7 +1169,7 @@ export const demoFundingGuaranteeSignalContainers = [
     },
     prepare: {
       typedData: {
-        stateMachineLabel: "UVPStateMachine 0.9",
+        stateMachineLabel: "UVPStateMachine 0.10",
         primaryType: "SubmitSignal",
         messageHint: "funding_condition_satisfied"
       },

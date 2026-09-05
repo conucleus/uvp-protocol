@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStateMachine",
-  "abiVersion": "0.9",
+  "abiVersion": "0.10",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStateMachine.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStateMachine.sol/UVPStateMachine.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x374fa889faf0a294c021f0511a8cd0de63d7ed73b1892d1d343741012aead6a5",
-    "bytecodeHash": "0x24f9f15c90307ea07e97f597a8be5201fe1cf3c9939a764da1f9d68be63a12a2",
-    "deployedBytecodeHash": "0xd9cb0f9305813cc6bcc4bbde44ccc4eb2be49e47af0bc88a96c8a078dbb1faf3",
-    "artifactHash": "0x556c9dc3706a2a93a49c9d4b98673bf1f5e023b543390a104bec2907be8a20d5"
+    "abiHash": "0x6ff2054ea3f339f41ff0a70c68dbb05207d726e0772dfd2b1209a6978f313552",
+    "bytecodeHash": "0xacec86c78b1cc940aab5e8793bd74d800fd1aa388000d9972419caef79ac579b",
+    "deployedBytecodeHash": "0x831540684ce143015362c2d9d646ba2fdea10d25efb9d3a3977a8776b30703c7",
+    "artifactHash": "0xdf382cf05cea6cd84f62c6c8f06ec8797a64c29c5cb7e32529ef542d050360b6"
   },
   "events": {
     "HookReady": {
@@ -362,12 +362,16 @@
       "selector": "0xf2fde38b"
     },
     "triggerOrderFromOutsideFor": {
-      "signature": "triggerOrderFromOutsideFor((bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),(bytes32,bytes32,address,bytes32,bytes32)[],bytes)",
-      "selector": "0x30f89979"
+      "signature": "triggerOrderFromOutsideFor((bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),(bytes32,bytes32,address,bytes32,bytes32)[],bytes)",
+      "selector": "0x9ddbef44"
     },
     "triggerOrderFromSignalFromModule": {
       "signature": "triggerOrderFromSignalFromModule((bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),(bytes32,bytes32,address,bytes32,bytes32)[],address)",
       "selector": "0xddfd54e9"
+    },
+    "triggerOrderIdFor": {
+      "signature": "triggerOrderIdFor(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x155f01af"
     }
   }
 }

@@ -152,9 +152,12 @@ contract UVPStagePatchModule {
         string metadataURI
     );
     event StageResourcePatchApplied(
+        // 审计批次（事件复合身份）：与同合约 ExecutorPatchApplied 对齐携带
+        // planId——两 plan 同号订单时不再字节级相同。
         bytes32 indexed orderId,
         bytes32 indexed selectorStageId,
         bytes32 indexed targetStageId,
+        bytes32 planId,
         address selector,
         bytes32 resourceKey,
         bytes32 manifestHash,
@@ -587,6 +590,7 @@ contract UVPStagePatchModule {
             orderId,
             patch.selectorStageId,
             patch.targetStageId,
+            planId,
             selector,
             patch.resourceKey,
             patch.manifestHash,

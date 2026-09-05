@@ -44,9 +44,14 @@ contract UVPOrderLinkModule {
     mapping(bytes32 planId => mapping(bytes32 triggeredOrderId => OrderTriggerLink link)) private _orderTriggerLinks;
 
     event OrderLinked(
+        // 审计批次（事件复合身份）：链接事件携带触发侧 planId——两 plan 同
+        // 号订单时不再字节级相同；origin 侧复合身份由
+        // (triggerOriginPlanId, triggerOriginOrderId) 数据字段完整携带。
         bytes32 indexed triggeredOrderId,
         bytes32 indexed triggerOriginOrderId,
         bytes32 indexed triggerStageId,
+        bytes32 planId,
+        bytes32 originPlanId,
         bytes32 originSourceId,
         bytes32 originSignalId
     );
@@ -70,20 +75,32 @@ contract UVPOrderLinkModule {
         if (!stateMachine.orderExists(trigger.originPlanId, trigger.triggerOriginOrderId)) {
             revert UnknownOrder();
         }
-        if (!stateMachine.hasSignal(trigger.originPlanId, trigger.triggerOriginOrderId, trigger.originSourceId, trigger.originSignalId)) {
+        if (!stateMachine.hasSignal(
+                trigger.originPlanId, trigger.triggerOriginOrderId, trigger.originSourceId, trigger.originSignalId
+            )) {
             revert UnknownOrder();
         }
         if (_orderTriggerLinks[trigger.planId][trigger.orderId].exists) {
             revert OrderTriggerLinkAlreadyRegistered(trigger.orderId);
         }
 
-        bytes32 authorizationsHash = signalAuthorizationsHash(authorizations);
-        address recoveredSigner =
-            _recoverSignalSubmitter(triggerOrderFromSignalDigest(trigger, authorizationsHash), signature);
-        if (recoveredSigner != trigger.submitter) {
-            revert InvalidTriggerOrderSignature(trigger.submitter, recoveredSigner);
+        {
+            bytes32 authorizationsHash = signalAuthorizationsHash(authorizations);
+            address recoveredSigner =
+                _recoverSignalSubmitter(triggerOrderFromSignalDigest(trigger, authorizationsHash), signature);
+            if (recoveredSigner != trigger.submitter) {
+                revert InvalidTriggerOrderSignature(trigger.submitter, recoveredSigner);
+            }
         }
+        _registerLinkAndTrigger(trigger, authorizations);
+    }
 
+    /// 链接登记 + 状态机派生 + 链接事件。独立函数体：OrderLinked 事件携带
+    /// 复合身份数据字段后编码压力上升，外部入口帧保持精简（栈深约束）。
+    function _registerLinkAndTrigger(
+        IUVPStateMachineCore.TriggerOrderFromSignalRequest calldata trigger,
+        IUVPStateMachineCore.SignalAuthorization[] calldata authorizations
+    ) private {
         // 审计 #1 残余：origin 侧同意的权威校验在状态机的
         // triggerOrderFromSignalFromModule 内执行（提交者或执行 relayer 持有
         // origin 订单同意集合中的身份），整笔事务原子回滚，这里无需重复。
@@ -101,6 +118,8 @@ contract UVPOrderLinkModule {
             trigger.orderId,
             trigger.triggerOriginOrderId,
             trigger.triggerStageId,
+            trigger.planId,
+            trigger.originPlanId,
             trigger.originSourceId,
             trigger.originSignalId
         );

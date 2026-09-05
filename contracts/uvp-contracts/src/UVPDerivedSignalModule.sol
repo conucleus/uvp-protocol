@@ -48,9 +48,14 @@ contract UVPDerivedSignalModule {
     );
 
     event DerivedSignalSubmitted(
+        // 审计批次（事件复合身份）：事件携带两端的 planId——两 plan 同号
+        // 订单时不再字节级相同（README：indexers must consume the composite
+        // identity in every event）。
         bytes32 indexed fromOrderId,
         bytes32 indexed targetOrderId,
         bytes32 indexed signalId,
+        bytes32 fromPlanId,
+        bytes32 targetPlanId,
         bytes32 fromStageId,
         bytes32 targetSourceId,
         bytes32 payloadHash,
@@ -152,8 +157,16 @@ contract UVPDerivedSignalModule {
             submitter
         );
         emit DerivedSignalSubmitted(
-            request.fromOrderId, request.targetOrderId, request.signalId, request.fromStageId, request.targetSourceId,
-            request.payloadHash, request.idempotencyKey, submitter
+            request.fromOrderId,
+            request.targetOrderId,
+            request.signalId,
+            request.fromPlanId,
+            request.targetPlanId,
+            request.fromStageId,
+            request.targetSourceId,
+            request.payloadHash,
+            request.idempotencyKey,
+            submitter
         );
     }
 
@@ -177,12 +190,13 @@ contract UVPDerivedSignalModule {
         }
 
         {
-            uint8 relation = _targetOrderRelation(request.fromPlanId, request.fromOrderId, request.targetPlanId, request.targetOrderId);
-            if (
-                !_planMetadata().isSignalCapabilityRegistered(
-                    request.fromPlanId, request.fromStageId, request.targetSourceId, request.signalId, relation
-                )
-            ) {
+            uint8 relation = _targetOrderRelation(
+                request.fromPlanId, request.fromOrderId, request.targetPlanId, request.targetOrderId
+            );
+            if (!_planMetadata()
+                    .isSignalCapabilityRegistered(
+                        request.fromPlanId, request.fromStageId, request.targetSourceId, request.signalId, relation
+                    )) {
                 revert InvalidSignalCapability();
             }
             // 审计 #1：capability 只查 from 订单的 plan 时，自版 plan 的攻击者
@@ -190,37 +204,43 @@ contract UVPDerivedSignalModule {
             // （origin）订单的 plan 声明同一 capability——目标侧的 plan/授权
             // 必须参与同意。
             if (relation != 0) {
-                if (
-                    !_planMetadata().isSignalCapabilityRegistered(
-                        request.targetPlanId, request.fromStageId, request.targetSourceId, request.signalId, relation
-                    )
-                ) {
+                if (!_planMetadata()
+                        .isSignalCapabilityRegistered(
+                            request.targetPlanId,
+                            request.fromStageId,
+                            request.targetSourceId,
+                            request.signalId,
+                            relation
+                        )) {
                     revert InvalidSignalCapability();
                 }
             }
         }
         // 提交者授权：from 侧 active executor，或 from/target 任一侧对
         // (sourceId, signalId, submitter) 的显式授权（审计 #10：全部按
-        // (planId, orderId) 寻址）。
+        // (planId, orderId) 寻址）。from 侧显式授权按业务事实键
+        // (targetSourceId, signalId) 查询——显式授权一律以 source id 为键
+        // 存储（source id ≠ stage id），fromStageId 不能塞进 sourceId 槽。
         if (
             stateMachine.activeStageExecutor(request.fromPlanId, request.fromOrderId, request.fromStageId) != submitter
                 && !stateMachine.hasExplicitSignalAuthorization(
                     request.targetPlanId, request.targetOrderId, request.targetSourceId, request.signalId, submitter
                 )
                 && !stateMachine.hasExplicitSignalAuthorization(
-                    request.fromPlanId, request.fromOrderId, request.fromStageId, request.signalId, submitter
+                    request.fromPlanId, request.fromOrderId, request.targetSourceId, request.signalId, submitter
                 )
         ) {
-            revert UnauthorizedSignalSubmitter(request.targetOrderId, request.targetSourceId, request.signalId, submitter);
+            revert UnauthorizedSignalSubmitter(
+                request.targetOrderId, request.targetSourceId, request.signalId, submitter
+            );
         }
     }
 
-    function _targetOrderRelation(
-        bytes32 fromPlanId,
-        bytes32 fromOrderId,
-        bytes32 targetPlanId,
-        bytes32 targetOrderId
-    ) private view returns (uint8) {
+    function _targetOrderRelation(bytes32 fromPlanId, bytes32 fromOrderId, bytes32 targetPlanId, bytes32 targetOrderId)
+        private
+        view
+        returns (uint8)
+    {
         if (fromPlanId == targetPlanId && fromOrderId == targetOrderId) {
             return 0;
         }

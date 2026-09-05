@@ -7,10 +7,11 @@ metadata:
   name: uvp-bootstrap-update-v2
   annotations:
     version: "2"
-  note: |
-    UVP 自举更新秩序（M1）。
-    目标：通过 registrar 的跨源入口信号触发后完成 init/audit/prepare/build/deploy/verify/switch/cleanup。
-    任意关键阶段失败后进入 rollback。
+# 说明（元数据 note 字段已随 deny_unknown_fields 裁撤，正文移入注释）：
+# UVP 自举更新秩序（M1）。
+# 目标：通过 registrar 的跨源入口信号触发后完成
+# init/audit/prepare/build/deploy/verify/switch/cleanup。
+# 任意关键阶段失败后进入 rollback。
 spec:
   platform:
     type: blockchain

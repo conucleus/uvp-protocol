@@ -450,15 +450,12 @@ test("rejects non-birth subscription receive hooks with the typed compilation er
               ? {
                   ...stage,
                   receiveSignals: { [hookName]: expression },
+                  // 普通静态执行者：zhixu 委托 + 订阅会被 Rust 侧
+                  // validate_subscription_delegation 先行拒绝，这里专门
+                  // 验证 TS 侧"非出生订阅不上链"的类型化错误。
                   executor: {
-                    supplierType: "zhixu",
-                    zhixuExecutorConfig: {
-                      schemaVersion: "uvp.dock.v1",
-                      target: { zhixu: "payment-zhixu", version: "1.2.0" },
-                      order: { idPolicy: "derived-v1" },
-                      inputMap: { [hookName]: "execute" },
-                      signalMap: { str: "started", cmp: "completed" }
-                    }
+                    supplierType: "organization",
+                    supplierID: "execution-org"
                   }
                 }
               : stage

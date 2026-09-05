@@ -219,9 +219,17 @@ function validateDependencies(dependencies: readonly unknown[], path: string): r
     expectOneOf(dependency.kind, ["positive", "negative", "timer"], `${path}[${index}].kind`, issues);
     expectString(dependency.source, `${path}[${index}].source`, issues);
     expectNonEmptyString(dependency.signalName, `${path}[${index}].signalName`, issues);
+    if (dependency.delaySeconds !== undefined) {
+      // E12：delaySeconds 只要在场就必须是正安全整数（非数值/NaN 拒绝），
+      // 不按 kind 静默放行。
+      if (!Number.isSafeInteger(dependency.delaySeconds) || Number(dependency.delaySeconds) <= 0) {
+        issues.push(`${path}[${index}].delaySeconds must be a positive safe integer when present`);
+      }
+    }
     if (
       dependency.kind === "timer" &&
-      (!Number.isSafeInteger(dependency.delaySeconds) || Number(dependency.delaySeconds) <= 0)
+      (typeof dependency.delaySeconds !== "number" ||
+        !Number.isSafeInteger(dependency.delaySeconds) || Number(dependency.delaySeconds) <= 0)
     ) {
       issues.push(`${path}[${index}].delaySeconds must be a positive safe integer for timer dependencies`);
     }

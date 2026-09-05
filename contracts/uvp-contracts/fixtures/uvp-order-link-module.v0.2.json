@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPOrderLinkModule",
-  "abiVersion": "0.1",
+  "abiVersion": "0.2",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPOrderLinkModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPOrderLinkModule.sol/UVPOrderLinkModule.json",
   "compiler": {
@@ -9,15 +9,15 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xe440a10ee592f78405dff34896527ff3cfb2118f9a408715535f62a8f20ba6c6",
-    "bytecodeHash": "0xbf95406b0fd9cc1c7f58e64ee915dcff15015b13b291ed0c4c69fba978520934",
-    "deployedBytecodeHash": "0x80470a81d46d2d6696c648a7cf891af3a952ad16e5deb3aae31722b2f8021e64",
-    "artifactHash": "0xcebda04cced517b945a5d52bf5a757ae81d6a320347626657284b4cd49acb8aa"
+    "abiHash": "0x4df4896f417dea7e2abff8d1f4ad2f663ca2c662e1622ff334d54197ad7a3832",
+    "bytecodeHash": "0xd0cd556c410afb3d64ac04d44c66d5c753d68c04aace4ff662f5410f460a88fb",
+    "deployedBytecodeHash": "0xa31e1daa2063d2bb7b66bb077259afc84e47e4e6bef9f562d6035995198f88be",
+    "artifactHash": "0x5e63b7c141245dbfc652b5d22a68c7bc83abb029bba3e91ade8abea7c4813be7"
   },
   "events": {
     "OrderLinked": {
-      "signature": "OrderLinked(bytes32,bytes32,bytes32,bytes32,bytes32)",
-      "topic": "0xe936fdb82b6a5232c1899d3562a56b4facfc272a9d9ca31120d810a63c374b6e"
+      "signature": "OrderLinked(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",
+      "topic": "0xd9c5c52d8b7b1e7736ebc368091725179cb8644a7f8482990d2bcdcdc310f263"
     }
   },
   "functions": {

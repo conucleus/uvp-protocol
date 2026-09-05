@@ -68,7 +68,9 @@ contract UVPStateMachine {
     }
 
     struct TriggerOrderFromOutsideRequest {
-        bytes32 orderId;
+        // 审计批次(一事一单)：orderId 不再自报——合约内按
+        // triggerOrderIdFor(planId, sourceId, signalId, payloadHash) 纯函数
+        // 派生，同一事实恒定同 id，重放幂等（OrderAlreadyRegistered）。
         bytes32 planId;
         address creator;
         bytes32 triggerHookId;
@@ -190,6 +192,7 @@ contract UVPStateMachine {
     error TooManyDependencies();
     error InvalidSignalSignature(address expectedSigner, address recoveredSigner);
     error InvalidSignalSignatureLength(uint256 length);
+    error InvalidSignalCapability(bytes32 planId, bytes32 sourceId, bytes32 signalId);
     error InvalidInstruction();
     error InvalidHook();
     error InvalidModuleAddress();
@@ -213,6 +216,7 @@ contract UVPStateMachine {
     error SignalAlreadyExists();
     error SignalSubmitterAlreadyAuthorized(bytes32 orderId, bytes32 sourceId, bytes32 signalId, address submitter);
     error StageExecutorNotAssigned(bytes32 orderId, bytes32 targetStageId);
+    error StageNotMaterializable(bytes32 stageId);
     error StageExecutorPatchNonceNotIncreasing(
         bytes32 orderId, bytes32 targetStageId, uint256 previousNonce, uint256 patchNonce
     );
@@ -254,7 +258,7 @@ contract UVPStateMachine {
     uint8 public constant SIGNAL_TARGET_CURRENT_ORDER = 0;
     uint8 public constant SIGNAL_TARGET_TRIGGER_ORIGIN = 1;
 
-    bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.9");
+    bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.10");
     bytes32 private constant _PLAN_RUNTIME_HASH_DOMAIN = keccak256("uvp.plan.runtime.v2");
     uint8 public constant HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
     uint8 public constant HOOK_FLAG_ORDER_TRIGGER_DOCK = 2;
@@ -272,7 +276,9 @@ contract UVPStateMachine {
         "UVPStateMachineSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
     );
     bytes32 private constant _TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
-        "UVPStateMachineTriggerOrderFromOutside(bytes32 orderId,bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
+        // 一事一单批次：摘要去掉自报 orderId——订单 id 由合约从事实纯函数
+        // 派生，签名不再背书调用方选择的订单号（防 mempool 抢注受害单号）。
+        "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
     );
     mapping(bytes32 planId => Plan plan) private _plans;
     // 审计 #10：订单及全部 per-order 状态按 (planId, orderId) 复合键存储。
@@ -524,9 +530,31 @@ contract UVPStateMachine {
             bytes32[] memory seenKeys = new bytes32[](MAX_PLAN_DEPENDENCIES);
             bytes32[] memory seenStages = new bytes32[](MAX_PLAN_DEPENDENCIES);
             bool[] memory seenTriggerOnly = new bool[](MAX_PLAN_DEPENDENCIES);
+            // 阶段物化防御纵深（簇 A2）：每个被注册 hook 的阶段必须至少有
+            // 一个 order-trigger 或 EMIT_READY hook——纯 flags=0 watcher 阶段
+            // 在链上永远无法物化（物化只由本阶段 hook Ready 触发，executor
+            // patch 不物化），其 watcher 会让共享信号键的提交交易稳定回滚。
+            // 编译器是第一道防线；这里是注册边界。
+            bytes32[] memory stageScratch = new bytes32[](hooks.length);
+            bool[] memory stageMaterializer = new bool[](hooks.length);
             uint256 seenCount;
             for (uint256 i = 0; i < hooks.length; i++) {
                 seenCount = _registerPlanHook(plan, hooks[i], seenKeys, seenStages, seenTriggerOnly, seenCount);
+                uint256 stageIndex = _seenDependencyIndex(stageScratch, i, hooks[i].stageId);
+                if (stageIndex == type(uint256).max) {
+                    stageScratch[i] = hooks[i].stageId;
+                    stageMaterializer[i] = _hookCanMaterializeStage(hooks[i].flags);
+                } else if (_hookCanMaterializeStage(hooks[i].flags)) {
+                    stageMaterializer[stageIndex] = true;
+                }
+            }
+            for (uint256 i = 0; i < hooks.length; i++) {
+                if (stageScratch[i] == bytes32(0)) {
+                    continue;
+                }
+                if (!stageMaterializer[i]) {
+                    revert StageNotMaterializable(stageScratch[i]);
+                }
             }
         }
 
@@ -594,34 +622,51 @@ contract UVPStateMachine {
         if (trigger.submitter == address(0)) {
             revert ZeroSubmitter();
         }
-
-        bytes32 authorizationsHash = _signalAuthorizationsHash(authorizations);
-        address recoveredSigner =
-            _recoverSignalSubmitter(_triggerOrderFromOutsideDigest(trigger, authorizationsHash), signature);
-        if (recoveredSigner != trigger.submitter) {
-            revert InvalidTriggerOrderSignature(trigger.submitter, recoveredSigner);
+        // 白皮书 §11.3 语义校验承诺：出生事实 (sourceId, signalId) 必须在
+        // 本 plan 的 capability 词表内（relation=0）。无任何 capability 声明
+        // 的手工 plan 保持历史放行口径（与 _signalStageId 的 legacy 行为一致）。
+        {
+            bool factKnown = _signalStageId(trigger.planId, trigger.sourceId, trigger.signalId) != bytes32(0);
+            if (!factKnown && _planSignalCapabilityCount(trigger.planId) != 0) {
+                revert InvalidSignalCapability(trigger.planId, trigger.sourceId, trigger.signalId);
+            }
         }
 
+        {
+            bytes32 authorizationsHash = _signalAuthorizationsHash(authorizations);
+            address recoveredSigner =
+                _recoverSignalSubmitter(_triggerOrderFromOutsideDigest(trigger, authorizationsHash), signature);
+            if (recoveredSigner != trigger.submitter) {
+                revert InvalidTriggerOrderSignature(trigger.submitter, recoveredSigner);
+            }
+        }
+        _createOutsideTriggerOrder(trigger, authorizations);
+    }
+
+    /// 一事一单执行体：订单 id 由合约从事实纯函数派生，调用方不再自报。
+    /// 同一 (planId, sourceId, signalId, payloadHash) 恒定派生同一 id——换
+    /// orderId 无限重铸与 mempool 抢注受害单号在入口处关闭；重放同一事实
+    /// 得到同 id，按 OrderAlreadyRegistered 幂等拒绝。
+    function _createOutsideTriggerOrder(
+        TriggerOrderFromOutsideRequest calldata trigger,
+        SignalAuthorization[] calldata authorizations
+    ) private {
+        bytes32 orderId = triggerOrderIdFor(trigger.planId, trigger.sourceId, trigger.signalId, trigger.payloadHash);
         // The high-bit namespace is reserved for deterministic dock child
-        // orders. Without this guard an attacker could front-run the public
-        // linkedOrderId visible in an openDockedOrder calldata payload.
-        if (_isDockOrderId(trigger.orderId)) {
-            revert InvalidDockOrderNamespace(trigger.orderId);
+        // orders. A derived id colliding with it is a hash-collision-level
+        // event; fail closed rather than let a dock child be front-run.
+        if (_isDockOrderId(orderId)) {
+            revert InvalidDockOrderNamespace(orderId);
         }
 
-        _createOrder(trigger.planId, trigger.orderId, trigger.creator, msg.sender);
-        _authorizeSignalSubmitters(trigger.planId, trigger.orderId, authorizations);
+        _createOrder(trigger.planId, orderId, trigger.creator, msg.sender);
+        _authorizeSignalSubmitters(trigger.planId, orderId, authorizations);
         emit OrderTriggered(
-            trigger.orderId,
-            trigger.planId,
-            trigger.triggerStageId,
-            trigger.sourceId,
-            trigger.signalId,
-            trigger.submitter
+            orderId, trigger.planId, trigger.triggerStageId, trigger.sourceId, trigger.signalId, trigger.submitter
         );
         _recordSignal(
             trigger.planId,
-            trigger.orderId,
+            orderId,
             trigger.sourceId,
             trigger.signalId,
             trigger.payloadHash,
@@ -629,7 +674,24 @@ contract UVPStateMachine {
             trigger.submitter,
             false
         );
-        _requireTriggerHookReady(trigger.planId, trigger.orderId, trigger.triggerHookId, trigger.triggerStageId);
+        _requireTriggerHookReady(trigger.planId, orderId, trigger.triggerHookId, trigger.triggerStageId);
+    }
+
+    /// @notice Outside 触发订单 id 的权威派生公式（一事一单）：
+    ///         keccak256(abi.encode(planId, sourceId, signalId, payloadHash))。
+    ///         消费方（BFF/indexer/bootstrap）必须镜像此公式预计算订单号。
+    function triggerOrderIdFor(bytes32 planId, bytes32 sourceId, bytes32 signalId, bytes32 payloadHash)
+        public
+        pure
+        returns (bytes32)
+    {
+        // dock 子单号恒置最高位（DOCK_ORDER_NAMESPACE_MASK），出生订单派生
+        // id 恒清该位——两个命名空间结构性分离；确定性不受影响（同一事实
+        // 恒定派生同一 id）。
+        return bytes32(
+            uint256(keccak256(abi.encode(planId, sourceId, signalId, payloadHash)))
+                & ~uint256(DOCK_ORDER_NAMESPACE_MASK)
+        );
     }
 
     function triggerOrderFromSignalFromModule(
@@ -1025,7 +1087,11 @@ contract UVPStateMachine {
         if (submitter == address(0)) {
             revert ZeroSubmitter();
         }
-        _requireActiveStageExecutorByStage(planId, orderId, stageId, submitter);
+        // 与普通 submitSignal 路径同口径（两维度独立）：显式 order 级授权
+        // 豁免 active executor patch 检查——同一事实两条入口结论必须一致。
+        if (!_hasExplicitSignalAuthorization(planId, orderId, sourceId, signalId, submitter)) {
+            _requireActiveStageExecutorByStage(planId, orderId, stageId, submitter);
+        }
         // The target/origin order may not have materialized the source stage;
         // relation-1 capabilities intentionally write back to that order.
         _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false);
@@ -1233,7 +1299,12 @@ contract UVPStateMachine {
         }
         DelegatedStageSignalAuthorization storage delegated =
             _delegatedStageSignalAuthorizations[planId][orderId][_signalKey(sourceId, signalId)];
-        return (delegated.exists && delegated.executor == submitter, delegated.role, delegated.metadataHash);
+        // 不存在即返回空值：委托授权的 executor 与查询 submitter 不匹配时，
+        // 旧的 role/metadataHash 残留会让"用 role 判存在"的消费方误判。
+        if (delegated.exists && delegated.executor == submitter) {
+            return (true, delegated.role, delegated.metadataHash);
+        }
+        return (false, bytes32(0), bytes32(0));
     }
 
     function activeStageExecutor(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
@@ -1299,20 +1370,19 @@ contract UVPStateMachine {
         view
         returns (bytes32)
     {
-        bytes memory encoded = new bytes(0x1a0);
+        bytes memory encoded = new bytes(0x180);
         _writeWord(encoded, 0x00, _TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH);
-        _writeWord(encoded, 0x20, trigger.orderId);
-        _writeWord(encoded, 0x40, trigger.planId);
-        _writeAddress(encoded, 0x60, trigger.creator);
-        _writeWord(encoded, 0x80, trigger.triggerHookId);
-        _writeWord(encoded, 0xa0, trigger.triggerStageId);
-        _writeWord(encoded, 0xc0, trigger.sourceId);
-        _writeWord(encoded, 0xe0, trigger.signalId);
-        _writeWord(encoded, 0x100, trigger.payloadHash);
-        _writeWord(encoded, 0x120, trigger.idempotencyKey);
-        _writeWord(encoded, 0x140, authorizationsHash);
-        _writeAddress(encoded, 0x160, trigger.submitter);
-        _writeWord(encoded, 0x180, bytes32(trigger.deadline));
+        _writeWord(encoded, 0x20, trigger.planId);
+        _writeAddress(encoded, 0x40, trigger.creator);
+        _writeWord(encoded, 0x60, trigger.triggerHookId);
+        _writeWord(encoded, 0x80, trigger.triggerStageId);
+        _writeWord(encoded, 0xa0, trigger.sourceId);
+        _writeWord(encoded, 0xc0, trigger.signalId);
+        _writeWord(encoded, 0xe0, trigger.payloadHash);
+        _writeWord(encoded, 0x100, trigger.idempotencyKey);
+        _writeWord(encoded, 0x120, authorizationsHash);
+        _writeAddress(encoded, 0x140, trigger.submitter);
+        _writeWord(encoded, 0x160, bytes32(trigger.deadline));
         bytes32 structHash = keccak256(encoded);
         return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
     }
@@ -1323,6 +1393,12 @@ contract UVPStateMachine {
 
     function _isOrderTrigger(uint8 flags) private pure returns (bool) {
         return flags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK) != 0;
+    }
+
+    /// 阶段物化三线统一（簇 A）：order-trigger 与 EMIT_READY hook 都能物化
+    /// 自身阶段；纯 flags=0 watcher 不能。
+    function _hookCanMaterializeStage(uint8 flags) private pure returns (bool) {
+        return _isOrderTrigger(flags) || flags & HOOK_FLAG_EMIT_READY != 0;
     }
 
     function _isDockOrderId(bytes32 orderId) private pure returns (bool) {
@@ -1559,6 +1635,7 @@ contract UVPStateMachine {
         bytes32 triggerSignalId
     ) private {
         Plan storage plan = _plans[planId];
+        Order storage order = _orders[planId][orderId];
         bytes32[] storage hookIds = plan.dependencyIndex[dependencyKey];
         for (uint256 i = 0; i < hookIds.length; i++) {
             StoredHook storage hook = plan.hooks[hookIds[i]];
@@ -1569,6 +1646,14 @@ contract UVPStateMachine {
         for (uint256 i = 0; i < hookIds.length; i++) {
             StoredHook storage hook = plan.hooks[hookIds[i]];
             if (!_isOrderTrigger(hook.flags)) {
+                // 模块写事实路径不再 brick（簇 A3）：纯 flags=0 watcher 且其
+                // 阶段未物化时跳过而不是 revert——与回放 oracle 的 skip 语义
+                // 对齐。该形态正常不可达（编译器拒绝不可物化阶段挂
+                // receive hook），本分支是防御纵深；EMIT_READY hook 仍照常
+                // 求值（executor dispatch 边允许先于阶段物化初始化）。
+                if (hook.flags & HOOK_FLAG_EMIT_READY == 0 && !order.materializedStages[hook.stageId]) {
+                    continue;
+                }
                 _evaluateHook(planId, orderId, hookIds[i], triggerSourceId, triggerSignalId);
             }
         }
@@ -1922,7 +2007,7 @@ contract UVPStateMachine {
 
     function _orValue(EvalValue memory left, EvalValue memory right) private pure returns (EvalValue memory) {
         // Arrival-time causality (semantic 0.5): merge keeps the EARLIEST
-    // received signal as the cause so trailing delays anchor on first
+        // received signal as the cause so trailing delays anchor on first
         // arrival, matching the core evaluator and replay oracle.
         if (left.value || right.value) {
             // Only READY branches compete for the anchor; a waiting branch's
@@ -2025,12 +2110,10 @@ contract UVPStateMachine {
         }
     }
 
-    function _requireActiveStageExecutorByStage(
-        bytes32 planId,
-        bytes32 orderId,
-        bytes32 stageId,
-        address submitter
-    ) private view {
+    function _requireActiveStageExecutorByStage(bytes32 planId, bytes32 orderId, bytes32 stageId, address submitter)
+        private
+        view
+    {
         if (stageId == bytes32(0)) {
             return;
         }
@@ -2065,6 +2148,16 @@ contract UVPStateMachine {
             }
         }
         return bytes32(0);
+    }
+
+    /// Number of signal capabilities the plan declares. Zero means a manual /
+    /// trigger-only plan without compiled metadata capabilities; such plans
+    /// keep the legacy permissive vocabulary (no semantic gate).
+    function _planSignalCapabilityCount(bytes32 planId) private view returns (uint256) {
+        if (planMetadataModule == address(0)) {
+            return 0;
+        }
+        return IUVPPlanMetadataModule(planMetadataModule).planSignalCapabilityCount(planId);
     }
 
     function _recoverSignalSubmitter(bytes32 digest, bytes calldata signature) private pure returns (address) {

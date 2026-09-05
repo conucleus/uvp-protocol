@@ -28,7 +28,7 @@ under this folder; repository-level deployment scripts live under
 - `src/libraries/ECDSA.sol`: minimal signature recovery helper.
 - `src/libraries/UVPSignatures.sol`: shared signature struct used by relayed
   state-machine signal submission.
-- `fixtures/uvp-state-machine.v0.9.json` and module fixture JSON files:
+- `fixtures/uvp-state-machine.v0.10.json` and module fixture JSON files:
   pinned ABI/hash fixtures for the current core and module public interfaces.
 - `fixtures/uvp-identity-registry.v0.1.json`: pinned ABI/hash fixture for the
   identity registry public interface.
@@ -66,20 +66,23 @@ the TypeScript `statemachine` oracle.
 
 ## ABI Fixture
 
-`UVPStateMachine v0.9` treats these as public interfaces:
+`UVPStateMachine v0.10` treats these as public interfaces:
 
 - its no-argument constructor;
 - one-time module configuration followed by irreversible `freezeModules`;
-- core function selectors for signed `commitPlan`, one-shot `finalizePlan`, signed
-  `triggerOrderFromOutsideFor`, signed `triggerOrderFromSignalFor`,
-  `submitSignal`, `submitSignalFor`, module configuration, module-only
-  writebacks, `signalSubmissionDigest`,
-  `signalAuthorizationsHash`, trigger-order digest helpers,
+- core function selectors for signed `commitPlan`, one-shot `finalizePlan`,
+  derived-order-id `triggerOrderFromOutsideFor` (one fact, one order — the id
+  is `triggerOrderIdFor(planId, sourceId, signalId, payloadHash)`, callers no
+  longer self-report it), signed `triggerOrderFromSignalFor`, `submitSignal`,
+  `submitSignalFor`, module configuration, module-only writebacks,
   `DOMAIN_SEPARATOR`, `pokeTimer`, `getHookStatus`,
-  `isSignalSubmitterAuthorized`, `getSignalAuthorization`, executor patch mode
-  constants, `DOCKED_ORDER_LINK_SIGNAL_ID`, signal target relation constants,
+  `isSignalSubmitterAuthorized`, `getSignalAuthorization`, dock order
+  namespace mask, signal target relation constants,
   `sourceSignalCount`, `lastSignalSubmitter`, stage-overlay view helpers,
-  trigger-link view helpers, and signal capability helpers;
+  trigger-link view helpers, and signal capability helpers (the retired
+  digest-helper surface `signalSubmissionDigest`/`signalAuthorizationsHash`/
+  trigger-order digest helpers on the core and the
+  `DOCKED_ORDER_LINK_SIGNAL_ID` constant no longer exist anywhere);
 - module function selectors for stage patch, derived signal, docking, and lens
   entrypoints/digest helpers/views;
 - event topics for ownership, module configuration/freeze,
@@ -140,13 +143,15 @@ code do not silently drift away from the contract ABI.
     independent resource-manifest patch through `UVPStagePatchModule` for a
     target stage and resource key. The chain stores hashes, nonces, and manifest
     URIs, not plaintext business documents.
-12. A wallet authorized for `DOCKED_ORDER_LINK_SIGNAL_ID` on a local stage may
-    link an independent order through `UVPDockingModule` as a docked Zhixu
-    execution interface. The link records the linked order id, linked plan id,
-    signal bindings, metadata URI, and nonce. `submitDockedSignal` can then map
-    an accepted linked-order signal into the local order according to the
-    registered binding. The two orders keep independent plans, authorization,
-    events, and lifecycle.
+12. Docking is v2 committed-route only (the manual `linkDockedOrder` surface
+    and `DOCKED_ORDER_LINK_SIGNAL_ID` are retired): a local entrance hook that
+    is Ready (`EMIT_READY`) plus a Merkle-proved `dockRoutesRoot` route lets a
+    keeper call `openDockedOrder`, which atomically derives the dock instance
+    id and high-bit-namespaced child order id, creates the child, records the
+    link, and writes the entrance fact. `submitDockedInput` /
+    `submitDockedSignal` then relay non-entrance inputs and outputs along the
+    committed bindings; the two orders keep independent plans, authorization,
+    events, and lifecycles.
 13. `triggerOrderFromOutsideFor` and `triggerOrderFromSignalFor` create orders
     through signed trigger paths. Signal-triggered orders record a trigger-origin
     link so `UVPDerivedSignalModule` can write declared signals back to the
@@ -161,7 +166,7 @@ code do not silently drift away from the contract ABI.
     `HookStatusChanged`, `HookReady`, and `TimerPoked`, and can be replayed from
     events by `statemachine` and `chain-services`.
 
-`registerOrder` is not a public business ABI in v0.9. New order creation
+`registerOrder` is not a public business ABI in v0.10. New order creation
 must pass through a trigger-order entrypoint so order materialization and the
 first trigger fact share one chain transaction and one business signer.
 
@@ -179,7 +184,7 @@ second registration of the same `orderId` still reverts with
 construction. Function signatures gained a leading `planId` parameter (and
 the from-signal trigger request gained `originPlanId`); this is the
 new-version surface of the unfreeze batch. Event signatures are pinned in
-the v0.9 and module fixtures; indexers must consume the composite identity in
+the v0.10 and module fixtures; indexers must consume the composite identity in
 every event and projection rather than treating `orderId` as globally unique.
 
 ## Stable Events

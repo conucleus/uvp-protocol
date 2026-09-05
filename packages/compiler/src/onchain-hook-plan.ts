@@ -52,6 +52,10 @@ import type {
 // preflight must reject the same inputs instead of letting the transaction
 // revert on-chain.
 const MAX_ONCHAIN_HOOK_DELAY_SECONDS = 2_592_000;
+// Mirrors UVPStateMachine.MAX_PLAN_DEPENDENCIES (1024): the contract reverts
+// TooManyDependencies while registering the plan dependency index, so the
+// preflight must reject plans with more than 1024 distinct dependency keys.
+const MAX_PLAN_DEPENDENCIES = 1024;
 
 const ONCHAIN_PLAN_HASH_DOMAIN = "uvp:onchain-hook-plan-artifact:v1";
 const ONCHAIN_ROUTE_HASH_DOMAIN = "uvp:onchain-hook-route:v1";
@@ -122,8 +126,15 @@ export function compileOnchainHookPlan(
       dependencies: hook.dependencies,
     })),
   );
-  if (crossStageIssues.length > 0) {
-    throw new HookPlanCompilationError(crossStageIssues);
+  // 簇 A1 镜像：不可物化阶段（无 order-trigger / EMIT_READY hook 的阶段）
+  // 不得挂任何 receive hook——纯 flags=0 watcher 不物化阶段，链上对该阶段
+  // 的任何求值都是不可恢复死锁（Rust 编译器是第一道，这里是 artifact
+  // 边界的第二道）。
+  const materializationIssues = unmaterializableStageIssues(compiledHooks);
+  const dependencyCountIssues = planDependencyCountIssues(compiledHooks);
+  const preflightIssues = [...crossStageIssues, ...materializationIssues, ...dependencyCountIssues];
+  if (preflightIssues.length > 0) {
+    throw new HookPlanCompilationError(preflightIssues);
   }
   const dependencyIndex = buildOnchainDependencyIndex(compiledHooks);
   const executorRoutes = Object.values(hookPlanArtifact.executorRoutes)
@@ -268,6 +279,11 @@ export function validateOnchainHookPlanArtifact(
         ...validateOnchainDependencyIndex(compiledHooks, dependencyIndex),
       );
     }
+    // 簇 A1 / E12 镜像同样作用于反序列化 artifact 边界。
+    issues.push(
+      ...unmaterializableStageIssues(compiledHooks as readonly OnchainCompiledHook[]),
+    );
+    issues.push(...planDependencyCountIssues(compiledHooks as readonly OnchainCompiledHook[]));
   }
 
   if (executorRoutes) {
@@ -1183,9 +1199,22 @@ function validateOnchainDependencies(
         `${prefix}.signalKey must be keccak256(abi.encodePacked(sourceId, signalId))`,
       );
     }
+    if (dependency.delaySeconds !== undefined) {
+      // E12：delaySeconds 只要在场就必须是正安全整数——非数值/NaN/零/负数
+      // 一律拒绝，不按 kind 静默放行。
+      if (
+        !Number.isSafeInteger(dependency.delaySeconds) ||
+        Number(dependency.delaySeconds) <= 0
+      ) {
+        issues.push(
+          `${prefix}.delaySeconds must be a positive safe integer when present`,
+        );
+      }
+    }
     if (
       dependency.kind === "timer" &&
-      (!Number.isSafeInteger(dependency.delaySeconds) ||
+      (typeof dependency.delaySeconds !== "number" ||
+        !Number.isSafeInteger(dependency.delaySeconds) ||
         Number(dependency.delaySeconds) <= 0)
     ) {
       issues.push(
@@ -1194,6 +1223,54 @@ function validateOnchainDependencies(
     }
   }
   return issues;
+}
+
+/**
+ * 簇 A1 镜像：每个出现在 compiledHooks 的阶段必须至少有一个 order-trigger
+ * 或 EMIT_READY hook（能物化自身阶段的 hook）。纯 flags=0 watcher 阶段在
+ * 链上永远无法物化——挂在其上的任何 hook 都构成不可恢复死锁。
+ */
+function unmaterializableStageIssues(
+  hooks: readonly OnchainCompiledHook[],
+): readonly string[] {
+  const issues: string[] = [];
+  const stageMaterializer = new Map<string, boolean>();
+  for (const hook of hooks) {
+    const canMaterialize =
+      hook.orderTriggerKind !== "none" || hook.emitReady;
+    const current = stageMaterializer.get(hook.stageId) ?? false;
+    stageMaterializer.set(hook.stageId, current || canMaterialize);
+  }
+  for (const hook of hooks) {
+    if (stageMaterializer.get(hook.stageId)) {
+      continue;
+    }
+    issues.push(
+      `stage ${hook.stageIdentifier} has no order-trigger or EMIT_READY hook; its hooks compile to flags=0 watchers which can never materialize the stage on-chain (deadlock, no recovery path) — the Rust compiler must reject this shape`,
+    );
+  }
+  return issues;
+}
+
+/**
+ * E12 镜像：UVPStateMachine.commitPlan 对去重后的 dependency key 总数执行
+ * MAX_PLAN_DEPENDENCIES=1024 上限（TooManyDependencies）——预检同口径拒绝。
+ */
+function planDependencyCountIssues(
+  hooks: readonly OnchainCompiledHook[],
+): readonly string[] {
+  const keys = new Set<string>();
+  for (const hook of hooks) {
+    for (const dependency of hook.dependencies) {
+      keys.add(dependency.signalKey);
+    }
+  }
+  if (keys.size > MAX_PLAN_DEPENDENCIES) {
+    return [
+      `distinct dependency keys ${keys.size} exceed the contract limit ${MAX_PLAN_DEPENDENCIES} (commitPlan reverts TooManyDependencies)`,
+    ];
+  }
+  return [];
 }
 
 /**

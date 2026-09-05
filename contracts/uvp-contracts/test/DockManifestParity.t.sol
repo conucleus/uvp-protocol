@@ -39,18 +39,14 @@ contract DockManifestParityTest {
     }
 
     function testSharedDockManifestMatchesSolidityPreimages() public {
-        string memory manifest = vm.readFile(
-            string.concat(vm.projectRoot(), "/../../../uvp-core/fixtures/dock/v1/manifest.json")
-        );
+        string memory manifest =
+            vm.readFile(string.concat(vm.projectRoot(), "/../../../uvp-core/fixtures/dock/v1/manifest.json"));
 
         uint256 chainId = vm.parseJsonUint(manifest, ".inputs.chainId");
         address stateMachine = vm.parseJsonAddress(manifest, ".inputs.stateMachineAddress");
         bytes32 stateMachineWord = bytes32(uint256(uint160(stateMachine)));
         bytes32 expectedEvmDomain = vm.parseJsonBytes32(manifest, ".expected.evmRuntimeDomain");
-        assertEq(
-            keccak256(abi.encode(DOMAIN_RUNTIME_EIP155, chainId, stateMachineWord)),
-            expectedEvmDomain
-        );
+        assertEq(keccak256(abi.encode(DOMAIN_RUNTIME_EIP155, chainId, stateMachineWord)), expectedEvmDomain);
 
         string memory cloudDeployment = vm.parseJsonString(manifest, ".inputs.cloudDeploymentId");
         string memory cloudSecurityDomain = vm.parseJsonString(manifest, ".inputs.cloudSecurityDomain");
@@ -58,30 +54,22 @@ contract DockManifestParityTest {
         assertEq(
             keccak256(
                 abi.encode(
-                    DOMAIN_RUNTIME_CLOUD,
-                    keccak256(bytes(cloudDeployment)),
-                    keccak256(bytes(cloudSecurityDomain))
+                    DOMAIN_RUNTIME_CLOUD, keccak256(bytes(cloudDeployment)), keccak256(bytes(cloudSecurityDomain))
                 )
             ),
             expectedCloudDomain
         );
 
         string memory parentUid = vm.parseJsonString(manifest, ".parentDefinition.metadata.uid");
-        string memory parentVersion = vm.parseJsonString(
-            manifest, ".parentDefinition.metadata.annotations.version"
-        );
-        bytes32 parentDefinitionRef = keccak256(
-            abi.encode(DOMAIN_DEFINITION_REF, keccak256(bytes(parentUid)), keccak256(bytes(parentVersion)))
-        );
+        string memory parentVersion = vm.parseJsonString(manifest, ".parentDefinition.metadata.annotations.version");
+        bytes32 parentDefinitionRef =
+            keccak256(abi.encode(DOMAIN_DEFINITION_REF, keccak256(bytes(parentUid)), keccak256(bytes(parentVersion))));
         assertEq(parentDefinitionRef, vm.parseJsonBytes32(manifest, ".expected.parentDefinitionRefHash"));
 
         string memory targetUid = vm.parseJsonString(manifest, ".targetDefinition.metadata.uid");
-        string memory targetVersion = vm.parseJsonString(
-            manifest, ".targetDefinition.metadata.annotations.version"
-        );
-        bytes32 targetDefinitionRef = keccak256(
-            abi.encode(DOMAIN_DEFINITION_REF, keccak256(bytes(targetUid)), keccak256(bytes(targetVersion)))
-        );
+        string memory targetVersion = vm.parseJsonString(manifest, ".targetDefinition.metadata.annotations.version");
+        bytes32 targetDefinitionRef =
+            keccak256(abi.encode(DOMAIN_DEFINITION_REF, keccak256(bytes(targetUid)), keccak256(bytes(targetVersion))));
         assertEq(targetDefinitionRef, vm.parseJsonBytes32(manifest, ".expected.targetDefinitionRefHash"));
 
         string memory localOrderId = vm.parseJsonString(manifest, ".inputs.localOrderId");

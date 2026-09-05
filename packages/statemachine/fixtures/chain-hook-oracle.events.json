@@ -14,7 +14,6 @@
           "stageId": "0x0000000000000000000000000000000000000000000000000000000000004000",
           "stageIdentifier": "init.main",
           "hookName": "TRIGGER",
-          "isTrigger": true,
           "instructions": [
             {
               "op": "SIGNAL",
@@ -22,14 +21,15 @@
               "signalId": "0x0000000000000000000000000000000000000000000000000000000000001000",
               "signalKey": "0x0000000000000000000000000000000000000000000000000000000000002000"
             }
-          ]
+          ],
+          "orderTriggerKind": "mint",
+          "emitReady": true
         },
         {
           "hookId": "0x0000000000000000000000000000000000000000000000000000000000003001",
           "stageId": "0x0000000000000000000000000000000000000000000000000000000000004001",
           "stageIdentifier": "exec.main",
           "hookName": "START",
-          "isTrigger": true,
           "instructions": [
             {
               "op": "SIGNAL",
@@ -37,14 +37,15 @@
               "signalId": "0x0000000000000000000000000000000000000000000000000000000000001001",
               "signalKey": "0x0000000000000000000000000000000000000000000000000000000000002001"
             }
-          ]
+          ],
+          "orderTriggerKind": "mint",
+          "emitReady": true
         },
         {
           "hookId": "0x0000000000000000000000000000000000000000000000000000000000003002",
           "stageId": "0x0000000000000000000000000000000000000000000000000000000000004001",
           "stageIdentifier": "exec.main",
           "hookName": "TIMEOUT",
-          "isTrigger": true,
           "instructions": [
             {
               "op": "SIGNAL",
@@ -69,7 +70,9 @@
               "op": "AND",
               "arity": 2
             }
-          ]
+          ],
+          "orderTriggerKind": "mint",
+          "emitReady": true
         }
       ],
       "dependencyIndex": {

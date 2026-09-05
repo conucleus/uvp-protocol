@@ -60,6 +60,9 @@ export function validateDockCommitments(
     return issues;
   }
   if (dockInterface === undefined) {
+    // fail-closed：undefined 与非对象同口径拒绝——null 是唯一的"无 dock 接口"
+    // 合法表达，字段缺失不得静默跳过承诺校验。
+    issues.push(`${path}.dockInterface must be an object or null`);
     return issues;
   }
   if (!isRecord(dockInterface)) {

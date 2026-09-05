@@ -154,6 +154,7 @@ contract UVPDockingModule {
     error DockDepthExceeded(uint8 parentDepth, uint8 maxDepth);
     error DockDepthMismatch(uint8 claimed, uint8 actual);
     error DockEntranceLeafMismatch(bytes32 field);
+    error DockEntranceBindingMismatch(bytes32 declared, bytes32 requested);
     error DockHookNotInputBound(bytes32 localPlanId, bytes32 localOrderId, bytes32 localHookId);
     error DockPermitExpired(uint256 deadline);
     error DockPermitInvalidSigner(address expected, address recovered);
@@ -435,8 +436,13 @@ contract UVPDockingModule {
         if (dockByTargetOrder[targetEndpointKey] != bytes32(0)) {
             revert DockEndpointOccupied(targetEndpointKey);
         }
-        // 12. 恰好一个 entrance + 逐 binding 重算。
+        // 12. 恰好一个 entrance + 逐 binding 重算 + 入口声明一致性：inputs[]
+        // 中唯一的 ENTRANCE 项必须就是请求级 entranceBinding 声明的那条——
+        // 否则已提交 route 可携带两条矛盾的入口声明（请求级 binding 与
+        // inputs[] 内的 ENTRANCE 项指不同绑定，各自通过根验证）。循环内
+        // 只记账，revert 延迟到局部变量释放后（栈深约束）。
         uint256 entranceCount;
+        uint256 declaredEntranceCount;
         for (uint256 i = 0; i < inputs.length; i++) {
             bytes32 recomputed = _inputBindingHash(
                 request.routeId,
@@ -451,10 +457,16 @@ contract UVPDockingModule {
             }
             if (inputs[i].kind == DOCK_KIND_ENTRANCE) {
                 entranceCount += 1;
+                if (inputs[i].bindingHash == request.entranceBindingHash) {
+                    declaredEntranceCount += 1;
+                }
             }
         }
         if (entranceCount != 1) {
             revert DockInputKindMismatch(request.entranceBindingHash);
+        }
+        if (declaredEntranceCount != 1) {
+            revert DockEntranceBindingMismatch(entranceBindingArg(inputs), request.entranceBindingHash);
         }
         for (uint256 i = 0; i < outputs.length; i++) {
             bytes32 recomputed = _outputBindingHash(
@@ -997,6 +1009,17 @@ contract UVPDockingModule {
             leaves[i] = inputs[i].bindingHash;
         }
         return DockMerkle.root(leaves);
+    }
+
+    /// 诊断辅助：inputs[] 中 ENTRANCE 项的 bindingHash（入口声明一致性
+    /// 失败时用于错误数据；调用前提为恰好存在一个 ENTRANCE 项）。
+    function entranceBindingArg(DockInputBindingArg[] calldata inputs) private pure returns (bytes32) {
+        for (uint256 i = 0; i < inputs.length; i++) {
+            if (inputs[i].kind == DOCK_KIND_ENTRANCE) {
+                return inputs[i].bindingHash;
+            }
+        }
+        return bytes32(0);
     }
 
     function _outputsRoot(DockOutputBindingArg[] calldata outputs) private pure returns (bytes32) {

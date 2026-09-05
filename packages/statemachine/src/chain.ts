@@ -51,7 +51,9 @@ export interface ChainOracleHook {
   readonly stageId: HexString;
   readonly stageIdentifier: string;
   readonly hookName: string;
-  readonly isTrigger: boolean;
+  /** PRD94 §3.4：单一 isTrigger 已拆分为 orderTriggerKind + emitReady。 */
+  readonly orderTriggerKind: "none" | "mint" | "dock";
+  readonly emitReady: boolean;
   readonly instructions: readonly ChainOracleInstruction[];
 }
 
@@ -140,8 +142,9 @@ export interface ChainStageMaterializedEvent extends ChainEventBase {
 export interface ChainHookStatusChangedEvent extends ChainEventBase {
   readonly eventName: "HookStatusChanged";
   /**
-   * Frozen payload: HookStatusChanged(bytes32 orderId, bytes32 hookId,
-   * uint8 previousStatus, uint8 newStatus, uint64 dueAt).
+   * Frozen payload (v0.10 ABI): HookStatusChanged(bytes32 indexed planId,
+   * bytes32 indexed orderId, bytes32 indexed hookId, uint8 previousStatus,
+   * uint8 newStatus, uint64 dueAt).
    * zhixuId below is indexer enrichment joined from the order registration,
    * never part of the emitted event.
    */
@@ -167,7 +170,8 @@ export interface ChainHookReadyEvent extends ChainEventBase {
 export interface ChainTimerPokedEvent extends ChainEventBase {
   readonly eventName: "TimerPoked";
   /**
-   * Frozen payload: TimerPoked(bytes32 orderId, bytes32 hookId, uint64 dueAt).
+   * Frozen payload (v0.10 ABI): TimerPoked(bytes32 indexed planId,
+   * bytes32 indexed orderId, bytes32 indexed hookId, uint64 dueAt).
    * zhixuId is indexer enrichment from the order registration. pokedAt is the
    * block timestamp of the poke transaction (also enrichment); the replay
    * oracle consumes it as the evaluation clock for this tick.
@@ -321,7 +325,19 @@ export function compareChainEvents(a: ChainEventBase, b: ChainEventBase): number
       a.transactionIndex !== b.transactionIndex) {
     return a.transactionIndex - b.transactionIndex;
   }
-  return a.logIndex - b.logIndex || a.transactionHash.localeCompare(b.transactionHash);
+  if (a.logIndex !== b.logIndex) {
+    return a.logIndex - b.logIndex;
+  }
+  // 确定性字节序平局裁决：localeCompare 依赖 ICU/locale，不得参与任何
+  // 会进 canonical 产物的排序（同仓 hook-plan.ts 明文禁止）。
+  return compareTxHashByCodeUnit(a.transactionHash, b.transactionHash);
+}
+
+function compareTxHashByCodeUnit(
+  left: `0x${string}`,
+  right: `0x${string}`,
+): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 export function chainEventToExpectedObservation(event: ChainModeExpectedEvent): ChainHookObservation {

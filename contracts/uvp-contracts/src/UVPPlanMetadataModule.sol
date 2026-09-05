@@ -18,6 +18,7 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     }
 
     error InvalidSignalCapability();
+    error DuplicateCurrentOrderSignalCapability(bytes32 planId, bytes32 sourceId, bytes32 signalId, bytes32 stageId);
     error InvalidTargetOrderRelation(uint8 targetOrderRelation);
     error StageSelectorBindingAlreadyRegistered(bytes32 planId, bytes32 selectorStageId, bytes32 targetStageId);
     error PlanMetadataAlreadyFinalized(bytes32 planId);
@@ -35,6 +36,11 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
 
     mapping(bytes32 planId => PlanMetadata metadata) private _metadata;
     mapping(bytes32 planId => bool finalized) public planMetadataFinalized;
+    // E16 注册守卫：relation=0 的事实键 → 唯一属主阶段。同一
+    // (sourceId, signalId) 被两个阶段以 relation=0 重复声明会让
+    // UVPStateMachine._signalStageId 按数组序"取首个匹配"，阶段归属静默
+    // 漂移——注册边界直接拒绝。
+    mapping(bytes32 planId => mapping(bytes32 factKey => bytes32 stageId)) private _currentOrderFactStages;
 
     event StageSelectorBindingRegistered(
         bytes32 indexed planId, bytes32 indexed selectorStageId, bytes32 indexed targetStageId
@@ -222,6 +228,18 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
             );
             if (metadata.signalCapabilities[capabilityKey].stageId != bytes32(0)) {
                 revert InvalidSignalCapability();
+            }
+            // E16：relation=0 的事实键唯一属主。跨阶段重复声明在此拒绝，
+            // 而不是让状态机侧 _signalStageId 按数组序取首个匹配。
+            if (capability.targetOrderRelation == SIGNAL_TARGET_CURRENT_ORDER) {
+                bytes32 factKey = keccak256(abi.encode(capability.targetSourceId, capability.signalId));
+                bytes32 ownerStageId = _currentOrderFactStages[planId][factKey];
+                if (ownerStageId != bytes32(0) && ownerStageId != capability.stageId) {
+                    revert DuplicateCurrentOrderSignalCapability(
+                        planId, capability.targetSourceId, capability.signalId, ownerStageId
+                    );
+                }
+                _currentOrderFactStages[planId][factKey] = capability.stageId;
             }
             metadata.signalCapabilities[capabilityKey] = capability;
             metadata.signalCapabilityKeys.push(capabilityKey);

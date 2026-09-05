@@ -131,7 +131,8 @@ test("chain-mode keeps AND delayed branches waiting until the latest live timer"
             stageId: andLatestWaitStageId,
             stageIdentifier: "latest-wait-stage",
             hookName: "latest-wait-hook",
-            isTrigger: true,
+            orderTriggerKind: "mint",
+            emitReady: true,
             instructions: [
               {
                 op: "SIGNAL",

@@ -68,7 +68,7 @@ contract UVPDockingModuleTest {
         "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 metadataHash,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,uint256 deadline)"
     );
     bytes32 private constant TRIGGER_OUTSIDE_TYPEHASH = keccak256(
-        "UVPStateMachineTriggerOrderFromOutside(bytes32 orderId,bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
+        "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
     );
     bytes32 private constant SIGNAL_TYPEHASH = keccak256(
         "UVPStateMachineSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
@@ -120,7 +120,9 @@ contract UVPDockingModuleTest {
     uint256 private constant TARGET_PUBLISHER_KEY = 0xB0B;
     address private constant ORDER_CREATOR = address(0xC0C0);
     address private constant KEEPER = address(0x5EED1);
-    bytes32 private constant PARENT_ORDER_ID = bytes32(uint256(0x0D001));
+    // 一事一单：outside 触发订单 id 由合约按出生事实派生；父 plan 注册后
+    // 在 setUp 里镜像同一公式（dockInstanceId preimage 依赖父订单 id）。
+    bytes32 private PARENT_ORDER_ID;
 
     UVPStateMachine private machine;
     UVPDockingModule private docking;
@@ -162,6 +164,7 @@ contract UVPDockingModuleTest {
         _rebindRouteHashes();
         // 父 plan 的 dockRoutesRoot 必须提交重绑后的 routeHash。
         parentPlanId = _registerParentPlan();
+        PARENT_ORDER_ID = machine.triggerOrderIdFor(parentPlanId, PARENT_STAGE, SIGNAL_START, PAYLOAD);
         // dockInstanceId 的身份域包含 localPlanId，只有父 plan 注册后才能
         // 计算最终的实例 ID。
         _rebindDockInstanceIds();
@@ -200,24 +203,33 @@ contract UVPDockingModuleTest {
         assertTrue(readyEmitted);
     }
 
-    /// A linkedOrderId is disclosed in the open calldata.  A target plan may
-    /// also expose a permissionless MINT trigger, so the state machine must
-    /// reserve a disjoint namespace rather than relying on transaction order.
+    /// A linkedOrderId is disclosed in the open calldata.  Outside trigger
+    /// order ids are contract-derived from the fact (one-fact-one-order), so a
+    /// permissionless MINT trigger physically cannot select the disclosed dock
+    /// child id: squatting by id choice is closed at the derivation boundary.
     function testLinkedOrderNamespaceCannotBeSquatted() public {
-        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = _outsideTrigger(TARGET_SIGNAL);
+        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = _outsideTrigger(TARGET_OUT_SIGNAL);
         trigger.planId = targetPlanId;
-        trigger.orderId = linkedOrderId;
         trigger.creator = vm.addr(TARGET_PUBLISHER_KEY);
         trigger.triggerHookId = TARGET_MINT_HOOK;
         trigger.triggerStageId = TARGET_STAGE;
-        trigger.sourceId = TARGET_SOURCE;
+        trigger.sourceId = TARGET_OUT_SOURCE;
         trigger.idempotencyKey = keccak256("squat-attempt");
 
+        // 派生 id 与披露的 dock 子单号不同——调用方没有任何字段能影响它。
+        bytes32 mintedOrderId =
+            machine.triggerOrderIdFor(targetPlanId, TARGET_OUT_SOURCE, TARGET_OUT_SIGNAL, trigger.payloadHash);
+        assertFalse(mintedOrderId == linkedOrderId);
+
         UVPStateMachine.SignalAuthorization[] memory auths = new UVPStateMachine.SignalAuthorization[](1);
-        auths[0] = _auth(TARGET_SOURCE, TARGET_SIGNAL, trigger.submitter);
-        _expect(abi.encodeWithSelector(UVPStateMachine.InvalidDockOrderNamespace.selector, linkedOrderId));
+        auths[0] = _auth(TARGET_OUT_SOURCE, TARGET_OUT_SIGNAL, trigger.submitter);
         machine.triggerOrderFromOutsideFor(trigger, auths, _sign(SUBMITTER_KEY, _outsideDigestFor(trigger, auths)));
+        assertTrue(machine.orderExists(targetPlanId, mintedOrderId));
         assertFalse(machine.orderExists(targetPlanId, linkedOrderId));
+
+        // Same fact replayed derives the same id and is idempotently rejected.
+        _expect(abi.encodeWithSelector(UVPStateMachine.OrderAlreadyRegistered.selector));
+        machine.triggerOrderFromOutsideFor(trigger, auths, _sign(SUBMITTER_KEY, _outsideDigestFor(trigger, auths)));
 
         // The legitimate module path remains the only creator of a dock
         // namespace order and succeeds after the rejected front-run attempt.
@@ -775,7 +787,7 @@ contract UVPDockingModuleTest {
         );
         permitLinkedOrderId = bytes32(
             uint256(keccak256(abi.encode(DOMAIN_DOCK_ORDER, permitDockInstanceId, targetDefinitionRef)))
-                | uint256(DOCK_ORDER_NAMESPACE_MASK)
+            | uint256(DOCK_ORDER_NAMESPACE_MASK)
         );
     }
 
@@ -801,16 +813,18 @@ contract UVPDockingModuleTest {
         });
         // Keep a MINT trigger in the target plan so the namespace regression
         // test exercises the real permissionless front-run surface.
+        // 词表内事实（TARGET_OUT_SOURCE::TARGET_OUT_SIGNAL，relation 0）：
+        // outside 触发的出生事实必须在 plan capability 词表内。
         UVPStateMachine.Instruction[] memory mintInstructions = new UVPStateMachine.Instruction[](1);
         mintInstructions[0] = UVPStateMachine.Instruction({
             op: UVPStateMachine.InstructionOp.Signal,
-            sourceId: TARGET_SOURCE,
-            signalId: TARGET_SIGNAL,
+            sourceId: TARGET_OUT_SOURCE,
+            signalId: TARGET_OUT_SIGNAL,
             arity: 0,
             delaySeconds: 0
         });
         bytes32[] memory mintDeps = new bytes32[](1);
-        mintDeps[0] = keccak256(abi.encode(TARGET_SOURCE, TARGET_SIGNAL));
+        mintDeps[0] = keccak256(abi.encode(TARGET_OUT_SOURCE, TARGET_OUT_SIGNAL));
         hooks[1] = UVPStateMachine.CompactHook({
             hookId: TARGET_MINT_HOOK,
             stageId: TARGET_STAGE,
@@ -949,7 +963,7 @@ contract UVPDockingModuleTest {
         );
         permitLinkedOrderId = bytes32(
             uint256(keccak256(abi.encode(DOMAIN_DOCK_ORDER, permitDockInstanceId, targetDefinitionRef)))
-                | uint256(DOCK_ORDER_NAMESPACE_MASK)
+            | uint256(DOCK_ORDER_NAMESPACE_MASK)
         );
     }
 
@@ -982,7 +996,7 @@ contract UVPDockingModuleTest {
         );
         permitLinkedOrderId = bytes32(
             uint256(keccak256(abi.encode(DOMAIN_DOCK_ORDER, permitDockInstanceId, targetDefinitionRef)))
-                | uint256(DOCK_ORDER_NAMESPACE_MASK)
+            | uint256(DOCK_ORDER_NAMESPACE_MASK)
         );
     }
 
@@ -1227,7 +1241,6 @@ contract UVPDockingModuleTest {
 
     function _outsideTrigger(bytes32 signalId) private returns (UVPStateMachine.TriggerOrderFromOutsideRequest memory) {
         return UVPStateMachine.TriggerOrderFromOutsideRequest({
-            orderId: PARENT_ORDER_ID,
             planId: bytes32(0), // 由调用方覆盖
             creator: ORDER_CREATOR,
             triggerHookId: PARENT_START_HOOK,
@@ -1255,7 +1268,6 @@ contract UVPDockingModuleTest {
         bytes32 structHash = keccak256(
             abi.encode(
                 TRIGGER_OUTSIDE_TYPEHASH,
-                trigger.orderId,
                 trigger.planId,
                 trigger.creator,
                 trigger.triggerHookId,
@@ -1318,7 +1330,7 @@ contract UVPDockingModuleTest {
             abi.encode(
                 keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
                 keccak256("UVPStateMachine"),
-                keccak256("0.9"),
+                keccak256("0.10"),
                 block.chainid,
                 address(machine)
             )

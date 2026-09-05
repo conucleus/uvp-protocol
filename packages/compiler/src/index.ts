@@ -51,6 +51,19 @@ export {
   u64Word,
   verifyMerkleProof,
 } from "./dock.js";
+// dock hash 域常量族（UVP_DOCK_*_V1）：兼容矩阵冻结的版本族断言消费。
+export {
+  DOMAIN_DEFINITION_REF,
+  DOMAIN_INTERFACE_INPUT,
+  DOMAIN_INTERFACE_OUTPUT,
+  DOMAIN_ROUTE_ID,
+  DOMAIN_INPUT_BINDING,
+  DOMAIN_OUTPUT_BINDING,
+  DOMAIN_ROUTE,
+  DOMAIN_DOCK_INSTANCE,
+  DOMAIN_DOCK_ORDER,
+  DOMAIN_INPUT_PAYLOAD,
+} from "./dock.js";
 export {
   HOOK_FLAG_EMIT_READY,
   HOOK_FLAG_ORDER_TRIGGER_DOCK,

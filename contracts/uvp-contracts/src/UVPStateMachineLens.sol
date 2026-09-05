@@ -49,7 +49,14 @@ interface IUVPDockingModuleLens {
     function getDockInputBinding(bytes32 dockInstanceId, bytes32 inputBindingHash)
         external
         view
-        returns (bytes32 localHookId, bytes32 portKey, bytes32 targetSourceId, bytes32 targetSignalId, uint8 kind, bool exists);
+        returns (
+            bytes32 localHookId,
+            bytes32 portKey,
+            bytes32 targetSourceId,
+            bytes32 targetSignalId,
+            uint8 kind,
+            bool exists
+        );
 
     function getDockOutputBinding(bytes32 dockInstanceId, bytes32 outputBindingHash)
         external
@@ -180,11 +187,17 @@ contract UVPStateMachineLens {
     function getDockInputBinding(bytes32 dockInstanceId, bytes32 inputBindingHash)
         external
         view
-        returns (bytes32 localHookId, bytes32 portKey, bytes32 targetSourceId, bytes32 targetSignalId, uint8 kind, bool exists)
+        returns (
+            bytes32 localHookId,
+            bytes32 portKey,
+            bytes32 targetSourceId,
+            bytes32 targetSignalId,
+            uint8 kind,
+            bool exists
+        )
     {
-        return IUVPDockingModuleLens(_moduleDirectory.dockingModule()).getDockInputBinding(
-            dockInstanceId, inputBindingHash
-        );
+        return IUVPDockingModuleLens(_moduleDirectory.dockingModule())
+            .getDockInputBinding(dockInstanceId, inputBindingHash);
     }
 
     function getDockOutputBinding(bytes32 dockInstanceId, bytes32 outputBindingHash)
@@ -200,21 +213,19 @@ contract UVPStateMachineLens {
             bool exists
         )
     {
-        return IUVPDockingModuleLens(_moduleDirectory.dockingModule()).getDockOutputBinding(
-            dockInstanceId, outputBindingHash
-        );
+        return IUVPDockingModuleLens(_moduleDirectory.dockingModule())
+            .getDockOutputBinding(dockInstanceId, outputBindingHash);
     }
 
     function dockInputDelivered(bytes32 dockInstanceId, bytes32 inputBindingHash) external view returns (bool) {
-        return IUVPDockingModuleLens(_moduleDirectory.dockingModule()).dockInputDelivered(
-            dockInstanceId, inputBindingHash
-        );
+        return
+            IUVPDockingModuleLens(_moduleDirectory.dockingModule()).dockInputDelivered(dockInstanceId, inputBindingHash);
     }
 
     function dockOutputDelivered(bytes32 dockInstanceId, bytes32 outputBindingHash) external view returns (bool) {
-        return IUVPDockingModuleLens(_moduleDirectory.dockingModule()).dockOutputDelivered(
-            dockInstanceId, outputBindingHash
-        );
+        return
+            IUVPDockingModuleLens(_moduleDirectory.dockingModule())
+                .dockOutputDelivered(dockInstanceId, outputBindingHash);
     }
 
     function planSelectorBindingCount(bytes32 planId) external view returns (uint256) {
@@ -264,9 +275,8 @@ contract UVPStateMachineLens {
         view
         returns (uint8)
     {
-        return IUVPOrderLinkModuleLens(_moduleDirectory.orderLinkModule()).targetOrderRelation(
-            fromPlanId, fromOrderId, targetPlanId, targetOrderId
-        );
+        return IUVPOrderLinkModuleLens(_moduleDirectory.orderLinkModule())
+            .targetOrderRelation(fromPlanId, fromOrderId, targetPlanId, targetOrderId);
     }
 
     function getTriggerOriginLink(bytes32 planId, bytes32 triggeredOrderId)
@@ -281,8 +291,7 @@ contract UVPStateMachineLens {
             bytes32 triggerStageId
         )
     {
-        return IUVPOrderLinkModuleLens(_moduleDirectory.orderLinkModule()).getTriggerOriginLink(
-            planId, triggeredOrderId
-        );
+        return IUVPOrderLinkModuleLens(_moduleDirectory.orderLinkModule())
+            .getTriggerOriginLink(planId, triggeredOrderId);
     }
 }

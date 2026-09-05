@@ -38,10 +38,7 @@ interface IUVPStateMachineCore {
         bytes32 originSignalId,
         address party
     ) external view returns (bool);
-    function activeStageExecutor(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
-        external
-        view
-        returns (address);
+    function activeStageExecutor(bytes32 planId, bytes32 orderId, bytes32 targetStageId) external view returns (address);
     function activateStageExecutorFromModule(
         bytes32 planId,
         bytes32 orderId,
@@ -71,24 +68,15 @@ interface IUVPStateMachineCore {
         bytes32 signalId,
         address submitter
     ) external view returns (bool);
-    function hasSignal(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId)
-        external
-        view
-        returns (bool);
-    function lastSignalSubmitter(bytes32 planId, bytes32 orderId, bytes32 sourceId)
-        external
-        view
-        returns (address);
+    function hasSignal(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId) external view returns (bool);
+    function lastSignalSubmitter(bytes32 planId, bytes32 orderId, bytes32 sourceId) external view returns (address);
     function orderCreator(bytes32 planId, bytes32 orderId) external view returns (address);
     function orderExists(bytes32 planId, bytes32 orderId) external view returns (bool);
     function orderLinkModule() external view returns (address);
     function planExists(bytes32 planId) external view returns (bool);
     function planMetadataModule() external view returns (address);
     function planPublisher(bytes32 planId) external view returns (address);
-    function sourceSignalCount(bytes32 planId, bytes32 orderId, bytes32 sourceId)
-        external
-        view
-        returns (uint256);
+    function sourceSignalCount(bytes32 planId, bytes32 orderId, bytes32 sourceId) external view returns (uint256);
     function createDockedOrderFromModule(
         bytes32 targetPlanId,
         bytes32 linkedOrderId,
