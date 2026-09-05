@@ -807,7 +807,7 @@ contract UVPDockingModuleTest {
             hookId: TARGET_ENTRANCE_HOOK,
             stageId: TARGET_STAGE,
             hookName: TARGET_HOOK_NAME,
-            flags: FLAG_DOCK,
+            flags: FLAG_DOCK | FLAG_EMIT_READY,
             instructions: instructions,
             dependencyKeys: deps
         });
@@ -829,7 +829,7 @@ contract UVPDockingModuleTest {
             hookId: TARGET_MINT_HOOK,
             stageId: TARGET_STAGE,
             hookName: bytes32("MINT"),
-            flags: FLAG_MINT,
+            flags: FLAG_MINT | FLAG_EMIT_READY,
             instructions: mintInstructions,
             dependencyKeys: mintDeps
         });
@@ -851,8 +851,9 @@ contract UVPDockingModuleTest {
 
     function _registerParentPlan() private returns (bytes32) {
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](3);
-        hooks[0] =
-            _parentHook(PARENT_START_HOOK, PARENT_STAGE, keccak256("START"), FLAG_MINT, PARENT_STAGE, SIGNAL_START);
+        hooks[0] = _parentHook(
+            PARENT_START_HOOK, PARENT_STAGE, keccak256("START"), FLAG_MINT | FLAG_EMIT_READY, PARENT_STAGE, SIGNAL_START
+        );
         hooks[1] = _parentHook(
             PARENT_EXEC_HOOK, PARENT_EXEC_STAGE, keccak256("EXECUTE"), FLAG_EMIT_READY, PARENT_STAGE, SIGNAL_EXEC
         );

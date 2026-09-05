@@ -131,8 +131,14 @@ export function compileOnchainHookPlan(
   // 的任何求值都是不可恢复死锁（Rust 编译器是第一道，这里是 artifact
   // 边界的第二道）。
   const materializationIssues = unmaterializableStageIssues(compiledHooks);
+  const silentTriggerIssues = silentOrderTriggerIssues(compiledHooks);
   const dependencyCountIssues = planDependencyCountIssues(compiledHooks);
-  const preflightIssues = [...crossStageIssues, ...materializationIssues, ...dependencyCountIssues];
+  const preflightIssues = [
+    ...crossStageIssues,
+    ...materializationIssues,
+    ...silentTriggerIssues,
+    ...dependencyCountIssues,
+  ];
   if (preflightIssues.length > 0) {
     throw new HookPlanCompilationError(preflightIssues);
   }
@@ -282,6 +288,9 @@ export function validateOnchainHookPlanArtifact(
     // 簇 A1 / E12 镜像同样作用于反序列化 artifact 边界。
     issues.push(
       ...unmaterializableStageIssues(compiledHooks as readonly OnchainCompiledHook[]),
+    );
+    issues.push(
+      ...silentOrderTriggerIssues(compiledHooks as readonly OnchainCompiledHook[]),
     );
     issues.push(...planDependencyCountIssues(compiledHooks as readonly OnchainCompiledHook[]));
   }
@@ -1248,6 +1257,28 @@ function unmaterializableStageIssues(
     issues.push(
       `stage ${hook.stageIdentifier} has no order-trigger or EMIT_READY hook; its hooks compile to flags=0 watchers which can never materialize the stage on-chain (deadlock, no recovery path) — the Rust compiler must reject this shape`,
     );
+  }
+  return issues;
+}
+
+/**
+ * HookReady 三线口径统一镜像：order-trigger hook 必须携带 emitReady——
+ * Rust 编译器产物恒为 trigger|EMIT_READY（flags=5/6），UVPStateMachine
+ * commitPlan 对缺 EMIT_READY 的"沉默 trigger"revert SilentOrderTriggerHook。
+ * 这里是 artifact 边界的镜像门禁（编译器第一道，合约注册边界兜底）。
+ */
+function silentOrderTriggerIssues(
+  hooks: readonly OnchainCompiledHook[],
+): readonly string[] {
+  const issues: string[] = [];
+  for (const hook of hooks) {
+    if (hook.orderTriggerKind !== "none" && !hook.emitReady) {
+      issues.push(
+        `hook ${hook.stageIdentifier}#${hook.hookName} is an order trigger without emitReady; ` +
+          `UVPStateMachine.commitPlan reverts SilentOrderTriggerHook — ` +
+          `the Rust compiler must always emit trigger flags with EMIT_READY`,
+      );
+    }
   }
   return issues;
 }

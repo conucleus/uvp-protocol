@@ -816,3 +816,69 @@ test("flags stages whose hooks can never materialize on-chain", () => {
       ),
   );
 });
+
+test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
+  const silentTriggerIssues = (issues: readonly string[]): readonly string[] =>
+    issues.filter((issue) => /order trigger without emitReady/.test(issue));
+
+  // 正例：编译器产物口径（mint trigger + emitReady=true，flags=5）零 issue。
+  const baseOnchain = compileOnchainHookPlan(
+    compileZhixuHookPlan(baseZhixu, demoManifest),
+  );
+  assert.deepEqual(silentTriggerIssues(validateOnchainHookPlanArtifact(baseOnchain)), []);
+
+  // 反例 1（沉默 mint trigger）：orderTriggerKind=mint、emitReady=false 的
+  // 形态——UVPStateMachine.commitPlan 对 flags=1 恒 revert
+  // SilentOrderTriggerHook，artifact 边界同口径拒绝。
+  const silentMint: OnchainHookPlanArtifact = {
+    ...baseOnchain,
+    compiledHooks: baseOnchain.compiledHooks.map((hook) =>
+      hook.stageIdentifier === "execution.main"
+        ? { ...hook, orderTriggerKind: "mint" as const, emitReady: false }
+        : hook,
+    ),
+  };
+  const mintIssues = silentTriggerIssues(validateOnchainHookPlanArtifact(silentMint));
+  assert.ok(mintIssues.length >= 1, "silent mint trigger must be flagged");
+  for (const issue of mintIssues) {
+    assert.match(
+      issue,
+      /hook execution\.main#.+ is an order trigger without emitReady; UVPStateMachine\.commitPlan reverts SilentOrderTriggerHook — the Rust compiler must always emit trigger flags with EMIT_READY$/,
+    );
+  }
+
+  // 反例 2（沉默 dock trigger）：orderTriggerKind=dock、emitReady=false
+  // 同样拒绝（flags=2 口径）。
+  const silentDock: OnchainHookPlanArtifact = {
+    ...baseOnchain,
+    compiledHooks: baseOnchain.compiledHooks.map((hook) =>
+      hook.stageIdentifier === "execution.main"
+        ? { ...hook, orderTriggerKind: "dock" as const, emitReady: false }
+        : hook,
+    ),
+  };
+  assert.ok(
+    silentTriggerIssues(validateOnchainHookPlanArtifact(silentDock)).length >= 1,
+    "silent dock trigger must be flagged",
+  );
+
+  // 编译入口同口径：沉默 trigger 形态在 compileOnchainHookPlan 预检即抛
+  // HookPlanCompilationError，不产出制品。
+  const silentSourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  const mutatedSilentPlan = {
+    ...silentSourcePlan,
+    compiledHooks: silentSourcePlan.compiledHooks.map((hook) =>
+      hook.stageIdentifier === "execution.main"
+        ? { ...hook, orderTriggerKind: "mint" as const, emitReady: false }
+        : hook,
+    ),
+  };
+  assert.throws(
+    () => compileOnchainHookPlan(mutatedSilentPlan),
+    (error: unknown) =>
+      error instanceof HookPlanCompilationError &&
+      error.issues.some((issue) =>
+        /order trigger without emitReady/.test(issue),
+      ),
+  );
+});

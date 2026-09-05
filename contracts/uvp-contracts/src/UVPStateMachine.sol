@@ -215,6 +215,12 @@ contract UVPStateMachine {
     error PlanNotFinalized();
     error SignalAlreadyExists();
     error SignalSubmitterAlreadyAuthorized(bytes32 orderId, bytes32 sourceId, bytes32 signalId, address submitter);
+    /// HookReady 三线口径统一：order-trigger hook 必须携带 EMIT_READY。编译器
+    /// 产物恒为 trigger|EMIT_READY（mint=5 / dock=6）；`_evaluateHook` 对
+    /// order-trigger 无条件置 readyEmitted 并发 HookReady——缺 EMIT_READY 的
+    /// "沉默 trigger" 会让链下 oracle 的 skip 口径与链上分叉。该形态在注册
+    /// 边界直接拒绝（编译器是第一道防线，这里是注册边界）。
+    error SilentOrderTriggerHook(bytes32 hookId);
     error StageExecutorNotAssigned(bytes32 orderId, bytes32 targetStageId);
     error StageNotMaterializable(bytes32 stageId);
     error StageExecutorPatchNonceNotIncreasing(
@@ -1499,6 +1505,12 @@ contract UVPStateMachine {
                 == (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK)
         ) {
             revert InvalidHook();
+        }
+        // HookReady 三线口径统一：order-trigger 必须携带 EMIT_READY——编译器
+        // 产物恒为 trigger|EMIT_READY；沉默 trigger（flags=1/2）的 HookReady
+        // 发出口径在链上链下会分叉。与下方阶段物化守卫同构：注册边界拒绝。
+        if (_isOrderTrigger(input.flags) && input.flags & HOOK_FLAG_EMIT_READY == 0) {
+            revert SilentOrderTriggerHook(input.hookId);
         }
         if (plan.hooks[input.hookId].exists) {
             revert HookAlreadyRegistered();

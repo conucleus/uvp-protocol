@@ -1647,6 +1647,75 @@ contract UVPStateMachineTest {
         );
     }
 
+    /// HookReady 三线口径统一：沉默 mint trigger（flags=1，缺 EMIT_READY）
+    /// 在注册边界直接拒绝——编译器产物恒为 trigger|EMIT_READY，该形态链上
+    /// 不可达。
+    function testSilentMintTriggerHookIsRejectedAtCommit() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](1);
+        instructions[0] = _signal(SIGNAL_TRIGGER);
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hookWithFlags(
+            HOOK_INIT, STAGE_INIT, HOOK_NAME_TRIGGER, FLAG_ORDER_TRIGGER_MINT, instructions, _deps(SIGNAL_TRIGGER)
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.SilentOrderTriggerHook.selector, HOOK_INIT));
+        _commitPlan(
+            machine,
+            hooks,
+            new IUVPPlanMetadataModule.StageSelectorBinding[](0),
+            new IUVPPlanMetadataModule.SignalCapability[](0)
+        );
+    }
+
+    /// 沉默 dock trigger（flags=2，缺 EMIT_READY）同样拒绝。
+    function testSilentDockTriggerHookIsRejectedAtCommit() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](1);
+        instructions[0] = _signal(SIGNAL_TRIGGER);
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hookWithFlags(
+            HOOK_INIT, STAGE_INIT, HOOK_NAME_TRIGGER, FLAG_ORDER_TRIGGER_DOCK, instructions, _deps(SIGNAL_TRIGGER)
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.SilentOrderTriggerHook.selector, HOOK_INIT));
+        _commitPlan(
+            machine,
+            hooks,
+            new IUVPPlanMetadataModule.StageSelectorBinding[](0),
+            new IUVPPlanMetadataModule.SignalCapability[](0)
+        );
+    }
+
+    /// 编译器同口径（mint=5 / dock=6）的 trigger hook 注册面放行。
+    function testCompilerShapedTriggerHooksRegister() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
+        UVPStateMachine.Instruction[] memory mintInstructions = new UVPStateMachine.Instruction[](1);
+        mintInstructions[0] = _signal(SIGNAL_TRIGGER);
+        hooks[0] = _hookWithFlags(
+            HOOK_INIT,
+            STAGE_INIT,
+            HOOK_NAME_TRIGGER,
+            uint8(FLAG_ORDER_TRIGGER_MINT | FLAG_EMIT_READY),
+            mintInstructions,
+            _deps(SIGNAL_TRIGGER)
+        );
+        UVPStateMachine.Instruction[] memory dockInstructions = new UVPStateMachine.Instruction[](1);
+        dockInstructions[0] = _signal(SIGNAL_AUDIT_PASS);
+        hooks[1] = _hookWithFlags(
+            HOOK_AUDIT,
+            STAGE_AUDIT,
+            HOOK_NAME_INIT_DONE,
+            uint8(FLAG_ORDER_TRIGGER_DOCK | FLAG_EMIT_READY),
+            dockInstructions,
+            _deps(SIGNAL_AUDIT_PASS)
+        );
+
+        bytes32 planId = _registerPlan(machine, hooks);
+        require(machine.planExists(planId), "compiler-shaped plan not registered");
+    }
+
     /// 簇 A3：flags=0 watcher 所在阶段未物化时，模块写事实路径不再稳定
     /// 回滚——求值循环跳过（与回放 oracle 对齐）。阶段挂一条 EMIT_READY
     /// hook（依赖另一未到达信号）满足 A2 注册守卫，但阶段尚未物化。
@@ -2328,7 +2397,10 @@ contract UVPStateMachineTest {
         private
         returns (UVPStateMachine.TriggerOrderFromOutsideRequest memory)
     {
-        ORDER_ID = keccak256(abi.encode(PLAN_ID, SOURCE_BOOTSTRAP, signalId, PAYLOAD_HASH));
+        // 镜像 triggerOrderIdFor：出生单号恒清 dock 命名空间最高位。
+        ORDER_ID = bytes32(
+            uint256(keccak256(abi.encode(PLAN_ID, SOURCE_BOOTSTRAP, signalId, PAYLOAD_HASH))) & ~uint256(1 << 255)
+        );
         return UVPStateMachine.TriggerOrderFromOutsideRequest({
             planId: PLAN_ID,
             creator: ORDER_CREATOR,
@@ -2762,8 +2834,16 @@ contract UVPStateMachineTest {
         UVPStateMachine.Instruction[] memory instructions,
         bytes32[] memory dependencyKeys
     ) private pure returns (UVPStateMachine.CompactHook memory) {
+        // 编译器同口径：order-trigger hook 恒携带 EMIT_READY（mint=5 /
+        // dock=6）。畸形 flags 形态（如沉默 trigger）用 _hookWithFlags
+        // 显式构造，不走本 helper。
         return _hookWithFlags(
-            hookId, stageId, hookName, isTrigger ? FLAG_ORDER_TRIGGER_MINT : uint8(0), instructions, dependencyKeys
+            hookId,
+            stageId,
+            hookName,
+            isTrigger ? uint8(FLAG_ORDER_TRIGGER_MINT | FLAG_EMIT_READY) : uint8(0),
+            instructions,
+            dependencyKeys
         );
     }
 
