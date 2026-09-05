@@ -216,12 +216,20 @@ Indexer and replay tooling should treat these event names as public interfaces:
 
 The module fixtures add these public events:
 
-- `OrderLinked` (order-link module);
+- `OrderLinked` (order-link module; carries `planId` + `originPlanId` alongside
+  the order ids);
 - `StageSelectorBindingRegistered` and `SignalCapabilityRegistered`
   (plan-metadata module);
-- `DerivedSignalSubmitted` (derived-signal module);
+- `DerivedSignalSubmitted` (derived-signal module; carries `fromPlanId` +
+  `targetPlanId`);
+- `StageResourcePatchApplied` (stage-patch module; carries `planId`, aligned
+  with `StageExecutorPatchApplied`);
 - `DockOpened`, `DockInputSubmitted`, `DockOutputSubmitted`, and `DockTerminal`
   (docking module).
+
+All of these module events carry the composite `(planId, orderId)` identity:
+two plans owning same-id orders no longer collide byte-for-byte, and indexers
+must key projections on both ids.
 
 ## Hook State Machine
 
