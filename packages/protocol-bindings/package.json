@@ -17,6 +17,7 @@
   "scripts": {
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
+    "generate:artifact-abis": "tsx scripts/generate-artifact-abis.ts",
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {

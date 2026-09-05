@@ -192,6 +192,47 @@ export const STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN =
   "uvp:stage-resource-patch-payload:v1";
 export const RESOURCE_MANIFEST_V1_SCHEMA_VERSION = "uvp-resource-manifest-v1";
 export const RESOURCE_MANIFEST_HASH_DOMAIN = "uvp:resource-manifest:v1";
+import {
+  HOOK_FLAG_EMIT_READY,
+  HOOK_FLAG_ORDER_TRIGGER_DOCK,
+  HOOK_FLAG_ORDER_TRIGGER_MINT,
+} from "./artifact-abis.js";
+export {
+  HOOK_FLAG_EMIT_READY,
+  HOOK_FLAG_ORDER_TRIGGER_DOCK,
+  HOOK_FLAG_ORDER_TRIGGER_MINT,
+  SIGNAL_SUBMITTED_ABI,
+  SIGNAL_SUBMITTED_TOPIC,
+  UVP_STATE_MACHINE_ARTIFACT_ABI,
+} from "./artifact-abis.js";
+
+export type OrderTriggerKind = "mint" | "dock";
+
+export interface CompactHookFlagsInput {
+  /** 出生订阅语义：mint=出生订阅上链（SIGNAL 指令），dock=docking 入口。 */
+  readonly orderTriggerKind?: OrderTriggerKind | null;
+  /** Ready 事件外发口径：order-trigger hook 必须携带，watcher 可选。 */
+  readonly emitReady?: boolean;
+}
+
+// CompactHook.flags 位标志口径：1=ORDER_TRIGGER_MINT，2=ORDER_TRIGGER_DOCK，
+// 4=EMIT_READY；位值由生成代码钉住合约常量，MINT/DOCK 互斥由合约注册边界
+// 校验（InvalidHook），trigger 缺 EMIT_READY 由 SilentOrderTriggerHook 拒绝。
+export function buildCompactHookFlags(
+  input: CompactHookFlagsInput = {},
+): number {
+  let flags = 0;
+  if (input.orderTriggerKind === "mint") {
+    flags |= HOOK_FLAG_ORDER_TRIGGER_MINT;
+  }
+  if (input.orderTriggerKind === "dock") {
+    flags |= HOOK_FLAG_ORDER_TRIGGER_DOCK;
+  }
+  if (input.emitReady) {
+    flags |= HOOK_FLAG_EMIT_READY;
+  }
+  return flags;
+}
 export const EXECUTOR_PATCH_MODE_ASSIGN = stringToHex("assign", {
   size: 32,
 }) as Hex;
