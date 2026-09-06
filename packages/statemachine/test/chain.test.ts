@@ -264,8 +264,8 @@ test("chain replay filters non-observable HookStatusChanged transitions (golden 
 test("chain replay derives order-link birth facts from HookReady", () => {
   // order-link 出生（triggerOrderFromSignalFromModule → _markTriggerHookReady）
   // 不 _recordSignal 但 emit HookStatusChanged(→reg) + HookReady +
-  // StageMaterialized。TS 消费面从 HookReady 推导出生事实：流可回放，
-  // expected==observed，且终态回填 hook=reg + 阶段物化。
+  // StageMaterialized。native oracle 从 HookReady 推导出生事实（唯一实现）：
+  // 流可回放，expected==observed，且终态回填 hook=reg + 阶段物化。
   const planId = "0x000000000000000000000000000000000000000000000000000000000000b001";
   const hookId = "0x000000000000000000000000000000000000000000000000000000000000b101";
   const stageId = "0x000000000000000000000000000000000000000000000000000000000000b201";
@@ -369,4 +369,76 @@ test("chain replay derives order-link birth facts from HookReady", () => {
   // 出生事实不落子单信号集：链上 order-link 路径不 _recordSignal，
   // 派生不得伪造 SignalSubmitted 状态。
   assert.deepEqual(childOrder?.signals, {});
+});
+
+test("chain replay exposes duplicated birth HookReady as a mismatch", () => {
+  // 合约 HookReady 只在 !readyEmitted 时发出（_markOrderTriggerHookReady），
+  // 逐字重复的出生 HookReady 是流异常——native 推导只接受第一次断言，
+  // 第二条必须以 missing-observed 暴露，不得静默吸收。
+  const planId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000b011";
+  const hookId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000b111";
+  const stageId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000b211";
+  const srcId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000b311";
+  const sigId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000b411";
+  const keyId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000b511";
+  const hookReady = {
+    eventName: "HookReady" as const,
+    blockNumber: 3,
+    logIndex: 0,
+    transactionHash: "0x03" as const,
+    planId,
+    zhixuId: "order-link-birth",
+    orderId: "link-child",
+    hookId,
+    stageIdentifier: "birth-stage",
+    hookName: "birth"
+  };
+  const events: ChainModeEvent[] = [
+    {
+      eventName: "PlanRegistered",
+      blockNumber: 1,
+      logIndex: 0,
+      transactionHash: "0x01",
+      plan: {
+        planId,
+        zhixuId: "order-link-birth",
+        version: "test",
+        compiledHooks: [
+          {
+            hookId,
+            stageId,
+            stageIdentifier: "birth-stage",
+            hookName: "birth",
+            orderTriggerKind: "mint",
+            emitReady: true,
+            instructions: [{ op: "SIGNAL", sourceId: srcId, signalId: sigId, signalKey: keyId }]
+          }
+        ],
+        dependencyIndex: { [keyId]: [hookId] }
+      }
+    },
+    {
+      eventName: "OrderRegistered",
+      blockNumber: 2,
+      logIndex: 0,
+      transactionHash: "0x02",
+      planId,
+      zhixuId: "order-link-birth",
+      orderId: "link-child",
+      registeredAt: "2026-01-01T00:00:00.000Z"
+    },
+    hookReady,
+    { ...hookReady, logIndex: 1 }
+  ];
+
+  let mismatchError: ChainReplayMismatchError | undefined;
+  try {
+    replayChainEvents(events);
+  } catch (error) {
+    assert.ok(error instanceof ChainReplayMismatchError);
+    mismatchError = error;
+  }
+  assert.ok(mismatchError !== undefined, "duplicated birth HookReady must fail loudly");
+  assert.equal(mismatchError.mismatches.length, 1);
+  assert.equal(mismatchError.mismatches[0]?.reason, "missing-observed");
 });

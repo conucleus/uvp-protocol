@@ -1,9 +1,7 @@
 export {
   ChainReplayMismatchError,
   chainEventId,
-  chainEventToExpectedObservation,
   compareChainEvents,
-  compareHookObservations,
   replayChainEvents
 } from "./chain.js";
 export type {
