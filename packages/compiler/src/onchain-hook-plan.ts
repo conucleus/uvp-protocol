@@ -10,7 +10,8 @@ import {
   parseAbiParameters,
   stringToHex,
 } from "viem";
-import { assertHookPlanArtifact } from "./hook-plan.js";
+import { assertHookPlanArtifact, compareByCodeUnit, HookPlanCompilationError } from "./hook-plan.js";
+import { canonicalStringify } from "./canonical.js";
 import {
   ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
   type HexString,
@@ -35,6 +36,35 @@ import {
   type ZhixuPlatform,
 } from "./types/index.js";
 import { compileZhixuHookPlan } from "./hook-plan.js";
+import {
+  dockRoutesRootOf,
+  interfaceRootOf,
+} from "./dock.js";
+import { validateDockCommitments } from "./dock-validation.js";
+import type {
+  DockResolutionManifest,
+  DockRouteV1,
+  OrderTriggerKind,
+} from "./types/index.js";
+
+// Mirrors UVPStateMachine.MAX_HOOK_DELAY_SECONDS (30 days): the contract
+// reverts HookDelayTooLong above this bound, so the fail-closed artifact
+// preflight must reject the same inputs instead of letting the transaction
+// revert on-chain.
+const MAX_ONCHAIN_HOOK_DELAY_SECONDS = 2_592_000;
+// Mirrors UVPStateMachine.MAX_PLAN_DEPENDENCIES (1024): the contract reverts
+// TooManyDependencies while registering the plan dependency index, so the
+// preflight must reject plans with more than 1024 distinct dependency keys.
+const MAX_PLAN_DEPENDENCIES = 1024;
+// Documented cap on compiled signal capabilities (= the plan-wide total of
+// sendSignals declarations). UVPStateMachine._signalStageId linearly scans
+// the capability list on EVERY materialized-source signal submission, and
+// _requireStageExecutorAssigned / hasTriggerOriginConsent repeat that scan —
+// without a cap the per-submission gas is plan-controlled and unbounded
+// (G-18). 256 keeps the scan under ~5k gas per call while staying far above
+// any realistic sendSignals vocabulary. Rust uvp-core must mirror this cap;
+// the grammar-level documentation is tracked by the HYGIENE wave.
+const MAX_SIGNAL_CAPABILITIES = 256;
 
 const ONCHAIN_PLAN_HASH_DOMAIN = "uvp:onchain-hook-plan-artifact:v1";
 const ONCHAIN_ROUTE_HASH_DOMAIN = "uvp:onchain-hook-route:v1";
@@ -42,6 +72,29 @@ const ONCHAIN_SELECTOR_BINDING_HASH_DOMAIN =
   "uvp:onchain-stage-selector-binding:v1";
 const ONCHAIN_SIGNAL_CAPABILITY_HASH_DOMAIN =
   "uvp:onchain-signal-capability:v1";
+const PLAN_RUNTIME_HASH_DOMAIN_V2 = "uvp.plan.runtime.v2";
+
+/** CompactHook flags 位定义。 */
+export const HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
+export const HOOK_FLAG_ORDER_TRIGGER_DOCK = 2;
+export const HOOK_FLAG_EMIT_READY = 4;
+
+export function solidityHookFlags(
+  orderTriggerKind: OrderTriggerKind,
+  emitReady: boolean,
+): number {
+  let flags = 0;
+  if (orderTriggerKind === "mint") {
+    flags |= HOOK_FLAG_ORDER_TRIGGER_MINT;
+  }
+  if (orderTriggerKind === "dock") {
+    flags |= HOOK_FLAG_ORDER_TRIGGER_DOCK;
+  }
+  if (emitReady) {
+    flags |= HOOK_FLAG_EMIT_READY;
+  }
+  return flags;
+}
 
 export class OnchainHookPlanArtifactValidationError extends Error {
   readonly issues: readonly string[];
@@ -65,12 +118,47 @@ export function compileOnchainHookPlan(
       stageIdentifier: hook.stageIdentifier,
       hookName: hook.hookName,
       kind: hook.kind,
-      isTrigger: hook.isTrigger,
-      instructions: compileHookInstructions(hook.ast),
+      orderTriggerKind: hook.orderTriggerKind,
+      emitReady: hook.emitReady,
+      instructions: compileHookInstructions(hook.ast, hook.stageIdentifier, {
+        orderTriggerKind: hook.orderTriggerKind,
+      }),
       dependencies: hook.dependencies.map(compileDependency),
       ...(hook.route ? { routeRef: routeRefForRoute(hook.route) } : {}),
     }))
     .sort(compareOnchainHooks);
+  // 逐 hook 顺序语义与合约 _registerPlanHook 一致（见 crossStageDependencyIssues）。
+  const crossStageIssues = crossStageDependencyIssues(compiledHooks);
+  // 不可物化阶段（无 order-trigger / EMIT_READY hook 的阶段）不得挂任何
+  // receive hook，且阶段声明不得编译为零 hook——纯 flags=0 watcher 不物化
+  // 阶段，零 hook 阶段同样不物化（P0-4），链上对该阶段的任何求值都是不可
+  // 恢复死锁（Rust 编译器是第一道，这里是 artifact 边界的第二道）。
+  const materializationIssues = unmaterializableStageIssues(
+    compiledHooks,
+    declaredStageIdentifiers(
+      hookPlanArtifact.signalCapabilities.map((capability) => capability.stageIdentifier),
+      Object.keys(hookPlanArtifact.executorRoutes),
+      hookPlanArtifact.selectedStageBindings.flatMap((binding) => [
+        binding.selectorStageIdentifier,
+        binding.targetStageIdentifier,
+      ]),
+    ),
+  );
+  const silentTriggerIssues = silentOrderTriggerIssues(compiledHooks);
+  const dependencyCountIssues = planDependencyCountIssues(compiledHooks);
+  const capabilityCountIssues = signalCapabilityCountIssues(
+    hookPlanArtifact.signalCapabilities,
+  );
+  const preflightIssues = [
+    ...crossStageIssues,
+    ...materializationIssues,
+    ...silentTriggerIssues,
+    ...dependencyCountIssues,
+    ...capabilityCountIssues,
+  ];
+  if (preflightIssues.length > 0) {
+    throw new HookPlanCompilationError(preflightIssues);
+  }
   const dependencyIndex = buildOnchainDependencyIndex(compiledHooks);
   const executorRoutes = Object.values(hookPlanArtifact.executorRoutes)
     .map(compileExecutorRoute)
@@ -81,6 +169,23 @@ export function compileOnchainHookPlan(
   const signalCapabilities = compileSignalCapabilities(
     hookPlanArtifact.signalCapabilities,
   );
+  // fail-closed：dock roots 由 TS 侧从 core 产物重算并断言一致，任何分叉
+  // 都在编译期暴露。
+  const dockRoutes = hookPlanArtifact.dockRoutes;
+  const recomputedRoutesRoot = dockRoutesRootOf(dockRoutes);
+  if (recomputedRoutesRoot !== hookPlanArtifact.dockRoutesRoot) {
+    throw new OnchainHookPlanArtifactValidationError([
+      "dockRoutesRoot does not match the recomputed root over dock route hashes",
+    ]);
+  }
+  if (hookPlanArtifact.dockInterface !== null) {
+    const recomputedInterfaceRoot = interfaceRootOf(hookPlanArtifact.dockInterface);
+    if (recomputedInterfaceRoot !== hookPlanArtifact.dockInterfaceRoot) {
+      throw new OnchainHookPlanArtifactValidationError([
+        "dockInterfaceRoot does not match the recomputed root over interface leaves",
+      ]);
+    }
+  }
   const payload = {
     schemaVersion: ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
     planId: hookPlanArtifact.planId,
@@ -92,6 +197,10 @@ export function compileOnchainHookPlan(
     compiledHooks,
     dependencyIndex,
     executorRoutes,
+    dockInterface: hookPlanArtifact.dockInterface,
+    dockRoutes,
+    dockRoutesRoot: hookPlanArtifact.dockRoutesRoot,
+    dockInterfaceRoot: hookPlanArtifact.dockInterfaceRoot,
     selectorBindings,
     signalCapabilities,
   };
@@ -104,14 +213,23 @@ export function compileOnchainHookPlan(
 
 export function compileZhixuOnchainHookPlan(
   definition: ZhixuDefinition,
+  resolutionManifest?: DockResolutionManifest,
 ): OnchainHookPlanArtifact {
-  return compileOnchainHookPlan(compileZhixuHookPlan(definition));
+  return compileOnchainHookPlan(
+    compileZhixuHookPlan(definition, resolutionManifest),
+  );
 }
 
+// These args feed the two-step `commitPlan` + `finalizePlan` flow. The
+// `RegisterPlanArgs` name is kept for API stability; renaming is a breaking
+// change.
 export function compileZhixuRegisterPlanArgs(
   definition: ZhixuDefinition,
+  resolutionManifest?: DockResolutionManifest,
 ): SolidityRegisterPlanArgs {
-  return toSolidityRegisterPlanArgs(compileZhixuOnchainHookPlan(definition));
+  return toSolidityRegisterPlanArgs(
+    compileZhixuOnchainHookPlan(definition, resolutionManifest),
+  );
 }
 
 export function validateOnchainHookPlanArtifact(
@@ -137,12 +255,15 @@ export function validateOnchainHookPlanArtifact(
   }
   expectHexHash(value.sourcePlanHash, "sourcePlanHash", issues);
   expectHexHash(value.planHash, "planHash", issues);
+  issues.push(...validateDockCommitments(value));
 
   const compiledHooks = Array.isArray(value.compiledHooks)
     ? value.compiledHooks
     : undefined;
   if (!compiledHooks) {
     issues.push("compiledHooks must be an array");
+  } else if (compiledHooks.length === 0) {
+    issues.push("compiledHooks must not be empty (contract reverts EmptyPlan)");
   }
 
   const dependencyIndex = isHexArrayRecord(value.dependencyIndex)
@@ -180,6 +301,47 @@ export function validateOnchainHookPlanArtifact(
         ...validateOnchainDependencyIndex(compiledHooks, dependencyIndex),
       );
     }
+    // 同一守卫同样作用于反序列化 artifact 边界。
+    issues.push(
+      ...unmaterializableStageIssues(
+        compiledHooks as readonly OnchainCompiledHook[],
+        declaredStageIdentifiers(
+          (signalCapabilities ?? []).map((capability) =>
+            isRecord(capability) && typeof capability.stageIdentifier === "string"
+              ? capability.stageIdentifier
+              : undefined,
+          ),
+          (executorRoutes ?? [])
+            .map((route) =>
+              isRecord(route) && typeof route.stageIdentifier === "string"
+                ? route.stageIdentifier
+                : undefined,
+            ),
+          (selectorBindings ?? []).flatMap((binding) =>
+            isRecord(binding)
+              ? [
+                  typeof binding.selectorStageIdentifier === "string"
+                    ? binding.selectorStageIdentifier
+                    : undefined,
+                  typeof binding.targetStageIdentifier === "string"
+                    ? binding.targetStageIdentifier
+                    : undefined,
+                ]
+              : [],
+          ),
+        ),
+      ),
+    );
+    issues.push(
+      ...silentOrderTriggerIssues(compiledHooks as readonly OnchainCompiledHook[]),
+    );
+    issues.push(...planDependencyCountIssues(compiledHooks as readonly OnchainCompiledHook[]));
+  }
+
+  if (signalCapabilities) {
+    issues.push(
+      ...signalCapabilityCountIssues(signalCapabilities as readonly unknown[]),
+    );
   }
 
   if (executorRoutes) {
@@ -204,6 +366,10 @@ export function validateOnchainHookPlanArtifact(
       compiledHooks: value.compiledHooks,
       dependencyIndex: value.dependencyIndex,
       executorRoutes: value.executorRoutes,
+      dockInterface: value.dockInterface ?? null,
+      dockRoutes: value.dockRoutes ?? [],
+      dockRoutesRoot: value.dockRoutesRoot,
+      dockInterfaceRoot: value.dockInterfaceRoot,
       selectorBindings: value.selectorBindings,
       signalCapabilities: value.signalCapabilities,
     });
@@ -226,22 +392,34 @@ export function assertOnchainHookPlanArtifact(
   }
 }
 
+// Solidity boundary builder: returns args for the two-step
+// commitPlan + finalizePlan registration flow. compileZhixuRegisterPlanArgs
+// wraps this for direct Zhixu definitions.
 export function toSolidityRegisterPlanArgs(
   artifact: OnchainHookPlanArtifact,
 ): SolidityRegisterPlanArgs {
   assertOnchainHookPlanArtifact(artifact);
 
   const hooks = artifact.compiledHooks.map((hook) => {
+    const dependencyKeys = uniqueSorted(
+      hook.dependencies.map((dependency) => dependency.signalKey),
+    );
+    if (dependencyKeys.length === 0) {
+      // Fail-closed mirror of UVPStateMachine._validateHook, which reverts
+      // InvalidHook when hook.dependencyKeys is empty.
+      throw new OnchainHookPlanArtifactValidationError([
+        `compiledHooks ${hook.hookId} dependencyKeys must not be empty `
+        + "(contract reverts InvalidHook for empty dependencyKeys)",
+      ]);
+    }
     const base = {
       hookId: hook.hookId,
       stageId: hook.stageId,
       hookName: onchainHookName(hook.hookName),
       kind: hook.kind,
-      isTrigger: hook.isTrigger,
+      flags: solidityHookFlags(hook.orderTriggerKind, hook.emitReady),
       instructions: hook.instructions.map(toSolidityInstructionArg),
-      dependencyKeys: uniqueSorted(
-        hook.dependencies.map((dependency) => dependency.signalKey),
-      ),
+      dependencyKeys,
     };
     return hook.routeRef ? { ...base, routeId: hook.routeRef.routeId } : base;
   });
@@ -262,12 +440,19 @@ export function toSolidityRegisterPlanArgs(
     selectorBindings,
     signalCapabilities,
   );
+  // PlanCommit runtime hash 覆盖 dock roots。
   const planHash = keccak256(
     encodeAbiParameters(
       parseAbiParameters(
-        "bytes32 domain, bytes32 hooksHash, bytes32 metadataHash",
+        "bytes32 domain, bytes32 hooksHash, bytes32 metadataHash, bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot",
       ),
-      [keccak256(stringToHex("uvp.plan.runtime.v1")), hooksHash, metadataHash],
+      [
+        keccak256(stringToHex(PLAN_RUNTIME_HASH_DOMAIN_V2)),
+        hooksHash,
+        metadataHash,
+        artifact.dockRoutesRoot,
+        artifact.dockInterfaceRoot,
+      ],
     ),
   ) as HexString;
 
@@ -280,9 +465,11 @@ export function toSolidityRegisterPlanArgs(
     artifactHash: artifact.planHash,
     hooksHash,
     metadataHash,
+    dockRoutesRoot: artifact.dockRoutesRoot,
+    dockInterfaceRoot: artifact.dockInterfaceRoot,
     hooks,
     dependencyIndex: Object.entries(artifact.dependencyIndex)
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareByCodeUnit(left, right))
       .map(([signalKey, hookIds]) => ({
         signalKey: signalKey as HexString,
         hookIds,
@@ -292,6 +479,8 @@ export function toSolidityRegisterPlanArgs(
       stageId: route.stageId,
       executorType: route.executorType,
       executorId: route.executorId,
+      executorHash: route.executorHash,
+      resourcesHash: route.resourcesHash,
       routeHash: route.routeHash,
     })),
     selectorBindings,
@@ -311,6 +500,27 @@ export function planIdForPublisher(
   ) as HexString;
 }
 
+/**
+ * hooksHash 的唯一权威公式（冻结口径，三方逐字节一致）：
+ *
+ *   hooksHash = keccak256(abi.encode(CompactHook[]))
+ *
+ * 其中每条指令 tuple (uint8 op, bytes32 sourceId, bytes32 signalId,
+ * uint16 arity, uint64 delaySeconds) 中，非 SIGNAL 指令的 sourceId/signalId
+ * 一律填 Solidity 零字（0x00…00，共 32 字节），arity/delaySeconds 未用位填
+ * 0——合约 commitPlan 对提交的 calldata 本身重算（fill-agnostic），因此
+ * TS compiler、uvp-deploy 驱动与任何链下预计算方必须用同一填充字节。
+ * keccak256("")（0xc5d2…470）只作为 DockMerkle.EMPTY_ROOT 出现，与指令
+ * 填充无关——任何一方在填充位改用它都会让含 NOT/AND/OR/DELAY 的计划在
+ * commitPlan 处 PlanMetadataHashMismatch 必然 revert。导出以便跨语言冻结
+ * 向量与 deploy 侧复用同一实现。
+ */
+export function hashSolidityRegisterHooks(
+  hooks: SolidityRegisterPlanArgs["hooks"],
+): HexString {
+  return hashSolidityHooks(hooks);
+}
+
 function hashSolidityHooks(
   hooks: SolidityRegisterPlanArgs["hooks"],
 ): HexString {
@@ -318,7 +528,7 @@ function hashSolidityHooks(
     hookId: hook.hookId,
     stageId: hook.stageId,
     hookName: hook.hookName,
-    isTrigger: hook.isTrigger,
+    flags: hook.flags,
     instructions: hook.instructions.map((instruction) =>
       solidityInstructionTuple(instruction),
     ),
@@ -327,7 +537,7 @@ function hashSolidityHooks(
   return keccak256(
     encodeAbiParameters(
       parseAbiParameters(
-        "(bytes32 hookId,bytes32 stageId,bytes32 hookName,bool isTrigger,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks",
+        "(bytes32 hookId,bytes32 stageId,bytes32 hookName,uint8 flags,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks",
       ),
       [encodedHooks] as never,
     ),
@@ -397,44 +607,65 @@ const ZERO_HASH = `0x${"00".repeat(32)}` as HexString;
 
 function compileHookInstructions(
   ast: HookExpressionAst,
+  stageIdentifier: string,
+  options: { readonly orderTriggerKind: OrderTriggerKind },
 ): readonly OnchainHookInstruction[] {
-  return compileConditionInstructions(ast.condition, ast.source);
+  return compileConditionInstructions(ast.condition, ast.source, stageIdentifier, options);
 }
 
 function compileConditionInstructions(
   condition: HookConditionAst,
   source: string,
+  stageIdentifier: string,
+  options: { readonly orderTriggerKind: OrderTriggerKind },
 ): readonly OnchainHookInstruction[] {
   switch (condition.kind) {
     case "signal":
       return [signalInstruction(source, condition.signalName)];
-    case "external":
-      if (condition.target) {
-        return compileHookInstructions(condition.target);
+    case "subscription":
+      // 出生订阅上链的现行三线口径（只描述现状，行为不动）：
+      // - outside 出生（triggerOrderFromOutsideFor）：出生事实记录在【新
+      //   订单】上，mint hook 在新订单内求值并物化新订单的阶段；
+      // - order-link 出生（triggerOrderFromSignalFromModule）：新单 plan 的
+      //   trigger hook 定义只用来【预检】origin 订单的信号状态
+      //   （_requireTriggerHookReadyForOrder），随后直接标记 Ready 并物化
+      //   【新订单】的阶段——源订单只被读取，绝不被链接路径求值或物化；
+      // - dock 出生（openDockedOrder）：entrance 事实由模块写入新订单后
+      //   标记 Ready。
+      // 编译为一条 SIGNAL 指令即可，链上不存在独立的订阅投递子系统。非出
+      // 生阶段（route=fanin 按类扇入 / 按单路由）的订阅是云侧运行时投递语
+      // 义，仍不上链。
+      if (options.orderTriggerKind === "none") {
+        throw new HookPlanCompilationError([
+          `on-chain HookPlan only supports subscription entries on order-trigger hooks `
+          + `(::ANCHOR(@${condition.source}::${condition.signal}) in stage "${source}"); `
+          + "non-birth subscriptions are cloud-side runtime deliveries "
+          + "(see uvp-core docs/specs/subscription-mint-spec.md)"
+        ]);
       }
-      return [signalInstruction(source, condition.mode)];
+      return [signalInstruction(condition.source, condition.signal)];
     case "not":
       return [
-        ...compileConditionInstructions(condition.expr, source),
+        ...compileConditionInstructions(condition.expr, source, stageIdentifier, options),
         { op: "NOT" },
       ];
     case "and":
       return [
         ...condition.terms.flatMap((term) =>
-          compileConditionInstructions(term, source),
+          compileConditionInstructions(term, source, stageIdentifier, options),
         ),
         { op: "AND", arity: condition.terms.length },
       ];
     case "or":
       return [
         ...condition.terms.flatMap((term) =>
-          compileConditionInstructions(term, source),
+          compileConditionInstructions(term, source, stageIdentifier, options),
         ),
         { op: "OR", arity: condition.terms.length },
       ];
     case "delay":
       return [
-        ...compileConditionInstructions(condition.expr, source),
+        ...compileConditionInstructions(condition.expr, source, stageIdentifier, options),
         { op: "DELAY", delaySeconds: condition.durationSeconds },
       ];
     default:
@@ -488,7 +719,7 @@ function buildOnchainDependencyIndex(
 
   const output: Record<HexString, readonly HexString[]> = {};
   for (const [signalKey, hookIds] of [...index.entries()].sort(
-    ([left], [right]) => left.localeCompare(right),
+    ([left], [right]) => compareByCodeUnit(left, right),
   )) {
     output[signalKey] = [...hookIds].sort();
   }
@@ -498,13 +729,28 @@ function buildOnchainDependencyIndex(
 function compileExecutorRoute(
   route: HookPlanExecutorRoute,
 ): OnchainExecutorRoute {
+  if (route.executor.supplierID === undefined || route.executor.supplierID === "") {
+    throw new HookPlanCompilationError([
+      `executor route "${route.stageIdentifier}" (supplierType=${String(route.executor.supplierType)}) is missing a non-empty executor.supplierID`,
+    ]);
+  }
+  const executorHash = opaqueContentHash(route.executor);
+  const resourcesHash =
+    route.fileResources === undefined ? ZERO_HASH : opaqueContentHash(route.fileResources);
   return {
     routeId: onchainRouteId(route.stageIdentifier),
     stageId: onchainStageId(route.stageIdentifier),
     stageIdentifier: route.stageIdentifier,
     executorType: String(route.executor.supplierType),
-    executorId: route.executor.supplierID ?? "",
-    routeHash: onchainRouteHash(route),
+    executorId: route.executor.supplierID,
+    executorHash,
+    resourcesHash,
+    routeHash: routeHashFromDigests(
+      onchainStageId(route.stageIdentifier),
+      route.stageIdentifier,
+      executorHash,
+      resourcesHash,
+    ),
   };
 }
 
@@ -657,16 +903,39 @@ export function onchainSignalKey(
   return keccak256Hex(concatHex32(sourceId, signalId));
 }
 
+function opaqueContentHash(value: unknown): HexString {
+  return keccak256Hex(canonicalStringify(value));
+}
+
 function onchainRouteHash(route: HookPlanExecutorRoute): HexString {
+  return routeHashFromDigests(
+    onchainStageId(route.stageIdentifier),
+    route.stageIdentifier,
+    opaqueContentHash(route.executor),
+    route.fileResources === undefined ? ZERO_HASH : opaqueContentHash(route.fileResources),
+  );
+}
+
+function routeHashFromDigests(
+  stageId: HexString,
+  stageIdentifier: string,
+  executorHash: HexString,
+  resourcesHash: HexString,
+): HexString {
   return hashCanonical(ONCHAIN_ROUTE_HASH_DOMAIN, {
-    stageId: onchainStageId(route.stageIdentifier),
-    stageIdentifier: route.stageIdentifier,
-    executor: route.executor,
-    fileResources: route.fileResources ?? null,
+    stageId,
+    stageIdentifier,
+    executorHash,
+    resourcesHash,
   });
 }
 
-function hashOnchainPlanPayload(
+/**
+ * Canonical payload hash of an on-chain HookPlan artifact. Exported so
+ * golden-fixture maintainers can re-pin planHash values with the exact
+ * production formula instead of transcribing them by hand.
+ */
+export function hashOnchainPlanPayload(
   payload: Omit<OnchainHookPlanArtifact, "planHash">,
 ): HexString {
   return hashCanonical(ONCHAIN_PLAN_HASH_DOMAIN, payload);
@@ -720,6 +989,12 @@ function validateOnchainCompiledHooks(
       .map((route) => route.routeId)
       .filter((routeId): routeId is string => typeof routeId === "string"),
   );
+  const routesById = new Map<string, Record<string, unknown>>();
+  for (const route of executorRoutes) {
+    if (isRecord(route) && typeof route.routeId === "string") {
+      routesById.set(route.routeId, route);
+    }
+  }
 
   for (const [index, hook] of hooks.entries()) {
     if (!isRecord(hook)) {
@@ -736,8 +1011,14 @@ function validateOnchainCompiledHooks(
       issues,
     );
     expectNonEmptyString(hook.hookName, `${prefix}.hookName`, issues);
-    expectOneOf(hook.kind, ["receive", "signalMap"], `${prefix}.kind`, issues);
-    expectBoolean(hook.isTrigger, `${prefix}.isTrigger`, issues);
+    expectOneOf(hook.kind, ["receive"], `${prefix}.kind`, issues);
+    expectOneOf(
+      hook.orderTriggerKind,
+      ["none", "mint", "dock"],
+      `${prefix}.orderTriggerKind`,
+      issues,
+    );
+    expectBoolean(hook.emitReady, `${prefix}.emitReady`, issues);
 
     if (
       typeof hook.stageIdentifier === "string" &&
@@ -815,6 +1096,20 @@ function validateOnchainCompiledHooks(
           issues.push(
             `${prefix}.routeRef.routeId must reference executorRoutes`,
           );
+        }
+        if (
+          typeof hook.routeRef.routeId === "string" &&
+          typeof hook.routeRef.routeHash === "string"
+        ) {
+          const referencedRoute = routesById.get(hook.routeRef.routeId);
+          if (
+            referencedRoute &&
+            referencedRoute.routeHash !== hook.routeRef.routeHash
+          ) {
+            issues.push(
+              `${prefix}.routeRef.routeHash must match the referenced executor route`,
+            );
+          }
         }
       }
     }
@@ -906,6 +1201,13 @@ function validateInstructions(
           Number(instruction.delaySeconds) <= 0
         ) {
           issues.push(`${prefix}.delaySeconds must be a positive safe integer`);
+        } else if (
+          Number(instruction.delaySeconds) > MAX_ONCHAIN_HOOK_DELAY_SECONDS
+        ) {
+          issues.push(
+            `${prefix}.delaySeconds must not exceed ${MAX_ONCHAIN_HOOK_DELAY_SECONDS} `
+            + "(contract MAX_HOOK_DELAY_SECONDS = 30 days, reverts HookDelayTooLong)",
+          );
         }
         if (stackDepth < 1) {
           issues.push(`${prefix}.op requires one stack item`);
@@ -916,7 +1218,10 @@ function validateInstructions(
     }
   }
 
-  if (instructions.length > 0 && stackDepth !== 1) {
+  // Aligned with UVPStateMachine._validateHook: `hook.instructions.length == 0`
+  // reverts InvalidHook on-chain, so an empty instruction array must fail the
+  // preflight too (stack depth 0 !== 1 below).
+  if (stackDepth !== 1) {
     issues.push(`${path} must leave exactly one stack item`);
   }
 
@@ -928,6 +1233,15 @@ function validateOnchainDependencies(
   path: string,
 ): readonly string[] {
   const issues: string[] = [];
+  // Aligned with UVPStateMachine._validateHook: `hook.dependencyKeys.length == 0`
+  // reverts InvalidHook on-chain, so a hook without dependencies is invalid
+  // at the artifact boundary as well.
+  if (dependencies.length === 0) {
+    issues.push(
+      `${path} must not be empty `
+      + "(contract reverts InvalidHook for empty dependencyKeys)",
+    );
+  }
   for (const [index, dependency] of dependencies.entries()) {
     if (!isRecord(dependency)) {
       issues.push(`${path}[${index}] must be an object`);
@@ -972,14 +1286,221 @@ function validateOnchainDependencies(
         `${prefix}.signalKey must be keccak256(abi.encodePacked(sourceId, signalId))`,
       );
     }
+    if (dependency.delaySeconds !== undefined) {
+      // E12：delaySeconds 只要在场就必须是正安全整数——非数值/NaN/零/负数
+      // 一律拒绝，不按 kind 静默放行。
+      if (
+        !Number.isSafeInteger(dependency.delaySeconds) ||
+        Number(dependency.delaySeconds) <= 0
+      ) {
+        issues.push(
+          `${prefix}.delaySeconds must be a positive safe integer when present`,
+        );
+      }
+    }
     if (
       dependency.kind === "timer" &&
-      (!Number.isSafeInteger(dependency.delaySeconds) ||
+      (typeof dependency.delaySeconds !== "number" ||
+        !Number.isSafeInteger(dependency.delaySeconds) ||
         Number(dependency.delaySeconds) <= 0)
     ) {
       issues.push(
         `${prefix}.delaySeconds must be a positive safe integer for timer dependencies`,
       );
+    }
+  }
+  return issues;
+}
+
+/**
+ * 阶段物化门（onchain target，镜像 uvp-core 659a388
+ * validate_onchain_stage_materialization）：
+ *
+ * - 每个出现在 compiledHooks 的阶段必须至少有一个 order-trigger 或
+ *   EMIT_READY hook（能物化自身阶段的 hook）。纯 flags=0 watcher 阶段在
+ *   链上永远无法物化——挂在其上的任何 hook 都构成不可恢复死锁。
+ * - 每个在 artifact 上留有声明投影（signalCapabilities / executorRoutes /
+ *   selectorBindings）的阶段不得编译为零 hook——零 hook 阶段同样永不可
+ *   物化，且其 sendSignals 在链上没有钩子可挂（submitSignal 恒 revert
+ *   UnknownHook）。Rust 定义层第一道拒绝（"declares no receiveSignals"），
+ *   这里是 artifact 边界的第二道。
+ *
+ * dock entrance 豁免口径与 Rust dock_entrance_hook_ids 单一来源一致：entrance
+ * 端口钩子在两个编译器里都编译为 orderTriggerKind=dock（dock|emitReady=6），
+ * 因此 artifact 层只认编译后的物化位本身、不再从 dockInterface 端口重推——
+ * flags 即该豁免的产物投影，重推属于镜像扩张。
+ */
+function unmaterializableStageIssues(
+  hooks: readonly OnchainCompiledHook[],
+  declaredStages: ReadonlySet<string>,
+): readonly string[] {
+  const issues: string[] = [];
+  const stageMaterializer = new Map<string, boolean>();
+  for (const hook of hooks) {
+    const canMaterialize =
+      hook.orderTriggerKind !== "none" || hook.emitReady;
+    const current = stageMaterializer.get(hook.stageId) ?? false;
+    stageMaterializer.set(hook.stageId, current || canMaterialize);
+  }
+  for (const hook of hooks) {
+    if (stageMaterializer.get(hook.stageId)) {
+      continue;
+    }
+    issues.push(
+      `stage ${hook.stageIdentifier} has no order-trigger or EMIT_READY hook; its hooks compile to flags=0 watchers which can never materialize the stage on-chain (deadlock, no recovery path) — the Rust compiler must reject this shape`,
+    );
+  }
+  for (const stageIdentifier of [...declaredStages].sort(compareByCodeUnit)) {
+    if (stageMaterializer.has(onchainStageId(stageIdentifier))) {
+      continue;
+    }
+    issues.push(
+      `stage ${stageIdentifier} declares no receiveSignals and compiles to zero hooks: `
+        + "the stage can never materialize on-chain (materialization only happens via "
+        + "this stage's own order-trigger/EMIT_READY hooks) and its sendSignals have "
+        + "no hook to hang on — submitSignal requires the source stage to be "
+        + "materialized and reverts UnknownHook forever (deadlock, no recovery path); "
+        + "declare receiveSignals carrying a mint/dock entrance or a static executor",
+    );
+  }
+  return issues;
+}
+
+/**
+ * artifact 边界可见的“阶段声明”全集：sendSignals（signalCapabilities）、
+ * executor（executorRoutes）、selectedStages（selectorBindings 两侧）三类
+ * 声明各留一处投影；receiveSignals 的投影是 compiledHooks 本体。零 hook
+ * 阶段没有 compiledHooks 记录，只能从这三处发现——非字符串项交由形状
+ * 校验报错，这里静默跳过。
+ */
+function declaredStageIdentifiers(
+  ...identifierGroups: readonly (readonly (string | undefined)[])[]
+): Set<string> {
+  const identifiers = new Set<string>();
+  for (const group of identifierGroups) {
+    for (const identifier of group) {
+      if (typeof identifier === "string" && identifier.trim().length > 0) {
+        identifiers.add(identifier);
+      }
+    }
+  }
+  return identifiers;
+}
+
+/**
+ * HookReady 三线口径统一镜像：order-trigger hook 必须携带 emitReady——
+ * Rust 编译器产物恒为 trigger|EMIT_READY（flags=5/6），UVPStateMachine
+ * commitPlan 对缺 EMIT_READY 的"沉默 trigger"revert SilentOrderTriggerHook。
+ * 这里是 artifact 边界的镜像门禁（编译器第一道，合约注册边界兜底）。
+ */
+function silentOrderTriggerIssues(
+  hooks: readonly OnchainCompiledHook[],
+): readonly string[] {
+  const issues: string[] = [];
+  for (const hook of hooks) {
+    if (hook.orderTriggerKind !== "none" && !hook.emitReady) {
+      issues.push(
+        `hook ${hook.stageIdentifier}#${hook.hookName} is an order trigger without emitReady; ` +
+          `UVPStateMachine.commitPlan reverts SilentOrderTriggerHook — ` +
+          `the Rust compiler must always emit trigger flags with EMIT_READY`,
+      );
+    }
+  }
+  return issues;
+}
+
+/**
+ * E12 镜像：UVPStateMachine.commitPlan 对去重后的 dependency key 总数执行
+ * MAX_PLAN_DEPENDENCIES=1024 上限（TooManyDependencies）——预检同口径拒绝。
+ */
+function planDependencyCountIssues(
+  hooks: readonly OnchainCompiledHook[],
+): readonly string[] {
+  const keys = new Set<string>();
+  for (const hook of hooks) {
+    for (const dependency of hook.dependencies) {
+      keys.add(dependency.signalKey);
+    }
+  }
+  if (keys.size > MAX_PLAN_DEPENDENCIES) {
+    return [
+      `distinct dependency keys ${keys.size} exceed the contract limit ${MAX_PLAN_DEPENDENCIES} (commitPlan reverts TooManyDependencies)`,
+    ];
+  }
+  return [];
+}
+
+/**
+ * G-18 镜像：sendSignals 声明总量（编译为 signalCapabilities）超过
+ * MAX_SIGNAL_CAPABILITIES 时 _signalStageId 的线性扫描会让每次信号提交的
+ * gas 随 plan 规模无界增长——预检在编译/反序列化两个边界同口径拒绝。
+ */
+function signalCapabilityCountIssues(
+  capabilities: readonly unknown[],
+): readonly string[] {
+  if (capabilities.length > MAX_SIGNAL_CAPABILITIES) {
+    return [
+      `signal capabilities ${capabilities.length} exceed the documented limit ${MAX_SIGNAL_CAPABILITIES} `
+      + "(UVPStateMachine._signalStageId linearly scans capabilities per signal submission; unbounded plan-controlled gas)",
+    ];
+  }
+  return [];
+}
+
+/**
+ * Cross-stage dependency preflight mirroring UVPStateMachine._registerPlanHook
+ * byte-for-byte in SEMANTICS: hooks are processed in submitted (artifact)
+ * order, and per signal key the FIRST watcher pins the recorded stage.
+ * A later cross-stage watcher passes only while every watcher seen so far on
+ * that key (AND-accumulated) is an order trigger; a set-based "any stage plus
+ * any non-trigger watcher" check is STRICTER than the contract and rejects
+ * plans the contract accepts (e.g. trigger(A) → trigger(B) → watcher(A)),
+ * so the sequential scan is load-bearing, not an optimization.
+ *
+ * Field mapping note (0300 M-7): artifacts carry `orderTriggerKind`
+ * ("none" | "mint" | "dock") — there is no `isOrderTrigger` boolean, neither
+ * at compile time nor in deserialized artifacts. The trigger flag is always
+ * derived as `orderTriggerKind !== "none"`; reading a boolean field here
+ * silently skipped the guard for every deserialized artifact.
+ */
+function crossStageDependencyIssues(hooks: readonly unknown[]): readonly string[] {
+  interface KeyState {
+    stageId: string;
+    triggerOnly: boolean;
+  }
+  const issues: string[] = [];
+  const keyState = new Map<string, KeyState>();
+  for (const hook of hooks) {
+    if (
+      !isRecord(hook) ||
+      typeof hook.hookId !== "string" ||
+      typeof hook.stageId !== "string" ||
+      typeof hook.orderTriggerKind !== "string" ||
+      !Array.isArray(hook.dependencies)
+    ) {
+      continue;
+    }
+    const isOrderTrigger = hook.orderTriggerKind !== "none";
+    for (const dependency of hook.dependencies) {
+      if (!isOnchainHookDependency(dependency)) {
+        continue;
+      }
+      const seen = keyState.get(dependency.signalKey);
+      if (seen === undefined) {
+        keyState.set(dependency.signalKey, { stageId: hook.stageId, triggerOnly: isOrderTrigger });
+        continue;
+      }
+      const triggerOnly = seen.triggerOnly && isOrderTrigger;
+      if (seen.stageId !== hook.stageId && !triggerOnly) {
+        issues.push(
+          `dependency ${dependency.signalKey} is shared across stages ${[seen.stageId, hook.stageId]
+            .sort((left, right) => compareByCodeUnit(left, right))
+            .join(", ")} with a non-trigger watcher after a foreign stage; `
+          + "an unmaterialized stage's non-trigger hook would make the "
+          + "submitting transaction revert forever",
+        );
+      }
+      seen.triggerOnly = triggerOnly;
     }
   }
   return issues;
@@ -1009,9 +1530,11 @@ function validateOnchainDependencyIndex(
     }
   }
 
+  issues.push(...crossStageDependencyIssues(hooks));
+
   const expected = Object.fromEntries(
     [...recomputed.entries()]
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareByCodeUnit(left, right))
       .map(([signalKey, hookIds]) => [signalKey, [...hookIds].sort()]),
   );
   if (JSON.stringify(expected) !== JSON.stringify(dependencyIndex)) {
@@ -1041,7 +1564,26 @@ function validateOnchainExecutorRoutes(
     );
     expectNonEmptyString(route.executorType, `${prefix}.executorType`, issues);
     expectString(route.executorId, `${prefix}.executorId`, issues);
+    expectHexHash(route.executorHash, `${prefix}.executorHash`, issues);
+    expectHexHash(route.resourcesHash, `${prefix}.resourcesHash`, issues);
     expectHexHash(route.routeHash, `${prefix}.routeHash`, issues);
+    if (
+      typeof route.routeHash === "string" &&
+      typeof route.stageId === "string" &&
+      typeof route.stageIdentifier === "string" &&
+      typeof route.executorHash === "string" &&
+      typeof route.resourcesHash === "string"
+    ) {
+      const recomputedRouteHash = routeHashFromDigests(
+        route.stageId as HexString,
+        route.stageIdentifier,
+        route.executorHash as HexString,
+        route.resourcesHash as HexString,
+      );
+      if (route.routeHash !== recomputedRouteHash) {
+        issues.push(`${prefix}.routeHash must match the committed content digests`);
+      }
+    }
     if (
       typeof route.stageIdentifier === "string" &&
       typeof route.stageId === "string" &&
@@ -1290,9 +1832,9 @@ function compareOnchainHooks(
   right: OnchainCompiledHook,
 ): number {
   return (
-    left.stageIdentifier.localeCompare(right.stageIdentifier) ||
-    left.hookName.localeCompare(right.hookName) ||
-    left.hookId.localeCompare(right.hookId)
+    compareByCodeUnit(left.stageIdentifier, right.stageIdentifier) ||
+    compareByCodeUnit(left.hookName, right.hookName) ||
+    compareByCodeUnit(left.hookId, right.hookId)
   );
 }
 
@@ -1301,8 +1843,8 @@ function compareExecutorRoutes(
   right: OnchainExecutorRoute,
 ): number {
   return (
-    left.stageIdentifier.localeCompare(right.stageIdentifier) ||
-    left.routeId.localeCompare(right.routeId)
+    compareByCodeUnit(left.stageIdentifier, right.stageIdentifier) ||
+    compareByCodeUnit(left.routeId, right.routeId)
   );
 }
 
@@ -1311,9 +1853,9 @@ function compareSelectorBindings(
   right: OnchainStageSelectorBinding,
 ): number {
   return (
-    left.selectorStageId.localeCompare(right.selectorStageId) ||
-    left.targetStageId.localeCompare(right.targetStageId) ||
-    left.bindingHash.localeCompare(right.bindingHash)
+    compareByCodeUnit(left.selectorStageId, right.selectorStageId) ||
+    compareByCodeUnit(left.targetStageId, right.targetStageId) ||
+    compareByCodeUnit(left.bindingHash, right.bindingHash)
   );
 }
 
@@ -1322,11 +1864,11 @@ function compareSignalCapabilities(
   right: OnchainSignalCapability,
 ): number {
   return (
-    left.stageId.localeCompare(right.stageId) ||
-    left.targetSourceId.localeCompare(right.targetSourceId) ||
-    left.signalId.localeCompare(right.signalId) ||
-    left.targetOrderRelation.localeCompare(right.targetOrderRelation) ||
-    left.capabilityHash.localeCompare(right.capabilityHash)
+    compareByCodeUnit(left.stageId, right.stageId) ||
+    compareByCodeUnit(left.targetSourceId, right.targetSourceId) ||
+    compareByCodeUnit(left.signalId, right.signalId) ||
+    compareByCodeUnit(left.targetOrderRelation, right.targetOrderRelation) ||
+    compareByCodeUnit(left.capabilityHash, right.capabilityHash)
   );
 }
 

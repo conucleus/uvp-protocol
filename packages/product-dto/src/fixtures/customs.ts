@@ -56,8 +56,8 @@ export const customsWallets = {
 
 export const customsPlanIds = {
   planId: "0x336d9b556f7ffa00c83f49600554819055a4a3b300f82abca70b401f6b161ddc",
-  planHash: "0x4761dcdb1b6a43bd587da0014c53db5e5a2c0794d30c3ef43708847bea13e342",
-  artifactHash: "0xd1b50a5e4c5288e52a874a2466b06c7b95175f5f1620b7c38938ba749a06c176"
+  planHash: "0xfb496c082967f755145cd0e9473828931fa8ab27b195c22450ca74c968b1ddd6",
+  artifactHash: "0x55cc801d49aab1f7fd4c0f08a84459e40d7281129ef8e956280796f5b67922e6"
 } as const;
 
 export const customsResourceManifest: ProductResourceManifestDTO = {
@@ -522,7 +522,6 @@ export const customsSelectorTask: ProductTaskDTO = {
   stageName: "选择报关履约者",
   deadline: "2026-05-01 23:59",
   fundingImpact: "无资金动作",
-  requiredEvidence: ["履约者元数据指纹"],
   status: "done",
   addOnKind: "stage_executor_patch",
   addOnManifest: customsBuyerSelectorManifest,
@@ -551,7 +550,6 @@ export const customsResourceControllerTask: ProductTaskDTO = {
   stageName: "发布报关资源清单",
   deadline: "2026-05-01 23:59",
   fundingImpact: "无资金动作",
-  requiredEvidence: ["资源清单指纹", "访问策略指纹"],
   status: "done",
   addOnKind: "stage_resource_patch",
   addOnManifest: customsBuyerResourceControllerManifest,
@@ -581,7 +579,6 @@ export const customsExecutorTask: ProductTaskDTO = {
   stageName: "报关完成",
   deadline: "2026-05-01 23:59",
   fundingImpact: "无资金动作",
-  requiredEvidence: ["报关完成凭证引用", "报关单 PDF 资源清单"],
   status: "done",
   addOnKind: "submit_signal",
   addOnManifest: customsExecutorManifest,
@@ -589,10 +586,11 @@ export const customsExecutorTask: ProductTaskDTO = {
   performanceSlotId: customsRoleSlotIds.customsExecutor,
   performanceSlotLabel: "报关履约者",
   businessPersonaLabels: ["报关行", "关务服务商"],
-  capabilityPlugin: {
-    ...customsExecutorPlugin,
-    roleSlotId: customsRoleSlotIds.customsExecutor
-  },
+  // schema 插件的 requiredEvidence 属于秩序发布面，不随任务 DTO 下发，显式剔除。
+  capabilityPlugin: (() => {
+    const { requiredEvidence: _schemaPluginEvidence, ...plugin } = customsExecutorPlugin;
+    return { ...plugin, roleSlotId: customsRoleSlotIds.customsExecutor };
+  })(),
   primaryActionLabel: "提交报关完成",
   participantRoleLabel: "报关履约者",
   participantWallet: customsWallets.customsExecutor,
@@ -612,7 +610,11 @@ export const customsProductCatalog: ProductCatalogDTO = {
 };
 
 export const customsOnchainHookPlanArtifact = {
-  schemaVersion: "uvp.onchainHookPlan.v1",
+  schemaVersion: "uvp.onchainHookPlan.v2",
+  dockInterface: null,
+  dockRoutes: [],
+  dockRoutesRoot: "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+  dockInterfaceRoot: "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
   planId: customsPlanIds.planId,
   zhixuId: CUSTOMS_ZHIXU_ID,
   version: "1",
@@ -629,7 +631,8 @@ export const customsOnchainHookPlanArtifact = {
       stageIdentifier: customsStageIds.buyerPublishCustomsResources,
       hookName: "resource_controller_task_ready",
       kind: "receive",
-      isTrigger: true,
+      orderTriggerKind: "mint",
+      emitReady: true,
       instructions: [
         {
           op: "SIGNAL",
@@ -653,7 +656,7 @@ export const customsOnchainHookPlanArtifact = {
       routeRef: {
         routeId: "0x9963f771afc5aaa6fabb6af0a7625a6c51011bc02fb39d5d5146ee79440bac3f",
         stageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca",
-        routeHash: "0xaa0698c451e6e8eca83fa242e475f9a763f4d544db920e544b12d050fa25c80f"
+        routeHash: "0x08507123bdafbc8946aba27ab465e524ec48f016fc271024fc305fa133d74324"
       }
     },
     {
@@ -662,7 +665,8 @@ export const customsOnchainHookPlanArtifact = {
       stageIdentifier: customsStageIds.buyerSelectCustomsExecutor,
       hookName: "selector_task_ready",
       kind: "receive",
-      isTrigger: true,
+      orderTriggerKind: "mint",
+      emitReady: true,
       instructions: [
         {
           op: "SIGNAL",
@@ -686,7 +690,7 @@ export const customsOnchainHookPlanArtifact = {
       routeRef: {
         routeId: "0x169a72a4d6908a7fd8eda5bbabaa54ee05d4de02e40ec40f9cb97f33e60f441a",
         stageId: "0x301c76d30a738a103f1a948d5edd57e97fa2e17d80ddffff275c32daa56e6047",
-        routeHash: "0xcccad2de7aa9ead401a511ba06c3fccbbe50233b80076678ca4910046b648395"
+        routeHash: "0xc07d535cc26a67052cc5f3b89878a45e18816bdc43d3a0d52c7b83bb77a064de"
       }
     },
     {
@@ -695,7 +699,8 @@ export const customsOnchainHookPlanArtifact = {
       stageIdentifier: customsStageIds.customsComplete,
       hookName: "customs_ready",
       kind: "receive",
-      isTrigger: true,
+      orderTriggerKind: "mint",
+      emitReady: true,
       instructions: [
         {
           op: "SIGNAL",
@@ -751,22 +756,8 @@ export const customsOnchainHookPlanArtifact = {
     ]
   },
   executorRoutes: [
-    {
-      routeId: "0x9963f771afc5aaa6fabb6af0a7625a6c51011bc02fb39d5d5146ee79440bac3f",
-      stageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca",
-      stageIdentifier: customsStageIds.buyerPublishCustomsResources,
-      executorType: "wallet",
-      executorId: "buyer",
-      routeHash: "0xaa0698c451e6e8eca83fa242e475f9a763f4d544db920e544b12d050fa25c80f"
-    },
-    {
-      routeId: "0x169a72a4d6908a7fd8eda5bbabaa54ee05d4de02e40ec40f9cb97f33e60f441a",
-      stageId: "0x301c76d30a738a103f1a948d5edd57e97fa2e17d80ddffff275c32daa56e6047",
-      stageIdentifier: customsStageIds.buyerSelectCustomsExecutor,
-      executorType: "wallet",
-      executorId: "buyer",
-      routeHash: "0xcccad2de7aa9ead401a511ba06c3fccbbe50233b80076678ca4910046b648395"
-    }
+    { routeId: "0x9963f771afc5aaa6fabb6af0a7625a6c51011bc02fb39d5d5146ee79440bac3f", stageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca", stageIdentifier: customsStageIds.buyerPublishCustomsResources, executorType: "wallet", executorId: "buyer", executorHash: "0xceba0f926893649fbdd5053bfd8e95f239a18892e2ee25e3f76562a3413e1e3b", resourcesHash: "0x069184494e0d2f806cee049270bee7ff504cb08daad1a83acc37ea2ca46b930a", routeHash: "0x08507123bdafbc8946aba27ab465e524ec48f016fc271024fc305fa133d74324" },
+    { routeId: "0x169a72a4d6908a7fd8eda5bbabaa54ee05d4de02e40ec40f9cb97f33e60f441a", stageId: "0x301c76d30a738a103f1a948d5edd57e97fa2e17d80ddffff275c32daa56e6047", stageIdentifier: customsStageIds.buyerSelectCustomsExecutor, executorType: "wallet", executorId: "buyer", executorHash: "0xecab016c59a79e17b59b3ff9a3c5e1caffecbbd4faa7220e245995b712499bbd", resourcesHash: "0x7dbcba468a4a1d997d8401f76d6d5ac8baca6007bffdba640e069955998e94f1", routeHash: "0xc07d535cc26a67052cc5f3b89878a45e18816bdc43d3a0d52c7b83bb77a064de" }
   ],
   selectorBindings: [
     {

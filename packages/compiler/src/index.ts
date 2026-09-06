@@ -15,6 +15,7 @@ export {
   assertOnchainHookPlanArtifact,
   compileZhixuOnchainHookPlan,
   compileZhixuRegisterPlanArgs,
+  hashSolidityRegisterHooks,
   onchainHookId,
   onchainHookName,
   planIdForPublisher,
@@ -29,6 +30,48 @@ export {
 } from "./onchain-hook-plan.js";
 export { hashCanonical, keccak256Hex } from "./hash.js";
 export {
+  canonicalSignalHash,
+  cloudRuntimeDomain,
+  definitionRefHash,
+  dockInstanceId,
+  dockOutputIdempotencyKey,
+  dockInputIdempotencyKey,
+  dockRouteId,
+  dockRoutesRootOf,
+  EMPTY_MERKLE_ROOT,
+  evmRuntimeDomain,
+  hookKey,
+  interfaceRootOf,
+  linkedOrderId,
+  localOrderKey,
+  merkleProof,
+  merkleRoot,
+  portKey,
+  sourceFactSetHash,
+  stageKey,
+  u64Word,
+  verifyMerkleProof,
+} from "./dock.js";
+// dock hash 域常量族（UVP_DOCK_*_V1）：兼容矩阵冻结的版本族断言消费。
+export {
+  DOMAIN_DEFINITION_REF,
+  DOMAIN_INTERFACE_INPUT,
+  DOMAIN_INTERFACE_OUTPUT,
+  DOMAIN_ROUTE_ID,
+  DOMAIN_INPUT_BINDING,
+  DOMAIN_OUTPUT_BINDING,
+  DOMAIN_ROUTE,
+  DOMAIN_DOCK_INSTANCE,
+  DOMAIN_DOCK_ORDER,
+  DOMAIN_INPUT_PAYLOAD,
+} from "./dock.js";
+export {
+  HOOK_FLAG_EMIT_READY,
+  HOOK_FLAG_ORDER_TRIGGER_DOCK,
+  HOOK_FLAG_ORDER_TRIGGER_MINT,
+  solidityHookFlags,
+} from "./onchain-hook-plan.js";
+export {
   COMPILER_NAME,
   COMPILER_VERSION,
   HOOK_PLAN_SCHEMA_VERSION,
@@ -36,7 +79,15 @@ export {
 } from "./types/index.js";
 export type {
   Address,
+  DockInputPortSource,
+  DockInterfaceArtifact,
+  DockInterfaceSource,
+  DockOutputPortSource,
+  DockResolutionManifest,
+  DockResolutionTarget,
+  DockRouteV1,
   ExecuteConfigs,
+  OrderTriggerKind,
   FileResourceLike,
   HexString,
   ObjectMeta,

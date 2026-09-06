@@ -79,6 +79,14 @@ contract UVPStagePatchModule {
         bytes32 orderId, bytes32 targetStageId, address expectedExecutor, address previousExecutor
     );
     error StageHasNoSignal(bytes32 orderId, bytes32 targetStageId);
+    /// 出生（mint/dock）阶段的执行者终生不可变（簇 I 裁决，云侧已强制）：
+    /// 逐单 executor patch 在合约侧读 plan hook flags 补门（0212 P1-3）。
+    /// 资源补丁不受此门——资源可替换已裁决。
+    error StageExecutorPatchForbiddenOnBirthStage(bytes32 orderId, bytes32 targetStageId);
+    /// 同秒平局 fail-closed（F7/O6/ETH-5）：最高 submittedAt 并列且提交者
+    /// 不同时，"上一执行者"没有确定序——拒绝而不是按 capability 数组枚举
+    /// 序静默取值。
+    error StagePreviousExecutorAmbiguous(bytes32 orderId, bytes32 targetStageId, uint64 submittedAt);
     error StageSignalCapabilityMissing(bytes32 planId, bytes32 targetStageId);
     error StageResourcePatchNonceNotIncreasing(
         bytes32 orderId, bytes32 targetStageId, bytes32 resourceKey, uint256 previousNonce, uint256 patchNonce
@@ -110,27 +118,35 @@ contract UVPStagePatchModule {
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _EIP712_NAME_HASH = keccak256("UVPStagePatchModule");
     bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.1");
+    // patch 签名绑定订单的
+    // (planId, orderId) 复合身份。
     bytes32 private constant _STAGE_EXECUTOR_PATCH_TYPEHASH = keccak256(
-        "UVPStagePatchModuleStageExecutorPatch(bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 approvalSourceId,bytes32 approvalSignalId,bytes32 patchHash,uint256 patchNonce,string metadataURI,address selector,uint256 deadline)"
+        "UVPStagePatchModuleStageExecutorPatch(bytes32 planId,bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 approvalSourceId,bytes32 approvalSignalId,bytes32 patchHash,uint256 patchNonce,string metadataURI,address selector,uint256 deadline)"
     );
     bytes32 private constant _STAGE_RESOURCE_PATCH_TYPEHASH = keccak256(
-        "UVPStagePatchModuleStageResourcePatch(bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,bytes32 resourceKey,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI,address selector,uint256 deadline)"
+        "UVPStagePatchModuleStageResourcePatch(bytes32 planId,bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,bytes32 resourceKey,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI,address selector,uint256 deadline)"
     );
     bytes32 private constant _STAGE_EXECUTOR_PATCH_APPLIED_TOPIC = keccak256(
-        "StageExecutorPatchApplied(bytes32,bytes32,bytes32,address,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string)"
+        "StageExecutorPatchApplied(bytes32,bytes32,bytes32,bytes32,address,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string)"
     );
 
-    mapping(bytes32 orderId => mapping(bytes32 targetStageId => ActiveStageExecutorPatch patch)) private
-        _activeStageExecutorPatches;
+    // patch 存储按 (planId, orderId) 复合键寻址。
     mapping(
-        bytes32 orderId
-            => mapping(bytes32 targetStageId => mapping(bytes32 resourceKey => ActiveStageResourcePatch patch))
+        bytes32 planId => mapping(bytes32 orderId => mapping(bytes32 targetStageId => ActiveStageExecutorPatch patch))
+    ) private _activeStageExecutorPatches;
+    mapping(
+        bytes32 planId
+            => mapping(
+            bytes32 orderId
+                => mapping(bytes32 targetStageId => mapping(bytes32 resourceKey => ActiveStageResourcePatch patch))
+        )
     ) private _activeStageResourcePatches;
 
     event StageExecutorPatchApplied(
         bytes32 indexed orderId,
         bytes32 indexed selectorStageId,
         bytes32 indexed targetStageId,
+        bytes32 planId,
         address selector,
         address executor,
         bytes32 role,
@@ -144,9 +160,12 @@ contract UVPStagePatchModule {
         string metadataURI
     );
     event StageResourcePatchApplied(
+        // 与同合约 ExecutorPatchApplied 对齐携带
+        // planId——两 plan 同号订单的事件字节级不同。
         bytes32 indexed orderId,
         bytes32 indexed selectorStageId,
         bytes32 indexed targetStageId,
+        bytes32 planId,
         address selector,
         bytes32 resourceKey,
         bytes32 manifestHash,
@@ -160,11 +179,12 @@ contract UVPStagePatchModule {
         stateMachine = IUVPStateMachineCore(stateMachineAddress);
     }
 
-    function applyStageExecutorPatch(bytes32 orderId, StageExecutorPatch calldata patch) external {
-        _applyStageExecutorPatch(orderId, patch, msg.sender, address(0));
+    function applyStageExecutorPatch(bytes32 planId, bytes32 orderId, StageExecutorPatch calldata patch) external {
+        _applyStageExecutorPatch(planId, orderId, patch, msg.sender, address(0));
     }
 
     function applyStageExecutorPatchFor(
+        bytes32 planId,
         bytes32 orderId,
         StageExecutorPatch calldata patch,
         address selector,
@@ -179,7 +199,7 @@ contract UVPStagePatchModule {
             revert ZeroSelector();
         }
 
-        bytes32 digest = stageExecutorPatchDigest(orderId, patch, selector, deadline);
+        bytes32 digest = stageExecutorPatchDigest(planId, orderId, patch, selector, deadline);
         address recoveredSigner = _recoverStageExecutorPatchSigner(digest, selectorSignature);
         if (recoveredSigner != selector) {
             revert InvalidStageExecutorPatchSignature(selector, recoveredSigner);
@@ -190,14 +210,15 @@ contract UVPStagePatchModule {
             recoveredPreviousExecutor = _recoverStageExecutorPatchSigner(digest, previousExecutorSignature);
         }
 
-        _applyStageExecutorPatch(orderId, patch, selector, recoveredPreviousExecutor);
+        _applyStageExecutorPatch(planId, orderId, patch, selector, recoveredPreviousExecutor);
     }
 
-    function applyStageResourcePatch(bytes32 orderId, StageResourcePatch calldata patch) external {
-        _applyStageResourcePatch(orderId, patch, msg.sender);
+    function applyStageResourcePatch(bytes32 planId, bytes32 orderId, StageResourcePatch calldata patch) external {
+        _applyStageResourcePatch(planId, orderId, patch, msg.sender);
     }
 
     function applyStageResourcePatchFor(
+        bytes32 planId,
         bytes32 orderId,
         StageResourcePatch calldata patch,
         address selector,
@@ -211,24 +232,33 @@ contract UVPStagePatchModule {
             revert ZeroSelector();
         }
 
-        address recoveredSigner =
-            _recoverStageResourcePatchSelector(stageResourcePatchDigest(orderId, patch, selector, deadline), signature);
+        address recoveredSigner = _recoverStageResourcePatchSelector(
+            stageResourcePatchDigest(planId, orderId, patch, selector, deadline), signature
+        );
         if (recoveredSigner != selector) {
             revert InvalidStageResourcePatchSignature(selector, recoveredSigner);
         }
 
-        _applyStageResourcePatch(orderId, patch, selector);
+        _applyStageResourcePatch(planId, orderId, patch, selector);
     }
 
-    function activeStageExecutor(bytes32 orderId, bytes32 targetStageId) external view returns (address) {
-        return _activeStageExecutorPatches[orderId][targetStageId].executor;
+    function activeStageExecutor(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
+        external
+        view
+        returns (address)
+    {
+        return _activeStageExecutorPatches[planId][orderId][targetStageId].executor;
     }
 
-    function orderStageExecutorPatchNonce(bytes32 orderId, bytes32 targetStageId) external view returns (uint256) {
-        return _activeStageExecutorPatches[orderId][targetStageId].patchNonce;
+    function orderStageExecutorPatchNonce(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
+        external
+        view
+        returns (uint256)
+    {
+        return _activeStageExecutorPatches[planId][orderId][targetStageId].patchNonce;
     }
 
-    function getActiveStageExecutorPatch(bytes32 orderId, bytes32 targetStageId)
+    function getActiveStageExecutorPatch(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
         external
         view
         returns (
@@ -241,7 +271,7 @@ contract UVPStagePatchModule {
             string memory metadataURI
         )
     {
-        ActiveStageExecutorPatch storage activePatch = _activeStageExecutorPatches[orderId][targetStageId];
+        ActiveStageExecutorPatch storage activePatch = _activeStageExecutorPatches[planId][orderId][targetStageId];
         return (
             activePatch.exists,
             activePatch.executor,
@@ -253,15 +283,15 @@ contract UVPStagePatchModule {
         );
     }
 
-    function orderStageResourcePatchNonce(bytes32 orderId, bytes32 targetStageId, bytes32 resourceKey)
+    function orderStageResourcePatchNonce(bytes32 planId, bytes32 orderId, bytes32 targetStageId, bytes32 resourceKey)
         external
         view
         returns (uint256)
     {
-        return _activeStageResourcePatches[orderId][targetStageId][resourceKey].patchNonce;
+        return _activeStageResourcePatches[planId][orderId][targetStageId][resourceKey].patchNonce;
     }
 
-    function getActiveStageResourcePatch(bytes32 orderId, bytes32 targetStageId, bytes32 resourceKey)
+    function getActiveStageResourcePatch(bytes32 planId, bytes32 orderId, bytes32 targetStageId, bytes32 resourceKey)
         external
         view
         returns (
@@ -273,7 +303,8 @@ contract UVPStagePatchModule {
             string memory manifestURI
         )
     {
-        ActiveStageResourcePatch storage activePatch = _activeStageResourcePatches[orderId][targetStageId][resourceKey];
+        ActiveStageResourcePatch storage activePatch =
+            _activeStageResourcePatches[planId][orderId][targetStageId][resourceKey];
         return (
             activePatch.exists,
             activePatch.manifestHash,
@@ -291,6 +322,7 @@ contract UVPStagePatchModule {
     }
 
     function stageExecutorPatchDigest(
+        bytes32 planId,
         bytes32 orderId,
         StageExecutorPatch calldata patch,
         address selector,
@@ -298,12 +330,15 @@ contract UVPStagePatchModule {
     ) public view returns (bytes32) {
         return keccak256(
             abi.encodePacked(
-                "\x19\x01", DOMAIN_SEPARATOR(), _stageExecutorPatchStructHash(orderId, patch, selector, deadline)
+                "\x19\x01",
+                DOMAIN_SEPARATOR(),
+                _stageExecutorPatchStructHash(planId, orderId, patch, selector, deadline)
             )
         );
     }
 
     function stageResourcePatchDigest(
+        bytes32 planId,
         bytes32 orderId,
         StageResourcePatch calldata patch,
         address selector,
@@ -312,6 +347,7 @@ contract UVPStagePatchModule {
         bytes32 structHash = keccak256(
             abi.encode(
                 _STAGE_RESOURCE_PATCH_TYPEHASH,
+                planId,
                 orderId,
                 patch.selectorStageId,
                 patch.targetStageId,
@@ -329,20 +365,21 @@ contract UVPStagePatchModule {
     }
 
     function _applyStageExecutorPatch(
+        bytes32 planId,
         bytes32 orderId,
         StageExecutorPatch calldata patch,
         address selector,
         address previousExecutorSigner
     ) private {
-        _validateStageExecutorPatch(orderId, patch, selector);
+        _validateStageExecutorPatch(planId, orderId, patch, selector);
 
-        ActiveStageExecutorPatch storage activePatch = _activeStageExecutorPatches[orderId][patch.targetStageId];
+        ActiveStageExecutorPatch storage activePatch = _activeStageExecutorPatches[planId][orderId][patch.targetStageId];
         if (patch.patchNonce <= activePatch.patchNonce) {
             revert StageExecutorPatchNonceNotIncreasing(
                 orderId, patch.targetStageId, activePatch.patchNonce, patch.patchNonce
             );
         }
-        _validateStageExecutorPatchMode(orderId, patch, activePatch, previousExecutorSigner);
+        _validateStageExecutorPatchMode(planId, orderId, patch, activePatch, previousExecutorSigner);
 
         activePatch.executor = patch.executor;
         activePatch.role = patch.role;
@@ -352,8 +389,9 @@ contract UVPStagePatchModule {
         activePatch.metadataURI = patch.metadataURI;
         activePatch.exists = true;
 
-        _emitStageExecutorPatchApplied(orderId, patch, selector);
+        _emitStageExecutorPatchApplied(planId, orderId, patch, selector);
         stateMachine.activateStageExecutorFromModule(
+            planId,
             orderId,
             patch.targetStageId,
             patch.executor,
@@ -363,11 +401,10 @@ contract UVPStagePatchModule {
             patch.patchNonce,
             patch.metadataURI
         );
-        _delegateStageExecutorSignals(orderId, patch);
+        _delegateStageExecutorSignals(planId, orderId, patch);
     }
 
-    function _delegateStageExecutorSignals(bytes32 orderId, StageExecutorPatch calldata patch) private {
-        bytes32 planId = stateMachine.orderPlanId(orderId);
+    function _delegateStageExecutorSignals(bytes32 planId, bytes32 orderId, StageExecutorPatch calldata patch) private {
         IUVPPlanMetadataModuleForStagePatch metadata = _planMetadata();
         uint256 capabilityCount = metadata.stageSignalCapabilityCount(planId, patch.targetStageId);
         uint256 delegatedCount;
@@ -378,7 +415,7 @@ contract UVPStagePatchModule {
             if (relation != 0) {
                 continue;
             }
-            _delegateStageExecutorSignal(orderId, targetSourceId, signalId, patch);
+            _delegateStageExecutorSignal(planId, orderId, targetSourceId, signalId, patch);
             delegatedCount += 1;
         }
 
@@ -388,12 +425,14 @@ contract UVPStagePatchModule {
     }
 
     function _delegateStageExecutorSignal(
+        bytes32 planId,
         bytes32 orderId,
         bytes32 targetSourceId,
         bytes32 signalId,
         StageExecutorPatch calldata patch
     ) private {
         stateMachine.delegateStageExecutorSignalFromModule(
+            planId,
             orderId,
             patch.targetStageId,
             targetSourceId,
@@ -405,10 +444,12 @@ contract UVPStagePatchModule {
         );
     }
 
-    function _validateStageExecutorPatch(bytes32 orderId, StageExecutorPatch calldata patch, address selector)
-        private
-        view
-    {
+    function _validateStageExecutorPatch(
+        bytes32 planId,
+        bytes32 orderId,
+        StageExecutorPatch calldata patch,
+        address selector
+    ) private view {
         if (selector == address(0)) {
             revert ZeroSelector();
         }
@@ -427,27 +468,40 @@ contract UVPStagePatchModule {
         if (!_isStageExecutorPatchMode(patch.mode)) {
             revert InvalidStageExecutorPatchMode(patch.mode);
         }
-        if (!stateMachine.orderExists(orderId)) {
+        if (!stateMachine.orderExists(planId, orderId)) {
             revert UnknownOrder();
         }
-        bytes32 planId = stateMachine.orderPlanId(orderId);
+        // 出生阶段守门（簇 I 裁决）：目标阶段挂有 mint/dock trigger hook 时
+        // 拒绝逐单 executor patch——云侧已强制"订阅/出生阶段终生不可变"，
+        // 合约读 flags 补门封死绕行。fileResources-only 资源补丁不经过本
+        // 函数（_applyStageResourcePatch），资源可替换已裁决。
+        if (stateMachine.stageHasOrderTriggerHook(planId, patch.targetStageId)) {
+            revert StageExecutorPatchForbiddenOnBirthStage(orderId, patch.targetStageId);
+        }
         if (!_planMetadata().isStageSelectorBound(planId, patch.selectorStageId, patch.targetStageId)) {
             revert StageSelectorBindingNotFound(planId, patch.selectorStageId, patch.targetStageId);
         }
-        if (!stateMachine.hasExplicitSignalAuthorization(
-                orderId, patch.selectorStageId, EXECUTOR_PATCH_SIGNAL_ID, selector
-            )) {
+        // selector 权：显式 EXECUTOR_PATCH_SIGNAL 授权，或订单 creator 自身。
+        // docked 订单 creator = 目标 plan publisher（DockingModule 派生），
+        // 引导权随订单创建派生，keeper 不经此获得任何权利。
+        if (
+            !stateMachine.hasExplicitSignalAuthorization(
+                    planId, orderId, patch.selectorStageId, EXECUTOR_PATCH_SIGNAL_ID, selector
+                ) && selector != stateMachine.orderCreator(planId, orderId)
+        ) {
             revert UnauthorizedStageExecutorPatchSelector(orderId, patch.selectorStageId, selector);
         }
     }
 
     function _validateStageExecutorPatchMode(
+        bytes32 planId,
         bytes32 orderId,
         StageExecutorPatch calldata patch,
         ActiveStageExecutorPatch storage activePatch,
         address previousExecutorSigner
     ) private view {
-        uint256 signalCount = stateMachine.sourceSignalCount(orderId, patch.targetStageId);
+        (uint256 signalCount, address latestSignalSubmitter, uint64 latestSubmittedAt, bool latestAmbiguous) =
+            _stageSignalState(planId, orderId, patch.targetStageId);
         if (patch.mode == EXECUTOR_PATCH_MODE_ASSIGN) {
             if (patch.previousExecutor != address(0)) {
                 revert StageExecutorPatchPreviousExecutorMismatch(
@@ -467,8 +521,13 @@ contract UVPStagePatchModule {
             revert StageHasNoSignal(orderId, patch.targetStageId);
         }
 
-        address expectedPreviousExecutor =
-            activePatch.exists ? activePatch.executor : stateMachine.lastSignalSubmitter(orderId, patch.targetStageId);
+        address expectedPreviousExecutor = activePatch.exists ? activePatch.executor : latestSignalSubmitter;
+        // 同秒平局 fail-closed（F7/O6/ETH-5）：回退到"最近提交者"判定且
+        // 最高 submittedAt 并列不同提交者时，没有确定序——拒绝。active
+        // patch 存在时不回退（patch executor 是权威上一执行者），无歧义。
+        if (!activePatch.exists && latestAmbiguous) {
+            revert StagePreviousExecutorAmbiguous(orderId, patch.targetStageId, latestSubmittedAt);
+        }
         if (patch.previousExecutor != expectedPreviousExecutor) {
             revert StageExecutorPatchPreviousExecutorMismatch(
                 orderId, patch.targetStageId, expectedPreviousExecutor, patch.previousExecutor
@@ -485,12 +544,17 @@ contract UVPStagePatchModule {
             return;
         }
 
-        if (!stateMachine.hasSignal(orderId, patch.approvalSourceId, patch.approvalSignalId)) {
+        if (!stateMachine.hasSignal(planId, orderId, patch.approvalSourceId, patch.approvalSignalId)) {
             revert StageExecutorPatchApprovalSignalMissing(orderId, patch.approvalSourceId, patch.approvalSignalId);
         }
     }
 
-    function _applyStageResourcePatch(bytes32 orderId, StageResourcePatch calldata patch, address selector) private {
+    function _applyStageResourcePatch(
+        bytes32 planId,
+        bytes32 orderId,
+        StageResourcePatch calldata patch,
+        address selector
+    ) private {
         if (selector == address(0)) {
             revert ZeroSelector();
         }
@@ -512,25 +576,25 @@ contract UVPStagePatchModule {
         if (patch.patchHash == bytes32(0)) {
             revert ZeroPatchHash();
         }
-        if (!stateMachine.orderExists(orderId)) {
+        if (!stateMachine.orderExists(planId, orderId)) {
             revert UnknownOrder();
         }
 
-        bytes32 planId = stateMachine.orderPlanId(orderId);
         if (!_planMetadata().isStageSelectorBound(planId, patch.selectorStageId, patch.targetStageId)) {
             revert StageSelectorBindingNotFound(planId, patch.selectorStageId, patch.targetStageId);
         }
         if (!stateMachine.hasExplicitSignalAuthorization(
-                orderId, patch.selectorStageId, RESOURCE_PATCH_SIGNAL_ID, selector
+                planId, orderId, patch.selectorStageId, RESOURCE_PATCH_SIGNAL_ID, selector
             )) {
             revert UnauthorizedStageResourcePatchSelector(orderId, patch.selectorStageId, selector);
         }
-        if (stateMachine.sourceSignalCount(orderId, patch.targetStageId) != 0) {
+        (uint256 signalCount,,,) = _stageSignalState(planId, orderId, patch.targetStageId);
+        if (signalCount != 0) {
             revert StageAlreadyHasSignal(orderId, patch.targetStageId);
         }
 
         ActiveStageResourcePatch storage activePatch =
-            _activeStageResourcePatches[orderId][patch.targetStageId][patch.resourceKey];
+            _activeStageResourcePatches[planId][orderId][patch.targetStageId][patch.resourceKey];
         if (patch.patchNonce <= activePatch.patchNonce) {
             revert StageResourcePatchNonceNotIncreasing(
                 orderId, patch.targetStageId, patch.resourceKey, activePatch.patchNonce, patch.patchNonce
@@ -548,6 +612,7 @@ contract UVPStagePatchModule {
             orderId,
             patch.selectorStageId,
             patch.targetStageId,
+            planId,
             selector,
             patch.resourceKey,
             patch.manifestHash,
@@ -563,54 +628,97 @@ contract UVPStagePatchModule {
             || mode == EXECUTOR_PATCH_MODE_REPLACEMENT;
     }
 
+    /// Count signals belonging to the target stage by its compiled capability
+    /// declarations. A production source id is not the stage id: the former
+    /// identifies a business source/class while the latter identifies the
+    /// stage path. Looking up sourceSignalCount with targetStageId therefore
+    /// lets assign patches through after a real stage signal and makes
+    /// handoff/replacement read the wrong previous submitter.
+    function _stageSignalState(bytes32 planId, bytes32 orderId, bytes32 stageId)
+        private
+        view
+        returns (uint256 count, address latestSubmitter, uint64 latestSubmittedAt, bool latestAmbiguous)
+    {
+        IUVPPlanMetadataModuleForStagePatch metadata = _planMetadata();
+        uint256 capabilityCount = metadata.stageSignalCapabilityCount(planId, stageId);
+        for (uint256 i = 0; i < capabilityCount; i++) {
+            (bytes32 sourceId, bytes32 signalId, uint8 relation) = metadata.stageSignalCapabilityAt(planId, stageId, i);
+            if (relation != 0) {
+                continue;
+            }
+            (bool exists,,, uint64 submittedAt, address submitter) =
+                stateMachine.getSignal(planId, orderId, sourceId, signalId);
+            if (!exists) {
+                continue;
+            }
+            count += 1;
+            // 最高 submittedAt 的并列提交者检测：更大的时间戳重置判定，
+            // 同秒不同提交者标记歧义——消费者必须 fail-closed，不得按
+            // capability 数组枚举序静默取"最后一个"。
+            if (submittedAt > latestSubmittedAt) {
+                latestSubmittedAt = submittedAt;
+                latestSubmitter = submitter;
+                latestAmbiguous = false;
+            } else if (submittedAt == latestSubmittedAt && submitter != latestSubmitter) {
+                latestAmbiguous = true;
+            }
+        }
+    }
+
     function _planMetadata() private view returns (IUVPPlanMetadataModuleForStagePatch) {
         return IUVPPlanMetadataModuleForStagePatch(stateMachine.planMetadataModule());
     }
 
     function _stageExecutorPatchStructHash(
+        bytes32 planId,
         bytes32 orderId,
         StageExecutorPatch calldata patch,
         address selector,
         uint256 deadline
     ) private pure returns (bytes32) {
-        bytes memory encoded = new bytes(0x200);
+        bytes memory encoded = new bytes(0x220);
         _writeWord(encoded, 0x00, _STAGE_EXECUTOR_PATCH_TYPEHASH);
-        _writeWord(encoded, 0x20, orderId);
-        _writeWord(encoded, 0x40, patch.selectorStageId);
-        _writeWord(encoded, 0x60, patch.targetStageId);
-        _writeAddress(encoded, 0x80, patch.executor);
-        _writeWord(encoded, 0xa0, patch.role);
-        _writeWord(encoded, 0xc0, patch.executorMetadataHash);
-        _writeWord(encoded, 0xe0, patch.mode);
-        _writeAddress(encoded, 0x100, patch.previousExecutor);
-        _writeWord(encoded, 0x120, patch.approvalSourceId);
-        _writeWord(encoded, 0x140, patch.approvalSignalId);
-        _writeWord(encoded, 0x160, patch.patchHash);
-        _writeWord(encoded, 0x180, bytes32(patch.patchNonce));
-        _writeWord(encoded, 0x1a0, keccak256(bytes(patch.metadataURI)));
-        _writeAddress(encoded, 0x1c0, selector);
-        _writeWord(encoded, 0x1e0, bytes32(deadline));
+        _writeWord(encoded, 0x20, planId);
+        _writeWord(encoded, 0x40, orderId);
+        _writeWord(encoded, 0x60, patch.selectorStageId);
+        _writeWord(encoded, 0x80, patch.targetStageId);
+        _writeAddress(encoded, 0xa0, patch.executor);
+        _writeWord(encoded, 0xc0, patch.role);
+        _writeWord(encoded, 0xe0, patch.executorMetadataHash);
+        _writeWord(encoded, 0x100, patch.mode);
+        _writeAddress(encoded, 0x120, patch.previousExecutor);
+        _writeWord(encoded, 0x140, patch.approvalSourceId);
+        _writeWord(encoded, 0x160, patch.approvalSignalId);
+        _writeWord(encoded, 0x180, patch.patchHash);
+        _writeWord(encoded, 0x1a0, bytes32(patch.patchNonce));
+        _writeWord(encoded, 0x1c0, keccak256(bytes(patch.metadataURI)));
+        _writeAddress(encoded, 0x1e0, selector);
+        _writeWord(encoded, 0x200, bytes32(deadline));
         return keccak256(encoded);
     }
 
-    function _emitStageExecutorPatchApplied(bytes32 orderId, StageExecutorPatch calldata patch, address selector)
-        private
-    {
+    function _emitStageExecutorPatchApplied(
+        bytes32 planId,
+        bytes32 orderId,
+        StageExecutorPatch calldata patch,
+        address selector
+    ) private {
         bytes memory metadataURI = bytes(patch.metadataURI);
-        bytes memory eventData = new bytes(0x180 + _paddedLength(metadataURI.length));
-        _writeAddress(eventData, 0x00, selector);
-        _writeAddress(eventData, 0x20, patch.executor);
-        _writeWord(eventData, 0x40, patch.role);
-        _writeWord(eventData, 0x60, patch.executorMetadataHash);
-        _writeWord(eventData, 0x80, patch.mode);
-        _writeAddress(eventData, 0xa0, patch.previousExecutor);
-        _writeWord(eventData, 0xc0, patch.approvalSourceId);
-        _writeWord(eventData, 0xe0, patch.approvalSignalId);
-        _writeWord(eventData, 0x100, patch.patchHash);
-        _writeWord(eventData, 0x120, bytes32(patch.patchNonce));
-        _writeWord(eventData, 0x140, bytes32(uint256(0x160)));
-        _writeWord(eventData, 0x160, bytes32(metadataURI.length));
-        _copyBytes(eventData, 0x180, metadataURI);
+        bytes memory eventData = new bytes(0x1a0 + _paddedLength(metadataURI.length));
+        _writeWord(eventData, 0x00, planId);
+        _writeAddress(eventData, 0x20, selector);
+        _writeAddress(eventData, 0x40, patch.executor);
+        _writeWord(eventData, 0x60, patch.role);
+        _writeWord(eventData, 0x80, patch.executorMetadataHash);
+        _writeWord(eventData, 0xa0, patch.mode);
+        _writeAddress(eventData, 0xc0, patch.previousExecutor);
+        _writeWord(eventData, 0xe0, patch.approvalSourceId);
+        _writeWord(eventData, 0x100, patch.approvalSignalId);
+        _writeWord(eventData, 0x120, patch.patchHash);
+        _writeWord(eventData, 0x140, bytes32(patch.patchNonce));
+        _writeWord(eventData, 0x160, bytes32(uint256(0x180)));
+        _writeWord(eventData, 0x180, bytes32(metadataURI.length));
+        _copyBytes(eventData, 0x1a0, metadataURI);
 
         bytes32 selectorStageId = patch.selectorStageId;
         bytes32 targetStageId = patch.targetStageId;

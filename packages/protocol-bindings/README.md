@@ -26,13 +26,13 @@ pnpm --filter @uvp-eth/protocol-bindings build
   `EXECUTOR_PATCH_MODE_ASSIGN`, `EXECUTOR_PATCH_MODE_HANDOFF`, and
   `EXECUTOR_PATCH_MODE_REPLACEMENT`.
 - `buildStageExecutorPatchTypedData` builds
-  `UVPStagePatchModuleStageExecutorPatch` EIP-712 typed data for PRD88 `assign`,
+  `UVPStagePatchModuleStageExecutorPatch` EIP-712 typed data for `assign`,
   `handoff`, and `replacement` payloads. The payload includes `mode`,
   `previousExecutor`, `approvalSourceId`, and `approvalSignalId`.
 - `recoverStageExecutorPatchSigner` recovers either the selector wallet or the
   previous executor wallet from a signature over the same executor patch typed
   data.
-- `buildApplyStageExecutorPatchForCall` encodes PRD88
+- `buildApplyStageExecutorPatchForCall` encodes
   `applyStageExecutorPatchFor` calldata with `selectorSignature` and
   `previousExecutorSignature`; pass `0x` when the selected mode does not
   require previous-executor consent.
@@ -49,14 +49,13 @@ pnpm --filter @uvp-eth/protocol-bindings build
   `UVPStagePatchModuleStageResourcePatch` EIP-712 typed data.
 - `recoverStageResourcePatchSigner` recovers the authorized stage executor
   wallet from a resource patch signature.
-- `buildApplyStageResourcePatchForCall` encodes PRD87
+- `buildApplyStageResourcePatchForCall` encodes
   `applyStageResourcePatchFor` calldata.
 - `hashStageResourcePatchPayload` commits to selector stage, target stage,
   resource key, manifest hash, policy hash, nonce, and manifest URI.
 
 ## Resource Manifest Helpers
 
-- `hashResourceManifest` canonicalizes and hashes `ResourceManifestV1` JSON.
-- `validateResourceManifestV1` applies the same validation without returning a
-  hash.
+- `hashResourceManifest` canonicalizes, validates, and hashes
+  `ResourceManifestV1` JSON.
 - Resource manifests reject public HTTP resource URLs.

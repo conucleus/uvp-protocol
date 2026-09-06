@@ -185,6 +185,7 @@ describe("product DTO catalog", () => {
     const draftRow = toStoreZhixuConsoleDTO(summarizeZhixu(zhixu));
     assert.equal(draftRow.lifecycleStatus, "approved_for_broadcast");
     assert.equal(draftRow.lifecycleLabel, "待发布签名");
+    assert.equal(draftRow.metricsStatus, "unknown");
 
     const activeRow = toStoreZhixuConsoleDTO({
       ...summarizeZhixu(zhixu),
@@ -201,6 +202,7 @@ describe("product DTO catalog", () => {
     });
     assert.equal(activeRow.lifecycleStatus, "active");
     assert.equal(activeRow.nextAction, "持续观察订单、待办和供应商状态");
+    assert.equal(activeRow.metricsStatus, "observed");
 
     const summary = storeConsoleSummary([draftRow, activeRow]);
     assert.equal(summary.totalZhixus, 2);
@@ -464,12 +466,10 @@ describe("product DTO catalog", () => {
       stageName: "Stage",
       deadline: "2026-05-01 18:00",
       fundingImpact: "No funding movement is represented by this DTO.",
-      requiredEvidence: ["Evidence hash"],
       status: "open",
       capabilityPlugin: {
         pluginKind: "evidence_submission",
-        source: "explicit",
-        requiredEvidence: ["Evidence hash"]
+        source: "explicit"
       },
       responsibilityStatements: [],
       proofRows: []
@@ -504,7 +504,6 @@ describe("product DTO catalog", () => {
       stageName: "检验验收",
       deadline: "2026-05-04 18:00",
       fundingImpact: "仅记录验收确认，不处理任何资金动作",
-      requiredEvidence: ["凭证指纹"],
       status: "open",
       addOnKind: "submit_signal",
       resourceRequirements: [

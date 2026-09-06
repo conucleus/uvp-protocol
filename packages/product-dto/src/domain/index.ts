@@ -63,7 +63,6 @@ export type ProductResourceType =
   | "metadata"
   | "uri"
   | "other";
-export type ProductFileResourceType = ProductResourceType;
 export type ProductResourceVisibility = "public" | "protected" | "private";
 export type ProductResourcePolicyPrincipalKind =
   | "wallet"
@@ -85,20 +84,6 @@ export type ProductDockedZhixuRuntimeStatus =
   | "signal_map_satisfied"
   | "blocked"
   | "not_modeled";
-export type ProductizationConvergenceTrack =
-  | "product_schema_v1"
-  | "dynamic_executor_authorization"
-  | "docked_zhixu_runtime"
-  | "resource_manifest_access"
-  | "store_schema_authoring"
-  | "proof_read_model"
-  | "identity_audit_ops"
-  | "signal_container_producer";
-export type ProductizationConvergenceStatus =
-  | "closed"
-  | "partial"
-  | "prototype"
-  | "open";
 export type CapabilityPluginSource = "explicit" | "inferred" | "missing";
 export type StoreCapabilityReviewStatus = "explicit" | "inferred" | "missing";
 export type StoreProductSchemaVersion = "store-product-schema.v1";
@@ -130,7 +115,6 @@ export type StoreSupplierReviewStatus =
   | "rejected"
   | "revoked";
 export type StoreSupplierIdentityStatus = "active" | "revoked" | "not_found";
-export type StoreSupplierCapabilityTag = string;
 
 export const STORE_PRODUCT_SCHEMA_V1_REQUIRED_FIELDS = [
   "schemaVersion",
@@ -264,20 +248,6 @@ export interface ProductDockedZhixuRuntimeDTO {
   readonly signalMap: readonly ProductDockedSignalMapEntryDTO[];
   readonly privacyNotice?: string;
   readonly proofRows: readonly ChainProofRowDTO[];
-}
-
-export interface ProductizationConvergenceItemDTO {
-  readonly track: ProductizationConvergenceTrack;
-  readonly status: ProductizationConvergenceStatus;
-  readonly ownerModule: string;
-  readonly publicClaim: string;
-  readonly nextAction: string;
-}
-
-export interface ProductizationConvergenceSummaryDTO {
-  readonly schemaVersion: "productization-convergence.v1";
-  readonly generatedAt: string;
-  readonly items: readonly ProductizationConvergenceItemDTO[];
 }
 
 export interface ProductResourcePolicyPrincipalDTO {
@@ -577,6 +547,140 @@ export interface ProductTimelineEventDTO {
   readonly proofRows?: readonly ChainProofRowDTO[];
 }
 
+export type TaskEvidenceInputKind = "file" | "text" | "date";
+
+/**
+ * Structured, publisher-owned evidence requirement for one task slot.
+ * Sole source of task evidence rules: when the publisher carries no spec the
+ * task has no evidence slots (field-only confirmation or offline submission
+ * by business convention), so consumers must not synthesize generic slots.
+ * Store surfaces must stay generic and must never hardcode business-specific
+ * labels, document types, or file formats.
+ */
+export interface TaskEvidenceSpecDTO {
+  /** Stable identifier; becomes the evidence documentType when uploaded. */
+  readonly key: string;
+  /** Publisher-provided display label. */
+  readonly label: string;
+  /** How the slot is collected. Defaults to "file". */
+  readonly inputKind?: TaskEvidenceInputKind;
+  /** Accepted file types (MIME types or extensions) for file inputs. */
+  readonly accept?: readonly string[];
+  /** Whether the slot must be satisfied. Defaults to true. */
+  readonly required?: boolean;
+  /** Optional publisher-provided explanation shown next to the slot. */
+  readonly description?: string;
+}
+
+export type TaskEvidenceSpecIssueCode =
+  | "empty_spec"
+  | "empty_key"
+  | "empty_label"
+  | "duplicate_key"
+  | "invalid_input_kind"
+  | "accept_on_non_file_input"
+  | "invalid_accept_entry";
+
+export interface TaskEvidenceSpecIssueDTO {
+  readonly code: TaskEvidenceSpecIssueCode;
+  readonly message: string;
+  readonly index?: number;
+}
+
+/**
+ * Validates an optional task evidence spec. An absent spec is valid; an
+ * empty array is not (either declare nothing or declare slots). Validation
+ * is structural only — it must never encode business-specific expectations.
+ */
+export function validateTaskEvidenceSpec(
+  spec: readonly TaskEvidenceSpecDTO[] | undefined | null,
+): readonly TaskEvidenceSpecIssueDTO[] {
+  if (spec === undefined || spec === null) {
+    return [];
+  }
+  if (!Array.isArray(spec)) {
+    return [
+      {
+        code: "empty_spec",
+        message: "evidenceSpec must be an array when present",
+      },
+    ];
+  }
+  if (spec.length === 0) {
+    return [
+      {
+        code: "empty_spec",
+        message: "evidenceSpec must declare at least one slot when present",
+      },
+    ];
+  }
+  const issues: TaskEvidenceSpecIssueDTO[] = [];
+  const seenKeys = new Set<string>();
+  spec.forEach((entry, index) => {
+    const key = typeof entry?.key === "string" ? entry.key.trim() : "";
+    if (key.length === 0) {
+      issues.push({
+        code: "empty_key",
+        message: `evidenceSpec[${index}].key must be a non-empty string`,
+        index,
+      });
+    } else if (seenKeys.has(key)) {
+      issues.push({
+        code: "duplicate_key",
+        message: `evidenceSpec[${index}].key "${key}" is duplicated`,
+        index,
+      });
+    }
+    if (key.length > 0) {
+      seenKeys.add(key);
+    }
+    const label = typeof entry?.label === "string" ? entry.label.trim() : "";
+    if (label.length === 0) {
+      issues.push({
+        code: "empty_label",
+        message: `evidenceSpec[${index}].label must be a non-empty string`,
+        index,
+      });
+    }
+    const inputKind = entry?.inputKind ?? "file";
+    if (inputKind !== "file" && inputKind !== "text" && inputKind !== "date") {
+      issues.push({
+        code: "invalid_input_kind",
+        message: `evidenceSpec[${index}].inputKind must be "file", "text", or "date"`,
+        index,
+      });
+    }
+    const accept = entry?.accept;
+    if (accept !== undefined) {
+      if (!Array.isArray(accept)) {
+        issues.push({
+          code: "invalid_accept_entry",
+          message: `evidenceSpec[${index}].accept must be an array of strings`,
+          index,
+        });
+      } else {
+        if (inputKind !== "file") {
+          issues.push({
+            code: "accept_on_non_file_input",
+            message: `evidenceSpec[${index}].accept only applies to file inputs`,
+            index,
+          });
+        }
+        accept.forEach((acceptEntry: unknown, acceptIndex: number) => {
+          if (typeof acceptEntry !== "string" || acceptEntry.trim().length === 0) {
+            issues.push({
+              code: "invalid_accept_entry",
+              message: `evidenceSpec[${index}].accept[${acceptIndex}] must be a non-empty string`,
+              index,
+            });
+          }
+        });
+      }
+    }
+  });
+  return issues;
+}
+
 export interface ProductTaskDTO {
   readonly taskId: string;
   readonly orderId: string;
@@ -592,7 +696,12 @@ export interface ProductTaskDTO {
   readonly stageName: string;
   readonly deadline: string;
   readonly fundingImpact: string;
-  readonly requiredEvidence: readonly string[];
+  /**
+   * Optional publisher-configured structured evidence requirements; the sole
+   * authority for task evidence slots. When absent the task has no evidence
+   * slots — consumers must not synthesize generic slots nor reject.
+   */
+  readonly evidenceSpec?: readonly TaskEvidenceSpecDTO[];
   readonly status: TaskStatus;
   readonly addOnKind?: ParticipantAddOnKind;
   readonly selectableTargets?: readonly ProductSelectableTargetDTO[];
@@ -701,7 +810,6 @@ export interface ProductTaskCapabilityPluginDTO {
   readonly title?: string;
   readonly summary?: string;
   readonly primaryActionLabel?: string;
-  readonly requiredEvidence: readonly string[];
   readonly inputPolicy?: readonly FulfillmentRequiredInputDTO[];
 }
 
@@ -766,6 +874,12 @@ export interface StoreZhixuConsoleDTO {
   readonly orderCount: number;
   readonly openTaskCount: number;
   readonly supplierCount: number;
+  /**
+   * Explicit availability marker for the metric fields above and for
+   * versionLabel: "unknown" means they were not supplied by the caller and
+   * must be displayed as unknown, never read as real observations.
+   */
+  readonly metricsStatus: StoreConsoleMetricsStatus;
   readonly planId: string;
   readonly planHash: string;
   readonly artifactHash?: string;
@@ -1062,6 +1176,8 @@ export interface StoreZhixuVersionSummaryDTO {
   readonly cutoverReason?: string;
 }
 
+export type StoreConsoleMetricsStatus = "observed" | "unknown";
+
 export interface StoreZhixuConsoleMetrics {
   readonly orderCount?: number;
   readonly openTaskCount?: number;
@@ -1090,12 +1206,22 @@ export function toStoreZhixuConsoleDTO(
     metrics.lifecycleStatus ?? lifecycleStatusForZhixu(zhixu);
   const planId = zhixu.planPublication.planId;
   const planHash = zhixu.planPublication.planHash;
+  // Metrics are either fully observed or explicitly unknown: a partial
+  // supply must not silently substitute zeros / "当前版本" for the missing
+  // fields while claiming the rest are real observations.
+  const metricsStatus: StoreConsoleMetricsStatus =
+    metrics.orderCount !== undefined &&
+    metrics.openTaskCount !== undefined &&
+    metrics.supplierCount !== undefined
+      ? "observed"
+      : "unknown";
   return {
     zhixuId: zhixu.zhixuId,
     title: zhixu.title,
     subtitle: zhixu.subtitle,
     maintainer: zhixu.maintainer,
     versionLabel: metrics.versionLabel ?? "当前版本",
+    metricsStatus,
     lifecycleStatus,
     lifecycleLabel: lifecycleLabel(lifecycleStatus),
     reviewStatus: zhixu.reviewStatus,

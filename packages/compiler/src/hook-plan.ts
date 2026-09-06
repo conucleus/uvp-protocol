@@ -3,8 +3,10 @@ import {
   HOOK_PLAN_SCHEMA_VERSION,
   type HookPlanArtifact,
   type ZhixuPlatform,
-  type ZhixuDefinition
+  type ZhixuDefinition,
+  type DockResolutionManifest,
 } from "./types/index.js";
+import { validateDockCommitments } from "./dock-validation.js";
 
 export class HookPlanCompilationError extends Error {
   readonly issues: readonly string[];
@@ -26,7 +28,19 @@ export class HookPlanArtifactValidationError extends Error {
   }
 }
 
-export function compileZhixuHookPlan(definition: ZhixuDefinition): HookPlanArtifact {
+/**
+ * Deterministic code-unit ordering. localeCompare is ICU/locale dependent and
+ * must never participate in canonical artifact construction, which has to
+ * reproduce byte-identically across environments (Rust side orders by bytes).
+ */
+export function compareByCodeUnit(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+export function compileZhixuHookPlan(
+  definition: ZhixuDefinition,
+  resolutionManifest?: DockResolutionManifest,
+): HookPlanArtifact {
   const issues = validateZhixuShape(definition);
   if (issues.length > 0) {
     throw new HookPlanCompilationError(issues);
@@ -34,7 +48,13 @@ export function compileZhixuHookPlan(definition: ZhixuDefinition): HookPlanArtif
 
   let artifact: unknown;
   try {
-    artifact = compileWithUvpCore({ target: "hook_plan", definition });
+    artifact = compileWithUvpCore({
+      target: "hook_plan",
+      definition,
+      ...(resolutionManifest === undefined
+        ? {}
+        : { resolutionManifest }),
+    });
   } catch (error) {
     throw new HookPlanCompilationError([
       error instanceof Error ? error.message : String(error)
@@ -75,6 +95,12 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
   if (!isRecord(value.executorRoutes)) {
     issues.push("executorRoutes must be an object");
   }
+  if (!Array.isArray(value.dockRoutes)) {
+    issues.push("dockRoutes must be an array");
+  }
+  expectHexHash(value.dockRoutesRoot as unknown, "dockRoutesRoot", issues);
+  expectHexHash(value.dockInterfaceRoot as unknown, "dockInterfaceRoot", issues);
+  issues.push(...validateDockCommitments(value));
   if (!Array.isArray(value.selectedStageBindings)) {
     issues.push("selectedStageBindings must be an array");
   }
@@ -138,10 +164,16 @@ function validateCompiledHooks(hooks: readonly unknown[]): readonly string[] {
     }
     const prefix = `compiledHooks[${index}]`;
     expectNonEmptyString(hook.hookId, `${prefix}.hookId`, issues);
-    expectOneOf(hook.kind, ["receive", "signalMap"], `${prefix}.kind`, issues);
+    expectOneOf(hook.kind, ["receive"], `${prefix}.kind`, issues);
     expectNonEmptyString(hook.stageIdentifier, `${prefix}.stageIdentifier`, issues);
     expectNonEmptyString(hook.hookName, `${prefix}.hookName`, issues);
-    expectBoolean(hook.isTrigger, `${prefix}.isTrigger`, issues);
+    expectOneOf(
+      hook.orderTriggerKind,
+      ["none", "mint", "dock"],
+      `${prefix}.orderTriggerKind`,
+      issues,
+    );
+    expectBoolean(hook.emitReady, `${prefix}.emitReady`, issues);
     expectNonEmptyString(hook.rawExpression, `${prefix}.rawExpression`, issues);
     expectNonEmptyString(hook.normalizedExpression, `${prefix}.normalizedExpression`, issues);
     if (!isRecord(hook.ast)) {
@@ -187,9 +219,17 @@ function validateDependencies(dependencies: readonly unknown[], path: string): r
     expectOneOf(dependency.kind, ["positive", "negative", "timer"], `${path}[${index}].kind`, issues);
     expectString(dependency.source, `${path}[${index}].source`, issues);
     expectNonEmptyString(dependency.signalName, `${path}[${index}].signalName`, issues);
+    if (dependency.delaySeconds !== undefined) {
+      // E12：delaySeconds 只要在场就必须是正安全整数（非数值/NaN 拒绝），
+      // 不按 kind 静默放行。
+      if (!Number.isSafeInteger(dependency.delaySeconds) || Number(dependency.delaySeconds) <= 0) {
+        issues.push(`${path}[${index}].delaySeconds must be a positive safe integer when present`);
+      }
+    }
     if (
       dependency.kind === "timer" &&
-      (!Number.isSafeInteger(dependency.delaySeconds) || Number(dependency.delaySeconds) <= 0)
+      (typeof dependency.delaySeconds !== "number" ||
+        !Number.isSafeInteger(dependency.delaySeconds) || Number(dependency.delaySeconds) <= 0)
     ) {
       issues.push(`${path}[${index}].delaySeconds must be a positive safe integer for timer dependencies`);
     }
@@ -256,7 +296,7 @@ function validateDependencyIndex(
 
   const expected = Object.fromEntries(
     [...recomputed.entries()]
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareByCodeUnit(left, right))
       .map(([key, hookIds]) => [key, [...hookIds].sort()])
   );
   if (JSON.stringify(expected) !== JSON.stringify(dependencyIndex)) {

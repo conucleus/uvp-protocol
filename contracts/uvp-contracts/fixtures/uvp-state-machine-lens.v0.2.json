@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStateMachineLens",
-  "abiVersion": "0.1",
+  "abiVersion": "0.2",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStateMachineLens.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStateMachineLens.sol/UVPStateMachineLens.json",
   "compiler": {
@@ -9,32 +9,44 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x93788917f2af02dca20c7c9c4263995994dbbee45203a6c4e34900055056b3ab",
-    "bytecodeHash": "0xd7b8ff9aa487b020694e442dcba64a2c5ad70cfe24429127c41a58a099a4128f",
-    "deployedBytecodeHash": "0xa2354ad4fb869b394b689853c36ba7fcb465ce00a57dec65984795a3a58d7c98",
-    "artifactHash": "0x8016cb6e86d75a26c92456aaa48d610df1341bea4ea12a3d27d0d601535904b7"
+    "abiHash": "0xc6be17ed23b1352cc20171130d5052cf996cd9a276665b380d41775d79f51c3d",
+    "bytecodeHash": "0xe7b84bb803961f2f3466fd87acd0874889855ab1b47a8dd9ae603f1627a2038e",
+    "deployedBytecodeHash": "0x31e03a6d7fe5bf265e4736127eb71373a7aba744a49318484368cb31698ac20d",
+    "artifactHash": "0xb8aaf419d425c049cc25e987c891764ade37a78a395396287a68d1396a09ab31"
   },
   "events": {},
   "functions": {
-    "getActiveDockedOrderLink": {
-      "signature": "getActiveDockedOrderLink(bytes32,bytes32)",
-      "selector": "0x1c1579c8"
+    "dockInputDelivered": {
+      "signature": "dockInputDelivered(bytes32,bytes32)",
+      "selector": "0x291da6de"
     },
-    "getActiveDockedSignalBinding": {
-      "signature": "getActiveDockedSignalBinding(bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0x73ca8690"
+    "dockOutputDelivered": {
+      "signature": "dockOutputDelivered(bytes32,bytes32)",
+      "selector": "0x04919a6e"
+    },
+    "getActiveDock": {
+      "signature": "getActiveDock(bytes32)",
+      "selector": "0xc6206738"
     },
     "getActiveStageExecutorPatch": {
-      "signature": "getActiveStageExecutorPatch(bytes32,bytes32)",
-      "selector": "0x6334d2a8"
+      "signature": "getActiveStageExecutorPatch(bytes32,bytes32,bytes32)",
+      "selector": "0x1ae5b35a"
     },
     "getActiveStageResourcePatch": {
-      "signature": "getActiveStageResourcePatch(bytes32,bytes32,bytes32)",
-      "selector": "0x901cfaaf"
+      "signature": "getActiveStageResourcePatch(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0xddfae56d"
+    },
+    "getDockInputBinding": {
+      "signature": "getDockInputBinding(bytes32,bytes32)",
+      "selector": "0x76a55463"
+    },
+    "getDockOutputBinding": {
+      "signature": "getDockOutputBinding(bytes32,bytes32)",
+      "selector": "0xdd6e63ce"
     },
     "getTriggerOriginLink": {
-      "signature": "getTriggerOriginLink(bytes32)",
-      "selector": "0x97481ae8"
+      "signature": "getTriggerOriginLink(bytes32,bytes32)",
+      "selector": "0x94e59116"
     },
     "isSelectorTargetStage": {
       "signature": "isSelectorTargetStage(bytes32,bytes32)",
@@ -65,8 +77,8 @@
       "selector": "0x37b416d8"
     },
     "targetOrderRelation": {
-      "signature": "targetOrderRelation(bytes32,bytes32)",
-      "selector": "0x4b019097"
+      "signature": "targetOrderRelation(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x6c4da396"
     }
   }
 }

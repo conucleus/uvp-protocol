@@ -11,6 +11,7 @@ import {
 interface CoreParseHookOutput {
   readonly normalizedExpression: string;
   readonly ast: HookExpressionAst;
+  readonly cloudAst: unknown;
   readonly dependencies: readonly HookDependency[];
 }
 
@@ -72,10 +73,14 @@ export function evaluateHook(
 ): HookEvaluation {
   const raw = requireRawHook(ast);
   try {
-    const evaluated = evaluateHookWithUvpCore({
+    const parsed = parseHookWithUvpCore({
       profile: "evm_strict",
       hookName: "HOOK",
-      hook: raw,
+      hook: raw
+    }) as CoreParseHookOutput;
+    const evaluated = evaluateHookWithUvpCore({
+      profile: "evm_strict",
+      ast: parsed.cloudAst,
       signals: Object.values(signalIndex),
       now: toDate(now).toISOString()
     }) as CoreEvaluateHookOutput;

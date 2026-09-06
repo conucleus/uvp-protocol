@@ -35,10 +35,6 @@ type ProtocolBindings = {
   readonly STAGE_RESOURCE_PATCH_DOMAIN_VERSION: string;
   readonly STAGE_RESOURCE_PATCH_PRIMARY_TYPE: string;
   readonly STAGE_RESOURCE_PATCH_TYPED_DATA_FIELDS: readonly ProtocolTypedDataField[];
-  readonly DOCKED_ORDER_LINK_DOMAIN_NAME: string;
-  readonly DOCKED_ORDER_LINK_DOMAIN_VERSION: string;
-  readonly DOCKED_ORDER_LINK_PRIMARY_TYPE: string;
-  readonly DOCKED_ORDER_LINK_TYPED_DATA_FIELDS: readonly ProtocolTypedDataField[];
 };
 
 type ProtocolTypedDataField = {
@@ -52,6 +48,7 @@ type ProductAction = {
 };
 
 const submitSignalFieldNames = [
+  "planId",
   "orderId",
   "sourceId",
   "signalId",
@@ -62,6 +59,7 @@ const submitSignalFieldNames = [
 ] as const;
 
 const stageExecutorPatchFieldNames = [
+  "planId",
   "orderId",
   "selectorStageId",
   "targetStageId",
@@ -80,6 +78,7 @@ const stageExecutorPatchFieldNames = [
 ] as const;
 
 const stageResourcePatchFieldNames = [
+  "planId",
   "orderId",
   "selectorStageId",
   "targetStageId",
@@ -93,26 +92,12 @@ const stageResourcePatchFieldNames = [
   "deadline"
 ] as const;
 
-const dockedOrderLinkFieldNames = [
-  "localOrderId",
-  "selectorStageId",
-  "localSourceId",
-  "linkedOrderId",
-  "linkedPlanId",
-  "linkHash",
-  "linkNonce",
-  "signalBindingsHash",
-  "metadataURI",
-  "selector",
-  "deadline"
-] as const;
-
 describe("Product DTO protocol surface", () => {
-  it("maps submit_signal fixtures to the current UVPStateMachine 0.8 submit action", async () => {
+  it("maps submit_signal fixtures to the current UVPStateMachine 0.10 submit action", async () => {
     const protocol = await loadProtocolBindings();
 
     assert.equal(protocol.PRODUCT_SUBMIT_DOMAIN_NAME, "UVPStateMachine");
-    assert.equal(protocol.PRODUCT_SUBMIT_DOMAIN_VERSION, "0.8");
+    assert.equal(protocol.PRODUCT_SUBMIT_DOMAIN_VERSION, "0.10");
     assert.equal(protocol.PRODUCT_SUBMIT_PRIMARY_TYPE, "UVPStateMachineSignal");
     assert.deepEqual(fieldNames(protocol.PRODUCT_SUBMIT_TYPED_DATA_FIELDS), [...submitSignalFieldNames]);
     assertAbiNames(protocol.STATE_MACHINE_ABI, "function", ["submitSignal", "submitSignalFor"]);
@@ -131,7 +116,7 @@ describe("Product DTO protocol surface", () => {
     for (const container of demoFundingGuaranteeSignalContainers) {
       assert.equal(container.schemaVersion, "uvp.signal-container.v1");
       assert.equal(container.actionKind, "submit_signal");
-      assert.equal(container.prepare.typedData.stateMachineLabel, "UVPStateMachine 0.8");
+      assert.equal(container.prepare.typedData.stateMachineLabel, "UVPStateMachine 0.10");
       assert.equal(container.prepare.typedData.stateMachineLabel, `${protocol.PRODUCT_SUBMIT_DOMAIN_NAME} ${protocol.PRODUCT_SUBMIT_DOMAIN_VERSION}`);
       assert.equal(productSubmitPrimaryType(container.prepare.typedData.primaryType), protocol.PRODUCT_SUBMIT_PRIMARY_TYPE);
       assert.equal(container.prepare.submitter, container.acceptedActor.wallet);
@@ -203,24 +188,27 @@ describe("Product DTO protocol surface", () => {
     }
   });
 
-  it("keeps docked order link on the docking module surface", async () => {
+  it("keeps the committed-route docking surface", async () => {
     const protocol = await loadProtocolBindings();
 
-    assert.equal(protocol.DOCKED_ORDER_LINK_DOMAIN_NAME, "UVPDockingModule");
-    assert.equal(protocol.DOCKED_ORDER_LINK_DOMAIN_VERSION, "0.1");
-    assert.equal(protocol.DOCKED_ORDER_LINK_PRIMARY_TYPE, "UVPDockingModuleDockedOrderLink");
-    assert.deepEqual(fieldNames(protocol.DOCKED_ORDER_LINK_TYPED_DATA_FIELDS), [...dockedOrderLinkFieldNames]);
-    assertAbiNames(protocol.DOCKING_MODULE_ABI, "function", ["linkDockedOrderFor", "submitDockedSignal"]);
+    // 全部 dock 走 committed route：openDockedOrder 原子 open。
+    assertAbiNames(protocol.DOCKING_MODULE_ABI, "function", [
+      "openDockedOrder",
+      "submitDockedInput",
+      "submitDockedSignal",
+      "getActiveDock"
+    ]);
     assertAbiNames(protocol.DOCKING_MODULE_ABI, "event", [
-      "DockedOrderLinked",
-      "DockedSignalMapped",
-      "DockedSignalSubmitted"
+      "DockOpened",
+      "DockInputSubmitted",
+      "DockOutputSubmitted"
     ]);
     assertAbiNames(protocol.STATE_MACHINE_LENS_ABI, "function", [
       "getActiveStageExecutorPatch",
       "getActiveStageResourcePatch",
-      "getActiveDockedOrderLink",
-      "getActiveDockedSignalBinding"
+      "getActiveDock",
+      "getDockInputBinding",
+      "getDockOutputBinding"
     ]);
   });
 
@@ -267,6 +255,8 @@ describe("Product DTO protocol surface", () => {
   it("fails Product signal map gate when schema source, signal, action or permission rows drift", async () => {
     const gate = await loadProductSignalMapGate();
 
+    // uvp-deploy 的 verify-product-signal-map 门禁断言 typed-data 字段清单
+    // （planId / localPlanId）全量生效。
     assert.deepEqual(gate.verifyCustomsProductSignalMap().failures, []);
 
     assert.match(

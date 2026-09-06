@@ -62,5 +62,4 @@ URLs, cloud object keys, or plaintext handles.
 
 `STORE_PRODUCT_SCHEMA_V1_REQUIRED_FIELDS` and
 `PARTICIPANT_ADDON_MANIFEST_V1_ACTION_KINDS` are the public alpha freeze points
-for the Store authoring bundle. They should be reviewed like API fields before
-the five core compartments are split into separate repositories.
+for the Store authoring bundle. They should be reviewed like API fields.

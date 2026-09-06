@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
 
 interface IUVPStagePatchModuleLens {
-    function getActiveStageExecutorPatch(bytes32 orderId, bytes32 targetStageId)
+    function getActiveStageExecutorPatch(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
         external
         view
         returns (
@@ -16,7 +16,7 @@ interface IUVPStagePatchModuleLens {
             uint256 patchNonce,
             string memory metadataURI
         );
-    function getActiveStageResourcePatch(bytes32 orderId, bytes32 targetStageId, bytes32 resourceKey)
+    function getActiveStageResourcePatch(bytes32 planId, bytes32 orderId, bytes32 targetStageId, bytes32 resourceKey)
         external
         view
         returns (
@@ -30,25 +30,51 @@ interface IUVPStagePatchModuleLens {
 }
 
 interface IUVPDockingModuleLens {
-    function getActiveDockedOrderLink(bytes32 localOrderId, bytes32 linkedOrderId)
+    function getActiveDock(bytes32 dockInstanceId)
         external
         view
         returns (
-            bool exists,
-            bytes32 selectorStageId,
-            bytes32 localSourceId,
-            bytes32 linkedPlanId,
-            address selector,
-            bytes32 linkHash,
-            uint256 linkNonce,
-            string memory metadataURI
+            bytes32 localPlanId,
+            bytes32 localOrderId,
+            bytes32 localStageId,
+            bytes32 routeId,
+            bytes32 routeHash,
+            bytes32 targetPlanId,
+            bytes32 linkedOrderId,
+            uint8 depth,
+            uint8 status,
+            bool exists
         );
-    function getActiveDockedSignalBinding(
-        bytes32 localOrderId,
-        bytes32 linkedOrderId,
-        bytes32 linkedSourceId,
-        bytes32 linkedSignalId
-    ) external view returns (bool exists, bytes32 localSourceId, bytes32 localSignalId);
+
+    function getDockInputBinding(bytes32 dockInstanceId, bytes32 inputBindingHash)
+        external
+        view
+        returns (
+            bytes32 localHookId,
+            bytes32 portKey,
+            bytes32 targetSourceId,
+            bytes32 targetSignalId,
+            uint8 kind,
+            bool exists
+        );
+
+    function getDockOutputBinding(bytes32 dockInstanceId, bytes32 outputBindingHash)
+        external
+        view
+        returns (
+            bytes32 localSourceId,
+            bytes32 localSignalId,
+            bytes32 portKey,
+            bytes32 targetSourceId,
+            bytes32 targetSignalId,
+            uint8 terminal,
+            bool exists
+        );
+
+    function dockInputDelivered(bytes32 dockInstanceId, bytes32 inputBindingHash) external view returns (bool);
+    function dockOutputDelivered(bytes32 dockInstanceId, bytes32 outputBindingHash) external view returns (bool);
+    function dockByLocalRoute(bytes32 localRouteInstanceKey) external view returns (bytes32);
+    function dockByTargetOrder(bytes32 targetEndpointKey) external view returns (bytes32);
 }
 
 interface IUVPPlanMetadataModuleLens {
@@ -73,13 +99,17 @@ interface IUVPPlanMetadataModuleLens {
 }
 
 interface IUVPOrderLinkModuleLens {
-    function targetOrderRelation(bytes32 fromOrderId, bytes32 targetOrderId) external view returns (uint8);
-    function getTriggerOriginLink(bytes32 triggeredOrderId)
+    function targetOrderRelation(bytes32 fromPlanId, bytes32 fromOrderId, bytes32 targetPlanId, bytes32 targetOrderId)
+        external
+        view
+        returns (uint8);
+    function getTriggerOriginLink(bytes32 planId, bytes32 triggeredOrderId)
         external
         view
         returns (
             bool exists,
             bytes32 triggerOriginOrderId,
+            bytes32 triggerOriginPlanId,
             bytes32 originSourceId,
             bytes32 originSignalId,
             bytes32 triggerStageId
@@ -102,7 +132,7 @@ contract UVPStateMachineLens {
         _moduleDirectory = IUVPStateMachineModuleDirectory(stateMachineAddress);
     }
 
-    function getActiveStageExecutorPatch(bytes32 orderId, bytes32 targetStageId)
+    function getActiveStageExecutorPatch(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
         external
         view
         returns (
@@ -116,10 +146,10 @@ contract UVPStateMachineLens {
         )
     {
         return IUVPStagePatchModuleLens(_moduleDirectory.stagePatchModule())
-            .getActiveStageExecutorPatch(orderId, targetStageId);
+            .getActiveStageExecutorPatch(planId, orderId, targetStageId);
     }
 
-    function getActiveStageResourcePatch(bytes32 orderId, bytes32 targetStageId, bytes32 resourceKey)
+    function getActiveStageResourcePatch(bytes32 planId, bytes32 orderId, bytes32 targetStageId, bytes32 resourceKey)
         external
         view
         returns (
@@ -132,35 +162,70 @@ contract UVPStateMachineLens {
         )
     {
         return IUVPStagePatchModuleLens(_moduleDirectory.stagePatchModule())
-            .getActiveStageResourcePatch(orderId, targetStageId, resourceKey);
+            .getActiveStageResourcePatch(planId, orderId, targetStageId, resourceKey);
     }
 
-    function getActiveDockedOrderLink(bytes32 localOrderId, bytes32 linkedOrderId)
+    function getActiveDock(bytes32 dockInstanceId)
         external
         view
         returns (
-            bool exists,
-            bytes32 selectorStageId,
-            bytes32 localSourceId,
-            bytes32 linkedPlanId,
-            address selector,
-            bytes32 linkHash,
-            uint256 linkNonce,
-            string memory metadataURI
+            bytes32 localPlanId,
+            bytes32 localOrderId,
+            bytes32 localStageId,
+            bytes32 routeId,
+            bytes32 routeHash,
+            bytes32 targetPlanId,
+            bytes32 linkedOrderId,
+            uint8 depth,
+            uint8 status,
+            bool exists
+        )
+    {
+        return IUVPDockingModuleLens(_moduleDirectory.dockingModule()).getActiveDock(dockInstanceId);
+    }
+
+    function getDockInputBinding(bytes32 dockInstanceId, bytes32 inputBindingHash)
+        external
+        view
+        returns (
+            bytes32 localHookId,
+            bytes32 portKey,
+            bytes32 targetSourceId,
+            bytes32 targetSignalId,
+            uint8 kind,
+            bool exists
         )
     {
         return IUVPDockingModuleLens(_moduleDirectory.dockingModule())
-            .getActiveDockedOrderLink(localOrderId, linkedOrderId);
+            .getDockInputBinding(dockInstanceId, inputBindingHash);
     }
 
-    function getActiveDockedSignalBinding(
-        bytes32 localOrderId,
-        bytes32 linkedOrderId,
-        bytes32 linkedSourceId,
-        bytes32 linkedSignalId
-    ) external view returns (bool exists, bytes32 localSourceId, bytes32 localSignalId) {
+    function getDockOutputBinding(bytes32 dockInstanceId, bytes32 outputBindingHash)
+        external
+        view
+        returns (
+            bytes32 localSourceId,
+            bytes32 localSignalId,
+            bytes32 portKey,
+            bytes32 targetSourceId,
+            bytes32 targetSignalId,
+            uint8 terminal,
+            bool exists
+        )
+    {
         return IUVPDockingModuleLens(_moduleDirectory.dockingModule())
-            .getActiveDockedSignalBinding(localOrderId, linkedOrderId, linkedSourceId, linkedSignalId);
+            .getDockOutputBinding(dockInstanceId, outputBindingHash);
+    }
+
+    function dockInputDelivered(bytes32 dockInstanceId, bytes32 inputBindingHash) external view returns (bool) {
+        return
+            IUVPDockingModuleLens(_moduleDirectory.dockingModule()).dockInputDelivered(dockInstanceId, inputBindingHash);
+    }
+
+    function dockOutputDelivered(bytes32 dockInstanceId, bytes32 outputBindingHash) external view returns (bool) {
+        return
+            IUVPDockingModuleLens(_moduleDirectory.dockingModule())
+                .dockOutputDelivered(dockInstanceId, outputBindingHash);
     }
 
     function planSelectorBindingCount(bytes32 planId) external view returns (uint256) {
@@ -205,22 +270,28 @@ contract UVPStateMachineLens {
             .isSignalCapabilityRegistered(planId, stageId, targetSourceId, signalId, relation);
     }
 
-    function targetOrderRelation(bytes32 fromOrderId, bytes32 targetOrderId) external view returns (uint8) {
-        return
-            IUVPOrderLinkModuleLens(_moduleDirectory.orderLinkModule()).targetOrderRelation(fromOrderId, targetOrderId);
+    function targetOrderRelation(bytes32 fromPlanId, bytes32 fromOrderId, bytes32 targetPlanId, bytes32 targetOrderId)
+        external
+        view
+        returns (uint8)
+    {
+        return IUVPOrderLinkModuleLens(_moduleDirectory.orderLinkModule())
+            .targetOrderRelation(fromPlanId, fromOrderId, targetPlanId, targetOrderId);
     }
 
-    function getTriggerOriginLink(bytes32 triggeredOrderId)
+    function getTriggerOriginLink(bytes32 planId, bytes32 triggeredOrderId)
         external
         view
         returns (
             bool exists,
             bytes32 triggerOriginOrderId,
+            bytes32 triggerOriginPlanId,
             bytes32 originSourceId,
             bytes32 originSignalId,
             bytes32 triggerStageId
         )
     {
-        return IUVPOrderLinkModuleLens(_moduleDirectory.orderLinkModule()).getTriggerOriginLink(triggeredOrderId);
+        return IUVPOrderLinkModuleLens(_moduleDirectory.orderLinkModule())
+            .getTriggerOriginLink(planId, triggeredOrderId);
     }
 }

@@ -53,7 +53,7 @@ This mode does not model HTTP dispatchers, executor-kit delivery, escrow,
 funding, or payment adapters. A successful delivery is never interpreted as
 business completion; the only completion input is a submitted business signal.
 
-PRD109 tracks docked Zhixu runtime as an explicit prototype surface. Store
-docking sandbox signal maps are not enough for this package to claim linked
-Zhixu replay until linked order facts and mapped signals are represented in
-replay input and proof projection.
+Docked Zhixu runtime is an explicit prototype surface. Store docking sandbox
+signal maps are not enough for this package to claim linked Zhixu replay until
+linked order facts and mapped signals are represented in replay input and proof
+projection.

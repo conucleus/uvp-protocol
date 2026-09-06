@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPOrderLinkModule",
-  "abiVersion": "0.1",
+  "abiVersion": "0.2",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPOrderLinkModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPOrderLinkModule.sol/UVPOrderLinkModule.json",
   "compiler": {
@@ -9,15 +9,15 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x2f2fae62a6c41bc240fa7fa7a80edef8fa9fc5d7e2eea2dc632c37d6de9bb496",
-    "bytecodeHash": "0xd4a89b2e8e0580dcec1439edb3f50d40e6235ffb372e5ae92e7c9990ca96333a",
-    "deployedBytecodeHash": "0x159cd90a479f5a6031bf7e296554c89e5545c5c48f6bd78b0e76f1bc9ac00abe",
-    "artifactHash": "0x48054efc921af2b171aea5678e5f8d1ea8ae99e46b772e767d0b81b53df17a95"
+    "abiHash": "0x4df4896f417dea7e2abff8d1f4ad2f663ca2c662e1622ff334d54197ad7a3832",
+    "bytecodeHash": "0xd0cd556c410afb3d64ac04d44c66d5c753d68c04aace4ff662f5410f460a88fb",
+    "deployedBytecodeHash": "0xa31e1daa2063d2bb7b66bb077259afc84e47e4e6bef9f562d6035995198f88be",
+    "artifactHash": "0x5e63b7c141245dbfc652b5d22a68c7bc83abb029bba3e91ade8abea7c4813be7"
   },
   "events": {
     "OrderLinked": {
-      "signature": "OrderLinked(bytes32,bytes32,bytes32,bytes32,bytes32)",
-      "topic": "0xe936fdb82b6a5232c1899d3562a56b4facfc272a9d9ca31120d810a63c374b6e"
+      "signature": "OrderLinked(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",
+      "topic": "0xd9c5c52d8b7b1e7736ebc368091725179cb8644a7f8482990d2bcdcdc310f263"
     }
   },
   "functions": {
@@ -34,8 +34,8 @@
       "selector": "0x909f38ec"
     },
     "getTriggerOriginLink": {
-      "signature": "getTriggerOriginLink(bytes32)",
-      "selector": "0x97481ae8"
+      "signature": "getTriggerOriginLink(bytes32,bytes32)",
+      "selector": "0x94e59116"
     },
     "signalAuthorizationsHash": {
       "signature": "signalAuthorizationsHash((bytes32,bytes32,address,bytes32,bytes32)[])",
@@ -46,16 +46,16 @@
       "selector": "0x37b416d8"
     },
     "targetOrderRelation": {
-      "signature": "targetOrderRelation(bytes32,bytes32)",
-      "selector": "0x4b019097"
+      "signature": "targetOrderRelation(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x6c4da396"
     },
     "triggerOrderFromSignalDigest": {
-      "signature": "triggerOrderFromSignalDigest((bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),bytes32)",
-      "selector": "0x4eb4090b"
+      "signature": "triggerOrderFromSignalDigest((bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),bytes32)",
+      "selector": "0x5f9c34b3"
     },
     "triggerOrderFromSignalFor": {
-      "signature": "triggerOrderFromSignalFor((bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),(bytes32,bytes32,address,bytes32,bytes32)[],bytes)",
-      "selector": "0x58fbe587"
+      "signature": "triggerOrderFromSignalFor((bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),(bytes32,bytes32,address,bytes32,bytes32)[],bytes)",
+      "selector": "0xd7d4ea90"
     }
   }
 }

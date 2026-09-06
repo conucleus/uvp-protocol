@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "uvp-eth.contractAbiFixture.v2",
+  "contractName": "UVPDerivedSignalModule",
+  "abiVersion": "0.2",
+  "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPDerivedSignalModule.sol",
+  "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPDerivedSignalModule.sol/UVPDerivedSignalModule.json",
+  "compiler": {
+    "name": "solc",
+    "version": "0.8.24+commit.e11b9ed9"
+  },
+  "hashes": {
+    "abiHash": "0x86864b41e69e0c0e6688fc95f92867ec04136564de4ff054a6bcfee05c44dc6c",
+    "bytecodeHash": "0x01ab8f7eca8921fe1fa48925e3d81baf877da9092581c2b0342dafdcde441dad",
+    "deployedBytecodeHash": "0xa164efed77d70524bea26c6c2fc608ce489092114cc1b4bfb73c2d087a7606fa",
+    "artifactHash": "0x6ad2dff78e12ec3f8cae50d2bb93da717ee559b7a42b690290552ea08c31c767"
+  },
+  "events": {
+    "DerivedSignalSubmitted": {
+      "signature": "DerivedSignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
+      "topic": "0x3fb6f4b6fb691a28317c1063e0e380e9995238a96e44f2de6183105d88ff0b91"
+    }
+  },
+  "functions": {
+    "DOMAIN_SEPARATOR": {
+      "signature": "DOMAIN_SEPARATOR()",
+      "selector": "0x3644e515"
+    },
+    "derivedSignalDigest": {
+      "signature": "derivedSignalDigest((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32),address,uint256)",
+      "selector": "0x33ffaf86"
+    },
+    "stateMachine": {
+      "signature": "stateMachine()",
+      "selector": "0x37b416d8"
+    },
+    "submitDerivedSignal": {
+      "signature": "submitDerivedSignal((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32),address)",
+      "selector": "0xd294cfff"
+    },
+    "submitDerivedSignalFor": {
+      "signature": "submitDerivedSignalFor((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32),address,uint256,bytes)",
+      "selector": "0xb07108cd"
+    }
+  }
+}

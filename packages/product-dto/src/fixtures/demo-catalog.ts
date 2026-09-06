@@ -14,6 +14,7 @@ import {
   type ProductTaskCapabilityPluginDTO,
   type ProductTaskDTO,
   type SlotCapabilityPluginDTO,
+  type TaskEvidenceSpecDTO,
   type ZhixuDetailDTO,
   type ZhixuStageDTO
 } from "../domain/index.js";
@@ -67,7 +68,6 @@ interface DemoFundingSignalContainerFixture {
   readonly capabilityKind: "payment_placeholder";
   readonly actionKind: "submit_signal";
   readonly requiredInputs: readonly FulfillmentRequiredInputDTO[];
-  readonly requiredEvidence: readonly string[];
   readonly acceptedActor: DemoFundingSignalContainerActor;
   readonly fundingMetadata: DemoFundingSignalContainerMetadata;
   readonly prepare: {
@@ -716,7 +716,6 @@ const demoPaymentTaskCapabilityPlugin: ProductTaskCapabilityPluginDTO = {
   title: fundsPaymentPlugin.title,
   summary: fundsPaymentPlugin.summary,
   primaryActionLabel: fundsPaymentPlugin.primaryActionLabel,
-  requiredEvidence: ["付款条件确认", "资金凭证指纹"],
   inputPolicy: demoPaymentRequiredInputs
 };
 
@@ -727,7 +726,6 @@ const demoCustomsTaskCapabilityPlugin: ProductTaskCapabilityPluginDTO = {
   title: deliveryUpdatePlugin.title,
   summary: deliveryUpdatePlugin.summary,
   primaryActionLabel: deliveryUpdatePlugin.primaryActionLabel,
-  requiredEvidence: ["报关单 PDF", "报关单号", "出口港口", "完成时间"],
   inputPolicy: demoCustomsRequiredInputs
 };
 
@@ -989,7 +987,6 @@ export const demoPaymentTask: ProductTaskDTO = {
   stageName: "资金保障",
   deadline: "2026-04-30 18:00",
   fundingImpact: "资金适配器占位：仅记录付款条件和证明，不托管、不划转、不释放、不退款任何资金",
-  requiredEvidence: ["付款条件确认", "资金凭证指纹"],
   status: "done",
   performanceSlotId: "funds",
   performanceSlotLabel: "资金保障履约者",
@@ -1032,7 +1029,6 @@ export const demoFundingGuaranteeSignalContainers = [
     capabilityKind: "payment_placeholder",
     actionKind: "submit_signal",
     requiredInputs: demoPaymentTask.requiredInputs ?? [],
-    requiredEvidence: demoPaymentTask.requiredEvidence,
     acceptedActor: {
       actorKind: "buyer",
       label: "买家付款凭证提交",
@@ -1052,7 +1048,7 @@ export const demoFundingGuaranteeSignalContainers = [
     },
     prepare: {
       typedData: {
-        stateMachineLabel: "UVPStateMachine 0.8",
+        stateMachineLabel: "UVPStateMachine 0.10",
         primaryType: "SubmitSignal",
         messageHint: "funding_condition_satisfied"
       },
@@ -1088,7 +1084,6 @@ export const demoFundingGuaranteeSignalContainers = [
     capabilityKind: "payment_placeholder",
     actionKind: "submit_signal",
     requiredInputs: demoPaymentTask.requiredInputs ?? [],
-    requiredEvidence: ["担保证明指纹", "担保策略指纹"],
     acceptedActor: {
       actorKind: "guarantor",
       label: "担保方证明提交",
@@ -1110,7 +1105,7 @@ export const demoFundingGuaranteeSignalContainers = [
     },
     prepare: {
       typedData: {
-        stateMachineLabel: "UVPStateMachine 0.8",
+        stateMachineLabel: "UVPStateMachine 0.10",
         primaryType: "SubmitSignal",
         messageHint: "funding_condition_satisfied"
       },
@@ -1146,7 +1141,6 @@ export const demoFundingGuaranteeSignalContainers = [
     capabilityKind: "payment_placeholder",
     actionKind: "submit_signal",
     requiredInputs: demoPaymentTask.requiredInputs ?? [],
-    requiredEvidence: ["适配器证明根", "适配器策略指纹"],
     acceptedActor: {
       actorKind: "adapter",
       label: "资金适配器证明提交",
@@ -1168,7 +1162,7 @@ export const demoFundingGuaranteeSignalContainers = [
     },
     prepare: {
       typedData: {
-        stateMachineLabel: "UVPStateMachine 0.8",
+        stateMachineLabel: "UVPStateMachine 0.10",
         primaryType: "SubmitSignal",
         messageHint: "funding_condition_satisfied"
       },
@@ -1208,7 +1202,6 @@ export const demoSelectorTask: ProductTaskDTO = {
   stageName: "订单确认",
   deadline: "2026-04-30 18:00",
   fundingImpact: "不涉及任何资金动作，只更新后续阶段的履约安排",
-  requiredEvidence: [],
   status: "open",
   addOnKind: "stage_executor_patch",
   addOnManifest: selectorAddOnManifest,
@@ -1252,7 +1245,6 @@ export const demoResourcePatchTask: ProductTaskDTO = {
   stageName: "订单确认",
   deadline: "2026-04-30 18:00",
   fundingImpact: "不涉及任何资金动作，只更新后续阶段的凭证清单要求",
-  requiredEvidence: [],
   status: "open",
   addOnKind: "stage_resource_patch",
   addOnManifest: resourcePatchAddOnManifest,
@@ -1285,6 +1277,40 @@ export const demoResourcePatchTask: ProductTaskDTO = {
   ]
 };
 
+/**
+ * Demo evidence configuration, shaped exactly like a nucleation-core-carried
+ * evidenceSpec: the store renders it through the generic evidence path and
+ * contains no equivalent business-specific code.
+ */
+export const demoCustomsEvidenceSpec: readonly TaskEvidenceSpecDTO[] = [
+  {
+    key: "customs_declaration_pdf",
+    label: "报关单 PDF",
+    inputKind: "file",
+    accept: ["application/pdf", ".pdf"],
+    required: true,
+    description: "海关报关单扫描件，仅支持 PDF。"
+  },
+  {
+    key: "customs_declaration_no",
+    label: "报关单号",
+    inputKind: "text",
+    required: true
+  },
+  {
+    key: "export_port",
+    label: "出口港口",
+    inputKind: "text",
+    required: true
+  },
+  {
+    key: "completion_date",
+    label: "完成时间",
+    inputKind: "date",
+    required: true
+  }
+];
+
 export const demoTask: ProductTaskDTO = {
   taskId: DEMO_TASK_ID,
   orderId: DEMO_ORDER_ID,
@@ -1297,7 +1323,7 @@ export const demoTask: ProductTaskDTO = {
   stageName: "出口报关",
   deadline: "2026-05-03 18:00",
   fundingImpact: "进入验收；通过后第 2 阶段付款条件满足",
-  requiredEvidence: ["报关单 PDF", "报关单号", "出口港口", "完成时间"],
+  evidenceSpec: demoCustomsEvidenceSpec,
   status: "open",
   addOnKind: "submit_signal",
   resourceRequirements: demoCustomsResourceRequirements,

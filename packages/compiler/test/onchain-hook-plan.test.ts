@@ -1,18 +1,44 @@
 import assert from "node:assert/strict";
+import { dockDemoResolutionManifest, dockPaymentTargetDefinition } from "./dock-demo.js";
+import { EMPTY_MERKLE_ROOT } from "../src/dock.js";
 import test from "node:test";
+import {
+  encodeAbiParameters,
+  keccak256,
+  parseAbiParameters,
+  stringToHex,
+} from "viem";
 import {
   assertOnchainHookPlanArtifact,
   compileZhixuOnchainHookPlan,
+  hashSolidityRegisterHooks,
   keccak256Hex,
   onchainSelectorBindingHash,
   OnchainHookPlanArtifactValidationError,
   toSolidityRegisterPlanArgs,
   validateOnchainHookPlanArtifact,
+  type OnchainHookPlanArtifact,
   type OnchainSignalInstruction,
+  type SolidityRegisterPlanArgs,
   type ZhixuDefinition,
 } from "../src/index.js";
-import { compileZhixuHookPlan } from "../src/hook-plan.js";
-import { compileOnchainHookPlan } from "../src/onchain-hook-plan.js";
+import { compileZhixuHookPlan, HookPlanCompilationError } from "../src/hook-plan.js";
+import { compileOnchainHookPlan, hashOnchainPlanPayload, onchainSignalId, onchainSourceId } from "../src/onchain-hook-plan.js";
+import type { HookPlanArtifact } from "../src/types/index.js";
+
+const demoManifest = dockDemoResolutionManifest();
+
+function compileZhixuHookPlanWithManifest(
+  definition: ZhixuDefinition,
+): ReturnType<typeof compileZhixuHookPlan> {
+  return compileZhixuHookPlan(definition, demoManifest);
+}
+
+function compileZhixuOnchainHookPlanWithManifest(
+  definition: ZhixuDefinition,
+): ReturnType<typeof compileZhixuOnchainHookPlan> {
+  return compileZhixuOnchainHookPlan(definition, demoManifest);
+}
 
 const baseZhixu: ZhixuDefinition = {
   apiVersion: "uvp/v0",
@@ -38,12 +64,13 @@ const baseZhixu: ZhixuDefinition = {
           {
             name: "assign",
             source: "buyer",
-            trigger: ["TRIGGER"],
-            receiveSignals: {
-              TRIGGER: "::OUTSIDE",
-            },
             selectedStages: ["execution.main"],
-            sendSignals: ["executor_selected"],
+            // PLACE 为自发种子入口钩子（uvp-core 659a388 物化门：零 hook
+            // 阶段在链上永不可物化、sendSignals 无钩子可挂）。
+            receiveSignals: {
+              PLACE: "buyer::selector.assign.seed",
+            },
+            sendSignals: ["executor_selected", "seed"],
             executor: {
               supplierType: "organization",
               supplierID: "selector-org",
@@ -57,7 +84,6 @@ const baseZhixu: ZhixuDefinition = {
           {
             name: "main",
             source: "buyer",
-            trigger: ["START"],
             receiveSignals: {
               START: "buyer::selector.assign.executor_selected",
               TIMEOUT:
@@ -66,12 +92,12 @@ const baseZhixu: ZhixuDefinition = {
             sendSignals: ["str", "cmp", "err"],
             executor: {
               supplierType: "zhixu",
-              supplierID: "payment-zhixu",
               zhixuExecutorConfig: {
-                signalMap: {
-                  str: "payment::payment_flow.init.str",
-                  cmp: "payment::payment_flow.settle.cmp",
-                },
+                schemaVersion: "uvp.dock.v1",
+                target: { zhixu: "payment-zhixu", version: "1.2.0" },
+                order: { idPolicy: "derived-v1" },
+                inputMap: { START: "execute", TIMEOUT: "cancel" },
+                signalMap: { str: "started", cmp: "completed" },
               },
             },
           },
@@ -82,18 +108,18 @@ const baseZhixu: ZhixuDefinition = {
 };
 
 test("compiles a stable compact on-chain HookPlan artifact", () => {
-  const sourcePlan = compileZhixuHookPlan(baseZhixu);
+  const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
   const onchain = compileOnchainHookPlan(sourcePlan);
-  const again = compileZhixuOnchainHookPlan(baseZhixu);
+  const again = compileZhixuOnchainHookPlan(baseZhixu, demoManifest);
 
   assert.deepEqual(onchain, again);
-  assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v1");
+  assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v2");
   assert.equal(onchain.planId, sourcePlan.planId);
   assert.deepEqual(onchain.platform, sourcePlan.platform);
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
   assert.equal(
     onchain.planHash,
-    "0x406a2044484e1f7b736b34d6a8abf1704e96d86ddd04cef6b807b2e231ca4912",
+    "0x4ffaab836687da7a368dbc93ec20abe36e58b4f86f78e37ff8e9a2eb67d9cc00",
   );
   assert.deepEqual(onchain.selectorBindings, [
     {
@@ -124,28 +150,27 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
         "selector.assign.executor_selected",
         "current",
       ],
+      ["selector.assign", "buyer", "selector.assign.seed", "current"],
     ],
   );
   assert.deepEqual(
     onchain.compiledHooks.map((hook) => hook.hookId),
     [
-      "0x4192cb3bc76e04ab3c8f9a95ead3b20e86b5af753ac911791d20249e19a81e5a",
-      "0x1c89ab49405588dd2aa212acd1bdcccbf18ed9828e3cb14fa678aeb3509f02d3",
       "0x07fec9e5326c8025bd807a2d26a55476168f38f6b9b1d3ef3af9df18f758da96",
       "0x2a799fd6d3c55a26d5b940bc8fedc135a5feae293bce3e0c6cd375c4a946fc89",
-      "0xdbddf4f61e7e055756d4138cf06773730c4f2b9d9663ff4729c87e1a0e743784",
+      "0x9ca6abf270eaace38c6f86f21c09e9fa9a81346c198a54de2b4927ebf82e5f52",
     ],
   );
   assert.equal(
-    onchain.compiledHooks[2]?.hookId,
+    onchain.compiledHooks[0]?.hookId,
     keccak256Hex("execution.main#START"),
   );
   assert.equal(
-    onchain.compiledHooks[2]?.stageId,
+    onchain.compiledHooks[0]?.stageId,
     keccak256Hex("execution.main"),
   );
 
-  const startSignal = onchain.compiledHooks[2]
+  const startSignal = onchain.compiledHooks[0]
     ?.instructions[0] as OnchainSignalInstruction;
   assert.equal(startSignal.sourceId, keccak256Hex("buyer"));
   assert.equal(
@@ -162,10 +187,13 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
 });
 
 test("serializes trigger-origin signal capabilities to Solidity relation 1", () => {
-  const onchain = compileZhixuOnchainHookPlan({
+  const onchain = compileZhixuOnchainHookPlanWithManifest({
     ...baseZhixu,
     metadata: {
       name: "trigger_origin_signal_demo",
+      annotations: {
+        version: "7"
+      },
     },
     spec: {
       ...baseZhixu.spec,
@@ -176,11 +204,10 @@ test("serializes trigger-origin signal capabilities to Solidity relation 1", () 
             {
               name: "close",
               source: "trade",
-              trigger: ["START"],
               receiveSignals: {
-                START: "::OUTSIDE",
+                START: "trade::settlement.close.start",
               },
-              sendSignals: ["book::book.settlement_wait.cmp"],
+              sendSignals: ["start", "book::book.settlement_wait.cmp"],
               executor: {
                 supplierType: "organization",
                 supplierID: "settlement-operator",
@@ -193,8 +220,11 @@ test("serializes trigger-origin signal capabilities to Solidity relation 1", () 
   });
   const args = toSolidityRegisterPlanArgs(onchain);
 
+  const triggerOriginCapabilities = onchain.signalCapabilities.filter(
+    (capability) => capability.targetOrderRelation === "triggerOrigin",
+  );
   assert.deepEqual(
-    onchain.signalCapabilities.map((capability) => [
+    triggerOriginCapabilities.map((capability) => [
       capability.targetSource,
       capability.targetSignalName,
       capability.targetOrderRelation,
@@ -202,13 +232,15 @@ test("serializes trigger-origin signal capabilities to Solidity relation 1", () 
     [["book", "book.settlement_wait.cmp", "triggerOrigin"]],
   );
   assert.deepEqual(
-    args.signalCapabilities.map((capability) => capability.targetOrderRelation),
+    args.signalCapabilities
+      .filter((capability) => capability.targetOrderRelation === 1)
+      .map((capability) => capability.targetOrderRelation),
     [1],
   );
 });
 
 test("compiles Hook AST nodes to stable on-chain instruction arrays", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   const timeoutHook = onchain.compiledHooks.find(
     (hook) => hook.hookName === "TIMEOUT",
   );
@@ -270,7 +302,7 @@ test("compiles Hook AST nodes to stable on-chain instruction arrays", () => {
     },
   };
   const orHook = compileOnchainHookPlan(
-    compileZhixuHookPlan(orZhixu),
+    compileZhixuHookPlan(orZhixu, demoManifest),
   ).compiledHooks.find((hook) => hook.hookName === "ALT");
 
   assert.deepEqual(
@@ -281,20 +313,15 @@ test("compiles Hook AST nodes to stable on-chain instruction arrays", () => {
 });
 
 test("builds a stable on-chain dependency index and route references", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
 
   assert.deepEqual(onchain.dependencyIndex, {
     "0x1845455a34645910fcbc7220c18dcb6661ad3f045893d3694d22a99a1a5dcc11": [
       "0x2a799fd6d3c55a26d5b940bc8fedc135a5feae293bce3e0c6cd375c4a946fc89",
     ],
-    "0x61cb81a7548a6a2edd47b3311aa31001794ad214e42ed5448a5e628b68d94ad8": [
-      "0xdbddf4f61e7e055756d4138cf06773730c4f2b9d9663ff4729c87e1a0e743784",
-    ],
-    "0x8553bcf44b2604c2d6ba8083e354d082f7e91254eba8a3034e5ac6930923a957": [
-      "0x1c89ab49405588dd2aa212acd1bdcccbf18ed9828e3cb14fa678aeb3509f02d3",
-    ],
-    "0xcc82a6048b0604736991482236464a3565da6e76b077288386298d4420134a8b": [
-      "0x4192cb3bc76e04ab3c8f9a95ead3b20e86b5af753ac911791d20249e19a81e5a",
+    // 种子入口钩子的自引用依赖（buyer::selector.assign.seed → PLACE）。
+    "0x92101349c0a8769bf471123524c5e6130565d09bb781684372b1c5d07fbe1081": [
+      "0x9ca6abf270eaace38c6f86f21c09e9fa9a81346c198a54de2b4927ebf82e5f52",
     ],
     "0xcf7c8f26d55e2223a316d1220b6f7c902d1654622e82b458a98871bdf4c4e433": [
       "0x07fec9e5326c8025bd807a2d26a55476168f38f6b9b1d3ef3af9df18f758da96",
@@ -304,39 +331,62 @@ test("builds a stable on-chain dependency index and route references", () => {
 
   assert.deepEqual(
     onchain.executorRoutes.map((route) => route.routeId),
-    [
-      "0x24e3b5a8ab000691a715e1ee367fc5fa8136fbe55b342008c62527e0dccea4a4",
-      "0x50a98fb0b72e21bff21f57c8269a01953f1400a33ee2a92483825ea897feb09a",
-    ],
+    ["0x50a98fb0b72e21bff21f57c8269a01953f1400a33ee2a92483825ea897feb09a"],
   );
+  // zhixu 委托 stage 不挂静态 executor route（routeRef 只属于静态执行者）。
   assert.equal(
-    onchain.compiledHooks.find((hook) => hook.hookName === "START")?.routeRef
-      ?.routeId,
-    "0x24e3b5a8ab000691a715e1ee367fc5fa8136fbe55b342008c62527e0dccea4a4",
+    onchain.compiledHooks.find((hook) => hook.hookName === "START")?.routeRef,
+    undefined,
   );
 });
 
 test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   const args = toSolidityRegisterPlanArgs(onchain);
 
-  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v1");
+  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v2");
   assert.equal(args.sourcePlanId, onchain.planId);
-  assert.equal(args.artifactHash, onchain.planHash);
+  // 真比较：artifactHash 用 artifact 载荷公式独立重算，planHash 用 PlanCommit
+  // runtime 公式独立重算——两边各自从原始字段推导，不再是同源引用恒等。
+  const { planHash: _storedPlanHash, ...artifactPayload } = onchain;
+  assert.equal(args.artifactHash, hashOnchainPlanPayload(artifactPayload));
+  assert.equal(
+    args.planHash,
+    keccak256(
+      encodeAbiParameters(
+        parseAbiParameters(
+          "bytes32 domain, bytes32 hooksHash, bytes32 metadataHash, bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot",
+        ),
+        [
+          keccak256(stringToHex("uvp.plan.runtime.v2")),
+          args.hooksHash,
+          args.metadataHash,
+          args.dockRoutesRoot,
+          args.dockInterfaceRoot,
+        ],
+      ),
+    ),
+  );
   assert.notEqual(args.planHash, args.artifactHash);
+  assert.equal(args.hooksHash, hashSolidityRegisterHooks(args.hooks));
   assert.match(args.hooksHash, /^0x[0-9a-f]{64}$/);
   assert.match(args.metadataHash, /^0x[0-9a-f]{64}$/);
-  assert.equal(args.hooks[3]?.hookName, keccak256Hex("TIMEOUT"));
+  assert.equal(args.hooks[1]?.hookName, keccak256Hex("TIMEOUT"));
   assert.deepEqual(
-    args.hooks[3]?.instructions.map((instruction) => instruction.op),
+    args.hooks[1]?.instructions.map((instruction) => instruction.op),
     ["SIGNAL", "DELAY", "SIGNAL", "NOT", "AND"],
   );
-  assert.deepEqual(args.hooks[3]?.dependencyKeys, [
+  assert.deepEqual(args.hooks[1]?.dependencyKeys, [
     "0x1845455a34645910fcbc7220c18dcb6661ad3f045893d3694d22a99a1a5dcc11",
     "0xcf7c8f26d55e2223a316d1220b6f7c902d1654622e82b458a98871bdf4c4e433",
   ]);
-  assert.equal(args.dependencyIndex.length, 5);
-  assert.equal(args.executorRoutes[0]?.executorId, "payment-zhixu");
+  assert.equal(args.dependencyIndex.length, 3);
+  assert.equal(
+    args.executorRoutes.every((route) => route.executorId !== "payment-zhixu"),
+    true,
+  );
+  assert.match(args.dockRoutesRoot, /^0x[0-9a-f]{64}$/);
+  assert.notEqual(args.dockRoutesRoot, EMPTY_MERKLE_ROOT);
   assert.deepEqual(args.selectorBindings, [
     {
       selectorStageId: keccak256Hex("selector.assign"),
@@ -345,12 +395,12 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
   ]);
   assert.deepEqual(
     args.signalCapabilities.map((capability) => capability.targetOrderRelation),
-    [0, 0, 0, 0],
+    [0, 0, 0, 0, 0],
   );
 });
 
 test("includes selector bindings in on-chain plan hash", () => {
-  const withBinding = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
+  const withBinding = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   const withoutSelectedStages: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
@@ -369,15 +419,259 @@ test("includes selector bindings in on-chain plan hash", () => {
     },
   };
   const withoutBinding = compileOnchainHookPlan(
-    compileZhixuHookPlan(withoutSelectedStages),
+    compileZhixuHookPlan(withoutSelectedStages, demoManifest),
   );
 
   assert.deepEqual(withoutBinding.selectorBindings, []);
   assert.notEqual(withBinding.planHash, withoutBinding.planHash);
 });
 
+test("selector bindings feed the Solidity metadata hash and runtime plan hash", () => {
+  // finalizePlan 以 keccak256(abi.encode(selectorBindings, signalCapabilities))
+  // 重算 metadataHash——selectorBindings 变化必须穿透 args.metadataHash 与
+  // PlanCommit runtime planHash，否则两步注册在 finalize 边 revert。
+  const withBinding = toSolidityRegisterPlanArgs(
+    compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest)),
+  );
+  const withoutBinding = toSolidityRegisterPlanArgs(
+    compileOnchainHookPlan(
+      compileZhixuHookPlan(
+        {
+          ...baseZhixu,
+          spec: {
+            ...baseZhixu.spec,
+            taskPatterns: baseZhixu.spec.taskPatterns.map((task) =>
+              task.name !== "selector"
+                ? task
+                : {
+                    ...task,
+                    stages: task.stages.map((stage) => ({
+                      ...stage,
+                      selectedStages: [],
+                    })),
+                  },
+            ),
+          },
+        },
+        demoManifest,
+      ),
+    ),
+  );
+
+  assert.deepEqual(withoutBinding.selectorBindings, []);
+  assert.deepEqual(withBinding.signalCapabilities, withoutBinding.signalCapabilities);
+  assert.notEqual(withBinding.metadataHash, withoutBinding.metadataHash);
+  assert.notEqual(withBinding.planHash, withoutBinding.planHash);
+  assert.equal(
+    withBinding.metadataHash,
+    keccak256(
+      encodeAbiParameters(
+        parseAbiParameters(
+          "(bytes32 selectorStageId,bytes32 targetStageId)[] selectorBindings,(bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation)[] signalCapabilities",
+        ),
+        [withBinding.selectorBindings, withBinding.signalCapabilities],
+      ),
+    ),
+  );
+});
+
+test("hooksHash frozen vector pins the zero-word instruction fill cross-language", () => {
+  // 与 UVPStateMachine.t.sol 的同名冻结向量逐字节一致：非 SIGNAL 指令的
+  // sourceId/signalId 填 Solidity 零字，arity/delaySeconds 未用位填 0。
+  // 任何一方（TS compiler / uvp-deploy 驱动 / Rust）在填充位引入别的字
+  // 节（例如 keccak256("")）都会让含 NOT/AND/OR/DELAY 的计划在 commitPlan
+  // 处 PlanMetadataHashMismatch 必然 revert。
+  const hooks = [
+    {
+      hookId: "0x0000000000000000000000000000000000000000000000000000000000001001",
+      stageId: "0x0000000000000000000000000000000000000000000000000000000000002001",
+      hookName: "0x0000000000000000000000000000000000000000000000000000000000003001",
+      kind: "receive",
+      flags: 5,
+      instructions: [
+        {
+          op: "SIGNAL",
+          sourceId: "0x0000000000000000000000000000000000000000000000000000000000004001",
+          signalId: "0x0000000000000000000000000000000000000000000000000000000000005001",
+          signalKey: "0x0000000000000000000000000000000000000000000000000000000000006001",
+        },
+        { op: "NOT" },
+        { op: "DELAY", delaySeconds: 30 },
+      ],
+      dependencyKeys: [
+        "0x0000000000000000000000000000000000000000000000000000000000006001",
+      ],
+    },
+    {
+      hookId: "0x0000000000000000000000000000000000000000000000000000000000001002",
+      stageId: "0x0000000000000000000000000000000000000000000000000000000000002002",
+      hookName: "0x0000000000000000000000000000000000000000000000000000000000003002",
+      kind: "receive",
+      flags: 0,
+      instructions: [
+        {
+          op: "SIGNAL",
+          sourceId: "0x0000000000000000000000000000000000000000000000000000000000004002",
+          signalId: "0x0000000000000000000000000000000000000000000000000000000000005002",
+          signalKey: "0x0000000000000000000000000000000000000000000000000000000000006002",
+        },
+        {
+          op: "SIGNAL",
+          sourceId: "0x0000000000000000000000000000000000000000000000000000000000004001",
+          signalId: "0x0000000000000000000000000000000000000000000000000000000000005001",
+          signalKey: "0x0000000000000000000000000000000000000000000000000000000000006001",
+        },
+        { op: "AND", arity: 2 },
+        { op: "OR", arity: 2 },
+      ],
+      dependencyKeys: [
+        "0x0000000000000000000000000000000000000000000000000000000000006002",
+        "0x0000000000000000000000000000000000000000000000000000000000006001",
+      ],
+    },
+  ];
+
+  assert.equal(
+    hashSolidityRegisterHooks(hooks as SolidityRegisterPlanArgs["hooks"]),
+    "0xe71cb5f3a4e16b4498c9d0ccd126cfcc63b6275039635cb94190bf5dcec486df",
+  );
+});
+
+test("cross-stage dependency guard fires on deserialized artifacts and follows contract order", () => {
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+
+  // (1) 反序列化边界（0300 M-7）：守卫读 orderTriggerKind 派生 trigger 位。
+  // 把一个 watcher 挪到外阶段（保持 hookId/stageId 自洽）后，共享键上的
+  // 跨阶段非 trigger watcher 必须在 validateOnchainHookPlanArtifact 报错。
+  const sharedKey = onchain.compiledHooks.find((hook) => hook.orderTriggerKind === "none")
+    ?.dependencies[0]?.signalKey;
+  assert.ok(sharedKey, "base artifact must expose a watcher dependency");
+  const watchesSharedKey = (hook: (typeof onchain.compiledHooks)[number]) =>
+    hook.orderTriggerKind === "none" &&
+    hook.dependencies.some((dependency) => dependency.signalKey === sharedKey);
+  const watcherIndex = onchain.compiledHooks.findIndex(watchesSharedKey);
+  const laterWatcherIndex = onchain.compiledHooks.findIndex(
+    (hook, index) => index > watcherIndex && watchesSharedKey(hook),
+  );
+  // 基线工件里共享键上至少要有两个 watcher（不同 hook），后者保持原阶段——
+  // 否则"挪走一个、留下一个"的跨阶段形态不成立。
+  assert.ok(watcherIndex >= 0 && laterWatcherIndex > watcherIndex, "need two shared-key watchers");
+  const foreignStageIdentifier = "foreign.stage";
+  const tamperedHooks = onchain.compiledHooks.map((hook, index) =>
+    index === watcherIndex
+      ? {
+          ...hook,
+          stageIdentifier: foreignStageIdentifier,
+          stageId: keccak256Hex(foreignStageIdentifier),
+          hookId: keccak256Hex(`${foreignStageIdentifier}#${hook.hookName}`),
+        }
+      : hook,
+  );
+  const issues = validateOnchainHookPlanArtifact({
+    ...onchain,
+    compiledHooks: tamperedHooks,
+    dependencyIndex: Object.fromEntries(
+      Object.entries(onchain.dependencyIndex).map(([key, hookIds]) => [
+        key,
+        hookIds,
+      ]),
+    ),
+  });
+  assert.equal(
+    issues.some((issue) => /is shared across stages/.test(issue)),
+    true,
+    `expected cross-stage issue, got: ${issues.join("; ")}`,
+  );
+
+  // (2) 逐 hook 顺序语义（0212 P3-1）：trigger(A) → trigger(B) → watcher(A)
+  // 共享一键时合约接受（seenStages 只记首个 watcher 的阶段，且 trigger 位
+  // AND 累积仍为真；watcher 回到首阶段不触发 CrossStageDependency）——
+  // 集合判定会误杀该形态，顺序仿真必须放行。
+  const stageA = "0x" + "01".repeat(32);
+  const stageB = "0x" + "02".repeat(32);
+  const dep = {
+    kind: "positive",
+    source: "buyer",
+    signalName: "buyer::shared",
+    sourceId: onchainSourceId("buyer"),
+    signalId: onchainSignalId("buyer::shared"),
+    signalKey: sharedKey,
+  };
+  const hookOf = (
+    name: string,
+    stageIdentifier: string,
+    stageId: string,
+    orderTriggerKind: "mint" | "none",
+  ) => ({
+    hookId: keccak256Hex(`${stageIdentifier}#${name}`),
+    stageId,
+    stageIdentifier,
+    hookName: name,
+    kind: "receive",
+    orderTriggerKind,
+    emitReady: orderTriggerKind !== "none",
+    instructions: [
+      {
+        op: "SIGNAL",
+        source: "buyer",
+        signalName: "buyer::shared",
+        sourceId: dep.sourceId,
+        signalId: dep.signalId,
+        signalKey: sharedKey,
+      },
+    ],
+    dependencies: [dep],
+  });
+  const sequentialHookLists = {
+    accepted: [
+      hookOf("t1", "stage.a", stageA, "mint"),
+      hookOf("t2", "stage.b", stageB, "mint"),
+      hookOf("w1", "stage.a", stageA, "none"),
+    ],
+    rejected: [
+      hookOf("w1", "stage.a", stageA, "none"),
+      hookOf("t1", "stage.b", stageB, "mint"),
+    ],
+  };
+  const sequentialArtifact = (hooks: readonly ReturnType<typeof hookOf>[]) => ({
+    ...onchain,
+    compiledHooks: hooks,
+    dependencyIndex: { [sharedKey]: hooks.map((hook) => hook.hookId) },
+  });
+  const acceptedIssues = validateOnchainHookPlanArtifact(sequentialArtifact(sequentialHookLists.accepted)).filter(
+    (issue) => /is shared across stages/.test(issue),
+  );
+  assert.deepEqual(acceptedIssues, []);
+
+  // (3) 顺序反过来（watcher(A) → trigger(B)）则合约拒绝——首个 watcher 非
+  // trigger，跨阶段 trigger 也过不去。
+  const rejectedIssues = validateOnchainHookPlanArtifact(sequentialArtifact(sequentialHookLists.rejected)).filter(
+    (issue) => /is shared across stages/.test(issue),
+  );
+  assert.equal(rejectedIssues.length, 1);
+});
+
+test("rejects plans whose sendSignals vocabulary exceeds the gas-bounded capability cap", () => {
+  // G-18：sendSignals 总量编译为 signalCapabilities；超上限在编译与反序列
+  // 化两个边界同口径拒绝（_signalStageId 每次信号提交线性扫描 capabilities）。
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  const template = onchain.signalCapabilities[0];
+  assert.ok(template);
+  assert.equal(
+    validateOnchainHookPlanArtifact({
+      ...onchain,
+      signalCapabilities: Array.from({ length: 257 }, (_, index) => ({
+        ...template,
+        targetSource: `buyer-${index}`,
+        targetSourceId: onchainSourceId(`buyer-${index}`),
+      })),
+    }).some((issue) => /signal capabilities 257 exceed the documented limit 256/.test(issue)),
+    true,
+  );
+});
+
 test("rejects duplicate on-chain selector bindings", () => {
-  const sourcePlan = compileZhixuHookPlan(baseZhixu);
+  const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
 
   assert.throws(
     () =>
@@ -393,11 +687,11 @@ test("rejects duplicate on-chain selector bindings", () => {
 });
 
 test("rejects invalid on-chain HookPlan artifact shapes", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
 
   assert.deepEqual(
     validateOnchainHookPlanArtifact({ ...onchain, schemaVersion: "wrong" }),
-    ["schemaVersion must be uvp.onchainHookPlan.v1"],
+    ["schemaVersion must be uvp.onchainHookPlan.v2"],
   );
   assert.match(
     validateOnchainHookPlanArtifact({
@@ -420,5 +714,513 @@ test("rejects invalid on-chain HookPlan artifact shapes", () => {
         dependencyIndex: {},
       }),
     OnchainHookPlanArtifactValidationError,
+  );
+});
+
+test("rejects non-birth subscription receive hooks with the typed compilation error", () => {
+  for (const [hookName, expression] of [
+    ["START", "::ANCHOR(@buyer::selector.assign.executor_selected)"]
+  ] as const) {
+    const zhixu: ZhixuDefinition = {
+      ...baseZhixu,
+      spec: {
+        ...baseZhixu.spec,
+        taskPatterns: baseZhixu.spec.taskPatterns.map((pattern) => ({
+          ...pattern,
+          stages: pattern.stages.map((stage) =>
+            stage.name === "main"
+              ? {
+                  ...stage,
+                  receiveSignals: { [hookName]: expression },
+                  // 普通静态执行者：zhixu 委托 + 订阅会被 Rust 侧
+                  // validate_subscription_delegation 先行拒绝，这里专门
+                  // 验证 TS 侧"非出生订阅不上链"的类型化错误。
+                  executor: {
+                    supplierType: "organization",
+                    supplierID: "execution-org"
+                  }
+                }
+              : stage
+          )
+        }))
+      }
+    };
+
+    assert.throws(
+      () => compileOnchainHookPlan(compileZhixuHookPlan(zhixu, demoManifest)),
+      (error: unknown) =>
+        error instanceof HookPlanCompilationError &&
+        error.issues.some(
+          (issue) =>
+            /only supports subscription entries on order-trigger hooks/.test(issue) &&
+            /subscription-mint-spec\.md/.test(issue)
+        )
+    );
+  }
+});
+
+test("compiles mint birth subscriptions into order-trigger SIGNAL hooks", () => {
+  // 出生订阅上链 = 提交事实本身即出生信号：编译为一条 SIGNAL 指令，
+  // 带 order-trigger flag（triggerOrderFrom* 的硬门槛），提交者按
+  // "现实成立后任意持有人签名提交"开放。
+  const zhixu: ZhixuDefinition = {
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      taskPatterns: [
+        ...baseZhixu.spec.taskPatterns,
+        {
+          // 出生订阅的信号必须只被出生钩子监视（链上守卫：非出生钩子在
+          // 未物化阶段监视同一信号会让提交交易永久 revert）。
+          name: "intake",
+          stages: [
+            {
+              name: "post",
+              source: "buyer",
+              // PUBLISH 为自发种子入口钩子（uvp-core 659a388 物化门：零
+              // hook 阶段在链上永不可物化、sendSignals 无钩子可挂）。
+              receiveSignals: {
+                PUBLISH: "buyer::intake.post.seed",
+              },
+              sendSignals: ["posted", "seed"],
+              executor: {
+                supplierType: "organization",
+                supplierID: "intake-exec",
+              },
+            },
+          ],
+        },
+        {
+          name: "fulfillment",
+          stages: [
+            {
+              name: "birth",
+              source: "fulfiller",
+              mint: "per-fact",
+              receiveSignals: {
+                BIRTH: "::ANCHOR(@buyer::intake.post.posted)",
+              },
+              sendSignals: ["str", "cmp", "err"],
+              executor: {
+                supplierType: "organization",
+                supplierID: "fulfiller-exec",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(zhixu, demoManifest));
+  const hook = onchain.compiledHooks.find((item) => item.hookName === "BIRTH");
+  assert.ok(hook, "birth hook missing from compiled plan");
+  assert.equal(hook.orderTriggerKind, "mint");
+  assert.equal(hook.emitReady, true);
+  assert.equal(hook.instructions.length, 1);
+  // 出生订阅编译为一条 SIGNAL 指令：提交的 (sourceId, signalId) 即出生事实。
+  const birth = hook.instructions[0] as OnchainSignalInstruction;
+  assert.equal(birth.op, "SIGNAL");
+  assert.equal(birth.sourceId, onchainSourceId("buyer"));
+  assert.equal(birth.signalId, onchainSignalId("intake.post.posted"));
+});
+
+test("rejects empty instructions the way the contract reverts InvalidHook", () => {
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  // 正例：现状（每条 hook 至少一条指令）仍全量通过预检。
+  assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
+
+  // 反例：instructions 为空在链上等价于 hook.instructions.length == 0 的
+  // InvalidHook revert，预检必须同样拒绝（而不是被 length > 0 前置条件吞掉）。
+  assert.match(
+    validateOnchainHookPlanArtifact({
+      ...onchain,
+      compiledHooks: [
+        { ...onchain.compiledHooks[0]!, instructions: [] },
+        ...onchain.compiledHooks.slice(1),
+      ],
+    }).join("; "),
+    /compiledHooks\[0\]\.instructions must leave exactly one stack item/,
+  );
+});
+
+test("rejects empty dependency keys the way the contract reverts InvalidHook", () => {
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  // 正例：带依赖的 hook 仍通过预检与 Solidity 参数转换。
+  assert.doesNotThrow(() => toSolidityRegisterPlanArgs(onchain));
+
+  const withEmptyDependencies = {
+    ...onchain,
+    compiledHooks: [
+      { ...onchain.compiledHooks[0]!, dependencies: [] },
+      ...onchain.compiledHooks.slice(1),
+    ],
+  };
+  // 反例：dependencyKeys 为空在链上等价于 hook.dependencyKeys.length == 0
+  // 的 InvalidHook revert；制品校验与 Solidity 参数转换都要拒绝。
+  assert.match(
+    validateOnchainHookPlanArtifact(withEmptyDependencies).join("; "),
+    /compiledHooks\[0\]\.dependencies must not be empty/,
+  );
+  assert.throws(
+    () => toSolidityRegisterPlanArgs(withEmptyDependencies),
+    (error: unknown) =>
+      error instanceof OnchainHookPlanArtifactValidationError &&
+      error.issues.some((issue) =>
+        /dependencies must not be empty/.test(issue)
+      )
+  );
+});
+
+test("rejects DELAY seconds beyond the 30-day contract bound", () => {
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  const withDelay = (
+    delaySeconds: number
+  ): OnchainHookPlanArtifact => ({
+    ...onchain,
+    compiledHooks: onchain.compiledHooks.map((hook) =>
+      hook.hookName === "TIMEOUT"
+        ? {
+            ...hook,
+            instructions: hook.instructions.map((instruction) =>
+              instruction.op === "DELAY"
+                ? { op: "DELAY", delaySeconds }
+                : instruction
+            ),
+          }
+        : hook
+    ),
+  });
+
+  // 反例：> 30 天在链上触发 HookDelayTooLong，预检必须先行拒绝。
+  assert.match(
+    validateOnchainHookPlanArtifact(withDelay(2_592_001)).join("; "),
+    /delaySeconds must not exceed 2592000.*HookDelayTooLong/,
+  );
+
+  // 正例：恰好 30 天（MAX_HOOK_DELAY_SECONDS）仍是合法制品。
+  const atBound = withDelay(2_592_000);
+  const { planHash: staleHash, ...payload } = atBound;
+  void staleHash;
+  const repinned = {
+    ...payload,
+    planHash: hashOnchainPlanPayload(payload),
+  };
+  assert.deepEqual(validateOnchainHookPlanArtifact(repinned), []);
+  assert.deepEqual(
+    toSolidityRegisterPlanArgs(repinned)
+      .hooks.find((hook) => hook.hookName === keccak256Hex("TIMEOUT"))
+      ?.instructions.filter((instruction) => instruction.op === "DELAY"),
+    [{ op: "DELAY", delaySeconds: 2_592_000 }],
+  );
+});
+
+test("rejects a dependency key shared across stages", () => {
+  const sharedZhixu: ZhixuDefinition = {
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      taskPatterns: baseZhixu.spec.taskPatterns.map((pattern) => ({
+        ...pattern,
+        stages: pattern.stages.map((stage) =>
+          stage.name === "assign"
+            ? {
+                ...stage,
+                receiveSignals: {
+                  ECHO: "buyer::selector.assign.executor_selected"
+                }
+              }
+            : stage
+        )
+      }))
+    }
+  };
+
+  assert.throws(
+    () => compileOnchainHookPlan(compileZhixuHookPlan(sharedZhixu, demoManifest)),
+    (error: unknown) =>
+      error instanceof HookPlanCompilationError &&
+      error.issues.some((issue) => /shared across stages/.test(issue))
+  );
+});
+
+test("flags stages whose hooks can never materialize on-chain", () => {
+  const materializationIssues = (issues: readonly string[]): readonly string[] =>
+    issues.filter((issue) => /no order-trigger or EMIT_READY hook/.test(issue));
+
+  // 正例 1（mint trigger 形态）：出生订阅编译为 orderTriggerKind=mint、
+  // emitReady=true 的 hook——阶段可物化，零 issue（口径对照 Rust
+  // validate_onchain_stage_materialization：有出生边的阶段不受限）。
+  const mintZhixu: ZhixuDefinition = {
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      taskPatterns: [
+        ...baseZhixu.spec.taskPatterns,
+        {
+          name: "intake",
+          stages: [
+            {
+              name: "post",
+              source: "buyer",
+              // PUBLISH 为自发种子入口钩子（uvp-core 659a388 物化门：零
+              // hook 阶段在链上永不可物化、sendSignals 无钩子可挂）。
+              receiveSignals: {
+                PUBLISH: "buyer::intake.post.seed",
+              },
+              sendSignals: ["posted", "seed"],
+              executor: {
+                supplierType: "organization",
+                supplierID: "intake-exec",
+              },
+            },
+          ],
+        },
+        {
+          name: "fulfillment",
+          stages: [
+            {
+              name: "birth",
+              source: "fulfiller",
+              mint: "per-fact",
+              receiveSignals: {
+                BIRTH: "::ANCHOR(@buyer::intake.post.posted)",
+              },
+              sendSignals: ["str", "cmp", "err"],
+              executor: {
+                supplierType: "organization",
+                supplierID: "fulfiller-exec",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const mintOnchain = compileOnchainHookPlan(
+    compileZhixuHookPlan(mintZhixu, demoManifest),
+  );
+  assert.deepEqual(materializationIssues(validateOnchainHookPlanArtifact(mintOnchain)), []);
+
+  // 正例 2（EMIT_READY receive hook 形态）：有静态 executor 的阶段其
+  // receive hook 恒 emitReady=true（executor dispatch 边），同样可物化。
+  const baseOnchain = compileOnchainHookPlan(
+    compileZhixuHookPlan(baseZhixu, demoManifest),
+  );
+  assert.deepEqual(materializationIssues(validateOnchainHookPlanArtifact(baseOnchain)), []);
+
+  // 正例 3（dock trigger 形态）：dock 出生边 orderTriggerKind=dock 同样
+  // 是合法物化者。
+  const dockOnchain: OnchainHookPlanArtifact = {
+    ...baseOnchain,
+    compiledHooks: baseOnchain.compiledHooks.map((hook) =>
+      hook.stageIdentifier === "execution.main"
+        ? { ...hook, orderTriggerKind: "dock" as const }
+        : hook,
+    ),
+  };
+  assert.deepEqual(materializationIssues(validateOnchainHookPlanArtifact(dockOnchain)), []);
+
+  // 反例（纯 receive hook 形态）：把 execution.main 的全部 hook 压成
+  // orderTriggerKind=none、emitReady=false 的 flags=0 纯 watcher——该阶段
+  // 永不可物化，正是 Rust validate_onchain_stage_materialization 在定义层
+  // 拒绝的形态；artifact 边界（第二道门）必须同样拒绝。
+  const watcherOnly: OnchainHookPlanArtifact = {
+    ...baseOnchain,
+    compiledHooks: baseOnchain.compiledHooks.map((hook) =>
+      hook.stageIdentifier === "execution.main"
+        ? { ...hook, orderTriggerKind: "none" as const, emitReady: false }
+        : hook,
+    ),
+  };
+  const watcherIssues = materializationIssues(
+    validateOnchainHookPlanArtifact(watcherOnly),
+  );
+  // 阶段内每条 hook 各报一条（START/TIMEOUT 两条），其余校验零噪声。
+  assert.equal(watcherIssues.length, 2);
+  for (const issue of watcherIssues) {
+    assert.match(
+      issue,
+      /^stage execution\.main has no order-trigger or EMIT_READY hook; its hooks compile to flags=0 watchers which can never materialize the stage on-chain \(deadlock, no recovery path\) — the Rust compiler must reject this shape$/,
+    );
+  }
+
+  // 编译入口同口径：该形态在 compileOnchainHookPlan 预检即抛
+  // HookPlanCompilationError，不产出制品。
+  const watcherSourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  const mutatedSourcePlan = {
+    ...watcherSourcePlan,
+    compiledHooks: watcherSourcePlan.compiledHooks.map((hook) =>
+      hook.stageIdentifier === "execution.main"
+        ? { ...hook, orderTriggerKind: "none" as const, emitReady: false }
+        : hook,
+    ),
+  };
+  assert.throws(
+    () => compileOnchainHookPlan(mutatedSourcePlan),
+    (error: unknown) =>
+      error instanceof HookPlanCompilationError &&
+      error.issues.some((issue) =>
+        /stage execution\.main has no order-trigger or EMIT_READY hook/.test(issue),
+      ),
+  );
+});
+
+test("rejects stages that compile to zero hooks (P0-4 materialization gate)", () => {
+  const zeroHookIssues = (issues: readonly string[]): readonly string[] =>
+    issues.filter((issue) =>
+      /declares no receiveSignals and compiles to zero hooks/.test(issue),
+    );
+  const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  const onchain = compileOnchainHookPlan(sourcePlan);
+
+  // 正例：带物化位的阶段放行——selector.assign 的种子入口钩子靠静态
+  // executor 得到 emitReady=true（flags=4），全计划零物化 issue。
+  const placeHook = onchain.compiledHooks.find(
+    (hook) => hook.hookName === "PLACE",
+  );
+  assert.equal(placeHook?.stageIdentifier, "selector.assign");
+  assert.equal(placeHook?.orderTriggerKind, "none");
+  assert.equal(placeHook?.emitReady, true);
+  assert.deepEqual(zeroHookIssues(validateOnchainHookPlanArtifact(onchain)), []);
+
+  // 反例（编译入口）：把 selector.assign 的钩子全部剥掉，阶段仅剩
+  // sendSignals/executor 声明投影——零 hook 阶段永不可物化、信号没有
+  // 钩子可挂，compileOnchainHookPlan 预检即抛，不产出制品。
+  // （dependencyIndex 同步剔除被剥钩子，让形状校验先行通过，确保
+  // 拦截者就是物化门本身。）
+  const strippedHookIds = new Set(
+    sourcePlan.compiledHooks
+      .filter((hook) => hook.stageIdentifier === "selector.assign")
+      .map((hook) => hook.hookId),
+  );
+  const zeroHookSourcePlan = {
+    ...sourcePlan,
+    compiledHooks: sourcePlan.compiledHooks.filter(
+      (hook) => hook.stageIdentifier !== "selector.assign",
+    ),
+    dependencyIndex: Object.fromEntries(
+      Object.entries(sourcePlan.dependencyIndex)
+        .map(([key, hookIds]): [string, readonly string[]] => [
+          key,
+          hookIds.filter((hookId) => !strippedHookIds.has(hookId)),
+        ])
+        .filter(([, hookIds]) => hookIds.length > 0),
+    ),
+  };
+  assert.throws(
+    () => compileOnchainHookPlan(zeroHookSourcePlan),
+    (error: unknown) =>
+      error instanceof HookPlanCompilationError &&
+      zeroHookIssues(error.issues).length === 1 &&
+      /^stage selector\.assign declares no receiveSignals and compiles to zero hooks: the stage can never materialize on-chain \(materialization only happens via this stage's own order-trigger\/EMIT_READY hooks\) and its sendSignals have no hook to hang on — submitSignal requires the source stage to be materialized and reverts UnknownHook forever \(deadlock, no recovery path\); declare receiveSignals carrying a mint\/dock entrance or a static executor$/.test(
+        zeroHookIssues(error.issues)[0] ?? "",
+      ),
+  );
+
+  // 反例（反序列化边界）：同一守卫作用于 onchain artifact 校验边界。
+  const zeroHookOnchain: OnchainHookPlanArtifact = {
+    ...onchain,
+    compiledHooks: onchain.compiledHooks.filter(
+      (hook) => hook.stageIdentifier !== "selector.assign",
+    ),
+  };
+  const boundaryIssues = zeroHookIssues(
+    validateOnchainHookPlanArtifact(zeroHookOnchain),
+  );
+  assert.equal(boundaryIssues.length, 1);
+  assert.match(
+    boundaryIssues[0] ?? "",
+    /^stage selector\.assign declares no receiveSignals and compiles to zero hooks/,
+  );
+});
+
+test("dock entrance hooks materialize their stage (CORE-8 materialization gate)", () => {
+  const materializationIssues = (issues: readonly string[]): readonly string[] =>
+    issues.filter((issue) =>
+      /no order-trigger or EMIT_READY hook|compiles to zero hooks/.test(issue),
+    );
+
+  // 真实 dockInterface entrance 端口：目标定义的 payment_flow.init#DOCK_EXECUTE
+  // 编译为 dock|emitReady（flags=6）——Rust 659a388 dock_entrance_hook_ids
+  // 豁免的产物投影，artifact 层按编译后物化位放行，不按 watcher 误拒。
+  const targetOnchain = compileZhixuOnchainHookPlan(
+    dockPaymentTargetDefinition(),
+  );
+  const entranceHook = targetOnchain.compiledHooks.find(
+    (hook) => hook.stageIdentifier === "payment_flow.init",
+  );
+  assert.equal(entranceHook?.hookName, "DOCK_EXECUTE");
+  assert.equal(entranceHook?.orderTriggerKind, "dock");
+  assert.equal(entranceHook?.emitReady, true);
+  assert.deepEqual(
+    materializationIssues(validateOnchainHookPlanArtifact(targetOnchain)),
+    [],
+  );
+});
+
+test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
+  const silentTriggerIssues = (issues: readonly string[]): readonly string[] =>
+    issues.filter((issue) => /order trigger without emitReady/.test(issue));
+
+  // 正例：编译器产物口径（mint trigger + emitReady=true，flags=5）零 issue。
+  const baseOnchain = compileOnchainHookPlan(
+    compileZhixuHookPlan(baseZhixu, demoManifest),
+  );
+  assert.deepEqual(silentTriggerIssues(validateOnchainHookPlanArtifact(baseOnchain)), []);
+
+  // 反例 1（沉默 mint trigger）：orderTriggerKind=mint、emitReady=false 的
+  // 形态——UVPStateMachine.commitPlan 对 flags=1 恒 revert
+  // SilentOrderTriggerHook，artifact 边界同口径拒绝。
+  const silentMint: OnchainHookPlanArtifact = {
+    ...baseOnchain,
+    compiledHooks: baseOnchain.compiledHooks.map((hook) =>
+      hook.stageIdentifier === "execution.main"
+        ? { ...hook, orderTriggerKind: "mint" as const, emitReady: false }
+        : hook,
+    ),
+  };
+  const mintIssues = silentTriggerIssues(validateOnchainHookPlanArtifact(silentMint));
+  assert.ok(mintIssues.length >= 1, "silent mint trigger must be flagged");
+  for (const issue of mintIssues) {
+    assert.match(
+      issue,
+      /hook execution\.main#.+ is an order trigger without emitReady; UVPStateMachine\.commitPlan reverts SilentOrderTriggerHook — the Rust compiler must always emit trigger flags with EMIT_READY$/,
+    );
+  }
+
+  // 反例 2（沉默 dock trigger）：orderTriggerKind=dock、emitReady=false
+  // 同样拒绝（flags=2 口径）。
+  const silentDock: OnchainHookPlanArtifact = {
+    ...baseOnchain,
+    compiledHooks: baseOnchain.compiledHooks.map((hook) =>
+      hook.stageIdentifier === "execution.main"
+        ? { ...hook, orderTriggerKind: "dock" as const, emitReady: false }
+        : hook,
+    ),
+  };
+  assert.ok(
+    silentTriggerIssues(validateOnchainHookPlanArtifact(silentDock)).length >= 1,
+    "silent dock trigger must be flagged",
+  );
+
+  // 编译入口同口径：沉默 trigger 形态在 compileOnchainHookPlan 预检即抛
+  // HookPlanCompilationError，不产出制品。
+  const silentSourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  const mutatedSilentPlan = {
+    ...silentSourcePlan,
+    compiledHooks: silentSourcePlan.compiledHooks.map((hook) =>
+      hook.stageIdentifier === "execution.main"
+        ? { ...hook, orderTriggerKind: "mint" as const, emitReady: false }
+        : hook,
+    ),
+  };
+  assert.throws(
+    () => compileOnchainHookPlan(mutatedSilentPlan),
+    (error: unknown) =>
+      error instanceof HookPlanCompilationError &&
+      error.issues.some((issue) =>
+        /order trigger without emitReady/.test(issue),
+      ),
   );
 });

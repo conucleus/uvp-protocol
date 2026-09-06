@@ -26,10 +26,30 @@ async function loadCorpus(): Promise<Corpus> {
   return JSON.parse(await readFile(corpusUrl, "utf8")) as Corpus;
 }
 
+/**
+ * The shared semantic corpus pins native-core semantics and predates the
+ * frozen v0.10 chain-event contract: its replayCases carry the projected
+ * pre-freeze HookStatusChanged shape (single `status`). replayChainEvents
+ * only accepts frozen v0.10 events carrying previousStatus/newStatus, so
+ * this test-side adapter lifts `status` onto `newStatus` before replaying.
+ */
+function liftCorpusEventToFrozenChainEvent(event: ChainModeEvent): ChainModeEvent {
+  const raw = event as unknown as Record<string, unknown>;
+  if (event.eventName !== "HookStatusChanged" || "newStatus" in raw) {
+    return event;
+  }
+  if (typeof raw.status !== "string") {
+    throw new Error(
+      `corpus HookStatusChanged ${String(raw.hookId)} carries neither newStatus nor status`
+    );
+  }
+  return { ...raw, newStatus: raw.status } as unknown as ChainModeEvent;
+}
+
 test("chain replay follows shared hook semantic corpus", async () => {
   const corpus = await loadCorpus();
   for (const item of corpus.replayCases) {
-    const result = replayChainEvents(item.events);
+    const result = replayChainEvents(item.events.map(liftCorpusEventToFrozenChainEvent));
     const signal = result.state.orders[item.expect.orderKey]?.signals[item.expect.signalKey];
 
     assert.equal(result.observed.length, item.expect.observedCount, item.name);

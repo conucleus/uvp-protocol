@@ -32,15 +32,15 @@ test("loads UVP update zhixu yaml and compiles stable on-chain plan", async () =
   assert.equal(hookPlan.platform.network, "base");
   assert.equal(onchain.platform.network, "base");
   assert.equal(hookPlan.planHash, again.planHash);
-  assert.equal(hookPlan.compiledHooks.length, 13);
-  assert.equal(onchain.compiledHooks.length, 13);
-  assert.equal(args.hooks.length, 13);
+  assert.equal(hookPlan.compiledHooks.length, 14);
+  assert.equal(onchain.compiledHooks.length, 14);
+  assert.equal(args.hooks.length, 14);
   assert.equal(
-    onchain.compiledHooks.filter((hook) => hook.stageIdentifier === "update.rollback" && hook.isTrigger).length,
+    onchain.compiledHooks.filter((hook) => hook.stageIdentifier === "update.rollback").length,
     5
   );
   assert.equal(
-    args.hooks.find((hook) => hook.hookId === onchain.compiledHooks.find((item) => item.stageIdentifier === "update.init")?.hookId)?.isTrigger,
+    onchain.compiledHooks.some((hook) => hook.stageIdentifier === "update.init"),
     true
   );
 });

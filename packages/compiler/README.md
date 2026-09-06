@@ -3,14 +3,17 @@
 Zhixu compiler for deterministic EVM state-machine artifacts.
 
 This module compiles UVP DSL directly into deterministic on-chain artifacts.
-The public protocol output is `OnchainHookPlanArtifact` and
-`UVPStateMachine.registerPlan` args. `HookPlanArtifact` is compiler-internal IR.
+The public protocol output is `OnchainHookPlanArtifact` and the registration
+args for the two-step `UVPStateMachine.commitPlan` + `finalizePlan` flow.
+`HookPlanArtifact` is compiler-internal IR.
 
 ## Inputs
 
 - `apiVersion: uvp/v0`, `kind: Zhixu` YAML/JSON definitions;
 - Hook DSL expressions under `receiveSignals`;
 - selected-stage executor bindings and supplier `signalMap` data;
+- the target-side `spec.dockInterface` and, for a `supplierType=zhixu`
+  route, a `uvp.dock.resolution.v1` resolution manifest;
 - target platform metadata, currently `platform.type=blockchain`,
   `platform.provider=eth`, and optional `platform.network` such as `base` for
   this track.
@@ -18,7 +21,8 @@ The public protocol output is `OnchainHookPlanArtifact` and
 ## Outputs
 
 - EVM-facing `OnchainHookPlanArtifact`;
-- Solidity `UVPStateMachine.registerPlan` args;
+- Solidity registration args for the two-step `UVPStateMachine.commitPlan` +
+  `finalizePlan` flow;
 - deterministic `planId`, `planHash`, source `zhixu_hash`, `policy_hash`,
   `metadata_hash`, and `artifact_hash`;
 - stable hook, stage, source, signal, dependency, and route ids;
@@ -35,7 +39,7 @@ The supported compiler surface is the chain artifact path:
 - static executor route extraction;
 - `supplierType=zhixu` `signalMap` compilation and same-source validation.
 
-Executor topology follows the original UVP closure rule: a stage without a
+Executor topology follows the UVP closure rule: a stage without a
 fixed `executor.supplierID` is valid only when it can be reached through
 `selectedStages` from a stage that does name a fixed executor. Selector loops or
 selector chains with no fixed executor anchor are rejected, so product flows
@@ -93,7 +97,7 @@ Use these root-package entrypoints:
 - `toSolidityRegisterPlanArgs(onchainHookPlanArtifact)`.
 
 `compileZhixuOnchainHookPlan(zhixu)` emits schema
-`uvp.onchainHookPlan.v1`. It:
+`uvp.onchainHookPlan.v2`. It:
 
 - emits stable `planId` and `planHash`;
 - carries target `platform` from Zhixu YAML as a protocol field
@@ -102,6 +106,7 @@ Use these root-package entrypoints:
 - replaces hook expressions with postfix instruction arrays;
 - indexes dependencies by packed signal key;
 - exposes executor routes through route references;
+- carries `dockInterface`, resolved `dockRoutes`, and their committed roots;
 - compiles `selectedStageBindings` into sorted `selectorBindings` for
   `StageSelectorBinding` registration;
 - includes selector bindings in the canonical on-chain `planHash`.

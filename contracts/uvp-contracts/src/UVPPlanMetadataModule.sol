@@ -3,9 +3,12 @@ pragma solidity ^0.8.24;
 
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
 import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
+import {DockMerkle} from "./libraries/DockMerkle.sol";
 
 contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     struct PlanMetadata {
+        bytes32 dockRoutesRoot;
+        bytes32 dockInterfaceRoot;
         bytes32[] selectorBindingKeys;
         bytes32[] signalCapabilityKeys;
         mapping(bytes32 stageId => bytes32[] capabilityKeys) stageSignalCapabilityKeys;
@@ -15,6 +18,7 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     }
 
     error InvalidSignalCapability();
+    error DuplicateCurrentOrderSignalCapability(bytes32 planId, bytes32 sourceId, bytes32 signalId, bytes32 stageId);
     error InvalidTargetOrderRelation(uint8 targetOrderRelation);
     error StageSelectorBindingAlreadyRegistered(bytes32 planId, bytes32 selectorStageId, bytes32 targetStageId);
     error PlanMetadataAlreadyFinalized(bytes32 planId);
@@ -32,6 +36,11 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
 
     mapping(bytes32 planId => PlanMetadata metadata) private _metadata;
     mapping(bytes32 planId => bool finalized) public planMetadataFinalized;
+    // E16 注册守卫：relation=0 的事实键 → 唯一属主阶段。同一
+    // (sourceId, signalId) 被两个阶段以 relation=0 重复声明会让
+    // UVPStateMachine._signalStageId 按数组序"取首个匹配"，阶段归属静默
+    // 漂移——注册边界直接拒绝。
+    mapping(bytes32 planId => mapping(bytes32 factKey => bytes32 stageId)) private _currentOrderFactStages;
 
     event StageSelectorBindingRegistered(
         bytes32 indexed planId, bytes32 indexed selectorStageId, bytes32 indexed targetStageId
@@ -51,7 +60,9 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     function finalizePlanMetadata(
         bytes32 planId,
         StageSelectorBinding[] calldata selectorBindings,
-        SignalCapability[] calldata signalCapabilities
+        SignalCapability[] calldata signalCapabilities,
+        bytes32 routesRoot,
+        bytes32 interfaceRoot
     ) external {
         if (msg.sender != address(stateMachine)) {
             revert UnauthorizedStateMachine(msg.sender);
@@ -59,9 +70,35 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
         if (planMetadataFinalized[planId]) {
             revert PlanMetadataAlreadyFinalized(planId);
         }
+        _metadata[planId].dockRoutesRoot = routesRoot;
+        _metadata[planId].dockInterfaceRoot = interfaceRoot;
         _registerStageSelectorBindings(planId, selectorBindings);
         _registerSignalCapabilities(planId, signalCapabilities);
         planMetadataFinalized[planId] = true;
+    }
+
+    function dockRoutesRoot(bytes32 planId) external view returns (bytes32) {
+        _requireKnownPlan(planId);
+        return _metadata[planId].dockRoutesRoot;
+    }
+
+    function dockInterfaceRoot(bytes32 planId) external view returns (bytes32) {
+        _requireKnownPlan(planId);
+        return _metadata[planId].dockInterfaceRoot;
+    }
+
+    function verifyDockRoute(bytes32 planId, bytes32 leaf, bytes32[] calldata proof) external view returns (bool) {
+        _requireKnownPlan(planId);
+        return DockMerkle.verify(_metadata[planId].dockRoutesRoot, leaf, proof);
+    }
+
+    function verifyDockInterfacePort(bytes32 planId, bytes32 leaf, bytes32[] calldata proof)
+        external
+        view
+        returns (bool)
+    {
+        _requireKnownPlan(planId);
+        return DockMerkle.verify(_metadata[planId].dockInterfaceRoot, leaf, proof);
     }
 
     function planSelectorBindingCount(bytes32 planId) external view returns (uint256) {
@@ -191,6 +228,18 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
             );
             if (metadata.signalCapabilities[capabilityKey].stageId != bytes32(0)) {
                 revert InvalidSignalCapability();
+            }
+            // E16：relation=0 的事实键唯一属主。跨阶段重复声明在此拒绝，
+            // 而不是让状态机侧 _signalStageId 按数组序取首个匹配。
+            if (capability.targetOrderRelation == SIGNAL_TARGET_CURRENT_ORDER) {
+                bytes32 factKey = keccak256(abi.encode(capability.targetSourceId, capability.signalId));
+                bytes32 ownerStageId = _currentOrderFactStages[planId][factKey];
+                if (ownerStageId != bytes32(0) && ownerStageId != capability.stageId) {
+                    revert DuplicateCurrentOrderSignalCapability(
+                        planId, capability.targetSourceId, capability.signalId, ownerStageId
+                    );
+                }
+                _currentOrderFactStages[planId][factKey] = capability.stageId;
             }
             metadata.signalCapabilities[capabilityKey] = capability;
             metadata.signalCapabilityKeys.push(capabilityKey);

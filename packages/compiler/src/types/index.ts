@@ -1,8 +1,13 @@
 export const COMPILER_NAME = "uvp-eth-compiler" as const;
 export const COMPILER_VERSION = "0.1.0" as const;
-export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v1" as const;
+export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v2" as const;
 export const ONCHAIN_HOOK_PLAN_SCHEMA_VERSION =
-  "uvp.onchainHookPlan.v1" as const;
+  "uvp.onchainHookPlan.v2" as const;
+export const DOCK_SCHEMA_VERSION = "uvp.dock.v1" as const;
+export const DOCK_INTERFACE_ARTIFACT_SCHEMA_VERSION =
+  "uvp.dockInterfaceArtifact.v1" as const;
+export const DOCK_ROUTE_SCHEMA_VERSION = "uvp.dockRoute.v1" as const;
+export const DOCK_RESOLUTION_SCHEMA_VERSION = "uvp.dock.resolution.v1" as const;
 
 export type HexString = `0x${string}`;
 export type Address = HexString;
@@ -30,6 +35,8 @@ export interface ZhixuDefinition {
       readonly params?: Record<string, string>;
     };
     readonly taskPatterns: readonly ZhixuTaskPattern[];
+    /** 目标侧公开的版本化对接接口（uvp.dock.v1）。 */
+    readonly dockInterface?: DockInterfaceSource;
   };
 }
 
@@ -52,7 +59,12 @@ export interface ZhixuTaskPattern {
 export interface ZhixuStage {
   readonly name: string;
   readonly source: string;
-  readonly trigger: readonly string[];
+  /**
+   * Birth-stage declaration (subscription-mint model): every fanned-in fact
+   * mints one order whose birth stage is this stage. Optional; "per-fact" is
+   * the only mint policy.
+   */
+  readonly mint?: "per-fact";
   readonly executor?: ExecuteConfigs;
   readonly selectedStages?: readonly string[];
   readonly sendSignals?: readonly string[];
@@ -63,11 +75,148 @@ export interface ZhixuStage {
 export interface ExecuteConfigs {
   readonly supplierType: "individual" | "organization" | "zhixu" | string;
   readonly supplierID?: string;
-  readonly zhixuExecutorConfig?: {
-    readonly signalMap: Record<string, string>;
-  };
+  /** uvp.dock.v1：`supplierType: zhixu` 时必填，且禁止 supplierID。 */
+  readonly zhixuExecutorConfig?: ZhixuExecutorConfigSource;
   readonly selectableResource?: Record<string, FileResourceLike>;
   readonly [key: string]: unknown;
+}
+
+/** `spec.dockInterface` source 形状。 */
+export interface DockInterfaceSource {
+  readonly schemaVersion: "uvp.dock.v1";
+  readonly inputs: Record<string, DockInputPortSource>;
+  readonly outputs: Record<string, DockOutputPortSource>;
+}
+
+export interface DockInputPortSource {
+  readonly kind: "entrance" | "signal";
+  /** `<task>.<stage>#<receiveHookName>` */
+  readonly hook: string;
+  readonly access: { readonly policy: "open" | "permit" | "linked" };
+}
+
+export interface DockOutputPortSource {
+  /** `<source>::<task>.<stage>.<signal>` */
+  readonly signal: string;
+  readonly terminal?: "success" | "failure" | "cancelled";
+}
+
+/** 调用方 `executor.zhixuExecutorConfig`。 */
+export interface ZhixuExecutorConfigSource {
+  readonly schemaVersion: "uvp.dock.v1";
+  readonly target: {
+    readonly zhixu: string;
+    readonly version: string;
+  };
+  readonly order: { readonly idPolicy: "derived-v1" };
+  readonly inputMap: Record<string, string>;
+  readonly signalMap: Record<string, string>;
+}
+
+/** Resolution manifest：由 Store/发布系统提供。 */
+export interface DockResolutionManifest {
+  readonly schemaVersion: "uvp.dock.resolution.v1";
+  readonly definitions: readonly DockResolutionTarget[];
+}
+
+export interface DockResolutionTarget {
+  readonly zhixu: string;
+  readonly version: string;
+  readonly definitionRefHash: HexString;
+  readonly artifactHash: HexString;
+  readonly published: boolean;
+  readonly interface: DockInterfaceArtifact;
+  readonly cloudArtifactId?: string;
+  readonly evmPlanId?: HexString;
+  readonly dockEdges?: readonly { zhixu: string; version: string }[];
+}
+
+/** 目标接口编译产物（数组按端口名升序）。 */
+export interface DockInterfaceArtifact {
+  readonly schemaVersion: "uvp.dockInterfaceArtifact.v1";
+  readonly definition: {
+    readonly uid: string;
+    readonly version: string;
+    readonly definitionRefHash: HexString;
+  };
+  readonly inputs: readonly {
+    readonly port: string;
+    readonly kind: "entrance" | "signal";
+    readonly stageIdentifier: string;
+    readonly hookName: string;
+    readonly hookId: string;
+    readonly canonicalInputSignal: string;
+    readonly canonicalInputSignalHash: HexString;
+    readonly source: string;
+    readonly sourceId: HexString;
+    readonly signalId: HexString;
+    readonly accessPolicy: "open" | "permit" | "linked";
+    readonly leafHash: HexString;
+  }[];
+  readonly outputs: readonly {
+    readonly port: string;
+    readonly canonicalOutputSignal: string;
+    readonly canonicalOutputSignalHash: HexString;
+    readonly source: string;
+    readonly sourceId: HexString;
+    readonly signalId: HexString;
+    readonly terminal: "none" | "success" | "failure" | "cancelled";
+    readonly leafHash: HexString;
+  }[];
+  readonly interfaceRoot: HexString;
+}
+
+/** 已解析 DockRouteV1（Rust core 权威产出）。 */
+export interface DockRouteV1 {
+  readonly schemaVersion: "uvp.dockRoute.v1";
+  readonly routeId: HexString;
+  readonly local: {
+    readonly definitionRefHash: HexString;
+    readonly stageIdentifier: string;
+    readonly stageKey: HexString;
+  };
+  readonly target: {
+    readonly definitionRefHash: HexString;
+    readonly zhixuUid: string;
+    readonly version: string;
+    readonly artifactHash: HexString;
+    readonly cloudArtifactId?: string;
+    readonly evmPlanId?: HexString;
+    readonly interfaceRoot: HexString;
+  };
+  readonly orderIdPolicy: "derived-v1";
+  readonly sourceSeam: string;
+  readonly entrance: {
+    readonly localHookName: string;
+    readonly targetPort: string;
+    readonly targetStageKey: HexString;
+    readonly targetHookKey: HexString;
+    readonly targetInputSignalHash: HexString;
+    readonly accessPolicy: "open" | "permit";
+  };
+  readonly inputs: readonly {
+    readonly localHookName: string;
+    readonly targetPort: string;
+    readonly targetInputSignalHash: HexString;
+    readonly targetSourceId: HexString;
+    readonly targetSignalId: HexString;
+    readonly kind: "entrance" | "signal";
+    readonly bindingHash: HexString;
+  }[];
+  readonly outputs: readonly {
+    readonly localSignalName: string;
+    readonly localSourceId: HexString;
+    readonly localSignalId: HexString;
+    readonly targetPort: string;
+    readonly targetOutputSignalHash: HexString;
+    readonly targetSourceId: HexString;
+    readonly targetSignalId: HexString;
+    readonly terminal: "none" | "success" | "failure" | "cancelled";
+    readonly bindingHash: HexString;
+  }[];
+  readonly inputsRoot: HexString;
+  readonly outputsRoot: HexString;
+  readonly routeHash: HexString;
 }
 
 export interface HookPlanArtifact {
@@ -80,17 +229,25 @@ export interface HookPlanArtifact {
   readonly compiledHooks: readonly CompiledHookPlanHook[];
   readonly dependencyIndex: Record<string, readonly string[]>;
   readonly executorRoutes: Record<string, HookPlanExecutorRoute>;
+  readonly dockInterface: DockInterfaceArtifact | null;
+  readonly dockRoutes: readonly DockRouteV1[];
+  readonly dockRoutesRoot: HexString;
+  readonly dockInterfaceRoot: HexString;
   readonly selectedStageBindings: readonly SelectedStageBinding[];
   readonly signalCapabilities: readonly SignalCapability[];
   readonly planHash: HexString;
 }
 
+/** order-trigger 种类：none / mint / dock；HookReady 发出由 emitReady 表达。 */
+export type OrderTriggerKind = "none" | "mint" | "dock";
+
 export interface CompiledHookPlanHook {
   readonly hookId: string;
-  readonly kind: "receive" | "signalMap";
+  readonly kind: "receive";
   readonly stageIdentifier: string;
   readonly hookName: string;
-  readonly isTrigger: boolean;
+  readonly orderTriggerKind: OrderTriggerKind;
+  readonly emitReady: boolean;
   readonly rawExpression: string;
   readonly normalizedExpression: string;
   readonly ast: import("@uvp-eth/hook-core").HookExpressionAst;
@@ -171,6 +328,14 @@ export interface OnchainExecutorRoute {
   readonly stageIdentifier: string;
   readonly executorType: string;
   readonly executorId: string;
+  /**
+   * Content digests of the opaque executor binding and its file resources,
+   * computed once by the producer over canonical JSON. The route hash commits
+   * to these digests instead of the raw free-form objects, so cross-language
+   * hash reproduction only ever compares fixed hex strings.
+   */
+  readonly executorHash: HexString;
+  readonly resourcesHash: HexString;
   readonly routeHash: HexString;
 }
 
@@ -200,8 +365,9 @@ export interface OnchainCompiledHook {
   readonly stageId: HexString;
   readonly stageIdentifier: string;
   readonly hookName: string;
-  readonly kind: "receive" | "signalMap";
-  readonly isTrigger: boolean;
+  readonly kind: "receive";
+  readonly orderTriggerKind: OrderTriggerKind;
+  readonly emitReady: boolean;
   readonly instructions: readonly OnchainHookInstruction[];
   readonly dependencies: readonly OnchainHookDependency[];
   readonly routeRef?: OnchainExecutorRouteRef;
@@ -218,6 +384,10 @@ export interface OnchainHookPlanArtifact {
   readonly compiledHooks: readonly OnchainCompiledHook[];
   readonly dependencyIndex: Record<HexString, readonly HexString[]>;
   readonly executorRoutes: readonly OnchainExecutorRoute[];
+  readonly dockInterface: DockInterfaceArtifact | null;
+  readonly dockRoutes: readonly DockRouteV1[];
+  readonly dockRoutesRoot: HexString;
+  readonly dockInterfaceRoot: HexString;
   readonly selectorBindings: readonly OnchainStageSelectorBinding[];
   readonly signalCapabilities: readonly OnchainSignalCapability[];
   readonly planHash: HexString;
@@ -246,8 +416,9 @@ export interface SolidityRegisterHookArg {
   readonly hookId: HexString;
   readonly stageId: HexString;
   readonly hookName: HexString;
-  readonly kind: "receive" | "signalMap";
-  readonly isTrigger: boolean;
+  readonly kind: "receive";
+  /** 位标志：1=ORDER_TRIGGER_MINT，2=ORDER_TRIGGER_DOCK，4=EMIT_READY。 */
+  readonly flags: number;
   readonly instructions: readonly SolidityRegisterInstructionArg[];
   readonly dependencyKeys: readonly HexString[];
   readonly routeId?: HexString;
@@ -287,6 +458,8 @@ export interface SolidityRegisterPlanArgs {
   readonly artifactHash: HexString;
   readonly hooksHash: HexString;
   readonly metadataHash: HexString;
+  readonly dockRoutesRoot: HexString;
+  readonly dockInterfaceRoot: HexString;
   readonly hooks: readonly SolidityRegisterHookArg[];
   readonly dependencyIndex: readonly SolidityRegisterDependencyIndexArg[];
   readonly executorRoutes: readonly SolidityRegisterExecutorRouteArg[];

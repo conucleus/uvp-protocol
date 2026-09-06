@@ -219,19 +219,35 @@ test("cancels delayed hooks when the negative signal arrives before the anchor",
   });
 });
 
-test("supports OUTSIDE and OUTSOURCE target dependencies", () => {
-  const outsideAst = parseHookExpression("::OUTSIDE");
-  const ast = parseHookExpression("buyer::OUTSOURCE@(seller::task.ship.cmp)");
+test("parses subscription entries with empty source header", () => {
+  const ast = parseHookExpression("::ANCHOR(@seller::task.ship.cmp)");
 
-  assert.deepEqual(extractHookDependencies(outsideAst), [
-    { kind: "positive", source: "", signalName: "OUTSIDE" }
-  ]);
+  assert.equal(ast.source, "");
+  assert.deepEqual(ast.condition, {
+    kind: "subscription",
+    source: "seller",
+    signal: "task.ship.cmp"
+  });
   assert.deepEqual(extractHookDependencies(ast), [
     { kind: "positive", source: "seller", signalName: "task.ship.cmp" }
   ]);
+});
+
+test("defers subscription entries to per-event delivery without expression verdict", () => {
+  const ast = parseHookExpression("::ANCHOR(@seller::task.ship.cmp)");
+
+  assert.deepEqual(evaluateHook(ast, index([]), at), { status: "init" });
   assert.deepEqual(evaluateHook(ast, index([["seller", "task.ship.cmp", at]]), at), {
-    status: "reg"
+    status: "init"
   });
+});
+
+test("rejects non-canonical cross-source header forms", () => {
+  assert.throws(() => parseHookExpression("::OUTSIDE"), /retired in uvp\.semantic\.v1/);
+  assert.throws(() => parseHookExpression("buyer::OUTSOURCE"), /retired in uvp\.semantic\.v1/);
+  assert.throws(() => parseHookExpression("buyer::MERGE@(peer::a.b.c)"), /retired in uvp\.semantic\.v1/);
+  assert.throws(() => parseHookExpression("::ANCHOR@(farmer.main.settle)"), /retired in uvp\.semantic\.v1/);
+  assert.throws(() => parseHookExpression("::MERGE@(seller::a.b.c, buyer::d.e.f)"), /retired in uvp\.semantic\.v1/);
 });
 
 test("rejects raw-less ASTs at adapter boundaries", () => {

@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { decodeFunctionData } from "viem";
+import { decodeEventLog, decodeFunctionData, toEventHash } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { STATE_MACHINE_ABI as EVM_STATE_MACHINE_ABI } from "@uvp-eth/protocol-bindings/evm";
 import {
   UnsupportedChainTargetError,
   unsupportedSolanaProtocolBinding,
-  type SolanaInstructionPlanPlaceholder,
 } from "@uvp-eth/protocol-bindings/solana";
 import {
   EXECUTOR_PATCH_MODE_ASSIGN,
@@ -26,6 +24,7 @@ import {
   buildTriggerOrderFromSignalForCall,
   buildTriggerOrderFromSignalTypedData,
   canonicalJson,
+  deriveTriggerOrderId,
   hashEvidenceJson,
   hashResourceManifest,
   hashStageExecutorPatchPayload,
@@ -52,6 +51,10 @@ const zeroBytes32 = bytes32("");
 const orderId = bytes32("01");
 const triggerOriginOrderId = bytes32("12");
 const planId = bytes32("13");
+const originPlanId = bytes32("18");
+const localPlanId = bytes32("19");
+const linkedPlanId = bytes32("20");
+const targetPlanId = bytes32("21");
 const triggerHookId = bytes32("14");
 const triggerStageId = bytes32("15");
 const sourceId = bytes32("02");
@@ -163,15 +166,44 @@ const signalAuthorizations = [
 ] as const;
 
 describe("protocol bindings", () => {
-  it("exposes explicit EVM and Solana binding boundaries", () => {
-    assert.equal(EVM_STATE_MACHINE_ABI, STATE_MACHINE_ABI);
-    const placeholder: SolanaInstructionPlanPlaceholder = {
-      target: "solana",
-      programIds: {},
-      TODO: "solana protocol bindings are reserved but not implemented",
-    };
+  it("exposes frozen v0.9 plan-scoped hook observation events", () => {
+    // 全部订单级事件补 planId（v0.9 冻结口径）。
+    assert.equal(
+      toEventHash("HookStatusChanged(bytes32,bytes32,bytes32,uint8,uint8,uint64)"),
+      "0xa0c688f78d307bee6d38b69ad4c19b02d9e1be8c6772327015b60fd21ec38fd2"
+    );
+    assert.equal(
+      toEventHash("TimerPoked(bytes32,bytes32,bytes32,uint64)"),
+      "0x4662f441e8cd10042e3591b57bbcf10851c0d735032f89690d2cca5d1297fd57"
+    );
 
-    assert.equal(placeholder.target, "solana");
+    const decoded = decodeEventLog({
+      abi: STATE_MACHINE_ABI,
+      data: (
+        "0x"
+        + "00".repeat(31) + "01"
+        + "00".repeat(31) + "02"
+        + "00".repeat(24) + "0000000000000018"
+      ) as `0x${string}`,
+      topics: [
+        "0xa0c688f78d307bee6d38b69ad4c19b02d9e1be8c6772327015b60fd21ec38fd2",
+        `0x${"33".repeat(32)}`,
+        `0x${"11".repeat(32)}`,
+        `0x${"22".repeat(32)}`
+      ] as const
+    });
+    assert.equal(decoded.eventName, "HookStatusChanged");
+    assert.deepEqual(decoded.args, {
+      planId: "0x" + "33".repeat(32),
+      orderId: "0x" + "11".repeat(32),
+      hookId: "0x" + "22".repeat(32),
+      previousStatus: 1,
+      newStatus: 2,
+      dueAt: 24n
+    });
+  });
+
+  it("rejects unimplemented Solana protocol bindings", () => {
     assert.throws(
       () => unsupportedSolanaProtocolBinding(),
       (error) =>
@@ -185,6 +217,7 @@ describe("protocol bindings", () => {
     const typedData = buildProductSubmitTypedData({
       chainId: 31337,
       verifyingContract,
+      planId,
       orderId,
       sourceId,
       signalId,
@@ -197,12 +230,13 @@ describe("protocol bindings", () => {
     assert.deepEqual(typedData, {
       domain: {
         name: "UVPStateMachine",
-        version: "0.8",
+        version: "0.10",
         chainId: 31337,
         verifyingContract,
       },
       types: {
         UVPStateMachineSignal: [
+          { name: "planId", type: "bytes32" },
           { name: "orderId", type: "bytes32" },
           { name: "sourceId", type: "bytes32" },
           { name: "signalId", type: "bytes32" },
@@ -214,6 +248,7 @@ describe("protocol bindings", () => {
       },
       primaryType: "UVPStateMachineSignal",
       message: {
+        planId,
         orderId,
         sourceId,
         signalId,
@@ -229,6 +264,7 @@ describe("protocol bindings", () => {
     const typedData = buildProductSubmitTypedData({
       chainId: 31337,
       verifyingContract,
+      planId,
       orderId,
       sourceId,
       signalId,
@@ -255,6 +291,7 @@ describe("protocol bindings", () => {
       planId,
       creator: submitter,
       triggerOriginOrderId,
+      originPlanId,
       triggerHookId,
       triggerStageId,
       originSourceId,
@@ -278,6 +315,7 @@ describe("protocol bindings", () => {
         "planId",
         "creator",
         "triggerOriginOrderId",
+        "originPlanId",
         "triggerHookId",
         "triggerStageId",
         "originSourceId",
@@ -317,6 +355,7 @@ describe("protocol bindings", () => {
     const firstTypedData = buildStageExecutorPatchTypedData({
       chainId: 31337,
       verifyingContract,
+      planId,
       orderId,
       ...firstCase.payload,
       patchHash: firstCase.patchHash,
@@ -327,6 +366,7 @@ describe("protocol bindings", () => {
     assert.deepEqual(
       firstTypedData.types.UVPStagePatchModuleStageExecutorPatch,
       [
+        { name: "planId", type: "bytes32" },
         { name: "orderId", type: "bytes32" },
         { name: "selectorStageId", type: "bytes32" },
         { name: "targetStageId", type: "bytes32" },
@@ -353,6 +393,7 @@ describe("protocol bindings", () => {
       const typedData = buildStageExecutorPatchTypedData({
         chainId: 31337,
         verifyingContract,
+        planId,
         orderId,
         ...payload,
         patchHash,
@@ -384,6 +425,7 @@ describe("protocol bindings", () => {
     const typedData = buildStageExecutorPatchTypedData({
       chainId: 31337,
       verifyingContract,
+      planId,
       orderId,
       ...handoffExecutorPatchPayload,
       patchHash: handoffExecutorPatchHash,
@@ -417,6 +459,7 @@ describe("protocol bindings", () => {
     const typedData = buildStageResourcePatchTypedData({
       chainId: 31337,
       verifyingContract,
+      planId,
       orderId,
       selectorStageId,
       targetStageId,
@@ -434,6 +477,7 @@ describe("protocol bindings", () => {
     );
 
     assert.deepEqual(typedData.types.UVPStagePatchModuleStageResourcePatch, [
+      { name: "planId", type: "bytes32" },
       { name: "orderId", type: "bytes32" },
       { name: "selectorStageId", type: "bytes32" },
       { name: "targetStageId", type: "bytes32" },
@@ -466,6 +510,7 @@ describe("protocol bindings", () => {
         chainId: 31337,
       },
       {
+        planId,
         orderId,
         sourceId,
         signalId,
@@ -481,6 +526,7 @@ describe("protocol bindings", () => {
     assert.equal(call.abi, STATE_MACHINE_ABI);
     assert.equal(call.functionName, "submitSignalFor");
     assert.deepEqual(call.args, [
+      planId,
       orderId,
       sourceId,
       signalId,
@@ -505,6 +551,7 @@ describe("protocol bindings", () => {
         planId,
         creator: submitter,
         triggerOriginOrderId,
+        originPlanId,
         triggerHookId,
         triggerStageId,
         originSourceId,
@@ -539,8 +586,10 @@ describe("protocol bindings", () => {
         chainId: 31337,
       },
       {
+        fromPlanId: planId,
         fromOrderId: orderId,
         fromStageId: targetStageId,
+        targetPlanId,
         targetOrderId: bytes32("11"),
         targetSourceId: sourceId,
         signalId,
@@ -556,13 +605,17 @@ describe("protocol bindings", () => {
     assert.equal(call.abi, DERIVED_SIGNAL_MODULE_ABI);
     assert.equal(call.functionName, "submitDerivedSignalFor");
     assert.deepEqual(call.args, [
-      orderId,
-      targetStageId,
-      bytes32("11"),
-      sourceId,
-      signalId,
-      payloadHash,
-      idempotencyKey,
+      {
+        fromPlanId: planId,
+        fromOrderId: orderId,
+        fromStageId: targetStageId,
+        targetPlanId,
+        targetOrderId: bytes32("11"),
+        targetSourceId: sourceId,
+        signalId,
+        payloadHash,
+        idempotencyKey,
+      },
       submitter,
       BigInt(deadline),
       signature,
@@ -579,6 +632,7 @@ describe("protocol bindings", () => {
         chainId: 31337,
       },
       {
+        planId,
         orderId,
         patch: {
           ...replacementExecutorPatchPayload,
@@ -599,6 +653,7 @@ describe("protocol bindings", () => {
     assert.equal(call.abi, STAGE_PATCH_MODULE_ABI);
     assert.equal(call.functionName, "applyStageExecutorPatchFor");
     assert.deepEqual(call.args, [
+      planId,
       orderId,
       [
         selectorStageId,
@@ -622,8 +677,9 @@ describe("protocol bindings", () => {
     assert.equal(decoded.functionName, "applyStageExecutorPatchFor");
     assert.ok(decoded.args);
     const decodedArgs = decoded.args;
-    assert.equal(decodedArgs[0], orderId);
-    assert.deepEqual(decodedArgs[1], {
+    assert.equal(decodedArgs[0], planId);
+    assert.equal(decodedArgs[1], orderId);
+    assert.deepEqual(decodedArgs[2], {
       selectorStageId,
       targetStageId,
       executor,
@@ -637,10 +693,10 @@ describe("protocol bindings", () => {
       patchNonce: BigInt(replacementPatchNonce),
       metadataURI: replacementMetadataURI,
     });
-    assert.equal(String(decodedArgs[2]).toLowerCase(), submitter);
-    assert.equal(decodedArgs[3], BigInt(deadline));
-    assert.equal(decodedArgs[4], selectorSignature);
-    assert.equal(decodedArgs[5], previousExecutorSignature);
+    assert.equal(String(decodedArgs[3]).toLowerCase(), submitter);
+    assert.equal(decodedArgs[4], BigInt(deadline));
+    assert.equal(decodedArgs[5], selectorSignature);
+    assert.equal(decodedArgs[6], previousExecutorSignature);
   });
 
   it("builds applyStageResourcePatchFor calls from the stage patch module ABI", () => {
@@ -651,6 +707,7 @@ describe("protocol bindings", () => {
         chainId: 31337,
       },
       {
+        planId,
         orderId,
         patch: {
           selectorStageId,
@@ -676,6 +733,7 @@ describe("protocol bindings", () => {
     assert.equal(call.abi, STAGE_PATCH_MODULE_ABI);
     assert.equal(call.functionName, "applyStageResourcePatchFor");
     assert.deepEqual(call.args, [
+      planId,
       orderId,
       [
         selectorStageId,
@@ -694,8 +752,9 @@ describe("protocol bindings", () => {
     assert.equal(decoded.functionName, "applyStageResourcePatchFor");
     assert.ok(decoded.args);
     const decodedArgs = decoded.args;
-    assert.equal(decodedArgs[0], orderId);
-    assert.deepEqual(decodedArgs[1], {
+    assert.equal(decodedArgs[0], planId);
+    assert.equal(decodedArgs[1], orderId);
+    assert.deepEqual(decodedArgs[2], {
       selectorStageId,
       targetStageId,
       resourceKey,
@@ -705,9 +764,9 @@ describe("protocol bindings", () => {
       patchNonce: BigInt(resourcePatchNonce),
       manifestURI,
     });
-    assert.equal(String(decodedArgs[2]).toLowerCase(), submitter);
-    assert.equal(decodedArgs[3], BigInt(deadline));
-    assert.equal(decodedArgs[4], signature);
+    assert.equal(String(decodedArgs[3]).toLowerCase(), submitter);
+    assert.equal(decodedArgs[4], BigInt(deadline));
+    assert.equal(decodedArgs[5], signature);
   });
 
   it("hashes canonical JSON in a browser-safe helper", () => {
@@ -723,6 +782,18 @@ describe("protocol bindings", () => {
     assert.equal(
       hashEvidenceJson({ b: 2, a: 1 }).evidenceHash,
       hashEvidenceJson({ a: 1, b: 2 }).evidenceHash,
+    );
+    // Code-point key order (Rust authority): astral keys sort AFTER every
+    // BMP key; UTF-16 code-unit order would put the surrogate pair first.
+    const astral = "\u{1F600}";
+    const bmp = "\uFFFD";
+    assert.equal(
+      canonicalJson({ [astral]: 1, [bmp]: 2 }),
+      `{"${bmp}":2,"${astral}":1}`,
+    );
+    assert.equal(
+      canonicalJson({ "\u{10FFFF}": 1, "\uFFFE": 2 }),
+      `{"\uFFFE":2,"\u{10FFFF}":1}`,
     );
   });
 
@@ -818,6 +889,59 @@ describe("protocol bindings", () => {
           plaintext: "invoice bytes",
         } as ResourceManifestV1),
       /plaintext is not part of ResourceManifestV1/,
+    );
+  });
+
+  // pinned 向量与 forge 测试 testTriggerOrderIdForMatchesPinnedMirrorVector
+  // （UVPStateMachine.t.sol）同源：向量由 `cast keccak` 对
+  // abi.encode(planId, sourceId, signalId, payloadHash) 生成后按合约
+  // triggerOrderIdFor 同口径清除 dock 子单命名空间保留位（最高位）。
+  // V3 的原始 digest 最高位为 1，专门钉住清位语义；两侧任一漂移即红。
+  it("derives trigger order ids matching the pinned contract vectors", () => {
+    // V1：小词输入。
+    assert.equal(
+      deriveTriggerOrderId(
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x0000000000000000000000000000000000000000000000000000000000000002",
+        "0x0000000000000000000000000000000000000000000000000000000000000003",
+        "0x0000000000000000000000000000000000000000000000000000000000000004",
+      ),
+      "0x392791df626408017a264f53fde61065d5a93a32b60171df9d8a46afdf82992d",
+    );
+
+    // V2：keccak 产物资（planId=keccak("plan")、sourceId=keccak("payment")、
+    // signalId=keccak("payment.ready")、payloadHash=keccak("payload")）。
+    assert.equal(
+      deriveTriggerOrderId(
+        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
+        "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
+        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
+        "0xebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7",
+      ),
+      "0x5ea3f67d172d893746b323173444e0dff190f5a4d4d91db58776692ad483009a",
+    );
+
+    // V3：同 V2 前三参，payloadHash=keccak("payload-3")——原始 digest
+    // 0xfadbfa9e…最高位为 1，清位后首字节 0xfa→0x7a。
+    assert.equal(
+      deriveTriggerOrderId(
+        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
+        "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
+        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
+        "0x7ddb57e56bc008d7f232156ac0c4a9be3da0582cbda6ae545fb75e0b912ee6fa",
+      ),
+      "0x7adbfa9eb5e66f4bda59ce36fa07abdf9979eb14222e023ed9480d0adb8d2c0a",
+    );
+
+    // V4：全零边界。
+    assert.equal(
+      deriveTriggerOrderId(
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+      ),
+      "0x012893657d8eb2efad4de0a91bcd0e39ad9837745dec3ea923737ea803fc8e3d",
     );
   });
 });

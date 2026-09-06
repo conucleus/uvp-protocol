@@ -5,10 +5,13 @@ apiVersion: uvp/v0
 kind: Zhixu
 metadata:
   name: uvp-bootstrap-update-v2
-  note: |
-    UVP 自举更新秩序（M1）。
-    目标：通过 OUTSIDE 触发后完成 init/audit/prepare/build/deploy/verify/switch/cleanup。
-    任意关键阶段失败后进入 rollback。
+  annotations:
+    version: "2"
+# 说明（元数据 note 字段已随 deny_unknown_fields 裁撤，正文移入注释）：
+# UVP 自举更新秩序（M1）。
+# 目标：通过 registrar 的跨源入口信号触发后完成
+# init/audit/prepare/build/deploy/verify/switch/cleanup。
+# 任意关键阶段失败后进入 rollback。
 spec:
   platform:
     type: blockchain
@@ -18,14 +21,32 @@ spec:
   nucleation:
     id: uvp-bootstrap
   taskPatterns:
+    - name: intake
+      stages:
+        - name: submission
+          # 注册提交的落点：bootstrap 域发出 submitted 事实，作为 init 的
+          # 出生订阅源（订阅类必须等于目标阶段 source，且不等于接收方）。
+          # PUBLISH 为自发种子入口钩子（uvp-core 659a388 物化门：零 hook
+          # 阶段在链上永不可物化、sendSignals 无钩子可挂）。
+          source: bootstrap
+          receiveSignals:
+            PUBLISH: "bootstrap::intake.submission.seed"
+          sendSignals: ["submitted", "seed"]
+          executor:
+            supplierID: "{{ .update_init_executor_uid }}"
+            supplierType: individual
     - name: update
       stages:
         - name: init
-          source: bootstrap
-          trigger: ["TRIGGER"]
+          source: registrar
+          # 出生阶段（mint）：订阅 bootstrap 域的注册提交事实即出生
+          # （triggerOrderFromOutsideFor），链上 order-trigger 出生钩子
+          # （emitReady=true）；出生只接受订阅通道，ANCHOR 编译为单条
+          # SIGNAL 指令。
+          mint: per-fact
           receiveSignals:
-            TRIGGER: "::OUTSIDE"
-          sendSignals: ["str", "cmp", "err"]
+            TRIGGER: "::ANCHOR(@bootstrap::intake.submission.submitted)"
+          sendSignals: ["trigger", "str", "cmp", "err"]
           fileResources:
             update_spec:
               fileType: local
@@ -37,9 +58,8 @@ spec:
 
         - name: audit
           source: bootstrap
-          trigger: ["init_done"]
           receiveSignals:
-            init_done: "bootstrap::update.init.cmp"
+            init_done: "registrar::update.init.cmp"
           sendSignals: ["str", "pass", "reject", "cmp", "err"]
           executor:
             supplierID: "{{ .update_audit_executor_uid }}"
@@ -47,7 +67,6 @@ spec:
 
         - name: prepare
           source: bootstrap
-          trigger: ["audit_pass"]
           receiveSignals:
             audit_pass: "bootstrap::update.audit.pass"
           sendSignals: ["str", "cmp", "err"]
@@ -57,7 +76,6 @@ spec:
 
         - name: build
           source: bootstrap
-          trigger: ["prepare_done"]
           receiveSignals:
             prepare_done: "bootstrap::update.prepare.cmp"
           sendSignals: ["str", "cmp", "err"]
@@ -67,7 +85,6 @@ spec:
 
         - name: deploy
           source: bootstrap
-          trigger: ["build_done"]
           receiveSignals:
             build_done: "bootstrap::update.build.cmp"
           sendSignals: ["str", "cmp", "err"]
@@ -77,7 +94,6 @@ spec:
 
         - name: verify
           source: bootstrap
-          trigger: ["deploy_done"]
           receiveSignals:
             deploy_done: "bootstrap::update.deploy.cmp"
           sendSignals: ["str", "pass", "fail", "cmp", "err"]
@@ -87,7 +103,6 @@ spec:
 
         - name: switch
           source: bootstrap
-          trigger: ["verify_pass"]
           receiveSignals:
             verify_pass: "bootstrap::update.verify.pass"
           sendSignals: ["str", "cmp", "err"]
@@ -97,7 +112,6 @@ spec:
 
         - name: cleanup
           source: bootstrap
-          trigger: ["switch_done"]
           receiveSignals:
             switch_done: "bootstrap::update.switch.cmp"
           sendSignals: ["str", "cmp", "err"]
@@ -107,7 +121,6 @@ spec:
 
         - name: rollback
           source: bootstrap
-          trigger: ["prepare_failure", "build_failure", "deploy_failure", "verify_failure", "verify_error"]
           receiveSignals:
             prepare_failure: "bootstrap::update.prepare.err"
             build_failure: "bootstrap::update.build.err"
