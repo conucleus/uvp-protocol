@@ -216,3 +216,157 @@ test("chain-mode keeps AND delayed branches waiting until the latest live timer"
   assert.deepEqual(result.mismatches, []);
   assert.deepEqual(result.observed, result.expected);
 });
+
+test("chain replay filters non-observable HookStatusChanged transitions (golden alignment)", async () => {
+  // 合约在 HookReady 旁恒发 HookStatusChanged(→Ready)（_evaluateHook /
+  // _markOrderTriggerHookReady），oracle 的 observed 面只产生 wait/cxl +
+  // HookReady——喂进 →reg/→init 状态变化必然 missing-observed。normalize
+  // 边界必须把它们滤掉；golden 流注入后回放仍须全绿。
+  const events = await loadChainEvents();
+  const injected: ChainModeEvent[] = [];
+  for (const event of events) {
+    injected.push(event);
+    if (event.eventName === "HookReady") {
+      injected.push({
+        eventName: "HookStatusChanged",
+        blockNumber: event.blockNumber,
+        transactionIndex: event.transactionIndex ?? 0,
+        logIndex: event.logIndex + 1000,
+        transactionHash: event.transactionHash,
+        planId: event.planId,
+        zhixuId: event.zhixuId,
+        orderId: event.orderId,
+        hookId: event.hookId,
+        previousStatus: "init",
+        newStatus: "reg"
+      });
+      injected.push({
+        eventName: "HookStatusChanged",
+        blockNumber: event.blockNumber,
+        transactionIndex: event.transactionIndex ?? 0,
+        logIndex: event.logIndex + 1001,
+        transactionHash: event.transactionHash,
+        planId: event.planId,
+        zhixuId: event.zhixuId,
+        orderId: event.orderId,
+        hookId: event.hookId,
+        previousStatus: "wait",
+        newStatus: "init"
+      });
+    }
+  }
+
+  const result = replayChainEvents(injected);
+  assert.deepEqual(result.mismatches, []);
+  assert.deepEqual(result.observed, result.expected);
+});
+
+test("chain replay derives order-link birth facts from HookReady", () => {
+  // order-link 出生（triggerOrderFromSignalFromModule → _markTriggerHookReady）
+  // 不 _recordSignal 但 emit HookStatusChanged(→reg) + HookReady +
+  // StageMaterialized。TS 消费面从 HookReady 推导出生事实：流可回放，
+  // expected==observed，且终态回填 hook=reg + 阶段物化。
+  const planId = "0x000000000000000000000000000000000000000000000000000000000000b001";
+  const hookId = "0x000000000000000000000000000000000000000000000000000000000000b101";
+  const stageId = "0x000000000000000000000000000000000000000000000000000000000000b201";
+  const srcId = "0x000000000000000000000000000000000000000000000000000000000000b301";
+  const sigId = "0x000000000000000000000000000000000000000000000000000000000000b401";
+  const keyId = "0x000000000000000000000000000000000000000000000000000000000000b501";
+  const events: ChainModeEvent[] = [
+    {
+      eventName: "PlanRegistered",
+      blockNumber: 1,
+      logIndex: 0,
+      transactionHash: "0x01",
+      plan: {
+        planId,
+        zhixuId: "order-link-birth",
+        version: "test",
+        compiledHooks: [
+          {
+            hookId,
+            stageId,
+            stageIdentifier: "birth-stage",
+            hookName: "birth",
+            orderTriggerKind: "mint",
+            emitReady: true,
+            instructions: [{ op: "SIGNAL", sourceId: srcId, signalId: sigId, signalKey: keyId }]
+          }
+        ],
+        dependencyIndex: { [keyId]: [hookId] }
+      }
+    },
+    {
+      eventName: "OrderRegistered",
+      blockNumber: 2,
+      logIndex: 0,
+      transactionHash: "0x02",
+      planId,
+      zhixuId: "order-link-birth",
+      orderId: "link-child",
+      registeredAt: "2026-01-01T00:00:00.000Z"
+    },
+    {
+      eventName: "OrderTriggered",
+      blockNumber: 3,
+      logIndex: 0,
+      transactionHash: "0x03",
+      orderId: "link-child",
+      planId,
+      triggerStageId: stageId,
+      sourceId: srcId,
+      signalId: sigId,
+      submitter: "alice"
+    },
+    {
+      eventName: "HookStatusChanged",
+      blockNumber: 3,
+      logIndex: 1,
+      transactionHash: "0x03",
+      planId,
+      zhixuId: "order-link-birth",
+      orderId: "link-child",
+      hookId,
+      previousStatus: "init",
+      newStatus: "reg"
+    },
+    {
+      eventName: "HookReady",
+      blockNumber: 3,
+      logIndex: 2,
+      transactionHash: "0x03",
+      planId,
+      zhixuId: "order-link-birth",
+      orderId: "link-child",
+      hookId,
+      stageIdentifier: "birth-stage",
+      hookName: "birth"
+    },
+    {
+      eventName: "StageMaterialized",
+      blockNumber: 3,
+      logIndex: 3,
+      transactionHash: "0x03",
+      planId,
+      orderId: "link-child",
+      stageId,
+      triggerHookId: hookId,
+      sourceId: srcId,
+      signalId: sigId
+    }
+  ];
+
+  const result = replayChainEvents(events);
+
+  assert.deepEqual(result.mismatches, []);
+  assert.deepEqual(result.observed, result.expected);
+  assert.equal(result.expected.length, 1);
+  assert.equal(result.expected[0]?.eventName, "HookReady");
+  const childOrder = result.state.orders[`${planId}::link-child`];
+  assert.equal(childOrder?.hookStatuses[hookId]?.status, "reg");
+  assert.equal(childOrder?.hookStatuses[hookId]?.readyEmitted, true);
+  assert.equal(childOrder?.materializedStages[stageId], true);
+  // 出生事实不落子单信号集：链上 order-link 路径不 _recordSignal，
+  // 派生不得伪造 SignalSubmitted 状态。
+  assert.deepEqual(childOrder?.signals, {});
+});

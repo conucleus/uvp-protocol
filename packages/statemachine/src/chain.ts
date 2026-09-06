@@ -112,7 +112,7 @@ export interface ChainOrderLinkedEvent extends ChainEventBase {
 
 export interface ChainSignalSubmittedEvent extends ChainEventBase {
   readonly eventName: "SignalSubmitted";
-  /** Frozen v0.9 identity: signal ownership is scoped by plan and order. */
+  /** Frozen v0.10 identity: signal ownership is scoped by plan and order. */
   readonly planId: HexString;
   readonly zhixuId: string;
   readonly orderId: string;
@@ -275,8 +275,12 @@ export function replayChainEvents(
   events: readonly ChainModeEvent[],
   options: ChainReplayOptions = {}
 ): ChainReplayResult {
-  const result = replayWithUvpCore({
-    events: events.map(normalizeChainEventForOracle),
+  const normalized: readonly OracleFeedEvent[] = events
+    .map(normalizeChainEventForOracle)
+    .filter((event): event is OracleFeedEvent => event !== undefined);
+  const { oracleEvents, births } = partitionOrderLinkBirths(normalized);
+  const replayed = replayWithUvpCore({
+    events: oracleEvents,
     options: {
       ...options,
       // The native layer collects structured mismatches instead of throwing
@@ -285,6 +289,7 @@ export function replayChainEvents(
       strict: false
     }
   }) as ChainReplayResult;
+  const result = deriveOrderLinkBirthFacts(replayed, oracleEvents, births);
   if (result.mismatches.length > 0) {
     throw new ChainReplayMismatchError(result.mismatches);
   }
@@ -296,25 +301,203 @@ export function chainEventId(event: ChainEventBase): string {
   return `${event.blockNumber}:${event.logIndex}:${event.transactionHash}`;
 }
 
+type ProjectedHookStatusChangedEvent = Omit<ChainHookStatusChangedEvent, "previousStatus" | "newStatus"> & {
+  readonly status: "wait" | "cxl";
+};
+
+type OracleFeedEvent = ChainModeEvent | ProjectedHookStatusChangedEvent;
+
 /**
  * The replay oracle consumes the projected observation shape (single
- * `status`), while the frozen v0.9 chain event carries
+ * `status`), while the frozen v0.10 chain event carries
  * previousStatus/newStatus. This adapter is the formal boundary between the
- * two contracts: v0.9 events are projected onto newStatus. A HookStatusChanged
- * event without a valid newStatus violates the frozen v0.9 contract and fails
- * loudly instead of passing through untouched.
+ * two contracts: v0.10 events are projected onto newStatus, and
+ * HookStatusChanged events with a non-observable new status ("reg"/"init")
+ * are FILTERED OUT — the oracle's observed face only ever produces wait/cxl
+ * status observations (ready transitions are observed through HookReady), so
+ * feeding the →Ready/→Init status changes the contract emits alongside
+ * HookReady would surface as guaranteed missing-observed mismatches (G-04).
+ * A HookStatusChanged event without a valid newStatus violates the frozen
+ * v0.10 contract and fails loudly instead of passing through untouched.
  */
-function normalizeChainEventForOracle(event: ChainModeEvent): Record<string, unknown> {
+function normalizeChainEventForOracle(event: ChainModeEvent): OracleFeedEvent | undefined {
   if (event.eventName === "HookStatusChanged") {
     if (!("newStatus" in event) || typeof event.newStatus !== "string") {
       throw new Error(
-        `HookStatusChanged ${event.hookId} is missing a valid newStatus; frozen v0.9 events must carry previousStatus/newStatus`
+        `HookStatusChanged ${event.hookId} is missing a valid newStatus; frozen v0.10 events must carry previousStatus/newStatus`
       );
     }
-    const { previousStatus: _previousStatus, ...rest } = event;
+    if (event.newStatus !== "wait" && event.newStatus !== "cxl") {
+      return undefined;
+    }
+    const { previousStatus: _previousStatus, newStatus: _newStatus, ...rest } = event;
     return { ...rest, status: event.newStatus };
   }
   return { ...event };
+}
+
+interface OrderLinkBirth {
+  /** Number of eligible oracle-feed events (wait/cxl/HookReady) before this birth. */
+  readonly eligibleBefore: number;
+  readonly event: ChainHookReadyEvent;
+  readonly stageId: string;
+}
+
+/**
+ * Order-link births (UVPStateMachine.triggerOrderFromSignalFromModule →
+ * _markTriggerHookReady) mark the trigger hook Ready and emit HookReady
+ * WITHOUT recording any birth signal on the child order — the facts live on
+ * the origin order. The oracle cannot derive that HookReady by evaluation,
+ * so the TS consumption face derives the birth fact FROM the HookReady
+ * event: a HookReady for an order-trigger hook whose SIGNAL keys were never
+ * submitted on that order is an authoritative on-chain birth statement
+ * (same philosophy as the oracle's StageMaterialized state backfill). Those
+ * events are stripped from the native feed and reconciled after the replay.
+ *
+ * Coordination note: the Rust oracle is gaining the same derivation
+ * natively; once it lands, this TS-side derivation is the redundant mirror
+ * to retire (they agree because stripping keeps the native feed unchanged).
+ */
+function partitionOrderLinkBirths(events: readonly OracleFeedEvent[]): {
+  readonly oracleEvents: readonly OracleFeedEvent[];
+  readonly births: readonly OrderLinkBirth[];
+} {
+  const plans = new Map<string, Map<string, { readonly orderTriggerKind: string; readonly stageId: string; readonly signalKeys: readonly string[] }>>();
+  const submittedKeys = new Set<string>();
+  const oracleEvents: OracleFeedEvent[] = [];
+  const births: OrderLinkBirth[] = [];
+  let eligibleCount = 0;
+
+  for (const event of events) {
+    if (event.eventName === "PlanRegistered") {
+      const planEvent = event as ChainPlanRegisteredEvent;
+      const hooks = new Map(
+        planEvent.plan.compiledHooks.map((hook) => [
+          hook.hookId.toLowerCase(),
+          {
+            orderTriggerKind: hook.orderTriggerKind,
+            stageId: hook.stageId,
+            signalKeys: hook.instructions
+              .filter(
+                (instruction): instruction is Extract<ChainOracleInstruction, { readonly op: "SIGNAL" }> =>
+                  instruction.op === "SIGNAL",
+              )
+              .map((instruction) => instruction.signalKey),
+          },
+        ]),
+      );
+      plans.set(planEvent.plan.planId, hooks);
+      oracleEvents.push(event);
+      continue;
+    }
+    if (event.eventName === "SignalSubmitted") {
+      const signalEvent = event as ChainSignalSubmittedEvent;
+      submittedKeys.add(`${signalEvent.planId}:${signalEvent.orderId}:${signalEvent.signalKey}`);
+      oracleEvents.push(event);
+      continue;
+    }
+    if (event.eventName === "HookReady") {
+      const readyEvent = event as ChainHookReadyEvent;
+      const hook = plans.get(readyEvent.planId)?.get(readyEvent.hookId.toLowerCase());
+      if (hook && hook.orderTriggerKind !== "none") {
+        const birthSignaled = hook.signalKeys.some((signalKey) =>
+          submittedKeys.has(`${event.planId}:${event.orderId}:${signalKey}`),
+        );
+        if (!birthSignaled) {
+          births.push({ eligibleBefore: eligibleCount, event: readyEvent, stageId: hook.stageId });
+          continue;
+        }
+      }
+      eligibleCount += 1;
+      oracleEvents.push(event);
+      continue;
+    }
+    if (event.eventName === "HookStatusChanged") {
+      eligibleCount += 1;
+    }
+    oracleEvents.push(event);
+  }
+
+  return { oracleEvents, births };
+}
+
+/**
+ * Merge the derived birth observations back into the replay result: expected
+ * keeps the full on-chain golden order (each eligible event maps 1:1 to an
+ * expected observation), observed receives the same birth observations at
+ * the matching stream positions, and the final state is backfilled
+ * (hook runtime → reg/readyEmitted, stage → materialized). Known limitation:
+ * the native run already evaluated with births stripped, so a duplicate-fact
+ * submission mid-stream that re-triggers an already-born hook is only
+ * covered once the Rust oracle derives births natively.
+ */
+function deriveOrderLinkBirthFacts(
+  replayed: ChainReplayResult,
+  oracleEvents: readonly OracleFeedEvent[],
+  births: readonly OrderLinkBirth[]
+): ChainReplayResult {
+  if (births.length === 0) {
+    return replayed;
+  }
+
+  const state = replayed.state;
+
+  // Each eligible oracle-feed event maps 1:1 to a native expected observation
+  // (chain_event_to_expected_observation is per-event), so the expected slot
+  // of a stripped birth is exactly `eligibleBefore` eligible oracle events
+  // into the stream. Interleaving births at that slot keeps the golden order.
+  const birthsBySlot = new Map<number, ChainHookObservation[]>();
+  for (const birth of births) {
+    const slot = birthsBySlot.get(birth.eligibleBefore) ?? [];
+    slot.push(chainEventToExpectedObservation(birth.event));
+    birthsBySlot.set(birth.eligibleBefore, slot);
+  }
+
+  const expected: ChainHookObservation[] = [];
+  const observed: ChainHookObservation[] = [];
+  let eligible = 0;
+  let observedCursor = 0;
+  const flushBirths = (): void => {
+    const slot = birthsBySlot.get(eligible);
+    if (slot === undefined) {
+      return;
+    }
+    birthsBySlot.delete(eligible);
+    for (const birthObservation of slot) {
+      expected.push(birthObservation);
+      observed.push(birthObservation);
+    }
+  };
+
+  for (const event of oracleEvents) {
+    flushBirths();
+    if (event.eventName === "HookReady" || event.eventName === "HookStatusChanged") {
+      expected.push(replayed.expected[eligible] as ChainHookObservation);
+      const observedItem = replayed.observed[observedCursor];
+      observedCursor += 1;
+      if (observedItem !== undefined) {
+        observed.push(observedItem);
+      }
+      eligible += 1;
+    }
+  }
+  flushBirths();
+
+  for (const birth of births) {
+    const orderKey = `${birth.event.planId}::${birth.event.orderId}`;
+    const order = state.orders[orderKey];
+    if (order) {
+      order.hookStatuses[birth.event.hookId] = { status: "reg", readyEmitted: true };
+      order.materializedStages[birth.stageId] = true;
+    }
+  }
+
+  return {
+    state,
+    expected,
+    observed,
+    mismatches: compareHookObservations(expected, observed),
+  };
 }
 
 export function compareChainEvents(a: ChainEventBase, b: ChainEventBase): number {

@@ -28,12 +28,12 @@ async function loadCorpus(): Promise<Corpus> {
 
 /**
  * The shared semantic corpus pins native-core semantics and predates the
- * frozen v0.9 chain-event contract: its replayCases carry the projected
- * pre-v0.9 HookStatusChanged shape (single `status`). replayChainEvents only
- * accepts frozen v0.9 events carrying previousStatus/newStatus, so this
- * test-side adapter lifts `status` onto `newStatus` before replaying.
+ * frozen v0.10 chain-event contract: its replayCases carry the projected
+ * pre-freeze HookStatusChanged shape (single `status`). replayChainEvents
+ * only accepts frozen v0.10 events carrying previousStatus/newStatus, so
+ * this test-side adapter lifts `status` onto `newStatus` before replaying.
  */
-function liftCorpusEventToFrozenV08(event: ChainModeEvent): ChainModeEvent {
+function liftCorpusEventToFrozenChainEvent(event: ChainModeEvent): ChainModeEvent {
   const raw = event as unknown as Record<string, unknown>;
   if (event.eventName !== "HookStatusChanged" || "newStatus" in raw) {
     return event;
@@ -49,7 +49,7 @@ function liftCorpusEventToFrozenV08(event: ChainModeEvent): ChainModeEvent {
 test("chain replay follows shared hook semantic corpus", async () => {
   const corpus = await loadCorpus();
   for (const item of corpus.replayCases) {
-    const result = replayChainEvents(item.events.map(liftCorpusEventToFrozenV08));
+    const result = replayChainEvents(item.events.map(liftCorpusEventToFrozenChainEvent));
     const signal = result.state.orders[item.expect.orderKey]?.signals[item.expect.signalKey];
 
     assert.equal(result.observed.length, item.expect.observedCount, item.name);
