@@ -129,11 +129,21 @@ export function compileOnchainHookPlan(
     .sort(compareOnchainHooks);
   // 逐 hook 顺序语义与合约 _registerPlanHook 一致（见 crossStageDependencyIssues）。
   const crossStageIssues = crossStageDependencyIssues(compiledHooks);
-  // 不可物化阶段（无 order-trigger / EMIT_READY hook 的阶段）
-  // 不得挂任何 receive hook——纯 flags=0 watcher 不物化阶段，链上对该阶段
-  // 的任何求值都是不可恢复死锁（Rust 编译器是第一道，这里是 artifact
-  // 边界的第二道）。
-  const materializationIssues = unmaterializableStageIssues(compiledHooks);
+  // 不可物化阶段（无 order-trigger / EMIT_READY hook 的阶段）不得挂任何
+  // receive hook，且阶段声明不得编译为零 hook——纯 flags=0 watcher 不物化
+  // 阶段，零 hook 阶段同样不物化（P0-4），链上对该阶段的任何求值都是不可
+  // 恢复死锁（Rust 编译器是第一道，这里是 artifact 边界的第二道）。
+  const materializationIssues = unmaterializableStageIssues(
+    compiledHooks,
+    declaredStageIdentifiers(
+      hookPlanArtifact.signalCapabilities.map((capability) => capability.stageIdentifier),
+      Object.keys(hookPlanArtifact.executorRoutes),
+      hookPlanArtifact.selectedStageBindings.flatMap((binding) => [
+        binding.selectorStageIdentifier,
+        binding.targetStageIdentifier,
+      ]),
+    ),
+  );
   const silentTriggerIssues = silentOrderTriggerIssues(compiledHooks);
   const dependencyCountIssues = planDependencyCountIssues(compiledHooks);
   const capabilityCountIssues = signalCapabilityCountIssues(
@@ -293,7 +303,34 @@ export function validateOnchainHookPlanArtifact(
     }
     // 同一守卫同样作用于反序列化 artifact 边界。
     issues.push(
-      ...unmaterializableStageIssues(compiledHooks as readonly OnchainCompiledHook[]),
+      ...unmaterializableStageIssues(
+        compiledHooks as readonly OnchainCompiledHook[],
+        declaredStageIdentifiers(
+          (signalCapabilities ?? []).map((capability) =>
+            isRecord(capability) && typeof capability.stageIdentifier === "string"
+              ? capability.stageIdentifier
+              : undefined,
+          ),
+          (executorRoutes ?? [])
+            .map((route) =>
+              isRecord(route) && typeof route.stageIdentifier === "string"
+                ? route.stageIdentifier
+                : undefined,
+            ),
+          (selectorBindings ?? []).flatMap((binding) =>
+            isRecord(binding)
+              ? [
+                  typeof binding.selectorStageIdentifier === "string"
+                    ? binding.selectorStageIdentifier
+                    : undefined,
+                  typeof binding.targetStageIdentifier === "string"
+                    ? binding.targetStageIdentifier
+                    : undefined,
+                ]
+              : [],
+          ),
+        ),
+      ),
     );
     issues.push(
       ...silentOrderTriggerIssues(compiledHooks as readonly OnchainCompiledHook[]),
@@ -1276,12 +1313,26 @@ function validateOnchainDependencies(
 }
 
 /**
- * 每个出现在 compiledHooks 的阶段必须至少有一个 order-trigger
- * 或 EMIT_READY hook（能物化自身阶段的 hook）。纯 flags=0 watcher 阶段在
- * 链上永远无法物化——挂在其上的任何 hook 都构成不可恢复死锁。
+ * 阶段物化门（onchain target，镜像 uvp-core 659a388
+ * validate_onchain_stage_materialization）：
+ *
+ * - 每个出现在 compiledHooks 的阶段必须至少有一个 order-trigger 或
+ *   EMIT_READY hook（能物化自身阶段的 hook）。纯 flags=0 watcher 阶段在
+ *   链上永远无法物化——挂在其上的任何 hook 都构成不可恢复死锁。
+ * - 每个在 artifact 上留有声明投影（signalCapabilities / executorRoutes /
+ *   selectorBindings）的阶段不得编译为零 hook——零 hook 阶段同样永不可
+ *   物化，且其 sendSignals 在链上没有钩子可挂（submitSignal 恒 revert
+ *   UnknownHook）。Rust 定义层第一道拒绝（"declares no receiveSignals"），
+ *   这里是 artifact 边界的第二道。
+ *
+ * dock entrance 豁免口径与 Rust dock_entrance_hook_ids 单一来源一致：entrance
+ * 端口钩子在两个编译器里都编译为 orderTriggerKind=dock（dock|emitReady=6），
+ * 因此 artifact 层只认编译后的物化位本身、不再从 dockInterface 端口重推——
+ * flags 即该豁免的产物投影，重推属于镜像扩张。
  */
 function unmaterializableStageIssues(
   hooks: readonly OnchainCompiledHook[],
+  declaredStages: ReadonlySet<string>,
 ): readonly string[] {
   const issues: string[] = [];
   const stageMaterializer = new Map<string, boolean>();
@@ -1299,7 +1350,41 @@ function unmaterializableStageIssues(
       `stage ${hook.stageIdentifier} has no order-trigger or EMIT_READY hook; its hooks compile to flags=0 watchers which can never materialize the stage on-chain (deadlock, no recovery path) — the Rust compiler must reject this shape`,
     );
   }
+  for (const stageIdentifier of [...declaredStages].sort(compareByCodeUnit)) {
+    if (stageMaterializer.has(onchainStageId(stageIdentifier))) {
+      continue;
+    }
+    issues.push(
+      `stage ${stageIdentifier} declares no receiveSignals and compiles to zero hooks: `
+        + "the stage can never materialize on-chain (materialization only happens via "
+        + "this stage's own order-trigger/EMIT_READY hooks) and its sendSignals have "
+        + "no hook to hang on — submitSignal requires the source stage to be "
+        + "materialized and reverts UnknownHook forever (deadlock, no recovery path); "
+        + "declare receiveSignals carrying a mint/dock entrance or a static executor",
+    );
+  }
   return issues;
+}
+
+/**
+ * artifact 边界可见的“阶段声明”全集：sendSignals（signalCapabilities）、
+ * executor（executorRoutes）、selectedStages（selectorBindings 两侧）三类
+ * 声明各留一处投影；receiveSignals 的投影是 compiledHooks 本体。零 hook
+ * 阶段没有 compiledHooks 记录，只能从这三处发现——非字符串项交由形状
+ * 校验报错，这里静默跳过。
+ */
+function declaredStageIdentifiers(
+  ...identifierGroups: readonly (readonly (string | undefined)[])[]
+): Set<string> {
+  const identifiers = new Set<string>();
+  for (const group of identifierGroups) {
+    for (const identifier of group) {
+      if (typeof identifier === "string" && identifier.trim().length > 0) {
+        identifiers.add(identifier);
+      }
+    }
+  }
+  return identifiers;
 }
 
 /**

@@ -26,8 +26,12 @@ spec:
         - name: submission
           # 注册提交的落点：bootstrap 域发出 submitted 事实，作为 init 的
           # 出生订阅源（订阅类必须等于目标阶段 source，且不等于接收方）。
+          # PUBLISH 为自发种子入口钩子（uvp-core 659a388 物化门：零 hook
+          # 阶段在链上永不可物化、sendSignals 无钩子可挂）。
           source: bootstrap
-          sendSignals: ["submitted"]
+          receiveSignals:
+            PUBLISH: "bootstrap::intake.submission.seed"
+          sendSignals: ["submitted", "seed"]
           executor:
             supplierID: "{{ .update_init_executor_uid }}"
             supplierType: individual

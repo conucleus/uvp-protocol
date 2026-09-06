@@ -41,7 +41,12 @@ const baseZhixu: ZhixuDefinition = {
             name: "assign",
             source: "buyer",
             selectedStages: ["execution.main"],
-            sendSignals: ["executor_selected"],
+            // PLACE 为自发种子入口钩子（uvp-core 659a388 物化门：零 hook
+            // 阶段在链上永不可物化、sendSignals 无钩子可挂）。
+            receiveSignals: {
+              PLACE: "buyer::selector.assign.seed"
+            },
+            sendSignals: ["executor_selected", "seed"],
             executor: {
               supplierType: "organization",
               supplierID: "selector-org"
@@ -140,8 +145,9 @@ test("compiles internal HookPlan IR", () => {
   assert.match(plan.planHash, /^0x[0-9a-f]{64}$/);
   assert.equal(plan.planHash, again.planHash);
   assert.match(plan.planHash, /^0x[0-9a-f]{64}$/);
-  assert.equal(plan.compiledHooks.length, 2);
+  assert.equal(plan.compiledHooks.length, 3);
   assert.deepEqual(plan.compiledHooks.map((hook) => hook.hookId), [
+    "selector.assign#PLACE",
     "execution.main#START",
     "execution.main#TIMEOUT"
   ]);
@@ -151,6 +157,10 @@ test("compiles internal HookPlan IR", () => {
   ]);
   assert.deepEqual(plan.dependencyIndex["buyer::execution.main.cmp"], [
     "execution.main#TIMEOUT"
+  ]);
+  // 种子入口钩子的自引用依赖（uvp-core 659a388 物化门语料对齐）。
+  assert.deepEqual(plan.dependencyIndex["buyer::selector.assign.seed"], [
+    "selector.assign#PLACE"
   ]);
   assert.deepEqual(plan.selectedStageBindings, [
     {
@@ -167,7 +177,8 @@ test("compiles internal HookPlan IR", () => {
     ["execution.main", "buyer", "execution.main.cmp", "current"],
     ["execution.main", "buyer", "execution.main.err", "current"],
     ["execution.main", "buyer", "execution.main.str", "current"],
-    ["selector.assign", "buyer", "selector.assign.executor_selected", "current"]
+    ["selector.assign", "buyer", "selector.assign.executor_selected", "current"],
+    ["selector.assign", "buyer", "selector.assign.seed", "current"]
   ]);
   assert.equal(plan.executorRoutes["execution.main"], undefined);
   assert.equal(plan.dockRoutes.length, 1);

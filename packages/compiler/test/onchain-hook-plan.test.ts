@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { dockDemoResolutionManifest } from "./dock-demo.js";
+import { dockDemoResolutionManifest, dockPaymentTargetDefinition } from "./dock-demo.js";
 import { EMPTY_MERKLE_ROOT } from "../src/dock.js";
 import test from "node:test";
 import {
@@ -65,7 +65,12 @@ const baseZhixu: ZhixuDefinition = {
             name: "assign",
             source: "buyer",
             selectedStages: ["execution.main"],
-            sendSignals: ["executor_selected"],
+            // PLACE 为自发种子入口钩子（uvp-core 659a388 物化门：零 hook
+            // 阶段在链上永不可物化、sendSignals 无钩子可挂）。
+            receiveSignals: {
+              PLACE: "buyer::selector.assign.seed",
+            },
+            sendSignals: ["executor_selected", "seed"],
             executor: {
               supplierType: "organization",
               supplierID: "selector-org",
@@ -114,7 +119,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
   assert.equal(
     onchain.planHash,
-    "0x9b5f1fbd3af5c982dcba9c2cf8145a90d91804e789cc7e76a214e7aed07dcc12",
+    "0x4ffaab836687da7a368dbc93ec20abe36e58b4f86f78e37ff8e9a2eb67d9cc00",
   );
   assert.deepEqual(onchain.selectorBindings, [
     {
@@ -145,6 +150,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
         "selector.assign.executor_selected",
         "current",
       ],
+      ["selector.assign", "buyer", "selector.assign.seed", "current"],
     ],
   );
   assert.deepEqual(
@@ -152,6 +158,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
     [
       "0x07fec9e5326c8025bd807a2d26a55476168f38f6b9b1d3ef3af9df18f758da96",
       "0x2a799fd6d3c55a26d5b940bc8fedc135a5feae293bce3e0c6cd375c4a946fc89",
+      "0x9ca6abf270eaace38c6f86f21c09e9fa9a81346c198a54de2b4927ebf82e5f52",
     ],
   );
   assert.equal(
@@ -312,8 +319,10 @@ test("builds a stable on-chain dependency index and route references", () => {
     "0x1845455a34645910fcbc7220c18dcb6661ad3f045893d3694d22a99a1a5dcc11": [
       "0x2a799fd6d3c55a26d5b940bc8fedc135a5feae293bce3e0c6cd375c4a946fc89",
     ],
-
-
+    // 种子入口钩子的自引用依赖（buyer::selector.assign.seed → PLACE）。
+    "0x92101349c0a8769bf471123524c5e6130565d09bb781684372b1c5d07fbe1081": [
+      "0x9ca6abf270eaace38c6f86f21c09e9fa9a81346c198a54de2b4927ebf82e5f52",
+    ],
     "0xcf7c8f26d55e2223a316d1220b6f7c902d1654622e82b458a98871bdf4c4e433": [
       "0x07fec9e5326c8025bd807a2d26a55476168f38f6b9b1d3ef3af9df18f758da96",
       "0x2a799fd6d3c55a26d5b940bc8fedc135a5feae293bce3e0c6cd375c4a946fc89",
@@ -371,7 +380,7 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
     "0x1845455a34645910fcbc7220c18dcb6661ad3f045893d3694d22a99a1a5dcc11",
     "0xcf7c8f26d55e2223a316d1220b6f7c902d1654622e82b458a98871bdf4c4e433",
   ]);
-  assert.equal(args.dependencyIndex.length, 2);
+  assert.equal(args.dependencyIndex.length, 3);
   assert.equal(
     args.executorRoutes.every((route) => route.executorId !== "payment-zhixu"),
     true,
@@ -386,7 +395,7 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
   ]);
   assert.deepEqual(
     args.signalCapabilities.map((capability) => capability.targetOrderRelation),
-    [0, 0, 0, 0],
+    [0, 0, 0, 0, 0],
   );
 });
 
@@ -768,7 +777,12 @@ test("compiles mint birth subscriptions into order-trigger SIGNAL hooks", () => 
             {
               name: "post",
               source: "buyer",
-              sendSignals: ["posted"],
+              // PUBLISH 为自发种子入口钩子（uvp-core 659a388 物化门：零
+              // hook 阶段在链上永不可物化、sendSignals 无钩子可挂）。
+              receiveSignals: {
+                PUBLISH: "buyer::intake.post.seed",
+              },
+              sendSignals: ["posted", "seed"],
               executor: {
                 supplierType: "organization",
                 supplierID: "intake-exec",
@@ -949,7 +963,12 @@ test("flags stages whose hooks can never materialize on-chain", () => {
             {
               name: "post",
               source: "buyer",
-              sendSignals: ["posted"],
+              // PUBLISH 为自发种子入口钩子（uvp-core 659a388 物化门：零
+              // hook 阶段在链上永不可物化、sendSignals 无钩子可挂）。
+              receiveSignals: {
+                PUBLISH: "buyer::intake.post.seed",
+              },
+              sendSignals: ["posted", "seed"],
               executor: {
                 supplierType: "organization",
                 supplierID: "intake-exec",
@@ -1044,6 +1063,99 @@ test("flags stages whose hooks can never materialize on-chain", () => {
       error.issues.some((issue) =>
         /stage execution\.main has no order-trigger or EMIT_READY hook/.test(issue),
       ),
+  );
+});
+
+test("rejects stages that compile to zero hooks (P0-4 materialization gate)", () => {
+  const zeroHookIssues = (issues: readonly string[]): readonly string[] =>
+    issues.filter((issue) =>
+      /declares no receiveSignals and compiles to zero hooks/.test(issue),
+    );
+  const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  const onchain = compileOnchainHookPlan(sourcePlan);
+
+  // 正例：带物化位的阶段放行——selector.assign 的种子入口钩子靠静态
+  // executor 得到 emitReady=true（flags=4），全计划零物化 issue。
+  const placeHook = onchain.compiledHooks.find(
+    (hook) => hook.hookName === "PLACE",
+  );
+  assert.equal(placeHook?.stageIdentifier, "selector.assign");
+  assert.equal(placeHook?.orderTriggerKind, "none");
+  assert.equal(placeHook?.emitReady, true);
+  assert.deepEqual(zeroHookIssues(validateOnchainHookPlanArtifact(onchain)), []);
+
+  // 反例（编译入口）：把 selector.assign 的钩子全部剥掉，阶段仅剩
+  // sendSignals/executor 声明投影——零 hook 阶段永不可物化、信号没有
+  // 钩子可挂，compileOnchainHookPlan 预检即抛，不产出制品。
+  // （dependencyIndex 同步剔除被剥钩子，让形状校验先行通过，确保
+  // 拦截者就是物化门本身。）
+  const strippedHookIds = new Set(
+    sourcePlan.compiledHooks
+      .filter((hook) => hook.stageIdentifier === "selector.assign")
+      .map((hook) => hook.hookId),
+  );
+  const zeroHookSourcePlan = {
+    ...sourcePlan,
+    compiledHooks: sourcePlan.compiledHooks.filter(
+      (hook) => hook.stageIdentifier !== "selector.assign",
+    ),
+    dependencyIndex: Object.fromEntries(
+      Object.entries(sourcePlan.dependencyIndex)
+        .map(([key, hookIds]): [string, readonly string[]] => [
+          key,
+          hookIds.filter((hookId) => !strippedHookIds.has(hookId)),
+        ])
+        .filter(([, hookIds]) => hookIds.length > 0),
+    ),
+  };
+  assert.throws(
+    () => compileOnchainHookPlan(zeroHookSourcePlan),
+    (error: unknown) =>
+      error instanceof HookPlanCompilationError &&
+      zeroHookIssues(error.issues).length === 1 &&
+      /^stage selector\.assign declares no receiveSignals and compiles to zero hooks: the stage can never materialize on-chain \(materialization only happens via this stage's own order-trigger\/EMIT_READY hooks\) and its sendSignals have no hook to hang on — submitSignal requires the source stage to be materialized and reverts UnknownHook forever \(deadlock, no recovery path\); declare receiveSignals carrying a mint\/dock entrance or a static executor$/.test(
+        zeroHookIssues(error.issues)[0] ?? "",
+      ),
+  );
+
+  // 反例（反序列化边界）：同一守卫作用于 onchain artifact 校验边界。
+  const zeroHookOnchain: OnchainHookPlanArtifact = {
+    ...onchain,
+    compiledHooks: onchain.compiledHooks.filter(
+      (hook) => hook.stageIdentifier !== "selector.assign",
+    ),
+  };
+  const boundaryIssues = zeroHookIssues(
+    validateOnchainHookPlanArtifact(zeroHookOnchain),
+  );
+  assert.equal(boundaryIssues.length, 1);
+  assert.match(
+    boundaryIssues[0] ?? "",
+    /^stage selector\.assign declares no receiveSignals and compiles to zero hooks/,
+  );
+});
+
+test("dock entrance hooks materialize their stage (CORE-8 materialization gate)", () => {
+  const materializationIssues = (issues: readonly string[]): readonly string[] =>
+    issues.filter((issue) =>
+      /no order-trigger or EMIT_READY hook|compiles to zero hooks/.test(issue),
+    );
+
+  // 真实 dockInterface entrance 端口：目标定义的 payment_flow.init#DOCK_EXECUTE
+  // 编译为 dock|emitReady（flags=6）——Rust 659a388 dock_entrance_hook_ids
+  // 豁免的产物投影，artifact 层按编译后物化位放行，不按 watcher 误拒。
+  const targetOnchain = compileZhixuOnchainHookPlan(
+    dockPaymentTargetDefinition(),
+  );
+  const entranceHook = targetOnchain.compiledHooks.find(
+    (hook) => hook.stageIdentifier === "payment_flow.init",
+  );
+  assert.equal(entranceHook?.hookName, "DOCK_EXECUTE");
+  assert.equal(entranceHook?.orderTriggerKind, "dock");
+  assert.equal(entranceHook?.emitReady, true);
+  assert.deepEqual(
+    materializationIssues(validateOnchainHookPlanArtifact(targetOnchain)),
+    [],
   );
 });
 

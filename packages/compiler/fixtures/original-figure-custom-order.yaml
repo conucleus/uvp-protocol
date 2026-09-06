@@ -28,7 +28,11 @@ spec:
       stages:
         - name: brief
           source: client
-          sendSignals: ["cmp", "cxl", "err"]
+          # BEGIN 为自发种子入口钩子（uvp-core 659a388 物化门：零 hook 阶段
+          # 在链上永不可物化、sendSignals 无钩子可挂）。
+          receiveSignals:
+            BEGIN: "client::figure.brief.seed"
+          sendSignals: ["cmp", "cxl", "err", "seed"]
           fileResources:
             brief_template:
               fileType: local

@@ -32,9 +32,9 @@ test("loads UVP update zhixu yaml and compiles stable on-chain plan", async () =
   assert.equal(hookPlan.platform.network, "base");
   assert.equal(onchain.platform.network, "base");
   assert.equal(hookPlan.planHash, again.planHash);
-  assert.equal(hookPlan.compiledHooks.length, 13);
-  assert.equal(onchain.compiledHooks.length, 13);
-  assert.equal(args.hooks.length, 13);
+  assert.equal(hookPlan.compiledHooks.length, 14);
+  assert.equal(onchain.compiledHooks.length, 14);
+  assert.equal(args.hooks.length, 14);
   assert.equal(
     onchain.compiledHooks.filter((hook) => hook.stageIdentifier === "update.rollback").length,
     5
@@ -53,9 +53,9 @@ test("loads original figure custom order yaml and compiles multi-party plan", as
 
   assert.equal(definition.metadata.name, "original-figure-custom-order");
   assert.equal(definition.metadata.uid, "zhixu-original-figure-custom-order-v1");
-  assert.equal(hookPlan.compiledHooks.length, 15);
-  assert.equal(onchain.compiledHooks.length, 15);
-  assert.equal(args.hooks.length, 15);
+  assert.equal(hookPlan.compiledHooks.length, 16);
+  assert.equal(onchain.compiledHooks.length, 16);
+  assert.equal(args.hooks.length, 16);
   assert.equal(hookPlan.selectedStageBindings.length, 13);
   assert.ok(
     hookPlan.selectedStageBindings.some(
