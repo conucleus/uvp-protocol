@@ -1580,8 +1580,13 @@ export function canonicalJson(value: unknown): string {
 
   if (typeof value === "object") {
     const record = value as Record<string, unknown>;
+    // Code-point key order (= UTF-8 byte order), matching the Rust authority
+    // (serde_json BTreeMap / str Ord) and the compiler's canonical.ts. The
+    // default Array#sort compares UTF-16 code units, which orders astral
+    // keys (surrogate pairs) before high-BMP keys — a different canonical
+    // byte stream and therefore a different evidence hash.
     const entries = Object.keys(record)
-      .sort()
+      .sort(compareJsonKeyByCodePoint)
       .map((key) => {
         const child = record[key];
         if (typeof child === "undefined") {
@@ -1595,6 +1600,20 @@ export function canonicalJson(value: unknown): string {
   }
 
   throw new TypeError(`canonical JSON does not support ${typeof value}`);
+}
+
+function compareJsonKeyByCodePoint(left: string, right: string): number {
+  const leftPoints = Array.from(left);
+  const rightPoints = Array.from(right);
+  const length = Math.min(leftPoints.length, rightPoints.length);
+  for (let index = 0; index < length; index += 1) {
+    const comparison =
+      (leftPoints[index] as string).codePointAt(0)! - (rightPoints[index] as string).codePointAt(0)!;
+    if (comparison !== 0) {
+      return comparison;
+    }
+  }
+  return leftPoints.length - rightPoints.length;
 }
 
 export function hashEvidenceBytes(bytes: Uint8Array): EvidenceHashResult {

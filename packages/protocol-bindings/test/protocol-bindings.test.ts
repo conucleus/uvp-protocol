@@ -783,6 +783,18 @@ describe("protocol bindings", () => {
       hashEvidenceJson({ b: 2, a: 1 }).evidenceHash,
       hashEvidenceJson({ a: 1, b: 2 }).evidenceHash,
     );
+    // Code-point key order (Rust authority): astral keys sort AFTER every
+    // BMP key; UTF-16 code-unit order would put the surrogate pair first.
+    const astral = "\u{1F600}";
+    const bmp = "\uFFFD";
+    assert.equal(
+      canonicalJson({ [astral]: 1, [bmp]: 2 }),
+      `{"${bmp}":2,"${astral}":1}`,
+    );
+    assert.equal(
+      canonicalJson({ "\u{10FFFF}": 1, "\uFFFE": 2 }),
+      `{"\uFFFE":2,"\u{10FFFF}":1}`,
+    );
   });
 
   it("hashes split patch payloads canonically", () => {
