@@ -100,14 +100,24 @@ contract UVPDockingModuleTest {
     bytes32 private constant TARGET_SOURCE = keccak256("payment");
     bytes32 private constant TARGET_SIGNAL = keccak256("pay.init.execute");
     bytes32 private constant TARGET_CANCEL_SIGNAL = keccak256("pay.control.cancel");
+    bytes32 private constant TARGET_PROGRESS_SIGNAL = keccak256("pay.init.progress");
     bytes32 private constant TARGET_OUT_SOURCE = keccak256("payment");
     bytes32 private constant TARGET_OUT_SIGNAL = keccak256("pay.init.done");
+    // 输出能力挂在非出生阶段（簇 I 裁决：出生/dock entrance 阶段的 executor
+    // 不可逐单 patch）。该阶段由消费 entrance 事实的 EMIT_READY watcher 在
+    // 子单上物化，输出 executor patch 指向它。
+    bytes32 private constant TARGET_OUT_STAGE = keccak256("pay.out");
+    bytes32 private constant TARGET_OUT_HOOK = keccak256("pay.out#DONE");
     bytes32 private constant LOCAL_MAPPED_SOURCE = keccak256("buyer");
     bytes32 private constant LOCAL_MAPPED_SIGNAL = keccak256("parent.exec.str");
 
     bytes32 private constant ENTRANCE_PORT = keccak256("execute");
+    bytes32 private constant PROGRESS_PORT = keccak256("progress");
     bytes32 private constant CANCEL_PORT = keccak256("cancel");
     bytes32 private constant DONE_PORT = keccak256("done");
+    bytes32 private constant PROGRESS_OUT_PORT = keccak256("progress.out");
+    bytes32 private constant LOCAL_PROGRESS_SOURCE = keccak256("buyer");
+    bytes32 private constant LOCAL_PROGRESS_SIGNAL = keccak256("parent.exec.progress");
     bytes32 private constant SOURCE_SEAM = keccak256("payment");
     bytes32 private constant TARGET_ARTIFACT = keccak256("target-artifact");
     bytes32 private constant PAYLOAD = bytes32(uint256(0xBEEF));
@@ -140,6 +150,8 @@ contract UVPDockingModuleTest {
     bytes32 private entranceBinding;
     bytes32 private cancelBinding;
     bytes32 private outputBinding;
+    bytes32 private progressBinding;
+    bytes32 private progressOutBinding;
     bytes32 private inputsRoot;
     bytes32 private outputsRoot;
     bytes32 private openRouteHash;
@@ -313,6 +325,50 @@ contract UVPDockingModuleTest {
         assertTrue(mapped);
         vm.prank(KEEPER);
         assertFalse(docking.submitDockedSignal(dockInstanceId, outputBinding));
+    }
+
+    function testOpenMarksEntranceInputDelivered() public {
+        // UVP-08：open 即 entrance input 的一次交付——投递账本必须与链上
+        // 事实一致（否则事后重放 submitDockedInput(entrance) 只会撞
+        // mailbox 既有事实 DockInputConflict，账本却显示未交付）。
+        assertTrue(
+            docking.openDockedOrder(
+                _openRequest(0),
+                _openRouteProof(),
+                _openLeafData(),
+                _openInterfaceProof(),
+                _inputs(),
+                _outputs(),
+                _permitEmpty()
+            )
+        );
+        assertTrue(docking.dockInputDelivered(dockInstanceId, entranceBinding));
+    }
+
+    function testSubmitDockedSignalRejectsOutputsAfterTerminal() public {
+        // 0200#2/ETH-4：终态闸。terminal 输出交付后 dock.status=1，其后
+        // 一切未交付 output（success 之后再投 failure 类矛盾序列）拒绝。
+        assertTrue(
+            docking.openDockedOrder(
+                _openRequest(0),
+                _openRouteProof(),
+                _openLeafData(),
+                _openInterfaceProof(),
+                _inputs(),
+                _outputs(),
+                _permitEmpty()
+            )
+        );
+        _submitTargetOutput();
+
+        vm.prank(KEEPER);
+        assertTrue(docking.submitDockedSignal(dockInstanceId, outputBinding));
+        (,,,,,,,, uint8 statusAfterTerminal,) = docking.getActiveDock(dockInstanceId);
+        assertEq(uint256(statusAfterTerminal), 1);
+
+        vm.prank(KEEPER);
+        _expect(abi.encodeWithSelector(UVPDockingModule.DockOutputConflict.selector, dockInstanceId, progressOutBinding));
+        docking.submitDockedSignal(dockInstanceId, progressOutBinding);
     }
 
     function testCallbackBeforeTargetFactReverts() public {
@@ -682,6 +738,17 @@ contract UVPDockingModuleTest {
                 uint256(0)
             )
         );
+        progressBinding = keccak256(
+            abi.encode(
+                DOMAIN_INPUT_BINDING,
+                routeId,
+                PARENT_EXEC_HOOK,
+                PROGRESS_PORT,
+                TARGET_SOURCE,
+                TARGET_PROGRESS_SIGNAL,
+                uint256(0)
+            )
+        );
         outputBinding = keccak256(
             abi.encode(
                 DOMAIN_OUTPUT_BINDING,
@@ -694,11 +761,27 @@ contract UVPDockingModuleTest {
                 uint256(1)
             )
         );
-        bytes32[] memory inputLeaves = new bytes32[](2);
+        progressOutBinding = keccak256(
+            abi.encode(
+                DOMAIN_OUTPUT_BINDING,
+                routeId,
+                LOCAL_PROGRESS_SOURCE,
+                LOCAL_PROGRESS_SIGNAL,
+                PROGRESS_OUT_PORT,
+                TARGET_OUT_SOURCE,
+                TARGET_OUT_SIGNAL,
+                uint256(0)
+            )
+        );
+        bytes32[] memory inputLeaves = new bytes32[](3);
         inputLeaves[0] = entranceBinding;
         inputLeaves[1] = cancelBinding;
+        inputLeaves[2] = progressBinding;
         inputsRoot = DockMerkle.root(inputLeaves);
-        outputsRoot = DockMerkle.root(_single(outputBinding));
+        bytes32[] memory outputLeaves = new bytes32[](2);
+        outputLeaves[0] = outputBinding;
+        outputLeaves[1] = progressOutBinding;
+        outputsRoot = DockMerkle.root(outputLeaves);
 
         openLeaf = keccak256(
             abi.encode(
@@ -792,7 +875,7 @@ contract UVPDockingModuleTest {
     }
 
     function _registerTargetPlan(bytes32 interfaceRoot) private returns (bytes32) {
-        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](3);
         UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](1);
         instructions[0] = UVPStateMachine.Instruction({
             op: UVPStateMachine.InstructionOp.Signal,
@@ -833,15 +916,41 @@ contract UVPDockingModuleTest {
             instructions: mintInstructions,
             dependencyKeys: mintDeps
         });
-        // 目标定义自身治理：selector 自绑定 + 输出能力（子订单 executor
-        // 经 executor patch 获得输出提交权，不经 open 注入授权）。
+        // 输出阶段：消费 progress 输入事实的 EMIT_READY watcher——
+        // submitDockedInput 送达即 Ready，物化输出阶段供 executor patch/
+        // 信号门使用（出生/dock entrance 阶段不可 patch，输出授权走非出生
+        // 阶段；跨阶段 watcher 消费 entrance 键会被 CrossStageDependency
+        // 拒绝，因此用本阶段自己的输入事实驱动物化）。
+        UVPStateMachine.Instruction[] memory outInstructions = new UVPStateMachine.Instruction[](1);
+        outInstructions[0] = UVPStateMachine.Instruction({
+            op: UVPStateMachine.InstructionOp.Signal,
+            sourceId: TARGET_SOURCE,
+            signalId: TARGET_PROGRESS_SIGNAL,
+            arity: 0,
+            delaySeconds: 0
+        });
+        bytes32[] memory outDeps = new bytes32[](1);
+        outDeps[0] = keccak256(abi.encode(TARGET_SOURCE, TARGET_PROGRESS_SIGNAL));
+        hooks[2] = UVPStateMachine.CompactHook({
+            hookId: TARGET_OUT_HOOK,
+            stageId: TARGET_OUT_STAGE,
+            hookName: bytes32("DONE"),
+            flags: FLAG_EMIT_READY,
+            instructions: outInstructions,
+            dependencyKeys: outDeps
+        });
+        // 目标定义自身治理：selector 自绑定 + 输出阶段自绑定（子订单输出
+        // executor 经 executor patch 获得提交权，不经 open 注入授权）。
         IUVPPlanMetadataModule.StageSelectorBinding[] memory bindings =
-            new IUVPPlanMetadataModule.StageSelectorBinding[](1);
+            new IUVPPlanMetadataModule.StageSelectorBinding[](2);
         bindings[0] =
             IUVPPlanMetadataModule.StageSelectorBinding({selectorStageId: TARGET_STAGE, targetStageId: TARGET_STAGE});
+        bindings[1] = IUVPPlanMetadataModule.StageSelectorBinding(
+            {selectorStageId: TARGET_OUT_STAGE, targetStageId: TARGET_OUT_STAGE}
+        );
         IUVPPlanMetadataModule.SignalCapability[] memory capabilities = new IUVPPlanMetadataModule.SignalCapability[](1);
         capabilities[0] = IUVPPlanMetadataModule.SignalCapability({
-            stageId: TARGET_STAGE,
+            stageId: TARGET_OUT_STAGE,
             targetSourceId: TARGET_OUT_SOURCE,
             signalId: TARGET_OUT_SIGNAL,
             targetOrderRelation: 0 // SIGNAL_TARGET_CURRENT_ORDER
@@ -1019,12 +1128,16 @@ contract UVPDockingModuleTest {
     }
 
     function _submitTargetOutput() private {
+        // 物化输出阶段：progress 输入事实送达子单，EMIT_READY watcher Ready
+        // （出生阶段不可 executor patch——簇 I 裁决；输出授权走非出生阶段）。
+        vm.prank(KEEPER);
+        docking.submitDockedInput(dockInstanceId, PARENT_EXEC_HOOK, progressBinding);
         // 目标定义自身授权流：目标 plan publisher（= 子订单 creator）作为
         // selector 指派输出 executor，能力委托使 childSubmitter 获得
         // (TARGET_OUT_SOURCE, TARGET_OUT_SIGNAL) 提交权。
         UVPStagePatchModule.StageExecutorPatch memory patch = UVPStagePatchModule.StageExecutorPatch({
-            selectorStageId: TARGET_STAGE,
-            targetStageId: TARGET_STAGE,
+            selectorStageId: TARGET_OUT_STAGE,
+            targetStageId: TARGET_OUT_STAGE,
             executor: childSubmitter,
             role: keccak256("child-executor"),
             executorMetadataHash: bytes32(0),
@@ -1161,7 +1274,7 @@ contract UVPDockingModuleTest {
     }
 
     function _inputs() private view returns (UVPDockingModule.DockInputBindingArg[] memory) {
-        UVPDockingModule.DockInputBindingArg[] memory inputs = new UVPDockingModule.DockInputBindingArg[](2);
+        UVPDockingModule.DockInputBindingArg[] memory inputs = new UVPDockingModule.DockInputBindingArg[](3);
         inputs[0] = UVPDockingModule.DockInputBindingArg({
             localHookId: PARENT_EXEC_HOOK,
             portKey: ENTRANCE_PORT,
@@ -1178,11 +1291,19 @@ contract UVPDockingModuleTest {
             kind: 0,
             bindingHash: cancelBinding
         });
+        inputs[2] = UVPDockingModule.DockInputBindingArg({
+            localHookId: PARENT_EXEC_HOOK,
+            portKey: PROGRESS_PORT,
+            targetSourceId: TARGET_SOURCE,
+            targetSignalId: TARGET_PROGRESS_SIGNAL,
+            kind: 0,
+            bindingHash: progressBinding
+        });
         return inputs;
     }
 
     function _outputs() private view returns (UVPDockingModule.DockOutputBindingArg[] memory) {
-        UVPDockingModule.DockOutputBindingArg[] memory outputs = new UVPDockingModule.DockOutputBindingArg[](1);
+        UVPDockingModule.DockOutputBindingArg[] memory outputs = new UVPDockingModule.DockOutputBindingArg[](2);
         outputs[0] = UVPDockingModule.DockOutputBindingArg({
             localSourceId: LOCAL_MAPPED_SOURCE,
             localSignalId: LOCAL_MAPPED_SIGNAL,
@@ -1191,6 +1312,15 @@ contract UVPDockingModuleTest {
             targetSignalId: TARGET_OUT_SIGNAL,
             terminal: 1,
             bindingHash: outputBinding
+        });
+        outputs[1] = UVPDockingModule.DockOutputBindingArg({
+            localSourceId: LOCAL_PROGRESS_SOURCE,
+            localSignalId: LOCAL_PROGRESS_SIGNAL,
+            portKey: PROGRESS_OUT_PORT,
+            targetSourceId: TARGET_OUT_SOURCE,
+            targetSignalId: TARGET_OUT_SIGNAL,
+            terminal: 0,
+            bindingHash: progressOutBinding
         });
         return outputs;
     }

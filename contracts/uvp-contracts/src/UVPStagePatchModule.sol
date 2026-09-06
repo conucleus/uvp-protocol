@@ -79,6 +79,14 @@ contract UVPStagePatchModule {
         bytes32 orderId, bytes32 targetStageId, address expectedExecutor, address previousExecutor
     );
     error StageHasNoSignal(bytes32 orderId, bytes32 targetStageId);
+    /// 出生（mint/dock）阶段的执行者终生不可变（簇 I 裁决，云侧已强制）：
+    /// 逐单 executor patch 在合约侧读 plan hook flags 补门（0212 P1-3）。
+    /// 资源补丁不受此门——资源可替换已裁决。
+    error StageExecutorPatchForbiddenOnBirthStage(bytes32 orderId, bytes32 targetStageId);
+    /// 同秒平局 fail-closed（F7/O6/ETH-5）：最高 submittedAt 并列且提交者
+    /// 不同时，"上一执行者"没有确定序——拒绝而不是按 capability 数组枚举
+    /// 序静默取值。
+    error StagePreviousExecutorAmbiguous(bytes32 orderId, bytes32 targetStageId, uint64 submittedAt);
     error StageSignalCapabilityMissing(bytes32 planId, bytes32 targetStageId);
     error StageResourcePatchNonceNotIncreasing(
         bytes32 orderId, bytes32 targetStageId, bytes32 resourceKey, uint256 previousNonce, uint256 patchNonce
@@ -463,6 +471,13 @@ contract UVPStagePatchModule {
         if (!stateMachine.orderExists(planId, orderId)) {
             revert UnknownOrder();
         }
+        // 出生阶段守门（簇 I 裁决）：目标阶段挂有 mint/dock trigger hook 时
+        // 拒绝逐单 executor patch——云侧已强制"订阅/出生阶段终生不可变"，
+        // 合约读 flags 补门封死绕行。fileResources-only 资源补丁不经过本
+        // 函数（_applyStageResourcePatch），资源可替换已裁决。
+        if (stateMachine.stageHasOrderTriggerHook(planId, patch.targetStageId)) {
+            revert StageExecutorPatchForbiddenOnBirthStage(orderId, patch.targetStageId);
+        }
         if (!_planMetadata().isStageSelectorBound(planId, patch.selectorStageId, patch.targetStageId)) {
             revert StageSelectorBindingNotFound(planId, patch.selectorStageId, patch.targetStageId);
         }
@@ -485,7 +500,8 @@ contract UVPStagePatchModule {
         ActiveStageExecutorPatch storage activePatch,
         address previousExecutorSigner
     ) private view {
-        (uint256 signalCount, address latestSignalSubmitter) = _stageSignalState(planId, orderId, patch.targetStageId);
+        (uint256 signalCount, address latestSignalSubmitter, uint64 latestSubmittedAt, bool latestAmbiguous) =
+            _stageSignalState(planId, orderId, patch.targetStageId);
         if (patch.mode == EXECUTOR_PATCH_MODE_ASSIGN) {
             if (patch.previousExecutor != address(0)) {
                 revert StageExecutorPatchPreviousExecutorMismatch(
@@ -506,6 +522,12 @@ contract UVPStagePatchModule {
         }
 
         address expectedPreviousExecutor = activePatch.exists ? activePatch.executor : latestSignalSubmitter;
+        // 同秒平局 fail-closed（F7/O6/ETH-5）：回退到"最近提交者"判定且
+        // 最高 submittedAt 并列不同提交者时，没有确定序——拒绝。active
+        // patch 存在时不回退（patch executor 是权威上一执行者），无歧义。
+        if (!activePatch.exists && latestAmbiguous) {
+            revert StagePreviousExecutorAmbiguous(orderId, patch.targetStageId, latestSubmittedAt);
+        }
         if (patch.previousExecutor != expectedPreviousExecutor) {
             revert StageExecutorPatchPreviousExecutorMismatch(
                 orderId, patch.targetStageId, expectedPreviousExecutor, patch.previousExecutor
@@ -566,7 +588,7 @@ contract UVPStagePatchModule {
             )) {
             revert UnauthorizedStageResourcePatchSelector(orderId, patch.selectorStageId, selector);
         }
-        (uint256 signalCount,) = _stageSignalState(planId, orderId, patch.targetStageId);
+        (uint256 signalCount,,,) = _stageSignalState(planId, orderId, patch.targetStageId);
         if (signalCount != 0) {
             revert StageAlreadyHasSignal(orderId, patch.targetStageId);
         }
@@ -615,11 +637,10 @@ contract UVPStagePatchModule {
     function _stageSignalState(bytes32 planId, bytes32 orderId, bytes32 stageId)
         private
         view
-        returns (uint256 count, address latestSubmitter)
+        returns (uint256 count, address latestSubmitter, uint64 latestSubmittedAt, bool latestAmbiguous)
     {
         IUVPPlanMetadataModuleForStagePatch metadata = _planMetadata();
         uint256 capabilityCount = metadata.stageSignalCapabilityCount(planId, stageId);
-        uint64 latestSubmittedAt;
         for (uint256 i = 0; i < capabilityCount; i++) {
             (bytes32 sourceId, bytes32 signalId, uint8 relation) = metadata.stageSignalCapabilityAt(planId, stageId, i);
             if (relation != 0) {
@@ -631,9 +652,15 @@ contract UVPStagePatchModule {
                 continue;
             }
             count += 1;
-            if (submittedAt >= latestSubmittedAt) {
+            // 最高 submittedAt 的并列提交者检测：更大的时间戳重置判定，
+            // 同秒不同提交者标记歧义——消费者必须 fail-closed，不得按
+            // capability 数组枚举序静默取"最后一个"。
+            if (submittedAt > latestSubmittedAt) {
                 latestSubmittedAt = submittedAt;
                 latestSubmitter = submitter;
+                latestAmbiguous = false;
+            } else if (submittedAt == latestSubmittedAt && submitter != latestSubmitter) {
+                latestAmbiguous = true;
             }
         }
     }

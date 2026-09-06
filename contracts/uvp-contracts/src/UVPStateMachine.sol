@@ -200,6 +200,9 @@ contract UVPStateMachine {
     error InvalidPlanSignature(address expectedSigner, address recoveredSigner);
     error IncompleteModuleConfiguration();
     error InvalidTriggerHook(bytes32 hookId);
+    /// order-link 派生单号不可自报：声明值必须等于按 link 事实重算的
+    /// 派生值（0300 H-1，防高位清零命名空间内抢注受害者的未来单号）。
+    error InvalidOrderLinkOrderId(bytes32 declared, bytes32 derived);
     error InvalidTriggerOrderSignature(address expectedSigner, address recoveredSigner);
     error ModulesAlreadyFrozen();
     error ModulesFrozen();
@@ -267,6 +270,9 @@ contract UVPStateMachine {
     uint8 public constant HOOK_FLAG_ORDER_TRIGGER_DOCK = 2;
     uint8 public constant HOOK_FLAG_EMIT_READY = 4;
     bytes32 private constant _PLAN_ID_HASH_DOMAIN = keccak256("uvp.plan.id.v1");
+    // order-link 派生订单号的独立哈希域：与 outside-trigger 派生域
+    // (triggerOrderIdFor) 结构性隔离，跨域占用只能靠 keccak256 碰撞。
+    bytes32 private constant _ORDER_LINK_ORDER_ID_DOMAIN = keccak256("uvp.order_link.order_id.v1");
     bytes32 public constant DOCK_ORDER_NAMESPACE_MASK = bytes32(uint256(1) << 255);
     uint64 public constant MAX_HOOK_DELAY_SECONDS = 30 days;
     uint256 public constant MAX_PLAN_DEPENDENCIES = 1024;
@@ -696,6 +702,38 @@ contract UVPStateMachine {
         );
     }
 
+    /// @notice order-link 派生订单 id 的权威派生公式（一事一单）：以 link
+    ///         事实（origin 复合身份 + origin 事实 + payload）为 preimage 的
+    ///         独立哈希域，且恒清 dock 命名空间位。自报 orderId 与派生值不
+    ///         一致即 revert——调用方无法选择订单号，也就无法抢注
+    ///         outside-trigger 派生域（高位清零命名空间）里受害者的未来
+    ///         订单号（0300 H-1）。重放同一 link 事实恒定派生同一 id，按
+    ///         OrderAlreadyRegistered 幂等拒绝。
+    function orderLinkOrderIdFor(
+        bytes32 planId,
+        bytes32 originPlanId,
+        bytes32 triggerOriginOrderId,
+        bytes32 originSourceId,
+        bytes32 originSignalId,
+        bytes32 payloadHash
+    ) public pure returns (bytes32) {
+        return bytes32(
+            uint256(
+                keccak256(
+                    abi.encode(
+                        _ORDER_LINK_ORDER_ID_DOMAIN,
+                        planId,
+                        originPlanId,
+                        triggerOriginOrderId,
+                        originSourceId,
+                        originSignalId,
+                        payloadHash
+                    )
+                )
+            ) & ~uint256(DOCK_ORDER_NAMESPACE_MASK)
+        );
+    }
+
     function triggerOrderFromSignalFromModule(
         TriggerOrderFromSignalRequest calldata trigger,
         SignalAuthorization[] calldata authorizations,
@@ -743,12 +781,37 @@ contract UVPStateMachine {
         ) {
             revert UnauthorizedTriggerOrigin(trigger.originPlanId, trigger.triggerOriginOrderId, trigger.submitter);
         }
+        // orderId 不可自报（0300 H-1）：合约按 link 事实派生，请求携带的
+        // orderId 只作镜像校验——与 routeId/dockInstanceId 的"重算即拒绝"
+        // 口径一致。自报域与 outside-trigger 派生域此前共享高位清零命名
+        // 空间，攻击者可先注受害者未来派生单号（_orders 先到先得）。
+        {
+            bytes32 derivedOrderId = orderLinkOrderIdFor(
+                trigger.planId,
+                trigger.originPlanId,
+                trigger.triggerOriginOrderId,
+                trigger.originSourceId,
+                trigger.originSignalId,
+                trigger.payloadHash
+            );
+            if (trigger.orderId != derivedOrderId) {
+                revert InvalidOrderLinkOrderId(trigger.orderId, derivedOrderId);
+            }
+        }
         _requireTriggerHookReadyForOrder(
             trigger.originPlanId,
             trigger.triggerOriginOrderId,
             trigger.planId,
             trigger.triggerHookId,
             trigger.triggerStageId
+        );
+        // 每个被消费的 SIGNAL 指令独立过 origin 同意门（UVP-08）：声明
+        // 的 origin 事实已同意，但 hook 求值实际读取的其它事实同样构成
+        // "把 origin 订单的事实拿去派生新单"，逐一校验。不存在的事实无
+        // 法影响求值（贡献 value=false），跳过以省 gas。
+        _requireTriggerHookSignalConsent(
+            trigger.originPlanId, trigger.triggerOriginOrderId, trigger.planId, trigger.triggerHookId,
+            trigger.triggerStageId, trigger.submitter, relayer
         );
 
         if (_isDockOrderId(trigger.orderId)) {
@@ -1044,6 +1107,21 @@ contract UVPStateMachine {
     function planHookStageId(bytes32 planId, bytes32 hookId) external view returns (bytes32) {
         StoredHook storage hook = _plans[planId].hooks[hookId];
         return hook.stageId;
+    }
+
+    /// @notice 阶段是否挂有 order-trigger（mint/dock）hook。出生/订阅阶段
+    ///         的执行者终生不可变（云侧已强制，簇 I 裁决）——stage patch
+    ///         模块读本视图拒绝出生阶段的逐单 executor patch；资源补丁
+    ///         （fileResources-only）不受此门，资源可替换已裁决。
+    function stageHasOrderTriggerHook(bytes32 planId, bytes32 stageId) external view returns (bool) {
+        Plan storage plan = _plans[planId];
+        for (uint256 i = 0; i < plan.hookIds.length; i++) {
+            StoredHook storage hook = plan.hooks[plan.hookIds[i]];
+            if (hook.stageId == stageId && _isOrderTrigger(hook.flags)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     function planDockRoots(bytes32 planId) external view returns (bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot) {
@@ -1692,6 +1770,41 @@ contract UVPStateMachine {
         EvalValue memory result = _evaluateInstructions(originPlanId, originOrderId, hook);
         if (!result.value || result.wait || result.cancel) {
             revert InvalidTriggerHook(triggerHookId);
+        }
+    }
+
+    /// UVP-08：trigger hook 的每一条 SIGNAL 指令读取的 origin 事实都必须
+    /// 独立通过同意门（submitter 或 relayer 任一持有同意即可）。声明之外
+    /// 被实际消费的未同意事实是"镜像声明、消费他事"的攻击面。不存在的事
+    /// 实对求值无贡献（value=false），跳过。
+    function _requireTriggerHookSignalConsent(
+        bytes32 originPlanId,
+        bytes32 originOrderId,
+        bytes32 planId,
+        bytes32 triggerHookId,
+        bytes32 triggerStageId,
+        address submitter,
+        address relayer
+    ) private view {
+        StoredHook storage hook = _validatedTriggerHook(planId, triggerHookId, triggerStageId);
+        for (uint256 i = 0; i < hook.instructions.length; i++) {
+            Instruction storage instruction = hook.instructions[i];
+            if (instruction.op != InstructionOp.Signal) {
+                continue;
+            }
+            if (!_hasSignal(originPlanId, originOrderId, instruction.sourceId, instruction.signalId)) {
+                continue;
+            }
+            if (hasTriggerOriginConsent(originPlanId, originOrderId, instruction.sourceId, instruction.signalId, submitter))
+            {
+                continue;
+            }
+            if (relayer != address(0)
+                && hasTriggerOriginConsent(originPlanId, originOrderId, instruction.sourceId, instruction.signalId, relayer))
+            {
+                continue;
+            }
+            revert UnauthorizedTriggerOrigin(originPlanId, originOrderId, submitter);
         }
     }
 

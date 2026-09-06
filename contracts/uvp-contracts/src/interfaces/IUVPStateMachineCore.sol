@@ -110,6 +110,10 @@ interface IUVPStateMachineCore {
 
     function planHookStageId(bytes32 planId, bytes32 hookId) external view returns (bytes32);
 
+    /// 出生（mint/dock）阶段对逐单 executor patch 关闭——出生/订阅阶段执
+    /// 行者终生不可变（簇 I 裁决），stage patch 模块以此守门。
+    function stageHasOrderTriggerHook(bytes32 planId, bytes32 stageId) external view returns (bool);
+
     function submitSignalFromModule(
         bytes32 planId,
         bytes32 orderId,

@@ -145,6 +145,10 @@ contract UVPDockingModule {
     error DockInputNotFound(bytes32 dockInstanceId, bytes32 inputBindingHash);
     error DockNotOpened(bytes32 dockInstanceId);
     error DockOutputAlreadyDelivered(bytes32 dockInstanceId, bytes32 outputBindingHash);
+    /// 终态后不再交付 output——与 input 侧 DockInputConflict 同构的终态闸
+    /// （0200#2/ETH-4）：没有该闸时，success 终端交付后仍可继续投递
+    /// failure 终端（或反之），链上出现矛盾终端序列。
+    error DockOutputConflict(bytes32 dockInstanceId, bytes32 outputBindingHash);
     error DockOutputBindingNotFound(bytes32 dockInstanceId, bytes32 outputBindingHash);
     error DockOutputNotReady(bytes32 dockInstanceId, bytes32 outputBindingHash);
     error DockRouteLeafMismatch(bytes32 expected, bytes32 actual);
@@ -558,6 +562,14 @@ contract UVPDockingModule {
             new IUVPStateMachineCore.SignalAuthorization[](0)
         );
 
+        // entrance 交付账本（UVP-08）：open 本身就是 entrance input 的一次
+        // 交付（createDockedOrderFromModule 写入 entrance 事实并发
+        // DockInputSubmitted），_inputDelivered 必须同步置位，否则
+        // dockInputDelivered(dockInstanceId, entranceBindingHash) 与链上
+        // 交付事实矛盾，且事后重放 submitDockedInput(entrance) 只会因
+        // mailbox 既有事实 DockInputConflict。
+        _inputDelivered[request.dockInstanceId][request.entranceBindingHash] = true;
+
         emit DockOpened(
             request.dockInstanceId,
             request.localOrderId,
@@ -677,6 +689,13 @@ contract UVPDockingModule {
         }
         if (_outputDelivered[dockInstanceId][outputBindingHash]) {
             return false; // 幂等重放
+        }
+        // 终态闸（0200#2/ETH-4）：与 submitDockedInput 的 dock.status != 0
+        // 拒绝同构。首个 terminal 交付在本交易尾部置 status=1；此后一切
+        // output 交付（含另一类 terminal）都被拒绝——success/failure 不可能
+        // 先后同时成立。
+        if (dock.status != 0) {
+            revert DockOutputConflict(dockInstanceId, outputBindingHash);
         }
         ActiveDockOutputBindingV1 storage binding = _outputBindings[dockInstanceId][outputBindingHash];
         if (!binding.exists) {

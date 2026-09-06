@@ -9,14 +9,17 @@ pragma solidity ^0.8.24;
 library DockMerkle {
     bytes32 public constant EMPTY_ROOT = keccak256("");
 
-    /// @notice 就地排序（去重）后逐层建树。仅用于测试与 calldata 一致性
-    ///         校验（叶子数 ≤ MAX_DOCK_OUTPUTS，无界输入禁止调用）。
+    /// @notice 排序（去重）后逐层建树，排序去重在函数内拷贝上执行，不
+    ///         修改调用方数组（ETH-7：就地缩长度会让调用方持有的
+    ///         calldata/memory 数组在 root 调用后被静默截断）。仅用于测试
+    ///         与 calldata 一致性校验（叶子数 ≤ MAX_DOCK_OUTPUTS，无界
+    ///         输入禁止调用）。
     function root(bytes32[] memory leaves) internal pure returns (bytes32) {
         if (leaves.length == 0) {
             return EMPTY_ROOT;
         }
-        sortUnique(leaves);
-        bytes32[] memory level = leaves;
+        bytes32[] memory sorted = sortUnique(leaves);
+        bytes32[] memory level = sorted;
         while (level.length > 1) {
             uint256 nextLength = (level.length + 1) / 2;
             bytes32[] memory next = new bytes32[](nextLength);
@@ -47,7 +50,12 @@ library DockMerkle {
         return current == rootValue;
     }
 
-    function sortUnique(bytes32[] memory leaves) private pure {
+    /// @dev 返回排序去重后的新数组；调用方数组保持原样。
+    function sortUnique(bytes32[] memory input) private pure returns (bytes32[] memory leaves) {
+        leaves = new bytes32[](input.length);
+        for (uint256 i = 0; i < input.length; i++) {
+            leaves[i] = input[i];
+        }
         uint256 length = leaves.length;
         for (uint256 i = 0; i < length; i++) {
             for (uint256 j = i + 1; j < length; j++) {
@@ -56,7 +64,8 @@ library DockMerkle {
                     leaves[i] = leaves[j];
                     leaves[j] = tmp;
                 } else if (leaves[j] == leaves[i]) {
-                    // 去重：把重复项交换到尾部并收缩有效长度。
+                    // 去重：把重复项交换到尾部并收缩有效长度（仅作用于
+                    // 函数内拷贝）。
                     leaves[j] = leaves[length - 1];
                     length -= 1;
                     j -= 1;
