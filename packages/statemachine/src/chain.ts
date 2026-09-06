@@ -22,7 +22,7 @@ export type ChainModeInputEvent =
 
 export type ChainModeExpectedEvent = ChainHookStatusChangedEvent | ChainHookReadyEvent;
 export type ChainObservableHookStatus = "wait" | "cxl";
-export type ChainOracleHookStatus = "init" | "wait" | "reg" | "cxl";
+export type ChainOracleHookStatus = "init" | "wait" | "ready" | "cxl";
 
 export interface ChainEventBase {
   readonly eventName: string;
@@ -312,7 +312,7 @@ type OracleFeedEvent = ChainModeEvent | ProjectedHookStatusChangedEvent;
  * `status`), while the frozen v0.10 chain event carries
  * previousStatus/newStatus. This adapter is the formal boundary between the
  * two contracts: v0.10 events are projected onto newStatus, and
- * HookStatusChanged events with a non-observable new status ("reg"/"init")
+ * HookStatusChanged events with a non-observable new status ("ready"/"init")
  * are FILTERED OUT — the oracle's observed face only ever produces wait/cxl
  * status observations (ready transitions are observed through HookReady), so
  * feeding the →Ready/→Init status changes the contract emits alongside
@@ -487,7 +487,7 @@ function deriveOrderLinkBirthFacts(
     const orderKey = `${birth.event.planId}::${birth.event.orderId}`;
     const order = state.orders[orderKey];
     if (order) {
-      order.hookStatuses[birth.event.hookId] = { status: "reg", readyEmitted: true };
+      order.hookStatuses[birth.event.hookId] = { status: "ready", readyEmitted: true };
       order.materializedStages[birth.stageId] = true;
     }
   }

@@ -42,7 +42,7 @@ test("chain-mode replay matches hook expectations from stable chain events", asy
     cancelOrder?.signals["0x0000000000000000000000000000000000000000000000000000000000002001"]?.eventId,
     "2:0:0x03"
   );
-  assert.equal(cancelOrder?.hookStatuses["0x0000000000000000000000000000000000000000000000000000000000003001"]?.status, "reg");
+  assert.equal(cancelOrder?.hookStatuses["0x0000000000000000000000000000000000000000000000000000000000003001"]?.status, "ready");
   assert.equal(cancelOrder?.hookStatuses["0x0000000000000000000000000000000000000000000000000000000000003002"]?.status, "cxl");
 
   const cancelStartReadyCount = result.observed.filter(
@@ -56,8 +56,8 @@ test("chain-mode replay matches hook expectations from stable chain events", asy
   const timerOrder = result.state.orders[
     "0x312bed89090d5be24d38a236e312f8734d64dff50f8da3376542bee659dbb35d::order-timer"
   ];
-  assert.equal(timerOrder?.hookStatuses["0x0000000000000000000000000000000000000000000000000000000000003001"]?.status, "reg");
-  assert.equal(timerOrder?.hookStatuses["0x0000000000000000000000000000000000000000000000000000000000003002"]?.status, "reg");
+  assert.equal(timerOrder?.hookStatuses["0x0000000000000000000000000000000000000000000000000000000000003001"]?.status, "ready");
+  assert.equal(timerOrder?.hookStatuses["0x0000000000000000000000000000000000000000000000000000000000003002"]?.status, "ready");
   assert.equal(
     result.observed.some(
       (event) =>
@@ -238,7 +238,7 @@ test("chain replay filters non-observable HookStatusChanged transitions (golden 
         orderId: event.orderId,
         hookId: event.hookId,
         previousStatus: "init",
-        newStatus: "reg"
+        newStatus: "ready"
       });
       injected.push({
         eventName: "HookStatusChanged",
@@ -328,7 +328,7 @@ test("chain replay derives order-link birth facts from HookReady", () => {
       orderId: "link-child",
       hookId,
       previousStatus: "init",
-      newStatus: "reg"
+      newStatus: "ready"
     },
     {
       eventName: "HookReady",
@@ -363,7 +363,7 @@ test("chain replay derives order-link birth facts from HookReady", () => {
   assert.equal(result.expected.length, 1);
   assert.equal(result.expected[0]?.eventName, "HookReady");
   const childOrder = result.state.orders[`${planId}::link-child`];
-  assert.equal(childOrder?.hookStatuses[hookId]?.status, "reg");
+  assert.equal(childOrder?.hookStatuses[hookId]?.status, "ready");
   assert.equal(childOrder?.hookStatuses[hookId]?.readyEmitted, true);
   assert.equal(childOrder?.materializedStages[stageId], true);
   // 出生事实不落子单信号集：链上 order-link 路径不 _recordSignal，
