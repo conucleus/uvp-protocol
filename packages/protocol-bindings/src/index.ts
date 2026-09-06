@@ -57,6 +57,8 @@ export const STATE_MACHINE_ABI = parseAbi([
   "function planIdFor(address publisher,bytes32 planHash) pure returns (bytes32)",
   "function triggerOrderFromOutsideFor((bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) trigger,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations,bytes signature)",
   "function triggerOrderIdFor(bytes32 planId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash) pure returns (bytes32)",
+  "function orderLinkOrderIdFor(bytes32 planId,bytes32 originPlanId,bytes32 triggerOriginOrderId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash) pure returns (bytes32)",
+  "function stageHasOrderTriggerHook(bytes32 planId,bytes32 stageId) view returns (bool)",
   "function submitSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey)",
   "function submitSignalFor(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline,bytes signature)",
   "function submitSignalFromModule(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter)",

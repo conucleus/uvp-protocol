@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x35bf25d484bbac490df36997c004b16b2e93724f104bb2b5ff61a9e63587c572",
-    "bytecodeHash": "0x81fd01b8f02bd7aa43cc5a7db3612512bb1c06dba82bd942f73505b1d08bde7d",
-    "deployedBytecodeHash": "0x1b9cbc03fff8fd47d8859d5d0906ae6a6e1cfba1fe2dd07328465fbb3b105d40",
-    "artifactHash": "0xaa0a2e10b5d29d2782615f16c5f519852e27a4030ff0e42fdbd462d876e094ab"
+    "abiHash": "0x0413f34a9bc87538ae15b88b707a2ec44b926292ea84c24d161db9dc28a04533",
+    "bytecodeHash": "0xfde59bbcfbd66c3642f31f27300f447a48be1e788ca9d8ff985330de9dd66830",
+    "deployedBytecodeHash": "0xbf0bba589254c40ea2db01867e2792a284428215202a7a813626eddc4b6165da",
+    "artifactHash": "0x6444ca6bd9b73f72d934a9ad3293c7065ffd4449c2c5f4577330d24b06819290"
   },
   "events": {
     "StageExecutorPatchApplied": {

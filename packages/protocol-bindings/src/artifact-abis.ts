@@ -1097,6 +1097,50 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
+    "name": "orderLinkOrderIdFor",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "originPlanId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "triggerOriginOrderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "originSourceId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "originSignalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "payloadHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
     "name": "orderRelayer",
     "inputs": [
       {
@@ -1539,6 +1583,30 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "count",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "stageHasOrderTriggerHook",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -2755,6 +2823,22 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     "type": "error",
     "name": "InvalidModuleAddress",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidOrderLinkOrderId",
+    "inputs": [
+      {
+        "name": "declared",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "derived",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
   },
   {
     "type": "error",

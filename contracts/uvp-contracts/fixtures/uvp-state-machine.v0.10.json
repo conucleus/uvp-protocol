@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x72fe42459181b203c29f3fe3e79861a514c11aa28f2234dd52df1f2345388c21",
-    "bytecodeHash": "0x51cec61a4d8a16f59863b5146892ba182b200fceb166986751c78a01668d0c1e",
-    "deployedBytecodeHash": "0x3b742212dd12c4a7b5c8bf871cbee46cb8f3124f16e04661b9799daddcc72ce9",
-    "artifactHash": "0x1b18042c7be7723ee19a13eab7e9b83650fd2bffafb9233f4cc0deeca42e0276"
+    "abiHash": "0xf840815400bb96d1129c4c34aefee9e964f3ac90b421925529baed676a21b6d4",
+    "bytecodeHash": "0x2634f40307d59d9baa5ede7a176db4b3856b715b55f4006846b777c4e3c3c332",
+    "deployedBytecodeHash": "0x1032e46269405447687a1cc0e6097593cf74e03dc67d9ae111b2bfd3b57716a3",
+    "artifactHash": "0xc3b62779ea044036d1367d468d96e201cfb6cdfda6f179d2df1f066b1947e202"
   },
   "events": {
     "HookReady": {
@@ -249,6 +249,10 @@
       "signature": "orderLinkModule()",
       "selector": "0x1d2103c0"
     },
+    "orderLinkOrderIdFor": {
+      "signature": "orderLinkOrderIdFor(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0xc31e315c"
+    },
     "orderRelayer": {
       "signature": "orderRelayer(bytes32,bytes32)",
       "selector": "0xd5fa735d"
@@ -336,6 +340,10 @@
     "sourceSignalCount": {
       "signature": "sourceSignalCount(bytes32,bytes32,bytes32)",
       "selector": "0xca201c09"
+    },
+    "stageHasOrderTriggerHook": {
+      "signature": "stageHasOrderTriggerHook(bytes32,bytes32)",
+      "selector": "0xb4d89d5b"
     },
     "stagePatchModule": {
       "signature": "stagePatchModule()",
