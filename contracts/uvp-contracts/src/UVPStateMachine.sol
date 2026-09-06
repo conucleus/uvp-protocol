@@ -783,8 +783,9 @@ contract UVPStateMachine {
         }
         // orderId 不可自报（0300 H-1）：合约按 link 事实派生，请求携带的
         // orderId 只作镜像校验——与 routeId/dockInstanceId 的"重算即拒绝"
-        // 口径一致。自报域与 outside-trigger 派生域此前共享高位清零命名
-        // 空间，攻击者可先注受害者未来派生单号（_orders 先到先得）。
+        // 口径一致。自报单号若可与派生域碰撞，攻击者可先注受害者未来派生
+        // 单号（_orders 先到先得），派生函数因此把 link 单号隔离到独立命
+        // 名空间。
         {
             bytes32 derivedOrderId = orderLinkOrderIdFor(
                 trigger.planId,
