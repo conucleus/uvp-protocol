@@ -15,6 +15,7 @@ export {
   assertOnchainHookPlanArtifact,
   compileZhixuOnchainHookPlan,
   compileZhixuRegisterPlanArgs,
+  hashSolidityRegisterHooks,
   onchainHookId,
   onchainHookName,
   planIdForPublisher,

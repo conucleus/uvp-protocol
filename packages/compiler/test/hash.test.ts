@@ -46,3 +46,31 @@ test("canonical JSON normalizes negative zero and rejects undefined fields", () 
     /must not be undefined/
   );
 });
+
+test("canonical JSON sorts keys by code point, not UTF-16 code units", () => {
+  // U+FFFD is a single BMP code point (UTF-16 unit 0xFFFD); U+1F600 is
+  // astral (surrogate pair 0xD83D 0xDE00, lead unit BELOW 0xFFFD).
+  // Code-unit order puts the surrogate pair BEFORE U+FFFD; code-point
+  // order (== UTF-8 byte order, the Rust BTreeMap/str Ord authority)
+  // puts it after. The canonical byte stream and its hash must follow
+  // the Rust order.
+  const astral = "\u{1F600}";
+  const bmp = "\uFFFD";
+  assert.equal(
+    canonicalStringify({ [astral]: 1, [bmp]: 2, plain: 3 }),
+    `{"plain":3,"${bmp}":2,"${astral}":1}`,
+  );
+  // Linearity check across the BMP/astral boundary: every BMP key sorts
+  // before every astral key under code-point order.
+  assert.equal(
+    canonicalStringify({ "\u{10FFFF}": 1, "\uFFFE": 2 }),
+    `{"\uFFFE":2,"\u{10FFFF}":1}`,
+  );
+  // Astral keys sort among themselves by code point (U+10000 < U+1F600),
+  // which UTF-16 unit order cannot distinguish from the reversed pair when
+  // lead units tie.
+  assert.equal(
+    canonicalStringify({ "\u{1F600}": 2, "\u{10000}": 1 }),
+    `{"\u{10000}":1,"\u{1F600}":2}`,
+  );
+});

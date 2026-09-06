@@ -56,6 +56,15 @@ const MAX_ONCHAIN_HOOK_DELAY_SECONDS = 2_592_000;
 // TooManyDependencies while registering the plan dependency index, so the
 // preflight must reject plans with more than 1024 distinct dependency keys.
 const MAX_PLAN_DEPENDENCIES = 1024;
+// Documented cap on compiled signal capabilities (= the plan-wide total of
+// sendSignals declarations). UVPStateMachine._signalStageId linearly scans
+// the capability list on EVERY materialized-source signal submission, and
+// _requireStageExecutorAssigned / hasTriggerOriginConsent repeat that scan —
+// without a cap the per-submission gas is plan-controlled and unbounded
+// (G-18). 256 keeps the scan under ~5k gas per call while staying far above
+// any realistic sendSignals vocabulary. Rust uvp-core must mirror this cap;
+// the grammar-level documentation is tracked by the HYGIENE wave.
+const MAX_SIGNAL_CAPABILITIES = 256;
 
 const ONCHAIN_PLAN_HASH_DOMAIN = "uvp:onchain-hook-plan-artifact:v1";
 const ONCHAIN_ROUTE_HASH_DOMAIN = "uvp:onchain-hook-route:v1";
@@ -118,14 +127,8 @@ export function compileOnchainHookPlan(
       ...(hook.route ? { routeRef: routeRefForRoute(hook.route) } : {}),
     }))
     .sort(compareOnchainHooks);
-  const crossStageIssues = crossStageDependencyIssues(
-    compiledHooks.map((hook) => ({
-      hookId: hook.hookId,
-      stageId: hook.stageId,
-      isOrderTrigger: hook.orderTriggerKind !== "none",
-      dependencies: hook.dependencies,
-    })),
-  );
+  // 逐 hook 顺序语义与合约 _registerPlanHook 一致（见 crossStageDependencyIssues）。
+  const crossStageIssues = crossStageDependencyIssues(compiledHooks);
   // 不可物化阶段（无 order-trigger / EMIT_READY hook 的阶段）
   // 不得挂任何 receive hook——纯 flags=0 watcher 不物化阶段，链上对该阶段
   // 的任何求值都是不可恢复死锁（Rust 编译器是第一道，这里是 artifact
@@ -133,11 +136,15 @@ export function compileOnchainHookPlan(
   const materializationIssues = unmaterializableStageIssues(compiledHooks);
   const silentTriggerIssues = silentOrderTriggerIssues(compiledHooks);
   const dependencyCountIssues = planDependencyCountIssues(compiledHooks);
+  const capabilityCountIssues = signalCapabilityCountIssues(
+    hookPlanArtifact.signalCapabilities,
+  );
   const preflightIssues = [
     ...crossStageIssues,
     ...materializationIssues,
     ...silentTriggerIssues,
     ...dependencyCountIssues,
+    ...capabilityCountIssues,
   ];
   if (preflightIssues.length > 0) {
     throw new HookPlanCompilationError(preflightIssues);
@@ -292,6 +299,12 @@ export function validateOnchainHookPlanArtifact(
       ...silentOrderTriggerIssues(compiledHooks as readonly OnchainCompiledHook[]),
     );
     issues.push(...planDependencyCountIssues(compiledHooks as readonly OnchainCompiledHook[]));
+  }
+
+  if (signalCapabilities) {
+    issues.push(
+      ...signalCapabilityCountIssues(signalCapabilities as readonly unknown[]),
+    );
   }
 
   if (executorRoutes) {
@@ -450,6 +463,27 @@ export function planIdForPublisher(
   ) as HexString;
 }
 
+/**
+ * hooksHash 的唯一权威公式（冻结口径，三方逐字节一致）：
+ *
+ *   hooksHash = keccak256(abi.encode(CompactHook[]))
+ *
+ * 其中每条指令 tuple (uint8 op, bytes32 sourceId, bytes32 signalId,
+ * uint16 arity, uint64 delaySeconds) 中，非 SIGNAL 指令的 sourceId/signalId
+ * 一律填 Solidity 零字（0x00…00，共 32 字节），arity/delaySeconds 未用位填
+ * 0——合约 commitPlan 对提交的 calldata 本身重算（fill-agnostic），因此
+ * TS compiler、uvp-deploy 驱动与任何链下预计算方必须用同一填充字节。
+ * keccak256("")（0xc5d2…470）只作为 DockMerkle.EMPTY_ROOT 出现，与指令
+ * 填充无关——任何一方在填充位改用它都会让含 NOT/AND/OR/DELAY 的计划在
+ * commitPlan 处 PlanMetadataHashMismatch 必然 revert。导出以便跨语言冻结
+ * 向量与 deploy 侧复用同一实现。
+ */
+export function hashSolidityRegisterHooks(
+  hooks: SolidityRegisterPlanArgs["hooks"],
+): HexString {
+  return hashSolidityHooks(hooks);
+}
+
 function hashSolidityHooks(
   hooks: SolidityRegisterPlanArgs["hooks"],
 ): HexString {
@@ -552,11 +586,18 @@ function compileConditionInstructions(
     case "signal":
       return [signalInstruction(source, condition.signalName)];
     case "subscription":
-      // 出生订阅可以上链：现实成立后，持有人签名提交（triggerOrderFrom*）
-      // 或 docking module 从上游订单中继，提交的 (sourceId, signalId) 本身
-      // 就是出生事实——编译为一条 SIGNAL 指令即可，链上不存在独立的订阅
-      // 投递子系统。非出生阶段（route=fanin 按类扇入 / 按单路由）的订阅
-      // 是云侧运行时投递语义，仍不上链。
+      // 出生订阅上链的现行三线口径（只描述现状，行为不动）：
+      // - outside 出生（triggerOrderFromOutsideFor）：出生事实记录在【新
+      //   订单】上，mint hook 在新订单内求值并物化新订单的阶段；
+      // - order-link 出生（triggerOrderFromSignalFromModule）：新单 plan 的
+      //   trigger hook 定义只用来【预检】origin 订单的信号状态
+      //   （_requireTriggerHookReadyForOrder），随后直接标记 Ready 并物化
+      //   【新订单】的阶段——源订单只被读取，绝不被链接路径求值或物化；
+      // - dock 出生（openDockedOrder）：entrance 事实由模块写入新订单后
+      //   标记 Ready。
+      // 编译为一条 SIGNAL 指令即可，链上不存在独立的订阅投递子系统。非出
+      // 生阶段（route=fanin 按类扇入 / 按单路由）的订阅是云侧运行时投递语
+      // 义，仍不上链。
       if (options.orderTriggerKind === "none") {
         throw new HookPlanCompilationError([
           `on-chain HookPlan only supports subscription entries on order-trigger hooks `
@@ -1305,54 +1346,76 @@ function planDependencyCountIssues(
 }
 
 /**
- * A canonical dependency key may be watched by hooks of a single stage only:
- * bootstrap signals fan out to every registered watcher, and an unmaterialized
- * cross-stage watcher would make the submitting transaction revert forever.
+ * G-18 镜像：sendSignals 声明总量（编译为 signalCapabilities）超过
+ * MAX_SIGNAL_CAPABILITIES 时 _signalStageId 的线性扫描会让每次信号提交的
+ * gas 随 plan 规模无界增长——预检在编译/反序列化两个边界同口径拒绝。
+ */
+function signalCapabilityCountIssues(
+  capabilities: readonly unknown[],
+): readonly string[] {
+  if (capabilities.length > MAX_SIGNAL_CAPABILITIES) {
+    return [
+      `signal capabilities ${capabilities.length} exceed the documented limit ${MAX_SIGNAL_CAPABILITIES} `
+      + "(UVPStateMachine._signalStageId linearly scans capabilities per signal submission; unbounded plan-controlled gas)",
+    ];
+  }
+  return [];
+}
+
+/**
+ * Cross-stage dependency preflight mirroring UVPStateMachine._registerPlanHook
+ * byte-for-byte in SEMANTICS: hooks are processed in submitted (artifact)
+ * order, and per signal key the FIRST watcher pins the recorded stage.
+ * A later cross-stage watcher passes only while every watcher seen so far on
+ * that key (AND-accumulated) is an order trigger; a set-based "any stage plus
+ * any non-trigger watcher" check is STRICTER than the contract and rejects
+ * plans the contract accepts (e.g. trigger(A) → trigger(B) → watcher(A)),
+ * so the sequential scan is load-bearing, not an optimization.
+ *
+ * Field mapping note (0300 M-7): artifacts carry `orderTriggerKind`
+ * ("none" | "mint" | "dock") — there is no `isOrderTrigger` boolean, neither
+ * at compile time nor in deserialized artifacts. The trigger flag is always
+ * derived as `orderTriggerKind !== "none"`; reading a boolean field here
+ * silently skipped the guard for every deserialized artifact.
  */
 function crossStageDependencyIssues(hooks: readonly unknown[]): readonly string[] {
-  interface Watcher {
-    readonly stageId: string;
-    readonly isOrderTrigger: boolean;
+  interface KeyState {
+    stageId: string;
+    triggerOnly: boolean;
   }
-  const watchersBySignalKey = new Map<string, Set<Watcher>>();
+  const issues: string[] = [];
+  const keyState = new Map<string, KeyState>();
   for (const hook of hooks) {
     if (
       !isRecord(hook) ||
       typeof hook.hookId !== "string" ||
       typeof hook.stageId !== "string" ||
-      typeof hook.isOrderTrigger !== "boolean" ||
+      typeof hook.orderTriggerKind !== "string" ||
       !Array.isArray(hook.dependencies)
     ) {
       continue;
     }
+    const isOrderTrigger = hook.orderTriggerKind !== "none";
     for (const dependency of hook.dependencies) {
       if (!isOnchainHookDependency(dependency)) {
         continue;
       }
-      const watchers =
-        watchersBySignalKey.get(dependency.signalKey) ?? new Set<Watcher>();
-      watchers.add({ stageId: hook.stageId, isOrderTrigger: hook.isOrderTrigger });
-      watchersBySignalKey.set(dependency.signalKey, watchers);
-    }
-  }
-  const issues: string[] = [];
-  for (const [signalKey, watchers] of watchersBySignalKey) {
-    const stages = new Set([...watchers].map((watcher) => watcher.stageId));
-    // Trigger hooks crossing stages are the normal selectedStages flow (the
-    // contract skips triggers of unmaterialized stages). The brick is a
-    // NON-trigger watcher in a stage that has not materialized yet: it makes
-    // the submitting transaction revert forever.
-    const hasNonTriggerWatcher = [...watchers].some(
-      (watcher) => !watcher.isOrderTrigger,
-    );
-    if (stages.size > 1 && hasNonTriggerWatcher) {
-      issues.push(
-        `dependency ${signalKey} is shared across stages ${[...stages]
-          .sort((left, right) => compareByCodeUnit(left, right))
-          .join(", ")} with at least one non-trigger watcher; `
-        + "an unmaterialized stage's non-trigger hook would make the "
-        + "submitting transaction revert forever",
-      );
+      const seen = keyState.get(dependency.signalKey);
+      if (seen === undefined) {
+        keyState.set(dependency.signalKey, { stageId: hook.stageId, triggerOnly: isOrderTrigger });
+        continue;
+      }
+      const triggerOnly = seen.triggerOnly && isOrderTrigger;
+      if (seen.stageId !== hook.stageId && !triggerOnly) {
+        issues.push(
+          `dependency ${dependency.signalKey} is shared across stages ${[seen.stageId, hook.stageId]
+            .sort((left, right) => compareByCodeUnit(left, right))
+            .join(", ")} with a non-trigger watcher after a foreign stage; `
+          + "an unmaterialized stage's non-trigger hook would make the "
+          + "submitting transaction revert forever",
+        );
+      }
+      seen.triggerOnly = triggerOnly;
     }
   }
   return issues;

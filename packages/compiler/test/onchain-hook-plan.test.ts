@@ -3,8 +3,15 @@ import { dockDemoResolutionManifest } from "./dock-demo.js";
 import { EMPTY_MERKLE_ROOT } from "../src/dock.js";
 import test from "node:test";
 import {
+  encodeAbiParameters,
+  keccak256,
+  parseAbiParameters,
+  stringToHex,
+} from "viem";
+import {
   assertOnchainHookPlanArtifact,
   compileZhixuOnchainHookPlan,
+  hashSolidityRegisterHooks,
   keccak256Hex,
   onchainSelectorBindingHash,
   OnchainHookPlanArtifactValidationError,
@@ -12,6 +19,7 @@ import {
   validateOnchainHookPlanArtifact,
   type OnchainHookPlanArtifact,
   type OnchainSignalInstruction,
+  type SolidityRegisterPlanArgs,
   type ZhixuDefinition,
 } from "../src/index.js";
 import { compileZhixuHookPlan, HookPlanCompilationError } from "../src/hook-plan.js";
@@ -329,8 +337,29 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
 
   assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v2");
   assert.equal(args.sourcePlanId, onchain.planId);
-  assert.equal(args.artifactHash, onchain.planHash);
+  // 真比较：artifactHash 用 artifact 载荷公式独立重算，planHash 用 PlanCommit
+  // runtime 公式独立重算——两边各自从原始字段推导，不再是同源引用恒等。
+  const { planHash: _storedPlanHash, ...artifactPayload } = onchain;
+  assert.equal(args.artifactHash, hashOnchainPlanPayload(artifactPayload));
+  assert.equal(
+    args.planHash,
+    keccak256(
+      encodeAbiParameters(
+        parseAbiParameters(
+          "bytes32 domain, bytes32 hooksHash, bytes32 metadataHash, bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot",
+        ),
+        [
+          keccak256(stringToHex("uvp.plan.runtime.v2")),
+          args.hooksHash,
+          args.metadataHash,
+          args.dockRoutesRoot,
+          args.dockInterfaceRoot,
+        ],
+      ),
+    ),
+  );
   assert.notEqual(args.planHash, args.artifactHash);
+  assert.equal(args.hooksHash, hashSolidityRegisterHooks(args.hooks));
   assert.match(args.hooksHash, /^0x[0-9a-f]{64}$/);
   assert.match(args.metadataHash, /^0x[0-9a-f]{64}$/);
   assert.equal(args.hooks[1]?.hookName, keccak256Hex("TIMEOUT"));
@@ -386,6 +415,250 @@ test("includes selector bindings in on-chain plan hash", () => {
 
   assert.deepEqual(withoutBinding.selectorBindings, []);
   assert.notEqual(withBinding.planHash, withoutBinding.planHash);
+});
+
+test("selector bindings feed the Solidity metadata hash and runtime plan hash", () => {
+  // finalizePlan 以 keccak256(abi.encode(selectorBindings, signalCapabilities))
+  // 重算 metadataHash——selectorBindings 变化必须穿透 args.metadataHash 与
+  // PlanCommit runtime planHash，否则两步注册在 finalize 边 revert。
+  const withBinding = toSolidityRegisterPlanArgs(
+    compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest)),
+  );
+  const withoutBinding = toSolidityRegisterPlanArgs(
+    compileOnchainHookPlan(
+      compileZhixuHookPlan(
+        {
+          ...baseZhixu,
+          spec: {
+            ...baseZhixu.spec,
+            taskPatterns: baseZhixu.spec.taskPatterns.map((task) =>
+              task.name !== "selector"
+                ? task
+                : {
+                    ...task,
+                    stages: task.stages.map((stage) => ({
+                      ...stage,
+                      selectedStages: [],
+                    })),
+                  },
+            ),
+          },
+        },
+        demoManifest,
+      ),
+    ),
+  );
+
+  assert.deepEqual(withoutBinding.selectorBindings, []);
+  assert.deepEqual(withBinding.signalCapabilities, withoutBinding.signalCapabilities);
+  assert.notEqual(withBinding.metadataHash, withoutBinding.metadataHash);
+  assert.notEqual(withBinding.planHash, withoutBinding.planHash);
+  assert.equal(
+    withBinding.metadataHash,
+    keccak256(
+      encodeAbiParameters(
+        parseAbiParameters(
+          "(bytes32 selectorStageId,bytes32 targetStageId)[] selectorBindings,(bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation)[] signalCapabilities",
+        ),
+        [withBinding.selectorBindings, withBinding.signalCapabilities],
+      ),
+    ),
+  );
+});
+
+test("hooksHash frozen vector pins the zero-word instruction fill cross-language", () => {
+  // 与 UVPStateMachine.t.sol 的同名冻结向量逐字节一致：非 SIGNAL 指令的
+  // sourceId/signalId 填 Solidity 零字，arity/delaySeconds 未用位填 0。
+  // 任何一方（TS compiler / uvp-deploy 驱动 / Rust）在填充位引入别的字
+  // 节（例如 keccak256("")）都会让含 NOT/AND/OR/DELAY 的计划在 commitPlan
+  // 处 PlanMetadataHashMismatch 必然 revert。
+  const hooks = [
+    {
+      hookId: "0x0000000000000000000000000000000000000000000000000000000000001001",
+      stageId: "0x0000000000000000000000000000000000000000000000000000000000002001",
+      hookName: "0x0000000000000000000000000000000000000000000000000000000000003001",
+      kind: "receive",
+      flags: 5,
+      instructions: [
+        {
+          op: "SIGNAL",
+          sourceId: "0x0000000000000000000000000000000000000000000000000000000000004001",
+          signalId: "0x0000000000000000000000000000000000000000000000000000000000005001",
+          signalKey: "0x0000000000000000000000000000000000000000000000000000000000006001",
+        },
+        { op: "NOT" },
+        { op: "DELAY", delaySeconds: 30 },
+      ],
+      dependencyKeys: [
+        "0x0000000000000000000000000000000000000000000000000000000000006001",
+      ],
+    },
+    {
+      hookId: "0x0000000000000000000000000000000000000000000000000000000000001002",
+      stageId: "0x0000000000000000000000000000000000000000000000000000000000002002",
+      hookName: "0x0000000000000000000000000000000000000000000000000000000000003002",
+      kind: "receive",
+      flags: 0,
+      instructions: [
+        {
+          op: "SIGNAL",
+          sourceId: "0x0000000000000000000000000000000000000000000000000000000000004002",
+          signalId: "0x0000000000000000000000000000000000000000000000000000000000005002",
+          signalKey: "0x0000000000000000000000000000000000000000000000000000000000006002",
+        },
+        {
+          op: "SIGNAL",
+          sourceId: "0x0000000000000000000000000000000000000000000000000000000000004001",
+          signalId: "0x0000000000000000000000000000000000000000000000000000000000005001",
+          signalKey: "0x0000000000000000000000000000000000000000000000000000000000006001",
+        },
+        { op: "AND", arity: 2 },
+        { op: "OR", arity: 2 },
+      ],
+      dependencyKeys: [
+        "0x0000000000000000000000000000000000000000000000000000000000006002",
+        "0x0000000000000000000000000000000000000000000000000000000000006001",
+      ],
+    },
+  ];
+
+  assert.equal(
+    hashSolidityRegisterHooks(hooks as SolidityRegisterPlanArgs["hooks"]),
+    "0xe71cb5f3a4e16b4498c9d0ccd126cfcc63b6275039635cb94190bf5dcec486df",
+  );
+});
+
+test("cross-stage dependency guard fires on deserialized artifacts and follows contract order", () => {
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+
+  // (1) 反序列化边界（0300 M-7）：守卫读 orderTriggerKind 派生 trigger 位。
+  // 把一个 watcher 挪到外阶段（保持 hookId/stageId 自洽）后，共享键上的
+  // 跨阶段非 trigger watcher 必须在 validateOnchainHookPlanArtifact 报错。
+  const sharedKey = onchain.compiledHooks.find((hook) => hook.orderTriggerKind === "none")
+    ?.dependencies[0]?.signalKey;
+  assert.ok(sharedKey, "base artifact must expose a watcher dependency");
+  const watchesSharedKey = (hook: (typeof onchain.compiledHooks)[number]) =>
+    hook.orderTriggerKind === "none" &&
+    hook.dependencies.some((dependency) => dependency.signalKey === sharedKey);
+  const watcherIndex = onchain.compiledHooks.findIndex(watchesSharedKey);
+  const laterWatcherIndex = onchain.compiledHooks.findIndex(
+    (hook, index) => index > watcherIndex && watchesSharedKey(hook),
+  );
+  // 基线工件里共享键上至少要有两个 watcher（不同 hook），后者保持原阶段——
+  // 否则"挪走一个、留下一个"的跨阶段形态不成立。
+  assert.ok(watcherIndex >= 0 && laterWatcherIndex > watcherIndex, "need two shared-key watchers");
+  const foreignStageIdentifier = "foreign.stage";
+  const tamperedHooks = onchain.compiledHooks.map((hook, index) =>
+    index === watcherIndex
+      ? {
+          ...hook,
+          stageIdentifier: foreignStageIdentifier,
+          stageId: keccak256Hex(foreignStageIdentifier),
+          hookId: keccak256Hex(`${foreignStageIdentifier}#${hook.hookName}`),
+        }
+      : hook,
+  );
+  const issues = validateOnchainHookPlanArtifact({
+    ...onchain,
+    compiledHooks: tamperedHooks,
+    dependencyIndex: Object.fromEntries(
+      Object.entries(onchain.dependencyIndex).map(([key, hookIds]) => [
+        key,
+        hookIds,
+      ]),
+    ),
+  });
+  assert.equal(
+    issues.some((issue) => /is shared across stages/.test(issue)),
+    true,
+    `expected cross-stage issue, got: ${issues.join("; ")}`,
+  );
+
+  // (2) 逐 hook 顺序语义（0212 P3-1）：trigger(A) → trigger(B) → watcher(A)
+  // 共享一键时合约接受（seenStages 只记首个 watcher 的阶段，且 trigger 位
+  // AND 累积仍为真；watcher 回到首阶段不触发 CrossStageDependency）——
+  // 集合判定会误杀该形态，顺序仿真必须放行。
+  const stageA = "0x" + "01".repeat(32);
+  const stageB = "0x" + "02".repeat(32);
+  const dep = {
+    kind: "positive",
+    source: "buyer",
+    signalName: "buyer::shared",
+    sourceId: onchainSourceId("buyer"),
+    signalId: onchainSignalId("buyer::shared"),
+    signalKey: sharedKey,
+  };
+  const hookOf = (
+    name: string,
+    stageIdentifier: string,
+    stageId: string,
+    orderTriggerKind: "mint" | "none",
+  ) => ({
+    hookId: keccak256Hex(`${stageIdentifier}#${name}`),
+    stageId,
+    stageIdentifier,
+    hookName: name,
+    kind: "receive",
+    orderTriggerKind,
+    emitReady: orderTriggerKind !== "none",
+    instructions: [
+      {
+        op: "SIGNAL",
+        source: "buyer",
+        signalName: "buyer::shared",
+        sourceId: dep.sourceId,
+        signalId: dep.signalId,
+        signalKey: sharedKey,
+      },
+    ],
+    dependencies: [dep],
+  });
+  const sequentialHookLists = {
+    accepted: [
+      hookOf("t1", "stage.a", stageA, "mint"),
+      hookOf("t2", "stage.b", stageB, "mint"),
+      hookOf("w1", "stage.a", stageA, "none"),
+    ],
+    rejected: [
+      hookOf("w1", "stage.a", stageA, "none"),
+      hookOf("t1", "stage.b", stageB, "mint"),
+    ],
+  };
+  const sequentialArtifact = (hooks: readonly ReturnType<typeof hookOf>[]) => ({
+    ...onchain,
+    compiledHooks: hooks,
+    dependencyIndex: { [sharedKey]: hooks.map((hook) => hook.hookId) },
+  });
+  const acceptedIssues = validateOnchainHookPlanArtifact(sequentialArtifact(sequentialHookLists.accepted)).filter(
+    (issue) => /is shared across stages/.test(issue),
+  );
+  assert.deepEqual(acceptedIssues, []);
+
+  // (3) 顺序反过来（watcher(A) → trigger(B)）则合约拒绝——首个 watcher 非
+  // trigger，跨阶段 trigger 也过不去。
+  const rejectedIssues = validateOnchainHookPlanArtifact(sequentialArtifact(sequentialHookLists.rejected)).filter(
+    (issue) => /is shared across stages/.test(issue),
+  );
+  assert.equal(rejectedIssues.length, 1);
+});
+
+test("rejects plans whose sendSignals vocabulary exceeds the gas-bounded capability cap", () => {
+  // G-18：sendSignals 总量编译为 signalCapabilities；超上限在编译与反序列
+  // 化两个边界同口径拒绝（_signalStageId 每次信号提交线性扫描 capabilities）。
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  const template = onchain.signalCapabilities[0];
+  assert.ok(template);
+  assert.equal(
+    validateOnchainHookPlanArtifact({
+      ...onchain,
+      signalCapabilities: Array.from({ length: 257 }, (_, index) => ({
+        ...template,
+        targetSource: `buyer-${index}`,
+        targetSourceId: onchainSourceId(`buyer-${index}`),
+      })),
+    }).some((issue) => /signal capabilities 257 exceed the documented limit 256/.test(issue)),
+    true,
+  );
 });
 
 test("rejects duplicate on-chain selector bindings", () => {
