@@ -72,7 +72,7 @@ describe("task evidence spec", () => {
     assert.ok(demoTask.evidenceSpec && demoTask.evidenceSpec.length > 0);
   });
 
-  it("stays additive: tasks without evidenceSpec serialize unchanged", () => {
+  it("serializes tasks without evidenceSpec free of evidence fields", () => {
     const task: ProductTaskDTO = {
       taskId: "task-legacy",
       orderId: "order",
@@ -85,14 +85,13 @@ describe("task evidence spec", () => {
       stageName: "阶段",
       deadline: "2026-09-30 18:00",
       fundingImpact: "无资金动作",
-      requiredEvidence: ["任意声明"],
       status: "open",
       responsibilityStatements: [],
       proofRows: []
     };
     const parsed = JSON.parse(JSON.stringify(task));
     assert.equal("evidenceSpec" in parsed, false);
-    assert.deepEqual(parsed.requiredEvidence, ["任意声明"]);
+    assert.equal("requiredEvidence" in parsed, false);
   });
 
   it("serializes evidenceSpec payloads as plain JSON", () => {

@@ -551,11 +551,11 @@ export type TaskEvidenceInputKind = "file" | "text" | "date";
 
 /**
  * Structured, publisher-owned evidence requirement for one task slot.
- * Optional and strictly additive over `requiredEvidence`: the open string
- * array keeps its existing meaning (human-readable declarations), while
- * `evidenceSpec` lets the zhixu publisher carry machine-readable rendering
- * and upload constraints as data. Store surfaces must stay generic and must
- * never hardcode business-specific labels, document types, or file formats.
+ * Sole source of task evidence rules: when the publisher carries no spec the
+ * task has no evidence slots (field-only confirmation or offline submission
+ * by business convention), so consumers must not synthesize generic slots.
+ * Store surfaces must stay generic and must never hardcode business-specific
+ * labels, document types, or file formats.
  */
 export interface TaskEvidenceSpecDTO {
   /** Stable identifier; becomes the evidence documentType when uploaded. */
@@ -696,11 +696,10 @@ export interface ProductTaskDTO {
   readonly stageName: string;
   readonly deadline: string;
   readonly fundingImpact: string;
-  readonly requiredEvidence: readonly string[];
   /**
-   * Optional publisher-configured structured evidence requirements.
-   * Additive alternative to parsing `requiredEvidence` strings; when absent,
-   * consumers must degrade to generic evidence slots instead of rejecting.
+   * Optional publisher-configured structured evidence requirements; the sole
+   * authority for task evidence slots. When absent the task has no evidence
+   * slots — consumers must not synthesize generic slots nor reject.
    */
   readonly evidenceSpec?: readonly TaskEvidenceSpecDTO[];
   readonly status: TaskStatus;
@@ -811,7 +810,6 @@ export interface ProductTaskCapabilityPluginDTO {
   readonly title?: string;
   readonly summary?: string;
   readonly primaryActionLabel?: string;
-  readonly requiredEvidence: readonly string[];
   readonly inputPolicy?: readonly FulfillmentRequiredInputDTO[];
 }
 

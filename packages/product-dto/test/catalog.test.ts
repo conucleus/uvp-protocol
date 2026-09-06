@@ -466,12 +466,10 @@ describe("product DTO catalog", () => {
       stageName: "Stage",
       deadline: "2026-05-01 18:00",
       fundingImpact: "No funding movement is represented by this DTO.",
-      requiredEvidence: ["Evidence hash"],
       status: "open",
       capabilityPlugin: {
         pluginKind: "evidence_submission",
-        source: "explicit",
-        requiredEvidence: ["Evidence hash"]
+        source: "explicit"
       },
       responsibilityStatements: [],
       proofRows: []
@@ -506,7 +504,6 @@ describe("product DTO catalog", () => {
       stageName: "检验验收",
       deadline: "2026-05-04 18:00",
       fundingImpact: "仅记录验收确认，不处理任何资金动作",
-      requiredEvidence: ["凭证指纹"],
       status: "open",
       addOnKind: "submit_signal",
       resourceRequirements: [

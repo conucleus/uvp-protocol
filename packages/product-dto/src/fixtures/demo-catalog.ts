@@ -68,7 +68,6 @@ interface DemoFundingSignalContainerFixture {
   readonly capabilityKind: "payment_placeholder";
   readonly actionKind: "submit_signal";
   readonly requiredInputs: readonly FulfillmentRequiredInputDTO[];
-  readonly requiredEvidence: readonly string[];
   readonly acceptedActor: DemoFundingSignalContainerActor;
   readonly fundingMetadata: DemoFundingSignalContainerMetadata;
   readonly prepare: {
@@ -717,7 +716,6 @@ const demoPaymentTaskCapabilityPlugin: ProductTaskCapabilityPluginDTO = {
   title: fundsPaymentPlugin.title,
   summary: fundsPaymentPlugin.summary,
   primaryActionLabel: fundsPaymentPlugin.primaryActionLabel,
-  requiredEvidence: ["付款条件确认", "资金凭证指纹"],
   inputPolicy: demoPaymentRequiredInputs
 };
 
@@ -728,7 +726,6 @@ const demoCustomsTaskCapabilityPlugin: ProductTaskCapabilityPluginDTO = {
   title: deliveryUpdatePlugin.title,
   summary: deliveryUpdatePlugin.summary,
   primaryActionLabel: deliveryUpdatePlugin.primaryActionLabel,
-  requiredEvidence: ["报关单 PDF", "报关单号", "出口港口", "完成时间"],
   inputPolicy: demoCustomsRequiredInputs
 };
 
@@ -990,7 +987,6 @@ export const demoPaymentTask: ProductTaskDTO = {
   stageName: "资金保障",
   deadline: "2026-04-30 18:00",
   fundingImpact: "资金适配器占位：仅记录付款条件和证明，不托管、不划转、不释放、不退款任何资金",
-  requiredEvidence: ["付款条件确认", "资金凭证指纹"],
   status: "done",
   performanceSlotId: "funds",
   performanceSlotLabel: "资金保障履约者",
@@ -1033,7 +1029,6 @@ export const demoFundingGuaranteeSignalContainers = [
     capabilityKind: "payment_placeholder",
     actionKind: "submit_signal",
     requiredInputs: demoPaymentTask.requiredInputs ?? [],
-    requiredEvidence: demoPaymentTask.requiredEvidence,
     acceptedActor: {
       actorKind: "buyer",
       label: "买家付款凭证提交",
@@ -1089,7 +1084,6 @@ export const demoFundingGuaranteeSignalContainers = [
     capabilityKind: "payment_placeholder",
     actionKind: "submit_signal",
     requiredInputs: demoPaymentTask.requiredInputs ?? [],
-    requiredEvidence: ["担保证明指纹", "担保策略指纹"],
     acceptedActor: {
       actorKind: "guarantor",
       label: "担保方证明提交",
@@ -1147,7 +1141,6 @@ export const demoFundingGuaranteeSignalContainers = [
     capabilityKind: "payment_placeholder",
     actionKind: "submit_signal",
     requiredInputs: demoPaymentTask.requiredInputs ?? [],
-    requiredEvidence: ["适配器证明根", "适配器策略指纹"],
     acceptedActor: {
       actorKind: "adapter",
       label: "资金适配器证明提交",
@@ -1209,7 +1202,6 @@ export const demoSelectorTask: ProductTaskDTO = {
   stageName: "订单确认",
   deadline: "2026-04-30 18:00",
   fundingImpact: "不涉及任何资金动作，只更新后续阶段的履约安排",
-  requiredEvidence: [],
   status: "open",
   addOnKind: "stage_executor_patch",
   addOnManifest: selectorAddOnManifest,
@@ -1253,7 +1245,6 @@ export const demoResourcePatchTask: ProductTaskDTO = {
   stageName: "订单确认",
   deadline: "2026-04-30 18:00",
   fundingImpact: "不涉及任何资金动作，只更新后续阶段的凭证清单要求",
-  requiredEvidence: [],
   status: "open",
   addOnKind: "stage_resource_patch",
   addOnManifest: resourcePatchAddOnManifest,
@@ -1332,7 +1323,6 @@ export const demoTask: ProductTaskDTO = {
   stageName: "出口报关",
   deadline: "2026-05-03 18:00",
   fundingImpact: "进入验收；通过后第 2 阶段付款条件满足",
-  requiredEvidence: ["报关单 PDF", "报关单号", "出口港口", "完成时间"],
   evidenceSpec: demoCustomsEvidenceSpec,
   status: "open",
   addOnKind: "submit_signal",

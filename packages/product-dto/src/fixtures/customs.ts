@@ -522,7 +522,6 @@ export const customsSelectorTask: ProductTaskDTO = {
   stageName: "选择报关履约者",
   deadline: "2026-05-01 23:59",
   fundingImpact: "无资金动作",
-  requiredEvidence: ["履约者元数据指纹"],
   status: "done",
   addOnKind: "stage_executor_patch",
   addOnManifest: customsBuyerSelectorManifest,
@@ -551,7 +550,6 @@ export const customsResourceControllerTask: ProductTaskDTO = {
   stageName: "发布报关资源清单",
   deadline: "2026-05-01 23:59",
   fundingImpact: "无资金动作",
-  requiredEvidence: ["资源清单指纹", "访问策略指纹"],
   status: "done",
   addOnKind: "stage_resource_patch",
   addOnManifest: customsBuyerResourceControllerManifest,
@@ -581,7 +579,6 @@ export const customsExecutorTask: ProductTaskDTO = {
   stageName: "报关完成",
   deadline: "2026-05-01 23:59",
   fundingImpact: "无资金动作",
-  requiredEvidence: ["报关完成凭证引用", "报关单 PDF 资源清单"],
   status: "done",
   addOnKind: "submit_signal",
   addOnManifest: customsExecutorManifest,
@@ -589,10 +586,11 @@ export const customsExecutorTask: ProductTaskDTO = {
   performanceSlotId: customsRoleSlotIds.customsExecutor,
   performanceSlotLabel: "报关履约者",
   businessPersonaLabels: ["报关行", "关务服务商"],
-  capabilityPlugin: {
-    ...customsExecutorPlugin,
-    roleSlotId: customsRoleSlotIds.customsExecutor
-  },
+  // schema 插件的 requiredEvidence 属于秩序发布面，不随任务 DTO 下发，显式剔除。
+  capabilityPlugin: (() => {
+    const { requiredEvidence: _schemaPluginEvidence, ...plugin } = customsExecutorPlugin;
+    return { ...plugin, roleSlotId: customsRoleSlotIds.customsExecutor };
+  })(),
   primaryActionLabel: "提交报关完成",
   participantRoleLabel: "报关履约者",
   participantWallet: customsWallets.customsExecutor,
