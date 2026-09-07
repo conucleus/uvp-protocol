@@ -352,21 +352,21 @@
       "ruling": "簇I 裁决：订单 ID 策略闭集 {derived-v1}（order.idPolicy=derived-v1，字符串 orderID 先 keccak 派生），错误码 D004。"
     },
     {
-      "id": "dock-target-version-exact",
+      "id": "dock-target-uid-required",
       "area": "dock",
-      "target": "executor.zhixuExecutorConfig.target.version",
-      "constraint": { "type": "pattern", "params": { "regex": "^[0-9A-Za-z.+-]+$", "forbiddenValues": ["latest"], "forbidEmpty": true, "note": "精确已发布不可变版本；拒绝 latest、空白与任何范围/通配语法" } },
+      "target": "executor.zhixuExecutorConfig.target.zhixu",
+      "constraint": { "type": "required_non_empty", "params": { "note": "uid（不可变 catalog UID）即完整定义身份；target 只携带 zhixu，残留 version 等键按未知字段确定性拒绝" } },
       "error": {
         "rust": "D003",
-        "go": "must be an exact published version",
+        "go": "zhixuExecutorConfig.target.zhixu is required",
         "ts": null
       },
       "applies": ["rust", "go"],
       "sources": {
-        "rust": "crates/uvp-compiler/src/dock.rs is_exact_version（白名单 [0-9A-Za-z.+-]，错误码 D003）",
-        "go": "pkg/compiler/validator/zhixu_schema.go isExactDockVersion（同白名单）"
+        "rust": "crates/uvp-compiler/src/dock.rs parse_zhixu_executor_config（D003，target 只接受 zhixu 键）",
+        "go": "pkg/compiler/validator/zhixu_schema.go validateExecutor（D003；target.version 字段已随 PRD_101 删除，strict decode 拒绝残留键）"
       },
-      "ruling": "簇I 裁决：目标版本白名单字符集 [0-9A-Za-z.+-] 且禁止 latest/空；与 Go 镜像同集，错误码 D003。"
+      "ruling": "PRD_101 裁决：dock 目标引用只剩 zhixu——uid 即完整定义身份，version 维度删除。"
     },
     {
       "id": "dock-port-name-pattern",

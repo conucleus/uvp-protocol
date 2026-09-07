@@ -190,7 +190,6 @@ export function compileOnchainHookPlan(
     schemaVersion: ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
     planId: hookPlanArtifact.planId,
     zhixuId: hookPlanArtifact.zhixuId,
-    version: hookPlanArtifact.version,
     zhixuName: hookPlanArtifact.zhixuName,
     platform: hookPlanArtifact.platform,
     sourcePlanHash: hookPlanArtifact.planHash,
@@ -248,7 +247,6 @@ export function validateOnchainHookPlanArtifact(
   );
   expectHexHash(value.planId, "planId", issues);
   expectNonEmptyString(value.zhixuId, "zhixuId", issues);
-  expectNonEmptyString(value.version, "version", issues);
   expectNonEmptyString(value.zhixuName, "zhixuName", issues);
   if (!isPlatform(value.platform)) {
     issues.push("platform must be an object with a non-empty type");
@@ -367,7 +365,6 @@ export function validateOnchainHookPlanArtifact(
       schemaVersion: value.schemaVersion,
       planId: value.planId,
       zhixuId: value.zhixuId,
-      version: value.version,
       zhixuName: value.zhixuName,
       platform: value.platform,
       sourcePlanHash: value.sourcePlanHash,
@@ -468,7 +465,6 @@ export function toSolidityRegisterPlanArgs(
     schemaVersion: artifact.schemaVersion,
     sourcePlanId: artifact.planId,
     zhixuId: artifact.zhixuId,
-    version: artifact.version,
     planHash,
     artifactHash: artifact.planHash,
     hooksHash,
@@ -1842,7 +1838,6 @@ function isPlanHashRecomputable(
     value.schemaVersion === ONCHAIN_HOOK_PLAN_SCHEMA_VERSION &&
     isHexHash(value.planId) &&
     typeof value.zhixuId === "string" &&
-    typeof value.version === "string" &&
     typeof value.zhixuName === "string" &&
     isPlatform(value.platform) &&
     isHexHash(value.sourcePlanHash) &&

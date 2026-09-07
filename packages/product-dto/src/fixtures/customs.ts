@@ -56,8 +56,9 @@ export const customsWallets = {
 
 export const customsPlanIds = {
   planId: "0x336d9b556f7ffa00c83f49600554819055a4a3b300f82abca70b401f6b161ddc",
-  planHash: "0xfb496c082967f755145cd0e9473828931fa8ab27b195c22450ca74c968b1ddd6",
-  artifactHash: "0x55cc801d49aab1f7fd4c0f08a84459e40d7281129ef8e956280796f5b67922e6"
+  // PRD_101 后重钉：onchain plan payload 不再携带 zhixu 业务 version 字段。
+  planHash: "0x619d3d617bf53af6ce77df329e9bb5654bc1049d8eb631089fa98ee00562e730",
+  artifactHash: "0x2ff72e3758ee30e414048aa8fb5f25dc5c7d585f33f81618d9d064404555ffd5"
 } as const;
 
 export const customsResourceManifest: ProductResourceManifestDTO = {
@@ -617,7 +618,6 @@ export const customsOnchainHookPlanArtifact = {
   dockInterfaceRoot: "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
   planId: customsPlanIds.planId,
   zhixuId: CUSTOMS_ZHIXU_ID,
-  version: "1",
   zhixuName: "Customs Completion",
   platform: {
     type: "blockchain",

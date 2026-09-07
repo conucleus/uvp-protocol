@@ -105,9 +105,9 @@ export interface DockOutputPortSource {
 /** 调用方 `executor.zhixuExecutorConfig`。 */
 export interface ZhixuExecutorConfigSource {
   readonly schemaVersion: "uvp.dock.v1";
+  /** 目标引用只剩 zhixu：不可变 catalog UID 即完整定义身份（PRD_101）。 */
   readonly target: {
     readonly zhixu: string;
-    readonly version: string;
   };
   readonly order: { readonly idPolicy: "derived-v1" };
   readonly inputMap: Record<string, string>;
@@ -122,14 +122,13 @@ export interface DockResolutionManifest {
 
 export interface DockResolutionTarget {
   readonly zhixu: string;
-  readonly version: string;
   readonly definitionRefHash: HexString;
   readonly artifactHash: HexString;
   readonly published: boolean;
   readonly interface: DockInterfaceArtifact;
   readonly cloudArtifactId?: string;
   readonly evmPlanId?: HexString;
-  readonly dockEdges?: readonly { zhixu: string; version: string }[];
+  readonly dockEdges?: readonly { zhixu: string }[];
 }
 
 /** 目标接口编译产物（数组按端口名升序）。 */
@@ -137,7 +136,6 @@ export interface DockInterfaceArtifact {
   readonly schemaVersion: "uvp.dockInterfaceArtifact.v1";
   readonly definition: {
     readonly uid: string;
-    readonly version: string;
     readonly definitionRefHash: HexString;
   };
   readonly inputs: readonly {
@@ -179,7 +177,6 @@ export interface DockRouteV1 {
   readonly target: {
     readonly definitionRefHash: HexString;
     readonly zhixuUid: string;
-    readonly version: string;
     readonly artifactHash: HexString;
     readonly cloudArtifactId?: string;
     readonly evmPlanId?: HexString;
@@ -224,7 +221,6 @@ export interface HookPlanArtifact {
   readonly schemaVersion: typeof HOOK_PLAN_SCHEMA_VERSION;
   readonly planId: HexString;
   readonly zhixuId: string;
-  readonly version: string;
   readonly zhixuName: string;
   readonly platform: ZhixuPlatform;
   readonly compiledHooks: readonly CompiledHookPlanHook[];
@@ -378,7 +374,6 @@ export interface OnchainHookPlanArtifact {
   readonly schemaVersion: typeof ONCHAIN_HOOK_PLAN_SCHEMA_VERSION;
   readonly planId: HexString;
   readonly zhixuId: string;
-  readonly version: string;
   readonly zhixuName: string;
   readonly platform: ZhixuPlatform;
   readonly sourcePlanHash: HexString;
@@ -454,7 +449,6 @@ export interface SolidityRegisterPlanArgs {
   readonly schemaVersion: typeof ONCHAIN_HOOK_PLAN_SCHEMA_VERSION;
   readonly sourcePlanId: HexString;
   readonly zhixuId: string;
-  readonly version: string;
   readonly planHash: HexString;
   readonly artifactHash: HexString;
   readonly hooksHash: HexString;

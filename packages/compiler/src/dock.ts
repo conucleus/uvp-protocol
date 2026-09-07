@@ -183,11 +183,8 @@ export function verifyMerkleProof(
 // 身份推导
 // ---------------------------------------------------------------------------
 
-export function definitionRefHash(uid: string, version: string): HexString {
-  return keccakWords(DOMAIN_DEFINITION_REF, [
-    keccakWord(uid),
-    keccakWord(version),
-  ]);
+export function definitionRefHash(uid: string): HexString {
+  return keccakWords(DOMAIN_DEFINITION_REF, [keccakWord(uid)]);
 }
 
 /** `keccak256(abi.encode(sourceId, signalId))`（StateMachine 事实键）。 */

@@ -62,16 +62,16 @@ contract DockManifestParityTest {
             expectedCloudDomain
         );
 
+        // PRD_101：definitionRefHash 只由 uid 推导——abi.encode 的参数
+        // 与 Rust/TS 的 keccak_words(domain, keccak(uid)) 逐字一致。
         string memory parentUid = vm.parseJsonString(manifest, ".parentDefinition.metadata.uid");
-        string memory parentVersion = vm.parseJsonString(manifest, ".parentDefinition.metadata.annotations.version");
         bytes32 parentDefinitionRef =
-            keccak256(abi.encode(DOMAIN_DEFINITION_REF, keccak256(bytes(parentUid)), keccak256(bytes(parentVersion))));
+            keccak256(abi.encode(DOMAIN_DEFINITION_REF, keccak256(bytes(parentUid))));
         assertEq(parentDefinitionRef, vm.parseJsonBytes32(manifest, ".expected.parentDefinitionRefHash"));
 
         string memory targetUid = vm.parseJsonString(manifest, ".targetDefinition.metadata.uid");
-        string memory targetVersion = vm.parseJsonString(manifest, ".targetDefinition.metadata.annotations.version");
         bytes32 targetDefinitionRef =
-            keccak256(abi.encode(DOMAIN_DEFINITION_REF, keccak256(bytes(targetUid)), keccak256(bytes(targetVersion))));
+            keccak256(abi.encode(DOMAIN_DEFINITION_REF, keccak256(bytes(targetUid))));
         assertEq(targetDefinitionRef, vm.parseJsonBytes32(manifest, ".expected.targetDefinitionRefHash"));
 
         // localOrderKey 的字符串→word 哈希是跨语言 v1 入口 API 的固定派生

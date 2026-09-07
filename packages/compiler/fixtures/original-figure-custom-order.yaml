@@ -9,7 +9,6 @@ metadata:
     industry: creative-manufacturing
     scenario: original-character-physicalization
   annotations:
-    version: "1"
     status: demo-fixture
 spec:
   platform:

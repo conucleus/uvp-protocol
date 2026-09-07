@@ -78,7 +78,6 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
   expectLiteral(value.schemaVersion, HOOK_PLAN_SCHEMA_VERSION, "schemaVersion", issues);
   expectHexHash(value.planId, "planId", issues);
   expectNonEmptyString(value.zhixuId, "zhixuId", issues);
-  expectNonEmptyString(value.version, "version", issues);
   expectNonEmptyString(value.zhixuName, "zhixuName", issues);
   if (!isPlatform(value.platform)) {
     issues.push("platform must be an object with a non-empty type");

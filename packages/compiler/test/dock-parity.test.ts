@@ -131,9 +131,7 @@ test("golden fixture compiles to identical routes, roots, and hashes", () => {
   // the parent linker.  Comparing only route fields would allow a stale
   // target planId/planHash to remain hidden in an otherwise valid route.
   const targetResolution = fixture.resolutionManifest.definitions.find(
-    (definition) =>
-      definition.zhixu === fixture.targetDefinition.metadata.uid &&
-      definition.version === fixture.targetDefinition.metadata.annotations?.version,
+    (definition) => definition.zhixu === fixture.targetDefinition.metadata.uid,
   );
   assert.ok(targetResolution, "golden fixture is missing its target resolution entry");
   assert.equal(targetPlan.planId, expected.targetPlanId);
@@ -144,12 +142,13 @@ test("golden fixture compiles to identical routes, roots, and hashes", () => {
   assert.deepEqual(targetResolution.interface, targetPlan.dockInterface);
 
   assert.equal(targetPlan.dockInterface?.definition.definitionRefHash, expected.targetDefinitionRefHash);
+  // PRD_101：definitionRefHash 只由 uid 推导（无 version 维度）。
   assert.equal(
-    definitionRefHash("zx-payment-execution", "1.2.0"),
+    definitionRefHash("zx-payment-execution"),
     expected.targetDefinitionRefHash,
   );
   assert.equal(
-    definitionRefHash("zx-settlement", "2.0.0"),
+    definitionRefHash("zx-settlement"),
     expected.parentDefinitionRefHash,
   );
 
@@ -245,9 +244,10 @@ test("golden fixture compiles to identical routes, roots, and hashes", () => {
   );
   // 缺 evmPlanId 的 route 哈希向量钉死：同一 route 的 targetPlanId 槽位填
   // 零 word（Rust 权威缺省）与空 Merkle root（旧错误缺省）必须分叉，冻结
-  // 如下——防止缺省值悄悄回退到 keccak256("")。
-  assert.equal(routeWithTargetPlan(ZERO_WORD), "0xb398030882051fa73cbc4a9992a837864b2287586dd2edad36a3c8fd2b859e06");
-  assert.equal(routeWithTargetPlan(EMPTY_MERKLE_ROOT), "0xd02a0a8b6197f045c07e0148a16f8e06fe4bde988be52ce1b3827d808312b022");
+  // 如下——防止缺省值悄悄回退到 keccak256("")。PRD_101 后重钉：
+  // definitionRefHash 不再吸收 version 维度，preimage 变化使向量同步变化。
+  assert.equal(routeWithTargetPlan(ZERO_WORD), "0xbaf7065c1b74bf6af77a28728b2c26dd5749872c6f91d405a44d91aa4e9f4caa");
+  assert.equal(routeWithTargetPlan(EMPTY_MERKLE_ROOT), "0x71f9461cdf42943607e1e87bea87f895f79d65b81ffbac5d803c999205f7893d");
   // input payload hash 独立重算
   const entranceInput0 = route.inputs.find((i) => i.kind === "entrance")!;
   assert.equal(

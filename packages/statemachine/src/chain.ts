@@ -41,7 +41,6 @@ export interface ChainPlanRegisteredEvent extends ChainEventBase {
 export interface ChainOraclePlan {
   readonly planId: HexString;
   readonly zhixuId: string;
-  readonly version: string;
   readonly compiledHooks: readonly ChainOracleHook[];
   readonly dependencyIndex: Record<HexString, readonly HexString[]>;
 }

@@ -17,7 +17,6 @@ export function dockPaymentTargetDefinition(): ZhixuDefinition {
     metadata: {
       name: "payment_execution",
       uid: "payment-zhixu",
-      annotations: { version: "1.2.0" },
     },
     spec: {
       platform: { type: "cloud" },
@@ -105,7 +104,6 @@ export function dockDemoResolutionManifest(): DockResolutionManifest {
     definitions: [
       {
         zhixu: "payment-zhixu",
-        version: "1.2.0",
         definitionRefHash:
           target.dockInterface.definition.definitionRefHash,
         artifactHash: target.planHash,

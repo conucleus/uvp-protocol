@@ -52,9 +52,6 @@ const baseZhixu: ZhixuDefinition = {
   metadata: {
     name: "demo_zhixu",
     uid: "zhixu-demo-001",
-    annotations: {
-      version: "7",
-    },
   },
   spec: {
     platform: {
@@ -100,7 +97,7 @@ const baseZhixu: ZhixuDefinition = {
               supplierType: "zhixu",
               zhixuExecutorConfig: {
                 schemaVersion: "uvp.dock.v1",
-                target: { zhixu: "payment-zhixu", version: "1.2.0" },
+                target: { zhixu: "payment-zhixu" },
                 order: { idPolicy: "derived-v1" },
                 inputMap: { START: "execute", TIMEOUT: "cancel" },
                 signalMap: { str: "started", cmp: "completed" },
@@ -123,9 +120,11 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.equal(onchain.planId, sourcePlan.planId);
   assert.deepEqual(onchain.platform, sourcePlan.platform);
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
+  // PRD_101 后重钉：plan payload 不再携带 zhixu 业务 version 字段，
+  // planHash preimage 变化使 golden 同步变化。
   assert.equal(
     onchain.planHash,
-    "0x4ffaab836687da7a368dbc93ec20abe36e58b4f86f78e37ff8e9a2eb67d9cc00",
+    "0x3718d7a3f2dddecf148b9f048e707b90b355fd3879a646e8a2e8dcb6e85e1c4c",
   );
   assert.deepEqual(onchain.selectorBindings, [
     {
@@ -197,9 +196,6 @@ test("serializes trigger-origin signal capabilities to Solidity relation 1", () 
     ...baseZhixu,
     metadata: {
       name: "trigger_origin_signal_demo",
-      annotations: {
-        version: "7"
-      },
     },
     spec: {
       ...baseZhixu.spec,
@@ -357,7 +353,6 @@ test("dependencyIndex hookIds follow calldata order, not keccak order (oracle pa
     ...baseZhixu,
     metadata: {
       name: "shared_key_order_demo",
-      annotations: { version: "7" },
     },
     spec: {
       ...baseZhixu.spec,

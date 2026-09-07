@@ -124,7 +124,6 @@ test("chain-mode keeps AND delayed branches waiting until the latest live timer"
       plan: {
         planId: andLatestWaitPlanId,
         zhixuId: "chain-parity",
-        version: "test",
         compiledHooks: [
           {
             hookId: andLatestWaitHookId,
@@ -281,7 +280,6 @@ test("chain replay derives order-link birth facts from HookReady", () => {
       plan: {
         planId,
         zhixuId: "order-link-birth",
-        version: "test",
         compiledHooks: [
           {
             hookId,
@@ -402,7 +400,6 @@ test("chain replay exposes duplicated birth HookReady as a mismatch", () => {
       plan: {
         planId,
         zhixuId: "order-link-birth",
-        version: "test",
         compiledHooks: [
           {
             hookId,

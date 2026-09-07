@@ -21,10 +21,7 @@ const baseZhixu: ZhixuDefinition = {
   kind: "Zhixu",
   metadata: {
     name: "demo_zhixu",
-    uid: "zhixu-demo-001",
-    annotations: {
-      version: "7"
-    }
+    uid: "zhixu-demo-001"
   },
   spec: {
     platform: {
@@ -69,7 +66,7 @@ const baseZhixu: ZhixuDefinition = {
               supplierType: "zhixu",
               zhixuExecutorConfig: {
                 schemaVersion: "uvp.dock.v1",
-                target: { zhixu: "payment-zhixu", version: "1.2.0" },
+                target: { zhixu: "payment-zhixu" },
                 order: { idPolicy: "derived-v1" },
                 inputMap: { START: "execute", TIMEOUT: "cancel" },
                 signalMap: { str: "started", cmp: "completed" }
@@ -111,10 +108,7 @@ function topologyZhixu(stages: readonly ZhixuStage[]): ZhixuDefinition {
     apiVersion: "uvp/v0",
     kind: "Zhixu",
     metadata: {
-      name: "topology_zhixu",
-      annotations: {
-        version: "7"
-      }
+      name: "topology_zhixu"
     },
     spec: {
       platform: {
@@ -139,7 +133,6 @@ test("compiles internal HookPlan IR", () => {
 
   assert.equal(plan.schemaVersion, "uvp.hookPlan.v2");
   assert.equal(plan.zhixuId, "zhixu-demo-001");
-  assert.equal(plan.version, "7");
   assert.deepEqual(plan.platform, { type: "cloud" });
   assert.match(plan.planId, /^0x[0-9a-f]{64}$/);
   assert.match(plan.planHash, /^0x[0-9a-f]{64}$/);
@@ -198,10 +191,7 @@ test("compiles source-qualified sendSignals as trigger-origin capabilities", () 
   const plan = compileZhixuHookPlanWithManifest({
     ...baseZhixu,
     metadata: {
-      name: "trigger_origin_signal_demo",
-      annotations: {
-        version: "7"
-      }
+      name: "trigger_origin_signal_demo"
     },
     spec: {
       ...baseZhixu.spec,
@@ -494,10 +484,7 @@ test("accepts multi-anchor receive stages without an entry table", () => {
     ...baseZhixu,
     metadata: {
       name: "orderbook_match",
-      uid: "orderbook-match",
-      annotations: {
-        version: "7"
-      }
+      uid: "orderbook-match"
     },
     spec: {
       ...baseZhixu.spec,
@@ -579,10 +566,7 @@ test("accepts same-source hook expressions with the full hook DSL", () => {
     ...baseZhixu,
     metadata: {
       name: "same_source_trigger_condition",
-      uid: "same-source-trigger-condition",
-      annotations: {
-        version: "7"
-      }
+      uid: "same-source-trigger-condition"
     },
     spec: {
       ...baseZhixu.spec,
@@ -938,7 +922,7 @@ test("rejects non-canonical zhixu executor config shapes", () => {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
                   schemaVersion: "uvp.dock.v1",
-                  target: { zhixu: "payment-zhixu", version: "1.2.0" },
+                  target: { zhixu: "payment-zhixu" },
                   order: { idPolicy: "derived-v1" },
                   inputMap: { START: "execute" },
                   signalMap: {
@@ -971,7 +955,7 @@ test("rejects non-canonical zhixu executor config shapes", () => {
                 supplierID: "peer-zhixu",
                 zhixuExecutorConfig: {
                   schemaVersion: "uvp.dock.v1",
-                  target: { zhixu: "payment-zhixu", version: "1.2.0" },
+                  target: { zhixu: "payment-zhixu" },
                   order: { idPolicy: "derived-v1" },
                   inputMap: { START: "execute" },
                   signalMap: { str: "started", cmp: "completed" }
@@ -1003,7 +987,7 @@ test("rejects locally invalid dock executor configs", () => {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
                   schemaVersion: "uvp.dock.v1",
-                  target: { zhixu: "payment-zhixu", version: "1.2.0" },
+                  target: { zhixu: "payment-zhixu" },
                   order: { idPolicy: "derived-v1" },
                   signalMap: { str: "started", cmp: "completed" }
                 } as never
@@ -1032,7 +1016,7 @@ test("rejects locally invalid dock executor configs", () => {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
                   schemaVersion: "uvp.dock.v1",
-                  target: { zhixu: "payment-zhixu", version: "1.2.0" },
+                  target: { zhixu: "payment-zhixu" },
                   order: { idPolicy: "derived-v1" },
                   inputMap: { START: "execute" },
                   signalMap: { str: "started" }
@@ -1065,7 +1049,7 @@ test("rejects locally invalid dock executor configs", () => {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
                   schemaVersion: "uvp.dock.v1",
-                  target: { zhixu: "payment-zhixu", version: "1.2.0" },
+                  target: { zhixu: "payment-zhixu" },
                   order: { idPolicy: "derived-v1" },
                   inputMap: { MISSING: "execute" },
                   signalMap: { str: "started", cmp: "completed" }

@@ -59,9 +59,7 @@ interface DockCompatFixture {
 test("protocol freeze consumes one Rust dock fixture and one resolved artifact", () => {
   assert.equal(fixture.schemaVersion, "uvp.dock.compat.v1");
   const targetEntry = fixture.resolutionManifest.definitions.find(
-    (entry) =>
-      entry.zhixu === fixture.targetDefinition.metadata.uid &&
-      entry.version === fixture.targetDefinition.metadata.annotations?.version,
+    (entry) => entry.zhixu === fixture.targetDefinition.metadata.uid,
   );
   assert.ok(targetEntry, "shared fixture must contain the target resolution entry");
 
@@ -168,7 +166,7 @@ test("core linker errors retain stable code, path, and target reference", () => 
           (issue) =>
             /D009/.test(issue) &&
             /inputMap\.CANCEL/.test(issue) &&
-            /zx-payment-execution@1\.2\.0/.test(issue),
+            /zx-payment-execution/.test(issue),
         ),
         error.issues.join("; "),
       );
