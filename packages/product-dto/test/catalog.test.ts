@@ -240,14 +240,41 @@ describe("product DTO catalog", () => {
     const ordinaryFundingCopy = [
       demoProductCatalog.zhixus[0]?.supportedPaymentMethods.join(" "),
       demoProductCatalog.zhixus[0]?.roleSlots.find((slot) => slot.slotId === "funds")?.duty,
-      demoProductCatalog.zhixus[0]?.dockableModules.find((module) => module.moduleId === "funds-protection")?.desc,
-      demoProductCatalog.zhixus[0]?.dockableModules.find((module) => module.moduleId === "funds-protection")?.ports.join(" "),
+      demoProductCatalog.zhixus[0]?.dockableModules.find((module) => module.interfaceName === "funds_protection")?.desc,
+      demoProductCatalog.zhixus[0]?.dockableModules
+        .find((module) => module.interfaceName === "funds_protection")
+        ?.inputs.map((port) => port.label)
+        .join(" "),
       demoPaymentTask.title,
       demoPaymentTask.subtitle,
       demoPaymentTask.fundingImpact,
       ...demoPaymentTask.responsibilityStatements.map((statement) => `${statement.title} ${statement.desc}`)
     ].join(" ");
     assert.doesNotMatch(ordinaryFundingCopy, /退款条件|资金托管|托管适配器|划转资金|释放资金|退款资金|结算保证/u);
+  });
+
+  it("pins the demo dockable modules to the named-interface v2 shape", () => {
+    const modules = demoProductCatalog.zhixus[0]?.dockableModules ?? [];
+    assert.deepEqual(
+      modules.map((module) => [module.interfaceName, module.orderModes.join("|")]),
+      [
+        ["funds_protection", "new"],
+        ["logistics_delivery", "new"],
+        ["inspection_acceptance", "new|existing"],
+        ["dispute_resolution", "existing"]
+      ]
+    );
+    for (const module of modules) {
+      for (const port of module.inputs) {
+        assert.match(port.hook ?? "", /^[\w.-]+#[\w.-]+$/u);
+      }
+      for (const port of module.outputs) {
+        assert.match(port.signal ?? "", /^[\w.-]+::[\w.-]+$/u);
+      }
+    }
+    // new ∈ orderModes 的接口必须有入口端口（建单型服务）。
+    const serviceLike = modules.filter((module) => module.orderModes.includes("new"));
+    assert.ok(serviceLike.every((module) => module.inputs.length > 0));
   });
 
   it("expresses funding and guarantee options as standard signal containers", () => {

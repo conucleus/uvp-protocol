@@ -15,7 +15,8 @@ import {
   type ZhixuStageDTO
 } from "../domain/index.js";
 
-export const CUSTOMS_ZHIXU_ID = "customs-completion";
+/** 派生身份演示值（zx-+32hex，与编译产物 zhixuId 同形态）。 */
+export const CUSTOMS_ZHIXU_ID = "zx-dbfac16c36b253ae56bc322280a3a66d";
 export const CUSTOMS_ORDER_ID = "order-customs-001";
 
 export const customsStageIds = {
@@ -618,7 +619,7 @@ export const customsOnchainHookPlanArtifact = {
   dockInterfaceRoot: "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
   planId: customsPlanIds.planId,
   zhixuId: CUSTOMS_ZHIXU_ID,
-  zhixuName: "Customs Completion",
+  zhixuName: "customs_completion",
   platform: {
     type: "blockchain",
     provider: "eth"

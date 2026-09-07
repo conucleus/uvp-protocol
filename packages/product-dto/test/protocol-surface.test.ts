@@ -16,6 +16,7 @@ import type { StoreProductSchemaDTO } from "@uvp-eth/product-dto";
 type AbiItem = {
   readonly type?: string;
   readonly name?: string;
+  readonly inputs?: readonly { readonly name?: string; readonly type: string }[];
 };
 
 type ProtocolBindings = {
@@ -191,18 +192,27 @@ describe("Product DTO protocol surface", () => {
   it("keeps the committed-route docking surface", async () => {
     const protocol = await loadProtocolBindings();
 
-    // 全部 dock 走 committed route：openDockedOrder 原子 open。
+    // 全部 dock 走 committed route：openDockedOrder 原子 open；终态不由
+    // 链上事件驱动，事件面闭集不含 terminal 类事件。
     assertAbiNames(protocol.DOCKING_MODULE_ABI, "function", [
       "openDockedOrder",
       "submitDockedInput",
       "submitDockedSignal",
-      "getActiveDock"
+      "getActiveDock",
+      "getDockInputBinding",
+      "getDockOutputBinding",
+      "entrancePermitDigest"
     ]);
-    assertAbiNames(protocol.DOCKING_MODULE_ABI, "event", [
+    assertAbiEventNames(protocol.DOCKING_MODULE_ABI, [
       "DockOpened",
       "DockInputSubmitted",
       "DockOutputSubmitted"
     ]);
+    const dockOpened = protocol.DOCKING_MODULE_ABI.find(
+      (item) => item.type === "event" && item.name === "DockOpened"
+    );
+    assert.ok(dockOpened?.inputs?.some((input) => input.name === "interfaceNameId"),
+      "DockOpened must carry interfaceNameId (named-interface dock, abiVersion 3.0)");
     assertAbiNames(protocol.STATE_MACHINE_LENS_ABI, "function", [
       "getActiveStageExecutorPatch",
       "getActiveStageResourcePatch",
@@ -376,6 +386,18 @@ function assertAbiNames(
   for (const expectedName of expectedNames) {
     assert.equal(actualNames.has(expectedName), true, `${itemType} ${expectedName} must stay in STATE_MACHINE_ABI`);
   }
+}
+
+/** 事件名闭集断言：多余/缺失事件都视为协议面漂移。 */
+function assertAbiEventNames(
+  abi: readonly AbiItem[],
+  expectedNames: readonly string[]
+): void {
+  const actualNames = abi
+    .filter((item) => item.type === "event" && typeof item.name === "string")
+    .map((item) => item.name)
+    .sort();
+  assert.deepEqual(actualNames, [...expectedNames].sort());
 }
 
 function productSubmitPrimaryType(primaryType: "SubmitSignal"): "UVPStateMachineSignal" {

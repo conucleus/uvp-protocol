@@ -16,6 +16,8 @@ export type ParticipantStatus =
   | "not_started";
 export type RoleSlotStatus = "required" | "connected" | "optional";
 export type DockableModuleStatus = "connected" | "available" | "planned";
+/** dock 接口开放的下单模式（PRD_100：{new, existing} 子集）。 */
+export type ProductDockOrderMode = "new" | "existing";
 export type OrderStatus = "registered";
 export type TaskStatus = "open" | "submitted" | "blocked" | "done";
 export type PermissionPayloadPolicy = "required" | "optional";
@@ -443,11 +445,27 @@ export interface RoleSlotDTO {
   readonly addOnManifest?: ParticipantAddOnManifestDTO;
 }
 
+export interface DockableZhixuModulePortDTO {
+  readonly portName: string;
+  readonly label: string;
+  /** input 端口的目标侧 hook 引用（`<task>.<stage>#<channel>`）。 */
+  readonly hook?: string;
+  /** output 端口的目标侧 canonical signal（`<source>::<task>.<stage>.<signal>`）。 */
+  readonly signal?: string;
+}
+
+/**
+ * 目标定义发布的具名 dock 接口（uvp.dockInterfaceArtifact.v2 的展示面）。
+ * 接口名/端口名遵循协议命名规则（`^[a-z][a-z0-9_]{0,31}$`）。
+ */
 export interface DockableZhixuModuleDTO {
-  readonly moduleId: string;
+  readonly interfaceName: string;
+  /** 接口开放的下单模式（{new, existing} 非空子集）。 */
+  readonly orderModes: readonly ProductDockOrderMode[];
   readonly title: string;
   readonly desc: string;
-  readonly ports: readonly string[];
+  readonly inputs: readonly DockableZhixuModulePortDTO[];
+  readonly outputs: readonly DockableZhixuModulePortDTO[];
   readonly status: DockableModuleStatus;
 }
 
