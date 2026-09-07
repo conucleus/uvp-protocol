@@ -28,10 +28,15 @@ interface IUVPPlanMetadataModule {
 
     function verifyDockRoute(bytes32 planId, bytes32 leaf, bytes32[] calldata proof) external view returns (bool);
 
-    function verifyDockInterfacePort(bytes32 planId, bytes32 leaf, bytes32[] calldata proof)
-        external
-        view
-        returns (bool);
+    function verifyDockInterfacePort(
+        bytes32 planId,
+        bytes32 definitionUidId,
+        bytes32 interfaceNameId,
+        uint8 orderModesWord,
+        bytes32 inputsRoot,
+        bytes32 outputsRoot,
+        bytes32[] calldata proof
+    ) external view returns (bool);
 
     function isSelectorTargetStage(bytes32 planId, bytes32 targetStageId) external view returns (bool);
 

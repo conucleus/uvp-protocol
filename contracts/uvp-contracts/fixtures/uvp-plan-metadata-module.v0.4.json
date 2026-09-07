@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPPlanMetadataModule",
-  "abiVersion": "0.3",
+  "abiVersion": "0.4",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPPlanMetadataModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPPlanMetadataModule.sol/UVPPlanMetadataModule.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xd4847ab632b76d3282fe7a98c98a8473f853cd6b12ca7a2b9e4c4255ae97114c",
-    "bytecodeHash": "0xa9b9b3490c2b543e429e60a1819308a1f9cad2e0cae098ad1e485539100494d4",
-    "deployedBytecodeHash": "0x361c2a77156fcc763fa43c109b8ab70ad2f80cc685ce61b14354f9eca029b46b",
-    "artifactHash": "0xabec5ef62983957364ec84bfac0a7a3123fa37cd5d3d479a76d1c3765ce29f5f"
+    "abiHash": "0x00f5c9d53479c5991ab3490f83dda151936fcb0c0c992a757ef589908a062e3d",
+    "bytecodeHash": "0x7dccf2a008604a1e0136ed90c7488c9a185a7b1b01330bfdbb149419664254e1",
+    "deployedBytecodeHash": "0xb25c878ff0f2510f6c07aa3b886ac50439537049b52ebea621b90e348bb33da3",
+    "artifactHash": "0xa873e38847bddef1ede476a8f12f2c00c976f0aa2898a27c7c13e88c65ca3070"
   },
   "events": {
     "SignalCapabilityRegistered": {
@@ -102,8 +102,8 @@
       "selector": "0x37b416d8"
     },
     "verifyDockInterfacePort": {
-      "signature": "verifyDockInterfacePort(bytes32,bytes32,bytes32[])",
-      "selector": "0x1624bbb2"
+      "signature": "verifyDockInterfacePort(bytes32,bytes32,bytes32,uint8,bytes32,bytes32,bytes32[])",
+      "selector": "0xe12c5912"
     },
     "verifyDockRoute": {
       "signature": "verifyDockRoute(bytes32,bytes32,bytes32[])",

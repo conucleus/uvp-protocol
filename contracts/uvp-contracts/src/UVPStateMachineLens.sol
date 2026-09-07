@@ -41,8 +41,8 @@ interface IUVPDockingModuleLens {
             bytes32 routeHash,
             bytes32 targetPlanId,
             bytes32 linkedOrderId,
+            bytes32 interfaceNameId,
             uint8 depth,
-            uint8 status,
             bool exists
         );
 
@@ -54,7 +54,6 @@ interface IUVPDockingModuleLens {
             bytes32 portKey,
             bytes32 targetSourceId,
             bytes32 targetSignalId,
-            uint8 kind,
             bool exists
         );
 
@@ -67,7 +66,6 @@ interface IUVPDockingModuleLens {
             bytes32 portKey,
             bytes32 targetSourceId,
             bytes32 targetSignalId,
-            uint8 terminal,
             bool exists
         );
 
@@ -176,8 +174,8 @@ contract UVPStateMachineLens {
             bytes32 routeHash,
             bytes32 targetPlanId,
             bytes32 linkedOrderId,
+            bytes32 interfaceNameId,
             uint8 depth,
-            uint8 status,
             bool exists
         )
     {
@@ -192,7 +190,6 @@ contract UVPStateMachineLens {
             bytes32 portKey,
             bytes32 targetSourceId,
             bytes32 targetSignalId,
-            uint8 kind,
             bool exists
         )
     {
@@ -209,7 +206,6 @@ contract UVPStateMachineLens {
             bytes32 portKey,
             bytes32 targetSourceId,
             bytes32 targetSignalId,
-            uint8 terminal,
             bool exists
         )
     {

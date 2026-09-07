@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPDockingModule",
-  "abiVersion": "2.1",
+  "abiVersion": "3.0",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPDockingModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPDockingModule.sol/UVPDockingModule.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x5c1611911e7483d2509564f3eaef31c0b4cad78fe0e9ce5390477e73e844c9ed",
-    "bytecodeHash": "0xf596bf28a295619e26c0f83adb1844ecb2e16d7f38b1d9f70083ae283f2f9cd4",
-    "deployedBytecodeHash": "0x037796eac3bfceea08202ca554f673b709218f5338a9d29bdc7e2660f827a2fd",
-    "artifactHash": "0xaafd18fff225ca42346afba78c14ddac05267364b4f80ead27baecf58926929d"
+    "abiHash": "0xccd83172235ca28caf328ba89e1ba5593697102436a22306bb521534f87ba71d",
+    "bytecodeHash": "0xf460bc8d3ab1394ac2a5bbb20454620c585d1f4de08f01902a90debaa5a99b73",
+    "deployedBytecodeHash": "0x9bdf8d627d886987be300f7ac14846acaa3b4a81609195aae0072f651432e887",
+    "artifactHash": "0x3f936abaf95f1b5cd7d65da811cecfd61f979148aa46679b8505851406c7dce5"
   },
   "events": {
     "DockInputSubmitted": {
@@ -20,34 +20,22 @@
       "topic": "0xd8ca3dbb37d811f49bc0352c5d5538c8b34f92a1721684a8b9fb4353fcb0e07e"
     },
     "DockOpened": {
-      "signature": "DockOpened(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint8,address)",
-      "topic": "0x6c5d1f61f34e6853ebaee2f7c1671160456bb0b9bcbb5752e28499df419b84c0"
+      "signature": "DockOpened(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint8,address)",
+      "topic": "0x4b27ba44044fdef1dc850cd0701c52eb8da60938277e7612046af358f7f366b6"
     },
     "DockOutputSubmitted": {
       "signature": "DockOutputSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
       "topic": "0x93983b284f3f4575cec0a01309313de5377e606ea9eb03f094aee3c9433fa9dd"
-    },
-    "DockTerminal": {
-      "signature": "DockTerminal(bytes32,uint8)",
-      "topic": "0xdb688518a8094d028d2a9c4c75f1f8ab6a1e9d59d9fd636e8da89462d7e17a76"
     }
   },
   "functions": {
-    "DOCK_ACCESS_OPEN": {
-      "signature": "DOCK_ACCESS_OPEN()",
-      "selector": "0xe617995b"
+    "DOCK_INTERFACE_ORDER_MODE_NEW": {
+      "signature": "DOCK_INTERFACE_ORDER_MODE_NEW()",
+      "selector": "0x5422c9e9"
     },
-    "DOCK_ACCESS_PERMIT": {
-      "signature": "DOCK_ACCESS_PERMIT()",
-      "selector": "0x575ae242"
-    },
-    "DOCK_KIND_ENTRANCE": {
-      "signature": "DOCK_KIND_ENTRANCE()",
-      "selector": "0xecd1083a"
-    },
-    "DOCK_KIND_SIGNAL": {
-      "signature": "DOCK_KIND_SIGNAL()",
-      "selector": "0x43b16bb2"
+    "DOCK_MODE_NEW": {
+      "signature": "DOCK_MODE_NEW()",
+      "selector": "0xcb67c827"
     },
     "DOMAIN_SEPARATOR": {
       "signature": "DOMAIN_SEPARATOR()",
@@ -56,10 +44,6 @@
     "MAX_DOCK_DEPTH": {
       "signature": "MAX_DOCK_DEPTH()",
       "selector": "0x362ec4ea"
-    },
-    "MAX_DOCK_INPUTS": {
-      "signature": "MAX_DOCK_INPUTS()",
-      "selector": "0x4169d17b"
     },
     "MAX_DOCK_OUTPUTS": {
       "signature": "MAX_DOCK_OUTPUTS()",
@@ -90,8 +74,8 @@
       "selector": "0x04919a6e"
     },
     "entrancePermitDigest": {
-      "signature": "entrancePermitDigest(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,uint256)",
-      "selector": "0x5986ec61"
+      "signature": "entrancePermitDigest(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,uint256)",
+      "selector": "0xc62b8c10"
     },
     "getActiveDock": {
       "signature": "getActiveDock(bytes32)",
@@ -106,8 +90,8 @@
       "selector": "0xdd6e63ce"
     },
     "openDockedOrder": {
-      "signature": "openDockedOrder((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint8,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint8),bytes32[],(bytes32,bytes32,uint8,bytes32,bytes32,bytes32,uint8),bytes32[],(bytes32,bytes32,bytes32,bytes32,uint8,bytes32)[],(bytes32,bytes32,bytes32,bytes32,bytes32,uint8,bytes32)[],(uint256,uint256,bytes))",
-      "selector": "0x051fbe4a"
+      "signature": "openDockedOrder((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint8),bytes32[],((bytes32,bytes32,bytes32),bytes32[],(uint8,bytes32,bytes32),bytes32[]),(bytes32,bytes32,bytes32,bytes32,bytes32)[],(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)[],(uint256,uint256,bytes))",
+      "selector": "0xeb989ef4"
     },
     "planMetadataModule": {
       "signature": "planMetadataModule()",

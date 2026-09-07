@@ -40,6 +40,8 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     // 全体提交者）。TS/Rust 编译器以同一数值预检；这里是注册边界兜底。
     uint256 public constant MAX_SIGNAL_CAPABILITIES = 256;
 
+    bytes32 private constant _DOMAIN_DOCK_INTERFACE = keccak256("UVP_DOCK_INTERFACE_V2");
+
     mapping(bytes32 planId => PlanMetadata metadata) private _metadata;
     mapping(bytes32 planId => bool finalized) public planMetadataFinalized;
     // E16 注册守卫：relation=0 的事实键 → 唯一属主阶段。同一
@@ -98,13 +100,25 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
         return DockMerkle.verify(_metadata[planId].dockRoutesRoot, leaf, proof);
     }
 
-    function verifyDockInterfacePort(bytes32 planId, bytes32 leaf, bytes32[] calldata proof)
-        external
-        view
-        returns (bool)
-    {
+    function verifyDockInterfacePort(
+        bytes32 planId,
+        bytes32 definitionUidId,
+        bytes32 interfaceNameId,
+        uint8 orderModesWord,
+        bytes32 inputsRoot,
+        bytes32 outputsRoot,
+        bytes32[] calldata proof
+    ) external view returns (bool) {
         _requireKnownPlan(planId);
-        return DockMerkle.verify(_metadata[planId].dockInterfaceRoot, leaf, proof);
+        // 具名接口叶由承诺输入重算（调用方不得自报叶值）：
+        // H("UVP_DOCK_INTERFACE_V2", uidId, interfaceNameId, orderModesWord,
+        //   inputsRoot, outputsRoot)，与 Rust/TS 逐字节一致。
+        bytes32 interfaceLeaf = keccak256(
+            abi.encode(
+                _DOMAIN_DOCK_INTERFACE, definitionUidId, interfaceNameId, uint256(orderModesWord), inputsRoot, outputsRoot
+            )
+        );
+        return DockMerkle.verify(_metadata[planId].dockInterfaceRoot, interfaceLeaf, proof);
     }
 
     function planSelectorBindingCount(bytes32 planId) external view returns (uint256) {
