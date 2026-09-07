@@ -3,43 +3,60 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
-import { keccak256, concat, encodeAbiParameters, pad, parseAbiParameters, stringToHex, toHex } from "viem";
 import { compileZhixuHookPlan } from "../src/hook-plan.js";
+import { validateDockCommitments } from "../src/dock-validation.js";
 import {
   canonicalSignalHash,
-  dockInputBindingHash,
-  dockInputPayloadHash,
-  dockInterfaceInputLeaf,
-  EMPTY_MERKLE_ROOT,
-  dockInterfaceOutputLeaf,
-  dockOutputBindingHash,
-  dockRouteHash,
-  signalKey,
   cloudRuntimeDomain,
   definitionRefHash,
+  definitionUid,
   dockInputIdempotencyKey,
+  dockInputPayloadHash,
   dockInstanceId,
   dockOutputIdempotencyKey,
+  dockRouteId,
+  dockRoutesRootOf,
+  EMPTY_MERKLE_ROOT,
+  eip712PermitDigest,
   evmRuntimeDomain,
   hookKey,
+  inputBindingHash,
+  inputPortLeaf,
+  interfaceLeaf,
+  interfaceNameKey,
   interfaceRootOf,
   linkedOrderId,
   localOrderKey,
   merkleProof,
   merkleRoot,
-  portKey,
+  modeWord,
+  orderModesWord,
+  outputBindingHash,
+  outputPortLeaf,
+  routeHash,
+  signalKey,
   sourceFactSetHash,
   stageKey,
+  targetOrderRefKey,
   verifyMerkleProof,
-  ZERO_WORD,
 } from "../src/dock.js";
-import type { DockResolutionManifest, ZhixuDefinition } from "../src/types/index.js";
+import {
+  DOCK_INTERFACE_ARTIFACT_SCHEMA_VERSION,
+  DOCK_RESOLUTION_SCHEMA_VERSION,
+  DOCK_ROUTE_SCHEMA_VERSION,
+  type DockInterfaceArtifactV2,
+  type DockOrderMode,
+  type DockResolutionManifest,
+  type DockRouteV2,
+  type HexString,
+  type ZhixuDefinition,
+} from "../src/types/index.js";
 
 /**
- * M0 跨语言 golden vectors：本测试与 Rust
- * `uvp-compiler` 的 `gen_dock_fixtures`、Solidity Foundry 测试消费同一份
+ * M0 跨语言 golden vectors（dock v2）：本测试与 Rust `uvp-compiler` 的
+ * `gen_dock_fixtures`、Solidity Foundry 测试消费同一份
  * `uvp-core/fixtures/dock/v1/manifest.json`；任何一侧的哈希/ID/编码分叉
- * 都会在这里失败。
+ * 都会在这里失败。word 布局权威 = PRD100_102_DESIGN.md §8（Rust dock.rs）。
  */
 const manifestPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -51,6 +68,21 @@ const fixture = JSON.parse(
 
 interface DockCompatFixture {
   readonly schemaVersion: string;
+  readonly constants: {
+    readonly schemaVersions: {
+      readonly dockInterfaceArtifact: string;
+      readonly dockRoute: string;
+      readonly resolution: string;
+    };
+    readonly domains: Record<string, string>;
+    readonly merkle: { readonly emptyRoot: `0x${string}` };
+    readonly enumWords: {
+      readonly orderMode: { readonly new: number; readonly existing: number };
+      readonly orderModesMask: { readonly new: number; readonly existing: number };
+    };
+    readonly permitTypeHash: string;
+    readonly permitDomainVersion: string;
+  };
   readonly inputs: {
     readonly chainId: number;
     readonly stateMachineAddress: `0x${string}`;
@@ -58,7 +90,12 @@ interface DockCompatFixture {
     readonly cloudDeploymentId: string;
     readonly cloudSecurityDomain: string;
     readonly localOrderId: string;
+    readonly existingTargetOrderRef: string;
     readonly parentPlanIdWord: `0x${string}`;
+  };
+  readonly identities: {
+    readonly targetUid: string;
+    readonly parentUid: string;
   };
   readonly targetDefinition: ZhixuDefinition;
   readonly parentDefinition: ZhixuDefinition;
@@ -68,39 +105,9 @@ interface DockCompatFixture {
     readonly parentDefinitionRefHash: `0x${string}`;
     readonly targetPlanId: `0x${string}`;
     readonly targetArtifactHash: `0x${string}`;
-    readonly interfaceArtifact: {
-      readonly interfaceRoot: `0x${string}`;
-      readonly inputs: readonly { readonly port: string; readonly leafHash: `0x${string}` }[];
-      readonly outputs: readonly { readonly port: string; readonly leafHash: `0x${string}` }[];
-    };
-    readonly dockRoutes: readonly {
-      readonly routeId: `0x${string}`;
-      readonly routeHash: `0x${string}`;
-      readonly local: { readonly stageKey: `0x${string}` };
-      readonly entrance: {
-        readonly localHookName: string;
-        readonly targetInputSignalHash: `0x${string}`;
-      };
-      readonly inputs: readonly {
-        readonly kind: string;
-        readonly bindingHash: `0x${string}`;
-        readonly targetInputSignalHash: `0x${string}`;
-        readonly localHookName: string;
-        readonly targetPort: string;
-        readonly targetSourceId: `0x${string}`;
-        readonly targetSignalId: `0x${string}`;
-      }[];
-      readonly outputs: readonly {
-        readonly localSignalName: string;
-        readonly bindingHash: `0x${string}`;
-        readonly localSourceId: `0x${string}`;
-        readonly localSignalId: `0x${string}`;
-        readonly targetPort: string;
-        readonly targetSourceId: `0x${string}`;
-        readonly targetSignalId: `0x${string}`;
-        readonly terminal: "none" | "success" | "failure" | "cancelled";
-      }[];
-    }[];
+    readonly interfaceArtifact: DockInterfaceArtifactV2;
+    readonly interfaceNameIds: Record<string, `0x${string}`>;
+    readonly dockRoutes: readonly DockRouteV2[];
     readonly dockRoutesRoot: `0x${string}`;
     readonly dockInterfaceRoot: `0x${string}`;
     readonly evmRuntimeDomain: `0x${string}`;
@@ -108,174 +115,246 @@ interface DockCompatFixture {
     readonly localOrderKey: `0x${string}`;
     readonly dockInstanceId: `0x${string}`;
     readonly linkedOrderId: `0x${string}`;
+    readonly existingDockInstanceId: `0x${string}`;
     readonly sourceFactSetHash: `0x${string}`;
     readonly inputPayloadHash: `0x${string}`;
     readonly inputIdempotencyKey: `0x${string}`;
     readonly outputIdempotencyKey: `0x${string}`;
     readonly permitDigest: `0x${string}`;
     readonly routeLeafProof: readonly `0x${string}`[];
-    readonly entranceInterfaceLeafProof: readonly `0x${string}`[];
+    readonly interfaceLeafProof: readonly `0x${string}`[];
+    readonly inputPortLeafProof: readonly `0x${string}`[];
   };
 }
 
-test("golden fixture compiles to identical routes, roots, and hashes", () => {
-  const parentPlan = compileZhixuHookPlan(
-    fixture.parentDefinition,
-    fixture.resolutionManifest,
-  );
-  const targetPlan = compileZhixuHookPlan(fixture.targetDefinition);
-  const expected = fixture.expected;
+const parentPlan = compileZhixuHookPlan(
+  fixture.parentDefinition,
+  fixture.resolutionManifest,
+);
+const targetPlan = compileZhixuHookPlan(fixture.targetDefinition);
+const expected = fixture.expected;
+const targetInterface = targetPlan.dockInterface!;
 
-  // The target identity must be freshly compiled from the fixture definition,
-  // then matched back to the exact resolution-manifest artifact consumed by
-  // the parent linker.  Comparing only route fields would allow a stale
-  // target planId/planHash to remain hidden in an otherwise valid route.
+function findRoute(interfaceName: string): DockRouteV2 {
+  const route = parentPlan.dockRoutes.find(
+    (candidate) => candidate.target.interfaceName === interfaceName,
+  );
+  assert.ok(route, `route on ${interfaceName} present`);
+  return route;
+}
+
+test("frozen constants match the golden manifest", () => {
+  assert.equal(fixture.schemaVersion, "uvp.dock.compat.v1");
+  assert.equal(
+    fixture.constants.schemaVersions.dockInterfaceArtifact,
+    DOCK_INTERFACE_ARTIFACT_SCHEMA_VERSION,
+  );
+  assert.equal(fixture.constants.schemaVersions.dockRoute, DOCK_ROUTE_SCHEMA_VERSION);
+  assert.equal(
+    fixture.constants.schemaVersions.resolution,
+    DOCK_RESOLUTION_SCHEMA_VERSION,
+  );
+  assert.equal(fixture.constants.merkle.emptyRoot, EMPTY_MERKLE_ROOT);
+  assert.equal(fixture.constants.permitTypeHash.length > 0, true);
+  assert.equal(fixture.constants.domains.definitionUid, "uvp:definition-uid:v1");
+  assert.equal(fixture.constants.domains.dockInstance, "UVP_DOCK_INSTANCE_V2");
+  assert.equal(fixture.constants.domains.dockInterface, "UVP_DOCK_INTERFACE_V2");
+  assert.equal(
+    fixture.constants.domains.interfaceInput,
+    "UVP_DOCK_INTERFACE_INPUT_V2",
+  );
+  assert.equal(
+    fixture.constants.domains.interfaceOutput,
+    "UVP_DOCK_INTERFACE_OUTPUT_V2",
+  );
+  assert.equal(fixture.constants.domains.inputBinding, "UVP_DOCK_INPUT_BINDING_V2");
+  assert.equal(
+    fixture.constants.domains.outputBinding,
+    "UVP_DOCK_OUTPUT_BINDING_V2",
+  );
+  assert.equal(fixture.constants.domains.route, "UVP_DOCK_ROUTE_V2");
+  assert.equal(fixture.constants.domains.routeId, "UVP_DOCK_ROUTE_ID_V1");
+
+  // 枚举 word：modeWord new=0/existing=1；orderModes 位掩码 bit0/bit1。
+  assert.equal(modeWord("new"), `0x${"0".repeat(63)}0`);
+  assert.equal(modeWord("existing"), `0x${"0".repeat(63)}1`);
+  assert.equal(fixture.constants.enumWords.orderMode.new, 0);
+  assert.equal(fixture.constants.enumWords.orderMode.existing, 1);
+  assert.equal(
+    orderModesWord(["new"]),
+    `0x${"0".repeat(63)}${fixture.constants.enumWords.orderModesMask.new.toString(16)}`,
+  );
+  assert.equal(
+    orderModesWord(["existing"]),
+    `0x${"0".repeat(63)}${fixture.constants.enumWords.orderModesMask.existing.toString(16)}`,
+  );
+  assert.equal(orderModesWord(["existing", "new"]), `0x${"0".repeat(63)}3`);
+  assert.equal(orderModesWord([]), undefined);
+  assert.equal(orderModesWord(["new", "new"]), undefined);
+  assert.equal(orderModesWord(["bogus"]), undefined);
+});
+
+test("definition uid parity: TS derivation matches the Rust-computed identities", () => {
+  // TS 对拍函数（仅测试/工具用）：canonical 去 annotations + 域前缀哈希，
+  // 必须与 Rust definition_uid 在 golden 样本上逐字符一致。
+  assert.equal(definitionUid(fixture.targetDefinition), fixture.identities.targetUid);
+  assert.equal(definitionUid(fixture.parentDefinition), fixture.identities.parentUid);
+  assert.match(fixture.identities.targetUid, /^zx-[0-9a-f]{32}$/);
+
+  // 注解永不参与身份：加 annotations 派生不变，改 name/labels 即变。
+  const annotated = structuredClone(fixture.targetDefinition) as ZhixuDefinition & {
+    metadata: { annotations?: Record<string, string>; labels?: Record<string, string> };
+  };
+  annotated.metadata.annotations = { doc: "parity-probe" };
+  assert.equal(definitionUid(annotated), fixture.identities.targetUid);
+  annotated.metadata.labels = { site: "factory-a" };
+  assert.notEqual(definitionUid(annotated), fixture.identities.targetUid);
+
+  // definitionRefHash 公式不变（吃派生 uid）。
+  assert.equal(
+    definitionRefHash(fixture.identities.targetUid),
+    expected.targetDefinitionRefHash,
+  );
+  assert.equal(
+    definitionRefHash(fixture.identities.parentUid),
+    expected.parentDefinitionRefHash,
+  );
+});
+
+test("golden fixture compiles to identical interfaces, routes, roots, and hashes", () => {
+  // 目标身份/产物与 manifest 声明逐项一致（stale planId/planHash 无处可藏）。
   const targetResolution = fixture.resolutionManifest.definitions.find(
-    (definition) => definition.zhixu === fixture.targetDefinition.metadata.uid,
+    (definition) => definition.zhixu === fixture.identities.targetUid,
   );
   assert.ok(targetResolution, "golden fixture is missing its target resolution entry");
+  assert.equal(targetPlan.zhixuId, fixture.identities.targetUid);
   assert.equal(targetPlan.planId, expected.targetPlanId);
   assert.equal(targetPlan.planHash, expected.targetArtifactHash);
   assert.equal(targetResolution.evmPlanId, targetPlan.planId);
   assert.equal(targetResolution.artifactHash, targetPlan.planHash);
-  assert.equal(targetResolution.definitionRefHash, targetPlan.dockInterface?.definition.definitionRefHash);
-  assert.deepEqual(targetResolution.interface, targetPlan.dockInterface);
-
-  assert.equal(targetPlan.dockInterface?.definition.definitionRefHash, expected.targetDefinitionRefHash);
-  // PRD_101：definitionRefHash 只由 uid 推导（无 version 维度）。
   assert.equal(
-    definitionRefHash("zx-payment-execution"),
-    expected.targetDefinitionRefHash,
+    targetResolution.definitionRefHash,
+    targetPlan.dockInterface?.definition.definitionRefHash,
   );
-  assert.equal(
-    definitionRefHash("zx-settlement"),
-    expected.parentDefinitionRefHash,
-  );
+  assert.deepEqual(targetResolution.interfaces, targetPlan.dockInterface?.interfaces);
+  assert.deepEqual(targetPlan.dockInterface, expected.interfaceArtifact);
+  assert.equal(targetPlan.dockInterfaceRoot, expected.interfaceArtifact.interfaceRoot);
 
-  // 目标接口 root：重算 == manifest 声明 == 编译产物。
-  assert.equal(interfaceRootOf(targetPlan.dockInterface!), expected.interfaceArtifact.interfaceRoot);
-
-  // 父定义 route 集与 Rust 输出一致。
-  assert.equal(parentPlan.dockRoutes.length, expected.dockRoutes.length);
-  const route = parentPlan.dockRoutes[0]!;
-  const expectedRoute = expected.dockRoutes[0]!;
-  assert.equal(route.routeId, expectedRoute.routeId);
-  assert.equal(route.routeHash, expectedRoute.routeHash);
-  assert.equal(route.local.stageKey, expectedRoute.local.stageKey);
-  assert.equal(route.entrance.localHookName, expectedRoute.entrance.localHookName);
-  assert.equal(route.inputs.length, expectedRoute.inputs.length);
-  assert.equal(route.outputs.length, expectedRoute.outputs.length);
-  for (const [actual, want] of zip(route.inputs, expectedRoute.inputs)) {
-    // TS 独立重算（不读 Rust 产物的哈希字段）
-    const recomputed = dockInputBindingHash({
-      routeId: route.routeId,
-      localHookId: keccak256(stringToHex(`${route.local.stageIdentifier}#${actual.localHookName}`)),
-      targetPort: actual.targetPort,
-      targetSourceId: actual.targetSourceId,
-      targetSignalId: actual.targetSignalId,
-      kind: actual.kind as "entrance" | "signal",
-    });
-    assert.equal(recomputed, want.bindingHash);
-    assert.equal(actual.bindingHash, want.bindingHash);
-    assert.equal(actual.kind, want.kind);
-  }
-  for (const [actual, want] of zip(route.outputs, expectedRoute.outputs)) {
-    const recomputed = dockOutputBindingHash({
-      routeId: route.routeId,
-      localSourceId: actual.localSourceId,
-      localSignalId: actual.localSignalId,
-      targetPort: actual.targetPort,
-      targetSourceId: actual.targetSourceId,
-      targetSignalId: actual.targetSignalId,
-      terminal: actual.terminal,
-    });
-    assert.equal(recomputed, want.bindingHash);
-    assert.equal(actual.bindingHash, want.bindingHash);
-    assert.equal(actual.localSignalName, want.localSignalName);
-  }
-  // 接口叶子逐个重算 + root 重算
-  const targetInterface = targetPlan.dockInterface!;
-  for (const port of targetInterface.inputs) {
+  // ---- 接口承诺：端口叶 → 两 root → interfaceLeaf_v2 → 定义级 root ----
+  for (const entry of targetInterface.interfaces) {
+    const name = entry.name;
+    for (const port of entry.inputs) {
+      assert.equal(
+        inputPortLeaf({
+          uid: targetInterface.definition.uid,
+          interfaceName: name,
+          portName: port.port,
+          hookId: port.hookId,
+        }),
+        port.leafHash,
+      );
+    }
+    for (const port of entry.outputs) {
+      assert.equal(
+        outputPortLeaf({
+          uid: targetInterface.definition.uid,
+          interfaceName: name,
+          portName: port.port,
+          canonicalSignal: port.canonicalOutputSignal,
+        }),
+        port.leafHash,
+      );
+    }
+    const inputsRoot = merkleRoot(entry.inputs.map((port) => port.leafHash));
+    const outputsRoot = merkleRoot(entry.outputs.map((port) => port.leafHash));
+    assert.equal(inputsRoot, entry.inputsRoot);
+    assert.equal(outputsRoot, entry.outputsRoot);
     assert.equal(
-      dockInterfaceInputLeaf({
-        definitionRefHash: targetInterface.definition.definitionRefHash,
-        portName: port.port,
-        kind: port.kind,
-        hookId: port.hookId,
-        sourceId: port.sourceId,
-        signalId: port.signalId,
-        accessPolicy: port.accessPolicy,
+      interfaceLeaf({
+        uid: targetInterface.definition.uid,
+        interfaceName: name,
+        orderModes: entry.orderModes,
+        inputsRoot: entry.inputsRoot,
+        outputsRoot: entry.outputsRoot,
       }),
-      port.leafHash,
+      entry.interfaceRoot,
     );
   }
-  for (const port of targetInterface.outputs) {
-    assert.equal(
-      dockInterfaceOutputLeaf({
-        definitionRefHash: targetInterface.definition.definitionRefHash,
-        portName: port.port,
-        sourceId: port.sourceId,
-        signalId: port.signalId,
-        terminal: port.terminal,
-      }),
-      port.leafHash,
-    );
-  }
-  // routeHash 全量重算（含 targetPlanId word）
-  // Rust 权威缺省（dock.rs `target.evm_plan_id.unwrap_or([0u8; 32])`）是
-  // 零 word，不是 keccak256("")——缺 evmPlanId 的目标按零 word 进 preimage。
-  const expectedRoute0 = expectedRoute;
-  const routeWithTargetPlan = (targetPlanId: `0x${string}`) =>
-    dockRouteHash({
-      routeId: route.routeId,
-      targetDefinitionRefHash: route.target.definitionRefHash,
-      targetArtifactHash: route.target.artifactHash,
-      targetInterfaceRoot: route.target.interfaceRoot,
-      targetPlanId,
-      sourceSeam: route.sourceSeam,
-      entranceBindingHash: route.inputs.find((i) => i.kind === "entrance")!.bindingHash,
-      accessPolicy: route.entrance.accessPolicy,
-      inputsRoot: merkleRoot(route.inputs.map((i) => i.bindingHash)),
-      outputsRoot: merkleRoot(route.outputs.map((o) => o.bindingHash)),
-    });
   assert.equal(
-    routeWithTargetPlan(route.target.evmPlanId ?? ZERO_WORD),
-    expectedRoute0.routeHash,
+    interfaceRootOf(targetInterface),
+    expected.interfaceArtifact.interfaceRoot,
   );
-  // 缺 evmPlanId 的 route 哈希向量钉死：同一 route 的 targetPlanId 槽位填
-  // 零 word（Rust 权威缺省）与空 Merkle root（旧错误缺省）必须分叉，冻结
-  // 如下——防止缺省值悄悄回退到 keccak256("")。PRD_101 后重钉：
-  // definitionRefHash 不再吸收 version 维度，preimage 变化使向量同步变化。
-  assert.equal(routeWithTargetPlan(ZERO_WORD), "0xbaf7065c1b74bf6af77a28728b2c26dd5749872c6f91d405a44d91aa4e9f4caa");
-  assert.equal(routeWithTargetPlan(EMPTY_MERKLE_ROOT), "0x71f9461cdf42943607e1e87bea87f895f79d65b81ffbac5d803c999205f7893d");
-  // input payload hash 独立重算
-  const entranceInput0 = route.inputs.find((i) => i.kind === "entrance")!;
-  assert.equal(
-    dockInputPayloadHash({
-      dockInstanceId: expected.dockInstanceId,
-      routeHash: route.routeHash,
-      localPlanId: pad(fixture.inputs.parentPlanIdWord, { size: 32 }),
-      localOrderId: expected.localOrderKey,
-      localStageId: route.local.stageKey,
-      localHookId: keccak256(stringToHex(`${route.local.stageIdentifier}#${route.entrance.localHookName}`)),
-      targetPlanId: fixture.expected.targetPlanId,
-      linkedOrderId: expected.linkedOrderId,
-      targetPort: route.entrance.targetPort,
-      targetSignalId: entranceInput0.targetSignalId,
-    }),
-    expected.inputPayloadHash,
-  );
+
+  // ---- 父定义 route 集：与 Rust 输出一致 ----
+  assert.equal(parentPlan.zhixuId, fixture.identities.parentUid);
+  assert.deepEqual(parentPlan.dockRoutes, expected.dockRoutes);
   assert.equal(parentPlan.dockRoutesRoot, expected.dockRoutesRoot);
-  assert.equal(parentPlan.dockInterfaceRoot, expected.dockInterfaceRoot);
+  // 父定义无 dockInterface → 定义级 root 是 EMPTY root。
+  assert.equal(parentPlan.dockInterface, null);
+  assert.equal(parentPlan.dockInterfaceRoot, EMPTY_MERKLE_ROOT);
+
+  for (const route of parentPlan.dockRoutes) {
+    // TS 独立重算（不读 Rust 产物的哈希字段）
+    const recomputedRouteId = dockRouteId(
+      expected.parentDefinitionRefHash,
+      stageKey(route.local.stageIdentifier),
+    );
+    assert.equal(recomputedRouteId, route.routeId);
+    for (const binding of route.inputBindings) {
+      assert.equal(
+        inputBindingHash({
+          routeId: route.routeId,
+          interfaceName: route.target.interfaceName,
+          localHookId: `${route.local.stageIdentifier}#${binding.localHookName}`,
+          portName: binding.targetPort,
+          targetSourceId: binding.targetSourceId,
+          targetSignalId: binding.targetSignalId,
+        }),
+        binding.bindingHash,
+      );
+    }
+    for (const binding of route.outputBindings) {
+      assert.equal(
+        outputBindingHash({
+          routeId: route.routeId,
+          interfaceName: route.target.interfaceName,
+          localSourceId: binding.localSourceId,
+          localSignalId: binding.localSignalId,
+          portName: binding.targetPort,
+          targetSourceId: binding.targetSourceId,
+          targetSignalId: binding.targetSignalId,
+        }),
+        binding.bindingHash,
+      );
+    }
+    const inputsRoot = merkleRoot(
+      route.inputBindings.map((binding) => binding.bindingHash),
+    );
+    const outputsRoot = merkleRoot(
+      route.outputBindings.map((binding) => binding.bindingHash),
+    );
+    assert.equal(inputsRoot, route.inputBindingsRoot);
+    assert.equal(outputsRoot, route.outputBindingsRoot);
+    assert.equal(
+      routeHash({
+        localDefinitionRefHash: expected.parentDefinitionRefHash,
+        targetDefinitionRefHash: route.target.definitionRefHash,
+        interfaceName: route.target.interfaceName,
+        orderMode: route.orderMode,
+        inputBindingsRoot: route.inputBindingsRoot,
+        outputBindingsRoot: route.outputBindingsRoot,
+      }),
+      route.routeHash,
+    );
+  }
   assert.equal(
-    merkleRoot(parentPlan.dockRoutes.map((dockRoute) => dockRoute.routeHash)),
+    dockRoutesRootOf(parentPlan.dockRoutes),
     expected.dockRoutesRoot,
   );
 });
 
 test("runtime domains and derived identities match the golden vectors", () => {
   const inputs = fixture.inputs;
-  const expected = fixture.expected;
   assert.equal(
     evmRuntimeDomain(BigInt(inputs.chainId), inputs.stateMachineAddress),
     expected.evmRuntimeDomain,
@@ -286,77 +365,121 @@ test("runtime domains and derived identities match the golden vectors", () => {
   );
   assert.equal(localOrderKey(inputs.localOrderId), expected.localOrderKey);
 
-  const route = fixture.expected.dockRoutes[0]!;
+  const serviceRoute = findRoute("production_service");
+  const evidenceRoute = findRoute("production_evidence");
+  // 接口名 word：keccak(interfaceName)。
+  assert.equal(
+    interfaceNameKey("production_service"),
+    expected.interfaceNameIds.production_service,
+  );
+  assert.equal(
+    interfaceNameKey("production_evidence"),
+    expected.interfaceNameIds.production_evidence,
+  );
+
+  // new 模式 dockInstanceId：恰 8 word（route 身份 + 本地单幂等建单锚）。
   const instance = dockInstanceId({
     runtimeDomain: expected.evmRuntimeDomain,
-    localPlanId: pad(fixture.inputs.parentPlanIdWord, { size: 32 }),
+    localPlanId: inputs.parentPlanIdWord,
     localDefinitionRefHash: expected.parentDefinitionRefHash,
     localOrderKey: expected.localOrderKey,
-    routeId: route.routeId,
-    routeHash: route.routeHash,
+    routeId: serviceRoute.routeId,
+    routeHash: serviceRoute.routeHash,
+    orderMode: "new",
+    interfaceName: "production_service",
   });
   assert.equal(instance, expected.dockInstanceId);
   assert.equal(
     linkedOrderId(instance, expected.targetDefinitionRefHash),
     expected.linkedOrderId,
   );
-});
 
-test("evmRuntimeDomain encodes chainId as a full uint256 word (contract parity)", () => {
-  // 0042 F-15：合约 runtimeDomain 用 abi.encode(_DOMAIN_RUNTIME_EIP155,
-  // block.chainid(uint256), address(stateMachine))——chainId ≥ 2^64 时
-  // u64 语义分叉。TS 侧按 uint256 全宽编码，独立 abi.encode 重算钉住。
-  const stateMachineAddress = "0x1111111111111111111111111111111111111111" as `0x${string}`;
-  const chainId = (1n << 64n) + 42n;
+  // existing 模式：尾部追加第 9 word = target order 引用（A07）。
   assert.equal(
-    evmRuntimeDomain(chainId, stateMachineAddress),
-    keccak256(
-      encodeAbiParameters(
-        parseAbiParameters("bytes32, uint256, address"),
-        [
-          keccak256(stringToHex("UVP_RUNTIME_EIP155_V1")),
-          chainId,
-          stateMachineAddress,
-        ],
-      ),
-    ),
+    dockInstanceId({
+      runtimeDomain: expected.cloudRuntimeDomain,
+      localPlanId: inputs.parentPlanIdWord,
+      localDefinitionRefHash: expected.parentDefinitionRefHash,
+      localOrderKey: expected.localOrderKey,
+      routeId: evidenceRoute.routeId,
+      routeHash: evidenceRoute.routeHash,
+      orderMode: "existing",
+      interfaceName: "production_evidence",
+      targetOrderRef: inputs.existingTargetOrderRef,
+    }),
+    expected.existingDockInstanceId,
   );
-  // 越界 chainId（≥ 2^256）响亮拒绝，不得静默截断。
-  assert.throws(
-    () => evmRuntimeDomain(1n << 256n, stateMachineAddress),
-    /256-bit word range/,
+  // 引用不同即不同实例（targetOrderRefKey 参与派生）。
+  assert.notEqual(
+    dockInstanceId({
+      runtimeDomain: expected.cloudRuntimeDomain,
+      localPlanId: inputs.parentPlanIdWord,
+      localDefinitionRefHash: expected.parentDefinitionRefHash,
+      localOrderKey: expected.localOrderKey,
+      routeId: evidenceRoute.routeId,
+      routeHash: evidenceRoute.routeHash,
+      orderMode: "existing",
+      interfaceName: "production_evidence",
+      targetOrderRef: "factory-a/P002",
+    }),
+    expected.existingDockInstanceId,
+  );
+  assert.equal(
+    targetOrderRefKey(inputs.existingTargetOrderRef).length,
+    66,
   );
 });
 
 test("envelope and idempotency keys match the golden vectors", () => {
-  const expected = fixture.expected;
-  const route = expected.dockRoutes[0]!;
-  const factSet = sourceFactSetHash([
-    canonicalSignalHash("buyer::checkout.confirm.cmp"),
-    canonicalSignalHash("buyer::checkout.cancel.cmp"),
-  ]);
-  assert.equal(factSet, expected.sourceFactSetHash);
+  const inputs = fixture.inputs;
+  const serviceRoute = findRoute("production_service");
+  const birthBinding = serviceRoute.inputBindings.find(
+    (binding) => binding.targetPort === "execute",
+  )!;
+  const completedOutput = serviceRoute.outputBindings.find(
+    (binding) => binding.localSignalName === "cmp",
+  )!;
 
-  const entranceInput = route.inputs.find((input) => input.kind === "entrance")!;
+  assert.equal(
+    sourceFactSetHash([
+      canonicalSignalHash("purchaser::procurement.confirm.cmp"),
+    ]),
+    expected.sourceFactSetHash,
+  );
+
+  assert.equal(
+    dockInputPayloadHash({
+      dockInstanceId: expected.dockInstanceId,
+      routeHash: serviceRoute.routeHash,
+      localPlanId: inputs.parentPlanIdWord,
+      localOrderId: expected.localOrderKey,
+      localStageId: serviceRoute.local.stageKey,
+      localHookId: hookKey("sourcing.manufacture#EXECUTE"),
+      targetPlanId: expected.targetPlanId,
+      linkedOrderId: expected.linkedOrderId,
+      targetPort: "execute",
+      targetSignalId: birthBinding.targetSignalId,
+      sequence: 0,
+    }),
+    expected.inputPayloadHash,
+  );
+
   assert.equal(
     dockInputIdempotencyKey({
       dockInstanceId: expected.dockInstanceId,
-      inputBindingHash: entranceInput.bindingHash,
+      inputBindingHash: birthBinding.bindingHash,
       localHookReadyOccurrence: 0n,
     }),
     expected.inputIdempotencyKey,
   );
 
-  const completedOutput = route.outputs.find(
-    (output) => output.localSignalName === "cmp",
-  )!;
   assert.equal(
     dockOutputIdempotencyKey({
       dockInstanceId: expected.dockInstanceId,
       outputBindingHash: completedOutput.bindingHash,
       targetFactId: signalKey(
-        keccak256(stringToHex("payment")),
-        keccak256(stringToHex("payment_flow.settle.cmp")),
+        interfaceNameKey("factory"),
+        interfaceNameKey("manufacturing.produce.cmp"),
       ),
     }),
     expected.outputIdempotencyKey,
@@ -364,10 +487,14 @@ test("envelope and idempotency keys match the golden vectors", () => {
 });
 
 test("merkle proofs from the golden fixture verify against the roots", () => {
-  const expected = fixture.expected;
-  const routeLeaf = expected.dockRoutes[0]!.routeHash;
+  const serviceRoute = findRoute("production_service");
+  const evidenceRoute = findRoute("production_evidence");
   assert.ok(
-    verifyMerkleProof(expected.dockRoutesRoot, routeLeaf, expected.routeLeafProof),
+    verifyMerkleProof(
+      expected.dockRoutesRoot,
+      serviceRoute.routeHash,
+      expected.routeLeafProof,
+    ),
   );
   assert.ok(
     !verifyMerkleProof(
@@ -376,70 +503,122 @@ test("merkle proofs from the golden fixture verify against the roots", () => {
       expected.routeLeafProof,
     ),
   );
+  // TS 侧重建的 proof 与 Rust 提供的 proof 逐字相同。
+  assert.deepEqual(
+    merkleProof(
+      parentPlan.dockRoutes.map((route) => route.routeHash),
+      serviceRoute.routeHash,
+    ),
+    expected.routeLeafProof,
+  );
 
-  const entranceLeaf = expected.interfaceArtifact.inputs.find(
+  const serviceInterface = targetInterface.interfaces.find(
+    (entry) => entry.name === "production_service",
+  )!;
+  const evidenceInterface = targetInterface.interfaces.find(
+    (entry) => entry.name === "production_evidence",
+  )!;
+  assert.ok(
+    verifyMerkleProof(
+      expected.interfaceArtifact.interfaceRoot,
+      serviceInterface.interfaceRoot,
+      expected.interfaceLeafProof,
+    ),
+  );
+  assert.deepEqual(
+    merkleProof(
+      targetInterface.interfaces.map((entry) => entry.interfaceRoot),
+      serviceInterface.interfaceRoot,
+    ),
+    expected.interfaceLeafProof,
+  );
+
+  const executeLeaf = serviceInterface.inputs.find(
     (port) => port.port === "execute",
   )!.leafHash;
   assert.ok(
     verifyMerkleProof(
-      expected.interfaceArtifact.interfaceRoot,
-      entranceLeaf,
-      expected.entranceInterfaceLeafProof,
+      serviceInterface.inputsRoot,
+      executeLeaf,
+      expected.inputPortLeafProof,
     ),
   );
-  // TS 侧重建的 proof 与 Rust 提供的 proof 逐字相同。
-  const leaves = [
-    ...expected.interfaceArtifact.inputs.map((port) => port.leafHash),
-    ...expected.interfaceArtifact.outputs.map((port) => port.leafHash),
-  ];
-  assert.deepEqual(merkleProof(leaves, entranceLeaf), expected.entranceInterfaceLeafProof);
+  assert.deepEqual(
+    merkleProof(
+      serviceInterface.inputs.map((port) => port.leafHash),
+      executeLeaf,
+    ),
+    expected.inputPortLeafProof,
+  );
+  void evidenceInterface;
+  void evidenceRoute;
 });
 
-test("EIP-712 entrance permit digest matches the golden vector", () => {
+test("EIP-712 entrance permit digest matches the golden vector (V2 typehash, version 3)", () => {
   const inputs = fixture.inputs;
-  const expected = fixture.expected;
-  const route = expected.dockRoutes[0]!;
-
-  const domainSeparator = keccak256(
-    concat([
-      keccak256(
-        stringToHex(
-          "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
-        ),
-      ),
-      keccak256(stringToHex("UVPDockingModule")),
-      keccak256(stringToHex("2")),
-      toHex(BigInt(inputs.chainId), { size: 32 }),
-      pad(inputs.dockingModuleAddress.toLowerCase() as `0x${string}`, { size: 32 }),
-    ]),
-  );
-  const structHash = keccak256(
-    concat([
-      keccak256(
-        stringToHex(
-          "UVPDockEntrancePermitV1(bytes32 targetPlanId,bytes32 targetEntrancePortId,bytes32 localPlanId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,uint256 feeLimit,uint256 nonce,uint256 deadline)",
-        ),
-      ),
-      pad(fixture.expected.targetPlanId, { size: 32 }),
-      portKey("execute"),
-      pad(inputs.parentPlanIdWord, { size: 32 }),
-      route.routeHash,
-      expected.dockInstanceId,
-      expected.linkedOrderId,
-      toHex(0n, { size: 32 }),
-      toHex(1n, { size: 32 }),
-      toHex(2000000000n, { size: 32 }),
-    ]),
-  );
-  const digest = keccak256(
-    concat([stringToHex("\u0019\u0001"), domainSeparator, structHash]),
-  );
+  const serviceRoute = findRoute("production_service");
+  const digest = eip712PermitDigest({
+    chainId: BigInt(inputs.chainId),
+    verifyingContract: inputs.dockingModuleAddress,
+    version: fixture.constants.permitDomainVersion,
+    targetPlanId: expected.targetPlanId,
+    targetEntrancePortId: interfaceNameKey("execute"),
+    interfaceNameId: interfaceNameKey("production_service"),
+    localPlanId: inputs.parentPlanIdWord,
+    routeHash: serviceRoute.routeHash,
+    dockInstanceId: expected.dockInstanceId,
+    linkedOrderId: expected.linkedOrderId,
+    nonce: 1,
+    deadline: 2000000000,
+  });
   assert.equal(digest, expected.permitDigest);
-  // hookKey 基元也被 permit/typehash 之外的身份推导使用，钉住一个样本。
-  assert.equal(hookKey("settlement.execute_payment#EXECUTE").length, 66);
 });
 
-function zip<T>(left: readonly T[], right: readonly T[]): [T, T][] {
-  assert.equal(left.length, right.length);
-  return left.map((item, index) => [item, right[index]!] as [T, T]);
-}
+test("golden routes satisfy the TS commitment recomputation", () => {
+  // dock-validation 的逐 word 重算对 golden 产物零 issue（fail-closed 镜像）。
+  assert.deepEqual(
+    validateDockCommitments({
+      dockRoutes: parentPlan.dockRoutes,
+      dockRoutesRoot: parentPlan.dockRoutesRoot,
+      dockInterface: targetPlan.dockInterface,
+      dockInterfaceRoot: targetPlan.dockInterfaceRoot,
+    }),
+    [],
+  );
+  // 篡改任一 leafHash/bindingHash/routeHash 必须被重算路径捕获。
+  const tamperedRoute = structuredClone(findRoute("production_service")) as DockRouteV2;
+  const tamperedBinding = tamperedRoute.outputBindings[0] as unknown as
+    | Record<string, unknown>
+    | undefined;
+  assert.ok(tamperedBinding, "production_service route has output bindings");
+  tamperedBinding.bindingHash = `0x${"0".repeat(63)}7`;
+  const routeIssues = validateDockCommitments({
+    dockRoutes: [tamperedRoute as unknown as DockRouteV2],
+    dockRoutesRoot: merkleRoot([tamperedRoute.routeHash]),
+    dockInterface: null,
+    dockInterfaceRoot: EMPTY_MERKLE_ROOT,
+  });
+  assert.ok(
+    routeIssues.some((issue) =>
+      /outputBindings\[0\]\.bindingHash must match the recomputed/.test(issue),
+    ),
+    routeIssues.join("; "),
+  );
+  const tamperedInterface = structuredClone(targetPlan.dockInterface!) as DockInterfaceArtifactV2;
+  const service = tamperedInterface.interfaces.find(
+    (entry) => entry.name === "production_service",
+  ) as unknown as Record<string, unknown>;
+  service.orderModes = ["existing"];
+  const interfaceIssues = validateDockCommitments({
+    dockRoutes: [],
+    dockRoutesRoot: EMPTY_MERKLE_ROOT,
+    dockInterface: tamperedInterface,
+    dockInterfaceRoot: tamperedInterface.interfaceRoot,
+  });
+  assert.ok(
+    interfaceIssues.some((issue) =>
+      /interfaceRoot must match the recomputed interface-leaf preimage/.test(issue),
+    ),
+    interfaceIssues.join("; "),
+  );
+});

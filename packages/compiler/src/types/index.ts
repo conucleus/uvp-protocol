@@ -3,18 +3,19 @@ export const COMPILER_VERSION = "0.1.0" as const;
 export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v2" as const;
 export const ONCHAIN_HOOK_PLAN_SCHEMA_VERSION =
   "uvp.onchainHookPlan.v2" as const;
-export const DOCK_SCHEMA_VERSION = "uvp.dock.v1" as const;
 export const DOCK_INTERFACE_ARTIFACT_SCHEMA_VERSION =
-  "uvp.dockInterfaceArtifact.v1" as const;
-export const DOCK_ROUTE_SCHEMA_VERSION = "uvp.dockRoute.v1" as const;
-export const DOCK_RESOLUTION_SCHEMA_VERSION = "uvp.dock.resolution.v1" as const;
+  "uvp.dockInterfaceArtifact.v2" as const;
+export const DOCK_ROUTE_SCHEMA_VERSION = "uvp.dockRoute.v2" as const;
+export const DOCK_RESOLUTION_SCHEMA_VERSION = "uvp.dock.resolution.v2" as const;
 
 export type HexString = `0x${string}`;
 export type Address = HexString;
 
+/** PRD_100 §11：route 订单方式与接口 orderModes 的闭集取值。 */
+export type DockOrderMode = "new" | "existing";
+
 export interface ObjectMeta {
   readonly name: string;
-  readonly uid?: string;
   readonly labels?: Record<string, string>;
   readonly annotations?: Record<string, string>;
 }
@@ -35,7 +36,7 @@ export interface ZhixuDefinition {
       readonly params?: Record<string, string>;
     };
     readonly taskPatterns: readonly ZhixuTaskPattern[];
-    /** 目标侧公开的版本化对接接口（uvp.dock.v1）。 */
+    /** 目标侧公开的具名对接接口 map（接口名 = key，PRD_100 §9）。 */
     readonly dockInterface?: DockInterfaceSource;
   };
 }
@@ -75,159 +76,179 @@ export interface ZhixuStage {
 export interface ExecuteConfigs {
   readonly supplierType: "individual" | "organization" | "zhixu" | string;
   readonly supplierID?: string;
-  /** uvp.dock.v1：`supplierType: zhixu` 时必填，且禁止 supplierID。 */
+  /** 键闭集 {target, interface, order, inputMap, signalMap}；`supplierType: zhixu` 时必填，且禁止 supplierID。 */
   readonly zhixuExecutorConfig?: ZhixuExecutorConfigSource;
   readonly selectableResource?: Record<string, FileResourceLike>;
   readonly [key: string]: unknown;
 }
 
-/** `spec.dockInterface` source 形状。 */
-export interface DockInterfaceSource {
-  readonly schemaVersion: "uvp.dock.v1";
-  readonly inputs: Record<string, DockInputPortSource>;
-  readonly outputs: Record<string, DockOutputPortSource>;
+/** `spec.dockInterface` source：具名接口 map（接口名 = key，与端口名同规则）。 */
+export type DockInterfaceSource = Record<string, DockInterfaceSpecSource>;
+
+export interface DockInterfaceSpecSource {
+  /** {new, existing} 的非空子集，无重复。 */
+  readonly orderModes: readonly DockOrderMode[];
+  /** port -> hook 引用（`<task>.<stage>#<receiveHookName>`）；省略 = 空集合。 */
+  readonly inputs?: Record<string, { readonly hook: string }>;
+  /** port -> canonical signal（`<source>::<task>.<stage>.<signal>`）；省略 = 空集合。 */
+  readonly outputs?: Record<string, { readonly signal: string }>;
 }
 
-export interface DockInputPortSource {
-  readonly kind: "entrance" | "signal";
-  /** `<task>.<stage>#<receiveHookName>` */
-  readonly hook: string;
-  readonly access: { readonly policy: "open" | "permit" | "linked" };
-}
-
-export interface DockOutputPortSource {
-  /** `<source>::<task>.<stage>.<signal>` */
-  readonly signal: string;
-  /** Rust 权威四值（dock.rs TERMINAL_TABLE），缺省 "none"。 */
-  readonly terminal?: "none" | "success" | "failure" | "cancelled";
-}
-
-/** 调用方 `executor.zhixuExecutorConfig`。 */
+/** 调用方 `executor.zhixuExecutorConfig`（键闭集 {target, interface, order, inputMap, signalMap}）。 */
 export interface ZhixuExecutorConfigSource {
-  readonly schemaVersion: "uvp.dock.v1";
-  /** 目标引用只剩 zhixu：不可变 catalog UID 即完整定义身份（PRD_101）。 */
-  readonly target: {
-    readonly zhixu: string;
-  };
-  readonly order: { readonly idPolicy: "derived-v1" };
-  readonly inputMap: Record<string, string>;
-  readonly signalMap: Record<string, string>;
+  /**
+   * 键必填：`{zhixu: <目标定义派生身份 zx-<32hex>>}` 为静态目标，显式
+   * `null` 表示运行时由选择记录补齐（loader/编译器对"缺键"与"null"区别
+   * 拒绝/放行，类型层面 target 恒为 required）。
+   */
+  readonly target: { readonly zhixu: string } | null;
+  /** 目标接口名（与端口名同规则）。 */
+  readonly interface: string;
+  readonly order: { readonly mode: DockOrderMode };
+  /** 本地 receiveSignals 通道名 -> 目标接口 input 端口名。 */
+  readonly inputMap?: Record<string, string>;
+  /** 本地 sendSignals 信号名 -> 目标接口 output 端口名。 */
+  readonly signalMap?: Record<string, string>;
 }
 
-/** Resolution manifest：由 Store/发布系统提供。 */
+/** Resolution manifest v2：由 Store/发布系统或离线 lock 文件提供。 */
 export interface DockResolutionManifest {
-  readonly schemaVersion: "uvp.dock.resolution.v1";
+  readonly schemaVersion: typeof DOCK_RESOLUTION_SCHEMA_VERSION;
   readonly definitions: readonly DockResolutionTarget[];
 }
 
 export interface DockResolutionTarget {
+  /** 目标定义派生身份（zx-<32hex>）；必须与内嵌 definition 派生结果一致。 */
   readonly zhixu: string;
+  /** 内嵌目标定义全文（内容寻址，PRD_102 §5：linker 重算 uid 三方一致校验）。 */
+  readonly definition: ZhixuDefinition;
   readonly definitionRefHash: HexString;
   readonly artifactHash: HexString;
   readonly published: boolean;
-  readonly interface: DockInterfaceArtifact;
+  readonly interfaces: readonly DockInterfaceArtifactInterface[];
   readonly cloudArtifactId?: string;
   readonly evmPlanId?: HexString;
-  readonly dockEdges?: readonly { zhixu: string }[];
+  readonly dockEdges?: readonly { readonly zhixu: string }[];
 }
 
-/** 目标接口编译产物（数组按端口名升序）。 */
-export interface DockInterfaceArtifact {
-  readonly schemaVersion: "uvp.dockInterfaceArtifact.v1";
+/** 目标接口编译产物 v2（Rust core 权威产出，字段逐字节镜像 dock.rs to_json）。 */
+export interface DockInterfaceArtifactV2 {
+  readonly schemaVersion: typeof DOCK_INTERFACE_ARTIFACT_SCHEMA_VERSION;
   readonly definition: {
     readonly uid: string;
     readonly definitionRefHash: HexString;
   };
-  readonly inputs: readonly {
-    readonly port: string;
-    readonly kind: "entrance" | "signal";
-    readonly stageIdentifier: string;
-    readonly hookName: string;
-    readonly hookId: string;
-    readonly canonicalInputSignal: string;
-    readonly canonicalInputSignalHash: HexString;
-    readonly source: string;
-    readonly sourceId: HexString;
-    readonly signalId: HexString;
-    readonly accessPolicy: "open" | "permit" | "linked";
-    readonly leafHash: HexString;
-  }[];
-  readonly outputs: readonly {
-    readonly port: string;
-    readonly canonicalOutputSignal: string;
-    readonly canonicalOutputSignalHash: HexString;
-    readonly source: string;
-    readonly sourceId: HexString;
-    readonly signalId: HexString;
-    readonly terminal: "none" | "success" | "failure" | "cancelled";
-    readonly leafHash: HexString;
-  }[];
+  /** 按接口名升序。 */
+  readonly interfaces: readonly DockInterfaceArtifactInterface[];
+  /** 定义级 dockInterfaceRoot：全部接口叶（interfaces[].interfaceRoot）的 merkle root；无接口 = EMPTY root。 */
   readonly interfaceRoot: HexString;
 }
 
-/** 已解析 DockRouteV1（Rust core 权威产出）。 */
-export interface DockRouteV1 {
-  readonly schemaVersion: "uvp.dockRoute.v1";
+/** 一个具名接口的承诺；`interfaceRoot` = interfaceLeaf_v2。 */
+export interface DockInterfaceArtifactInterface {
+  readonly name: string;
+  readonly orderModes: readonly DockOrderMode[];
+  readonly inputs: readonly DockInterfaceArtifactPortInput[];
+  readonly outputs: readonly DockInterfaceArtifactPortOutput[];
+  readonly inputsRoot: HexString;
+  readonly outputsRoot: HexString;
+  readonly interfaceRoot: HexString;
+}
+
+export interface DockInterfaceArtifactPortInput {
+  readonly port: string;
+  readonly stageIdentifier: string;
+  readonly hookName: string;
+  /** `<task>.<stage>#<receiveHookName>` 原文（即 leaf preimage 的 hookRef）。 */
+  readonly hookId: string;
+  readonly canonicalInputSignal: string;
+  readonly canonicalInputSignalHash: HexString;
+  readonly source: string;
+  /** 运行期投递寻址数据（keccak(source) / keccak(task.stage.signal)），随产物携带但不入叶哈希。 */
+  readonly sourceId: HexString;
+  readonly signalId: HexString;
+  readonly leafHash: HexString;
+}
+
+export interface DockInterfaceArtifactPortOutput {
+  readonly port: string;
+  /** `<source>::<task>.<stage>.<signal>` 原文（即 leaf preimage 的 canonicalSignal）。 */
+  readonly canonicalOutputSignal: string;
+  readonly canonicalOutputSignalHash: HexString;
+  readonly source: string;
+  readonly sourceId: HexString;
+  readonly signalId: HexString;
+  readonly leafHash: HexString;
+}
+
+/** 已解析 DockRoute v2（Rust core 权威产出）。 */
+export interface DockRouteV2 {
+  readonly schemaVersion: typeof DOCK_ROUTE_SCHEMA_VERSION;
   readonly routeId: HexString;
   readonly local: {
     readonly definitionRefHash: HexString;
+    readonly planId: HexString;
     readonly stageIdentifier: string;
     readonly stageKey: HexString;
   };
   readonly target: {
     readonly definitionRefHash: HexString;
     readonly zhixuUid: string;
+    readonly zhixuName: string;
+    readonly interfaceName: string;
+    /** 被绑定接口的 interfaceLeaf_v2（manifest interfaces[].interfaceRoot）。 */
+    readonly interfaceRoot: HexString;
+    /** 目标定义级 dockInterfaceRoot。 */
+    readonly dockInterfaceRoot: HexString;
     readonly artifactHash: HexString;
     readonly cloudArtifactId?: string;
     readonly evmPlanId?: HexString;
-    readonly interfaceRoot: HexString;
   };
-  readonly orderIdPolicy: "derived-v1";
+  readonly orderMode: DockOrderMode;
   readonly sourceSeam: string;
-  readonly entrance: {
-    readonly localHookName: string;
-    readonly targetPort: string;
-    readonly targetStageKey: HexString;
-    readonly targetHookKey: HexString;
-    readonly targetInputSignalHash: HexString;
-    readonly accessPolicy: "open" | "permit";
-  };
-  readonly inputs: readonly {
-    readonly localHookName: string;
-    readonly targetPort: string;
-    readonly targetInputSignalHash: HexString;
-    readonly targetSourceId: HexString;
-    readonly targetSignalId: HexString;
-    readonly kind: "entrance" | "signal";
-    readonly bindingHash: HexString;
-  }[];
-  readonly outputs: readonly {
-    readonly localSignalName: string;
-    readonly localSourceId: HexString;
-    readonly localSignalId: HexString;
-    readonly targetPort: string;
-    readonly targetOutputSignalHash: HexString;
-    readonly targetSourceId: HexString;
-    readonly targetSignalId: HexString;
-    readonly terminal: "none" | "success" | "failure" | "cancelled";
-    readonly bindingHash: HexString;
-  }[];
-  readonly inputsRoot: HexString;
-  readonly outputsRoot: HexString;
+  readonly inputBindings: readonly DockRouteInputBinding[];
+  readonly outputBindings: readonly DockRouteOutputBinding[];
+  readonly inputBindingsRoot: HexString;
+  readonly outputBindingsRoot: HexString;
   readonly routeHash: HexString;
+}
+
+export interface DockRouteInputBinding {
+  readonly localHookName: string;
+  readonly targetPort: string;
+  readonly targetInputSignalHash: HexString;
+  readonly targetSourceId: HexString;
+  readonly targetSignalId: HexString;
+  /** 目标侧可读名称（仅 JSON 投影，不参与哈希）。 */
+  readonly targetStageIdentifier: string;
+  readonly targetSignalName: string;
+  readonly bindingHash: HexString;
+}
+
+export interface DockRouteOutputBinding {
+  readonly localSignalName: string;
+  readonly localSourceId: HexString;
+  readonly localSignalId: HexString;
+  readonly targetPort: string;
+  readonly targetOutputSignalHash: HexString;
+  readonly targetSourceId: HexString;
+  readonly targetSignalId: HexString;
+  readonly targetSignalName: string;
+  readonly bindingHash: HexString;
 }
 
 export interface HookPlanArtifact {
   readonly schemaVersion: typeof HOOK_PLAN_SCHEMA_VERSION;
   readonly planId: HexString;
+  /** 定义派生身份（zx-<32hex>，PRD_102 §5）。 */
   readonly zhixuId: string;
   readonly zhixuName: string;
   readonly platform: ZhixuPlatform;
   readonly compiledHooks: readonly CompiledHookPlanHook[];
   readonly dependencyIndex: Record<string, readonly string[]>;
   readonly executorRoutes: Record<string, HookPlanExecutorRoute>;
-  readonly dockInterface: DockInterfaceArtifact | null;
-  readonly dockRoutes: readonly DockRouteV1[];
+  readonly dockInterface: DockInterfaceArtifactV2 | null;
+  readonly dockRoutes: readonly DockRouteV2[];
   readonly dockRoutesRoot: HexString;
   readonly dockInterfaceRoot: HexString;
   readonly selectedStageBindings: readonly SelectedStageBinding[];
@@ -373,6 +394,7 @@ export interface OnchainCompiledHook {
 export interface OnchainHookPlanArtifact {
   readonly schemaVersion: typeof ONCHAIN_HOOK_PLAN_SCHEMA_VERSION;
   readonly planId: HexString;
+  /** 定义派生身份（zx-<32hex>，PRD_102 §5）。 */
   readonly zhixuId: string;
   readonly zhixuName: string;
   readonly platform: ZhixuPlatform;
@@ -380,8 +402,8 @@ export interface OnchainHookPlanArtifact {
   readonly compiledHooks: readonly OnchainCompiledHook[];
   readonly dependencyIndex: Record<HexString, readonly HexString[]>;
   readonly executorRoutes: readonly OnchainExecutorRoute[];
-  readonly dockInterface: DockInterfaceArtifact | null;
-  readonly dockRoutes: readonly DockRouteV1[];
+  readonly dockInterface: DockInterfaceArtifactV2 | null;
+  readonly dockRoutes: readonly DockRouteV2[];
   readonly dockRoutesRoot: HexString;
   readonly dockInterfaceRoot: HexString;
   readonly selectorBindings: readonly OnchainStageSelectorBinding[];

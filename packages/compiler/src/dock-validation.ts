@@ -1,12 +1,26 @@
-import { EMPTY_MERKLE_ROOT, merkleRoot } from "./dock.js";
+import {
+  definitionRefHash,
+  dockRouteId,
+  EMPTY_MERKLE_ROOT,
+  inputBindingHash,
+  inputPortLeaf,
+  interfaceLeaf,
+  merkleRoot,
+  outputBindingHash,
+  outputPortLeaf,
+  routeHash as routeHashOf,
+  stageKey,
+} from "./dock.js";
 
 /**
- * Validate the Merkle commitments carried by a HookPlan artifact.
+ * Validate the Merkle commitments carried by a HookPlan artifact (dock v2).
  *
- * The Rust linker checks these commitments while producing the portable
- * artifact.  The TS artifact boundary must repeat the check when it receives
- * a serialized artifact, otherwise a caller could repin `planHash` around a
- * stale route/interface root and still pass local validation.
+ * The Rust linker recomputes every leaf/root/route hash from the manifest
+ * words while producing the portable artifact.  The TS artifact boundary
+ * must repeat the same word-level recomputation when it receives a
+ * serialized artifact, otherwise a caller could repin `planHash` around a
+ * stale or hand-crafted route/interface commitment and still pass local
+ * validation.
  *
  * This helper deliberately only checks the commitment surface.  The regular
  * HookPlan/on-chain validators own the rest of the schema and append their
@@ -39,6 +53,9 @@ export function validateDockCommitments(
         continue;
       }
       routeHashes.push(route.routeHash);
+      issues.push(
+        ...validateDockRouteCommitments(route, `${path}.dockRoutes[${index}]`),
+      );
     }
     if (allRouteHashesValid && isHexHash(value.dockRoutesRoot)) {
       const expectedRoot = merkleRoot(routeHashes as `0x${string}`[]);
@@ -70,55 +87,326 @@ export function validateDockCommitments(
     return issues;
   }
 
-  const inputs = dockInterface.inputs;
-  const outputs = dockInterface.outputs;
-  if (!Array.isArray(inputs)) {
-    issues.push(`${path}.dockInterface.inputs must be an array`);
+  const definition = isRecord(dockInterface.definition)
+    ? dockInterface.definition
+    : undefined;
+  const uid = definition?.uid;
+  const definitionRef = definition?.definitionRefHash;
+  const interfaces = dockInterface.interfaces;
+  if (
+    typeof uid !== "string" ||
+    uid.length === 0 ||
+    !isHexHash(definitionRef)
+  ) {
+    issues.push(
+      `${path}.dockInterface.definition must carry a non-empty uid and a lowercase 32-byte hex definitionRefHash`,
+    );
+    return issues;
   }
-  if (!Array.isArray(outputs)) {
-    issues.push(`${path}.dockInterface.outputs must be an array`);
+  if (!Array.isArray(interfaces)) {
+    issues.push(`${path}.dockInterface.interfaces must be an array`);
+    return issues;
   }
-  if (!Array.isArray(inputs) || !Array.isArray(outputs)) {
+  if (definitionRefHash(uid) !== definitionRef) {
+    issues.push(
+      `${path}.dockInterface.definition.definitionRefHash must match H(UVP_DEFINITION_REF_V1, keccak(uid))`,
+    );
+  }
+
+  for (const [index, entry] of interfaces.entries()) {
+    if (!isRecord(entry)) {
+      issues.push(`${path}.dockInterface.interfaces[${index}] must be an object`);
+      continue;
+    }
+    issues.push(
+      ...validateInterfaceCommitments(
+        entry,
+        uid,
+        `${path}.dockInterface.interfaces[${index}]`,
+      ),
+    );
+  }
+
+  const interfaceRoots: string[] = [];
+  let allInterfaceRootsValid = true;
+  for (const entry of interfaces) {
+    if (!isRecord(entry) || !isHexHash(entry.interfaceRoot)) {
+      allInterfaceRootsValid = false;
+      continue;
+    }
+    interfaceRoots.push(entry.interfaceRoot as string);
+  }
+  if (allInterfaceRootsValid && isHexHash(dockInterface.interfaceRoot)) {
+    const expectedRoot = merkleRoot(interfaceRoots as `0x${string}`[]);
+    if (dockInterface.interfaceRoot !== expectedRoot) {
+      issues.push(
+        `${path}.dockInterface.interfaceRoot must match the recomputed root over interface leaves`,
+      );
+    }
+    // 定义级 root（PlanCommit 的接口根承诺）与接口叶重算结果必须一致。
+    if (isHexHash(value.dockInterfaceRoot) && value.dockInterfaceRoot !== expectedRoot) {
+      issues.push(
+        `${path}.dockInterfaceRoot must match the recomputed root over interface leaves`,
+      );
+    }
+  }
+  return issues;
+}
+
+/**
+ * 单条 route 的承诺重算（镜像 Rust link_dock_routes 的 D008 逐 word 重算）：
+ * routeId、每条 bindingHash、两 root、routeHash 全部从携带字段独立重推导。
+ */
+function validateDockRouteCommitments(
+  route: Record<string, unknown>,
+  path: string,
+): readonly string[] {
+  const issues: string[] = [];
+  const orderMode = route.orderMode;
+  if (orderMode !== "new" && orderMode !== "existing") {
+    issues.push(`${path}.orderMode must be "new" or "existing"`);
     return issues;
   }
 
-  const interfaceLeaves: string[] = [];
-  let allLeavesValid = true;
+  const local = isRecord(route.local) ? route.local : undefined;
+  const target = isRecord(route.target) ? route.target : undefined;
+  const interfaceName =
+    target !== undefined && typeof target.interfaceName === "string"
+      ? target.interfaceName
+      : undefined;
+  if (
+    local === undefined ||
+    !isHexHash(local.definitionRefHash) ||
+    typeof local.stageIdentifier !== "string" ||
+    !isHexHash(route.routeId)
+  ) {
+    // 形状问题交给上层 HookPlan/onchain 校验器的详细诊断，这里只重算承诺。
+    return issues;
+  }
+  if (interfaceName === undefined) {
+    return issues;
+  }
+  const recomputedRouteId = dockRouteId(
+    local.definitionRefHash,
+    stageKey(local.stageIdentifier),
+  );
+  if (recomputedRouteId !== route.routeId) {
+    issues.push(
+      `${path}.routeId must match the recomputed H(UVP_DOCK_ROUTE_ID_V1, localDefinitionRefHash, stageKey)`,
+    );
+  }
+
+  const inputBindings = Array.isArray(route.inputBindings)
+    ? route.inputBindings
+    : [];
+  const outputBindings = Array.isArray(route.outputBindings)
+    ? route.outputBindings
+    : [];
+  const inputHashes: string[] = [];
+  const outputHashes: string[] = [];
+  let bindingsComputable = true;
+  for (const [index, binding] of inputBindings.entries()) {
+    if (
+      !isRecord(binding) ||
+      !isHexHash(binding.bindingHash) ||
+      typeof binding.localHookName !== "string" ||
+      typeof binding.targetPort !== "string" ||
+      !isHexHash(binding.targetSourceId) ||
+      !isHexHash(binding.targetSignalId)
+    ) {
+      bindingsComputable = false;
+      continue;
+    }
+    const recomputed = inputBindingHash({
+      routeId: route.routeId,
+      interfaceName,
+      localHookId: `${local.stageIdentifier}#${binding.localHookName}`,
+      portName: binding.targetPort,
+      targetSourceId: binding.targetSourceId,
+      targetSignalId: binding.targetSignalId,
+    });
+    if (recomputed !== binding.bindingHash) {
+      issues.push(
+        `${path}.inputBindings[${index}].bindingHash must match the recomputed input-binding preimage`,
+      );
+    }
+    inputHashes.push(binding.bindingHash);
+  }
+  for (const [index, binding] of outputBindings.entries()) {
+    if (
+      !isRecord(binding) ||
+      !isHexHash(binding.bindingHash) ||
+      !isHexHash(binding.localSourceId) ||
+      !isHexHash(binding.localSignalId) ||
+      typeof binding.targetPort !== "string" ||
+      !isHexHash(binding.targetSourceId) ||
+      !isHexHash(binding.targetSignalId)
+    ) {
+      bindingsComputable = false;
+      continue;
+    }
+    const recomputed = outputBindingHash({
+      routeId: route.routeId,
+      interfaceName,
+      localSourceId: binding.localSourceId,
+      localSignalId: binding.localSignalId,
+      portName: binding.targetPort,
+      targetSourceId: binding.targetSourceId,
+      targetSignalId: binding.targetSignalId,
+    });
+    if (recomputed !== binding.bindingHash) {
+      issues.push(
+        `${path}.outputBindings[${index}].bindingHash must match the recomputed output-binding preimage`,
+      );
+    }
+    outputHashes.push(binding.bindingHash);
+  }
+
+  if (bindingsComputable) {
+    const inputsRoot = merkleRoot(inputHashes as `0x${string}`[]);
+    const outputsRoot = merkleRoot(outputHashes as `0x${string}`[]);
+    if (isHexHash(route.inputBindingsRoot) && route.inputBindingsRoot !== inputsRoot) {
+      issues.push(
+        `${path}.inputBindingsRoot must match the recomputed root over input binding hashes`,
+      );
+    }
+    if (isHexHash(route.outputBindingsRoot) && route.outputBindingsRoot !== outputsRoot) {
+      issues.push(
+        `${path}.outputBindingsRoot must match the recomputed root over output binding hashes`,
+      );
+    }
+    if (
+      isHexHash(target?.definitionRefHash) &&
+      isHexHash(route.inputBindingsRoot) &&
+      isHexHash(route.outputBindingsRoot)
+    ) {
+      const recomputedRouteHash = routeHashOf({
+        localDefinitionRefHash: local.definitionRefHash,
+        targetDefinitionRefHash: target.definitionRefHash,
+        interfaceName,
+        orderMode,
+        inputBindingsRoot: route.inputBindingsRoot,
+        outputBindingsRoot: route.outputBindingsRoot,
+      });
+      if (recomputedRouteHash !== route.routeHash) {
+        issues.push(
+          `${path}.routeHash must match the recomputed route preimage`,
+        );
+      }
+    }
+  }
+  return issues;
+}
+
+/** 单个具名接口的承诺重算：端口叶 → 两 root → interfaceLeaf_v2。 */
+function validateInterfaceCommitments(
+  entry: Record<string, unknown>,
+  uid: string,
+  path: string,
+): readonly string[] {
+  const issues: string[] = [];
+  const name = entry.name;
+  if (typeof name !== "string" || name.length === 0) {
+    return issues;
+  }
+  if (!Array.isArray(entry.orderModes)) {
+    issues.push(`${path}.orderModes must be an array`);
+    return issues;
+  }
+  const inputs = Array.isArray(entry.inputs) ? entry.inputs : undefined;
+  const outputs = Array.isArray(entry.outputs) ? entry.outputs : undefined;
+  if (inputs === undefined || outputs === undefined) {
+    issues.push(`${path}.inputs and outputs must be arrays`);
+    return issues;
+  }
+
+  const inputLeaves: string[] = [];
+  let inputsComputable = true;
   for (const [index, port] of inputs.entries()) {
-    if (!isRecord(port)) {
-      issues.push(`${path}.dockInterface.inputs[${index}] must be an object`);
-      allLeavesValid = false;
+    if (
+      !isRecord(port) ||
+      !isHexHash(port.leafHash) ||
+      typeof port.port !== "string" ||
+      typeof port.hookId !== "string"
+    ) {
+      inputsComputable = false;
       continue;
     }
-    if (!isHexHash(port.leafHash)) {
+    const recomputed = inputPortLeaf({
+      uid,
+      interfaceName: name,
+      portName: port.port,
+      hookId: port.hookId,
+    });
+    if (recomputed !== port.leafHash) {
       issues.push(
-        `${path}.dockInterface.inputs[${index}].leafHash must be a lowercase 32-byte hex hash`,
+        `${path}.inputs[${index}].leafHash must match the recomputed input-port preimage`,
       );
-      allLeavesValid = false;
-      continue;
     }
-    interfaceLeaves.push(port.leafHash);
+    inputLeaves.push(port.leafHash);
   }
+  const outputLeaves: string[] = [];
+  let outputsComputable = true;
   for (const [index, port] of outputs.entries()) {
-    if (!isRecord(port)) {
-      issues.push(`${path}.dockInterface.outputs[${index}] must be an object`);
-      allLeavesValid = false;
+    if (
+      !isRecord(port) ||
+      !isHexHash(port.leafHash) ||
+      typeof port.port !== "string" ||
+      typeof port.canonicalOutputSignal !== "string"
+    ) {
+      outputsComputable = false;
       continue;
     }
-    if (!isHexHash(port.leafHash)) {
+    const recomputed = outputPortLeaf({
+      uid,
+      interfaceName: name,
+      portName: port.port,
+      canonicalSignal: port.canonicalOutputSignal,
+    });
+    if (recomputed !== port.leafHash) {
       issues.push(
-        `${path}.dockInterface.outputs[${index}].leafHash must be a lowercase 32-byte hex hash`,
+        `${path}.outputs[${index}].leafHash must match the recomputed output-port preimage`,
       );
-      allLeavesValid = false;
-      continue;
     }
-    interfaceLeaves.push(port.leafHash);
+    outputLeaves.push(port.leafHash);
   }
-  if (allLeavesValid && isHexHash(value.dockInterfaceRoot)) {
-    const expectedRoot = merkleRoot(interfaceLeaves as `0x${string}`[]);
-    if (value.dockInterfaceRoot !== expectedRoot) {
+
+  if (!inputsComputable || !outputsComputable) {
+    return issues;
+  }
+  const inputsRoot = merkleRoot(inputLeaves as `0x${string}`[]);
+  const outputsRoot = merkleRoot(outputLeaves as `0x${string}`[]);
+  if (isHexHash(entry.inputsRoot) && entry.inputsRoot !== inputsRoot) {
+    issues.push(
+      `${path}.inputsRoot must match the recomputed root over input-port leaves`,
+    );
+  }
+  if (isHexHash(entry.outputsRoot) && entry.outputsRoot !== outputsRoot) {
+    issues.push(
+      `${path}.outputsRoot must match the recomputed root over output-port leaves`,
+    );
+  }
+  if (
+    isHexHash(entry.inputsRoot) &&
+    isHexHash(entry.outputsRoot) &&
+    isHexHash(entry.interfaceRoot)
+  ) {
+    try {
+      const recomputedLeaf = interfaceLeaf({
+        uid,
+        interfaceName: name,
+        orderModes: entry.orderModes.map((mode) => String(mode)),
+        inputsRoot: entry.inputsRoot,
+        outputsRoot: entry.outputsRoot,
+      });
+      if (recomputedLeaf !== entry.interfaceRoot) {
+        issues.push(
+          `${path}.interfaceRoot must match the recomputed interface-leaf preimage`,
+        );
+      }
+    } catch {
       issues.push(
-        `${path}.dockInterfaceRoot must match the recomputed root over interface leaves`,
+        `${path}.orderModes must be a non-empty subset of {new, existing} without duplicates`,
       );
     }
   }

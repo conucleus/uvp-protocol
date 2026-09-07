@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { dockDemoResolutionManifest, dockPaymentTargetDefinition } from "./dock-demo.js";
+import {
+  dockDemoResolutionManifest,
+  dockDemoTargetUid,
+  dockProductionTargetDefinition,
+} from "./dock-demo.js";
 import { EMPTY_MERKLE_ROOT } from "../src/dock.js";
 import test from "node:test";
 import {
@@ -33,6 +37,7 @@ import {
 import type { HookPlanArtifact } from "../src/types/index.js";
 
 const demoManifest = dockDemoResolutionManifest();
+const demoTargetUid = dockDemoTargetUid();
 
 function compileZhixuHookPlanWithManifest(
   definition: ZhixuDefinition,
@@ -51,7 +56,6 @@ const baseZhixu: ZhixuDefinition = {
   kind: "Zhixu",
   metadata: {
     name: "demo_zhixu",
-    uid: "zhixu-demo-001",
   },
   spec: {
     platform: {
@@ -95,11 +99,13 @@ const baseZhixu: ZhixuDefinition = {
             sendSignals: ["str", "cmp", "err"],
             executor: {
               supplierType: "zhixu",
+              // mode=new 恰好一条 input 绑定（出生锚）；TIMEOUT 是本地
+              // receiveSignals 通道但不参与 inputMap。
               zhixuExecutorConfig: {
-                schemaVersion: "uvp.dock.v1",
-                target: { zhixu: "payment-zhixu" },
-                order: { idPolicy: "derived-v1" },
-                inputMap: { START: "execute", TIMEOUT: "cancel" },
+                target: { zhixu: demoTargetUid },
+                interface: "production_service",
+                order: { mode: "new" },
+                inputMap: { START: "execute" },
                 signalMap: { str: "started", cmp: "completed" },
               },
             },
@@ -120,11 +126,11 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.equal(onchain.planId, sourcePlan.planId);
   assert.deepEqual(onchain.platform, sourcePlan.platform);
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
-  // PRD_101 后重钉：plan payload 不再携带 zhixu 业务 version 字段，
-  // planHash preimage 变化使 golden 同步变化。
+  // PRD_100/102 后重钉：zhixuId 换为内容派生身份（zx-<32hex>）、dock
+  // route/interface 形状换 v2，planHash preimage 变化使 golden 同步变化。
   assert.equal(
     onchain.planHash,
-    "0x3718d7a3f2dddecf148b9f048e707b90b355fd3879a646e8a2e8dcb6e85e1c4c",
+    "0x295cb08ffd9c889297b74fa3640c17f9b168cbc0dabccfc4979693d6f836ee30",
   );
   assert.deepEqual(onchain.selectorBindings, [
     {
@@ -463,9 +469,11 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
     "0xcf7c8f26d55e2223a316d1220b6f7c902d1654622e82b458a98871bdf4c4e433",
   ]);
   assert.equal(args.dependencyIndex.length, 3);
-  assert.equal(
-    args.executorRoutes.every((route) => route.executorId !== "payment-zhixu"),
-    true,
+  // zhixu 委托 stage 不产生静态 executor route：executorRoutes 只含
+  // 静态执行者（selector-org），不含目标 Zhixu 身份。
+  assert.deepEqual(
+    args.executorRoutes.map((route) => route.executorId),
+    ["selector-org"],
   );
   assert.match(args.dockRoutesRoot, /^0x[0-9a-f]{64}$/);
   assert.notEqual(args.dockRoutesRoot, EMPTY_MERKLE_ROOT);
@@ -1286,21 +1294,125 @@ test("dock entrance hooks materialize their stage (CORE-8 materialization gate)"
       /no order-trigger or EMIT_READY hook|compiles to zero hooks/.test(issue),
     );
 
-  // 真实 dockInterface entrance 端口：目标定义的 payment_flow.init#DOCK_EXECUTE
-  // 编译为 dock|emitReady（flags=6）——Rust 659a388 dock_entrance_hook_ids
+  // 真实 dockInterface input 端口：目标定义的 manufacturing.intake#EXECUTE
+  // 编译为 dock|emitReady（flags=6）——Rust dock_entrance_hook_ids
   // 豁免的产物投影，artifact 层按编译后物化位放行，不按 watcher 误拒。
   const targetOnchain = compileZhixuOnchainHookPlan(
-    dockPaymentTargetDefinition(),
+    dockProductionTargetDefinition(),
   );
   const entranceHook = targetOnchain.compiledHooks.find(
-    (hook) => hook.stageIdentifier === "payment_flow.init",
+    (hook) => hook.stageIdentifier === "manufacturing.intake",
   );
-  assert.equal(entranceHook?.hookName, "DOCK_EXECUTE");
+  assert.equal(entranceHook?.hookName, "EXECUTE");
   assert.equal(entranceHook?.orderTriggerKind, "dock");
   assert.equal(entranceHook?.emitReady, true);
   assert.deepEqual(
     materializationIssues(validateOnchainHookPlanArtifact(targetOnchain)),
     [],
+  );
+});
+
+test("rejects existing-mode dock routes on the on-chain track (PRD_100 §17 explicit rejection)", () => {
+  // Rust 两个编译 profile 都放行 existing（云轨运行时语义）；on-chain 编译
+  // 必须显式拒绝，不静默降级。编译入口与反序列化边界同口径。
+  const existingZhixu: ZhixuDefinition = {
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      taskPatterns: baseZhixu.spec.taskPatterns.map((task) =>
+        task.name !== "execution"
+          ? task
+          : {
+              ...task,
+              stages: task.stages.map((stage) => ({
+                ...stage,
+                receiveSignals: {
+                  START: "buyer::selector.assign.executor_selected",
+                },
+                executor: {
+                  supplierType: "zhixu" as const,
+                  zhixuExecutorConfig: {
+                    target: { zhixu: demoTargetUid },
+                    interface: "production_evidence",
+                    order: { mode: "existing" as const },
+                    signalMap: { cmp: "scrap_declared" },
+                  },
+                },
+              })),
+            },
+      ),
+    },
+  };
+
+  assert.throws(
+    () => compileZhixuOnchainHookPlan(existingZhixu, demoManifest),
+    (error: unknown) => {
+      assert.ok(error instanceof HookPlanCompilationError);
+      assert.ok(
+        error.issues.some(
+          (issue) =>
+            /order mode "existing"/.test(issue) &&
+            /on-chain targets do not support/.test(issue) &&
+            /explicit rejection instead of a silent fallback/.test(issue),
+        ),
+        error.issues.join("; "),
+      );
+      return true;
+    },
+  );
+
+  // 反序列化边界：云轨 hook_plan 产物合法携带 existing route，但喂给
+  // onchain 校验器必须被同一道门拒绝。compileOnchainHookPlan 的 preflight
+  // 会先抛，这里从 base 计划（new 模式合法产物）换挂 existing routes 后
+  // 重钉 planHash，模拟反序列化视角。
+  const cloudPlan = compileZhixuHookPlan(existingZhixu, demoManifest);
+  assert.equal(cloudPlan.dockRoutes[0]?.orderMode, "existing");
+  const onchainBase = compileOnchainHookPlan(
+    compileZhixuHookPlan(baseZhixu, demoManifest),
+  );
+  const swapped = {
+    ...onchainBase,
+    dockRoutes: cloudPlan.dockRoutes,
+  };
+  const { planHash: _staleHash, ...swappedPayload } = swapped;
+  void _staleHash;
+  const boundaryIssues = validateOnchainHookPlanArtifact({
+    ...swappedPayload,
+    planHash: hashOnchainPlanPayload(swappedPayload as never),
+  } as unknown as OnchainHookPlanArtifact);
+  assert.ok(
+    boundaryIssues.some(
+      (issue) =>
+        /on-chain targets do not support/.test(issue) &&
+        /existing/.test(issue),
+    ),
+    boundaryIssues.join("; "),
+  );
+});
+
+test("rejects unresolved dock targets on the on-chain track (UNRESOLVED_DOCK_TARGET)", () => {
+  const onchain = compileOnchainHookPlan(
+    compileZhixuHookPlan(baseZhixu, demoManifest),
+  );
+  // target:null 的动态选择 route：on-chain 没有运行时选择面，按
+  // UNRESOLVED_DOCK_TARGET 口径拒绝（与 Rust 无 manifest 编译错误同锚点）。
+  const unresolved = structuredClone(onchain) as OnchainHookPlanArtifact & {
+    dockRoutes: Array<Record<string, unknown>>;
+  };
+  (unresolved.dockRoutes[0] as Record<string, unknown>).target = null;
+  const { planHash: _stale, ...payload } = unresolved;
+  void _stale;
+  const issues = validateOnchainHookPlanArtifact({
+    ...payload,
+    planHash: hashOnchainPlanPayload(payload as never),
+  } as unknown as OnchainHookPlanArtifact);
+  assert.ok(
+    issues.some(
+      (issue) =>
+        /UNRESOLVED_DOCK_TARGET/.test(issue) &&
+        /no statically linked target/.test(issue),
+    ),
+    issues.join("; "),
   );
 });
 

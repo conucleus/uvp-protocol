@@ -43,7 +43,7 @@ import {
 import { validateDockCommitments } from "./dock-validation.js";
 import type {
   DockResolutionManifest,
-  DockRouteV1,
+  DockRouteV2,
   OrderTriggerKind,
 } from "./types/index.js";
 
@@ -149,12 +149,18 @@ export function compileOnchainHookPlan(
   const capabilityCountIssues = signalCapabilityCountIssues(
     hookPlanArtifact.signalCapabilities,
   );
+  // 链轨拒绝（PRD_100 §17/§5.2）：Rust 两个 profile 都放行 existing 与
+  // 动态 target，是否上链由宿主轨道决定——on-chain 编译在这里显式拒绝，
+  // 不静默降级。Rust 侧无 manifest 的 UNRESOLVED_DOCK_TARGET 先行兜底，
+  // 这里是 on-chain 边界的第二道同口径门。
+  const dockTrackIssues = onchainDockTrackIssues(hookPlanArtifact.dockRoutes);
   const preflightIssues = [
     ...crossStageIssues,
     ...materializationIssues,
     ...silentTriggerIssues,
     ...dependencyCountIssues,
     ...capabilityCountIssues,
+    ...dockTrackIssues,
   ];
   if (preflightIssues.length > 0) {
     throw new HookPlanCompilationError(preflightIssues);
@@ -262,6 +268,9 @@ export function validateOnchainHookPlanArtifact(
   expectHexHash(value.dockRoutesRoot, "dockRoutesRoot", issues);
   expectHexHash(value.dockInterfaceRoot, "dockInterfaceRoot", issues);
   issues.push(...validateDockCommitments(value));
+  if (Array.isArray(value.dockRoutes)) {
+    issues.push(...onchainDockTrackIssues(value.dockRoutes));
+  }
 
   const compiledHooks = Array.isArray(value.compiledHooks)
     ? value.compiledHooks
@@ -1378,6 +1387,49 @@ function unmaterializableStageIssues(
         + "materialized and reverts UnknownHook forever (deadlock, no recovery path); "
         + "declare receiveSignals carrying a mint/dock entrance or a static executor",
     );
+  }
+  return issues;
+}
+
+/**
+ * 链轨 dock route 门（PRD_100 §17/§5.2，设计定稿"明确不做"项）：
+ * - `orderMode: "existing"`：Rust 两个编译 profile 都放行（existing 是云轨
+ *   运行时语义），on-chain 编译必须显式拒绝，不得静默降级为 new 或吞掉；
+ * - 未解析目标（target 缺失/非对象/无 zhixuUid，含 `target: null` 的动态
+ *   选择 route）：on-chain 没有运行时选择面，按 UNRESOLVED_DOCK_TARGET
+ *   口径拒绝（与 Rust 无 manifest 时的编译期错误同锚点）。
+ * 编译入口（compileOnchainHookPlan preflight）与反序列化边界
+ * （validateOnchainHookPlanArtifact）共用本门。
+ */
+function onchainDockTrackIssues(routes: readonly unknown[]): readonly string[] {
+  const issues: string[] = [];
+  for (const [index, route] of routes.entries()) {
+    if (!isRecord(route)) {
+      continue;
+    }
+    const stageIdentifier =
+      (isRecord(route.local) &&
+        typeof route.local.stageIdentifier === "string" &&
+        route.local.stageIdentifier) ||
+      `dockRoutes[${index}]`;
+    if (route.orderMode === "existing") {
+      issues.push(
+        `dock route ${stageIdentifier} uses order mode "existing", which on-chain targets do not support; ` +
+          "PRD_100 §17 requires an explicit rejection instead of a silent fallback — " +
+          'serve this route from a cloud runtime or bind an interface with order mode "new"',
+      );
+    }
+    const target = route.target;
+    if (
+      !isRecord(target) ||
+      typeof target.zhixuUid !== "string" ||
+      target.zhixuUid.trim().length === 0
+    ) {
+      issues.push(
+        `UNRESOLVED_DOCK_TARGET: dock route ${stageIdentifier} has no statically linked target; ` +
+          "on-chain compilation cannot fill a dynamic (null) target at runtime (PRD_100 §10.3/§17)",
+      );
+    }
   }
   return issues;
 }
