@@ -31,7 +31,7 @@ export const STATE_MACHINE_ABI = parseAbi([
   "event OrderRelayerRecorded(bytes32 indexed planId,bytes32 indexed orderId,address indexed relayer,address creator)",
   "event SignalSubmitterAuthorized(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)",
   "event StageMaterialized(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed stageId,bytes32 triggerHookId,bytes32 sourceId,bytes32 signalId)",
-  "event OrderTriggered(bytes32 indexed orderId,bytes32 indexed planId,bytes32 indexed triggerStageId,bytes32 sourceId,bytes32 signalId,address submitter)",
+  "event OrderTriggered(bytes32 indexed orderId,bytes32 indexed planId,bytes32 indexed triggerStageId,bytes32 triggerHookId,bytes32 sourceId,bytes32 signalId,address submitter)",
   "event StageExecutorActivated(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,address executor,bytes32 role,bytes32 metadataHash,uint256 patchNonce,string metadataURI)",
   "event StageExecutorSignalDelegated(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 sourceId,bytes32 signalId,address executor,bytes32 role,bytes32 metadataHash,uint256 patchNonce)",
   "function owner() view returns (address)",
@@ -1650,9 +1650,13 @@ export function hashStageExecutorPatchPayload(
   payload: StageExecutorPatchPayload,
 ): Hex {
   const normalized = normalizeStageExecutorPatchPayload(payload);
+  // 域分离：payload 哈希以 keccak256(STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN)
+  // 开头（与 executor/resource 两个 patch 族的 preimage 分域；此前域常量
+  // 只有定义处引用，是假接口）。
   return keccak256(
     encodeAbiParameters(
       [
+        { name: "domain", type: "bytes32" },
         { name: "selectorStageId", type: "bytes32" },
         { name: "targetStageId", type: "bytes32" },
         { name: "executor", type: "address" },
@@ -1666,6 +1670,7 @@ export function hashStageExecutorPatchPayload(
         { name: "metadataURI", type: "string" },
       ],
       [
+        keccak256(stringToHex(STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN)),
         normalized.selectorStageId,
         normalized.targetStageId,
         normalized.executor,
@@ -1686,9 +1691,12 @@ export function hashStageResourcePatchPayload(
   payload: StageResourcePatchPayload,
 ): Hex {
   const normalized = normalizeStageResourcePatchPayload(payload);
+  // 域分离：与 executor patch 同构，域字取自
+  // STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN。
   return keccak256(
     encodeAbiParameters(
       [
+        { name: "domain", type: "bytes32" },
         { name: "selectorStageId", type: "bytes32" },
         { name: "targetStageId", type: "bytes32" },
         { name: "resourceKey", type: "bytes32" },
@@ -1698,6 +1706,7 @@ export function hashStageResourcePatchPayload(
         { name: "manifestURI", type: "string" },
       ],
       [
+        keccak256(stringToHex(STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN)),
         normalized.selectorStageId,
         normalized.targetStageId,
         normalized.resourceKey,

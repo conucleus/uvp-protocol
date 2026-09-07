@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
-import { keccak256, concat, stringToHex, pad, toHex } from "viem";
+import { keccak256, concat, encodeAbiParameters, pad, parseAbiParameters, stringToHex, toHex } from "viem";
 import { compileZhixuHookPlan } from "../src/hook-plan.js";
 import {
   canonicalSignalHash,
@@ -31,6 +31,7 @@ import {
   sourceFactSetHash,
   stageKey,
   verifyMerkleProof,
+  ZERO_WORD,
 } from "../src/dock.js";
 import type { DockResolutionManifest, ZhixuDefinition } from "../src/types/index.js";
 
@@ -222,22 +223,31 @@ test("golden fixture compiles to identical routes, roots, and hashes", () => {
     );
   }
   // routeHash 全量重算（含 targetPlanId word）
+  // Rust 权威缺省（dock.rs `target.evm_plan_id.unwrap_or([0u8; 32])`）是
+  // 零 word，不是 keccak256("")——缺 evmPlanId 的目标按零 word 进 preimage。
   const expectedRoute0 = expectedRoute;
-  assert.equal(
+  const routeWithTargetPlan = (targetPlanId: `0x${string}`) =>
     dockRouteHash({
       routeId: route.routeId,
       targetDefinitionRefHash: route.target.definitionRefHash,
       targetArtifactHash: route.target.artifactHash,
       targetInterfaceRoot: route.target.interfaceRoot,
-      targetPlanId: route.target.evmPlanId ?? EMPTY_MERKLE_ROOT,
+      targetPlanId,
       sourceSeam: route.sourceSeam,
       entranceBindingHash: route.inputs.find((i) => i.kind === "entrance")!.bindingHash,
       accessPolicy: route.entrance.accessPolicy,
       inputsRoot: merkleRoot(route.inputs.map((i) => i.bindingHash)),
       outputsRoot: merkleRoot(route.outputs.map((o) => o.bindingHash)),
-    }),
+    });
+  assert.equal(
+    routeWithTargetPlan(route.target.evmPlanId ?? ZERO_WORD),
     expectedRoute0.routeHash,
   );
+  // 缺 evmPlanId 的 route 哈希向量钉死：同一 route 的 targetPlanId 槽位填
+  // 零 word（Rust 权威缺省）与空 Merkle root（旧错误缺省）必须分叉，冻结
+  // 如下——防止缺省值悄悄回退到 keccak256("")。
+  assert.equal(routeWithTargetPlan(ZERO_WORD), "0xb398030882051fa73cbc4a9992a837864b2287586dd2edad36a3c8fd2b859e06");
+  assert.equal(routeWithTargetPlan(EMPTY_MERKLE_ROOT), "0xd02a0a8b6197f045c07e0148a16f8e06fe4bde988be52ce1b3827d808312b022");
   // input payload hash 独立重算
   const entranceInput0 = route.inputs.find((i) => i.kind === "entrance")!;
   assert.equal(
@@ -289,6 +299,32 @@ test("runtime domains and derived identities match the golden vectors", () => {
   assert.equal(
     linkedOrderId(instance, expected.targetDefinitionRefHash),
     expected.linkedOrderId,
+  );
+});
+
+test("evmRuntimeDomain encodes chainId as a full uint256 word (contract parity)", () => {
+  // 0042 F-15：合约 runtimeDomain 用 abi.encode(_DOMAIN_RUNTIME_EIP155,
+  // block.chainid(uint256), address(stateMachine))——chainId ≥ 2^64 时
+  // u64 语义分叉。TS 侧按 uint256 全宽编码，独立 abi.encode 重算钉住。
+  const stateMachineAddress = "0x1111111111111111111111111111111111111111" as `0x${string}`;
+  const chainId = (1n << 64n) + 42n;
+  assert.equal(
+    evmRuntimeDomain(chainId, stateMachineAddress),
+    keccak256(
+      encodeAbiParameters(
+        parseAbiParameters("bytes32, uint256, address"),
+        [
+          keccak256(stringToHex("UVP_RUNTIME_EIP155_V1")),
+          chainId,
+          stateMachineAddress,
+        ],
+      ),
+    ),
+  );
+  // 越界 chainId（≥ 2^256）响亮拒绝，不得静默截断。
+  assert.throws(
+    () => evmRuntimeDomain(1n << 256n, stateMachineAddress),
+    /256-bit word range/,
   );
 });
 

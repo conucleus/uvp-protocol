@@ -362,10 +362,19 @@ contract UVPStateMachineTest {
 
         require(machine.orderExists(PLAN_ID, ORDER_ID), "order missing");
         require(machine.hasSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER), "trigger signal missing");
-        require(
-            _countTopic(logs, keccak256("OrderTriggered(bytes32,bytes32,bytes32,bytes32,bytes32,address)")) == 1,
-            "trigger event count"
-        );
+        {
+            bytes32 triggerTopic = keccak256("OrderTriggered(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)");
+            uint256 triggerCount;
+            for (uint256 i = 0; i < logs.length; i++) {
+                if (logs[i].topics.length == 0 || logs[i].topics[0] != triggerTopic) {
+                    continue;
+                }
+                triggerCount += 1;
+                (bytes32 emittedTriggerHookId,,,) = abi.decode(logs[i].data, (bytes32, bytes32, bytes32, address));
+                require(emittedTriggerHookId == HOOK_INIT, "trigger event missing triggerHookId");
+            }
+            require(triggerCount == 1, "trigger event count");
+        }
         require(
             _countTopic(logs, keccak256("OrderMaterialized(bytes32,bytes32,bytes32)")) == 1, "materialized event count"
         );
@@ -378,9 +387,7 @@ contract UVPStateMachineTest {
 
         vm.recordLogs();
         _triggerOrderFromSignalRequest(
-            machine,
-            _signalTriggerRequest(machine, ORDER_ID, bytes32(uint256(2))),
-            _auths1(SIGNAL_TRIGGER, SUBMITTER_A)
+            machine, _signalTriggerRequest(machine, ORDER_ID, bytes32(uint256(2))), _auths1(SIGNAL_TRIGGER, SUBMITTER_A)
         );
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
@@ -475,7 +482,10 @@ contract UVPStateMachineTest {
     function testProductionSourceStageMappingGatesSignalsAndPatches() public {
         UVPStateMachine machine = _newMachine();
         _registerPlan(
-            machine, _withOrderStart(_patchableSequentialPlan()), _selectorBindings(), _productionOverlaySignalCapabilities()
+            machine,
+            _withOrderStart(_patchableSequentialPlan()),
+            _selectorBindings(),
+            _productionOverlaySignalCapabilities()
         );
 
         UVPStateMachine.SignalAuthorization[] memory authorizations = new UVPStateMachine.SignalAuthorization[](3);
@@ -507,7 +517,10 @@ contract UVPStateMachineTest {
     function testDerivedSignalHonorsActiveExecutorOnTargetStage() public {
         UVPStateMachine machine = _newMachine();
         _registerPlan(
-            machine, _withOrderStart(_patchableSequentialPlan()), _selectorBindings(), _derivedActiveSignalCapabilities()
+            machine,
+            _withOrderStart(_patchableSequentialPlan()),
+            _selectorBindings(),
+            _derivedActiveSignalCapabilities()
         );
 
         // The origin order intentionally has no explicit authorization for
@@ -1724,6 +1737,251 @@ contract UVPStateMachineTest {
         require(machine.planExists(planId), "compiler-shaped plan not registered");
     }
 
+    /// order-trigger hook 内禁止 DELAY（0124 F19 邻 / 0557 B-2）：outside
+    /// 出生的事实与订单创建同笔交易（anchorAt=now），Delay(SIGNAL) 必得
+    /// Wait，出生路径永久 InvalidTriggerHook——注册边界直接拒绝。
+    function testDelayInMintTriggerHookIsRejectedAtCommit() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](2);
+        instructions[0] = _signal(SIGNAL_TRIGGER);
+        instructions[1] = _delay(5);
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hookWithFlags(
+            HOOK_INIT,
+            STAGE_INIT,
+            HOOK_NAME_TRIGGER,
+            uint8(FLAG_ORDER_TRIGGER_MINT | FLAG_EMIT_READY),
+            instructions,
+            _deps(SIGNAL_TRIGGER)
+        );
+
+        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
+        _commitPlan(
+            machine,
+            hooks,
+            new IUVPPlanMetadataModule.StageSelectorBinding[](0),
+            new IUVPPlanMetadataModule.SignalCapability[](0)
+        );
+    }
+
+    /// dock trigger（entrance）hook 同口径拒绝 DELAY——entrance 由模块直接
+    /// 标记 Ready，DELAY 在该 hook 内只是死代码。
+    function testDelayInDockTriggerHookIsRejectedAtCommit() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](2);
+        instructions[0] = _signal(SIGNAL_TRIGGER);
+        instructions[1] = _delay(5);
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hookWithFlags(
+            HOOK_INIT,
+            STAGE_INIT,
+            HOOK_NAME_TRIGGER,
+            uint8(FLAG_ORDER_TRIGGER_DOCK | FLAG_EMIT_READY),
+            instructions,
+            _deps(SIGNAL_TRIGGER)
+        );
+
+        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
+        _commitPlan(
+            machine,
+            hooks,
+            new IUVPPlanMetadataModule.StageSelectorBinding[](0),
+            new IUVPPlanMetadataModule.SignalCapability[](0)
+        );
+    }
+
+    /// Merge 操作数必须是裸 SIGNAL 引用（0124 F19 / 0137#5）：非裸操作数
+    /// （如 Delay 结果）会把 wait 带入 _mergeValue 的"wait 不可达"假设，
+    /// hook 永不进入 Wait，pokeTimer 因 TimerNotWaiting 永久不可用。
+    function testMergeWithNonBareSignalOperandsIsRejectedAtCommit() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](4);
+        instructions[0] = _signal(SIGNAL_TRIGGER);
+        instructions[1] = _delay(5);
+        instructions[2] = _signal(SIGNAL_INIT_CMP);
+        instructions[3] = UVPStateMachine.Instruction({
+            op: UVPStateMachine.InstructionOp.Merge,
+            sourceId: bytes32(0),
+            signalId: bytes32(0),
+            arity: 2,
+            delaySeconds: 0
+        });
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hookWithFlags(
+            HOOK_TIMEOUT,
+            STAGE_INIT,
+            HOOK_NAME_TIMEOUT,
+            FLAG_EMIT_READY,
+            instructions,
+            _deps2(SIGNAL_TRIGGER, SIGNAL_INIT_CMP)
+        );
+
+        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
+        _commitPlan(
+            machine,
+            hooks,
+            new IUVPPlanMetadataModule.StageSelectorBinding[](0),
+            new IUVPPlanMetadataModule.SignalCapability[](0)
+        );
+    }
+
+    /// 延时操作数须含正向信号锚点（对齐 uvp-hook-dsl validate_anchors）：
+    /// 全否定操作数在 value=true 时 anchorAt=0，到期时刻恒在过去，Delay
+    /// 沦为立即放行（非/~ 形态编译器已拒，这里是注册边界兜底）。
+    function testDelayWithoutPositiveSignalAnchorIsRejectedAtCommit() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](3);
+        instructions[0] = _signal(SIGNAL_TRIGGER);
+        instructions[1] = _not();
+        instructions[2] = _delay(5);
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hookWithFlags(
+            HOOK_TIMEOUT, STAGE_INIT, HOOK_NAME_TIMEOUT, FLAG_EMIT_READY, instructions, _deps(SIGNAL_TRIGGER)
+        );
+
+        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
+        _commitPlan(
+            machine,
+            hooks,
+            new IUVPPlanMetadataModule.StageSelectorBinding[](0),
+            new IUVPPlanMetadataModule.SignalCapability[](0)
+        );
+    }
+
+    /// Or 的缺席分支可单独就绪且锚点为 0：Delay 的操作数里每个 Or 分支
+    /// 都须含正向锚点（镜像编译器 each-OR-branch 约束）。
+    function testDelayOverOrWithUnanchoredBranchIsRejectedAtCommit() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](5);
+        instructions[0] = _signal(SIGNAL_TRIGGER);
+        instructions[1] = _not();
+        instructions[2] = _signal(SIGNAL_INIT_CMP);
+        instructions[3] = _or(2);
+        instructions[4] = _delay(5);
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hookWithFlags(
+            HOOK_TIMEOUT,
+            STAGE_INIT,
+            HOOK_NAME_TIMEOUT,
+            FLAG_EMIT_READY,
+            instructions,
+            _deps2(SIGNAL_TRIGGER, SIGNAL_INIT_CMP)
+        );
+
+        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
+        _commitPlan(
+            machine,
+            hooks,
+            new IUVPPlanMetadataModule.StageSelectorBinding[](0),
+            new IUVPPlanMetadataModule.SignalCapability[](0)
+        );
+    }
+
+    /// finalizePlan 二次调用专属错误：与 commitPlan 幂等重放
+    /// （PlanAlreadyRegistered）区分拒绝点。
+    function testFinalizePlanTwiceRevertsPlanAlreadyFinalized() public {
+        UVPStateMachine machine = _newMachine();
+        bytes32 planId = _registerPlan(machine, _withOrderStart(_positiveHookPlan(HOOK_INIT, true)));
+
+        vm.expectRevert(UVPStateMachine.PlanAlreadyFinalized.selector);
+        machine.finalizePlan(
+            planId,
+            new IUVPPlanMetadataModule.StageSelectorBinding[](0),
+            new IUVPPlanMetadataModule.SignalCapability[](0)
+        );
+    }
+
+    /// sourceId==0 的 SIGNAL 授权会绕过 stage/executor 门
+    /// （_signalStageId 对 sourceId==0 恒返回 0）——注册期拒绝。
+    function testTriggerOrderAuthorizationRejectsZeroSourceId() public {
+        UVPStateMachine machine = _newMachine();
+        bytes32 planId = _registerPlan(machine, _withOrderStart(_positiveHookPlan(HOOK_INIT, true)));
+        PLAN_ID = planId;
+
+        UVPStateMachine.SignalAuthorization[] memory authorizations = new UVPStateMachine.SignalAuthorization[](1);
+        authorizations[0] = UVPStateMachine.SignalAuthorization({
+            sourceId: bytes32(0),
+            signalId: SIGNAL_ORDER_START,
+            submitter: address(this),
+            role: ROLE_BOOTSTRAP,
+            metadataHash: AUTH_METADATA_HASH
+        });
+        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger =
+            _outsideTriggerRequest(HOOK_ORDER_START, SIGNAL_ORDER_START);
+        bytes memory signature =
+            _triggerOrderFromOutsideSignature(machine, trigger, authorizations, SUBMITTER_PRIVATE_KEY);
+
+        vm.expectRevert(UVPStateMachine.ZeroSourceId.selector);
+        machine.triggerOrderFromOutsideFor(trigger, authorizations, signature);
+    }
+
+    /// FromModule 信号写入口全量拒绝 submitter==0：lastSignalSubmitter=0
+    /// 会污染 dock output 通道与 HANDOFF 签名门（0557 B-10）。
+    function testCreateDockedOrderFromModuleRejectsZeroSubmitter() public {
+        UVPStateMachine machine = _newMachine();
+
+        vm.prank(address(_dockingModules[address(machine)]));
+        vm.expectRevert(UVPStateMachine.ZeroSubmitter.selector);
+        machine.createDockedOrderFromModule(
+            PLAN_ID,
+            bytes32(uint256(1) << 255),
+            ORDER_CREATOR,
+            address(this),
+            HOOK_INIT,
+            STAGE_INIT,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_ORDER_START,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            address(0),
+            new UVPStateMachine.SignalAuthorization[](0)
+        );
+    }
+
+    function testRecordDockedInputFromModuleRejectsZeroSubmitter() public {
+        UVPStateMachine machine = _newMachine();
+
+        vm.prank(address(_dockingModules[address(machine)]));
+        vm.expectRevert(UVPStateMachine.ZeroSubmitter.selector);
+        machine.recordDockedInputFromModule(
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, address(0)
+        );
+    }
+
+    /// G-18 链上强制：能力表超过 MAX_SIGNAL_CAPABILITIES 时每次信号提交
+    /// 的 gas 随 plan 规模无界增长（手签超大能力表 plan 毒化全体提交者）。
+    function testFinalizePlanRejectsSignalCapabilitiesAboveLimit() public {
+        UVPStateMachine machine = _newMachine();
+        UVPPlanMetadataModule metadata = _planMetadataModules[address(machine)];
+
+        IUVPPlanMetadataModule.SignalCapability[] memory capabilities =
+            new IUVPPlanMetadataModule.SignalCapability[](metadata.MAX_SIGNAL_CAPABILITIES() + 1);
+        for (uint256 i = 0; i < capabilities.length; i++) {
+            capabilities[i] = IUVPPlanMetadataModule.SignalCapability({
+                stageId: STAGE_AUDIT,
+                targetSourceId: SOURCE_BOOTSTRAP,
+                signalId: bytes32(uint256(0x11000) + i),
+                targetOrderRelation: 0
+            });
+        }
+
+        bytes32 planId = _commitPlan(
+            machine,
+            _withOrderStart(_positiveHookPlan(HOOK_INIT, true)),
+            new IUVPPlanMetadataModule.StageSelectorBinding[](0),
+            capabilities
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPPlanMetadataModule.TooManySignalCapabilities.selector,
+                uint256(metadata.MAX_SIGNAL_CAPABILITIES() + 1),
+                uint256(metadata.MAX_SIGNAL_CAPABILITIES())
+            )
+        );
+        machine.finalizePlan(planId, new IUVPPlanMetadataModule.StageSelectorBinding[](0), capabilities);
+    }
+
     /// flags=0 watcher 所在阶段未物化时，模块写事实路径不回滚——
     /// 求值循环跳过（与回放 oracle 对齐）。阶段挂一条 EMIT_READY
     /// hook（依赖另一未到达信号）满足注册守卫，但阶段尚未物化。
@@ -1839,7 +2097,10 @@ contract UVPStateMachineTest {
     function testDerivedSignalFromSideExplicitAuthorizationUsesSourceKey() public {
         UVPStateMachine machine = _newMachine();
         _registerPlan(
-            machine, _withOrderStart(_patchableSequentialPlan()), _selectorBindings(), _derivedActiveSignalCapabilities()
+            machine,
+            _withOrderStart(_patchableSequentialPlan()),
+            _selectorBindings(),
+            _derivedActiveSignalCapabilities()
         );
         _submitTriggerOrderFromOutside(machine, PLAN_ID, ORDER_CREATOR, _defaultAuthorizations(address(this)));
         machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY);
@@ -2685,8 +2946,11 @@ contract UVPStateMachineTest {
         instructions[0] = _signal(SIGNAL_TRIGGER);
         instructions[1] = _delay(delaySeconds);
 
+        // 延时 hook 是下游执行 hook：order-trigger hook 内禁止 DELAY
+        // （出生事实与创建同笔交易，Delay 必 Wait，出生路径永久 revert）。
         hooks = new UVPStateMachine.CompactHook[](1);
-        hooks[0] = _hook(hookId, STAGE_INIT, HOOK_NAME_TIMEOUT, true, instructions, _deps(SIGNAL_TRIGGER));
+        hooks[0] =
+            _hookWithFlags(hookId, STAGE_INIT, HOOK_NAME_TIMEOUT, FLAG_EMIT_READY, instructions, _deps(SIGNAL_TRIGGER));
     }
 
     function _negativeHookPlan(bytes32 hookId) private pure returns (UVPStateMachine.CompactHook[] memory hooks) {
@@ -2994,11 +3258,12 @@ contract UVPStateMachineTest {
         instructions[3] = _delay(5);
 
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
-        hooks[0] = _hook(
+        // 延时 hook 用 EMIT_READY（非 order-trigger）——trigger hook 内禁止 DELAY。
+        hooks[0] = _hookWithFlags(
             HOOK_TIMEOUT,
             STAGE_INIT,
             HOOK_NAME_TIMEOUT,
-            true,
+            FLAG_EMIT_READY,
             instructions,
             _deps2(SIGNAL_TRIGGER, bytes32(uint256(0x4002)))
         );
@@ -3048,11 +3313,12 @@ contract UVPStateMachineTest {
         instructions[5] = _delay(10);
 
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
-        hooks[0] = _hook(
+        // 延时 hook 用 EMIT_READY（非 order-trigger）——trigger hook 内禁止 DELAY。
+        hooks[0] = _hookWithFlags(
             HOOK_TIMEOUT,
             STAGE_INIT,
             HOOK_NAME_TIMEOUT,
-            true,
+            FLAG_EMIT_READY,
             instructions,
             _deps3(SIGNAL_TRIGGER, SIGNAL_INIT_CMP, SIGNAL_AUDIT_PASS)
         );
@@ -3071,12 +3337,7 @@ contract UVPStateMachineTest {
         // max(A,B)+10 ≥ 70——50 是分歧锚点。
         vm.warp(40);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_AUDIT_PASS,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x4005))
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_AUDIT_PASS, PAYLOAD_HASH, bytes32(uint256(0x4005))
         );
         (status, dueAt,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
         require(status == UVPStateMachine.HookStatus.Wait, "must wait on C maturity + delay");
@@ -3096,12 +3357,7 @@ contract UVPStateMachineTest {
         // B@60 迟到：AND 分支此刻成熟（max=60），但不得回归已就绪状态。
         vm.warp(60);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_INIT_CMP,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x4004))
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, PAYLOAD_HASH, bytes32(uint256(0x4004))
         );
         (status,,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
         require(status == UVPStateMachine.HookStatus.Ready, "late AND maturity must not regress ready");
@@ -3114,7 +3370,10 @@ contract UVPStateMachineTest {
         instructions[2] = _delay(5);
 
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
-        hooks[0] = _hook(HOOK_TIMEOUT, STAGE_INIT, HOOK_NAME_TIMEOUT, true, instructions, _deps(SIGNAL_TRIGGER));
+        // 延时 hook 用 EMIT_READY（非 order-trigger）——trigger hook 内禁止 DELAY。
+        hooks[0] = _hookWithFlags(
+            HOOK_TIMEOUT, STAGE_INIT, HOOK_NAME_TIMEOUT, FLAG_EMIT_READY, instructions, _deps(SIGNAL_TRIGGER)
+        );
 
         UVPStateMachine machine = _registeredMachine(hooks);
 
@@ -3309,8 +3568,9 @@ contract UVPStateMachineTest {
 
         // V1：小词输入。
         require(
-            machine.triggerOrderIdFor(bytes32(uint256(1)), bytes32(uint256(2)), bytes32(uint256(3)), bytes32(uint256(4)))
-                == 0x392791df626408017a264f53fde61065d5a93a32b60171df9d8a46afdf82992d,
+            machine.triggerOrderIdFor(
+                    bytes32(uint256(1)), bytes32(uint256(2)), bytes32(uint256(3)), bytes32(uint256(4))
+                ) == 0x392791df626408017a264f53fde61065d5a93a32b60171df9d8a46afdf82992d,
             "V1 mirror vector drifted"
         );
 
@@ -3389,8 +3649,9 @@ contract UVPStateMachineTest {
 
         // 攻击者（无 origin 侧任何身份）尝试把自己的派生单挂到受害方订单上。
         address attacker = vm.addr(ATTACKER_SUBMITTER_PRIVATE_KEY);
-        bytes32 mirroredOrderId =
-            machine.orderLinkOrderIdFor(attackerPlanId, victimPlanId, victimOrderId, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH);
+        bytes32 mirroredOrderId = machine.orderLinkOrderIdFor(
+            attackerPlanId, victimPlanId, victimOrderId, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH
+        );
         IUVPStateMachineCore.TriggerOrderFromSignalRequest memory mirrored =
             IUVPStateMachineCore.TriggerOrderFromSignalRequest({
                 orderId: mirroredOrderId,
@@ -3560,11 +3821,12 @@ contract UVPStateMachineTest {
         IUVPStateMachineCore.SignalAuthorization[] memory childAuths =
             _moduleAuthorizations(_auths1(SIGNAL_TRIGGER, SUBMITTER_A));
         bytes memory signature = _triggerOrderFromSignalSignature(machine, request, childAuths, SUBMITTER_PRIVATE_KEY);
-        bytes32 derived = machine.orderLinkOrderIdFor(
-            PLAN_ID, PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH
-        );
+        bytes32 derived =
+            machine.orderLinkOrderIdFor(PLAN_ID, PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH);
         vm.prank(UNAUTHORIZED_SUBMITTER);
-        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.InvalidOrderLinkOrderId.selector, bytes32(uint256(0xdead)), derived));
+        vm.expectRevert(
+            abi.encodeWithSelector(UVPStateMachine.InvalidOrderLinkOrderId.selector, bytes32(uint256(0xdead)), derived)
+        );
         _orderLink(machine).triggerOrderFromSignalFor(request, childAuths, signature);
     }
 
@@ -3583,9 +3845,8 @@ contract UVPStateMachineTest {
         bytes32 victimOrderId =
             machine.triggerOrderIdFor(planId, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, bytes32(uint256(0x9999)));
         // link 派生域与 outside 派生域结构性分离。
-        bytes32 derivedLinkId = machine.orderLinkOrderIdFor(
-            PLAN_ID, PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH
-        );
+        bytes32 derivedLinkId =
+            machine.orderLinkOrderIdFor(PLAN_ID, PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH);
         require(victimOrderId != derivedLinkId, "link and outside derivation domains must be disjoint");
 
         IUVPStateMachineCore.TriggerOrderFromSignalRequest memory request =
@@ -3614,8 +3875,15 @@ contract UVPStateMachineTest {
         instructions[0] = _signal(SIGNAL_TRIGGER);
         instructions[1] = _signal(SIGNAL_INIT_CMP);
         instructions[2] = _and(2);
-        hooks[0] = _hook(HOOK_INIT, STAGE_INIT, HOOK_NAME_TRIGGER, true, instructions, _deps2(SIGNAL_TRIGGER, SIGNAL_INIT_CMP));
-        bytes32 planId = _registerPlan(machine, _withOrderStart(hooks), new IUVPPlanMetadataModule.StageSelectorBinding[](0), new IUVPPlanMetadataModule.SignalCapability[](0));
+        hooks[0] = _hook(
+            HOOK_INIT, STAGE_INIT, HOOK_NAME_TRIGGER, true, instructions, _deps2(SIGNAL_TRIGGER, SIGNAL_INIT_CMP)
+        );
+        bytes32 planId = _registerPlan(
+            machine,
+            _withOrderStart(hooks),
+            new IUVPPlanMetadataModule.StageSelectorBinding[](0),
+            new IUVPPlanMetadataModule.SignalCapability[](0)
+        );
 
         // origin 订单：TRIGGER 由 triggerSubmitter 提交（显式授权），
         // INIT_CMP 由 SUBMITTER_A 提交（显式授权）——两人各持一条事实的同意。
@@ -3642,7 +3910,9 @@ contract UVPStateMachineTest {
         bytes memory signature = _triggerOrderFromSignalSignature(machine, request, childAuths, SUBMITTER_PRIVATE_KEY);
         vm.prank(UNAUTHORIZED_SUBMITTER);
         vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.UnauthorizedTriggerOrigin.selector, planId, ORDER_ID, vm.addr(SUBMITTER_PRIVATE_KEY))
+            abi.encodeWithSelector(
+                UVPStateMachine.UnauthorizedTriggerOrigin.selector, planId, ORDER_ID, vm.addr(SUBMITTER_PRIVATE_KEY)
+            )
         );
         _orderLink(machine).triggerOrderFromSignalFor(request, childAuths, signature);
 
@@ -3668,7 +3938,9 @@ contract UVPStateMachineTest {
         patch.targetStageId = STAGE_INIT;
         patch.selectorStageId = STAGE_INIT;
         vm.expectRevert(
-            abi.encodeWithSelector(UVPStagePatchModule.StageExecutorPatchForbiddenOnBirthStage.selector, ORDER_ID, STAGE_INIT)
+            abi.encodeWithSelector(
+                UVPStagePatchModule.StageExecutorPatchForbiddenOnBirthStage.selector, ORDER_ID, STAGE_INIT
+            )
         );
         _stagePatch(machine).applyStageExecutorPatch(PLAN_ID, ORDER_ID, patch);
     }
@@ -3679,8 +3951,10 @@ contract UVPStateMachineTest {
         UVPStateMachine machine = _newMachine();
         IUVPPlanMetadataModule.StageSelectorBinding[] memory bindings =
             new IUVPPlanMetadataModule.StageSelectorBinding[](2);
-        bindings[0] = IUVPPlanMetadataModule.StageSelectorBinding({selectorStageId: STAGE_INIT, targetStageId: STAGE_AUDIT});
-        bindings[1] = IUVPPlanMetadataModule.StageSelectorBinding({selectorStageId: STAGE_INIT, targetStageId: STAGE_INIT});
+        bindings[0] =
+            IUVPPlanMetadataModule.StageSelectorBinding({selectorStageId: STAGE_INIT, targetStageId: STAGE_AUDIT});
+        bindings[1] =
+            IUVPPlanMetadataModule.StageSelectorBinding({selectorStageId: STAGE_INIT, targetStageId: STAGE_INIT});
         UVPStateMachine.SignalAuthorization[] memory originAuthorizations = new UVPStateMachine.SignalAuthorization[](2);
         originAuthorizations[0] = _stageAuthorization(STAGE_INIT, RESOURCE_PATCH_SIGNAL_ID, address(this));
         originAuthorizations[1] = _authorization(SIGNAL_ORDER_START, address(this));
@@ -3691,7 +3965,8 @@ contract UVPStateMachineTest {
         patch.targetStageId = STAGE_INIT;
         patch.selectorStageId = STAGE_INIT;
         _stagePatch(machine).applyStageResourcePatch(PLAN_ID, ORDER_ID, patch);
-        (bool exists,,,,,) = _stagePatch(machine).getActiveStageResourcePatch(PLAN_ID, ORDER_ID, STAGE_INIT, RESOURCE_KEY);
+        (bool exists,,,,,) =
+            _stagePatch(machine).getActiveStageResourcePatch(PLAN_ID, ORDER_ID, STAGE_INIT, RESOURCE_KEY);
         require(exists, "birth-stage resource patch missing");
     }
 
@@ -3702,8 +3977,7 @@ contract UVPStateMachineTest {
         // 派生模块写入（_recordSignal(false) 不走 selector-target 执行者
         // 门——无 patch 的阶段事实正是该回退路径的可达形态）。
         UVPStateMachine machine = _newMachine();
-        IUVPPlanMetadataModule.SignalCapability[] memory caps =
-            new IUVPPlanMetadataModule.SignalCapability[](3);
+        IUVPPlanMetadataModule.SignalCapability[] memory caps = new IUVPPlanMetadataModule.SignalCapability[](3);
         caps[0] = IUVPPlanMetadataModule.SignalCapability({
             stageId: STAGE_AUDIT, targetSourceId: STAGE_AUDIT, signalId: SIGNAL_STAGE_DONE, targetOrderRelation: 0
         });
@@ -3722,19 +3996,37 @@ contract UVPStateMachineTest {
         _submitTriggerOrderFromOutside(machine, PLAN_ID, ORDER_CREATOR, auths);
 
         vm.prank(SUBMITTER_A);
-        _derivedSignal(machine).submitDerivedSignal(
-            _derivedSignalRequestWithPlans(
-                ORDER_ID, STAGE_AUDIT, PLAN_ID, ORDER_ID, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, PAYLOAD_HASH, bytes32(uint256(1))
-            ),
-            SUBMITTER_A
-        );
+        _derivedSignal(machine)
+            .submitDerivedSignal(
+                _derivedSignalRequestWithPlans(
+                    ORDER_ID,
+                    STAGE_AUDIT,
+                    PLAN_ID,
+                    ORDER_ID,
+                    PLAN_ID,
+                    STAGE_AUDIT,
+                    SIGNAL_STAGE_DONE,
+                    PAYLOAD_HASH,
+                    bytes32(uint256(1))
+                ),
+                SUBMITTER_A
+            );
         vm.prank(SUBMITTER_B);
-        _derivedSignal(machine).submitDerivedSignal(
-            _derivedSignalRequestWithPlans(
-                ORDER_ID, STAGE_AUDIT, PLAN_ID, ORDER_ID, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW, PAYLOAD_HASH, bytes32(uint256(2))
-            ),
-            SUBMITTER_B
-        );
+        _derivedSignal(machine)
+            .submitDerivedSignal(
+                _derivedSignalRequestWithPlans(
+                    ORDER_ID,
+                    STAGE_AUDIT,
+                    PLAN_ID,
+                    ORDER_ID,
+                    PLAN_ID,
+                    STAGE_AUDIT,
+                    SIGNAL_STAGE_REVIEW,
+                    PAYLOAD_HASH,
+                    bytes32(uint256(2))
+                ),
+                SUBMITTER_B
+            );
 
         UVPStagePatchModule.StageExecutorPatch memory patch = _stageExecutorPatchWithMode(
             2, SUBMITTER_B, PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, SUBMITTER_A, bytes32(0), bytes32(0)
@@ -3742,7 +4034,10 @@ contract UVPStateMachineTest {
         vm.prank(vm.addr(SUBMITTER_PRIVATE_KEY));
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.StagePreviousExecutorAmbiguous.selector, ORDER_ID, STAGE_AUDIT, uint64(block.timestamp)
+                UVPStagePatchModule.StagePreviousExecutorAmbiguous.selector,
+                ORDER_ID,
+                STAGE_AUDIT,
+                uint64(block.timestamp)
             )
         );
         _stagePatch(machine).applyStageExecutorPatch(PLAN_ID, ORDER_ID, patch);
@@ -3767,19 +4062,27 @@ contract UVPStateMachineTest {
         );
         {
             uint256 deadline = block.timestamp + 1 hours;
-            bytes32 digest = _stagePatch(machine).stageExecutorPatchDigest(
-                PLAN_ID, ORDER_ID, patch, vm.addr(SUBMITTER_PRIVATE_KEY), deadline
-            );
+            bytes32 digest = _stagePatch(machine)
+                .stageExecutorPatchDigest(PLAN_ID, ORDER_ID, patch, vm.addr(SUBMITTER_PRIVATE_KEY), deadline);
             (uint8 v, bytes32 r, bytes32 s) = vm.sign(SUBMITTER_PRIVATE_KEY, digest);
             bytes memory selectorSignature = _packedSignature(v, r, s);
             (uint8 pv, bytes32 pr, bytes32 ps) = vm.sign(WRONG_SUBMITTER_PRIVATE_KEY, digest);
             bytes memory previousSignature = _packedSignature(pv, pr, ps);
             vm.prank(UNAUTHORIZED_SUBMITTER);
-            _stagePatch(machine).applyStageExecutorPatchFor(
-                PLAN_ID, ORDER_ID, patch, vm.addr(SUBMITTER_PRIVATE_KEY), deadline, selectorSignature, previousSignature
-            );
+            _stagePatch(machine)
+                .applyStageExecutorPatchFor(
+                    PLAN_ID,
+                    ORDER_ID,
+                    patch,
+                    vm.addr(SUBMITTER_PRIVATE_KEY),
+                    deadline,
+                    selectorSignature,
+                    previousSignature
+                );
         }
-        require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == address(0xcc), "handoff executor missing");
+        require(
+            machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == address(0xcc), "handoff executor missing"
+        );
     }
 
     // ------------------------------------------------------------------

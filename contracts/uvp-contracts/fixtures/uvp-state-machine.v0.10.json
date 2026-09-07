@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xf840815400bb96d1129c4c34aefee9e964f3ac90b421925529baed676a21b6d4",
-    "bytecodeHash": "0x2634f40307d59d9baa5ede7a176db4b3856b715b55f4006846b777c4e3c3c332",
-    "deployedBytecodeHash": "0x1032e46269405447687a1cc0e6097593cf74e03dc67d9ae111b2bfd3b57716a3",
-    "artifactHash": "0xc3b62779ea044036d1367d468d96e201cfb6cdfda6f179d2df1f066b1947e202"
+    "abiHash": "0xb9f0b591d47993b799a8cf307c902b03c2532c6eb2f766417138e22bb3bb0918",
+    "bytecodeHash": "0x947cde467b00d5cef7b9c396821d0396af2bbc0b27901e04a0348e4d94868739",
+    "deployedBytecodeHash": "0xa1239d5bd6a524df4b392b0d30d8a4efd047e74e003005c0451e69c9085d4e80",
+    "artifactHash": "0x1fceba767947be9369750d91b1a96ffc03b44e915a2d3690dd2706e6726b84d3"
   },
   "events": {
     "HookReady": {
@@ -36,8 +36,8 @@
       "topic": "0xfb823505fda512863c2a65c12c710a42b9bb4653dd8e7ac0c1b8fb9662acc9e8"
     },
     "OrderTriggered": {
-      "signature": "OrderTriggered(bytes32,bytes32,bytes32,bytes32,bytes32,address)",
-      "topic": "0x16713a317223487a8630fd22d8192537c6f993baec2d9fb0e7c61be027b2f8b0"
+      "signature": "OrderTriggered(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
+      "topic": "0xbe2b637c10170dd6e7fc69ecdbc27e81ae35e6307328e493694d61c9c32a693b"
     },
     "OwnershipTransferred": {
       "signature": "OwnershipTransferred(address,address)",

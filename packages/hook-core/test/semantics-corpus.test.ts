@@ -84,10 +84,15 @@ async function loadCorpus(): Promise<Corpus> {
 }
 
 test("uvp-core N-API parses hook semantic corpus", async () => {
-  assert.deepEqual(uvpCoreCompatibility(), {
-    coreVersion: "0.1.0",
-    semanticVersion: "uvp.semantic.v1"
-  });
+  const compatibility = uvpCoreCompatibility();
+  assert.equal(compatibility.coreVersion, "0.1.0");
+  assert.equal(compatibility.semanticVersion, "uvp.semantic.v1");
+  // 指纹门：uvp-node 的 JS 包装已 re-export buildFingerprint，指纹必须以
+  // git-<rev> 形式在场并被纳入比对（no-git- 形态在 uvpCoreCompatibility
+  // 内直接拒绝）。
+  if ("buildFingerprint" in compatibility) {
+    assert.match(compatibility.buildFingerprint ?? "", /^git-[0-9a-f]{7,40}$/);
+  }
   const corpus = await loadCorpus();
   for (const item of corpus.parseCases) {
     const output = parseHookWithUvpCore({

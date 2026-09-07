@@ -34,16 +34,20 @@ args for the two-step `UVPStateMachine.commitPlan` + `finalizePlan` flow.
 The supported compiler surface is the chain artifact path:
 
 - `receiveSignals` hook parsing;
-- `trigger` reference validation;
 - `selectedStages` binding validation;
 - static executor route extraction;
 - `supplierType=zhixu` `signalMap` compilation and same-source validation.
 
 Executor topology follows the UVP closure rule: a stage without a
-fixed `executor.supplierID` is valid only when it can be reached through
-`selectedStages` from a stage that does name a fixed executor. Selector loops or
-selector chains with no fixed executor anchor are rejected, so product flows
-cannot publish order stages that nobody is authorized to select or perform.
+fixed `executor.supplierID` passes the closure rule only when it can be reached
+through `selectedStages` from a stage that does name a fixed executor. Selector
+loops or selector chains with no fixed executor anchor are rejected. On top of
+the closure rule, the Rust materialization gate (mirrored at the on-chain
+artifact boundary) additionally requires every declared stage to compile at
+least one hook with a materialization bit (mint/dock order trigger or a static
+executor's EMIT_READY receive hook) — an executor-less selected stage is
+therefore rejected even when it is reachable, because on-chain stages
+materialize only through their own hooks.
 
 Do not execute hooks in this module. Runtime evaluation belongs in
 `hook-core`/`statemachine`.

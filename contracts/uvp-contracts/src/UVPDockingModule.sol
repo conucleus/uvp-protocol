@@ -16,9 +16,10 @@ import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 /// 哈希域（与 Rust uvp-compiler::dock / TS compiler/src/dock.ts 逐字节一致）：
 ///   inputLeaf   = H("UVP_DOCK_INTERFACE_INPUT_V1",  defRef, portKey, kind, hookKey, sourceId, signalId, access)
 ///   routeId     = H("UVP_DOCK_ROUTE_ID_V1", localDefRef, stageKey)
-///   inputBind   = H("UVP_DOCK_INPUT_BINDING_V1",  routeId, localHookId, portKey, targetSourceId, targetSignalId)
+///   inputBind   = H("UVP_DOCK_INPUT_BINDING_V1",  routeId, localHookId, portKey, targetSourceId, targetSignalId,
+///                    kind)
 ///   outputBind  = H("UVP_DOCK_OUTPUT_BINDING_V1", routeId, localSourceId, localSignalId, portKey,
-///                    targetSourceId, targetSignalId)
+///                    targetSourceId, targetSignalId, terminal)
 ///   routeHash   = H("UVP_DOCK_ROUTE_V1", routeId, targetDefRef, targetArtifactHash, targetInterfaceRoot,
 ///                    targetPlanId, idPolicy(0), sourceSeam, entranceBinding, access, inputsRoot, outputsRoot)
 ///   dockInst    = H("UVP_DOCK_INSTANCE_V1", runtimeDomain, localPlanId, localDefRef, localOrderKey, routeId, routeHash)

@@ -23,7 +23,13 @@ import {
   type ZhixuDefinition,
 } from "../src/index.js";
 import { compileZhixuHookPlan, HookPlanCompilationError } from "../src/hook-plan.js";
-import { compileOnchainHookPlan, hashOnchainPlanPayload, onchainSignalId, onchainSourceId } from "../src/onchain-hook-plan.js";
+import {
+  compileOnchainHookPlan,
+  hashOnchainPlanPayload,
+  onchainSignalId,
+  onchainSignalKey,
+  onchainSourceId,
+} from "../src/onchain-hook-plan.js";
 import type { HookPlanArtifact } from "../src/types/index.js";
 
 const demoManifest = dockDemoResolutionManifest();
@@ -337,6 +343,87 @@ test("builds a stable on-chain dependency index and route references", () => {
   assert.equal(
     onchain.compiledHooks.find((hook) => hook.hookName === "START")?.routeRef,
     undefined,
+  );
+});
+
+test("dependencyIndex hookIds follow calldata order, not keccak order (oracle pairing)", () => {
+  // 同键双 hook：合约 _registerPlanHook 按 commitPlan calldata（=
+  // compiledHooks 的 stage/hookName 序）逐个 push hookId，回放 oracle 按
+  // 数组序逐位配对。本 fixture 里 keccak 序（0x2cb2… SECOND < 0xe460…
+  // FIRST）与名字序（FIRST < SECOND）分叉——artifact 每键 hookIds 必须按
+  // calldata 序生成，按 hookId 排序会让同键同阶段双 hook 同轮就绪时以
+  // ~50% 概率产生假 mismatch。
+  const zhixu: ZhixuDefinition = {
+    ...baseZhixu,
+    metadata: {
+      name: "shared_key_order_demo",
+      annotations: { version: "7" },
+    },
+    spec: {
+      ...baseZhixu.spec,
+      taskPatterns: [
+        {
+          name: "watch",
+          stages: [
+            {
+              name: "stage",
+              source: "buyer",
+              receiveSignals: {
+                FIRST: "buyer::watch.stage.seed",
+                SECOND: "buyer::watch.stage.seed",
+              },
+              sendSignals: ["seed"],
+              executor: {
+                supplierType: "organization",
+                supplierID: "watcher-org",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const onchain = compileZhixuOnchainHookPlanWithManifest(zhixu);
+  const seedKey = onchainSignalKey(
+    onchainSourceId("buyer"),
+    onchainSignalId("watch.stage.seed"),
+  );
+  const calldataOrder = onchain.compiledHooks.map((hook) => hook.hookId);
+  assert.deepEqual(
+    onchain.compiledHooks.map((hook) => hook.hookName),
+    ["FIRST", "SECOND"],
+  );
+  // 前置守卫：本 fixture 的 keccak 序确实与 calldata 序不同（否则测试退化）。
+  assert.notDeepEqual([...calldataOrder].sort(), calldataOrder);
+  assert.deepEqual(onchain.dependencyIndex[seedKey], calldataOrder);
+
+  // Solidity 参数与 artifact 逐位一致：commitPlan calldata 与
+  // dependencyIndex 由同一顺序喂入。
+  const args = toSolidityRegisterPlanArgs(onchain);
+  assert.deepEqual(
+    args.dependencyIndex.find((entry) => entry.signalKey === seedKey)?.hookIds,
+    calldataOrder,
+  );
+
+  // keccak 序的 dependencyIndex 在反序列化边界必须被拒绝。
+  const { planHash: _staleHash, ...payload } = onchain;
+  const keccakOrdered = {
+    ...payload,
+    dependencyIndex: Object.fromEntries(
+      Object.entries(payload.dependencyIndex).map(([key, hookIds]) => [
+        key,
+        [...hookIds].sort(),
+      ]),
+    ),
+  };
+  assert.ok(
+    validateOnchainHookPlanArtifact({
+      ...keccakOrdered,
+      planHash: hashOnchainPlanPayload(keccakOrdered),
+    }).some(
+      (issue) =>
+        issue === "dependencyIndex must match on-chain hook dependencies",
+    ),
   );
 });
 
@@ -714,6 +801,69 @@ test("rejects invalid on-chain HookPlan artifact shapes", () => {
         dependencyIndex: {},
       }),
     OnchainHookPlanArtifactValidationError,
+  );
+});
+
+test("collects dock commitment shape violations as issues instead of throwing or pinning defaults", () => {
+  // 0348 发现1+发现3 / 0524 C12：dock 字段缺失/畸形不得 fail-open——
+  // 既不能落进 planHash 重算的 ?? 兜底（缺失被钉成 []/null 后照常通过），
+  // 也不能让 canonicalize 抛未类型化 TypeError（破坏"返回 issues"契约）。
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+
+  const strip = (field: string): Record<string, unknown> => {
+    const { [field]: _removed, ...rest } = {
+      ...onchain,
+    } as Record<string, unknown>;
+    return rest;
+  };
+
+  // dockRoutes 非数组 → 形状 issue，不抛异常。
+  const badRoutesIssues = validateOnchainHookPlanArtifact({
+    ...onchain,
+    dockRoutes: { "0x50": [] },
+  } as unknown as OnchainHookPlanArtifact);
+  assert.ok(
+    badRoutesIssues.includes("dockRoutes must be an array"),
+    `expected dockRoutes shape issue, got: ${badRoutesIssues.join("; ")}`,
+  );
+
+  // dockRoutesRoot 缺失 → hex issue（而非重算路径的裸 TypeError）。
+  const missingRoutesRootIssues = validateOnchainHookPlanArtifact(
+    strip("dockRoutesRoot"),
+  );
+  assert.ok(
+    missingRoutesRootIssues.includes(
+      "dockRoutesRoot must be a lowercase 32-byte hex hash",
+    ),
+  );
+  assert.ok(
+    !missingRoutesRootIssues.includes(
+      "planHash must match the canonical on-chain HookPlan payload",
+    ),
+    "planHash must not be recomputed while dockRoutesRoot is missing",
+  );
+
+  // dockInterfaceRoot 非法 hex → hex issue。
+  assert.ok(
+    validateOnchainHookPlanArtifact({
+      ...onchain,
+      dockInterfaceRoot: "0xdeadbeef",
+    }).includes("dockInterfaceRoot must be a lowercase 32-byte hex hash"),
+  );
+
+  // dockInterface 缺失 → 承诺校验报 issue，planHash 不重算。
+  const missingInterfaceIssues = validateOnchainHookPlanArtifact(
+    strip("dockInterface"),
+  );
+  assert.ok(
+    missingInterfaceIssues.includes(
+      "artifact.dockInterface must be an object or null",
+    ),
+  );
+  assert.ok(
+    !missingInterfaceIssues.includes(
+      "planHash must match the canonical on-chain HookPlan payload",
+    ),
   );
 });
 

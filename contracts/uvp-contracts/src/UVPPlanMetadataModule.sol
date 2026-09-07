@@ -22,6 +22,7 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     error InvalidTargetOrderRelation(uint8 targetOrderRelation);
     error StageSelectorBindingAlreadyRegistered(bytes32 planId, bytes32 selectorStageId, bytes32 targetStageId);
     error PlanMetadataAlreadyFinalized(bytes32 planId);
+    error TooManySignalCapabilities(uint256 count, uint256 max);
     error UnauthorizedStateMachine(address caller);
     error UnknownPlan();
     error ZeroSelectorStageId();
@@ -33,6 +34,11 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
 
     uint8 public constant SIGNAL_TARGET_CURRENT_ORDER = 0;
     uint8 public constant SIGNAL_TARGET_TRIGGER_ORIGIN = 1;
+
+    // G-18 链上强制：能力表超过该上限时 _signalStageId 的线性扫描会让
+    // 每次信号提交的 gas 随 plan 规模无界增长（手签超大能力表 plan 毒化
+    // 全体提交者）。TS/Rust 编译器以同一数值预检；这里是注册边界兜底。
+    uint256 public constant MAX_SIGNAL_CAPABILITIES = 256;
 
     mapping(bytes32 planId => PlanMetadata metadata) private _metadata;
     mapping(bytes32 planId => bool finalized) public planMetadataFinalized;
@@ -219,6 +225,9 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     }
 
     function _registerSignalCapabilities(bytes32 planId, SignalCapability[] calldata signalCapabilities) private {
+        if (signalCapabilities.length > MAX_SIGNAL_CAPABILITIES) {
+            revert TooManySignalCapabilities(signalCapabilities.length, MAX_SIGNAL_CAPABILITIES);
+        }
         PlanMetadata storage metadata = _metadata[planId];
         for (uint256 i = 0; i < signalCapabilities.length; i++) {
             SignalCapability calldata capability = signalCapabilities[i];

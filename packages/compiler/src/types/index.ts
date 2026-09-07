@@ -98,7 +98,8 @@ export interface DockInputPortSource {
 export interface DockOutputPortSource {
   /** `<source>::<task>.<stage>.<signal>` */
   readonly signal: string;
-  readonly terminal?: "success" | "failure" | "cancelled";
+  /** Rust 权威四值（dock.rs TERMINAL_TABLE），缺省 "none"。 */
+  readonly terminal?: "none" | "success" | "failure" | "cancelled";
 }
 
 /** 调用方 `executor.zhixuExecutorConfig`。 */

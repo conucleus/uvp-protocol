@@ -12,7 +12,7 @@
     "abiHash": "0x4df4896f417dea7e2abff8d1f4ad2f663ca2c662e1622ff334d54197ad7a3832",
     "bytecodeHash": "0xd0cd556c410afb3d64ac04d44c66d5c753d68c04aace4ff662f5410f460a88fb",
     "deployedBytecodeHash": "0xa31e1daa2063d2bb7b66bb077259afc84e47e4e6bef9f562d6035995198f88be",
-    "artifactHash": "0x5e63b7c141245dbfc652b5d22a68c7bc83abb029bba3e91ade8abea7c4813be7"
+    "artifactHash": "0x72a217602ebb6ea9f59833288f723abcef5e8ba0d16400ba3b6f9de1cd186006"
   },
   "events": {
     "OrderLinked": {

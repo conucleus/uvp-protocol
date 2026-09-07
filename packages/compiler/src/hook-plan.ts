@@ -7,6 +7,7 @@ import {
   type DockResolutionManifest,
 } from "./types/index.js";
 import { validateDockCommitments } from "./dock-validation.js";
+import { compareByCodePoint } from "./canonical.js";
 
 export class HookPlanCompilationError extends Error {
   readonly issues: readonly string[];
@@ -296,8 +297,14 @@ function validateDependencyIndex(
 
   const expected = Object.fromEntries(
     [...recomputed.entries()]
-      .sort(([left], [right]) => compareByCodeUnit(left, right))
-      .map(([key, hookIds]) => [key, [...hookIds].sort()])
+      // Rust 权威是 BTreeMap<String, BTreeSet<String>>（字节序 = 码点序）；
+      // 默认 .sort() 按 UTF-16 码元比较，会把星面字符（代理对）排到
+      // U+E000..U+FFFF 的高 BMP 键之前，误拒合法 Rust 产物。
+      .sort(([left], [right]) => compareByCodePoint(left, right))
+      .map(([key, hookIds]) => [
+        key,
+        [...hookIds].sort(compareByCodePoint),
+      ])
   );
   if (JSON.stringify(expected) !== JSON.stringify(dependencyIndex)) {
     issues.push("dependencyIndex must match compiled hook dependencies");

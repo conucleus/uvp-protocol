@@ -12,7 +12,7 @@
     "abiHash": "0x5c1611911e7483d2509564f3eaef31c0b4cad78fe0e9ce5390477e73e844c9ed",
     "bytecodeHash": "0xf596bf28a295619e26c0f83adb1844ecb2e16d7f38b1d9f70083ae283f2f9cd4",
     "deployedBytecodeHash": "0x037796eac3bfceea08202ca554f673b709218f5338a9d29bdc7e2660f827a2fd",
-    "artifactHash": "0x8ffd3abb3c777bbc638e57ede06321aed9575ae15e5567fc3f794d1db6dbdfde"
+    "artifactHash": "0xaafd18fff225ca42346afba78c14ddac05267364b4f80ead27baecf58926929d"
   },
   "events": {
     "DockInputSubmitted": {

@@ -2250,6 +2250,12 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "bytes32"
       },
       {
+        "name": "triggerHookId",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
         "name": "sourceId",
         "type": "bytes32",
         "indexed": false,
@@ -2981,6 +2987,11 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   {
     "type": "error",
     "name": "OrderAlreadyRegistered",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PlanAlreadyFinalized",
     "inputs": []
   },
   {

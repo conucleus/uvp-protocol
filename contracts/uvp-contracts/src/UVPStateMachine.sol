@@ -210,6 +210,10 @@ contract UVPStateMachine {
     error NotOwner();
     error OrderAlreadyRegistered();
     error PlanAlreadyRegistered();
+    // commitPlan 幂等重放（已 committed）与 finalizePlan 二次调用（已
+    // finalized）是两个不同的拒绝点——复用 PlanAlreadyRegistered 会让
+    // relayer 无法区分"重复提交 hooks"与"重复 finalize 元数据"。
+    error PlanAlreadyFinalized();
     error PlanMetadataHashMismatch(bytes32 expectedHash, bytes32 actualHash);
     error PlanNotCommitted();
     error PlanNotFinalized();
@@ -378,6 +382,9 @@ contract UVPStateMachine {
         bytes32 indexed orderId,
         bytes32 indexed planId,
         bytes32 indexed triggerStageId,
+        // triggerHookId 让索引器/回放方不必反查 plan 即可定位出生 hook
+        // 定义（多 hook 阶段下 stageId 不足以定位求值语义）。
+        bytes32 triggerHookId,
         bytes32 sourceId,
         bytes32 signalId,
         address submitter
@@ -589,7 +596,7 @@ contract UVPStateMachine {
             revert PlanNotCommitted();
         }
         if (plan.finalized) {
-            revert PlanAlreadyRegistered();
+            revert PlanAlreadyFinalized();
         }
         bytes32 actualMetadataHash = keccak256(abi.encode(selectorBindings, signalCapabilities));
         if (actualMetadataHash != plan.metadataHash) {
@@ -670,7 +677,13 @@ contract UVPStateMachine {
         _createOrder(trigger.planId, orderId, trigger.creator, msg.sender);
         _authorizeSignalSubmitters(trigger.planId, orderId, authorizations);
         emit OrderTriggered(
-            orderId, trigger.planId, trigger.triggerStageId, trigger.sourceId, trigger.signalId, trigger.submitter
+            orderId,
+            trigger.planId,
+            trigger.triggerStageId,
+            trigger.triggerHookId,
+            trigger.sourceId,
+            trigger.signalId,
+            trigger.submitter
         );
         _recordSignal(
             trigger.planId,
@@ -808,11 +821,20 @@ contract UVPStateMachine {
         );
         // 每个被消费的 SIGNAL 指令独立过 origin 同意门（UVP-08）：声明
         // 的 origin 事实已同意，但 hook 求值实际读取的其它事实同样构成
-        // "把 origin 订单的事实拿去派生新单"，逐一校验。不存在的事实无
-        // 法影响求值（贡献 value=false），跳过以省 gas。
+        // "把 origin 订单的事实拿去派生新单"，逐一校验。跳过未发生的
+        // 事实不是因为它们不影响求值——恰恰相反，经 NOT 它们可以让表
+        // 达式就绪（A & ~X 正是在 X 未发生时为真）——而是因为同意门只
+        // 约束"已被说出"的事实：未发生的事实不是 origin 订单上任何一方
+        // 的发言，不存在可被要求同意的主体（"X 未发生"是全链可见的缺
+        // 席状态，不是 origin 订单的私有信息）。
         _requireTriggerHookSignalConsent(
-            trigger.originPlanId, trigger.triggerOriginOrderId, trigger.planId, trigger.triggerHookId,
-            trigger.triggerStageId, trigger.submitter, relayer
+            trigger.originPlanId,
+            trigger.triggerOriginOrderId,
+            trigger.planId,
+            trigger.triggerHookId,
+            trigger.triggerStageId,
+            trigger.submitter,
+            relayer
         );
 
         if (_isDockOrderId(trigger.orderId)) {
@@ -825,6 +847,7 @@ contract UVPStateMachine {
             trigger.orderId,
             trigger.planId,
             trigger.triggerStageId,
+            trigger.triggerHookId,
             trigger.originSourceId,
             trigger.originSignalId,
             trigger.submitter
@@ -882,6 +905,12 @@ contract UVPStateMachine {
     {
         if (authorization.signalId == bytes32(0)) {
             revert ZeroSignalId();
+        }
+        // sourceId==0 的事实键绕过 _signalStageId（对 sourceId==0 恒返回
+        // 0）——stage 物化与 executor 门永远不绑定，等于发布者签出一扇
+        // 豁免门；注册期直接拒绝。
+        if (authorization.sourceId == bytes32(0)) {
+            revert ZeroSourceId();
         }
         if (authorization.submitter == address(0)) {
             revert ZeroSubmitter();
@@ -1074,6 +1103,12 @@ contract UVPStateMachine {
         if (msg.sender != dockingModule) {
             revert UnauthorizedStateMachineModule(msg.sender);
         }
+        // 与其余 FromModule 信号写入口同口径：submitter==0 会把
+        // lastSignalSubmitter 写成 0，污染 dock output 通道与 HANDOFF
+        // 签名门的"上一提交者"判定。
+        if (submitter == address(0)) {
+            revert ZeroSubmitter();
+        }
         if (!_isDockOrderId(linkedOrderId)) {
             revert InvalidDockOrderNamespace(linkedOrderId);
         }
@@ -1096,6 +1131,11 @@ contract UVPStateMachine {
     ) external {
         if (msg.sender != dockingModule) {
             revert UnauthorizedStateMachineModule(msg.sender);
+        }
+        // 同 createDockedOrderFromModule：submitter==0 污染
+        // lastSignalSubmitter（dock output 通道 / HANDOFF 签名门）。
+        if (submitter == address(0)) {
+            revert ZeroSubmitter();
         }
         _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false);
     }
@@ -1675,6 +1715,23 @@ contract UVPStateMachine {
             revert InvalidHook();
         }
 
+        // order-trigger（mint/dock）hook 内禁止 DELAY：outside 出生的事
+        // 实与订单创建同笔交易（anchorAt=now），Delay(SIGNAL) 必得 Wait，
+        // 出生路径永久 InvalidTriggerHook；dock entrance 由模块直接标记
+        // Ready，DELAY 只是死代码。编译器产物的 trigger hook 恒为裸
+        // SIGNAL；注册边界拒绝（B-2/0557）。
+        bool orderTrigger = _isOrderTrigger(hook.flags);
+        // 裸 SIGNAL 栈标志：Merge 的操作数约束（编码层契约——操作数必须
+        // 是裸 SIGNAL 引用）。_mergeValue 吞掉 wait 分支，Delay 混入
+        // Merge 会让 hook 永不进入 Wait，pokeTimer 因 TimerNotWaiting 永
+        // 久不可用，与回放 oracle（按事件时刻重放求值）分叉。
+        bool[] memory bareSignal = new bool[](hook.instructions.length);
+        // 正向锚点栈标志：延时操作数须含正向信号锚点（对齐 uvp-hook-dsl
+        // validate_anchors）。全否定/缺席的操作数在 value=true 时
+        // anchorAt=0，到期时刻恒在过去，Delay 沦为立即放行。
+        // Signal/Delay 贡献正向锚点，Not 归零，And 取任一，Or/Merge 需
+        // 每一分支都有（Or 的缺席分支可单独就绪且锚点为 0）。
+        bool[] memory hasPosAnchor = new bool[](hook.instructions.length);
         uint256 stackDepth;
         for (uint256 i = 0; i < hook.instructions.length; i++) {
             Instruction calldata instruction = hook.instructions[i];
@@ -1682,29 +1739,60 @@ contract UVPStateMachine {
                 if (instruction.signalId == bytes32(0)) {
                     revert InvalidInstruction();
                 }
+                bareSignal[stackDepth] = true;
+                hasPosAnchor[stackDepth] = true;
                 stackDepth += 1;
             } else if (instruction.op == InstructionOp.Not || instruction.op == InstructionOp.Delay) {
                 if (stackDepth == 0) {
                     revert InvalidInstruction();
                 }
-                if (instruction.op == InstructionOp.Delay && instruction.delaySeconds == 0) {
-                    revert InvalidInstruction();
-                }
-                if (instruction.op == InstructionOp.Delay && instruction.delaySeconds > MAX_HOOK_DELAY_SECONDS) {
-                    revert HookDelayTooLong(instruction.delaySeconds);
+                if (instruction.op == InstructionOp.Delay) {
+                    if (instruction.delaySeconds == 0) {
+                        revert InvalidInstruction();
+                    }
+                    if (instruction.delaySeconds > MAX_HOOK_DELAY_SECONDS) {
+                        revert HookDelayTooLong(instruction.delaySeconds);
+                    }
+                    if (orderTrigger) {
+                        revert InvalidInstruction();
+                    }
+                    if (!hasPosAnchor[stackDepth - 1]) {
+                        revert InvalidInstruction();
+                    }
+                    // Delay 结果的锚点口径 = 操作数口径（成熟时刻成为新
+                    // 锚点，正负性随操作数）。
+                    bareSignal[stackDepth - 1] = false;
+                } else {
+                    bareSignal[stackDepth - 1] = false;
+                    hasPosAnchor[stackDepth - 1] = false;
                 }
             } else if (instruction.op == InstructionOp.And || instruction.op == InstructionOp.Or) {
                 if (instruction.arity < 2 || stackDepth < instruction.arity) {
                     revert InvalidInstruction();
                 }
+                bool anchored = instruction.op == InstructionOp.And
+                    ? _anyPosAnchor(hasPosAnchor, stackDepth - instruction.arity, instruction.arity)
+                    : _allPosAnchor(hasPosAnchor, stackDepth - instruction.arity, instruction.arity);
                 stackDepth = stackDepth - instruction.arity + 1;
+                bareSignal[stackDepth - 1] = false;
+                hasPosAnchor[stackDepth - 1] = anchored;
             } else if (instruction.op == InstructionOp.Merge) {
                 // 撮合扇入（semantic 0.6）：表达式形态下限 k≥2；k=1 的跨订单
                 // 观察入口是 cloud 运行时投递形态，链上无对应物，编码层拒绝。
                 if (instruction.arity < 2 || stackDepth < instruction.arity) {
                     revert InvalidInstruction();
                 }
+                // 操作数必须是裸 SIGNAL 引用（编译器产物的既有形态）：
+                // 非裸操作数（如 Delay）会把 wait 带入 _mergeValue 的
+                // "wait 不可达"假设。
+                for (uint256 j = 0; j < instruction.arity; j++) {
+                    if (!bareSignal[stackDepth - instruction.arity + j]) {
+                        revert InvalidInstruction();
+                    }
+                }
                 stackDepth = stackDepth - instruction.arity + 1;
+                bareSignal[stackDepth - 1] = false;
+                hasPosAnchor[stackDepth - 1] = true;
             } else {
                 revert InvalidInstruction();
             }
@@ -1712,6 +1800,32 @@ contract UVPStateMachine {
         if (stackDepth != 1) {
             revert InvalidInstruction();
         }
+    }
+
+    function _anyPosAnchor(bool[] memory hasPosAnchor, uint256 base, uint256 arity)
+        private
+        pure
+        returns (bool anchored)
+    {
+        for (uint256 i = 0; i < arity; i++) {
+            if (hasPosAnchor[base + i]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function _allPosAnchor(bool[] memory hasPosAnchor, uint256 base, uint256 arity)
+        private
+        pure
+        returns (bool anchored)
+    {
+        for (uint256 i = 0; i < arity; i++) {
+            if (!hasPosAnchor[base + i]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     function _evaluateAffectedHooks(
@@ -1796,13 +1910,17 @@ contract UVPStateMachine {
             if (!_hasSignal(originPlanId, originOrderId, instruction.sourceId, instruction.signalId)) {
                 continue;
             }
-            if (hasTriggerOriginConsent(originPlanId, originOrderId, instruction.sourceId, instruction.signalId, submitter))
-            {
+            if (hasTriggerOriginConsent(
+                    originPlanId, originOrderId, instruction.sourceId, instruction.signalId, submitter
+                )) {
                 continue;
             }
-            if (relayer != address(0)
-                && hasTriggerOriginConsent(originPlanId, originOrderId, instruction.sourceId, instruction.signalId, relayer))
-            {
+            if (
+                relayer != address(0)
+                    && hasTriggerOriginConsent(
+                        originPlanId, originOrderId, instruction.sourceId, instruction.signalId, relayer
+                    )
+            ) {
                 continue;
             }
             revert UnauthorizedTriggerOrigin(originPlanId, originOrderId, submitter);

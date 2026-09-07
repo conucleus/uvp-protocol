@@ -255,6 +255,14 @@ export function validateOnchainHookPlanArtifact(
   }
   expectHexHash(value.sourcePlanHash, "sourcePlanHash", issues);
   expectHexHash(value.planHash, "planHash", issues);
+  // 姊妹边界 hook-plan.ts 同口径：dock 字段缺失/畸形必须在形状层报 issue，
+  // 而不是落进 planHash 重算的 ?? 兜底或 canonicalize 的未类型化
+  // TypeError（fail-open：缺失被钉成 []/null 后哈希仍可通过）。
+  if (!Array.isArray(value.dockRoutes)) {
+    issues.push("dockRoutes must be an array");
+  }
+  expectHexHash(value.dockRoutesRoot, "dockRoutesRoot", issues);
+  expectHexHash(value.dockInterfaceRoot, "dockInterfaceRoot", issues);
   issues.push(...validateDockCommitments(value));
 
   const compiledHooks = Array.isArray(value.compiledHooks)
@@ -366,8 +374,8 @@ export function validateOnchainHookPlanArtifact(
       compiledHooks: value.compiledHooks,
       dependencyIndex: value.dependencyIndex,
       executorRoutes: value.executorRoutes,
-      dockInterface: value.dockInterface ?? null,
-      dockRoutes: value.dockRoutes ?? [],
+      dockInterface: value.dockInterface,
+      dockRoutes: value.dockRoutes,
       dockRoutesRoot: value.dockRoutesRoot,
       dockInterfaceRoot: value.dockInterfaceRoot,
       selectorBindings: value.selectorBindings,
@@ -705,14 +713,26 @@ function compileDependency(dependency: HookDependency): OnchainHookDependency {
   };
 }
 
+/**
+ * Per-key hookIds MUST follow the compiledHooks (= commitPlan calldata) order:
+ * UVPStateMachine._registerPlanHook pushes `input.hookId` while scanning the
+ * submitted hooks array, and the replay oracle replays the per-key array
+ * positionally. Sorting by hookId (keccak order) forks the contract's
+ * dependencyIndex and flips the oracle's event pairing whenever the two
+ * orders disagree on a key with ≥2 same-partition (trigger/watcher) hooks.
+ */
 function buildOnchainDependencyIndex(
   compiledHooks: readonly OnchainCompiledHook[],
 ): Record<HexString, readonly HexString[]> {
-  const index = new Map<HexString, Set<HexString>>();
+  const index = new Map<HexString, HexString[]>();
   for (const hook of compiledHooks) {
     for (const dependency of hook.dependencies) {
-      const hookIds = index.get(dependency.signalKey) ?? new Set<HexString>();
-      hookIds.add(hook.hookId);
+      const hookIds = index.get(dependency.signalKey) ?? [];
+      // Mirror the contract's per-hook dependencyKey dedup: one hook can only
+      // register once per key.
+      if (!hookIds.includes(hook.hookId)) {
+        hookIds.push(hook.hookId);
+      }
       index.set(dependency.signalKey, hookIds);
     }
   }
@@ -721,7 +741,7 @@ function buildOnchainDependencyIndex(
   for (const [signalKey, hookIds] of [...index.entries()].sort(
     ([left], [right]) => compareByCodeUnit(left, right),
   )) {
-    output[signalKey] = [...hookIds].sort();
+    output[signalKey] = hookIds;
   }
   return output;
 }
@@ -1511,7 +1531,9 @@ function validateOnchainDependencyIndex(
   dependencyIndex: Record<string, readonly string[]>,
 ): readonly string[] {
   const issues: string[] = [];
-  const recomputed = new Map<string, Set<string>>();
+  // Recompute in compiledHooks (= calldata) order, exactly like
+  // buildOnchainDependencyIndex and UVPStateMachine._registerPlanHook.
+  const recomputed = new Map<string, string[]>();
   for (const hook of hooks) {
     if (
       !isRecord(hook) ||
@@ -1524,8 +1546,10 @@ function validateOnchainDependencyIndex(
       if (!isOnchainHookDependency(dependency)) {
         continue;
       }
-      const hookIds = recomputed.get(dependency.signalKey) ?? new Set<string>();
-      hookIds.add(hook.hookId);
+      const hookIds = recomputed.get(dependency.signalKey) ?? [];
+      if (!hookIds.includes(hook.hookId)) {
+        hookIds.push(hook.hookId);
+      }
       recomputed.set(dependency.signalKey, hookIds);
     }
   }
@@ -1535,7 +1559,7 @@ function validateOnchainDependencyIndex(
   const expected = Object.fromEntries(
     [...recomputed.entries()]
       .sort(([left], [right]) => compareByCodeUnit(left, right))
-      .map(([signalKey, hookIds]) => [signalKey, [...hookIds].sort()]),
+      .map(([signalKey, hookIds]) => [signalKey, hookIds]),
   );
   if (JSON.stringify(expected) !== JSON.stringify(dependencyIndex)) {
     issues.push("dependencyIndex must match on-chain hook dependencies");
@@ -1810,6 +1834,10 @@ function isPlanHashRecomputable(
 ): value is Omit<OnchainHookPlanArtifact, "planHash"> & {
   readonly planHash: HexString;
 } {
+  // dock 字段必须全部在场且形状合法才允许重算 planHash：缺失的
+  // dockRoutesRoot 会让 canonicalize 抛未类型化 TypeError（破坏"返回
+  // issues"契约），缺失的 dockRoutes/dockInterface 落进 ?? 兜底则把
+  // 缺失钉成 []/null 后照常通过（fail-open）。两者都改为收集为 issue。
   return (
     value.schemaVersion === ONCHAIN_HOOK_PLAN_SCHEMA_VERSION &&
     isHexHash(value.planId) &&
@@ -1823,6 +1851,10 @@ function isPlanHashRecomputable(
     Array.isArray(value.executorRoutes) &&
     Array.isArray(value.selectorBindings) &&
     Array.isArray(value.signalCapabilities) &&
+    Array.isArray(value.dockRoutes) &&
+    (value.dockInterface === null || isRecord(value.dockInterface)) &&
+    isHexHash(value.dockRoutesRoot) &&
+    isHexHash(value.dockInterfaceRoot) &&
     isHexHash(value.planHash)
   );
 }

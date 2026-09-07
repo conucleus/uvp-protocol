@@ -212,7 +212,12 @@ test("compiles source-qualified sendSignals as trigger-origin capabilities", () 
             {
               name: "close",
               source: "trade",
-              sendSignals: ["book::book.settlement_wait.cmp"],
+              // PLACE 为自发种子入口钩子（uvp-core 物化门：零 hook 阶段
+              // 永不可物化、sendSignals 无钩子可挂）。
+              receiveSignals: {
+                PLACE: "trade::settlement.close.seed"
+              },
+              sendSignals: ["seed", "book::book.settlement_wait.cmp"],
               executor: {
                 supplierType: "organization",
                 supplierID: "settlement-operator"
@@ -224,14 +229,20 @@ test("compiles source-qualified sendSignals as trigger-origin capabilities", () 
     }
   });
 
-  assert.deepEqual(plan.signalCapabilities.map((capability) => [
-    capability.stageIdentifier,
-    capability.targetSource,
-    capability.targetSignalName,
-    capability.targetOrderRelation
-  ]), [
-    ["settlement.close", "book", "book.settlement_wait.cmp", "triggerOrigin"]
-  ]);
+  // 种子 capability 是物化门的伴随产物，断言聚焦 triggerOrigin 投影。
+  assert.deepEqual(
+    plan.signalCapabilities
+      .filter((capability) => capability.targetOrderRelation === "triggerOrigin")
+      .map((capability) => [
+        capability.stageIdentifier,
+        capability.targetSource,
+        capability.targetSignalName,
+        capability.targetOrderRelation
+      ]),
+    [
+      ["settlement.close", "book", "book.settlement_wait.cmp", "triggerOrigin"]
+    ],
+  );
 });
 
 test("preserves opaque platform metadata for future target schemas at the internal IR boundary", () => {
@@ -278,6 +289,87 @@ test("validates HookPlan IR artifacts at the internal boundary", () => {
   );
 });
 
+test("dependencyIndex ordering follows code-point (Rust byte) order for astral-plane hooks", () => {
+  // Rust 权威 build_dependency_index 用 BTreeMap<String, BTreeSet<String>>
+  // （字节序 = 码点序）。U+FFFD（高 BMP）按码点小于 U+1F600（星面），但
+  // UTF-16 码元序会把代理对排到前面——按默认 .sort()/compareByCodeUnit
+  // 重算会把合法 Rust 产物误判为 dependencyIndex 不匹配。
+  const astralStage = "\u{1F600}.stage";
+  const bmpStage = "\u{FFFD}.stage";
+  const astralHook = `${astralStage}#W`;
+  const bmpHook = `${bmpStage}#W`;
+  assert.ok(astralHook < bmpHook, "fixture guard: UTF-16 order must differ here");
+
+  const plan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  const hookWith = (
+    hookId: string,
+    stageIdentifier: string,
+    dependencies: readonly object[],
+  ) => {
+    // 模板钩子的 route 绑定原阶段名，改写阶段后剥离（route 与本测试无关）。
+    const { route: _route, ...template } = plan.compiledHooks[0]!;
+    return {
+      ...template,
+      hookId,
+      stageIdentifier,
+      hookName: "W",
+      dependencies,
+    };
+  };
+  const artifact = {
+    ...plan,
+    compiledHooks: [
+      hookWith(bmpHook, bmpStage, [
+        { kind: "positive", source: "buyer", signalName: "shared.sig" },
+        { kind: "positive", source: "\u{FFFD}", signalName: "sig" },
+      ]),
+      hookWith(astralHook, astralStage, [
+        { kind: "positive", source: "buyer", signalName: "shared.sig" },
+        { kind: "positive", source: "\u{1F600}", signalName: "sig" },
+      ]),
+    ],
+  };
+  const dependencyKey = (source: string, signalName: string) =>
+    `${source}::${signalName}`;
+
+  // 码点序（Rust BTreeMap/BTreeSet 产物）：键与每键 hookIds 都按码点排，
+  // 高 BMP 键在前、星面键在后 → 通过。
+  assert.doesNotThrow(() =>
+    assertHookPlanArtifact({
+      ...artifact,
+      dependencyIndex: {
+        [dependencyKey("buyer", "shared.sig")]: [bmpHook, astralHook],
+        [dependencyKey("\u{FFFD}", "sig")]: [bmpHook],
+        [dependencyKey("\u{1F600}", "sig")]: [astralHook],
+      },
+    })
+  );
+
+  // UTF-16 码元序变体 1（hookIds 代理对在前）→ 必须被拒绝。
+  assert.ok(
+    validateHookPlanArtifact({
+      ...artifact,
+      dependencyIndex: {
+        [dependencyKey("buyer", "shared.sig")]: [astralHook, bmpHook],
+        [dependencyKey("\u{FFFD}", "sig")]: [bmpHook],
+        [dependencyKey("\u{1F600}", "sig")]: [astralHook],
+      },
+    }).includes("dependencyIndex must match compiled hook dependencies")
+  );
+
+  // UTF-16 码元序变体 2（键序代理对在前）→ 同样必须被拒绝。
+  assert.ok(
+    validateHookPlanArtifact({
+      ...artifact,
+      dependencyIndex: {
+        [dependencyKey("buyer", "shared.sig")]: [bmpHook, astralHook],
+        [dependencyKey("\u{1F600}", "sig")]: [astralHook],
+        [dependencyKey("\u{FFFD}", "sig")]: [bmpHook],
+      },
+    }).includes("dependencyIndex must match compiled hook dependencies")
+  );
+});
+
 test("rejects invalid mint declarations", () => {
   const invalid: ZhixuDefinition = {
     ...baseZhixu,
@@ -317,13 +409,17 @@ test("mint stages accept single ANCHOR birth subscriptions and mark them order-t
       taskPatterns: [
         {
           // 出生事实的发出方：buyer 域的 feeder 阶段（订阅类必须等于目标
-          // 阶段的 source，且不得等于接收阶段自身的 source）。
+          // 阶段的 source，且不得等于接收阶段自身的 source）。PLACE 种子
+          // 入口钩子满足物化门（零 hook 阶段在链上永不可物化）。
           name: "feeder",
           stages: [
             {
               name: "gate",
               source: "buyer",
-              sendSignals: ["ready"],
+              receiveSignals: {
+                PLACE: "buyer::feeder.gate.seed"
+              },
+              sendSignals: ["ready", "seed"],
               executor: {
                 supplierType: "organization",
                 supplierID: "feeder-org"
@@ -408,13 +504,17 @@ test("accepts multi-anchor receive stages without an entry table", () => {
       taskPatterns: [
         {
           // source 类是 zhixu 局部命名空间：hook 引用的 seller/buyer 必须有
-          // 声明阶段承载（引用存在性 + 本域 source 校验）。
+          // 声明阶段承载（引用存在性 + 本域 source 校验）。PLACE 种子入口
+          // 钩子满足物化门（零 hook 阶段在链上永不可物化）。
           name: "feed",
           stages: [
             {
               name: "quote",
               source: "seller",
-              sendSignals: ["updated"],
+              receiveSignals: {
+                PLACE: "seller::feed.quote.seed"
+              },
+              sendSignals: ["updated", "seed"],
               executor: {
                 supplierType: "organization",
                 supplierID: "seller-feed"
@@ -423,7 +523,10 @@ test("accepts multi-anchor receive stages without an entry table", () => {
             {
               name: "bid",
               source: "buyer",
-              sendSignals: ["updated"],
+              receiveSignals: {
+                PLACE: "buyer::feed.bid.seed"
+              },
+              sendSignals: ["updated", "seed"],
               executor: {
                 supplierType: "organization",
                 supplierID: "buyer-feed"
@@ -453,15 +556,20 @@ test("accepts multi-anchor receive stages without an entry table", () => {
     }
   });
 
+  // 断言聚焦 market.match 的多锚接收钩子（feed 阶段的 PLACE 种子钩子是
+  // 物化门伴随产物）。
+  const matchHooks = plan.compiledHooks.filter(
+    (hook) => hook.stageIdentifier === "market.match"
+  );
   assert.deepEqual(
-    plan.compiledHooks.map((hook) => [hook.hookName, hook.orderTriggerKind, hook.emitReady]),
+    matchHooks.map((hook) => [hook.hookName, hook.orderTriggerKind, hook.emitReady]),
     [
       ["BUYER_UPDATED", "none", true],
       ["SELLER_UPDATED", "none", true]
     ],
   );
   assert.deepEqual(
-    plan.compiledHooks.flatMap((hook) => hook.dependencies.map((dependency) => `${dependency.source}::${dependency.signalName}`)).sort(),
+    matchHooks.flatMap((hook) => hook.dependencies.map((dependency) => `${dependency.source}::${dependency.signalName}`)).sort(),
     ["buyer::feed.bid.updated", "seller::feed.quote.updated"]
   );
 });
@@ -539,8 +647,13 @@ test("rejects unbound stages", () => {
   ]);
 });
 
-test("accepts executor-less selected-stage chains anchored by a static executor", () => {
-  const plan = compileZhixuHookPlan(
+test("rejects executor-less selected-stage chains at the materialization gate", () => {
+  // 物化门（P0-4）后 Rust 权威：每个阶段声明都必须自带物化位（order-trigger
+  // mint/dock 入口或静态 executor 的 receive hook）——仅靠 selectedStages
+  // 锚定静态执行者不再让 executor-less 阶段合法（链上阶段只能由本阶段的
+  // hook 物化，submitSignal 要求源阶段已物化，零 hook 阶段恒 UnknownHook）。
+  // 以 Rust 为准：该形态从"接受"改为拒绝。
+  assertCompilationIssues(
     topologyZhixu([
       {
         name: "a",
@@ -560,6 +673,50 @@ test("accepts executor-less selected-stage chains anchored by a static executor"
         name: "c",
         source: "buyer",
       }
+    ]),
+    [
+      /flow\.a declares no receiveSignals and compiles to zero hooks/,
+      /flow\.b declares no receiveSignals and compiles to zero hooks/,
+      /flow\.c declares no receiveSignals and compiles to zero hooks/,
+    ]
+  );
+
+  // 正例：同一拓扑每阶段自带 receive hook + 静态 executor——selectedStages
+  // 绑定照常编译，executorRoutes 只落在声明了 executor 的阶段。
+  const plan = compileZhixuHookPlan(
+    topologyZhixu([
+      {
+        name: "a",
+        source: "buyer",
+        selectedStages: ["flow.b"],
+        receiveSignals: { PLACE: "buyer::flow.a.seed" },
+        sendSignals: ["seed"],
+        executor: {
+          supplierType: "organization",
+          supplierID: "anchor-org"
+        }
+      },
+      {
+        name: "b",
+        source: "buyer",
+        selectedStages: ["flow.c"],
+        receiveSignals: { PLACE: "buyer::flow.b.seed" },
+        sendSignals: ["seed"],
+        executor: {
+          supplierType: "organization",
+          supplierID: "b-org"
+        }
+      },
+      {
+        name: "c",
+        source: "buyer",
+        receiveSignals: { PLACE: "buyer::flow.c.seed" },
+        sendSignals: ["seed"],
+        executor: {
+          supplierType: "organization",
+          supplierID: "c-org"
+        }
+      }
     ])
   );
 
@@ -574,8 +731,8 @@ test("accepts executor-less selected-stage chains anchored by a static executor"
     }
   ]);
   assert.equal(plan.executorRoutes["flow.a"]?.executor.supplierID, "anchor-org");
-  assert.equal(plan.executorRoutes["flow.b"], undefined);
-  assert.equal(plan.executorRoutes["flow.c"], undefined);
+  assert.ok(plan.executorRoutes["flow.b"]);
+  assert.ok(plan.executorRoutes["flow.c"]);
 });
 
 test("rejects executor-less selected cycles without a static anchor", () => {

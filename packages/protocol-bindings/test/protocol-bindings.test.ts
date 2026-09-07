@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { decodeEventLog, decodeFunctionData, toEventHash } from "viem";
+import {
+  decodeEventLog,
+  decodeFunctionData,
+  encodeAbiParameters,
+  keccak256,
+  stringToHex,
+  toEventHash,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
   UnsupportedChainTargetError,
@@ -29,6 +36,8 @@ import {
   hashResourceManifest,
   hashStageExecutorPatchPayload,
   hashStageResourcePatchPayload,
+  STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN,
+  STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN,
   recoverProductSubmitSigner,
   recoverStageExecutorPatchSigner,
   recoverStageResourcePatchSigner,
@@ -166,8 +175,8 @@ const signalAuthorizations = [
 ] as const;
 
 describe("protocol bindings", () => {
-  it("exposes frozen v0.9 plan-scoped hook observation events", () => {
-    // 全部订单级事件补 planId（v0.9 冻结口径）。
+  it("exposes frozen v0.10 plan-scoped hook observation events", () => {
+    // 全部订单级事件补 planId（v0.10 冻结口径，UVPStateMachine EIP-712 版本 0.10）。
     assert.equal(
       toEventHash("HookStatusChanged(bytes32,bytes32,bytes32,uint8,uint8,uint64)"),
       "0xa0c688f78d307bee6d38b69ad4c19b02d9e1be8c6772327015b60fd21ec38fd2"
@@ -809,6 +818,82 @@ describe("protocol bindings", () => {
     assert.equal(
       EXECUTOR_PATCH_MODE_REPLACEMENT,
       "0x7265706c6163656d656e74000000000000000000000000000000000000000000",
+    );
+    // 0137#3：payload 哈希必须吃进导出的域常量（域分离）——keccak256(abi
+    // .encode(keccak256(domain), …payload))。独立重算而非同源引用。
+    assert.equal(
+      STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN,
+      "uvp:stage-executor-patch-payload:v1",
+    );
+    assert.equal(
+      STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN,
+      "uvp:stage-resource-patch-payload:v1",
+    );
+    assert.equal(
+      assignExecutorPatchHash,
+      keccak256(
+        encodeAbiParameters(
+          [
+            { name: "domain", type: "bytes32" },
+            { name: "selectorStageId", type: "bytes32" },
+            { name: "targetStageId", type: "bytes32" },
+            { name: "executor", type: "address" },
+            { name: "role", type: "bytes32" },
+            { name: "executorMetadataHash", type: "bytes32" },
+            { name: "mode", type: "bytes32" },
+            { name: "previousExecutor", type: "address" },
+            { name: "approvalSourceId", type: "bytes32" },
+            { name: "approvalSignalId", type: "bytes32" },
+            { name: "patchNonce", type: "uint256" },
+            { name: "metadataURI", type: "string" },
+          ],
+          [
+            keccak256(
+              stringToHex(STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN),
+            ),
+            selectorStageId,
+            targetStageId,
+            executor,
+            role,
+            executorMetadataHash,
+            EXECUTOR_PATCH_MODE_ASSIGN,
+            zeroAddress,
+            zeroBytes32,
+            zeroBytes32,
+            BigInt(executorPatchNonce),
+            metadataURI,
+          ],
+        ),
+      ),
+    );
+    assert.equal(
+      resourcePatchHash,
+      keccak256(
+        encodeAbiParameters(
+          [
+            { name: "domain", type: "bytes32" },
+            { name: "selectorStageId", type: "bytes32" },
+            { name: "targetStageId", type: "bytes32" },
+            { name: "resourceKey", type: "bytes32" },
+            { name: "manifestHash", type: "bytes32" },
+            { name: "policyHash", type: "bytes32" },
+            { name: "patchNonce", type: "uint256" },
+            { name: "manifestURI", type: "string" },
+          ],
+          [
+            keccak256(
+              stringToHex(STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN),
+            ),
+            selectorStageId,
+            targetStageId,
+            resourceKey,
+            manifestHash,
+            policyHash,
+            BigInt(resourcePatchNonce),
+            manifestURI,
+          ],
+        ),
+      ),
     );
     assert.equal(
       assignExecutorPatchHash,

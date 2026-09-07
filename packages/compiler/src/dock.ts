@@ -73,6 +73,22 @@ export function u64Word(value: bigint | number): HexString {
   return `0x${hex}` as HexString;
 }
 
+/**
+ * uint256 word（32 字节大端、高位在左）。合约侧 EIP-155 运行时域以
+ * `abi.encode(_DOMAIN_RUNTIME_EIP155, block.chainid, address(...))` 编码
+ * chainId（uint256，UVPDockingModule），chainId ≥ 2^64 时 u64 语义会与
+ * 合约分叉——本编码按完整 256 位 word 校验并落位（Rust 侧
+ * evm_runtime_domain 仍收 u64，需协同放宽，见 uvp-core dock.rs）。
+ */
+export function u256Word(value: bigint): HexString {
+  if (value < 0n || value >= 1n << 256n) {
+    throw new RangeError(
+      `value must fit the unsigned 256-bit word range, received ${value}`,
+    );
+  }
+  return `0x${value.toString(16).padStart(64, "0")}` as HexString;
+}
+
 export function u8Word(value: number): HexString {
   return u64Word(value);
 }
@@ -206,8 +222,10 @@ export function evmRuntimeDomain(
   chainId: bigint | number,
   stateMachineAddress: HexString,
 ): HexString {
+  // chainId 按合约 uint256 全宽编码（block.chainid 是 uint256；u64 截断
+  // 在 chainId ≥ 2^64 时与 UVPDockingModule 的 runtimeDomain 重算分叉）。
   return keccakWords(DOMAIN_RUNTIME_EIP155, [
-    u64Word(chainId),
+    u256Word(BigInt(chainId)),
     addressWord(stateMachineAddress),
   ]);
 }

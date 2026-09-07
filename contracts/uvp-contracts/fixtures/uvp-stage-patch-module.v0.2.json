@@ -12,7 +12,7 @@
     "abiHash": "0x0413f34a9bc87538ae15b88b707a2ec44b926292ea84c24d161db9dc28a04533",
     "bytecodeHash": "0xfde59bbcfbd66c3642f31f27300f447a48be1e788ca9d8ff985330de9dd66830",
     "deployedBytecodeHash": "0xbf0bba589254c40ea2db01867e2792a284428215202a7a813626eddc4b6165da",
-    "artifactHash": "0x6444ca6bd9b73f72d934a9ad3293c7065ffd4449c2c5f4577330d24b06819290"
+    "artifactHash": "0x5db61bddb4acf99531b40f927bf26051692dc49f02783e753a5974c163cb72a1"
   },
   "events": {
     "StageExecutorPatchApplied": {

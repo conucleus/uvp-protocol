@@ -14,7 +14,10 @@ export {
   EXPECTED_UVP_SEMANTIC_VERSION,
   parseHookWithUvpCore,
   replayWithUvpCore,
-  uvpCoreCompatibility
+  uvpCoreBuildFingerprint,
+  uvpCoreCompatibility,
+  uvpCoreHookPlanSchemaVersion,
+  type UvpCoreCompatibility
 } from "./core.js";
 
 export * from "./types.js";
