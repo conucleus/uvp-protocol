@@ -22,7 +22,7 @@ export function canonicalize(value: unknown, path = "$"): CanonicalJsonValue {
     }
     // -0 保留符号原样透传：Rust 权威（uvp-ir canonicalize_number）对
     // serde_json Number 不做任何改写，f64 -0.0 序列化为 "-0.0"（源字面量
-    // "-0" 在 serde_json 里同样解析为 f64 -0.0）。此前把 -0 改写成 0 的
+    // "-0" 在 serde_json 里同样解析为 f64 -0.0）。把 -0 改写成 0 的
     // 规范化会让同一份产物在两条线上产生不同哈希。
     return value as number;
   }

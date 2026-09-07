@@ -1651,8 +1651,8 @@ export function hashStageExecutorPatchPayload(
 ): Hex {
   const normalized = normalizeStageExecutorPatchPayload(payload);
   // 域分离：payload 哈希以 keccak256(STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN)
-  // 开头（与 executor/resource 两个 patch 族的 preimage 分域；此前域常量
-  // 只有定义处引用，是假接口）。
+  // 开头，与 executor/resource 两个 patch 族的 preimage 分域——域常量必须
+  // 真正进入 preimage，只在定义处引用等于没有分域。
   return keccak256(
     encodeAbiParameters(
       [
