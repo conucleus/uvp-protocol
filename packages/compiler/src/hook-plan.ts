@@ -98,6 +98,9 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
   if (!Array.isArray(value.dockRoutes)) {
     issues.push("dockRoutes must be an array");
   }
+  if (value.unresolvedDockRoutes !== undefined) {
+    issues.push(...validateUnresolvedDockRoutes(value.unresolvedDockRoutes));
+  }
   expectHexHash(value.dockRoutesRoot as unknown, "dockRoutesRoot", issues);
   expectHexHash(value.dockInterfaceRoot as unknown, "dockInterfaceRoot", issues);
   issues.push(...validateDockCommitments(value));
@@ -152,6 +155,97 @@ export function assertHookPlanArtifact(value: unknown): asserts value is HookPla
   if (issues.length > 0) {
     throw new HookPlanArtifactValidationError(issues);
   }
+}
+
+// 端口名形态（与 Rust valid_port_name 同规则）：^[a-z][a-z0-9_]{0,31}$。
+function isPortName(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[a-z][a-z0-9_]{0,31}$/.test(value)
+  );
+}
+
+/**
+ * 未解析 route 声明面（§8.8）逐元素校验：mode 枚举、端口名形态、至少一
+ * 条映射（D019 镜像）与基础身份字段。承诺字段不得在场——未解析 route 无
+ * 哈希可承诺，出现即毒产物。
+ */
+function validateUnresolvedDockRoutes(
+  routes: unknown,
+): readonly string[] {
+  const issues: string[] = [];
+  if (!Array.isArray(routes)) {
+    return ["unresolvedDockRoutes must be an array when present"];
+  }
+  for (const [index, route] of routes.entries()) {
+    const prefix = `unresolvedDockRoutes[${index}]`;
+    if (!isRecord(route)) {
+      issues.push(`${prefix} must be an object`);
+      continue;
+    }
+    expectLiteral(
+      route.schemaVersion,
+      "uvp.dockRoute.unresolved.v1",
+      `${prefix}.schemaVersion`,
+      issues,
+    );
+    expectNonEmptyString(route.stageIdentifier, `${prefix}.stageIdentifier`, issues);
+    expectHexHash(route.stageId, `${prefix}.stageId`, issues);
+    expectHexHash(route.localDefinitionRefHash, `${prefix}.localDefinitionRefHash`, issues);
+    expectHexHash(route.localPlanId, `${prefix}.localPlanId`, issues);
+    expectNonEmptyString(route.localSource, `${prefix}.localSource`, issues);
+    expectNonEmptyString(route.interfaceName, `${prefix}.interfaceName`, issues);
+    expectOneOf(route.orderMode, ["new", "existing"], `${prefix}.orderMode`, issues);
+    for (const absent of ["routeId", "routeHash", "target", "sourceSeam"]) {
+      if (route[absent] !== undefined) {
+        issues.push(`${prefix}.${absent} must not be present on an unresolved route`);
+      }
+    }
+
+    const inputs = Array.isArray(route.inputBindings) ? route.inputBindings : undefined;
+    const outputs = Array.isArray(route.outputBindings) ? route.outputBindings : undefined;
+    if (!inputs) {
+      issues.push(`${prefix}.inputBindings must be an array`);
+    }
+    if (!outputs) {
+      issues.push(`${prefix}.outputBindings must be an array`);
+    }
+    if (inputs) {
+      for (const [bindingIndex, binding] of inputs.entries()) {
+        const bindingPath = `${prefix}.inputBindings[${bindingIndex}]`;
+        if (!isRecord(binding)) {
+          issues.push(`${bindingPath} must be an object`);
+          continue;
+        }
+        if (typeof binding.hookId !== "string" || !binding.hookId.includes("#")) {
+          issues.push(`${bindingPath}.hookId must be a full hook identifier <task>.<stage>#<channel>`);
+        }
+        if (!isPortName(binding.port)) {
+          issues.push(`${bindingPath}.port must match ^[a-z][a-z0-9_]{0,31}$`);
+        }
+      }
+    }
+    if (outputs) {
+      for (const [bindingIndex, binding] of outputs.entries()) {
+        const bindingPath = `${prefix}.outputBindings[${bindingIndex}]`;
+        if (!isRecord(binding)) {
+          issues.push(`${bindingPath} must be an object`);
+          continue;
+        }
+        expectNonEmptyString(binding.signal, `${bindingPath}.signal`, issues);
+        if (!isPortName(binding.port)) {
+          issues.push(`${bindingPath}.port must match ^[a-z][a-z0-9_]{0,31}$`);
+        }
+      }
+    }
+    // D019 镜像：route 至少声明一项输入或输出映射。
+    if (inputs !== undefined && outputs !== undefined && inputs.length + outputs.length === 0) {
+      issues.push(
+        `${prefix} must declare at least one input or output binding (a route maps an input or an output)`,
+      );
+    }
+  }
+  return issues;
 }
 
 function validateCompiledHooks(hooks: readonly unknown[]): readonly string[] {

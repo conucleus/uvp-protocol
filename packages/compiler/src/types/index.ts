@@ -6,6 +6,9 @@ export const ONCHAIN_HOOK_PLAN_SCHEMA_VERSION =
 export const DOCK_INTERFACE_ARTIFACT_SCHEMA_VERSION =
   "uvp.dockInterfaceArtifact.v2" as const;
 export const DOCK_ROUTE_SCHEMA_VERSION = "uvp.dockRoute.v2" as const;
+/** 未解析 route（target:null 动态选择）的声明面形态（设计文档 §8.8）。 */
+export const DOCK_ROUTE_UNRESOLVED_SCHEMA_VERSION =
+  "uvp.dockRoute.unresolved.v1" as const;
 export const DOCK_RESOLUTION_SCHEMA_VERSION = "uvp.dock.resolution.v2" as const;
 
 export type HexString = `0x${string}`;
@@ -237,6 +240,39 @@ export interface DockRouteOutputBinding {
   readonly bindingHash: HexString;
 }
 
+/**
+ * 未解析 DockRoute（target:null 动态选择，设计文档 §8.8）：本地声明面完整、
+ * 目标身份空缺。哈希承诺字段（routeId/routeHash/bindingHash/roots）与
+ * target 块一律不携带——它们的 preimage 含目标定义身份与目标端口寻址
+ * word，只能由云轨运行时在选择记录补齐目标后按 §8.2/§8.4/§8.5 重算。
+ */
+export interface UnresolvedDockRouteV1 {
+  readonly schemaVersion: typeof DOCK_ROUTE_UNRESOLVED_SCHEMA_VERSION;
+  readonly stageIdentifier: string;
+  /** keccak(stageIdentifier)。 */
+  readonly stageId: HexString;
+  /** H(UVP_DEFINITION_REF_V1, keccak(本定义 uid))。 */
+  readonly localDefinitionRefHash: HexString;
+  /** 与产物 planId 同源（dockInstanceId 推导消费）。 */
+  readonly localPlanId: HexString;
+  /** 本地 stage source（output 绑定 localSourceId 的输入）。 */
+  readonly localSource: string;
+  readonly interfaceName: string;
+  readonly orderMode: DockOrderMode;
+  readonly inputBindings: readonly {
+    /** 本地被绑定通道的完整 hook 标识 `<task>.<stage>#<receiveHookName>`。 */
+    readonly hookId: string;
+    /** 目标 input 端口名（声明值）。 */
+    readonly port: string;
+  }[];
+  readonly outputBindings: readonly {
+    /** 本地 sendSignals 信号名。 */
+    readonly signal: string;
+    /** 目标 output 端口名（声明值）。 */
+    readonly port: string;
+  }[];
+}
+
 export interface HookPlanArtifact {
   readonly schemaVersion: typeof HOOK_PLAN_SCHEMA_VERSION;
   readonly planId: HexString;
@@ -249,6 +285,12 @@ export interface HookPlanArtifact {
   readonly executorRoutes: Record<string, HookPlanExecutorRoute>;
   readonly dockInterface: DockInterfaceArtifactV2 | null;
   readonly dockRoutes: readonly DockRouteV2[];
+  /**
+   * target:null 动态选择 route 的声明面（§8.8）：仅非空时由 Rust core 落
+   * 字段。链轨（onchain 产物）不携带——上链在 TS onchain 边界按
+   * UNRESOLVED_DOCK_TARGET 响亮拒绝。
+   */
+  readonly unresolvedDockRoutes?: readonly UnresolvedDockRouteV1[];
   readonly dockRoutesRoot: HexString;
   readonly dockInterfaceRoot: HexString;
   readonly selectedStageBindings: readonly SelectedStageBinding[];

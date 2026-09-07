@@ -1416,6 +1416,32 @@ test("rejects unresolved dock targets on the on-chain track (UNRESOLVED_DOCK_TAR
   );
 });
 
+test("rejects unresolvedDockRoutes at the on-chain compile boundary (UNRESOLVED_DOCK_TARGET)", () => {
+  // Wave3-E4（§8.8）：Rust hook_plan 对 target:null 放行并携带
+  // unresolvedDockRoutes 声明面；on-chain 编译入口必须响亮拒绝，不静默
+  // 丢弃未解析 route。
+  const dynamicTarget = structuredClone(baseZhixu) as ZhixuDefinition & {
+    spec: { taskPatterns: Array<{ stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } | null } } }> }> };
+  };
+  dynamicTarget.spec.taskPatterns[1]!.stages[0]!.executor!.zhixuExecutorConfig!.target = null;
+  const cloudPlan = compileZhixuHookPlan(
+    dynamicTarget as unknown as ZhixuDefinition,
+    demoManifest,
+  );
+  assert.equal(cloudPlan.unresolvedDockRoutes?.length, 1);
+  assert.throws(
+    () => compileOnchainHookPlan(cloudPlan),
+    (error: unknown) => {
+      assert.ok(error instanceof HookPlanCompilationError);
+      const issues = error.issues.join("; ");
+      assert.match(issues, /UNRESOLVED_DOCK_TARGET/);
+      assert.match(issues, /execution\.main/);
+      assert.match(issues, /unresolved route/);
+      return true;
+    },
+  );
+});
+
 test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
   const silentTriggerIssues = (issues: readonly string[]): readonly string[] =>
     issues.filter((issue) => /order trigger without emitReady/.test(issue));

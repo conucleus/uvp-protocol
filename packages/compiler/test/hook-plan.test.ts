@@ -1102,28 +1102,42 @@ test("demo sourcing parent links both demo interfaces (new + existing)", () => {
   assert.deepEqual(validateHookPlanArtifact(plan), []);
 });
 
-test("rejects null (dynamic-selection) targets on statically linked compilation", () => {
-  // target:null 走 Rust 链接器 D008 动态选择口径：静态链接编译不能解析，
-  // 云轨运行时才由选择记录补齐（PRD_100 §10.3）。
+test("carries null (dynamic-selection) targets as unresolved routes (§8.8)", () => {
+  // target:null 不再整体拒绝（Wave3-E4）：hook plan 产物保留未解析 route 的
+  // 声明面（manifest 在场时不进 link、不报 D008），云轨运行时才由选择记录
+  // 补齐（PRD_100 §10.3）；链轨拒绝在 onchain 边界（见 onchain 测试）。
   const dynamicTarget = structuredClone(baseZhixu) as ZhixuDefinition & {
     spec: { taskPatterns: Array<{ stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } | null } } }> }> };
   };
   dynamicTarget.spec.taskPatterns[1]!.stages[0]!.executor!.zhixuExecutorConfig!.target = null;
-  assert.throws(
-    () =>
-      compileZhixuHookPlan(
-        dynamicTarget as unknown as ZhixuDefinition,
-        demoManifest,
-      ),
-    (error: unknown) => {
-      assert.ok(error instanceof HookPlanCompilationError);
-      assert.match(
-        error.issues.join("; "),
-        /target is null \(dynamic selection\)/,
-      );
-      return true;
-    },
+  const plan = compileZhixuHookPlan(
+    dynamicTarget as unknown as ZhixuDefinition,
+    demoManifest,
   );
+  assert.deepEqual(plan.dockRoutes, []);
+  const unresolved = plan.unresolvedDockRoutes ?? [];
+  assert.equal(unresolved.length, 1);
+  const route = unresolved[0]!;
+  assert.equal(route.schemaVersion, "uvp.dockRoute.unresolved.v1");
+  assert.equal(route.stageIdentifier, "execution.main");
+  assert.equal(route.localSource, "buyer");
+  assert.equal(route.interfaceName, "production_service");
+  assert.equal(route.orderMode, "new");
+  assert.deepEqual(
+    route.inputBindings.map((binding) => [binding.hookId, binding.port]),
+    [["execution.main#START", "execute"]],
+  );
+  assert.deepEqual(
+    route.outputBindings
+      .map((binding) => [binding.signal, binding.port])
+      .sort(),
+    [["cmp", "completed"], ["str", "started"]],
+  );
+  assert.equal(route.localPlanId, plan.planId);
+  // 声明面校验零 issue；无未解析 route 的产物不落字段。
+  assert.deepEqual(validateHookPlanArtifact(plan), []);
+  const staticPlan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  assert.equal(staticPlan.unresolvedDockRoutes, undefined);
 });
 
 test("compiles existing-mode routes on the cloud-facing hook plan profile", () => {

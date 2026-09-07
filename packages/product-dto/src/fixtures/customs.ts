@@ -57,9 +57,9 @@ export const customsWallets = {
 
 export const customsPlanIds = {
   planId: "0x336d9b556f7ffa00c83f49600554819055a4a3b300f82abca70b401f6b161ddc",
-  // PRD_101 后重钉：onchain plan payload 不再携带 zhixu 业务 version 字段。
-  planHash: "0x619d3d617bf53af6ce77df329e9bb5654bc1049d8eb631089fa98ee00562e730",
-  artifactHash: "0x2ff72e3758ee30e414048aa8fb5f25dc5c7d585f33f81618d9d064404555ffd5"
+  // 派生身份(zx-)+当前编译器 canonical payload 重钉。
+  planHash: "0xf6eaeabe4e155834fa0ba5d6bd1f077d63ca99bc6e32987aadcd54badf1e9f94",
+  artifactHash: "0x371f2561e189cd80ff95121a5dbb4daa785e22d70afd72b87a64bedcd28dc10d"
 } as const;
 
 export const customsResourceManifest: ProductResourceManifestDTO = {

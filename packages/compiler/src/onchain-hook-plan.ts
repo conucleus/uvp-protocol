@@ -150,10 +150,14 @@ export function compileOnchainHookPlan(
     hookPlanArtifact.signalCapabilities,
   );
   // 链轨拒绝（PRD_100 §17/§5.2）：Rust 两个 profile 都放行 existing 与
-  // 动态 target，是否上链由宿主轨道决定——on-chain 编译在这里显式拒绝，
-  // 不静默降级。Rust 侧无 manifest 的 UNRESOLVED_DOCK_TARGET 先行兜底，
-  // 这里是 on-chain 边界的第二道同口径门。
+  // 动态 target（hook plan 产物携带 unresolvedDockRoutes 声明面，§8.8），
+  // 是否上链由宿主轨道决定——on-chain 编译在这里显式拒绝，不静默降级。
+  // Rust hook_plan 不再对 target:null 兜底拒绝，这里是 on-chain 边界对
+  // 未解析 route 的第一道门。
   const dockTrackIssues = onchainDockTrackIssues(hookPlanArtifact.dockRoutes);
+  const unresolvedTrackIssues = onchainUnresolvedRouteIssues(
+    hookPlanArtifact.unresolvedDockRoutes,
+  );
   const preflightIssues = [
     ...crossStageIssues,
     ...materializationIssues,
@@ -161,6 +165,7 @@ export function compileOnchainHookPlan(
     ...dependencyCountIssues,
     ...capabilityCountIssues,
     ...dockTrackIssues,
+    ...unresolvedTrackIssues,
   ];
   if (preflightIssues.length > 0) {
     throw new HookPlanCompilationError(preflightIssues);
@@ -1430,6 +1435,34 @@ function onchainDockTrackIssues(routes: readonly unknown[]): readonly string[] {
           "on-chain compilation cannot fill a dynamic (null) target at runtime (PRD_100 §10.3/§17)",
       );
     }
+  }
+  return issues;
+}
+
+/**
+ * 未解析 route（target:null 动态选择，§8.8）的链轨门：Rust hook_plan 产物
+ * 携带 unresolvedDockRoutes 声明面（云轨运行时由选择记录补齐），on-chain
+ * 没有运行时选择面——按 UNRESOLVED_DOCK_TARGET 口径逐条响亮拒绝，不静默
+ * 丢弃。onchain 产物自身不携带该字段，此门只作用于编译入口。
+ */
+function onchainUnresolvedRouteIssues(
+  routes: readonly unknown[] | undefined,
+): readonly string[] {
+  if (!Array.isArray(routes) || routes.length === 0) {
+    return [];
+  }
+  const issues: string[] = [];
+  for (const [index, route] of routes.entries()) {
+    const stageIdentifier =
+      (isRecord(route) &&
+        typeof route.stageIdentifier === "string" &&
+        route.stageIdentifier) ||
+      `unresolvedDockRoutes[${index}]`;
+    issues.push(
+      `UNRESOLVED_DOCK_TARGET: dock route ${stageIdentifier} declares a dynamic (null) target carried as an unresolved route; ` +
+        "on-chain compilation cannot fill it from selection records at runtime (PRD_100 §10.3/§17) — " +
+        "serve this route from a cloud runtime or bind a static target",
+    );
   }
   return issues;
 }
