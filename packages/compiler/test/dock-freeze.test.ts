@@ -29,14 +29,15 @@ import type {
 } from "../src/types/index.js";
 
 /**
- * Protocol freeze gate: Rust's generated compatibility manifest is the only
- * fixture input for this test.  The target artifact in its resolution entry,
- * the parent routes (new + existing 双模式), and the EVM-facing plans must
- * all resolve to the same committed identities and dock roots.
+ * Protocol freeze gate: the TS-authority generated compatibility manifest is
+ * the only fixture input for this test.  The target artifact in its
+ * resolution entry, the parent routes (new + existing 双模式), and the
+ * EVM-facing plans must all resolve to the same committed identities and
+ * dock roots.
  */
 const manifestPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  "../../../../uvp-core/fixtures/dock/v1/manifest.json",
+  "../fixtures/dock/v1/manifest.json",
 );
 const fixture = JSON.parse(readFileSync(manifestPath, "utf8")) as DockCompatFixture;
 
@@ -179,7 +180,7 @@ test("core linker errors retain stable code, path, and target reference", () => 
           (issue) =>
             /D009/.test(issue) &&
             /inputMap\.EXECUTE/.test(issue) &&
-            /zx-459b6f6c0e1fe47ace72be19ef0fad4d/.test(issue),
+            /friction_wheel_production/.test(issue),
         ),
         error.issues.join("; "),
       );
@@ -188,7 +189,7 @@ test("core linker errors retain stable code, path, and target reference", () => 
   );
 });
 
-test("D020 mode-not-allowed and D003 target-shape errors surface from the Rust linker", () => {
+test("D020 mode-not-allowed and D003 target-shape errors surface from the core linker", () => {
   // D020：mode ∉ 接口 orderModes（production_service 只允许 new；existing
   // 模式本地允许 0..N 条 input 绑定，故不会先触发 D010）。
   const wrongMode = structuredClone(fixture.parentDefinition) as unknown as ZhixuDefinition & {
@@ -220,8 +221,8 @@ test("D020 mode-not-allowed and D003 target-shape errors surface from the Rust l
     },
   );
 
-  // D003：target.zhixu 形态必须 zx-<32hex>。
-  const badUid = structuredClone(fixture.parentDefinition) as unknown as ZhixuDefinition & {
+  // D003：target.zhixu 形态必须是与 metadata.name 同规则的 slug。
+  const badName = structuredClone(fixture.parentDefinition) as unknown as ZhixuDefinition & {
     spec: {
       taskPatterns: Array<{
         stages: Array<{
@@ -232,15 +233,15 @@ test("D020 mode-not-allowed and D003 target-shape errors surface from the Rust l
       }>;
     };
   };
-  badUid.spec.taskPatterns[1]!.stages[0]!.executor!.zhixuExecutorConfig!.target.zhixu =
-    "payment-zhixu";
+  badName.spec.taskPatterns[1]!.stages[0]!.executor!.zhixuExecutorConfig!.target.zhixu =
+    "Payment-Zhixu";
   assert.throws(
-    () => compileZhixuHookPlan(badUid as unknown as ZhixuDefinition, fixture.resolutionManifest),
+    () => compileZhixuHookPlan(badName as unknown as ZhixuDefinition, fixture.resolutionManifest),
     (error: unknown) => {
       assert.ok(error instanceof HookPlanCompilationError);
       assert.ok(
         error.issues.some(
-          (issue) => /D003/.test(issue) && /zx-<32hex>/.test(issue),
+          (issue) => /D003/.test(issue) && /metadata\.name/.test(issue),
         ),
         error.issues.join("; "),
       );

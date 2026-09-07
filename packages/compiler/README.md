@@ -13,7 +13,9 @@ args for the two-step `UVPStateMachine.commitPlan` + `finalizePlan` flow.
 - Hook DSL expressions under `receiveSignals`;
 - selected-stage executor bindings and supplier `signalMap` data;
 - the target-side `spec.dockInterface` and, for a `supplierType=zhixu`
-  route, a `uvp.dock.resolution.v1` resolution manifest;
+  route, a `uvp.dock.resolution.v2` resolution manifest (chain-track
+  publishing face: TS validates the content addressing and derives the
+  neutral name catalog the uvp-core linker consumes);
 - target platform metadata, currently `platform.type=blockchain`,
   `platform.provider=eth`, and optional `platform.network` such as `base` for
   this track.
@@ -28,6 +30,10 @@ args for the two-step `UVPStateMachine.commitPlan` + `finalizePlan` flow.
 - stable hook, stage, source, signal, dependency, and route ids;
 - on-chain selector bindings for order-level executor overlay authority;
 - golden fixtures for compiler, contract, executor-kit, and replay tests.
+  Dock commitments are computed by this package (the chain-track hash-layer
+  authority; frozen word layout in `docs/dock-word-layout.md`), and the dock
+  golden manifest regenerates via
+  `pnpm --filter @uvp-eth/compiler generate:dock-fixtures`.
 
 ## MVP Constraint
 

@@ -15,8 +15,8 @@ import {
 /**
  * Validate the Merkle commitments carried by a HookPlan artifact (dock v2).
  *
- * The Rust linker recomputes every leaf/root/route hash from the manifest
- * words while producing the portable artifact.  The TS artifact boundary
+ * The chain-track TS assembly (dock-commitments.ts) computes every
+ * leaf/root/route hash while producing the artifact.  The artifact boundary
  * must repeat the same word-level recomputation when it receives a
  * serialized artifact, otherwise a caller could repin `planHash` around a
  * stale or hand-crafted route/interface commitment and still pass local
@@ -154,7 +154,7 @@ export function validateDockCommitments(
 }
 
 /**
- * 单条 route 的承诺重算（镜像 Rust link_dock_routes 的 D008 逐 word 重算）：
+ * 单条 route 的承诺重算（对 TS 组装层的逐 word 自校验，防实现漂移）：
  * routeId、每条 bindingHash、两 root、routeHash 全部从携带字段独立重推导。
  */
 function validateDockRouteCommitments(

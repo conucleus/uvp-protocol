@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {
   dockDemoResolutionManifest,
-  dockDemoTargetUid,
+  dockDemoTargetName,
   dockProductionTargetDefinition,
 } from "./dock-demo.js";
 import { EMPTY_MERKLE_ROOT } from "../src/dock.js";
@@ -37,7 +37,6 @@ import {
 import type { HookPlanArtifact } from "../src/types/index.js";
 
 const demoManifest = dockDemoResolutionManifest();
-const demoTargetUid = dockDemoTargetUid();
 
 function compileZhixuHookPlanWithManifest(
   definition: ZhixuDefinition,
@@ -102,7 +101,7 @@ const baseZhixu: ZhixuDefinition = {
               // mode=new 恰好一条 input 绑定（出生锚）；TIMEOUT 是本地
               // receiveSignals 通道但不参与 inputMap。
               zhixuExecutorConfig: {
-                target: { zhixu: demoTargetUid },
+                target: { zhixu: dockDemoTargetName },
                 interface: "production_service",
                 order: { mode: "new" },
                 inputMap: { START: "execute" },
@@ -126,11 +125,12 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.equal(onchain.planId, sourcePlan.planId);
   assert.deepEqual(onchain.platform, sourcePlan.platform);
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
-  // PRD_100/102 后重钉：zhixuId 换为内容派生身份（zx-<32hex>）、dock
-  // route/interface 形状换 v2，planHash preimage 变化使 golden 同步变化。
+  // v2 权威分治后重钉：父定义 target.zhixu 由派生 uid 改为目标 name
+  // 引用（DSL 壳不携带派生身份），sourcePlanHash/planHash preimage 随
+  // 定义内容变化；承诺公式本身冻结不变。
   assert.equal(
     onchain.planHash,
-    "0x295cb08ffd9c889297b74fa3640c17f9b168cbc0dabccfc4979693d6f836ee30",
+    "0x9692f1889aa59810b9cff28d225dce9ed22e7bcecbf5c0e5ddcb9d2896dc293f",
   );
   assert.deepEqual(onchain.selectorBindings, [
     {
@@ -1332,7 +1332,7 @@ test("rejects existing-mode dock routes on the on-chain track (PRD_100 §17 expl
                 executor: {
                   supplierType: "zhixu" as const,
                   zhixuExecutorConfig: {
-                    target: { zhixu: demoTargetUid },
+                    target: { zhixu: dockDemoTargetName },
                     interface: "production_evidence",
                     order: { mode: "existing" as const },
                     signalMap: { cmp: "scrap_declared" },

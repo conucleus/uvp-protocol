@@ -135,7 +135,7 @@
       "constraint": {
         "type": "forbidden",
         "params": {
-          "reason": "定义身份由系统从定义内容确定性派生（zx-<32hex>），uid 不是作者可写字段；出现即按未知字段响亮拒绝，不存在『写了就用/不写就兜底』的分支"
+          "reason": "DSL 壳不携带任何派生身份：跨轨引用一律走 name，名字到实体的解析是各轨权威的事。uid 不是作者可写字段；出现即按未知字段响亮拒绝，不存在『写了就用/不写就兜底』的分支"
         }
       },
       "error": {
@@ -677,17 +677,17 @@
       "ruling": "PRD_100 §11.3/A06 裁决：new 模式的建单入口需要确定的出生锚——恰好一条 input 绑定；同一建立动作重试必须复用已创建的远端 Order（幂等）。"
     },
     {
-      "id": "dock-target-uid-required",
+      "id": "dock-target-name-slug",
       "area": "dock",
       "target": "executor.zhixuExecutorConfig.target.zhixu",
       "constraint": {
         "type": "required_non_empty",
         "params": {
-          "note": "target 必填键：值为 {zhixu: <目标定义派生身份 zx-<32hex>>} 或显式 null（动态选择，运行时由选择记录补齐）；target 只携带 zhixu，残留键按未知字段确定性拒绝"
+          "note": "target 必填键：值为 {zhixu: <目标定义 metadata.name>}（slug，^[a-z][a-z0-9_-]{0,99}$）或显式 null（动态选择，运行时由选择记录补齐）；target 只携带 zhixu，残留键按未知字段确定性拒绝"
         }
       },
       "error": {
-        "rust": "D003 target.zhixu must be the target definition's derived identity zx-<32hex>",
+        "rust": "D003 target.zhixu must be the target definition's metadata.name, matching ^[a-z][a-z0-9_-]{0,99}$",
         "go": null,
         "ts": null
       },
@@ -695,9 +695,9 @@
         "rust"
       ],
       "sources": {
-        "rust": "crates/uvp-compiler/src/dock.rs parse_zhixu_executor_config（D003，zx-+32hex 形态校验；target 可为 null）"
+        "rust": "crates/uvp-compiler/src/dock.rs parse_zhixu_executor_config（D003，name slug 形态校验；target 可为 null）"
       },
-      "ruling": "PRD_100 §10.1/PRD_102 §5 裁决：跨秩序引用填写目标定义的内容派生身份（zx- 前缀 + 32 hex），由工具或 Store 从目标定义算得，作者不手造；target:null 表示运行时选择补齐。"
+      "ruling": "PRD_100 §10.1/PRD_102 裁决：跨秩序引用填写目标定义的 metadata.name（slug，与 metadata.name 同规则）；名字到实体的解析由各轨权威承担（链轨内容派生 uid、云轨 DB 唯一名）。target:null 表示运行时选择补齐。"
     },
     {
       "id": "dock-port-name-pattern",

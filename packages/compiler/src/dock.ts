@@ -9,10 +9,10 @@ import type {
 } from "./types/index.js";
 
 /**
- * Zhixu Dock v2 跨运行时哈希库。
+ * Zhixu Dock v2 跨运行时哈希库（链轨权威实现）。
  *
- * 与 Rust `uvp-compiler::dock` 逐字节对齐（word 布局定稿 =
- * PRD100_102_DESIGN.md §8）：
+ * word 布局定稿冻结于 UVPDockingModule abiVersion 3.0（规格 =
+ * packages/compiler/docs/dock-word-layout.md）：
  * - 所有 commitment = `keccak256(keccak256(domain) ‖ words…)`，等价于
  *   Solidity `keccak256(abi.encode(keccak256(domain), …))`；
  * - Merkle：叶子排序去重后逐层 `keccak256(min ‖ max)`，空集合用
@@ -22,8 +22,8 @@ import type {
  * - EIP-712 permit（V2 typehash + interfaceNameId）按 EIP-712 规范
  *   `keccak256(concat(...))`（无 domain word 前缀）。
  *
- * 任何修改都必须同步 Rust/Solidity 并重新生成
- * `uvp-core/fixtures/dock/v1/manifest.json` golden vectors。
+ * 任何修改都必须同步 Solidity 并重新生成
+ * `packages/compiler/fixtures/dock/v1/manifest.json` golden vectors。
  */
 
 export const EMPTY_MERKLE_ROOT =
@@ -233,10 +233,10 @@ export function orderModesWord(modes: readonly string[]): HexString | undefined 
 // ---------------------------------------------------------------------------
 
 /**
- * 定义身份派生对拍函数（PRD_102 §5）：canonical 剔除 `metadata.annotations`
- * 后按 `uvp:definition-uid:v1:` 域哈希，`zx-` + hex 前 32 字符。
- * 权威实现是 uvp-core；宿主消费编译产物 zhixuId，本函数仅供测试/工具对拍，
- * 不得成为运行时的第二份派生来源。
+ * 定义身份派生函数（PRD_102 §5，链轨权威）：canonical 剔除
+ * `metadata.annotations` 后按 `uvp:definition-uid:v1:` 域哈希，
+ * `zx-` + hex 前 32 字符。链轨制品的 zhixuId 与 resolution manifest 的
+ * 内容寻址校验都从这里派生——云轨不镜像本公式（其身份归 DB）。
  */
 export function definitionUid(definition: unknown): string {
   const digest = keccak256Hex(

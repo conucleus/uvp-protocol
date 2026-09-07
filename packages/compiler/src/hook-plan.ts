@@ -8,6 +8,11 @@ import {
 } from "./types/index.js";
 import { validateDockCommitments } from "./dock-validation.js";
 import { compareByCodePoint } from "./canonical.js";
+import {
+  assembleChainTrackHookPlan,
+  prepareDockResolution,
+  type HookPlanShell,
+} from "./dock-commitments.js";
 
 export class HookPlanCompilationError extends Error {
   readonly issues: readonly string[];
@@ -38,6 +43,12 @@ export function compareByCodeUnit(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+/**
+ * 编译入口：core 产出中性 plan 壳（hooks/依赖索引/中性 dock 声明），
+ * 链轨承诺（uid/planId/roots/routeHash/planHash）由 TS 在壳上计算组装
+ * （PRD100_102_DESIGN.md §5.2）。resolution manifest 是链轨发布面：TS
+ * 先做内容寻址校验并派生 core linker 消费的中性 name 目录。
+ */
 export function compileZhixuHookPlan(
   definition: ZhixuDefinition,
   resolutionManifest?: DockResolutionManifest,
@@ -47,14 +58,23 @@ export function compileZhixuHookPlan(
     throw new HookPlanCompilationError(issues);
   }
 
-  let artifact: unknown;
+  let resolution;
+  if (resolutionManifest !== undefined) {
+    try {
+      resolution = prepareDockResolution(resolutionManifest);
+    } catch (error) {
+      throw new HookPlanCompilationError([
+        error instanceof Error ? error.message : String(error)
+      ]);
+    }
+  }
+
+  let shell: unknown;
   try {
-    artifact = compileWithUvpCore({
+    shell = compileWithUvpCore({
       target: "hook_plan",
       definition,
-      ...(resolutionManifest === undefined
-        ? {}
-        : { resolutionManifest }),
+      ...(resolution === undefined ? {} : { resolutionManifest: resolution.neutral }),
     });
   } catch (error) {
     throw new HookPlanCompilationError([
@@ -62,11 +82,17 @@ export function compileZhixuHookPlan(
     ]);
   }
 
+  const artifact = assembleChainTrackHookPlan(
+    definition,
+    shell as HookPlanShell,
+    resolution,
+  );
+
   const artifactIssues = validateHookPlanArtifact(artifact);
   if (artifactIssues.length > 0) {
     throw new HookPlanArtifactValidationError(artifactIssues);
   }
-  return artifact as HookPlanArtifact;
+  return artifact;
 }
 
 export function validateHookPlanArtifact(value: unknown): readonly string[] {

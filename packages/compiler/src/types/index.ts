@@ -100,9 +100,10 @@ export interface DockInterfaceSpecSource {
 /** 调用方 `executor.zhixuExecutorConfig`（键闭集 {target, interface, order, inputMap, signalMap}）。 */
 export interface ZhixuExecutorConfigSource {
   /**
-   * 键必填：`{zhixu: <目标定义派生身份 zx-<32hex>>}` 为静态目标，显式
+   * 键必填：`{zhixu: <目标定义 metadata.name>}`（slug）为静态目标，显式
    * `null` 表示运行时由选择记录补齐（loader/编译器对"缺键"与"null"区别
-   * 拒绝/放行，类型层面 target 恒为 required）。
+   * 拒绝/放行，类型层面 target 恒为 required）。DSL 壳不携带派生身份——
+   * 名字到实体的解析是各轨权威的事（链轨 TS 内容派生 uid、云轨 DB 唯一名）。
    */
   readonly target: { readonly zhixu: string } | null;
   /** 目标接口名（与端口名同规则）。 */
@@ -114,7 +115,12 @@ export interface ZhixuExecutorConfigSource {
   readonly signalMap?: Record<string, string>;
 }
 
-/** Resolution manifest v2：由 Store/发布系统或离线 lock 文件提供。 */
+/**
+ * Resolution manifest v2（链轨发布面）：由 Store/发布系统或离线 lock 文件
+ * 提供。跨轨共享的解析面是中性 name 目录（uvp-core linker 消费的
+ * NeutralResolutionManifest，由本包从每个 entry 派生）；内容寻址校验
+ * （uid/definitionRefHash/接口叶重算比对）是链轨 TS 自己的事，不入 core。
+ */
 export interface DockResolutionManifest {
   readonly schemaVersion: typeof DOCK_RESOLUTION_SCHEMA_VERSION;
   readonly definitions: readonly DockResolutionTarget[];
@@ -123,7 +129,7 @@ export interface DockResolutionManifest {
 export interface DockResolutionTarget {
   /** 目标定义派生身份（zx-<32hex>）；必须与内嵌 definition 派生结果一致。 */
   readonly zhixu: string;
-  /** 内嵌目标定义全文（内容寻址，PRD_102 §5：linker 重算 uid 三方一致校验）。 */
+  /** 内嵌目标定义全文（内容寻址，PRD_102 §5：TS 重算 uid 三方一致校验）。 */
   readonly definition: ZhixuDefinition;
   readonly definitionRefHash: HexString;
   readonly artifactHash: HexString;
@@ -131,7 +137,50 @@ export interface DockResolutionTarget {
   readonly interfaces: readonly DockInterfaceArtifactInterface[];
   readonly cloudArtifactId?: string;
   readonly evmPlanId?: HexString;
-  readonly dockEdges?: readonly { readonly zhixu: string }[];
+  /** 该定义声明的静态 dock 出边（目标定义 name），供 D015 启动图检测。 */
+  readonly dockEdges?: readonly { readonly target: string }[];
+}
+
+/**
+ * 中性 resolution manifest（uvp-core linker 的解析面）：name 目录 + 中性
+ * 接口声明数组 + 可选 name 出边。无任何哈希/派生身份字段。
+ */
+export interface NeutralResolutionManifest {
+  readonly schemaVersion: typeof DOCK_RESOLUTION_SCHEMA_VERSION;
+  readonly definitions: readonly {
+    readonly name: string;
+    readonly interfaces: readonly NeutralInterfaceDeclaration[];
+    readonly dockEdges?: readonly { readonly target: string }[];
+  }[];
+}
+
+/** 中性接口声明（core 产物/解析面共形）：接口名/orderModes/端口原文。 */
+export interface NeutralInterfaceDeclaration {
+  readonly name: string;
+  readonly orderModes: readonly string[];
+  readonly inputs?: Readonly<Record<string, { readonly hook: string }>>;
+  readonly outputs?: Readonly<Record<string, { readonly signal: string }>>;
+}
+
+/** 中性已解析 route（core hook_plan 壳元素）：本地声明 + 目标 name 引用。 */
+export interface NeutralDockRoute {
+  readonly schemaVersion: typeof DOCK_ROUTE_SCHEMA_VERSION;
+  readonly local: { readonly stageIdentifier: string };
+  readonly target: { readonly name: string; readonly interfaceName: string };
+  readonly orderMode: DockOrderMode;
+  readonly inputBindings: readonly { readonly hookId: string; readonly port: string }[];
+  readonly outputBindings: readonly { readonly signal: string; readonly port: string }[];
+}
+
+/** 中性未解析 route（core hook_plan 壳元素，target:null 动态选择声明面）。 */
+export interface NeutralUnresolvedDockRoute {
+  readonly schemaVersion: typeof DOCK_ROUTE_UNRESOLVED_SCHEMA_VERSION;
+  readonly stageIdentifier: string;
+  readonly localSource: string;
+  readonly interfaceName: string;
+  readonly orderMode: DockOrderMode;
+  readonly inputBindings: readonly { readonly hookId: string; readonly port: string }[];
+  readonly outputBindings: readonly { readonly signal: string; readonly port: string }[];
 }
 
 /** 目标接口编译产物 v2（Rust core 权威产出，字段逐字节镜像 dock.rs to_json）。 */

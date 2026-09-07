@@ -11,11 +11,11 @@ optimizer_runs = 200
 via_ir = true
 bytecode_hash = "none"
 ffi = false
-# The dock parity gate reads the canonical Rust-generated manifest from the
-# sibling uvp-core submodule; keep one fixture source instead of a Solidity
-# copy that can silently drift.
-allow_paths = ["../../../uvp-core"]
+# The dock parity gate reads the canonical TS-generated manifest from the
+# packages/compiler fixtures in this repo; keep one fixture source instead of
+# a Solidity copy that can silently drift.
+allow_paths = ["../../packages/compiler"]
 
 [[profile.default.fs_permissions]]
 access = "read"
-path = "../../../uvp-core"
+path = "../../packages/compiler"

@@ -1,0 +1,639 @@
+import { hashCanonical } from "./hash.js";
+import {
+  definitionRefHash,
+  definitionUid,
+  dockRouteId,
+  EMPTY_MERKLE_ROOT,
+  inputBindingHash,
+  inputPortLeaf,
+  interfaceLeaf,
+  interfaceRootOf,
+  keccakWord,
+  merkleRoot,
+  outputBindingHash,
+  outputPortLeaf,
+  routeHash as routeHashOf,
+  stageKey,
+  stripAnnotations,
+} from "./dock.js";
+import { canonicalize } from "./canonical.js";
+import { validateDockCommitments } from "./dock-validation.js";
+import {
+  COMPILER_NAME,
+  COMPILER_VERSION,
+  DOCK_INTERFACE_ARTIFACT_SCHEMA_VERSION,
+  DOCK_ROUTE_SCHEMA_VERSION,
+  HOOK_PLAN_SCHEMA_VERSION,
+  type DockInterfaceArtifactInterface,
+  type DockInterfaceArtifactV2,
+  type DockOrderMode,
+  type DockResolutionManifest,
+  type DockResolutionTarget,
+  type DockRouteInputBinding,
+  type DockRouteOutputBinding,
+  type DockRouteV2,
+  type HexString,
+  type HookPlanArtifact,
+  type NeutralDockRoute,
+  type NeutralInterfaceDeclaration,
+  type NeutralResolutionManifest,
+  type NeutralUnresolvedDockRoute,
+  type ZhixuDefinition,
+} from "./types/index.js";
+
+/**
+ * 链轨承诺层：uvp-core 只产出中性 plan 壳（无哈希、无派生身份），本模块
+ * 在壳上计算全部链上承诺（PRD100_102_DESIGN.md §2/§5.2 的 TS 权威实现）。
+ * 公式与 word 布局冻结于 UVPDockingModule abiVersion 3.0（规格见
+ * docs/dock-word-layout.md），Solidity 逐字节对拍钉死。
+ */
+
+export const HOOK_PLAN_ID_DOMAIN = "uvp:hook-plan-id:v1";
+export const HOOK_PLAN_HASH_DOMAIN = "uvp:hook-plan-artifact:v1";
+
+/** core 中性 hook_plan 壳（承诺字段的输入面；哈希字段一律不在此层）。 */
+export interface HookPlanShell {
+  readonly schemaVersion: typeof HOOK_PLAN_SCHEMA_VERSION;
+  readonly zhixuName: string;
+  readonly platform: unknown;
+  readonly compiledHooks: readonly ShellHook[];
+  readonly dependencyIndex: Record<string, readonly string[]>;
+  readonly executorRoutes: Record<string, unknown>;
+  readonly dockRoutes?: readonly NeutralDockRoute[];
+  readonly dockInterface?: readonly NeutralInterfaceDeclaration[];
+  readonly unresolvedDockRoutes?: readonly NeutralUnresolvedDockRoute[];
+  readonly selectedStageBindings: readonly unknown[];
+  readonly signalCapabilities: readonly unknown[];
+}
+
+interface ShellHook {
+  readonly hookId: string;
+  readonly stageIdentifier: string;
+  readonly dependencies: readonly {
+    readonly kind: string;
+    readonly source: string;
+    readonly signalName: string;
+  }[];
+}
+
+/** 链轨 resolution manifest 的校验+解析结果（route 组装的寻址面）。 */
+export interface PreparedDockResolution {
+  /** core linker 消费的中性 name 目录。 */
+  readonly neutral: NeutralResolutionManifest;
+  /** name → 发布面数据（含 TS 重算的定义级 dockInterfaceRoot）。 */
+  readonly byName: ReadonlyMap<string, PreparedTarget>;
+}
+
+export interface PreparedTarget {
+  readonly uid: string;
+  readonly definitionRefHash: HexString;
+  readonly artifactHash: HexString;
+  readonly interfaces: readonly DockInterfaceArtifactInterface[];
+  readonly dockInterfaceRoot: HexString;
+  readonly cloudArtifactId?: string;
+  readonly evmPlanId?: HexString;
+}
+
+export function prepareDockResolution(
+  manifest: DockResolutionManifest,
+): PreparedDockResolution {
+  if (manifest.schemaVersion !== "uvp.dock.resolution.v2") {
+    throw new RangeError(
+      `resolutionManifest.schemaVersion must be "uvp.dock.resolution.v2", received ${JSON.stringify(manifest.schemaVersion)}`,
+    );
+  }
+  const byName = new Map<string, PreparedTarget>();
+  type NeutralDefinition = NeutralResolutionManifest["definitions"][number];
+  const neutralDefinitions: NeutralDefinition[] = [];
+  for (const [index, entry] of manifest.definitions.entries()) {
+    const path = `resolutionManifest.definitions[${index}]`;
+    const prepared = prepareTargetEntry(entry, path);
+    const name = entry.definition.metadata.name;
+    if (byName.has(name)) {
+      throw new RangeError(
+        `${path}: duplicate definition name ${JSON.stringify(name)} — names are the resolution key and must be unique in the manifest`,
+      );
+    }
+    byName.set(name, prepared);
+    neutralDefinitions.push({
+      name,
+      interfaces: entry.interfaces.map(neutralInterfaceOf),
+      ...(entry.dockEdges === undefined ? {} : { dockEdges: entry.dockEdges }),
+    });
+  }
+  return {
+    neutral: {
+      schemaVersion: "uvp.dock.resolution.v2",
+      definitions: neutralDefinitions,
+    },
+    byName,
+  };
+}
+
+/**
+ * 单个发布面 entry 的内容寻址校验（链轨内务，不入 core）：uid/引用哈希从
+ * 内嵌定义全文重算，接口叶/根由 manifest 数据逐 word 重算——自不一致的
+ * manifest 在编译期拒绝，不推迟到运行期。
+ */
+function prepareTargetEntry(
+  entry: DockResolutionTarget,
+  path: string,
+): PreparedTarget {
+  const uid = definitionUid(entry.definition);
+  if (uid !== entry.zhixu) {
+    throw new RangeError(
+      `${path}.zhixu declares ${JSON.stringify(entry.zhixu)} but the embedded definition derives ${JSON.stringify(uid)} — the manifest is not content-addressed`,
+    );
+  }
+  const refHash = definitionRefHash(uid);
+  if (refHash !== entry.definitionRefHash) {
+    throw new RangeError(
+      `${path}.definitionRefHash does not match H(UVP_DEFINITION_REF_V1, keccak(uid)) over the embedded definition`,
+    );
+  }
+  if (!entry.published || entry.artifactHash === `0x${"0".repeat(64)}`) {
+    throw new RangeError(
+      `${path}: target artifact ${uid} is not published/immutable`,
+    );
+  }
+  const dockInterfaceRoot = merkleRoot(
+    entry.interfaces.map((interfaceEntry) => interfaceEntry.interfaceRoot),
+  );
+  // 接口叶/两根/定义级根的逐 word 重算（复用 dock-validation 的 fail-closed
+  // 重算路径）；_uid/refHash 已单独校验，此处占位值不再参与。
+  const commitmentIssues = validateDockCommitments({
+    dockRoutes: [],
+    dockRoutesRoot: EMPTY_MERKLE_ROOT,
+    dockInterface: {
+      schemaVersion: DOCK_INTERFACE_ARTIFACT_SCHEMA_VERSION,
+      definition: { uid, definitionRefHash: refHash },
+      interfaces: entry.interfaces,
+      interfaceRoot: dockInterfaceRoot,
+    },
+    dockInterfaceRoot,
+  });
+  if (commitmentIssues.length > 0) {
+    throw new RangeError(commitmentIssues.join("; "));
+  }
+  return {
+    uid,
+    definitionRefHash: refHash,
+    artifactHash: entry.artifactHash,
+    interfaces: entry.interfaces,
+    dockInterfaceRoot,
+    ...(entry.cloudArtifactId === undefined
+      ? {}
+      : { cloudArtifactId: entry.cloudArtifactId }),
+    ...(entry.evmPlanId === undefined ? {} : { evmPlanId: entry.evmPlanId }),
+  };
+}
+
+/** 发布面接口 → core 中性声明（端口 map 形态，键序由 canonical 化消除）。 */
+function neutralInterfaceOf(
+  interfaceEntry: DockInterfaceArtifactInterface,
+): NeutralInterfaceDeclaration {
+  const inputs: Record<string, { hook: string }> = {};
+  for (const port of interfaceEntry.inputs) {
+    inputs[port.port] = { hook: port.hookId };
+  }
+  const outputs: Record<string, { signal: string }> = {};
+  for (const port of interfaceEntry.outputs) {
+    outputs[port.port] = { signal: port.canonicalOutputSignal };
+  }
+  return {
+    name: interfaceEntry.name,
+    orderModes: [...interfaceEntry.orderModes],
+    inputs,
+    outputs,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 中性接口声明 → 接口承诺 artifact v2（目标侧）
+// ---------------------------------------------------------------------------
+
+/**
+ * 从中性接口声明 + 本地 hook 表推导接口承诺：入口端口的 canonical 信号取
+ * 该 hook 编译后的单一正向原子（D013 由 core 保证），sourceId/signalId 是
+ * 运行期寻址数据、只随产物携带不入叶。
+ */
+export function buildDockInterfaceArtifact(
+  declarations: readonly NeutralInterfaceDeclaration[],
+  uid: string,
+  hooksById: ReadonlyMap<string, ShellHook>,
+): DockInterfaceArtifactV2 {
+  const interfaces = [...declarations]
+    .sort((left, right) => compareBytes(left.name, right.name))
+    .map((declaration) => {
+      const inputs = Object.entries(declaration.inputs ?? {})
+        .sort(([left], [right]) => compareBytes(left, right))
+        .map(([portName, port]) => {
+          const hook = hooksById.get(port.hook);
+          const dependency = hook?.dependencies[0];
+          if (
+            dependency === undefined ||
+            dependency.kind !== "positive"
+          ) {
+            throw new RangeError(
+              `dockInterface input port ${portName} must reference a hook with exactly one positive canonical signal atom, received ${JSON.stringify(port.hook)}`,
+            );
+          }
+          const canonicalInputSignal = `${dependency.source}::${dependency.signalName}`;
+          return {
+            port: portName,
+            stageIdentifier: stageIdentifierOfHook(port.hook),
+            hookName: hookNameOfHook(port.hook),
+            hookId: port.hook,
+            canonicalInputSignal,
+            canonicalInputSignalHash: keccakWord(canonicalInputSignal),
+            source: dependency.source,
+            sourceId: keccakWord(dependency.source),
+            signalId: keccakWord(dependency.signalName),
+            leafHash: inputPortLeaf({
+              uid,
+              interfaceName: declaration.name,
+              portName,
+              hookId: port.hook,
+            }),
+          };
+        });
+      const outputs = Object.entries(declaration.outputs ?? {})
+        .sort(([left], [right]) => compareBytes(left, right))
+        .map(([portName, port]) => {
+          const [source, signalName] = splitCanonicalSignal(port.signal);
+          return {
+            port: portName,
+            canonicalOutputSignal: port.signal,
+            canonicalOutputSignalHash: keccakWord(port.signal),
+            source,
+            sourceId: keccakWord(source),
+            signalId: keccakWord(signalName),
+            leafHash: outputPortLeaf({
+              uid,
+              interfaceName: declaration.name,
+              portName,
+              canonicalSignal: port.signal,
+            }),
+          };
+        });
+      const inputsRoot = merkleRoot(inputs.map((port) => port.leafHash));
+      const outputsRoot = merkleRoot(outputs.map((port) => port.leafHash));
+      return {
+        name: declaration.name,
+        orderModes: [...declaration.orderModes] as DockOrderMode[],
+        inputs,
+        outputs,
+        inputsRoot,
+        outputsRoot,
+        interfaceRoot: interfaceLeaf({
+          uid,
+          interfaceName: declaration.name,
+          orderModes: declaration.orderModes,
+          inputsRoot,
+          outputsRoot,
+        }),
+      };
+    });
+  const artifact: DockInterfaceArtifactV2 = {
+    schemaVersion: DOCK_INTERFACE_ARTIFACT_SCHEMA_VERSION,
+    definition: { uid, definitionRefHash: definitionRefHash(uid) },
+    interfaceRoot: merkleRoot(interfaces.map((entry) => entry.interfaceRoot)),
+    interfaces,
+  };
+  return artifact;
+}
+
+// ---------------------------------------------------------------------------
+// 中性 route → 链轨承诺 route v2（调用方侧）
+// ---------------------------------------------------------------------------
+
+export function buildDockRoute(
+  neutral: NeutralDockRoute,
+  context: {
+    readonly localDefinitionRefHash: HexString;
+    readonly localPlanId: HexString;
+    readonly localStageSources: ReadonlyMap<string, string>;
+    readonly resolution: PreparedDockResolution;
+  },
+): DockRouteV2 {
+  const stageIdentifier = neutral.local.stageIdentifier;
+  const stageKeyWord = stageKey(stageIdentifier);
+  const routeId = dockRouteId(context.localDefinitionRefHash, stageKeyWord);
+  const target = context.resolution.byName.get(neutral.target.name);
+  if (target === undefined) {
+    throw new RangeError(
+      `dock route ${stageIdentifier} targets ${JSON.stringify(neutral.target.name)} which is absent from the validated resolution manifest`,
+    );
+  }
+  const interfaceEntry = target.interfaces.find(
+    (candidate) => candidate.name === neutral.target.interfaceName,
+  );
+  if (interfaceEntry === undefined) {
+    throw new RangeError(
+      `dock route ${stageIdentifier} targets interface ${JSON.stringify(neutral.target.interfaceName)} which target ${neutral.target.name} does not publish`,
+    );
+  }
+
+  const inputBindings: DockRouteInputBinding[] = neutral.inputBindings.map(
+    (binding) => {
+      const port = interfaceEntry.inputs.find(
+        (candidate) => candidate.port === binding.port,
+      );
+      if (port === undefined) {
+        throw new RangeError(
+          `dock route ${stageIdentifier} binds unknown target input port ${JSON.stringify(binding.port)}`,
+        );
+      }
+      return {
+        localHookName: hookNameOfHook(binding.hookId),
+        targetPort: binding.port,
+        targetInputSignalHash: port.canonicalInputSignalHash,
+        targetSourceId: port.sourceId,
+        targetSignalId: port.signalId,
+        targetStageIdentifier: port.stageIdentifier,
+        targetSignalName: port.canonicalInputSignal,
+        bindingHash: inputBindingHash({
+          routeId,
+          interfaceName: neutral.target.interfaceName,
+          localHookId: binding.hookId,
+          portName: binding.port,
+          targetSourceId: port.sourceId,
+          targetSignalId: port.signalId,
+        }),
+      };
+    },
+  );
+  const stageSource = context.localStageSources.get(stageIdentifier);
+  if (stageSource === undefined) {
+    throw new RangeError(
+      `dock route ${stageIdentifier} has no matching stage in the local definition`,
+    );
+  }
+  const outputBindings: DockRouteOutputBinding[] = neutral.outputBindings.map(
+    (binding) => {
+      const port = interfaceEntry.outputs.find(
+        (candidate) => candidate.port === binding.port,
+      );
+      if (port === undefined) {
+        throw new RangeError(
+          `dock route ${stageIdentifier} binds unknown target output port ${JSON.stringify(binding.port)}`,
+        );
+      }
+      const localSourceId = keccakWord(stageSource);
+      const localSignalId = keccakWord(
+        `${stageIdentifier}.${binding.signal}`,
+      );
+      return {
+        localSignalName: binding.signal,
+        localSourceId,
+        localSignalId,
+        targetPort: binding.port,
+        targetOutputSignalHash: port.canonicalOutputSignalHash,
+        targetSourceId: port.sourceId,
+        targetSignalId: port.signalId,
+        targetSignalName: port.canonicalOutputSignal,
+        bindingHash: outputBindingHash({
+          routeId,
+          interfaceName: neutral.target.interfaceName,
+          localSourceId,
+          localSignalId,
+          portName: binding.port,
+          targetSourceId: port.sourceId,
+          targetSignalId: port.signalId,
+        }),
+      };
+    },
+  );
+
+  // 绑定按 bindingHash 排序（word 字节序）；merkle root 与产物数组同口径。
+  inputBindings.sort((left, right) => compareBytes(left.bindingHash, right.bindingHash));
+  outputBindings.sort((left, right) => compareBytes(left.bindingHash, right.bindingHash));
+  const inputBindingsRoot = merkleRoot(
+    inputBindings.map((binding) => binding.bindingHash),
+  );
+  const outputBindingsRoot = merkleRoot(
+    outputBindings.map((binding) => binding.bindingHash),
+  );
+
+  const seams = new Set(
+    [
+      ...neutral.inputBindings.map((binding) => binding.port),
+      ...neutral.outputBindings.map((binding) => binding.port),
+    ].flatMap((portName) => {
+      const input = interfaceEntry.inputs.find(
+        (candidate) => candidate.port === portName,
+      );
+      const output = interfaceEntry.outputs.find(
+        (candidate) => candidate.port === portName,
+      );
+      return input !== undefined
+        ? [input.source]
+        : output !== undefined
+          ? [output.source]
+          : [];
+    }),
+  );
+  if (seams.size !== 1) {
+    throw new RangeError(
+      `dock route ${stageIdentifier} must bind a single target source seam, found ${JSON.stringify([...seams])}`,
+    );
+  }
+
+  return {
+    schemaVersion: DOCK_ROUTE_SCHEMA_VERSION,
+    routeId,
+    local: {
+      definitionRefHash: context.localDefinitionRefHash,
+      planId: context.localPlanId,
+      stageIdentifier,
+      stageKey: stageKeyWord,
+    },
+    target: {
+      definitionRefHash: target.definitionRefHash,
+      zhixuUid: target.uid,
+      zhixuName: neutral.target.name,
+      interfaceName: neutral.target.interfaceName,
+      interfaceRoot: interfaceEntry.interfaceRoot,
+      dockInterfaceRoot: target.dockInterfaceRoot,
+      artifactHash: target.artifactHash,
+      ...(target.cloudArtifactId === undefined
+        ? {}
+        : { cloudArtifactId: target.cloudArtifactId }),
+      ...(target.evmPlanId === undefined ? {} : { evmPlanId: target.evmPlanId }),
+    },
+    orderMode: neutral.orderMode,
+    sourceSeam: [...seams][0] as string,
+    inputBindings,
+    outputBindings,
+    inputBindingsRoot,
+    outputBindingsRoot,
+    routeHash: routeHashOf({
+      localDefinitionRefHash: context.localDefinitionRefHash,
+      targetDefinitionRefHash: target.definitionRefHash,
+      interfaceName: neutral.target.interfaceName,
+      orderMode: neutral.orderMode,
+      inputBindingsRoot,
+      outputBindingsRoot,
+    }),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 中性壳 → 链轨 hook plan 制品
+// ---------------------------------------------------------------------------
+
+export function assembleChainTrackHookPlan(
+  definition: ZhixuDefinition,
+  shell: HookPlanShell,
+  resolution: PreparedDockResolution | undefined,
+): HookPlanArtifact {
+  const zhixuId = definitionUid(definition);
+  const localDefinitionRefHash = definitionRefHash(zhixuId);
+  const hooksById = new Map(
+    shell.compiledHooks.map((hook) => [hook.hookId, hook]),
+  );
+  const dockInterface =
+    shell.dockInterface === undefined
+      ? null
+      : buildDockInterfaceArtifact(shell.dockInterface, zhixuId, hooksById);
+  const dockInterfaceRoot =
+    dockInterface === null ? EMPTY_MERKLE_ROOT : dockInterface.interfaceRoot;
+  const platform = shell.platform as HookPlanArtifact["platform"];
+  const planId = planIdOf(zhixuId, shell.zhixuName, platform);
+  const localStageSources = flattenStageSources(definition);
+  const dockRoutes = (shell.dockRoutes ?? []).map((route) =>
+    buildDockRoute(route, {
+      localDefinitionRefHash,
+      localPlanId: planId,
+      localStageSources,
+      resolution: resolution ?? failNoResolution(route),
+    }),
+  );
+  const dockRoutesRoot = merkleRoot(dockRoutes.map((route) => route.routeHash));
+  const unresolvedDockRoutes = shell.unresolvedDockRoutes?.map((route) => ({
+    schemaVersion: route.schemaVersion,
+    stageIdentifier: route.stageIdentifier,
+    stageId: stageKey(route.stageIdentifier),
+    localDefinitionRefHash,
+    localPlanId: planId,
+    localSource: route.localSource,
+    interfaceName: route.interfaceName,
+    orderMode: route.orderMode,
+    inputBindings: route.inputBindings,
+    outputBindings: route.outputBindings,
+  }));
+
+  // planHash 的 source 快照剔除 metadata.annotations：注解永不参与任何
+  // 身份，planHash 随业务内容变化、不随文档注解变化。
+  const payload = {
+    schemaVersion: HOOK_PLAN_SCHEMA_VERSION,
+    planId,
+    zhixuId,
+    zhixuName: shell.zhixuName,
+    platform,
+    compiledHooks: shell.compiledHooks as HookPlanArtifact["compiledHooks"],
+    dependencyIndex: shell.dependencyIndex,
+    executorRoutes: shell.executorRoutes,
+    dockInterface,
+    dockRoutes,
+    dockRoutesRoot,
+    dockInterfaceRoot,
+    selectedStageBindings: shell.selectedStageBindings,
+    signalCapabilities: shell.signalCapabilities,
+    source: canonicalize(stripAnnotations(definition)),
+    ...(unresolvedDockRoutes === undefined || unresolvedDockRoutes.length === 0
+      ? {}
+      : { unresolvedDockRoutes }),
+  };
+  const planHash = hashCanonical(HOOK_PLAN_HASH_DOMAIN, payload);
+  return {
+    schemaVersion: HOOK_PLAN_SCHEMA_VERSION,
+    planId,
+    zhixuId,
+    zhixuName: shell.zhixuName,
+    platform,
+    compiledHooks: shell.compiledHooks as unknown as HookPlanArtifact["compiledHooks"],
+    dependencyIndex: shell.dependencyIndex,
+    executorRoutes: shell.executorRoutes as HookPlanArtifact["executorRoutes"],
+    dockInterface,
+    dockRoutes,
+    ...(unresolvedDockRoutes === undefined || unresolvedDockRoutes.length === 0
+      ? {}
+      : { unresolvedDockRoutes }),
+    dockRoutesRoot,
+    dockInterfaceRoot,
+    selectedStageBindings:
+      shell.selectedStageBindings as HookPlanArtifact["selectedStageBindings"],
+    signalCapabilities:
+      shell.signalCapabilities as HookPlanArtifact["signalCapabilities"],
+    planHash,
+  };
+}
+
+export function planIdOf(
+  zhixuId: string,
+  zhixuName: string,
+  platform: unknown,
+): HexString {
+  return hashCanonical(HOOK_PLAN_ID_DOMAIN, {
+    compiler: { name: COMPILER_NAME, version: COMPILER_VERSION },
+    platform,
+    zhixuId,
+    zhixuName,
+  });
+}
+
+function failNoResolution(route: NeutralDockRoute): PreparedDockResolution {
+  throw new RangeError(
+    `dock route ${route.local.stageIdentifier} resolved against a target but no resolution manifest was prepared`,
+  );
+}
+
+/** taskPattern.name + stage.name 的两段标识（与 core flatten_stages 同口径）。 */
+function flattenStageSources(
+  definition: ZhixuDefinition,
+): Map<string, string> {
+  const sources = new Map<string, string>();
+  for (const pattern of definition.spec.taskPatterns) {
+    for (const stage of pattern.stages) {
+      sources.set(`${pattern.name}.${stage.name}`, stage.source);
+    }
+  }
+  return sources;
+}
+
+function stageIdentifierOfHook(hookId: string): string {
+  const hashIndex = hookId.indexOf("#");
+  if (hashIndex <= 0) {
+    throw new RangeError(
+      `hook reference must be <task>.<stage>#<hookName>, received ${JSON.stringify(hookId)}`,
+    );
+  }
+  return hookId.slice(0, hashIndex);
+}
+
+function hookNameOfHook(hookId: string): string {
+  const hashIndex = hookId.indexOf("#");
+  if (hashIndex <= 0 || hashIndex === hookId.length - 1) {
+    throw new RangeError(
+      `hook reference must be <task>.<stage>#<hookName>, received ${JSON.stringify(hookId)}`,
+    );
+  }
+  return hookId.slice(hashIndex + 1);
+}
+
+/** `<source>::<task>.<stage>.<signal>` → [source, `<task>.<stage>.<signal>`]。 */
+function splitCanonicalSignal(signal: string): [string, string] {
+  const separator = signal.indexOf("::");
+  if (separator <= 0) {
+    throw new RangeError(
+      `signal must be <source>::<task>.<stage>.<signal>, received ${JSON.stringify(signal)}`,
+    );
+  }
+  return [signal.slice(0, separator), signal.slice(separator + 2)];
+}
+
+/** 字节序比较（Rust str Ord）；hex word 与 ASCII 标识符上等价于码点序。 */
+function compareBytes(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}

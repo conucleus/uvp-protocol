@@ -53,14 +53,15 @@ import {
 } from "../src/types/index.js";
 
 /**
- * M0 跨语言 golden vectors（dock v2）：本测试与 Rust `uvp-compiler` 的
- * `gen_dock_fixtures`、Solidity Foundry 测试消费同一份
- * `uvp-core/fixtures/dock/v1/manifest.json`；任何一侧的哈希/ID/编码分叉
- * 都会在这里失败。word 布局权威 = PRD100_102_DESIGN.md §8（Rust dock.rs）。
+ * M0 跨语言 golden vectors（dock v2）：本测试、Solidity Foundry 测试与
+ * uvp-deploy verify-stack 消费同一份 TS 权威生成器产出的
+ * `packages/compiler/fixtures/dock/v1/manifest.json`；任何一侧的
+ * 哈/ID/编码分叉都会在这里失败。word 布局权威 =
+ * packages/compiler/docs/dock-word-layout.md（冻结于 abiVersion 3.0）。
  */
 const manifestPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  "../../../../uvp-core/fixtures/dock/v1/manifest.json",
+  "../fixtures/dock/v1/manifest.json",
 );
 const fixture = JSON.parse(
   readFileSync(manifestPath, "utf8"),
