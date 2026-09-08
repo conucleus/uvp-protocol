@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xb9f0b591d47993b799a8cf307c902b03c2532c6eb2f766417138e22bb3bb0918",
-    "bytecodeHash": "0x947cde467b00d5cef7b9c396821d0396af2bbc0b27901e04a0348e4d94868739",
-    "deployedBytecodeHash": "0xa1239d5bd6a524df4b392b0d30d8a4efd047e74e003005c0451e69c9085d4e80",
-    "artifactHash": "0x1fceba767947be9369750d91b1a96ffc03b44e915a2d3690dd2706e6726b84d3"
+    "abiHash": "0x48a3219dad52637c21d38dbd49c15b844a5d12911618ec73372686f986d43806",
+    "bytecodeHash": "0xb6996546a024997b89a076714f470aa1d59d3f8eaff360e5a653958f6dd101be",
+    "deployedBytecodeHash": "0xea52958f1dc01a9b31deefa5f3301e2de75cf9d216f5fac422ce4ce0b657ac13",
+    "artifactHash": "0x5af83820b37fd2c9a7a1195964b37de71b64fb75357cd79ae3baa263c7b87b6e"
   },
   "events": {
     "HookReady": {
@@ -280,6 +280,10 @@
     "planHash": {
       "signature": "planHash(bytes32)",
       "selector": "0x942e17f1"
+    },
+    "planHookDependsOn": {
+      "signature": "planHookDependsOn(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x5fe320a1"
     },
     "planHookFlags": {
       "signature": "planHookFlags(bytes32,bytes32)",

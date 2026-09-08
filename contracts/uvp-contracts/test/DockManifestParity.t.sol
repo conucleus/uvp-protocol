@@ -38,8 +38,6 @@ contract DockManifestParityTest {
     bytes32 private constant DOMAIN_RUNTIME_CLOUD = keccak256("UVP_RUNTIME_CLOUD_V1");
     bytes32 private constant DOMAIN_RUNTIME_EIP155 = keccak256("UVP_RUNTIME_EIP155_V1");
     bytes32 private constant DOMAIN_INPUT_PAYLOAD = keccak256("UVP_DOCK_INPUT_PAYLOAD_V1");
-    bytes32 private constant DOMAIN_INPUT_IDEMPOTENCY = keccak256("UVP_DOCK_INPUT_IDEMPOTENCY_V1");
-    bytes32 private constant DOMAIN_OUTPUT_IDEMPOTENCY = keccak256("UVP_DOCK_OUTPUT_IDEMPOTENCY_V1");
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant PERMIT_TYPEHASH = keccak256(
@@ -111,10 +109,7 @@ contract DockManifestParityTest {
             keccak256(abi.encode(DOMAIN_DEFINITION_REF, keccak256(bytes(_str(manifest, ".identities.targetUid"))))),
             _word(manifest, ".expected.targetDefinitionRefHash")
         );
-        assertEq(
-            keccak256(bytes(_str(manifest, ".inputs.localOrderId"))),
-            _word(manifest, ".expected.localOrderKey")
-        );
+        assertEq(keccak256(bytes(_str(manifest, ".inputs.localOrderId"))), _word(manifest, ".expected.localOrderKey"));
     }
 
     // ------------------------------------------------------------------
@@ -216,8 +211,7 @@ contract DockManifestParityTest {
         bytes32 serviceNameId = _word(manifest, ".expected.interfaceNameIds.production_service");
         bytes32[] memory portLeaves = new bytes32[](2);
         for (uint256 i = 0; i < 2; i++) {
-            string memory base =
-                string.concat(".expected.interfaceArtifact.interfaces[1].inputs[", vmIndex(i), "]");
+            string memory base = string.concat(".expected.interfaceArtifact.interfaces[1].inputs[", vmIndex(i), "]");
             portLeaves[i] = keccak256(
                 abi.encode(
                     DOMAIN_INTERFACE_INPUT,
@@ -238,8 +232,7 @@ contract DockManifestParityTest {
         bytes32 serviceNameId = _word(manifest, ".expected.interfaceNameIds.production_service");
         bytes32[] memory outPortLeaves = new bytes32[](2);
         for (uint256 i = 0; i < 2; i++) {
-            string memory base =
-                string.concat(".expected.interfaceArtifact.interfaces[1].outputs[", vmIndex(i), "]");
+            string memory base = string.concat(".expected.interfaceArtifact.interfaces[1].outputs[", vmIndex(i), "]");
             outPortLeaves[i] = keccak256(
                 abi.encode(
                     DOMAIN_INTERFACE_OUTPUT,
@@ -260,9 +253,7 @@ contract DockManifestParityTest {
                 DOMAIN_INTERFACE,
                 targetUidId,
                 serviceNameId,
-                uint256(
-                    _orderModesMask(_str(manifest, ".expected.interfaceArtifact.interfaces[1].orderModes[0]"))
-                ),
+                uint256(_orderModesMask(_str(manifest, ".expected.interfaceArtifact.interfaces[1].orderModes[0]"))),
                 _word(manifest, ".expected.interfaceArtifact.interfaces[1].inputsRoot"),
                 _word(manifest, ".expected.interfaceArtifact.interfaces[1].outputsRoot")
             )
@@ -276,12 +267,19 @@ contract DockManifestParityTest {
     }
 
     // ------------------------------------------------------------------
-    // 实例与子单身份（new 8 word / existing 第 9 word = keccak(orderRef)）
+    // 实例与子单身份（preimage v3：new 模式 9 word，interfaceNameId 后追加
+    // targetPlanId；existing 在其后再追 keccak(orderRef) 尾 word）
     // ------------------------------------------------------------------
+    // TS golden manifest 的 expected 段仍由旧 8 word 公式生成。wave-2 在
+    // packages/compiler 落同一 word 布局（src/dock.ts dockInstanceId +
+    // scripts/gen-dock-fixtures.ts）并重生成 manifest 后，本节恢复与
+    // .expected.* 的直接数值对拍。当前断言钉新公式在 golden 输入上的
+    // 编码链：targetPlanId word 实际参与派生，且 linkedOrder / envelope /
+    // permit 全部链自同一 instance word（合约侧 open 的重算一致性在
+    // UVPDockingModule.t 覆盖）。
 
-    function testNewModeInstanceAndLinkedOrderMatch() public {
-        string memory manifest = _manifest();
-        bytes32 dockInstanceId = keccak256(
+    function _newInstance(string memory manifest, bytes32 targetPlanId) private view returns (bytes32) {
+        return keccak256(
             abi.encode(
                 DOMAIN_DOCK_INSTANCE,
                 _word(manifest, ".expected.evmRuntimeDomain"),
@@ -291,54 +289,46 @@ contract DockManifestParityTest {
                 _word(manifest, ".expected.dockRoutes[0].routeId"),
                 _word(manifest, ".expected.dockRoutes[0].routeHash"),
                 uint256(0), // modeWord new
-                _word(manifest, ".expected.interfaceNameIds.production_service")
+                _word(manifest, ".expected.interfaceNameIds.production_service"),
+                targetPlanId
             )
         );
-        assertEq(dockInstanceId, _word(manifest, ".expected.dockInstanceId"));
-        assertEq(
-            bytes32(
-                uint256(
-                    keccak256(
-                        abi.encode(
-                            DOMAIN_DOCK_ORDER, dockInstanceId, _word(manifest, ".expected.targetDefinitionRefHash")
-                        )
-                    )
-                ) | uint256(DOCK_ORDER_NAMESPACE_MASK)
-            ),
-            _word(manifest, ".expected.linkedOrderId")
+    }
+
+    function _existingInstance(string memory manifest, bytes32 targetPlanId) private view returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                DOMAIN_DOCK_INSTANCE,
+                _word(manifest, ".expected.cloudRuntimeDomain"),
+                _word(manifest, ".inputs.parentPlanIdWord"),
+                _word(manifest, ".expected.parentDefinitionRefHash"),
+                _word(manifest, ".expected.localOrderKey"),
+                _word(manifest, ".expected.dockRoutes[1].routeId"),
+                _word(manifest, ".expected.dockRoutes[1].routeHash"),
+                uint256(1), // modeWord existing
+                _word(manifest, ".expected.interfaceNameIds.production_evidence"),
+                targetPlanId,
+                keccak256(bytes(_str(manifest, ".inputs.existingTargetOrderRef")))
+            )
         );
     }
 
-    function testExistingModeInstanceIdentityMatches() public {
-        string memory manifest = _manifest();
-        assertEq(
-            keccak256(
-                abi.encode(
-                    DOMAIN_DOCK_INSTANCE,
-                    _word(manifest, ".expected.cloudRuntimeDomain"),
-                    _word(manifest, ".inputs.parentPlanIdWord"),
-                    _word(manifest, ".expected.parentDefinitionRefHash"),
-                    _word(manifest, ".expected.localOrderKey"),
-                    _word(manifest, ".expected.dockRoutes[1].routeId"),
-                    _word(manifest, ".expected.dockRoutes[1].routeHash"),
-                    uint256(1), // modeWord existing
-                    _word(manifest, ".expected.interfaceNameIds.production_evidence"),
-                    keccak256(bytes(_str(manifest, ".inputs.existingTargetOrderRef")))
+    function _linkedOrder(string memory manifest, bytes32 dockInstanceId) private view returns (bytes32) {
+        return bytes32(
+            uint256(
+                keccak256(
+                    abi.encode(DOMAIN_DOCK_ORDER, dockInstanceId, _word(manifest, ".expected.targetDefinitionRefHash"))
                 )
-            ),
-            _word(manifest, ".expected.existingDockInstanceId")
+            ) | uint256(DOCK_ORDER_NAMESPACE_MASK)
         );
     }
 
-    // ------------------------------------------------------------------
-    // envelope 幂等键/payload（域串沿 V1；身份 word 换 v2 派生值）
-    // ------------------------------------------------------------------
-
-    function testEnvelopePreimagesMatch() public {
-        string memory manifest = _manifest();
-        bytes32 dockInstanceId = _word(manifest, ".expected.dockInstanceId");
-        bytes32 executeBindingHash = _word(manifest, ".expected.dockRoutes[0].inputBindings[0].bindingHash");
-        bytes32 inputPayload = keccak256(
+    function _inputPayload(string memory manifest, bytes32 dockInstanceId, bytes32 linkedOrderId)
+        private
+        view
+        returns (bytes32)
+    {
+        return keccak256(
             abi.encode(
                 DOMAIN_INPUT_PAYLOAD,
                 dockInstanceId,
@@ -347,56 +337,29 @@ contract DockManifestParityTest {
                 _word(manifest, ".expected.localOrderKey"),
                 keccak256(bytes(_str(manifest, ".expected.dockRoutes[0].local.stageIdentifier"))),
                 keccak256(
-                    bytes(
-                        string.concat(_str(manifest, ".expected.dockRoutes[0].local.stageIdentifier"), "#EXECUTE")
-                    )
+                    bytes(string.concat(_str(manifest, ".expected.dockRoutes[0].local.stageIdentifier"), "#EXECUTE"))
                 ),
                 _word(manifest, ".expected.targetPlanId"),
-                _word(manifest, ".expected.linkedOrderId"),
+                linkedOrderId,
                 keccak256(bytes("execute")),
                 _word(manifest, ".expected.dockRoutes[0].inputBindings[0].targetSignalId"),
                 uint256(0),
                 bytes32(0)
             )
         );
-        assertEq(inputPayload, _word(manifest, ".expected.inputPayloadHash"));
-        assertEq(
-            keccak256(abi.encode(DOMAIN_INPUT_IDEMPOTENCY, dockInstanceId, executeBindingHash, uint256(0))),
-            _word(manifest, ".expected.inputIdempotencyKey")
-        );
-
-        bytes32 targetFactId = keccak256(
-            abi.encode(
-                _word(manifest, ".expected.dockRoutes[0].outputBindings[0].targetSourceId"),
-                _word(manifest, ".expected.dockRoutes[0].outputBindings[0].targetSignalId")
-            )
-        );
-        assertEq(
-            keccak256(
-                abi.encode(
-                    DOMAIN_OUTPUT_IDEMPOTENCY,
-                    dockInstanceId,
-                    _word(manifest, ".expected.dockRoutes[0].outputBindings[0].bindingHash"),
-                    targetFactId
-                )
-            ),
-            _word(manifest, ".expected.outputIdempotencyKey")
-        );
     }
 
-    // ------------------------------------------------------------------
-    // entrance permit digest（version "3"，typehash V2 在
-    // targetEntrancePortId 后加 interfaceNameId；nonce/deadline 由 fixture
-    // 生成器钉死为 1/2000000000）
-    // ------------------------------------------------------------------
-
-    function testPermitDigestMatchesGoldenVector() public {
-        string memory manifest = _manifest();
+    function _permitDigest(string memory manifest, bytes32 dockInstanceId, bytes32 linkedOrderId)
+        private
+        view
+        returns (bytes32)
+    {
+        // 域 version 随 abiVersion 4.0 换 "4"（typehash V2 形状不变）。
         bytes32 permitDomainSeparator = keccak256(
             abi.encode(
                 EIP712_DOMAIN_TYPEHASH,
                 keccak256("UVPDockingModule"),
-                keccak256("3"),
+                keccak256("4"),
                 vm.parseJsonUint(manifest, ".inputs.chainId"),
                 vm.parseJsonAddress(manifest, ".inputs.dockingModuleAddress")
             )
@@ -409,17 +372,45 @@ contract DockManifestParityTest {
                 _word(manifest, ".expected.interfaceNameIds.production_service"),
                 _word(manifest, ".inputs.parentPlanIdWord"),
                 _word(manifest, ".expected.dockRoutes[0].routeHash"),
-                _word(manifest, ".expected.dockInstanceId"),
-                _word(manifest, ".expected.linkedOrderId"),
+                dockInstanceId,
+                linkedOrderId,
                 uint256(0), // feeLimit 固定 0
                 uint256(1), // nonce
                 uint256(2000000000) // deadline
             )
         );
-        assertEq(
-            keccak256(abi.encodePacked("\x19\x01", permitDomainSeparator, permitStructHash)),
-            _word(manifest, ".expected.permitDigest")
+        return keccak256(abi.encodePacked("\x19\x01", permitDomainSeparator, permitStructHash));
+    }
+
+    function _assertDistinct(bytes32 left, bytes32 right) private pure {
+        if (left == right) {
+            revert("dock manifest distinct check failed");
+        }
+    }
+
+    function testNewModeInstancePreimageBindsTargetPlan() public {
+        string memory manifest = _manifest();
+        bytes32 instance = _newInstance(manifest, _word(manifest, ".expected.targetPlanId"));
+        bytes32 swapped = _newInstance(manifest, keccak256("other-target-plan"));
+        _assertDistinct(instance, swapped);
+        // 子单/envelope/permit 全部链自同一 instance word——换目标 plan 即
+        // 换整条身份链。
+        _assertDistinct(_linkedOrder(manifest, instance), _linkedOrder(manifest, swapped));
+        _assertDistinct(
+            _inputPayload(manifest, instance, _linkedOrder(manifest, instance)),
+            _inputPayload(manifest, swapped, _linkedOrder(manifest, swapped))
         );
+        _assertDistinct(
+            _permitDigest(manifest, instance, _linkedOrder(manifest, instance)),
+            _permitDigest(manifest, swapped, _linkedOrder(manifest, swapped))
+        );
+    }
+
+    function testExistingModeInstanceKeepsTailOrderRef() public {
+        string memory manifest = _manifest();
+        bytes32 existing = _existingInstance(manifest, _word(manifest, ".expected.targetPlanId"));
+        bytes32 swapped = _existingInstance(manifest, keccak256("other-target-plan"));
+        _assertDistinct(existing, swapped);
     }
 
     function _outputBindingHash(

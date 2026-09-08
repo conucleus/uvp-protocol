@@ -7,7 +7,7 @@ import {DockMerkle} from "./libraries/DockMerkle.sol";
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
 import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 
-/// @title UVPDockingModule — 统一 Zhixu DockRoute（preimage v2，abiVersion 3.0）
+/// @title UVPDockingModule — 统一 Zhixu DockRoute（abiVersion 4.0）
 /// @notice 所有 Zhixu dock 来自 committed route：openDockedOrder 在一笔
 ///          交易内原子完成 child 创建、link 登记、entrance fact 写入；
 ///          submitDockedInput / submitDockedSignal permissionless：keeper
@@ -30,7 +30,7 @@ import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 ///   routeHash   = H("UVP_DOCK_ROUTE_V2",            localDefRef, targetDefRef, interfaceNameId,
 ///                    modeWord(new=0), inputBindingsRoot, outputBindingsRoot)
 ///   dockInst    = H("UVP_DOCK_INSTANCE_V2",         runtimeDomain, localPlanId, localDefRef, localOrderKey,
-///                    routeId, routeHash, modeWord(new=0), interfaceNameId)
+///                    routeId, routeHash, modeWord(new=0), interfaceNameId, targetPlanId)
 ///   linkedOrder = H("UVP_DOCK_ORDER_V1",            dockInstanceId, targetDefRef)
 ///   inputIdem   = H("UVP_DOCK_INPUT_IDEMPOTENCY_V1",dockInstanceId, inputBindingHash, occurrence(0))
 ///   outputIdem  = H("UVP_DOCK_OUTPUT_IDEMPOTENCY_V1",dockInstanceId, outputBindingHash, targetFactId)
@@ -106,7 +106,11 @@ contract UVPDockingModule {
         bytes32 portKey;
         bytes32 targetSourceId;
         bytes32 targetSignalId;
+        // 接口 output 端口叶的 canonical 输出信号 word：叶内容经 outputsRoot
+        // membership 由目标接口承诺背书（调用方不得自报叶值）。
+        bytes32 portSignalWord;
         bytes32 bindingHash;
+        bytes32[] portProof;
     }
 
     struct EntrancePermitV2 {
@@ -166,6 +170,7 @@ contract UVPDockingModule {
     error DockDepthExceeded(uint8 parentDepth, uint8 maxDepth);
     error DockDepthMismatch(uint8 claimed, uint8 actual);
     error DockEntranceLeafMismatch(bytes32 field);
+    error DockEntranceFactNotDeclared(bytes32 targetHookId, bytes32 targetSourceId, bytes32 targetSignalId);
     error DockHookNotInputBound(bytes32 localPlanId, bytes32 localOrderId, bytes32 localHookId);
     error DockPermitExpired(uint256 deadline);
     error DockPermitInvalidSigner(address expected, address recovered);
@@ -230,6 +235,7 @@ contract UVPDockingModule {
 
     bytes32 private constant _DOMAIN_DEFINITION_REF = keccak256("UVP_DEFINITION_REF_V1");
     bytes32 private constant _DOMAIN_INTERFACE_INPUT = keccak256("UVP_DOCK_INTERFACE_INPUT_V2");
+    bytes32 private constant _DOMAIN_INTERFACE_OUTPUT = keccak256("UVP_DOCK_INTERFACE_OUTPUT_V2");
     bytes32 private constant _DOMAIN_ROUTE_ID = keccak256("UVP_DOCK_ROUTE_ID_V1");
     bytes32 private constant _DOMAIN_SOURCE_FACT_SET_ZERO = bytes32(0);
     bytes32 private constant _DOMAIN_INPUT_BINDING = keccak256("UVP_DOCK_INPUT_BINDING_V2");
@@ -248,7 +254,7 @@ contract UVPDockingModule {
     bytes32 private constant _EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _EIP712_NAME_HASH = keccak256("UVPDockingModule");
-    bytes32 private constant _EIP712_VERSION_HASH = keccak256("3");
+    bytes32 private constant _EIP712_VERSION_HASH = keccak256("4");
     // creator 不进 permit：open 路由 creator 恒等于目标 plan publisher，
     // 与 permit 验签权威同源（planPublisher(targetPlanId)）。
     bytes32 private constant _PERMIT_TYPEHASH = keccak256(
@@ -328,6 +334,13 @@ contract UVPDockingModule {
         if (inputs.length != 1) {
             revert DockBindingCountInvalid(inputs.length, 1);
         }
+        // 就绪门与出生锚同源恒等（与 submitDockedInput 的绑定核对同形）：
+        // request.localHookId 只喂就绪判定，绑定哈希与 envelope 以
+        // inputs[0].localHookId 为准——两者不一致即兄弟 hook 冒名提前开仓，
+        // payloadHash 与链下权威公式分叉。
+        if (inputs[0].localHookId != request.localHookId) {
+            revert DockHookNotInputBound(request.localPlanId, request.localOrderId, request.localHookId);
+        }
         if (outputs.length > MAX_DOCK_OUTPUTS) {
             revert DockBindingLimitExceeded(outputs.length, MAX_DOCK_OUTPUTS);
         }
@@ -348,6 +361,22 @@ contract UVPDockingModule {
         }
         for (uint256 i = 0; i < outputs.length; i++) {
             _recomputeOutputBinding(request.routeId, request.interfaceNameId, outputs[i]);
+            // output 端口 membership（input 侧同款二级承诺）：端口叶由承诺
+            // 输入重算，必须落在目标接口 outputsRoot 内——否则已提交 route
+            // 可把输出绑到目标接口从未宣告的端口（只重算绑定哈希入 routeHash
+            // 不构成目标侧承诺）。
+            bytes32 outputPortLeaf = keccak256(
+                abi.encode(
+                    _DOMAIN_INTERFACE_OUTPUT,
+                    request.targetUidId,
+                    request.interfaceNameId,
+                    outputs[i].portKey,
+                    outputs[i].portSignalWord
+                )
+            );
+            if (!DockMerkle.verify(interfaceProof.commitment.outputsRoot, outputPortLeaf, outputs[i].portProof)) {
+                revert DockInterfaceLeafMismatch(outputPortLeaf, interfaceProof.commitment.outputsRoot);
+            }
         }
 
         // 7. routeHash 重算：modeWord 钉 new(0)——existing 路由的哈希在此
@@ -374,6 +403,16 @@ contract UVPDockingModule {
         }
         if (!_verifyTargetInterface(request, interfaceProof)) {
             revert DockInterfaceLeafMismatch(entranceLeafHash, bytes32(0));
+        }
+        // 8.5 出生锚事实键一致性：entrance 事实键必须是目标 mailbox hook 声明
+        //     的 SIGNAL 依赖原子（目标 plan 的 receive 词表）。接口端口叶只
+        //     承诺 (portKey, hookKey)，事实键只进绑定哈希——不钉在 hook 依赖
+        //     声明上，已提交 route 可向目标 plan 注入任意事实键（首事实键先
+        //     到先得）并连带把 mailbox hook 置 Ready。
+        if (!stateMachine.planHookDependsOn(
+                request.targetPlanId, request.targetHookId, inputs[0].targetSourceId, inputs[0].targetSignalId
+            )) {
+            revert DockEntranceFactNotDeclared(request.targetHookId, inputs[0].targetSourceId, inputs[0].targetSignalId);
         }
 
         // 9. 身份推导重算（keeper 不可自报 ID）。localOrderKey 为 bytes32
@@ -468,14 +507,16 @@ contract UVPDockingModule {
             inputs[0].portKey,
             inputs[0].targetSignalId
         );
-        bytes32 entranceIdempotencyKey = keccak256(
-            abi.encode(_DOMAIN_INPUT_IDEMPOTENCY, request.dockInstanceId, entranceBindingHash, uint256(0))
-        );
+        bytes32 entranceIdempotencyKey =
+            keccak256(abi.encode(_DOMAIN_INPUT_IDEMPOTENCY, request.dockInstanceId, entranceBindingHash, uint256(0)));
 
-        // keeper 只提供活性。creator 与子订单授权不得由 keeper
-        // 自选——creator = 目标 plan publisher（permit 路由的签名者同源）。
-        // 子订单信号授权随后按目标定义自身的授权流（executor patch/
-        // submitSignalFor）建立，不经 open 注入。
+        // keeper 只提供活性（relayer/opener 归 keeper）。creator 与 dock 事实
+        // 提交者不得是 keeper——基础设施地址没有业务身份，混入
+        // lastSignalSubmitter 会让 HANDOFF/REPLACEMENT 的"上一执行者"回退取
+        // 到 keeper。dock 通道事实的提交者记为 creator（= 目标 plan
+        // publisher，permit 路由的签名者同源，且本就是该子单的 patch
+        // selector 权威）；子订单信号授权随后按目标定义自身的授权流
+        // （executor patch / submitSignalFor）建立，不经 open 注入。
         address creator = stateMachine.planPublisher(request.targetPlanId);
         stateMachine.createDockedOrderFromModule(
             request.targetPlanId,
@@ -488,7 +529,7 @@ contract UVPDockingModule {
             inputs[0].targetSignalId,
             entrancePayloadHash,
             entranceIdempotencyKey,
-            msg.sender,
+            creator,
             new IUVPStateMachineCore.SignalAuthorization[](0)
         );
 
@@ -521,7 +562,7 @@ contract UVPDockingModule {
             request.targetPlanId,
             inputs[0].targetSignalId,
             entrancePayloadHash,
-            msg.sender
+            creator
         );
         return true;
     }
@@ -580,6 +621,9 @@ contract UVPDockingModule {
         );
 
         _inputDelivered[dockInstanceId][inputBindingHash] = true;
+        // 提交者记子订单 creator（目标 plan publisher），不记 keeper——与
+        // open 的 entrance 事实同口径，基础设施地址不进业务归因。
+        address childCreator = stateMachine.orderCreator(dock.targetPlanId, dock.linkedOrderId);
         stateMachine.recordDockedInputFromModule(
             dock.targetPlanId,
             dock.linkedOrderId,
@@ -587,7 +631,7 @@ contract UVPDockingModule {
             binding.targetSignalId,
             payloadHash,
             idempotencyKey,
-            msg.sender
+            childCreator
         );
 
         emit DockInputSubmitted(
@@ -599,7 +643,7 @@ contract UVPDockingModule {
             dock.targetPlanId,
             binding.targetSignalId,
             payloadHash,
-            msg.sender
+            childCreator
         );
         return true;
     }
@@ -782,6 +826,8 @@ contract UVPDockingModule {
         if (block.timestamp > permit.deadline) {
             revert DockPermitExpired(permit.deadline);
         }
+        // nonce 序列从 1 起：storage 缺省 0 使 nonce=0 恒不可用（0>=0 即拒
+        // 绝）——这是有意的发号下界，不是 off-by-one，签名方/构建器从 1 递增。
         if (usedEntrancePermitNonce[request.dockInstanceId] >= permit.nonce) {
             revert DockPermitNonceAlreadyUsed(request.dockInstanceId, permit.nonce);
         }
@@ -814,9 +860,8 @@ contract UVPDockingModule {
             sigS := mload(add(signature, 0x40))
             v := byte(0, mload(add(signature, 0x60)))
         }
-        if (v < 27) {
-            v += 27;
-        }
+        // v 值严格 {27,28}（与其余 EIP-712 验签入口同口径）：ECDSA.recover 对
+        // 非 {27,28} 直接 InvalidSignatureV，不做 0/1 归一化。
         address recovered = ECDSA.recover(digest, UVPSignatures.Signature({v: v, r: r, s: sigS}));
         if (recovered != authority) {
             revert DockPermitInvalidSigner(authority, recovered);
@@ -866,13 +911,12 @@ contract UVPDockingModule {
         );
     }
 
-    /// new 模式实例身份（8 word：runtimeDomain/localPlan/localDefRef/
-    /// localOrderKey/routeId/routeHash/modeWord/interfaceNameId）。
-    function _dockInstanceId(OpenDockRequestV2 calldata request, bytes32 runtimeDomain)
-        private
-        pure
-        returns (bytes32)
-    {
+    /// new 模式实例身份（9 word：runtimeDomain/localPlan/localDefRef/
+    /// localOrderKey/routeId/routeHash/modeWord/interfaceNameId/targetPlanId）。
+    /// 目标 plan 身份必须进 preimage：接口承诺 word（dockInterfaceRoot）可被
+    /// 第三方复制进自建 plan，不绑 targetPlanId 时实例/子单身份无法与真正的
+    /// 对接目标 plan 一一对应。
+    function _dockInstanceId(OpenDockRequestV2 calldata request, bytes32 runtimeDomain) private pure returns (bytes32) {
         return keccak256(
             abi.encode(
                 _DOMAIN_DOCK_INSTANCE,
@@ -883,7 +927,8 @@ contract UVPDockingModule {
                 request.routeId,
                 request.routeHash,
                 uint256(DOCK_MODE_NEW),
-                request.interfaceNameId
+                request.interfaceNameId,
+                request.targetPlanId
             )
         );
     }
@@ -928,7 +973,12 @@ contract UVPDockingModule {
         returns (bytes32)
     {
         bytes32 recomputed = _inputBindingHash(
-            routeId, interfaceNameId, binding.localHookId, binding.portKey, binding.targetSourceId, binding.targetSignalId
+            routeId,
+            interfaceNameId,
+            binding.localHookId,
+            binding.portKey,
+            binding.targetSourceId,
+            binding.targetSignalId
         );
         if (recomputed != binding.bindingHash) {
             revert DockRouteLeafMismatch(binding.bindingHash, recomputed);
@@ -964,13 +1014,7 @@ contract UVPDockingModule {
     ) private pure returns (bytes32) {
         return keccak256(
             abi.encode(
-                _DOMAIN_INPUT_BINDING,
-                routeId,
-                interfaceNameId,
-                localHookId,
-                portKey,
-                targetSourceId,
-                targetSignalId
+                _DOMAIN_INPUT_BINDING, routeId, interfaceNameId, localHookId, portKey, targetSourceId, targetSignalId
             )
         );
     }

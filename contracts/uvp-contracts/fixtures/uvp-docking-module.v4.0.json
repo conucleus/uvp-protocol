@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPDockingModule",
-  "abiVersion": "3.0",
+  "abiVersion": "4.0",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPDockingModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPDockingModule.sol/UVPDockingModule.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xccd83172235ca28caf328ba89e1ba5593697102436a22306bb521534f87ba71d",
-    "bytecodeHash": "0xf460bc8d3ab1394ac2a5bbb20454620c585d1f4de08f01902a90debaa5a99b73",
-    "deployedBytecodeHash": "0x9bdf8d627d886987be300f7ac14846acaa3b4a81609195aae0072f651432e887",
-    "artifactHash": "0x3f936abaf95f1b5cd7d65da811cecfd61f979148aa46679b8505851406c7dce5"
+    "abiHash": "0xfa871d983c1b05b98d9556325c084a0ca54782aff40f9098292c969a885a3a5c",
+    "bytecodeHash": "0xa250197259db76ef02990238c98c98256a5696030b619996938428e09d18f260",
+    "deployedBytecodeHash": "0x4843be00d8f1b726e1420f29cc8460da1681339892eb323495b9d62a622ad4ef",
+    "artifactHash": "0x778271f4ac2bb10d96a485f683abb34019f1e897e07b8411673ee3e06db7f73b"
   },
   "events": {
     "DockInputSubmitted": {
@@ -90,8 +90,8 @@
       "selector": "0xdd6e63ce"
     },
     "openDockedOrder": {
-      "signature": "openDockedOrder((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint8),bytes32[],((bytes32,bytes32,bytes32),bytes32[],(uint8,bytes32,bytes32),bytes32[]),(bytes32,bytes32,bytes32,bytes32,bytes32)[],(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)[],(uint256,uint256,bytes))",
-      "selector": "0xeb989ef4"
+      "signature": "openDockedOrder((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint8),bytes32[],((bytes32,bytes32,bytes32),bytes32[],(uint8,bytes32,bytes32),bytes32[]),(bytes32,bytes32,bytes32,bytes32,bytes32)[],(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32[])[],(uint256,uint256,bytes))",
+      "selector": "0x2b8e5cfc"
     },
     "planMetadataModule": {
       "signature": "planMetadataModule()",

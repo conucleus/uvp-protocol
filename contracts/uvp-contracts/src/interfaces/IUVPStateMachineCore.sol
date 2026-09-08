@@ -110,6 +110,12 @@ interface IUVPStateMachineCore {
 
     function planHookStageId(bytes32 planId, bytes32 hookId) external view returns (bytes32);
 
+    /// hook 是否声明依赖事实 (sourceId, signalId)（receive 词表投影）。
+    function planHookDependsOn(bytes32 planId, bytes32 hookId, bytes32 sourceId, bytes32 signalId)
+        external
+        view
+        returns (bool);
+
     /// 挂有 order-trigger（mint/dock）hook 的阶段对逐单 executor patch
     /// 关闭——出生阶段执行者终生不可变（簇 I 裁决），stage patch 模块以
     /// 此守门。本 flag 判定只覆盖 mint/dock 出生形态；其它订阅阶段（无

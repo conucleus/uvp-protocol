@@ -603,11 +603,14 @@ contract UVPStateMachine {
             revert PlanMetadataHashMismatch(plan.metadataHash, actualMetadataHash);
         }
 
+        // CEI：finalized 先于模块外调落定。模块回调（如重入 finalizePlan）
+        // 必须看到已终态并按 PlanAlreadyFinalized 拒绝，而不是在 finalized
+        // 落定前的窗口里二次过门。
+        plan.finalized = true;
         IUVPPlanMetadataModule(planMetadataModule)
             .finalizePlanMetadata(
                 planId, selectorBindings, signalCapabilities, plan.dockRoutesRoot, plan.dockInterfaceRoot
             );
-        plan.finalized = true;
 
         emit PlanFinalized(planId, plan.planHash, plan.metadataHash);
         emit PlanRegistered(planId, plan.planHash, plan.hookIds.length);
@@ -1150,6 +1153,23 @@ contract UVPStateMachine {
         return hook.stageId;
     }
 
+    /// @notice hook 是否声明依赖事实 (sourceId, signalId)——plan 的 receive
+    ///         词表投影（compiledHooks 的 dependencyKeys）。docking 模块用它
+    ///         把 dock 出生锚事实键钉在目标 mailbox hook 的 SIGNAL 原子上。
+    function planHookDependsOn(bytes32 planId, bytes32 hookId, bytes32 sourceId, bytes32 signalId)
+        external
+        view
+        returns (bool)
+    {
+        bytes32[] storage dependents = _plans[planId].dependencyIndex[_signalKey(sourceId, signalId)];
+        for (uint256 i = 0; i < dependents.length; i++) {
+            if (dependents[i] == hookId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /// @notice 阶段是否挂有 order-trigger（mint/dock）hook。出生/订阅阶段
     ///         的执行者终生不可变（云侧已强制，簇 I 裁决）——stage patch
     ///         模块读本视图拒绝出生阶段的逐单 executor patch；资源补丁
@@ -1185,6 +1205,16 @@ contract UVPStateMachine {
         if (submitter == address(0)) {
             revert ZeroSubmitter();
         }
+        if (msg.sender == dockingModule) {
+            // dock output 通道镜像 mint 词表闸：本地映射事实键必须在本 plan
+            // 的 capability 词表内（编译器 D006：signalMap 键 ∈ sendSignals）；
+            // 无任何 capability 声明的手工 plan 放行（与 mint 同口径）。
+            // derived 模块不经此门——其能力校验在模块自身入口。
+            bool factKnown = _signalStageId(planId, sourceId, signalId) != bytes32(0);
+            if (!factKnown && _planSignalCapabilityCount(planId) != 0) {
+                revert InvalidSignalCapability(planId, sourceId, signalId);
+            }
+        }
         _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, true);
     }
 
@@ -1213,9 +1243,14 @@ contract UVPStateMachine {
         if (!_hasExplicitSignalAuthorization(planId, orderId, sourceId, signalId, submitter)) {
             _requireActiveStageExecutorByStage(planId, orderId, stageId, submitter);
         }
-        // The target/origin order may not have materialized the source stage;
-        // relation-1 capabilities intentionally write back to that order.
-        _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false);
+        // relation 判定与派生模块同源：relation=0（from==target 本单生产事实）
+        // 恒有 relation=0 capability（_signalStageId 非 0）；relation=1（trigger-
+        // origin 回写）只以 relation=1 声明，_signalStageId 返回 0。relation=0
+        // 与普通 submitSignal 同口径过物化门 + executor 存在门——否则显式
+        // 授权者可在 assign 前写入生产事实，StageAlreadyHasSignal 把 assign
+        // 永久顶死；relation=1 回写不经两门（origin 订单无需物化 from 侧阶段）。
+        bool currentOrderFact = _signalStageId(planId, sourceId, signalId) != bytes32(0);
+        _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, currentOrderFact);
     }
 
     function _submitSignal(
@@ -1763,6 +1798,12 @@ contract UVPStateMachine {
                     // 锚点，正负性随操作数）。
                     bareSignal[stackDepth - 1] = false;
                 } else {
+                    // NOT 操作数必须裸 SIGNAL（uvp-hook-dsl validate_anchors
+                    // 镜像，Merge 分支同款编码层契约）：~(A&B)/~Delay(A) 一类
+                    // 组合否定的取消/锚点语义与编译器产物形态分叉。
+                    if (!bareSignal[stackDepth - 1]) {
+                        revert InvalidInstruction();
+                    }
                     bareSignal[stackDepth - 1] = false;
                     hasPosAnchor[stackDepth - 1] = false;
                 }
@@ -1798,6 +1839,12 @@ contract UVPStateMachine {
             }
         }
         if (stackDepth != 1) {
+            revert InvalidInstruction();
+        }
+        // 整体至少一正锚（validate_anchors 镜像）：纯否定条件（如 ~A）在
+        // value=true 时 anchorAt=0——外层延时锚到过去、回放锚点无源，注册
+        // 边界拒绝（编译器产物恒含正锚，这里是兜底）。
+        if (!hasPosAnchor[0]) {
             revert InvalidInstruction();
         }
     }
