@@ -1278,6 +1278,40 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
+    "name": "planHookDependsOn",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "hookId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "sourceId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "signalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "planHookFlags",
     "inputs": [
       {
