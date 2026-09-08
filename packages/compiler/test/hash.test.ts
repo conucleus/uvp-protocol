@@ -39,10 +39,14 @@ test("canonical JSON is independent of object insertion order", () => {
   );
 });
 
-test("canonical JSON keeps negative zero sign and rejects undefined fields", () => {
-  // serde_json 权威：f64 -0.0（源字面量 "-0" 与 "-0.0" 都解析为 f64 -0.0）
-  // 序列化为 "-0.0"——TS 侧不得把 -0 改写成 0，否则同一产物两线哈希分叉。
-  assert.equal(canonicalStringify({ n: -0 }), "{\"n\":-0.0}");
+test("canonical JSON rejects undefined fields and negative zero", () => {
+  // bug_audit #15：负零是 f64 载荷（serde_json 将 "-0"/"-0.0" 都解析为
+  // f64 -0.0），权威侧一律拒绝——TS 与之同口径（-0 经 Object.is 可观测，
+  // 不存在 JS 表示盲区）；正零 0 是 i64 整数，照常接受。
+  assert.throws(
+    () => canonicalStringify({ n: -0 }),
+    /must be an integer: canonical JSON hash preimages reject float-form numbers, received -0/,
+  );
   assert.equal(canonicalStringify({ n: 0 }), "{\"n\":0}");
   assert.throws(
     () => canonicalStringify({ optional: undefined }),
@@ -51,30 +55,53 @@ test("canonical JSON keeps negative zero sign and rejects undefined fields", () 
 });
 
 test("canonical JSON number formatting matches the serde_json probe vectors", () => {
-  // 与 uvp-ir canonicalize_number（serde_json Number 原样透传）的探针实测
-  // 逐字节对齐。覆盖：整数（u64/i64 路径）、普通小数、小数区段下界
-  // （1e-5 起仍是十进制表示）、-0。
-  // 整值浮点字面量（100.0/1e2 → Rust "100.0"）与 |x|>2^53 的整数是 JS
-  // 数字模型不可表示的分叉（见 canonical.ts writeCanonicalNumber 注释），
-  // 不在本表——产线定义不得让它们进入跨线哈希输入。
+  // 与 uvp-ir canonicalize_number 的实测逐字节对齐。bug_audit #15 后
+  // canonical 哈希输入的数字词表封闭为整数（u64/i64）：整数按十进制整型
+  // 输出；一切浮点形态（0.1/1.5/1e-5/整值浮点/负零）一律响亮拒绝——
+  // 语料（uvp-core fixtures/canonical/canonical.v1.json）钉死该边界。
   const cases: readonly [number, string][] = [
     [0, "0"],
     [100, "100"],
     [-42, "-42"],
-    [0.1, "0.1"],
-    [1.5, "1.5"],
-    [-2.75, "-2.75"],
-    [1e-4, "0.0001"],
-    [1e-5, "0.00001"],
-    [2.5e-5, "0.000025"],
-    [0.000012345, "0.000012345"],
-    [1234567890123456.5, "1234567890123456.5"],
     [9007199254740991, "9007199254740991"],
   ];
   for (const [value, expected] of cases) {
     assert.equal(canonicalStringify(value), expected);
   }
-  assert.equal(canonicalStringify({ a: [-0, 0.5] }), '{"a":[-0.0,0.5]}');
+  assert.equal(canonicalStringify({ a: [0, 1] }), '{"a":[0,1]}');
+});
+
+test("canonical JSON rejects float-form numbers loudly (bug_audit #15)", () => {
+  // 非整值 float：普通小数、科学计数、整值小数位与嵌套位置全部拒绝，
+  // 错误信息带路径与值（响亮失败，不静默截断/取整）。
+  const rejected: readonly number[] = [
+    1.5,
+    0.1,
+    -2.75,
+    1e-4,
+    1e-5,
+    2.5e-5,
+    0.000012345,
+    1234567890123456.5,
+  ];
+  for (const value of rejected) {
+    assert.throws(
+      () => canonicalStringify(value),
+      /must be an integer: canonical JSON hash preimages reject float-form numbers/,
+    );
+  }
+  assert.throws(
+    () => canonicalStringify({ a: [0, 0.5] }),
+    /\$\.a\[1\] must be an integer: canonical JSON hash preimages reject float-form numbers, received 0\.5/,
+  );
+  // 负零是 f64 载荷（serde_json 把 "-0"/"-0.0" 都解析为 f64 -0.0），与
+  // 权威同口径拒绝；正零 0 与整数照常接受。
+  assert.throws(
+    () => canonicalStringify(-0),
+    /received -0/,
+  );
+  assert.equal(canonicalStringify(0), "0");
+  assert.equal(canonicalStringify(1), "1");
 });
 
 test("canonical JSON sorts keys by code point, not UTF-16 code units", () => {

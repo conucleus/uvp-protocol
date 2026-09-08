@@ -20,10 +20,22 @@ export function canonicalize(value: unknown, path = "$"): CanonicalJsonValue {
     if (!Number.isFinite(value)) {
       throw new TypeError(`${path} must be a finite JSON number`);
     }
-    // -0 保留符号原样透传：Rust 权威（uvp-ir canonicalize_number）对
-    // serde_json Number 不做任何改写，f64 -0.0 序列化为 "-0.0"（源字面量
-    // "-0" 在 serde_json 里同样解析为 f64 -0.0）。把 -0 改写成 0 的
-    // 规范化会让同一份产物在两条线上产生不同哈希。
+    // 浮点拒绝（bug_audit #15）：canonical 哈希输入的数字词表封闭为整数
+    // （u64/i64）——Rust 权威（uvp-ir canonicalize_number）对一切 f64 载荷
+    // （分数 1.5、整值浮点 100.0、指数写法 1e2、负零 -0.0）响亮拒绝，三线
+    // 共用 uvp-core fixtures/canonical/canonical.v1.json 语料钉死该边界。
+    // JS 数字模型无法区分 1 与源字面量 1.0（JSON.parse 即抹平），TS 侧的
+    // 拒绝面是"非整数 number + 负零"；整值浮点字面量（不含 -0）的区分与
+    // 拒绝只在 Rust 权威解析侧。负零 -0 在 JS 可观测（Object.is）且
+    // serde_json 将 "-0"/"-0.0" 都解析为 f64 -0.0，故与权威同口径拒绝。
+    if (!Number.isInteger(value) || Object.is(value, -0)) {
+      // String(-0) 丢符号显示为 "0"——错误信息按肇事 token 原样列出
+      // （与 Rust 权威 FloatNumber { token } 列出原始字面量同口径）。
+      const token = Object.is(value, -0) ? "-0" : String(value);
+      throw new TypeError(
+        `${path} must be an integer: canonical JSON hash preimages reject float-form numbers, received ${token}`,
+      );
+    }
     return value as number;
   }
 
@@ -71,24 +83,19 @@ export function canonicalStringify(value: unknown): string {
 }
 
 /**
- * Rust 权威（uvp-ir canonicalize_number → serde_json Number 原样透传）在
- * TS 侧的最忠实序列化（serde_json 探针实测口径）：
+ * 数字写入器（bug_audit #15 后 canonical 哈希输入只剩整数）：
  * - 整数按十进制整型输出（Rust u64/i64 路径逐字节一致）；
- * - -0 输出 "-0.0"（serde_json 对 f64 -0.0 的输出；JSON.stringify 会丢符
- *   号输出 "0"，因此数字必须走本写入器而非 JSON.stringify 直通）；
- * - 其余有限 double 恒为非整值且 |x| < 2^53：JS 的最短往返十进制表示与
- *   ryu 在该区段逐字节一致（1e-5 → "0.00001"、0.000012345、
- *   1234567890123456.5 等均同）。
+ * - 一切浮点形态（含负零 -0）在 canonicalize 入口已拒绝，本函数不会
+ *   收到它们。
  *
  * 已知 JS 不可表示分叉（记录，非实现缺口）：源字面量 100.0/1e2（整值
- * f64）在 Rust 侧输出 "100.0"，而 JS 数字模型无法将其与 u64 100 区分，
- * 只能输出 "100"；|x| > 2^53 的整数在 JS 侧丢精度。整值浮点字面量因此
- * 不得进入跨线 canonical 哈希输入（Rust 产线侧应按整数发出）。
+ * f64）在 Rust 权威侧按浮点拒绝，而 JS 数字模型无法将其与 u64 100 区分
+ * （JSON.parse 即抹平），只能按整数放行——整值浮点字面量的拒绝在 Rust
+ * 权威解析侧；|x| > 2^53 的整数在 JS 侧丢精度。语料（uvp-core
+ * fixtures/canonical/canonical.v1.json）中依赖该区分的用例在 TS 消费侧
+ * 按已知分叉显式登记。
  */
 function writeCanonicalNumber(value: number): string {
-  if (Object.is(value, -0)) {
-    return "-0.0";
-  }
   return JSON.stringify(value);
 }
 
