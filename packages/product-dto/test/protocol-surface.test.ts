@@ -16,7 +16,11 @@ import type { StoreProductSchemaDTO } from "@uvp-eth/product-dto";
 type AbiItem = {
   readonly type?: string;
   readonly name?: string;
-  readonly inputs?: readonly { readonly name?: string; readonly type: string }[];
+  readonly inputs?: readonly {
+    readonly name?: string;
+    readonly type: string;
+    readonly components?: readonly { readonly name?: string; readonly type: string }[];
+  }[];
 };
 
 type ProtocolBindings = {
@@ -212,7 +216,23 @@ describe("Product DTO protocol surface", () => {
       (item) => item.type === "event" && item.name === "DockOpened"
     );
     assert.ok(dockOpened?.inputs?.some((input) => input.name === "interfaceNameId"),
-      "DockOpened must carry interfaceNameId (named-interface dock, abiVersion 3.0)");
+      "DockOpened must carry interfaceNameId (named-interface dock, abiVersion 4.0)");
+    // v4.0：output 绑定自带端口叶 word + membership 证明（调用方不得自报叶值）。
+    const openDockedOrder = protocol.DOCKING_MODULE_ABI.find(
+      (item) => item.type === "function" && item.name === "openDockedOrder"
+    );
+    const outputsTuple = openDockedOrder?.inputs?.find((input) => input.name === "outputs");
+    const outputComponentNames = (outputsTuple?.components ?? []).map((component) => component.name);
+    assert.deepEqual(outputComponentNames, [
+      "localSourceId",
+      "localSignalId",
+      "portKey",
+      "targetSourceId",
+      "targetSignalId",
+      "portSignalWord",
+      "bindingHash",
+      "portProof"
+    ]);
     assertAbiNames(protocol.STATE_MACHINE_LENS_ABI, "function", [
       "getActiveStageExecutorPatch",
       "getActiveStageResourcePatch",
