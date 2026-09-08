@@ -87,9 +87,8 @@ export function u64Word(value: bigint | number): HexString {
 /**
  * uint256 word（32 字节大端、高位在左）。合约侧 EIP-155 运行时域以
  * `abi.encode(_DOMAIN_RUNTIME_EIP155, block.chainid, address(...))` 编码
- * chainId（uint256，UVPDockingModule），chainId ≥ 2^64 时 u64 语义会与
- * 合约分叉——本编码按完整 256 位 word 校验并落位（Rust 侧
- * evm_runtime_domain 仍收 u64，需协同放宽，见 uvp-core dock.rs）。
+ * chainId（uint256，UVPDockingModule）；word 落位按完整 256 位，但 chainId
+ * 取值域保持 64 位（见 requireChainId）。
  */
 export function u256Word(value: bigint): HexString {
   if (value < 0n || value >= 1n << 256n) {
@@ -98,6 +97,44 @@ export function u256Word(value: bigint): HexString {
     );
   }
   return `0x${value.toString(16).padStart(64, "0")}` as HexString;
+}
+
+/**
+ * chainId 取值域上界（bug_audit #19）：跨运行时域（evmRuntimeDomain 与
+ * EIP-712 permit 域）的 FFI 侧字段保持 64 位——TS 编译入口对 ≥ 2^64、
+ * 负数与非整数 chainId 显式拒绝（fail-closed），不放宽到 u256。
+ */
+export const MAX_CHAIN_ID = (1n << 64n) - 1n;
+
+/**
+ * chainId 入口校验：非整数/负数/≥ 2^64 一律响亮拒绝。number 入参在
+ * 2^53 以上本就无法精确表示，同样在此拦截（不静默四舍五入）。
+ */
+export function requireChainId(chainId: bigint | number, path = "chainId"): bigint {
+  if (typeof chainId === "number") {
+    if (!Number.isInteger(chainId)) {
+      throw new RangeError(
+        `${path} must be an integer chain id, received ${chainId}`,
+      );
+    }
+    if (!Number.isSafeInteger(chainId)) {
+      throw new RangeError(
+        `${path} must be a safe integer chain id (numbers beyond 2^53 cannot be represented exactly; pass a bigint), received ${chainId}`,
+      );
+    }
+  }
+  const value = BigInt(chainId);
+  if (value < 0n) {
+    throw new RangeError(
+      `${path} must be a non-negative chain id, received ${chainId}`,
+    );
+  }
+  if (value > MAX_CHAIN_ID) {
+    throw new RangeError(
+      `${path} must fit the 64-bit range (< 2^64) — the runtime-domain FFI field stays 64-bit and chainId overflow is rejected explicitly (bug_audit #19), received ${chainId}`,
+    );
+  }
+  return value;
 }
 
 export function u8Word(value: number): HexString {
@@ -309,10 +346,10 @@ export function evmRuntimeDomain(
   chainId: bigint | number,
   stateMachineAddress: HexString,
 ): HexString {
-  // chainId 按合约 uint256 全宽编码（block.chainid 是 uint256；u64 截断
-  // 在 chainId ≥ 2^64 时与 UVPDockingModule 的 runtimeDomain 重算分叉）。
+  // chainId 按合约 uint256 全宽落位（block.chainid 是 uint256），但取值域
+  // 保持 64 位（requireChainId）：FFI 域不放宽，≥ 2^64 在入口显式拒绝。
   return keccakWords(DOMAIN_RUNTIME_EIP155, [
-    u256Word(BigInt(chainId)),
+    u256Word(requireChainId(chainId)),
     addressWord(stateMachineAddress),
   ]);
 }
@@ -632,7 +669,7 @@ export function eip712PermitDomainSeparator(input: {
       keccakWord(PERMIT_DOMAIN_TYPE),
       keccakWord(PERMIT_DOMAIN_NAME),
       keccakWord(input.version ?? PERMIT_DOMAIN_VERSION),
-      u256Word(BigInt(input.chainId)),
+      u256Word(requireChainId(input.chainId, "chainId")),
       addressWord(input.verifyingContract),
     ]),
   ) as HexString;

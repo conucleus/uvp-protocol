@@ -594,6 +594,62 @@ test("EIP-712 entrance permit digest matches the golden vector (V2 typehash, ver
   assert.equal(digest, expected.permitDigest);
 });
 
+test("chainId overflow guard rejects >=2^64, negative, and fractional chain ids (bug_audit #19)", () => {
+  const inputs = fixture.inputs;
+  // 上界内（含 u64 最大值 2^64-1）仍可推导——FFI 域保持 64 位，边界值合法。
+  assert.doesNotThrow(() =>
+    evmRuntimeDomain(0xffffffffffffffffn, inputs.stateMachineAddress),
+  );
+  // ≥ 2^64：显式拒绝（不放宽到 u256、不截断）。
+  assert.throws(
+    () => evmRuntimeDomain(1n << 64n, inputs.stateMachineAddress),
+    /chainId must fit the 64-bit range \(< 2\^64\)/,
+  );
+  assert.throws(
+    () => evmRuntimeDomain(2n ** 128n, inputs.stateMachineAddress),
+    /chainId must fit the 64-bit range \(< 2\^64\)/,
+  );
+  // 负数 / 非整数 / 超精度 number 同样拒绝。
+  assert.throws(
+    () => evmRuntimeDomain(-1n, inputs.stateMachineAddress),
+    /chainId must be a non-negative chain id/,
+  );
+  assert.throws(
+    () => evmRuntimeDomain(1.5, inputs.stateMachineAddress),
+    /chainId must be an integer chain id/,
+  );
+  assert.throws(
+    () => evmRuntimeDomain(1e19, inputs.stateMachineAddress),
+    /chainId must be a safe integer chain id/,
+  );
+  // EIP-712 permit 域同口径（nonce 从 1 起的既有门在前，链 id 校验在域组装）。
+  const permitInput = {
+    verifyingContract: inputs.dockingModuleAddress,
+    targetPlanId: expected.targetPlanId,
+    targetEntrancePortId: interfaceNameKey("execute"),
+    interfaceNameId: interfaceNameKey("production_service"),
+    localPlanId: inputs.parentPlanIdWord,
+    routeHash: findRoute("production_service").routeHash,
+    dockInstanceId: expected.dockInstanceId,
+    linkedOrderId: expected.linkedOrderId,
+    nonce: 1,
+    deadline: 2000000000,
+  };
+  assert.doesNotThrow(() => eip712PermitDigest({ ...permitInput, chainId: 1n }));
+  assert.throws(
+    () => eip712PermitDigest({ ...permitInput, chainId: 1n << 64n }),
+    /chainId must fit the 64-bit range \(< 2\^64\)/,
+  );
+  assert.throws(
+    () => eip712PermitDigest({ ...permitInput, chainId: -31337n }),
+    /chainId must be a non-negative chain id/,
+  );
+  assert.throws(
+    () => eip712PermitDigest({ ...permitInput, chainId: 31337.5 }),
+    /chainId must be an integer chain id/,
+  );
+});
+
 test("golden routes satisfy the TS commitment recomputation", () => {
   // dock-validation 的逐 word 重算对 golden 产物零 issue（fail-closed 镜像）。
   assert.deepEqual(
