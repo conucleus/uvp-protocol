@@ -92,8 +92,8 @@ the TypeScript `statemachine` oracle.
   `StageExecutorPatchApplied`,
   `StageResourcePatchApplied`, `StageExecutorActivated`, and
   `StageExecutorSignalDelegated`;
-- docking module event topics for `DockOpened`, `DockInputSubmitted`,
-  `DockOutputSubmitted`, and `DockTerminal`; order-link module event topics for
+- docking module event topics for `DockOpened`, `DockInputSubmitted`, and
+  `DockOutputSubmitted`; order-link module event topics for
   `OrderLinked`; plan-metadata module event topics for
   `StageSelectorBindingRegistered` and `SignalCapabilityRegistered`; derived
   signal module event topics for `DerivedSignalSubmitted`; and deployment
@@ -151,10 +151,14 @@ code do not silently drift away from the contract ABI.
     is Ready (`EMIT_READY`) plus a Merkle-proved `dockRoutesRoot` route lets a
     keeper call `openDockedOrder`, which atomically derives the dock instance
     id and high-bit-namespaced child order id, creates the child, records the
-    link, and writes the entrance fact. `submitDockedInput` /
-    `submitDockedSignal` then relay non-entrance inputs and outputs along the
-    committed bindings; the two orders keep independent plans, authorization,
-    events, and lifecycles.
+    link, and writes the entrance fact. `openDockedOrder` accepts exactly one
+    input binding and consumes it as the entrance (reverts
+    `DockBindingCountInvalid` otherwise), so on the frozen chain surface there
+    is no non-entrance input to relay — `submitDockedInput` is structurally
+    unreachable and must not be listed as a live relay path;
+    `submitDockedSignal` relays outputs along the committed output bindings.
+    The two orders keep independent plans, authorization, events, and
+    lifecycles.
 11. `triggerOrderFromOutsideFor` and `triggerOrderFromSignalFor` create orders
     through signed trigger paths. Signal-triggered orders record a trigger-origin
     link so `UVPDerivedSignalModule` can write declared signals back to the
@@ -225,7 +229,7 @@ The module fixtures add these public events:
   `targetPlanId`);
 - `StageResourcePatchApplied` (stage-patch module; carries `planId`, aligned
   with `StageExecutorPatchApplied`);
-- `DockOpened`, `DockInputSubmitted`, `DockOutputSubmitted`, and `DockTerminal`
+- `DockOpened`, `DockInputSubmitted`, and `DockOutputSubmitted`
   (docking module).
 
 All of these module events carry the composite `(planId, orderId)` identity:

@@ -680,6 +680,14 @@ export function eip712PermitDigest(input: {
   readonly nonce: bigint | number;
   readonly deadline: bigint | number;
 }): HexString {
+  // nonce 序列从 1 起（UVPDockingModule usedEntrancePermitNonce 的 storage
+  // 缺省 0 即单调下界）：nonce=0 的 permit 链上恒拒，在此响亮拒绝而不是
+  // 让签发方产出一个必定回退的签名。
+  if (BigInt(input.nonce) < 1n) {
+    throw new RangeError(
+      "entrance permit nonce sequence starts at 1 (the contract's usedEntrancePermitNonce storage defaults to 0, so nonce=0 always reverts)",
+    );
+  }
   const domainSeparator = eip712PermitDomainSeparator(input);
   const structHash = eip712PermitStructHash(input);
   const prefix = new Uint8Array([0x19, 0x01]);
