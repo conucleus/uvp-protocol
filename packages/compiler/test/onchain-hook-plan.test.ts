@@ -27,6 +27,7 @@ import {
   type ZhixuDefinition,
 } from "../src/index.js";
 import { compileZhixuHookPlan, HookPlanCompilationError } from "../src/hook-plan.js";
+import { hookPlanHashOf } from "../src/dock-commitments.js";
 import {
   compileOnchainHookPlan,
   hashOnchainPlanPayload,
@@ -37,6 +38,11 @@ import {
 import type { HookPlanArtifact } from "../src/types/index.js";
 
 const demoManifest = dockDemoResolutionManifest();
+
+/** 变异 hook plan 制品后按载荷重签 planHash（承诺重算由专门的篡改测试覆盖）。 */
+function resign(artifact: HookPlanArtifact): HookPlanArtifact {
+  return { ...artifact, planHash: hookPlanHashOf(artifact) };
+}
 
 function compileZhixuHookPlanWithManifest(
   definition: ZhixuDefinition,
@@ -760,17 +766,66 @@ test("rejects plans whose sendSignals vocabulary exceeds the gas-bounded capabil
   );
 });
 
+test("rejects cross-stage current-order fact key duplication (E16 mirror)", () => {
+  const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  // 同一事实键 (targetSourceId, signalId) 挂到两个阶段、relation=current：
+  // commitPlan 可过、finalizePlan 恒 revert DuplicateCurrentOrderSignalCapability
+  // （planId 烧毁）——编译期预检必须拒绝，不等链上。
+  const fact = sourcePlan.signalCapabilities[0]!;
+  const otherStage =
+    sourcePlan.signalCapabilities.find(
+      (capability) => capability.stageIdentifier !== fact.stageIdentifier,
+    )?.stageIdentifier ?? "zz.other";
+  const crossStageDuplicate = resign({
+    ...sourcePlan,
+    signalCapabilities: [
+      ...sourcePlan.signalCapabilities.map((capability) =>
+        capability === fact ? { ...capability, targetOrderRelation: "current" as const } : capability,
+      ),
+      { ...fact, stageIdentifier: otherStage, targetOrderRelation: "current" as const },
+    ],
+  });
+  assert.throws(
+    () => compileOnchainHookPlan(crossStageDuplicate),
+    (error: unknown) =>
+      error instanceof HookPlanCompilationError &&
+      error.issues.some((issue) =>
+        /current-order fact key .* already owned by stage .*DuplicateCurrentOrderSignalCapability/.test(issue),
+      ),
+  );
+  // 反例：同一阶段重复声明同一事实键合法（属主未变），且 relation≠0 的
+  // 事实键不受 E16 约束。
+  assert.doesNotThrow(() =>
+    compileOnchainHookPlan(
+      resign({
+        ...sourcePlan,
+        signalCapabilities: sourcePlan.signalCapabilities.map((capability) =>
+          capability === fact
+            ? { ...capability, targetOrderRelation: "triggerOrigin" as const }
+            : capability,
+        ),
+      }),
+    ),
+  );
+});
+
 test("rejects duplicate on-chain selector bindings", () => {
   const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
 
+  const duplicated = {
+    ...sourcePlan,
+    selectedStageBindings: [
+      ...sourcePlan.selectedStageBindings,
+      sourcePlan.selectedStageBindings[0]!,
+    ],
+  };
   assert.throws(
     () =>
       compileOnchainHookPlan({
-        ...sourcePlan,
-        selectedStageBindings: [
-          ...sourcePlan.selectedStageBindings,
-          sourcePlan.selectedStageBindings[0]!,
-        ],
+        // 重签 planHash：让拦截者聚焦在 selector binding 查重本身
+        // （篡改不重签的形态由 hook-plan 边界的承诺重算测试覆盖）。
+        ...duplicated,
+        planHash: hookPlanHashOf(duplicated),
       }),
     OnchainHookPlanArtifactValidationError,
   );
@@ -1199,7 +1254,8 @@ test("flags stages whose hooks can never materialize on-chain", () => {
   }
 
   // 编译入口同口径：该形态在 compileOnchainHookPlan 预检即抛
-  // HookPlanCompilationError，不产出制品。
+  // HookPlanCompilationError，不产出制品。（变异后重签 planHash，让拦截
+  // 者聚焦在物化门本身。）
   const watcherSourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
   const mutatedSourcePlan = {
     ...watcherSourcePlan,
@@ -1209,8 +1265,12 @@ test("flags stages whose hooks can never materialize on-chain", () => {
         : hook,
     ),
   };
+  const resignedMutatedPlan = {
+    ...mutatedSourcePlan,
+    planHash: hookPlanHashOf(mutatedSourcePlan),
+  };
   assert.throws(
-    () => compileOnchainHookPlan(mutatedSourcePlan),
+    () => compileOnchainHookPlan(resignedMutatedPlan),
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
       error.issues.some((issue) =>
@@ -1261,8 +1321,14 @@ test("rejects stages that compile to zero hooks (P0-4 materialization gate)", ()
         .filter(([, hookIds]) => hookIds.length > 0),
     ),
   };
+  // 重签 planHash：让拦截者聚焦在物化门本身（承诺重算由 hook-plan 边界
+  // 的专门测试覆盖）。
+  const unsignedZeroHookPlan = {
+    ...zeroHookSourcePlan,
+    planHash: hookPlanHashOf(zeroHookSourcePlan),
+  };
   assert.throws(
-    () => compileOnchainHookPlan(zeroHookSourcePlan),
+    () => compileOnchainHookPlan(unsignedZeroHookPlan),
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
       zeroHookIssues(error.issues).length === 1 &&

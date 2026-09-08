@@ -344,6 +344,12 @@ export interface HookPlanArtifact {
   readonly dockInterfaceRoot: HexString;
   readonly selectedStageBindings: readonly SelectedStageBinding[];
   readonly signalCapabilities: readonly SignalCapability[];
+  /**
+   * planHash preimage 的 source 快照（canonical 剔除 metadata.annotations 的
+   * 定义全文）：制品携带它是为了让边界校验能重算 planHash——否则篡改
+   * compiledHooks 后保留旧 planHash 也能通过反序列化校验。
+   */
+  readonly source: unknown;
   readonly planHash: HexString;
 }
 

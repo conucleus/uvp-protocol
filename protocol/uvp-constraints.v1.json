@@ -920,9 +920,9 @@
       "mirrors": {
         "rust": "none",
         "go": "none",
-        "ts": "none"
+        "ts": "packages/compiler/src/onchain-hook-plan.ts duplicateCurrentOrderFactKeyIssues（compileOnchainHookPlan preflight + validateOnchainHookPlanArtifact 边界，回归测试 test/onchain-hook-plan.test.ts E16 mirror）"
       },
-      "note": "镜像债：此类 plan 可 commit、finalize 永久 revert（planId 烧毁）；TS/Rust 预检镜像待补（F075）。"
+      "note": "镜像债：此类 plan 可 commit、finalize 永久 revert（planId 烧毁）；TS 线预检镜像已补（F075），Rust/Go 线仍欠。"
     },
     {
       "id": "signal-capability-vocabulary-gate",

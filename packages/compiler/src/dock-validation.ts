@@ -174,16 +174,31 @@ function validateDockRouteCommitments(
     target !== undefined && typeof target.interfaceName === "string"
       ? target.interfaceName
       : undefined;
-  if (
-    local === undefined ||
-    !isHexHash(local.definitionRefHash) ||
-    typeof local.stageIdentifier !== "string" ||
-    !isHexHash(route.routeId)
-  ) {
-    // 形状问题交给上层 HookPlan/onchain 校验器的详细诊断，这里只重算承诺。
+  // fail-closed：承诺重算的输入字段缺失即显式拒绝——静默跳过会让一条
+  // local/routeId/interfaceName 残缺的 route 绕过全部重算（含 dockRoutesRoot
+  // 对拍，root 对拍依赖每条 routeHash 有效）。
+  if (local === undefined) {
+    issues.push(`${path}.local must be an object`);
+    return issues;
+  }
+  if (!isHexHash(local.definitionRefHash)) {
+    issues.push(
+      `${path}.local.definitionRefHash must be a lowercase 32-byte hex hash`,
+    );
+    return issues;
+  }
+  if (typeof local.stageIdentifier !== "string") {
+    issues.push(`${path}.local.stageIdentifier must be a string`);
+    return issues;
+  }
+  if (!isHexHash(route.routeId)) {
+    issues.push(
+      `${path}.routeId must be a lowercase 32-byte hex hash`,
+    );
     return issues;
   }
   if (interfaceName === undefined) {
+    issues.push(`${path}.target.interfaceName must be a string`);
     return issues;
   }
   const recomputedRouteId = dockRouteId(

@@ -8,6 +8,12 @@ import {
   validateHookPlanArtifact
 } from "../src/hook-plan.js";
 import {
+  hookPlanHashOf,
+  prepareDockResolution,
+} from "../src/dock-commitments.js";
+import {
+  type DockResolutionManifest,
+  type HookPlanArtifact,
   type ZhixuDefinition,
   type ZhixuStage
 } from "../src/types/index.js";
@@ -16,9 +22,19 @@ import {
   dockDemoTargetName,
   dockSourcingParentDefinition,
 } from "./dock-demo.js";
-import { EMPTY_MERKLE_ROOT, merkleRoot } from "../src/dock.js";
+import {
+  definitionRefHash,
+  definitionUid,
+  EMPTY_MERKLE_ROOT,
+  merkleRoot,
+} from "../src/dock.js";
 
 const demoManifest = dockDemoResolutionManifest();
+
+/** 变异制品后按载荷重签 planHash（承诺重算测试之外的形状测试需要）。 */
+function resign(artifact: HookPlanArtifact): HookPlanArtifact {
+  return { ...artifact, planHash: hookPlanHashOf(artifact) };
+}
 
 const baseZhixu: ZhixuDefinition = {
   apiVersion: "uvp/v0",
@@ -268,12 +284,16 @@ test("preserves opaque platform metadata for future target schemas at the intern
 test("validates HookPlan IR artifacts at the internal boundary", () => {
   const plan = compileZhixuHookPlan(baseZhixu, demoManifest);
 
-  assert.deepEqual(validateHookPlanArtifact({ ...plan, schemaVersion: "wrong" }), [
-    "schemaVersion must be uvp.hookPlan.v2"
-  ]);
-  assert.deepEqual(validateHookPlanArtifact({ ...plan, compiledHooks: [] }), [
-    "dependencyIndex must match compiled hook dependencies"
-  ]);
+  // 变异后按载荷重签 planHash，让断言聚焦在字段本身的形状问题上
+  // （planHash 不重签的篡改形态在下方专门的承诺重算测试里）。
+  assert.deepEqual(
+    validateHookPlanArtifact(resign({ ...plan, schemaVersion: "wrong" })),
+    ["schemaVersion must be uvp.hookPlan.v2"]
+  );
+  assert.deepEqual(
+    validateHookPlanArtifact(resign({ ...plan, compiledHooks: [] })),
+    ["dependencyIndex must match compiled hook dependencies"]
+  );
   assert.throws(
     () =>
       assertHookPlanArtifact({
@@ -284,6 +304,176 @@ test("validates HookPlan IR artifacts at the internal boundary", () => {
         }
       }),
     HookPlanArtifactValidationError
+  );
+});
+
+test("rejects artifacts tampering compiledHooks/planId/source against the carried commitments", () => {
+  const plan = compileZhixuHookPlan(baseZhixu, demoManifest);
+
+  // 篡改 compiledHooks 保留旧 planHash → 载荷重算不匹配，反序列化边界即拒，
+  // 不等链上（0318BUG-3）。
+  const tampered = {
+    ...plan,
+    compiledHooks: plan.compiledHooks.map((hook) =>
+      hook.hookId === plan.compiledHooks[0]!.hookId
+        ? { ...hook, rawExpression: "tampered" }
+        : hook,
+    ),
+  };
+  assert.deepEqual(validateHookPlanArtifact(tampered), [
+    "planHash must match the recomputed H(uvp:hook-plan-artifact:v1; payload) over the carried fields",
+  ]);
+  // 同一篡改按载荷重签 → 零 issue：重算装配（hookPlanPayloadForHash）与
+  // 产出侧逐字段同构，hashCanonical 幂等。
+  assert.deepEqual(validateHookPlanArtifact(resign(tampered)), []);
+
+  // 篡改 planId → planId 重算不匹配（且载荷变化连带 planHash 不匹配）。
+  const tamperedPlanId = { ...plan, planId: `0x${"11".repeat(32)}` };
+  assert.ok(
+    validateHookPlanArtifact(tamperedPlanId).includes(
+      "planId must match the recomputed H(uvp:hook-plan-id:v1; compiler/platform/zhixuId/zhixuName)",
+    ),
+  );
+
+  // 缺 source（旧版制品形状）→ 显式拒绝，且不做 planHash 重算。
+  assert.deepEqual(validateHookPlanArtifact({ ...plan, source: undefined }), [
+    "source is required (the canonical annotation-stripped definition snapshot in the planHash preimage)",
+  ]);
+});
+
+function resolutionEntryWithStaticEdge(withEdges: boolean) {
+  // 内嵌定义静态引用 dockDemoTargetName（zhixu 执行器），manifest 声明面
+  // 必须等价携带该出边，否则 core D015 的启动图环检测被绕过（0830F5）。
+  const definition: ZhixuDefinition = {
+    apiVersion: "uvp/v0",
+    kind: "Zhixu",
+    metadata: { name: "edge_intermediary" },
+    spec: {
+      platform: { type: "cloud" },
+      nucleation: { id: "edge-core" },
+      taskPatterns: [
+        {
+          name: "relay",
+          stages: [
+            {
+              name: "forward",
+              source: "operator",
+              receiveSignals: { GO: "operator::relay.forward.go" },
+              sendSignals: ["done"],
+              executor: {
+                supplierType: "zhixu",
+                zhixuExecutorConfig: {
+                  target: { zhixu: dockDemoTargetName },
+                  interface: "production_evidence",
+                  order: { mode: "existing" },
+                  signalMap: { cmp: "scrap_declared" },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const uid = definitionUid(definition);
+  return {
+    zhixu: uid,
+    definition,
+    definitionRefHash: definitionRefHash(uid),
+    artifactHash: `0x${"ab".repeat(32)}` as `0x${string}`,
+    published: true,
+    interfaces: [],
+    ...(withEdges ? { dockEdges: [{ target: dockDemoTargetName }] } : {}),
+  };
+}
+
+test("rejects resolution manifests whose dockEdges diverge from the embedded definition", () => {
+  const manifest = (withEdges: boolean): DockResolutionManifest => ({
+    schemaVersion: "uvp.dock.resolution.v2",
+    definitions: [resolutionEntryWithStaticEdge(withEdges)],
+  });
+
+  // 漏报出边 = 绕过 D015 环检测的形态，编译期拒绝。
+  assert.throws(
+    () => prepareDockResolution(manifest(false)),
+    /dockEdges must declare static target "friction_wheel_production"/,
+  );
+  // 等价声明 → 放行。
+  assert.doesNotThrow(() => prepareDockResolution(manifest(true)));
+  // 多声明（定义未静态引用的出边）同样拒绝。
+  assert.throws(
+    () =>
+      prepareDockResolution({
+        schemaVersion: "uvp.dock.resolution.v2",
+        definitions: [
+          {
+            ...resolutionEntryWithStaticEdge(true),
+            dockEdges: [
+              { target: dockDemoTargetName },
+              { target: "phantom_target" },
+            ],
+          },
+        ],
+      }),
+    /dockEdges declares target "phantom_target" which the embedded definition never statically references/,
+  );
+  // 重复出边拒绝。
+  assert.throws(
+    () =>
+      prepareDockResolution({
+        schemaVersion: "uvp.dock.resolution.v2",
+        definitions: [
+          {
+            ...resolutionEntryWithStaticEdge(true),
+            dockEdges: [
+              { target: dockDemoTargetName },
+              { target: dockDemoTargetName },
+            ],
+          },
+        ],
+      }),
+    /duplicates target "friction_wheel_production"/,
+  );
+});
+
+test("rejects resolution manifests whose evmPlanId diverges from the embedded definition", () => {
+  assert.throws(
+    () =>
+      prepareDockResolution({
+        schemaVersion: "uvp.dock.resolution.v2",
+        definitions: [
+          {
+            ...resolutionEntryWithStaticEdge(true),
+            evmPlanId: `0x${"cd".repeat(32)}` as `0x${string}`,
+          },
+        ],
+      }),
+    /evmPlanId does not match the recomputed/,
+  );
+});
+
+test("dock route commitment recomputation fails closed on missing identity fields", () => {
+  const plan = compileZhixuHookPlan(
+    dockSourcingParentDefinition(dockDemoTargetName),
+    demoManifest,
+  );
+  const stripped = {
+    ...plan,
+    dockRoutes: plan.dockRoutes.map((route, index) =>
+      index === 0
+        ? {
+            ...route,
+            local: { ...route.local, definitionRefHash: undefined as unknown as string },
+          }
+        : route,
+    ),
+  };
+  const issues = validateHookPlanArtifact(stripped);
+  assert.ok(
+    issues.includes(
+      "artifact.dockRoutes[0].local.definitionRefHash must be a lowercase 32-byte hex hash",
+    ),
+    `expected explicit fail-closed issue, got: ${JSON.stringify(issues)}`,
   );
 });
 
@@ -331,16 +521,19 @@ test("dependencyIndex ordering follows code-point (Rust byte) order for astral-p
     `${source}::${signalName}`;
 
   // 码点序（Rust BTreeMap/BTreeSet 产物）：键与每键 hookIds 都按码点排，
-  // 高 BMP 键在前、星面键在后 → 通过。
+  // 高 BMP 键在前、星面键在后 → 通过。（compiledHooks 已被重写，planHash
+  // 按载荷重签以聚焦 dependencyIndex 排序本身。）
   assert.doesNotThrow(() =>
-    assertHookPlanArtifact({
-      ...artifact,
-      dependencyIndex: {
-        [dependencyKey("buyer", "shared.sig")]: [bmpHook, astralHook],
-        [dependencyKey("\u{FFFD}", "sig")]: [bmpHook],
-        [dependencyKey("\u{1F600}", "sig")]: [astralHook],
-      },
-    })
+    assertHookPlanArtifact(
+      resign({
+        ...artifact,
+        dependencyIndex: {
+          [dependencyKey("buyer", "shared.sig")]: [bmpHook, astralHook],
+          [dependencyKey("\u{FFFD}", "sig")]: [bmpHook],
+          [dependencyKey("\u{1F600}", "sig")]: [astralHook],
+        },
+      })
+    )
   );
 
   // UTF-16 码元序变体 1（hookIds 代理对在前）→ 必须被拒绝。

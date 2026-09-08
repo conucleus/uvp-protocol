@@ -138,6 +138,7 @@ export function compileOnchainHookPlan(
     declaredStageIdentifiers(
       hookPlanArtifact.signalCapabilities.map((capability) => capability.stageIdentifier),
       Object.keys(hookPlanArtifact.executorRoutes),
+      hookPlanArtifact.dockRoutes.map((route) => route.local.stageIdentifier),
       hookPlanArtifact.selectedStageBindings.flatMap((binding) => [
         binding.selectorStageIdentifier,
         binding.targetStageIdentifier,
@@ -148,6 +149,14 @@ export function compileOnchainHookPlan(
   const dependencyCountIssues = planDependencyCountIssues(compiledHooks);
   const capabilityCountIssues = signalCapabilityCountIssues(
     hookPlanArtifact.signalCapabilities,
+  );
+  const currentOrderFactKeyIssues = duplicateCurrentOrderFactKeyIssues(
+    hookPlanArtifact.signalCapabilities.map((capability) => ({
+      stage: capability.stageIdentifier,
+      sourceId: onchainSourceId(capability.targetSource),
+      signalId: onchainSignalId(capability.targetSignalName),
+      isCurrentOrder: capability.targetOrderRelation === "current",
+    })),
   );
   // 链轨拒绝（PRD_100 §17/§5.2）：Rust 两个 profile 都放行 existing 与
   // 动态 target（hook plan 产物携带 unresolvedDockRoutes 声明面，§8.8），
@@ -164,6 +173,7 @@ export function compileOnchainHookPlan(
     ...silentTriggerIssues,
     ...dependencyCountIssues,
     ...capabilityCountIssues,
+    ...currentOrderFactKeyIssues,
     ...dockTrackIssues,
     ...unresolvedTrackIssues,
   ];
@@ -337,6 +347,14 @@ export function validateOnchainHookPlanArtifact(
                 ? route.stageIdentifier
                 : undefined,
             ),
+          (Array.isArray(value.dockRoutes) ? value.dockRoutes : []).map(
+            (route) =>
+              isRecord(route) &&
+              isRecord(route.local) &&
+              typeof route.local.stageIdentifier === "string"
+                ? route.local.stageIdentifier
+                : undefined,
+          ),
           (selectorBindings ?? []).flatMap((binding) =>
             isRecord(binding)
               ? [
@@ -372,6 +390,26 @@ export function validateOnchainHookPlanArtifact(
   }
   if (signalCapabilities) {
     issues.push(...validateOnchainSignalCapabilities(signalCapabilities));
+    issues.push(
+      ...duplicateCurrentOrderFactKeyIssues(
+        (signalCapabilities as readonly unknown[]).flatMap((capability) =>
+          isRecord(capability) &&
+          typeof capability.stageIdentifier === "string" &&
+          typeof capability.targetSourceId === "string" &&
+          typeof capability.signalId === "string"
+            ? [
+                {
+                  stage: capability.stageIdentifier,
+                  sourceId: capability.targetSourceId,
+                  signalId: capability.signalId,
+                  isCurrentOrder:
+                    capability.targetOrderRelation === "current",
+                },
+              ]
+            : [],
+        ),
+      ),
+    );
   }
 
   if (isPlanHashRecomputable(value)) {
@@ -1017,6 +1055,48 @@ function solidityTargetOrderRelation(
   }
 }
 
+/**
+ * E16 镜像（uvp-constraints.v1.json rejectionSurfaces
+ * e16-current-order-factkey-unique-owner）：relation=0（current）的事实键
+ * (targetSourceId, signalId) 在 plan 内有唯一属主阶段——跨阶段重复声明在
+ * UVPPlanMetadataModule finalizePlan 的注册守卫 revert
+ * DuplicateCurrentOrderSignalCapability。此类 plan 能通过 commitPlan、
+ * finalize 永久 revert（planId 烧毁，2318中2），这里是 artifact 边界的
+ * 编译期预检；Rust/Go 镜像仍欠（F075 镜像债的 TS 线部分）。
+ */
+function duplicateCurrentOrderFactKeyIssues(
+  capabilities: readonly {
+    readonly stage: string;
+    readonly sourceId: string;
+    readonly signalId: string;
+    readonly isCurrentOrder: boolean;
+  }[],
+): readonly string[] {
+  const issues: string[] = [];
+  const owners = new Map<string, string>();
+  for (const capability of capabilities) {
+    if (!capability.isCurrentOrder) {
+      continue;
+    }
+    const factKey = `${capability.sourceId}:${capability.signalId}`;
+    const owner = owners.get(factKey);
+    if (owner === undefined) {
+      owners.set(factKey, capability.stage);
+      continue;
+    }
+    if (owner !== capability.stage) {
+      issues.push(
+        `stage ${capability.stage} declares the current-order fact key `
+          + `(${capability.sourceId}, ${capability.signalId}) already owned by stage ${owner}; `
+          + "UVPPlanMetadataModule reverts DuplicateCurrentOrderSignalCapability at "
+          + "finalizePlan, so the plan would commit but finalize permanently — "
+          + "declare the fact key on a single stage",
+      );
+    }
+  }
+  return issues;
+}
+
 function validateOnchainCompiledHooks(
   hooks: readonly unknown[],
   executorRoutes: readonly unknown[],
@@ -1541,10 +1621,12 @@ function onchainUnresolvedRouteIssues(
 
 /**
  * artifact 边界可见的“阶段声明”全集：sendSignals（signalCapabilities）、
- * executor（executorRoutes）、selectedStages（selectorBindings 两侧）三类
- * 声明各留一处投影；receiveSignals 的投影是 compiledHooks 本体。零 hook
- * 阶段没有 compiledHooks 记录，只能从这三处发现——非字符串项交由形状
- * 校验报错，这里静默跳过。
+ * executor（executorRoutes）、dock 委托（dockRoutes）、selectedStages
+ * （selectorBindings 两侧）四类声明各留一处投影；receiveSignals 的投影是
+ * compiledHooks 本体。零 hook 阶段没有 compiledHooks 记录，只能从这四处
+ * 发现——zhixu 委托阶段只出现在 dockRoutes 一侧、不进 executorRoutes，漏
+ * 投影会让手工制品绕过零 hook 门。非字符串项交由形状校验报错，这里静默
+ * 跳过。
  */
 function declaredStageIdentifiers(
   ...identifierGroups: readonly (readonly (string | undefined)[])[]

@@ -156,6 +156,34 @@ function prepareTargetEntry(
       `${path}: target artifact ${uid} is not published/immutable`,
     );
   }
+  // evmPlanId 是目标定义的派生 planId（同 keyed preimage：compiler/platform/
+  // zhixuId/zhixuName），可从内嵌定义独立重算——manifest 自身可重算的
+  // 承诺面到此为止（artifactHash = 目标 plan 的 planHash，目标 plan 不在
+  // manifest 内，无法在此重算，信任边界在发布流程）。
+  if (entry.evmPlanId !== undefined) {
+    const recomputedPlanId = planIdOf(
+      uid,
+      entry.definition.metadata.name,
+      entry.definition.spec.platform,
+    );
+    if (entry.evmPlanId !== recomputedPlanId) {
+      throw new RangeError(
+        `${path}.evmPlanId does not match the recomputed H(uvp:hook-plan-id:v1; compiler/platform/zhixuId/zhixuName) over the embedded definition`,
+      );
+    }
+  }
+  // manifest 声明面对内嵌定义的交叉重算：dockEdges（静态出边）与
+  // interfaces（接口声明）都是"持有定义全文却纯信任输入"的字段——漏报
+  // dockEdges 会绕过 core D015 的启动图环检测，接口漂移则让调用方按
+  // 幻影端口组装配 route。
+  const edgeIssues = dockEdgeCorrespondenceIssues(entry, path);
+  if (edgeIssues.length > 0) {
+    throw new RangeError(edgeIssues.join("; "));
+  }
+  const interfaceIssues = interfaceCorrespondenceIssues(entry, path);
+  if (interfaceIssues.length > 0) {
+    throw new RangeError(interfaceIssues.join("; "));
+  }
   const dockInterfaceRoot = merkleRoot(
     entry.interfaces.map((interfaceEntry) => interfaceEntry.interfaceRoot),
   );
@@ -566,6 +594,7 @@ export function assembleChainTrackHookPlan(
       shell.selectedStageBindings as HookPlanArtifact["selectedStageBindings"],
     signalCapabilities:
       shell.signalCapabilities as HookPlanArtifact["signalCapabilities"],
+    source: payload.source,
     planHash,
   };
 }
@@ -581,6 +610,45 @@ export function planIdOf(
     zhixuId,
     zhixuName,
   });
+}
+
+/**
+ * planHash 的 preimage 装配（与 assembleChainTrackHookPlan 同口径）：
+ * 边界校验用它对携带字段整体重算，防"篡改 compiledHooks + 保留旧
+ * planHash"的毒制品通过反序列化校验。
+ */
+export function hookPlanPayloadForHash(
+  artifact: Omit<HookPlanArtifact, "planHash">,
+): Record<string, unknown> {
+  const unresolved =
+    artifact.unresolvedDockRoutes === undefined ||
+    artifact.unresolvedDockRoutes.length === 0
+      ? {}
+      : { unresolvedDockRoutes: artifact.unresolvedDockRoutes };
+  return {
+    schemaVersion: artifact.schemaVersion,
+    planId: artifact.planId,
+    zhixuId: artifact.zhixuId,
+    zhixuName: artifact.zhixuName,
+    platform: artifact.platform,
+    compiledHooks: artifact.compiledHooks,
+    dependencyIndex: artifact.dependencyIndex,
+    executorRoutes: artifact.executorRoutes,
+    dockInterface: artifact.dockInterface,
+    dockRoutes: artifact.dockRoutes,
+    dockRoutesRoot: artifact.dockRoutesRoot,
+    dockInterfaceRoot: artifact.dockInterfaceRoot,
+    selectedStageBindings: artifact.selectedStageBindings,
+    signalCapabilities: artifact.signalCapabilities,
+    source: artifact.source,
+    ...unresolved,
+  };
+}
+
+export function hookPlanHashOf(
+  artifact: Omit<HookPlanArtifact, "planHash">,
+): HexString {
+  return hashCanonical(HOOK_PLAN_HASH_DOMAIN, hookPlanPayloadForHash(artifact));
 }
 
 function failNoResolution(route: NeutralDockRoute): PreparedDockResolution {
@@ -636,4 +704,139 @@ function splitCanonicalSignal(signal: string): [string, string] {
 /** 字节序比较（Rust str Ord）；hex word 与 ASCII 标识符上等价于码点序。 */
 function compareBytes(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/**
+ * dockEdges 声明 vs 内嵌定义静态出边（各 stage zhixu 执行者解析态目标
+ * name 集）的交叉比对：D015 的启动图以 manifest 声明为边源，漏报即绕过
+ * 环检测——集不相等（含缺声明/多声明/重复）一律拒绝。
+ */
+function dockEdgeCorrespondenceIssues(
+  entry: DockResolutionTarget,
+  path: string,
+): readonly string[] {
+  const issues: string[] = [];
+  const derived = new Set<string>();
+  for (const pattern of entry.definition.spec.taskPatterns) {
+    for (const stage of pattern.stages) {
+      const targetName = stage.executor?.zhixuExecutorConfig?.target?.zhixu;
+      if (typeof targetName === "string") {
+        derived.add(targetName);
+      }
+    }
+  }
+  const declared = entry.dockEdges ?? [];
+  const declaredSet = new Set<string>();
+  for (const [index, edge] of declared.entries()) {
+    if (declaredSet.has(edge.target)) {
+      issues.push(
+        `${path}.dockEdges[${index}] duplicates target ${JSON.stringify(edge.target)}`,
+      );
+      continue;
+    }
+    declaredSet.add(edge.target);
+  }
+  for (const target of derived) {
+    if (!declaredSet.has(target)) {
+      issues.push(
+        `${path}.dockEdges must declare static target ${JSON.stringify(target)} `
+        + "(referenced by a zhixu executor in the embedded definition; omitting it bypasses the D015 startup-graph cycle check)",
+      );
+    }
+  }
+  for (const target of declaredSet) {
+    if (!derived.has(target)) {
+      issues.push(
+        `${path}.dockEdges declares target ${JSON.stringify(target)} which the embedded definition never statically references`,
+      );
+    }
+  }
+  return issues;
+}
+
+/**
+ * manifest interfaces vs 内嵌定义 spec.dockInterface 的对应性比对：接口
+ * 名/下单模式/端口及其 hook/signal 引用逐项相等——自不一致的发布面在
+ * 编译期拒绝，调用方不得按幻影端口组装 route。
+ */
+function interfaceCorrespondenceIssues(
+  entry: DockResolutionTarget,
+  path: string,
+): readonly string[] {
+  const issues: string[] = [];
+  const declared = entry.definition.spec.dockInterface ?? {};
+  const declaredNames = new Set(Object.keys(declared));
+  const artifactNames = new Set<string>();
+  for (const [index, artifactInterface] of entry.interfaces.entries()) {
+    const interfacePath = `${path}.interfaces[${index}]`;
+    const name = artifactInterface.name;
+    if (artifactNames.has(name)) {
+      issues.push(`${interfacePath} duplicates interface name ${JSON.stringify(name)}`);
+      continue;
+    }
+    artifactNames.add(name);
+    const source = declared[name];
+    if (source === undefined) {
+      issues.push(
+        `${interfacePath} is absent from the embedded definition's spec.dockInterface`,
+      );
+      continue;
+    }
+    if (
+      [...source.orderModes].sort(compareBytes).join(",") !==
+      [...artifactInterface.orderModes].sort(compareBytes).join(",")
+    ) {
+      issues.push(
+        `${interfacePath}.orderModes must equal spec.dockInterface[${JSON.stringify(name)}].orderModes`,
+      );
+    }
+    const sourceInputs = source.inputs ?? {};
+    for (const port of artifactInterface.inputs) {
+      const sourcePort = sourceInputs[port.port];
+      if (sourcePort === undefined) {
+        issues.push(
+          `${interfacePath}.inputs declares port ${JSON.stringify(port.port)} absent from the definition`,
+        );
+      } else if (sourcePort.hook !== port.hookId) {
+        issues.push(
+          `${interfacePath}.inputs[${JSON.stringify(port.port)}].hookId must equal the definition's hook reference`,
+        );
+      }
+    }
+    for (const portName of Object.keys(sourceInputs)) {
+      if (!artifactInterface.inputs.some((port) => port.port === portName)) {
+        issues.push(
+          `${interfacePath}.inputs must declare definition port ${JSON.stringify(portName)}`,
+        );
+      }
+    }
+    const sourceOutputs = source.outputs ?? {};
+    for (const port of artifactInterface.outputs) {
+      const sourcePort = sourceOutputs[port.port];
+      if (sourcePort === undefined) {
+        issues.push(
+          `${interfacePath}.outputs declares port ${JSON.stringify(port.port)} absent from the definition`,
+        );
+      } else if (sourcePort.signal !== port.canonicalOutputSignal) {
+        issues.push(
+          `${interfacePath}.outputs[${JSON.stringify(port.port)}].canonicalOutputSignal must equal the definition's signal`,
+        );
+      }
+    }
+    for (const portName of Object.keys(sourceOutputs)) {
+      if (!artifactInterface.outputs.some((port) => port.port === portName)) {
+        issues.push(
+          `${interfacePath}.outputs must declare definition port ${JSON.stringify(portName)}`,
+        );
+      }
+    }
+  }
+  for (const name of declaredNames) {
+    if (!artifactNames.has(name)) {
+      issues.push(
+        `${path}.interfaces must declare spec.dockInterface entry ${JSON.stringify(name)}`,
+      );
+    }
+  }
+  return issues;
 }

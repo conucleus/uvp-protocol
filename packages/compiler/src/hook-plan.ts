@@ -8,9 +8,13 @@ import {
 } from "./types/index.js";
 import { validateDockCommitments } from "./dock-validation.js";
 import { compareByCodePoint } from "./canonical.js";
+import { hashCanonical } from "./hash.js";
 import {
   assembleChainTrackHookPlan,
+  hookPlanPayloadForHash,
+  planIdOf,
   prepareDockResolution,
+  HOOK_PLAN_HASH_DOMAIN,
   type HookPlanShell,
 } from "./dock-commitments.js";
 
@@ -109,6 +113,44 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
     issues.push("platform must be an object with a non-empty type");
   }
   expectHexHash(value.planHash, "planHash", issues);
+
+  // 承诺重算（对齐 onchain 侧 hashOnchainPlanPayload 的边界口径）：planId
+  // 与 planHash 都从携带字段独立重推导——篡改 compiledHooks/source 后保留
+  // 旧 planHash 的毒制品在此拒绝，不等到链上。重算抛错（负载携带非 JSON
+  // 值）同样按 issue 报告，校验器的契约是返回 issues 而非抛出。
+  if (isPlatform(value.platform) && typeof value.zhixuId === "string" && typeof value.zhixuName === "string") {
+    try {
+      const recomputedPlanId = planIdOf(value.zhixuId, value.zhixuName, value.platform);
+      if (typeof value.planId === "string" && value.planId !== recomputedPlanId) {
+        issues.push(
+          "planId must match the recomputed H(uvp:hook-plan-id:v1; compiler/platform/zhixuId/zhixuName)",
+        );
+      }
+    } catch {
+      issues.push("planId preimage is not canonicalizable (platform carries non-JSON values)");
+    }
+  }
+  if (value.source === undefined) {
+    issues.push(
+      "source is required (the canonical annotation-stripped definition snapshot in the planHash preimage)",
+    );
+  } else if (typeof value.planHash === "string" && /^0x[0-9a-f]{64}$/.test(value.planHash)) {
+    try {
+      const recomputedPlanHash = hashCanonical(
+        HOOK_PLAN_HASH_DOMAIN,
+        hookPlanPayloadForHash(value as Omit<HookPlanArtifact, "planHash">),
+      );
+      if (value.planHash !== recomputedPlanHash) {
+        issues.push(
+          "planHash must match the recomputed H(uvp:hook-plan-artifact:v1; payload) over the carried fields",
+        );
+      }
+    } catch {
+      issues.push(
+        "planHash preimage is not canonicalizable (payload carries undefined or non-JSON values)",
+      );
+    }
+  }
 
   const compiledHooks = Array.isArray(value.compiledHooks) ? value.compiledHooks : undefined;
   if (!compiledHooks) {
