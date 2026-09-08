@@ -326,6 +326,22 @@ export const TRIGGER_ORDER_FROM_SIGNAL_TYPED_DATA_FIELDS: readonly ProductSubmit
     { name: "deadline", type: "uint256" },
   ];
 
+// 与 UVPDerivedSignalModule._DERIVED_SIGNAL_TYPEHASH 逐字段一致。
+export const DERIVED_SIGNAL_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] =
+  [
+    { name: "fromPlanId", type: "bytes32" },
+    { name: "fromOrderId", type: "bytes32" },
+    { name: "fromStageId", type: "bytes32" },
+    { name: "targetPlanId", type: "bytes32" },
+    { name: "targetOrderId", type: "bytes32" },
+    { name: "targetSourceId", type: "bytes32" },
+    { name: "signalId", type: "bytes32" },
+    { name: "payloadHash", type: "bytes32" },
+    { name: "idempotencyKey", type: "bytes32" },
+    { name: "submitter", type: "address" },
+    { name: "deadline", type: "uint256" },
+  ];
+
 export const STAGE_EXECUTOR_PATCH_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] =
   [
     { name: "planId", type: "bytes32" },
@@ -448,6 +464,46 @@ export interface TriggerOrderFromSignalPayload {
   readonly idempotencyKey: Hex | string;
   readonly submitter: Address | string;
   readonly deadline: bigint | number | string;
+}
+
+export interface DerivedSignalPayload {
+  readonly fromPlanId: Hex | string;
+  readonly fromOrderId: Hex | string;
+  readonly fromStageId: Hex | string;
+  readonly targetPlanId: Hex | string;
+  readonly targetOrderId: Hex | string;
+  readonly targetSourceId: Hex | string;
+  readonly signalId: Hex | string;
+  readonly payloadHash: Hex | string;
+  readonly idempotencyKey: Hex | string;
+  readonly submitter: Address | string;
+  readonly deadline: bigint | number | string;
+}
+
+export interface DerivedSignalTypedData {
+  readonly domain: {
+    readonly name: typeof DERIVED_SIGNAL_DOMAIN_NAME;
+    readonly version: typeof DERIVED_SIGNAL_DOMAIN_VERSION;
+    readonly chainId: number;
+    readonly verifyingContract: Address;
+  };
+  readonly types: {
+    readonly UVPDerivedSignalModuleSignal: readonly ProductSubmitTypedDataField[];
+  };
+  readonly primaryType: typeof DERIVED_SIGNAL_PRIMARY_TYPE;
+  readonly message: {
+    readonly fromPlanId: Hex;
+    readonly fromOrderId: Hex;
+    readonly fromStageId: Hex;
+    readonly targetPlanId: Hex;
+    readonly targetOrderId: Hex;
+    readonly targetSourceId: Hex;
+    readonly signalId: Hex;
+    readonly payloadHash: Hex;
+    readonly idempotencyKey: Hex;
+    readonly submitter: Address;
+    readonly deadline: string;
+  };
 }
 
 export interface TriggerOrderFromOutsideTypedData {
@@ -664,6 +720,12 @@ export interface BuildTriggerOrderFromSignalTypedDataInput
   readonly chainId: number;
   readonly verifyingContract: Address | string;
   readonly authorizations: readonly SignalAuthorizationPayload[];
+}
+
+export interface BuildDerivedSignalTypedDataInput
+  extends DerivedSignalPayload {
+  readonly chainId: number;
+  readonly verifyingContract: Address | string;
 }
 
 export interface BuildStageExecutorPatchTypedDataInput
@@ -1141,6 +1203,39 @@ export function buildTriggerOrderFromSignalTypedData(
   };
 }
 
+export function buildDerivedSignalTypedData(
+  input: BuildDerivedSignalTypedDataInput,
+): DerivedSignalTypedData {
+  return {
+    domain: {
+      name: DERIVED_SIGNAL_DOMAIN_NAME,
+      version: DERIVED_SIGNAL_DOMAIN_VERSION,
+      chainId: normalizeChainId(input.chainId),
+      verifyingContract: normalizeAddress(
+        input.verifyingContract,
+        "verifyingContract",
+      ),
+    },
+    types: {
+      UVPDerivedSignalModuleSignal: DERIVED_SIGNAL_TYPED_DATA_FIELDS,
+    },
+    primaryType: DERIVED_SIGNAL_PRIMARY_TYPE,
+    message: {
+      fromPlanId: normalizeBytes32(input.fromPlanId, "fromPlanId"),
+      fromOrderId: normalizeBytes32(input.fromOrderId, "fromOrderId"),
+      fromStageId: normalizeBytes32(input.fromStageId, "fromStageId"),
+      targetPlanId: normalizeBytes32(input.targetPlanId, "targetPlanId"),
+      targetOrderId: normalizeBytes32(input.targetOrderId, "targetOrderId"),
+      targetSourceId: normalizeBytes32(input.targetSourceId, "targetSourceId"),
+      signalId: normalizeBytes32(input.signalId, "signalId"),
+      payloadHash: normalizeBytes32(input.payloadHash, "payloadHash"),
+      idempotencyKey: normalizeBytes32(input.idempotencyKey, "idempotencyKey"),
+      submitter: normalizeAddress(input.submitter, "submitter"),
+      deadline: normalizeUintString(input.deadline, "deadline"),
+    },
+  };
+}
+
 export function buildStageExecutorPatchTypedData(
   input: BuildStageExecutorPatchTypedDataInput,
 ): StageExecutorPatchTypedData {
@@ -1258,6 +1353,20 @@ export async function recoverTriggerOrderFromSignalSigner(
     signature: normalizeHex(signature, "signature"),
   } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
   return normalizeAddress(recovered, "recoveredTriggerOrderSigner");
+}
+
+export async function recoverDerivedSignalSigner(
+  typedData: DerivedSignalTypedData,
+  signature: Hex | string,
+): Promise<Address> {
+  const recovered = await recoverTypedDataAddress({
+    domain: typedData.domain,
+    types: typedData.types,
+    primaryType: typedData.primaryType,
+    message: typedData.message,
+    signature: normalizeHex(signature, "signature"),
+  } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
+  return normalizeAddress(recovered, "recoveredDerivedSignalSigner");
 }
 
 export async function recoverStageExecutorPatchSigner(
@@ -1588,6 +1697,12 @@ export function canonicalJson(value: unknown): string {
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
       throw new TypeError("canonical JSON does not support non-finite numbers");
+    }
+    // -0 保留符号（Rust 权威对 serde_json Number 原样透传，f64 -0.0 序列化
+    // 为 "-0.0"）；JSON.stringify 会丢符号输出 "0"，让同一份证据在 TS 与
+    // Rust 权威哈希上分叉。
+    if (Object.is(value, -0)) {
+      return "-0.0";
     }
     return JSON.stringify(value);
   }

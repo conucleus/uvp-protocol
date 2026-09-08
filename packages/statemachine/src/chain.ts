@@ -102,8 +102,18 @@ export interface ChainOrderTriggeredEvent extends ChainEventBase {
 
 export interface ChainOrderLinkedEvent extends ChainEventBase {
   readonly eventName: "OrderLinked";
+  /**
+   * Frozen payload (UVPOrderLinkModule): OrderLinked(bytes32 indexed
+   * triggeredOrderId, bytes32 indexed triggerOriginOrderId, bytes32 indexed
+   * triggerStageId, bytes32 planId, bytes32 originPlanId, bytes32
+   * originSourceId, bytes32 originSignalId). The composite (planId, orderId)
+   * identities must ride on every link event — two plans with the same
+   * numeric order ids produce byte-different events only through these keys.
+   */
+  readonly planId: HexString;
   readonly triggeredOrderId: string;
   readonly triggerOriginOrderId: string;
+  readonly originPlanId: HexString;
   readonly triggerStageId: string;
   readonly originSourceId: string;
   readonly originSignalId: string;
@@ -319,8 +329,9 @@ type OracleFeedEvent = ChainModeEvent | ProjectedHookStatusChangedEvent;
  * status observations (ready transitions are observed through HookReady), so
  * feeding the →Ready/→Init status changes the contract emits alongside
  * HookReady would surface as guaranteed missing-observed mismatches (G-04).
- * A HookStatusChanged event without a valid newStatus violates the frozen
- * v0.10 contract and fails loudly instead of passing through untouched.
+ * A HookStatusChanged event without a valid newStatus — or with a status
+ * value outside the frozen v0.10 set {init, wait, ready, cxl} — violates the
+ * frozen contract and fails loudly instead of being silently dropped.
  */
 function normalizeChainEventForOracle(event: ChainModeEvent): OracleFeedEvent | undefined {
   if (event.eventName === "HookStatusChanged") {
@@ -330,7 +341,12 @@ function normalizeChainEventForOracle(event: ChainModeEvent): OracleFeedEvent | 
       );
     }
     if (event.newStatus !== "wait" && event.newStatus !== "cxl") {
-      return undefined;
+      if (event.newStatus === "ready" || event.newStatus === "init") {
+        return undefined;
+      }
+      throw new Error(
+        `HookStatusChanged ${event.hookId} carries unknown newStatus ${JSON.stringify(event.newStatus)}; frozen v0.10 statuses are init/wait/ready/cxl`
+      );
     }
     const { previousStatus: _previousStatus, newStatus: _newStatus, ...rest } = event;
     return { ...rest, status: event.newStatus };

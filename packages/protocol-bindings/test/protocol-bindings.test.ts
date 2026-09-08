@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  concatHex,
   decodeEventLog,
   decodeFunctionData,
   encodeAbiParameters,
+  hashTypedData,
   keccak256,
   stringToHex,
   toEventHash,
@@ -23,6 +25,7 @@ import {
   STAGE_PATCH_MODULE_ABI,
   buildApplyStageExecutorPatchForCall,
   buildApplyStageResourcePatchForCall,
+  buildDerivedSignalTypedData,
   buildProductSubmitTypedData,
   buildStageExecutorPatchTypedData,
   buildStageResourcePatchTypedData,
@@ -38,6 +41,7 @@ import {
   hashStageResourcePatchPayload,
   STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN,
   STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN,
+  recoverDerivedSignalSigner,
   recoverProductSubmitSigner,
   recoverStageExecutorPatchSigner,
   recoverStageResourcePatchSigner,
@@ -632,6 +636,111 @@ describe("protocol bindings", () => {
     assert.match(call.data, /^0x[0-9a-f]+$/);
   });
 
+  it("builds derived signal typed data whose digest matches the module formula", async () => {
+    const typedData = buildDerivedSignalTypedData({
+      fromPlanId: planId,
+      fromOrderId: orderId,
+      fromStageId: targetStageId,
+      targetPlanId,
+      targetOrderId: bytes32("11"),
+      targetSourceId: sourceId,
+      signalId,
+      payloadHash,
+      idempotencyKey,
+      submitter,
+      deadline,
+      chainId: 31337,
+      verifyingContract,
+    });
+
+    assert.equal(typedData.domain.name, "UVPDerivedSignalModule");
+    assert.equal(typedData.domain.version, "0.6");
+    assert.equal(typedData.primaryType, "UVPDerivedSignalModuleSignal");
+
+    // 与 UVPDerivedSignalModule.derivedSignalDigest 的链上公式逐字段对拍：
+    // typehash（字段名/顺序即冻结面）、domain separator、struct hash。
+    const typehash = keccak256(
+      stringToHex(
+        "UVPDerivedSignalModuleSignal(bytes32 fromPlanId,bytes32 fromOrderId,bytes32 fromStageId,bytes32 targetPlanId,bytes32 targetOrderId,bytes32 targetSourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)",
+      ),
+    );
+    const domainSeparator = keccak256(
+      encodeAbiParameters(
+        [
+          { name: "typehash", type: "bytes32" },
+          { name: "name", type: "bytes32" },
+          { name: "version", type: "bytes32" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        [
+          keccak256(
+            stringToHex(
+              "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
+            ),
+          ),
+          keccak256(stringToHex("UVPDerivedSignalModule")),
+          keccak256(stringToHex("0.6")),
+          31337n,
+          verifyingContract,
+        ],
+      ),
+    );
+    const structHash = keccak256(
+      encodeAbiParameters(
+        [
+          { name: "typehash", type: "bytes32" },
+          { name: "fromPlanId", type: "bytes32" },
+          { name: "fromOrderId", type: "bytes32" },
+          { name: "fromStageId", type: "bytes32" },
+          { name: "targetPlanId", type: "bytes32" },
+          { name: "targetOrderId", type: "bytes32" },
+          { name: "targetSourceId", type: "bytes32" },
+          { name: "signalId", type: "bytes32" },
+          { name: "payloadHash", type: "bytes32" },
+          { name: "idempotencyKey", type: "bytes32" },
+          { name: "submitter", type: "address" },
+          { name: "deadline", type: "uint256" },
+        ],
+        [
+          typehash,
+          planId,
+          orderId,
+          targetStageId,
+          targetPlanId,
+          bytes32("11"),
+          sourceId,
+          signalId,
+          payloadHash,
+          idempotencyKey,
+          submitter,
+          BigInt(deadline),
+        ],
+      ),
+    );
+    const expectedDigest = keccak256(
+      concatHex(["0x1901", domainSeparator, structHash]),
+    );
+    assert.equal(
+      await hashTypedData({
+        domain: typedData.domain,
+        types: typedData.types,
+        primaryType: typedData.primaryType,
+        message: typedData.message,
+      }),
+      expectedDigest,
+    );
+
+    // 签名/恢复闭环：module 的 submitter 即 EIP-712 签名者。
+    const signature = await account.signTypedData({
+      domain: typedData.domain,
+      types: typedData.types,
+      primaryType: typedData.primaryType,
+      message: typedData.message,
+    });
+    assert.equal(await recoverDerivedSignalSigner(typedData, signature), submitter);
+  });
+
   it("builds applyStageExecutorPatchFor calls from the stage patch module ABI", () => {
     const selectorSignature = `0x${"bb".repeat(65)}` as const;
     const previousExecutorSignature = `0x${"dd".repeat(65)}` as const;
@@ -783,7 +892,10 @@ describe("protocol bindings", () => {
       canonicalJson({ b: 2, a: { d: 4, c: 3 } }),
       '{"a":{"c":3,"d":4},"b":2}',
     );
-    assert.equal(canonicalJson({ n: -0 }), '{"n":0}');
+    // -0 保留符号（Rust 权威 serde_json 对 f64 -0.0 输出 "-0.0"）；
+    // JSON.stringify 丢符号的 "0" 会与权威哈希分叉。
+    assert.equal(canonicalJson({ n: -0 }), '{"n":-0.0}');
+    assert.equal(canonicalJson({ n: 0 }), '{"n":0}');
     assert.throws(
       () => canonicalJson({ optional: undefined }),
       /undefined object properties/,
