@@ -273,8 +273,9 @@ async function main(): Promise<void> {
     "uvp-cloud-security-fixture",
   );
   const parentOrderKey = localOrderKey("order-fixture-001");
-  // new 模式：route 身份 + 本地单（幂等建单锚，A06）。合成向量必须与产物
-  // route.local.planId 同源，否则消费方会在生产推导里得到不同实例。
+  // new 模式：route 身份 + 本地单（幂等建单锚，A06）+ targetPlanId（实例
+  // 身份绑定对接目标 plan）。合成向量必须与产物 route.local.planId 同源，
+  // 否则消费方会在生产推导里得到不同实例。
   const dockInstance = dockInstanceId({
     runtimeDomain: evmDomain,
     localPlanId: parentPlan.planId,
@@ -284,6 +285,7 @@ async function main(): Promise<void> {
     routeHash: serviceRoute.routeHash,
     orderMode: "new",
     interfaceName: "production_service",
+    targetPlanId: targetPlan.planId,
   });
   const linkedOrder = linkedOrderId(
     dockInstance,
@@ -299,6 +301,7 @@ async function main(): Promise<void> {
     routeHash: evidenceRoute.routeHash,
     orderMode: "existing",
     interfaceName: "production_evidence",
+    targetPlanId: targetPlan.planId,
     targetOrderRef: "factory-a/P001",
   });
 

@@ -378,7 +378,8 @@ test("runtime domains and derived identities match the golden vectors", () => {
     expected.interfaceNameIds.production_evidence,
   );
 
-  // new 模式 dockInstanceId：恰 8 word（route 身份 + 本地单幂等建单锚）。
+  // new 模式 dockInstanceId：恰 9 word（route 身份 + 本地单幂等建单锚 +
+  // targetPlanId——实例身份绑定对接目标 plan）。
   const instance = dockInstanceId({
     runtimeDomain: expected.evmRuntimeDomain,
     localPlanId: inputs.parentPlanIdWord,
@@ -388,14 +389,30 @@ test("runtime domains and derived identities match the golden vectors", () => {
     routeHash: serviceRoute.routeHash,
     orderMode: "new",
     interfaceName: "production_service",
+    targetPlanId: expected.targetPlanId,
   });
   assert.equal(instance, expected.dockInstanceId);
   assert.equal(
     linkedOrderId(instance, expected.targetDefinitionRefHash),
     expected.linkedOrderId,
   );
+  // 换 targetPlanId 即换实例（preimage 绑定对接目标 plan）。
+  assert.notEqual(
+    dockInstanceId({
+      runtimeDomain: expected.evmRuntimeDomain,
+      localPlanId: inputs.parentPlanIdWord,
+      localDefinitionRefHash: expected.parentDefinitionRefHash,
+      localOrderKey: expected.localOrderKey,
+      routeId: serviceRoute.routeId,
+      routeHash: serviceRoute.routeHash,
+      orderMode: "new",
+      interfaceName: "production_service",
+      targetPlanId: inputs.parentPlanIdWord,
+    }),
+    expected.dockInstanceId,
+  );
 
-  // existing 模式：尾部追加第 9 word = target order 引用（A07）。
+  // existing 模式：尾部追加第 10 word = target order 引用（A07）。
   assert.equal(
     dockInstanceId({
       runtimeDomain: expected.cloudRuntimeDomain,
@@ -406,6 +423,7 @@ test("runtime domains and derived identities match the golden vectors", () => {
       routeHash: evidenceRoute.routeHash,
       orderMode: "existing",
       interfaceName: "production_evidence",
+      targetPlanId: expected.targetPlanId,
       targetOrderRef: inputs.existingTargetOrderRef,
     }),
     expected.existingDockInstanceId,
@@ -421,6 +439,7 @@ test("runtime domains and derived identities match the golden vectors", () => {
       routeHash: evidenceRoute.routeHash,
       orderMode: "existing",
       interfaceName: "production_evidence",
+      targetPlanId: expected.targetPlanId,
       targetOrderRef: "factory-a/P002",
     }),
     expected.existingDockInstanceId,
@@ -555,7 +574,7 @@ test("merkle proofs from the golden fixture verify against the roots", () => {
   void evidenceRoute;
 });
 
-test("EIP-712 entrance permit digest matches the golden vector (V2 typehash, version 3)", () => {
+test("EIP-712 entrance permit digest matches the golden vector (V2 typehash, version 4)", () => {
   const inputs = fixture.inputs;
   const serviceRoute = findRoute("production_service");
   const digest = eip712PermitDigest({

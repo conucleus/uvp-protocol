@@ -11,7 +11,7 @@ import type {
 /**
  * Zhixu Dock v2 跨运行时哈希库（链轨权威实现）。
  *
- * word 布局定稿冻结于 UVPDockingModule abiVersion 3.0（规格 =
+ * word 布局定稿冻结于 UVPDockingModule abiVersion 4.0（规格 =
  * packages/compiler/docs/dock-word-layout.md）：
  * - 所有 commitment = `keccak256(keccak256(domain) ‖ words…)`，等价于
  *   Solidity `keccak256(abi.encode(keccak256(domain), …))`；
@@ -337,8 +337,10 @@ export function targetOrderRefKey(orderRef: string): HexString {
 }
 
 /**
- * dockInstanceId v2（§8.5）：new 模式恰 8 word（幂等建单锚）；existing
- * 模式在尾部追加第 9 个 word = target order 引用（引用不同即不同实例）。
+ * dockInstanceId v2（§8.5）：new 模式恰 9 word（幂等建单锚，末 word =
+ * targetPlanId——接口承诺 word 可被第三方复制进自建 plan，实例/子单身份
+ * 必须与对接目标 plan 绑定）；existing 模式在尾部追加第 10 个 word =
+ * target order 引用（引用不同即不同实例）。
  */
 export function dockInstanceId(input: {
   readonly runtimeDomain: HexString;
@@ -349,6 +351,7 @@ export function dockInstanceId(input: {
   readonly routeHash: HexString;
   readonly orderMode: DockOrderMode;
   readonly interfaceName: string;
+  readonly targetPlanId: HexString;
   readonly targetOrderRef?: string;
 }): HexString {
   return keccakWords(DOMAIN_DOCK_INSTANCE, [
@@ -360,6 +363,7 @@ export function dockInstanceId(input: {
     input.routeHash,
     modeWord(input.orderMode),
     interfaceNameKey(input.interfaceName),
+    input.targetPlanId,
     ...(input.targetOrderRef === undefined
       ? []
       : [targetOrderRefKey(input.targetOrderRef)]),
@@ -606,8 +610,8 @@ export function dockRoutesRootOf(routes: readonly DockRouteV2[]): HexString {
 export const PERMIT_TYPEHASH =
   "UVPDockEntrancePermitV2(bytes32 targetPlanId,bytes32 targetEntrancePortId,bytes32 interfaceNameId,bytes32 localPlanId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,uint256 feeLimit,uint256 nonce,uint256 deadline)";
 
-/** 链侧 docking module EIP-712 域 version（abiVersion 3.0 线）。 */
-export const PERMIT_DOMAIN_VERSION = "3";
+/** 链侧 docking module EIP-712 域 version（abiVersion 4.0 线）。 */
+export const PERMIT_DOMAIN_VERSION = "4";
 export const PERMIT_DOMAIN_NAME = "UVPDockingModule";
 export const PERMIT_DOMAIN_TYPE =
   "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)";
