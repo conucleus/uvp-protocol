@@ -18,6 +18,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { compileOnchainHookPlan } from "../src/onchain-hook-plan.js";
+import { hookPlanHashOf } from "../src/dock-commitments.js";
+import type { HookPlanArtifact } from "../src/types/index.js";
 import {
   compileZhixuHookPlan,
   compileZhixuOnchainHookPlan,
@@ -50,7 +52,7 @@ const PINNED_VERSION = "uvp.constraints.v1" as const;
 //   uvp-core      crates/uvp-compiler/tests/constraints_registry.rs
 //   miniprogram   pkg/compiler/validator/constraints_registry_test.go
 const PINNED_SHA256 =
-  "b856474fac3effc92247ce3c5eeddecb031fe61ffaff07e1d1785a93436a4290";
+  "b310924486d2a05789615628d93ca4278868d2702e67cd8e33ae92703b0f5bc6";
 
 interface ConstraintsRule {
   readonly id: string;
@@ -226,6 +228,9 @@ const TS_PROBES = new Map<string, Probe>([
     for (const hookIds of Object.values(recomputed)) hookIds.sort();
     (bloated as unknown as { dependencyIndex: Record<string, string[]> }).dependencyIndex =
       Object.fromEntries(Object.entries(recomputed).sort(([l], [r]) => (l < r ? -1 : 1)));
+    // 变异后按载荷重签 planHash：承诺重算域先于 preflight 校验，未重签会以
+    // planHash 不匹配报错而非 TooManyDependencies 镜像。
+    bloated.planHash = hookPlanHashOf(bloated as unknown as HookPlanArtifact);
     assert.throws(
       () => compileOnchainHookPlan(bloated),
       /exceed the contract limit 1024/,
