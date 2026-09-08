@@ -1790,17 +1790,17 @@ contract UVPStateMachineTest {
         );
     }
 
-    /// Merge 操作数必须是裸 SIGNAL 引用（0124 F19 / 0137#5）：非裸操作数
-    /// （如 Delay 结果）会把 wait 带入 _mergeValue 的"wait 不可达"假设，
-    /// hook 永不进入 Wait，pokeTimer 因 TimerNotWaiting 永久不可用。
-    function testMergeWithNonBareSignalOperandsIsRejectedAtCommit() public {
+    /// PRD_104：指令集收敛为 SIGNAL/NOT/AND/OR/DELAY——已退役的旧扇入
+    /// 操作码（数值 5，按 uint8 数值拼装，不在词表内）携带进 plan 时，
+    /// commitPlan 注册边界经 _validateHook 词表门显式 revert
+    /// InvalidInstruction。
+    function testCommitPlanRejectsRetiredFanInOpcode() public {
         UVPStateMachine machine = _newMachine();
-        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](4);
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](3);
         instructions[0] = _signal(SIGNAL_TRIGGER);
-        instructions[1] = _delay(5);
-        instructions[2] = _signal(SIGNAL_INIT_CMP);
-        instructions[3] = UVPStateMachine.Instruction({
-            op: UVPStateMachine.InstructionOp.Merge,
+        instructions[1] = _signal(SIGNAL_INIT_CMP);
+        instructions[2] = UVPStateMachine.Instruction({
+            op: uint8(5),
             sourceId: bytes32(0),
             signalId: bytes32(0),
             arity: 2,
@@ -1877,8 +1877,8 @@ contract UVPStateMachineTest {
         );
     }
 
-    /// F057：NOT 操作数必须裸 SIGNAL（uvp-hook-dsl validate_anchors 镜像，
-    /// Merge 分支同款）——~(A&B) 组合否定在注册边界拒绝。
+    /// F057：NOT 操作数必须裸 SIGNAL（uvp-hook-dsl validate_anchors 镜像
+    /// 的编码层契约）——~(A&B) 组合否定在注册边界拒绝。
     function testCommitPlanRejectsNotOverCompositeOperand() public {
         UVPStateMachine machine = _newMachine();
         UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](4);
@@ -3381,7 +3381,7 @@ contract UVPStateMachineTest {
 
     function _signal(bytes32 signalId) private pure returns (UVPStateMachine.Instruction memory) {
         return UVPStateMachine.Instruction({
-            op: UVPStateMachine.InstructionOp.Signal,
+            op: uint8(UVPStateMachine.InstructionOp.Signal),
             sourceId: SOURCE_BOOTSTRAP,
             signalId: signalId,
             arity: 0,
@@ -3391,13 +3391,13 @@ contract UVPStateMachineTest {
 
     function _not() private pure returns (UVPStateMachine.Instruction memory) {
         return UVPStateMachine.Instruction({
-            op: UVPStateMachine.InstructionOp.Not, sourceId: bytes32(0), signalId: bytes32(0), arity: 0, delaySeconds: 0
+            op: uint8(UVPStateMachine.InstructionOp.Not), sourceId: bytes32(0), signalId: bytes32(0), arity: 0, delaySeconds: 0
         });
     }
 
     function _or(uint16 arity) private pure returns (UVPStateMachine.Instruction memory) {
         return UVPStateMachine.Instruction({
-            op: UVPStateMachine.InstructionOp.Or,
+            op: uint8(UVPStateMachine.InstructionOp.Or),
             sourceId: bytes32(0),
             signalId: bytes32(0),
             arity: arity,
@@ -3407,7 +3407,7 @@ contract UVPStateMachineTest {
 
     function _and(uint16 arity) private pure returns (UVPStateMachine.Instruction memory) {
         return UVPStateMachine.Instruction({
-            op: UVPStateMachine.InstructionOp.And,
+            op: uint8(UVPStateMachine.InstructionOp.And),
             sourceId: bytes32(0),
             signalId: bytes32(0),
             arity: arity,
@@ -3417,7 +3417,7 @@ contract UVPStateMachineTest {
 
     function _delay(uint64 delaySeconds) private pure returns (UVPStateMachine.Instruction memory) {
         return UVPStateMachine.Instruction({
-            op: UVPStateMachine.InstructionOp.Delay,
+            op: uint8(UVPStateMachine.InstructionOp.Delay),
             sourceId: bytes32(0),
             signalId: bytes32(0),
             arity: 0,
@@ -3609,48 +3609,6 @@ contract UVPStateMachineTest {
         machine.pokeTimer(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
         (status,,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
         require(status == UVPStateMachine.HookStatus.Ready, "ready at chained total");
-    }
-
-    function testMergeDeliversOnFirstContributingSignal() public {
-        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](3);
-        instructions[0] = _signal(SIGNAL_TRIGGER);
-        instructions[1] = _signal(bytes32(uint256(0x5002)));
-        instructions[2] = UVPStateMachine.Instruction({
-            op: UVPStateMachine.InstructionOp.Merge,
-            sourceId: bytes32(0),
-            signalId: bytes32(0),
-            arity: 2,
-            delaySeconds: 0
-        });
-
-        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
-        hooks[0] = _hook(
-            HOOK_INIT,
-            STAGE_INIT,
-            HOOK_NAME_TRIGGER,
-            true,
-            instructions,
-            _deps2(SIGNAL_TRIGGER, bytes32(uint256(0x5002)))
-        );
-
-        UVPStateMachine machine = _newMachine();
-        _registerPlan(machine, _withOrderStart(hooks));
-        UVPStateMachine.SignalAuthorization[] memory authorizations = new UVPStateMachine.SignalAuthorization[](2);
-        authorizations[0] = _authorization(SIGNAL_TRIGGER, address(this));
-        authorizations[1] = _authorization(bytes32(uint256(0x5002)), address(this));
-        _submitTriggerOrderFromOutside(machine, PLAN_ID, ORDER_CREATOR, authorizations);
-
-        vm.warp(100);
-        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY);
-        (UVPStateMachine.HookStatus status,,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_INIT);
-        require(status == UVPStateMachine.HookStatus.Ready, "merge delivers on first arrival");
-
-        vm.warp(200);
-        machine.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, bytes32(uint256(0x5002)), PAYLOAD_HASH, bytes32(uint256(0x5003))
-        );
-        (status,,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_INIT);
-        require(status == UVPStateMachine.HookStatus.Ready, "late branch must not regress ready");
     }
 
     function testCommitPlanRejectsCrossStageSharedDependencyKey() public {
@@ -4326,7 +4284,7 @@ contract UVPStateMachineTest {
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
         UVPStateMachine.Instruction[] memory a = new UVPStateMachine.Instruction[](3);
         a[0] = UVPStateMachine.Instruction({
-            op: UVPStateMachine.InstructionOp.Signal,
+            op: uint8(UVPStateMachine.InstructionOp.Signal),
             sourceId: bytes32(uint256(0x4001)),
             signalId: bytes32(uint256(0x5001)),
             arity: 0,
@@ -4346,14 +4304,14 @@ contract UVPStateMachineTest {
         });
         UVPStateMachine.Instruction[] memory b = new UVPStateMachine.Instruction[](4);
         b[0] = UVPStateMachine.Instruction({
-            op: UVPStateMachine.InstructionOp.Signal,
+            op: uint8(UVPStateMachine.InstructionOp.Signal),
             sourceId: bytes32(uint256(0x4002)),
             signalId: bytes32(uint256(0x5002)),
             arity: 0,
             delaySeconds: 0
         });
         b[1] = UVPStateMachine.Instruction({
-            op: UVPStateMachine.InstructionOp.Signal,
+            op: uint8(UVPStateMachine.InstructionOp.Signal),
             sourceId: bytes32(uint256(0x4001)),
             signalId: bytes32(uint256(0x5001)),
             arity: 0,

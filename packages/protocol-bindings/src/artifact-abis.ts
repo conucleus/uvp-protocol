@@ -360,7 +360,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
               {
                 "name": "op",
                 "type": "uint8",
-                "internalType": "enum UVPStateMachine.InstructionOp"
+                "internalType": "uint8"
               },
               {
                 "name": "sourceId",

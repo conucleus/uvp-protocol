@@ -14,17 +14,23 @@ contract UVPStateMachine {
         Cancelled
     }
 
+    // 求值指令词表（PRD_104 收敛为五指令）：Signal=0, Not=1, And=2, Or=3,
+    // Delay=4。声明顺序即协议编码值——Instruction.op 按 uint8 承载这些
+    // 值，勿重排成员。
     enum InstructionOp {
         Signal,
         Not,
         And,
         Or,
-        Delay,
-        Merge
+        Delay
     }
 
     struct Instruction {
-        InstructionOp op;
+        // 按数值承载 InstructionOp 词表（ABI/EIP-712/hooksHash 编码与枚举
+        // 形态逐字节一致）：词表外操作码（如已退役的旧扇入 op=5）在
+        // commitPlan 注册边界被 _validateHook 显式 revert
+        // InvalidInstruction，而不是只依赖解码层的无名回滚。
+        uint8 op;
         bytes32 sourceId;
         bytes32 signalId;
         uint16 arity;
@@ -1756,32 +1762,31 @@ contract UVPStateMachine {
         // Ready，DELAY 只是死代码。编译器产物的 trigger hook 恒为裸
         // SIGNAL；注册边界拒绝（B-2/0557）。
         bool orderTrigger = _isOrderTrigger(hook.flags);
-        // 裸 SIGNAL 栈标志：Merge 的操作数约束（编码层契约——操作数必须
-        // 是裸 SIGNAL 引用）。_mergeValue 吞掉 wait 分支，Delay 混入
-        // Merge 会让 hook 永不进入 Wait，pokeTimer 因 TimerNotWaiting 永
-        // 久不可用，与回放 oracle（按事件时刻重放求值）分叉。
+        // 裸 SIGNAL 栈标志：NOT 的操作数约束（编码层契约——操作数必须是
+        // 裸 SIGNAL 引用）。~(A&B)/~Delay(A) 一类组合否定的取消/锚点语义
+        // 与编译器产物形态分叉，注册边界拒绝。
         bool[] memory bareSignal = new bool[](hook.instructions.length);
         // 正向锚点栈标志：延时操作数须含正向信号锚点（对齐 uvp-hook-dsl
         // validate_anchors）。全否定/缺席的操作数在 value=true 时
         // anchorAt=0，到期时刻恒在过去，Delay 沦为立即放行。
-        // Signal/Delay 贡献正向锚点，Not 归零，And 取任一，Or/Merge 需
+        // Signal/Delay 贡献正向锚点，Not 归零，And 取任一，Or 需
         // 每一分支都有（Or 的缺席分支可单独就绪且锚点为 0）。
         bool[] memory hasPosAnchor = new bool[](hook.instructions.length);
         uint256 stackDepth;
         for (uint256 i = 0; i < hook.instructions.length; i++) {
             Instruction calldata instruction = hook.instructions[i];
-            if (instruction.op == InstructionOp.Signal) {
+            if (instruction.op == uint8(InstructionOp.Signal)) {
                 if (instruction.signalId == bytes32(0)) {
                     revert InvalidInstruction();
                 }
                 bareSignal[stackDepth] = true;
                 hasPosAnchor[stackDepth] = true;
                 stackDepth += 1;
-            } else if (instruction.op == InstructionOp.Not || instruction.op == InstructionOp.Delay) {
+            } else if (instruction.op == uint8(InstructionOp.Not) || instruction.op == uint8(InstructionOp.Delay)) {
                 if (stackDepth == 0) {
                     revert InvalidInstruction();
                 }
-                if (instruction.op == InstructionOp.Delay) {
+                if (instruction.op == uint8(InstructionOp.Delay)) {
                     if (instruction.delaySeconds == 0) {
                         revert InvalidInstruction();
                     }
@@ -1799,7 +1804,7 @@ contract UVPStateMachine {
                     bareSignal[stackDepth - 1] = false;
                 } else {
                     // NOT 操作数必须裸 SIGNAL（uvp-hook-dsl validate_anchors
-                    // 镜像，Merge 分支同款编码层契约）：~(A&B)/~Delay(A) 一类
+                    // 镜像的编码层契约）：~(A&B)/~Delay(A) 一类
                     // 组合否定的取消/锚点语义与编译器产物形态分叉。
                     if (!bareSignal[stackDepth - 1]) {
                         revert InvalidInstruction();
@@ -1807,34 +1812,19 @@ contract UVPStateMachine {
                     bareSignal[stackDepth - 1] = false;
                     hasPosAnchor[stackDepth - 1] = false;
                 }
-            } else if (instruction.op == InstructionOp.And || instruction.op == InstructionOp.Or) {
+            } else if (instruction.op == uint8(InstructionOp.And) || instruction.op == uint8(InstructionOp.Or)) {
                 if (instruction.arity < 2 || stackDepth < instruction.arity) {
                     revert InvalidInstruction();
                 }
-                bool anchored = instruction.op == InstructionOp.And
+                bool anchored = instruction.op == uint8(InstructionOp.And)
                     ? _anyPosAnchor(hasPosAnchor, stackDepth - instruction.arity, instruction.arity)
                     : _allPosAnchor(hasPosAnchor, stackDepth - instruction.arity, instruction.arity);
                 stackDepth = stackDepth - instruction.arity + 1;
                 bareSignal[stackDepth - 1] = false;
                 hasPosAnchor[stackDepth - 1] = anchored;
-            } else if (instruction.op == InstructionOp.Merge) {
-                // 撮合扇入（semantic 0.6）：表达式形态下限 k≥2；k=1 的跨订单
-                // 观察入口是 cloud 运行时投递形态，链上无对应物，编码层拒绝。
-                if (instruction.arity < 2 || stackDepth < instruction.arity) {
-                    revert InvalidInstruction();
-                }
-                // 操作数必须是裸 SIGNAL 引用（编译器产物的既有形态）：
-                // 非裸操作数（如 Delay）会把 wait 带入 _mergeValue 的
-                // "wait 不可达"假设。
-                for (uint256 j = 0; j < instruction.arity; j++) {
-                    if (!bareSignal[stackDepth - instruction.arity + j]) {
-                        revert InvalidInstruction();
-                    }
-                }
-                stackDepth = stackDepth - instruction.arity + 1;
-                bareSignal[stackDepth - 1] = false;
-                hasPosAnchor[stackDepth - 1] = true;
             } else {
+                // 词表外操作码显式拒绝（PRD_104）：op 以 uint8 承载，已退役
+                // 的旧扇入操作码（数值 5）等未知值在此响亮回滚。
                 revert InvalidInstruction();
             }
         }
@@ -1951,7 +1941,7 @@ contract UVPStateMachine {
         StoredHook storage hook = _validatedTriggerHook(planId, triggerHookId, triggerStageId);
         for (uint256 i = 0; i < hook.instructions.length; i++) {
             Instruction storage instruction = hook.instructions[i];
-            if (instruction.op != InstructionOp.Signal) {
+            if (instruction.op != uint8(InstructionOp.Signal)) {
                 continue;
             }
             if (!_hasSignal(originPlanId, originOrderId, instruction.sourceId, instruction.signalId)) {
@@ -2185,33 +2175,30 @@ contract UVPStateMachine {
         uint256 stackDepth;
         for (uint256 i = 0; i < hook.instructions.length; i++) {
             Instruction storage instruction = hook.instructions[i];
-            if (instruction.op == InstructionOp.Signal) {
+            if (instruction.op == uint8(InstructionOp.Signal)) {
                 stack[stackDepth++] = _signalValue(planId, orderId, instruction.sourceId, instruction.signalId);
-            } else if (instruction.op == InstructionOp.Not) {
+            } else if (instruction.op == uint8(InstructionOp.Not)) {
                 stack[stackDepth - 1] = _notValue(stack[stackDepth - 1]);
-            } else if (instruction.op == InstructionOp.Delay) {
+            } else if (instruction.op == uint8(InstructionOp.Delay)) {
                 stack[stackDepth - 1] = _delayValue(stack[stackDepth - 1], instruction.delaySeconds);
-            } else if (instruction.op == InstructionOp.And) {
+            } else if (instruction.op == uint8(InstructionOp.And)) {
                 EvalValue memory value = stack[stackDepth - instruction.arity];
                 for (uint256 j = stackDepth - instruction.arity + 1; j < stackDepth; j++) {
                     value = _andValue(value, stack[j]);
                 }
                 stackDepth = stackDepth - instruction.arity;
                 stack[stackDepth++] = value;
-            } else if (instruction.op == InstructionOp.Or) {
+            } else if (instruction.op == uint8(InstructionOp.Or)) {
                 EvalValue memory value = stack[stackDepth - instruction.arity];
                 for (uint256 j = stackDepth - instruction.arity + 1; j < stackDepth; j++) {
                     value = _orValue(value, stack[j]);
                 }
                 stackDepth = stackDepth - instruction.arity;
                 stack[stackDepth++] = value;
-            } else if (instruction.op == InstructionOp.Merge) {
-                EvalValue memory value = stack[stackDepth - instruction.arity];
-                for (uint256 j = stackDepth - instruction.arity + 1; j < stackDepth; j++) {
-                    value = _mergeValue(value, stack[j]);
-                }
-                stackDepth = stackDepth - instruction.arity;
-                stack[stackDepth++] = value;
+            } else {
+                // 存储侧只经 _validateHook 词表门写入，此处为词表外值的
+                // 兜底拒绝（uint8 承载后不可再依赖类型层穷尽性）。
+                revert InvalidInstruction();
             }
         }
         return stack[0];
@@ -2274,26 +2261,8 @@ contract UVPStateMachine {
         return EvalValue({value: false, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
     }
 
-    /// 撮合扇入（semantic 0.6，规格 I1/I2）：任一路贡献信号在场即就绪，锚点取
-    /// 在场分支中最早到达（先到因果）。无等待/取消分支——编码层约束操作数必须是
-    /// 裸 SIGNAL 引用，永不为 wait；逐事件投递语义下首个到达即交付。
-    function _mergeValue(EvalValue memory left, EvalValue memory right) private pure returns (EvalValue memory) {
-        if (left.value && right.value) {
-            return EvalValue({
-                value: true, wait: false, cancel: false, dueAt: 0, anchorAt: _minAnchor(left.anchorAt, right.anchorAt)
-            });
-        }
-        if (left.value) {
-            return EvalValue({value: true, wait: false, cancel: false, dueAt: 0, anchorAt: left.anchorAt});
-        }
-        if (right.value) {
-            return EvalValue({value: true, wait: false, cancel: false, dueAt: 0, anchorAt: right.anchorAt});
-        }
-        return EvalValue({value: false, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
-    }
-
     function _orValue(EvalValue memory left, EvalValue memory right) private pure returns (EvalValue memory) {
-        // Arrival-time causality (semantic 0.5): merge keeps the EARLIEST
+        // Arrival-time causality (semantic 0.5): OR keeps the EARLIEST
         // received signal as the cause so trailing delays anchor on first
         // arrival, matching the core evaluator and replay oracle.
         if (left.value || right.value) {
