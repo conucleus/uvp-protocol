@@ -1559,16 +1559,17 @@ test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
   );
 
   // 编译入口同口径：沉默 trigger 形态在 compileOnchainHookPlan 预检即抛
-  // HookPlanCompilationError，不产出制品。
+  // HookPlanCompilationError，不产出制品。（重签 planHash，让拦截者聚焦在
+  // 静默 trigger 门本身。）
   const silentSourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
-  const mutatedSilentPlan = {
+  const mutatedSilentPlan = resign({
     ...silentSourcePlan,
     compiledHooks: silentSourcePlan.compiledHooks.map((hook) =>
       hook.stageIdentifier === "execution.main" && hook.hookName === "START"
         ? { ...hook, orderTriggerKind: "mint" as const, emitReady: false }
         : hook,
     ),
-  };
+  });
   assert.throws(
     () => compileOnchainHookPlan(mutatedSilentPlan),
     (error: unknown) =>
@@ -1683,7 +1684,7 @@ test("rejects DELAY on order-trigger conditions at the compile boundary (F074 �
   );
   assert.ok(triggerHook, "target fixture must expose the dock entrance trigger hook");
   assert.equal(triggerHook.orderTriggerKind, "dock");
-  const delayed = {
+  const delayed = resign({
     ...targetPlan,
     compiledHooks: targetPlan.compiledHooks.map((hook) =>
       hook === triggerHook
@@ -1701,7 +1702,7 @@ test("rejects DELAY on order-trigger conditions at the compile boundary (F074 �
           }
         : hook,
     ) as typeof targetPlan.compiledHooks,
-  };
+  });
   assert.throws(
     () => compileOnchainHookPlan(delayed),
     (error: unknown) => {
