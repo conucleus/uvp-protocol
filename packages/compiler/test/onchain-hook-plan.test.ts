@@ -40,8 +40,11 @@ import type { HookPlanArtifact } from "../src/types/index.js";
 const demoManifest = dockDemoResolutionManifest();
 
 /** 变异 hook plan 制品后按载荷重签 planHash（承诺重算由专门的篡改测试覆盖）。 */
-function resign(artifact: HookPlanArtifact): HookPlanArtifact {
-  return { ...artifact, planHash: hookPlanHashOf(artifact) };
+function resign<A extends { planHash: string }>(artifact: A): A {
+  return {
+    ...artifact,
+    planHash: hookPlanHashOf(artifact as unknown as HookPlanArtifact),
+  };
 }
 
 function compileZhixuHookPlanWithManifest(
@@ -1689,7 +1692,7 @@ test("rejects DELAY on order-trigger conditions at the compile boundary (F074 �
             ast: {
               ...hook.ast,
               condition: {
-                kind: "delay",
+                kind: "delay" as const,
                 durationSeconds: 5,
                 expr: hook.ast.condition,
                 rawDuration: "5s",
@@ -1697,7 +1700,7 @@ test("rejects DELAY on order-trigger conditions at the compile boundary (F074 �
             },
           }
         : hook,
-    ),
+    ) as typeof targetPlan.compiledHooks,
   };
   assert.throws(
     () => compileOnchainHookPlan(delayed),

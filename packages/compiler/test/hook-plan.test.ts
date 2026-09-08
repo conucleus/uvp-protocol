@@ -32,8 +32,11 @@ import {
 const demoManifest = dockDemoResolutionManifest();
 
 /** 变异制品后按载荷重签 planHash（承诺重算测试之外的形状测试需要）。 */
-function resign(artifact: HookPlanArtifact): HookPlanArtifact {
-  return { ...artifact, planHash: hookPlanHashOf(artifact) };
+function resign<A extends { planHash: string }>(artifact: A): A {
+  return {
+    ...artifact,
+    planHash: hookPlanHashOf(artifact as unknown as HookPlanArtifact),
+  };
 }
 
 const baseZhixu: ZhixuDefinition = {
