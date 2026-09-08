@@ -1790,8 +1790,8 @@ contract UVPStateMachineTest {
         );
     }
 
-    /// PRD_104：指令集收敛为 SIGNAL/NOT/AND/OR/DELAY——已退役的旧扇入
-    /// 操作码（数值 5，按 uint8 数值拼装，不在词表内）携带进 plan 时，
+    /// 指令集收敛为 SIGNAL/NOT/AND/OR/DELAY——旧扇入操作码（数值 5，按
+    /// uint8 数值拼装，不在词表内）携带进 plan 时，
     /// commitPlan 注册边界经 _validateHook 词表门显式 revert
     /// InvalidInstruction。
     function testCommitPlanRejectsRetiredFanInOpcode() public {
@@ -1877,7 +1877,7 @@ contract UVPStateMachineTest {
         );
     }
 
-    /// F057：NOT 操作数必须裸 SIGNAL（uvp-hook-dsl validate_anchors 镜像
+    /// NOT 操作数必须裸 SIGNAL（uvp-hook-dsl validate_anchors 镜像
     /// 的编码层契约）——~(A&B) 组合否定在注册边界拒绝。
     function testCommitPlanRejectsNotOverCompositeOperand() public {
         UVPStateMachine machine = _newMachine();
@@ -1905,7 +1905,7 @@ contract UVPStateMachineTest {
         );
     }
 
-    /// F057：整体至少一正锚（validate_anchors 镜像）——纯否定 hook（~A）在
+    /// 整体至少一正锚（validate_anchors 镜像）——纯否定 hook（~A）在
     /// value=true 时 anchorAt=0，注册边界拒绝。
     function testCommitPlanRejectsPureNegativeHook() public {
         UVPStateMachine machine = _newMachine();
@@ -2140,7 +2140,7 @@ contract UVPStateMachineTest {
         );
     }
 
-    /// F058：relation=0 派生生产事实与普通 submitSignal 同口径过物化门 +
+    /// relation=0 派生生产事实与普通 submitSignal 同口径过物化门 +
     /// executor 存在门——阶段未物化先拒（UnknownHook），selector-target 阶段
     /// 未 assign 再拒（否则显式授权者提前写入，StageAlreadyHasSignal 把
     /// assign 永久顶死）；assign 后同路径放行。
@@ -2238,7 +2238,7 @@ contract UVPStateMachineTest {
         );
     }
 
-    /// F055：dock output 通道（submitSignalFromModule 的 docking 分支）镜像
+    /// dock output 通道（submitSignalFromModule 的 docking 分支）镜像
     /// mint 词表闸——capability 词表外的事实键拒绝，词表内放行。
     function testDockingModuleSignalVocabularyGate() public {
         UVPStateMachine machine = _newMachine();
@@ -2282,7 +2282,7 @@ contract UVPStateMachineTest {
         );
     }
 
-    /// F066（CEI）：finalized 位先于 planMetadata 外调落定——模块在回调里
+    /// finalized 位先于 planMetadata 外调落定（CEI）——模块在回调里
     /// 重入 finalizePlan 必须按 PlanAlreadyFinalized 拒绝，不得在外调窗口
     /// 二次过门。
     function testFinalizePlanReentrantCallSeesFinalized() public {
@@ -4144,7 +4144,7 @@ contract UVPStateMachineTest {
     }
 
     function testSameSecondDifferentSubmittersFailsClosedOnPreviousExecutor() public {
-        // F058 收紧后，selector-target 阶段的 relation-0 事实只能出现在
+        // relation-0 事实收紧后，selector-target 阶段只能出现在
         // active patch 之后（派生/普通路径同过 assign 门）——"无 patch 的
         // 阶段事实"这一回退触发面在公链路径关闭，handoff 的上一执行者恒为
         // active patch executor。同一秒（同块）两个不同提交者各交一条阶段
@@ -4189,8 +4189,8 @@ contract UVPStateMachineTest {
     }
 
     function testSameSecondFallbackShapeIsClosedAtAssignGate() public {
-        // F058 负钉：曾经构造"无 patch 的同秒双提交者阶段事实"的入口
-        // （relation-0 派生写入）现在在 assign 门被拒，回退触发面前置关闭。
+        // "无 patch 的同秒双提交者阶段事实"构造入口（relation-0 派生
+        // 写入）在 assign 门被拒，回退触发面前置关闭。
         UVPStateMachine machine = _newMachine();
         IUVPPlanMetadataModule.SignalCapability[] memory caps = new IUVPPlanMetadataModule.SignalCapability[](3);
         caps[0] = IUVPPlanMetadataModule.SignalCapability({
@@ -4339,8 +4339,9 @@ contract UVPStateMachineTest {
     }
 }
 
-/// F066 专用：finalizePlanMetadata 回调里重入 finalizePlan 的假模块——
-/// CEI 修复后重入必须看到 finalized=true 并按 PlanAlreadyFinalized 拒绝。
+/// finalizePlanMetadata 回调里重入 finalizePlan 的假模块——重入必须
+/// 看到 finalized=true 并按 PlanAlreadyFinalized 拒绝（finalized 位先于
+/// 外调落定）。
 contract ReenteringMetadataModule is IUVPPlanMetadataModule {
     UVPStateMachine private immutable _machine;
 

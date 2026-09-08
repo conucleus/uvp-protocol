@@ -156,7 +156,7 @@ test("compiles internal HookPlan IR", () => {
   const again = compileZhixuHookPlan(baseZhixu, demoManifest);
 
   assert.equal(plan.schemaVersion, "uvp.hookPlan.v2");
-  // zhixuId = 定义内容派生身份（PRD_102 §5），不再有作者手写 uid。
+  // zhixuId = 定义内容派生身份，没有作者手写 uid。
   assert.match(plan.zhixuId, /^zx-[0-9a-f]{32}$/);
   assert.deepEqual(plan.platform, { type: "cloud" });
   assert.match(plan.planId, /^0x[0-9a-f]{64}$/);
@@ -1300,7 +1300,7 @@ test("demo sourcing parent links both demo interfaces (new + existing)", () => {
 test("carries null (dynamic-selection) targets as unresolved routes (§8.8)", () => {
   // target:null 不再整体拒绝（Wave3-E4）：hook plan 产物保留未解析 route 的
   // 声明面（manifest 在场时不进 link、不报 D008），云轨运行时才由选择记录
-  // 补齐（PRD_100 §10.3）；链轨拒绝在 onchain 边界（见 onchain 测试）。
+  // 补齐；链轨拒绝在 onchain 边界（见 onchain 测试）。
   const dynamicTarget = structuredClone(baseZhixu) as ZhixuDefinition & {
     spec: { taskPatterns: Array<{ stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } | null } } }> }> };
   };

@@ -14,7 +14,7 @@ contract UVPStateMachine {
         Cancelled
     }
 
-    // 求值指令词表（PRD_104 收敛为五指令）：Signal=0, Not=1, And=2, Or=3,
+    // 求值指令词表（五指令闭集）：Signal=0, Not=1, And=2, Or=3,
     // Delay=4。声明顺序即协议编码值——Instruction.op 按 uint8 承载这些
     // 值，勿重排成员。
     enum InstructionOp {
@@ -1823,8 +1823,8 @@ contract UVPStateMachine {
                 bareSignal[stackDepth - 1] = false;
                 hasPosAnchor[stackDepth - 1] = anchored;
             } else {
-                // 词表外操作码显式拒绝（PRD_104）：op 以 uint8 承载，已退役
-                // 的旧扇入操作码（数值 5）等未知值在此响亮回滚。
+                // 词表外操作码显式拒绝：op 以 uint8 承载，旧扇入操作码
+                // （数值 5）等未知值在此响亮回滚。
                 revert InvalidInstruction();
             }
         }

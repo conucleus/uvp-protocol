@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * 生成 dock v2 兼容性 golden（PRD_100/PRD_102，链轨 TS 权威实现）：
+ * 生成 dock v2 兼容性 golden（链轨 TS 权威实现）：
  * - `fixtures/dock/v1/manifest.json`：冻结常量、目标/父定义、resolution
  *   manifest（链轨发布面）、全部 leaf/root/hash/ID/envelope/permit golden
  *   向量；
@@ -67,7 +67,7 @@ import {
   type ZhixuDefinition,
 } from "../src/types/index.js";
 
-/** 目标定义：两个具名接口——production_service[new]（建单型服务）与 production_evidence[existing]（只读既有事实，PRD_100 §12.1）。 */
+/** 目标定义：两个具名接口——production_service[new]（建单型服务）与 production_evidence[existing]（只读既有事实）。 */
 function targetProductionDefinition(): ZhixuDefinition {
   return {
     apiVersion: "uvp/v0",
@@ -133,7 +133,7 @@ function targetProductionDefinition(): ZhixuDefinition {
   };
 }
 
-/** 调用方定义：new 模式生产委托（PRD_100 §12.2）+ existing 模式既有事实引用（PRD_100 §12.3）。目标按 name 引用（v2 契约：DSL 壳不携带派生身份）。 */
+/** 调用方定义：new 模式生产委托（建单型委托）+ existing 模式既有事实引用（只读引用）。目标按 name 引用（v2 契约：DSL 壳不携带派生身份）。 */
 function parentSourcingDefinition(targetName: string): ZhixuDefinition {
   return {
     apiVersion: "uvp/v0",

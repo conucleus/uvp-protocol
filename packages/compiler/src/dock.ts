@@ -52,7 +52,7 @@ export const DOMAIN_SOURCE_FACT_SET = "UVP_DOCK_SOURCE_FACT_SET_V1";
 export const MAX_DOCK_INPUTS = 8;
 export const MAX_DOCK_OUTPUTS = 16;
 export const MAX_DOCK_DEPTH = 8;
-/** `^[a-z][a-z0-9_]{0,31}$`：端口名与接口名同规则（PRD_100 §9.3）。 */
+/** `^[a-z][a-z0-9_]{0,31}$`：端口名与接口名同规则。 */
 export const MAX_PORT_NAME_BYTES = 32;
 
 /** payload preimage 中 sourceFactSetHash 槽位的固定零字（与 Solidity `_DOMAIN_SOURCE_FACT_SET_ZERO` 对齐）。 */
@@ -194,7 +194,7 @@ export function verifyMerkleProof(
 // 枚举 word
 // ---------------------------------------------------------------------------
 
-/** route 的 order mode word：new=0、existing=1（PRD_100 §11）。 */
+/** route 的 order mode word：new=0、existing=1。 */
 export function modeWord(mode: DockOrderMode): HexString {
   if (mode !== "new" && mode !== "existing") {
     throw new RangeError(`order mode must be "new" or "existing", received ${mode}`);
@@ -233,7 +233,7 @@ export function orderModesWord(modes: readonly string[]): HexString | undefined 
 // ---------------------------------------------------------------------------
 
 /**
- * 定义身份派生函数（PRD_102 §5，链轨权威）：canonical 剔除
+ * 定义身份派生函数（链轨权威）：canonical 剔除
  * `metadata.annotations` 后按 `uvp:definition-uid:v1:` 域哈希，
  * `zx-` + hex 前 32 字符。链轨制品的 zhixuId 与 resolution manifest 的
  * 内容寻址校验都从这里派生——云轨不镜像本公式（其身份归 DB）。
@@ -266,7 +266,7 @@ export function definitionRefHash(uid: string): HexString {
   return keccakWords(DOMAIN_DEFINITION_REF, [keccakWord(uid)]);
 }
 
-/** N6 显示口径（PRD_102 §4）：`name(uid 去 zx- 后前 8 hex)`。 */
+/** 显示口径：`name(uid 去 zx- 后前 8 hex)`。 */
 export function displayIdentity(name: string, uid: string): string {
   const hex = uid.startsWith("zx-") ? uid.slice(3) : uid;
   return `${name}(${hex.slice(0, 8)})`;

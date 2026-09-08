@@ -6,8 +6,8 @@ libs = ["lib"]
 solc_version = "0.8.24"
 optimizer = true
 optimizer_runs = 200
-# Dock v2 的 openDockedOrder 校验链需要较多栈槽（PRD95 §7.1 允许拆
-# 结构或启用 IR）；开启 via_ir 以容纳完整验证路径。
+# Dock v2 的 openDockedOrder 校验链需要较多栈槽（允许拆结构或启用
+# IR）；开启 via_ir 以容纳完整验证路径。
 via_ir = true
 bytecode_hash = "none"
 ffi = false

@@ -95,7 +95,7 @@ contract DockManifestParityTest {
     }
 
     // ------------------------------------------------------------------
-    // 定义身份（PRD_102 §5：definitionRefHash 只由派生 uid 推导；
+    // 定义身份（definitionRefHash 只由派生 uid 推导；
     // manifest 顶层定义已无 metadata.uid，uid 冻结在 identities 段）
     // ------------------------------------------------------------------
 
@@ -270,11 +270,8 @@ contract DockManifestParityTest {
     // 实例与子单身份（preimage v3：new 模式 9 word，interfaceNameId 后追加
     // targetPlanId；existing 在其后再追 keccak(orderRef) 尾 word）
     // ------------------------------------------------------------------
-    // TS golden manifest 的 expected 段仍由旧 8 word 公式生成。wave-2 在
-    // packages/compiler 落同一 word 布局（src/dock.ts dockInstanceId +
-    // scripts/gen-dock-fixtures.ts）并重生成 manifest 后，本节恢复与
-    // .expected.* 的直接数值对拍。当前断言钉新公式在 golden 输入上的
-    // 编码链：targetPlanId word 实际参与派生，且 linkedOrder / envelope /
+    // 本节在 golden 输入上重算 preimage v3 编码链并断言身份联动：
+    // targetPlanId word 实际参与派生，且 linkedOrder / envelope /
     // permit 全部链自同一 instance word（合约侧 open 的重算一致性在
     // UVPDockingModule.t 覆盖）。
 

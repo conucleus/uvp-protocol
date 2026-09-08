@@ -57,7 +57,7 @@ export const customsWallets = {
 
 export const customsPlanIds = {
   planId: "0x336d9b556f7ffa00c83f49600554819055a4a3b300f82abca70b401f6b161ddc",
-  // 派生身份(zx-)+当前编译器 canonical payload 重钉。
+  // 派生身份(zx-)+当前编译器 canonical payload 重算钉住。
   planHash: "0xf6eaeabe4e155834fa0ba5d6bd1f077d63ca99bc6e32987aadcd54badf1e9f94",
   artifactHash: "0x371f2561e189cd80ff95121a5dbb4daa785e22d70afd72b87a64bedcd28dc10d"
 } as const;

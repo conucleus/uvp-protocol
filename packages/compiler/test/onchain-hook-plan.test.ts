@@ -134,9 +134,8 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.equal(onchain.planId, sourcePlan.planId);
   assert.deepEqual(onchain.platform, sourcePlan.platform);
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
-  // v2 权威分治后重钉：父定义 target.zhixu 由派生 uid 改为目标 name
-  // 引用（DSL 壳不携带派生身份），sourcePlanHash/planHash preimage 随
-  // 定义内容变化；承诺公式本身冻结不变。
+  // 父定义 target.zhixu 携带目标 name 引用（DSL 壳不携带派生身份），
+  // sourcePlanHash/planHash preimage 随定义内容变化；承诺公式本身冻结不变。
   assert.equal(
     onchain.planHash,
     "0x9692f1889aa59810b9cff28d225dce9ed22e7bcecbf5c0e5ddcb9d2896dc293f",
@@ -1381,7 +1380,7 @@ test("dock entrance hooks materialize their stage (CORE-8 materialization gate)"
   );
 });
 
-test("rejects existing-mode dock routes on the on-chain track (PRD_100 §17 explicit rejection)", () => {
+test("rejects existing-mode dock routes on the on-chain track (explicit rejection)", () => {
   // Rust 两个编译 profile 都放行 existing（云轨运行时语义）；on-chain 编译
   // 必须显式拒绝，不静默降级。编译入口与反序列化边界同口径。
   const existingZhixu: ZhixuDefinition = {
@@ -1433,7 +1432,7 @@ test("rejects existing-mode dock routes on the on-chain track (PRD_100 §17 expl
   // 反序列化边界：云轨 hook_plan 产物合法携带 existing route，但喂给
   // onchain 校验器必须被同一道门拒绝。compileOnchainHookPlan 的 preflight
   // 会先抛，这里从 base 计划（new 模式合法产物）换挂 existing routes 后
-  // 重钉 planHash，模拟反序列化视角。
+  // 重算 planHash，模拟反序列化视角。
   const cloudPlan = compileZhixuHookPlan(existingZhixu, demoManifest);
   assert.equal(cloudPlan.dockRoutes[0]?.orderMode, "existing");
   const onchainBase = compileOnchainHookPlan(
@@ -1607,7 +1606,7 @@ test("mirrors _validateHook DELAY/NOT/anchor rejection branches at the artifact 
       ),
     } as OnchainHookPlanArtifact);
 
-  // 触发条件：F074 主体——order-trigger hook 内出现 DELAY，制品边界必须
+  // 触发条件主体：order-trigger hook 内出现 DELAY，制品边界必须
   // 镜像合约 InvalidInstruction（毒制品过验证即 commitPlan 必 revert）。
   const timeoutInstructions = baseOnchain.compiledHooks
     .find((hook) => hook.hookName === "TIMEOUT")!
@@ -1639,7 +1638,7 @@ test("mirrors _validateHook DELAY/NOT/anchor rejection branches at the artifact 
     ),
   );
 
-  // NOT 非裸操作数（F057 合约侧镜像缺口）：~(A&B) 形态。
+  // NOT 非裸操作数（合约侧镜像缺口）：~(A&B) 形态。
   const notOverAnd = mutateHookInstructions("TIMEOUT", [
     timeoutInstructions[0], // SIGNAL
     timeoutInstructions[2], // SIGNAL
@@ -1652,7 +1651,7 @@ test("mirrors _validateHook DELAY/NOT/anchor rejection branches at the artifact 
     ),
   );
 
-  // 整体纯否定（F057 合约侧镜像缺口）：~A 单钩。
+  // 整体纯否定（合约侧镜像缺口）：~A 单钩。
   const pureNegative = mutateHookInstructions("TIMEOUT", [
     timeoutInstructions[0], // SIGNAL
     { op: "NOT" },
@@ -1671,7 +1670,7 @@ test("mirrors _validateHook DELAY/NOT/anchor rejection branches at the artifact 
   );
 });
 
-test("rejects DELAY on order-trigger conditions at the compile boundary (F074 产出侧)", () => {
+test("rejects DELAY on order-trigger conditions at the compile boundary (producer side)", () => {
   // core 的 D013 在 DSL 层已拒绝 input-port 钩子带延时；这里是第二道门：
   // 手工/漂移的 HookPlanArtifact（trigger 钩子 + delay AST）在 on-chain
   // 编译入口以合约 _validateHook 同口径拒绝，不产出毒制品。

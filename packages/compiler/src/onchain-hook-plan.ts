@@ -158,7 +158,7 @@ export function compileOnchainHookPlan(
       isCurrentOrder: capability.targetOrderRelation === "current",
     })),
   );
-  // 链轨拒绝（PRD_100 §17/§5.2）：Rust 两个 profile 都放行 existing 与
+  // 链轨拒绝：Rust 两个 profile 都放行 existing 与
   // 动态 target（hook plan 产物携带 unresolvedDockRoutes 声明面，§8.8），
   // 是否上链由宿主轨道决定——on-chain 编译在这里显式拒绝，不静默降级。
   // Rust hook_plan 不再对 target:null 兜底拒绝，这里是 on-chain 边界对
@@ -1062,7 +1062,7 @@ function solidityTargetOrderRelation(
  * UVPPlanMetadataModule finalizePlan 的注册守卫 revert
  * DuplicateCurrentOrderSignalCapability。此类 plan 能通过 commitPlan、
  * finalize 永久 revert（planId 烧毁，2318中2），这里是 artifact 边界的
- * 编译期预检；Rust/Go 镜像仍欠（F075 镜像债的 TS 线部分）。
+ * 编译期预检；Rust/Go 镜像仍欠（镜像债）。
  */
 function duplicateCurrentOrderFactKeyIssues(
   capabilities: readonly {
@@ -1549,7 +1549,7 @@ function unmaterializableStageIssues(
 }
 
 /**
- * 链轨 dock route 门（PRD_100 §17/§5.2，设计定稿"明确不做"项）：
+ * 链轨 dock route 门（"明确不做"项）：
  * - `orderMode: "existing"`：Rust 两个编译 profile 都放行（existing 是云轨
  *   运行时语义），on-chain 编译必须显式拒绝，不得静默降级为 new 或吞掉；
  * - 未解析目标（target 缺失/非对象/无 zhixuUid，含 `target: null` 的动态
@@ -1572,7 +1572,7 @@ function onchainDockTrackIssues(routes: readonly unknown[]): readonly string[] {
     if (route.orderMode === "existing") {
       issues.push(
         `dock route ${stageIdentifier} uses order mode "existing", which on-chain targets do not support; ` +
-          "PRD_100 §17 requires an explicit rejection instead of a silent fallback — " +
+          "the on-chain track requires an explicit rejection instead of a silent fallback — " +
           'serve this route from a cloud runtime or bind an interface with order mode "new"',
       );
     }
@@ -1584,7 +1584,7 @@ function onchainDockTrackIssues(routes: readonly unknown[]): readonly string[] {
     ) {
       issues.push(
         `UNRESOLVED_DOCK_TARGET: dock route ${stageIdentifier} has no statically linked target; ` +
-          "on-chain compilation cannot fill a dynamic (null) target at runtime (PRD_100 §10.3/§17)",
+          "on-chain compilation cannot fill a dynamic (null) target at runtime",
       );
     }
   }
@@ -1612,7 +1612,7 @@ function onchainUnresolvedRouteIssues(
       `unresolvedDockRoutes[${index}]`;
     issues.push(
       `UNRESOLVED_DOCK_TARGET: dock route ${stageIdentifier} declares a dynamic (null) target carried as an unresolved route; ` +
-        "on-chain compilation cannot fill it from selection records at runtime (PRD_100 §10.3/§17) — " +
+        "on-chain compilation cannot fill it from selection records at runtime — " +
         "serve this route from a cloud runtime or bind a static target",
     );
   }

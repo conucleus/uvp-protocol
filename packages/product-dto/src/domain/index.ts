@@ -16,7 +16,7 @@ export type ParticipantStatus =
   | "not_started";
 export type RoleSlotStatus = "required" | "connected" | "optional";
 export type DockableModuleStatus = "connected" | "available" | "planned";
-/** dock 接口开放的下单模式（PRD_100：{new, existing} 子集）。 */
+/** dock 接口开放的下单模式（{new, existing} 子集）。 */
 export type ProductDockOrderMode = "new" | "existing";
 export type OrderStatus = "registered";
 export type TaskStatus = "open" | "submitted" | "blocked" | "done";

@@ -17,7 +17,7 @@ import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 ///          route 的哈希在重算处直接失配（显式拒绝，不静默降级）。
 ///
 /// 哈希域（与 Rust uvp-compiler::dock / TS compiler/src/dock.ts 逐字节一致，
-/// word 布局 = PRD100_102_DESIGN.md §8；字符串 word 一律 keccak256(utf8(s))，
+/// word 布局见 packages/compiler/docs/dock-word-layout.md；字符串 word 一律 keccak256(utf8(s))，
 /// 整数 word 大端右对齐）：
 ///   defRef      = H("UVP_DEFINITION_REF_V1",         uidId)
 ///   portLeaf    = H("UVP_DOCK_INTERFACE_INPUT_V2",  uidId, interfaceNameId, portKey, hookKey)

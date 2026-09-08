@@ -72,7 +72,7 @@ contract UVPDockingModuleTest {
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
     );
 
-    // preimage v2 域（与 PRD100_102_DESIGN.md §8 / Rust dock.rs 逐字节一致）。
+    // preimage v2 域（与 packages/compiler/docs/dock-word-layout.md / Rust dock.rs 逐字节一致）。
     bytes32 private constant DOMAIN_DEFINITION_REF = keccak256("UVP_DEFINITION_REF_V1");
     bytes32 private constant DOMAIN_INTERFACE = keccak256("UVP_DOCK_INTERFACE_V2");
     bytes32 private constant DOMAIN_INTERFACE_INPUT = keccak256("UVP_DOCK_INTERFACE_INPUT_V2");
@@ -130,10 +130,10 @@ contract UVPDockingModuleTest {
     bytes32 private constant OUT_WORD_DONE = keccak256("canonical.done");
     bytes32 private constant OUT_WORD_PROGRESS = keccak256("canonical.progress");
     bytes32 private constant OUT_WORD_SETTLE = keccak256("canonical.settle");
-    // 目标接口从未宣告的端口/信号 word（F056 拒绝路径）。
+    // 目标接口从未宣告的端口/信号 word（拒绝路径）。
     bytes32 private constant ROGUE_PORT = keccak256("rogue_port");
     bytes32 private constant ROGUE_OUT_WORD = keccak256("canonical.rogue");
-    // 同阶段的兄弟 hook（EMIT_READY，但从未就绪）——F053 冒名开仓路径。
+    // 同阶段的兄弟 hook（EMIT_READY，但从未就绪）——冒名开仓路径。
     bytes32 private constant PARENT_SIBLING_HOOK = keccak256("parent.exec#SIBLING");
     bytes32 private constant PAYLOAD = bytes32(uint256(0xBEEF));
 
@@ -497,10 +497,11 @@ contract UVPDockingModuleTest {
     }
 
     // ------------------------------------------------------------------
-    // 审计修复轮回归（F053/F054/F056/F061/F062/F064）
+    // 开仓门与实例身份回归：恒等校验 / 出生锚依赖 / 端口词表 /
+    // preimage 绑定 / permit 验签 / 事实署名
     // ------------------------------------------------------------------
 
-    /// F053：就绪门只看调用方自报 request.localHookId 时，已提交 route 的
+    /// 就绪门只看调用方自报 request.localHookId 时，已提交 route 的
     /// 出生锚可绑兄弟 hook，冒名者借就绪 hook 提前开仓——恒等校验拒绝。
     function testOpenRejectsEntranceHookImpersonation() public {
         RogueRoute memory route =
@@ -524,7 +525,7 @@ contract UVPDockingModuleTest {
         docking.openDockedOrder(request, route.routeProof, _interfaceProof(), inputs, _outputs(), _permitEmpty());
     }
 
-    /// F054：出生锚事实键不在目标 mailbox hook 的 SIGNAL 依赖声明内（首事实
+    /// 出生锚事实键不在目标 mailbox hook 的 SIGNAL 依赖声明内（首事实
     /// 键先到先得注入）——一致性闸拒绝。
     function testOpenRejectsEntranceFactNotDeclaredByTargetHook() public {
         // TARGET_PENDING_SIGNAL 不是目标 plan 任何 hook 的依赖原子。
@@ -550,7 +551,7 @@ contract UVPDockingModuleTest {
         docking.openDockedOrder(request, route.routeProof, _interfaceProof(), inputs, _outputs(), _permitEmpty());
     }
 
-    /// F056：output 绑定指向目标接口从未宣告的端口——outputsRoot membership
+    /// output 绑定指向目标接口从未宣告的端口——outputsRoot membership
     /// 拒绝（此前只重算绑定哈希入 routeHash，不构成目标侧承诺）。
     function testOpenRejectsUndeclaredOutputPort() public {
         UVPDockingModule.DockOutputBindingArg[] memory outputs = _outputs();
@@ -581,7 +582,7 @@ contract UVPDockingModuleTest {
         );
     }
 
-    /// F061：targetPlanId 进 dockInstanceId preimage——换目标 plan 即换实例
+    /// targetPlanId 进 dockInstanceId preimage——换目标 plan 即换实例
     /// 身份；接口承诺 word 可被复制，plan 身份不可冒名。
     function testDockInstancePreimageBindsTargetPlan() public {
         bytes32 otherPlanInstance = keccak256(
@@ -601,7 +602,7 @@ contract UVPDockingModuleTest {
         assertFalse(otherPlanInstance == dockInstanceId);
     }
 
-    /// F064：dock 事实提交者记目标 plan publisher（creator），keeper 只落
+    /// dock 事实提交者记目标 plan publisher（creator），keeper 只落
     /// relayer/opener——基础设施地址不进业务归因。
     function testOpenRecordsPublisherAsEntranceFactSubmitter() public {
         assertTrue(_open());
@@ -609,7 +610,7 @@ contract UVPDockingModuleTest {
         assertTrue(entranceSubmitter == vm.addr(TARGET_PUBLISHER_KEY));
     }
 
-    /// F062：permit 验签 v 值严格 {27,28}（与其余 EIP-712 入口同口径），
+    /// permit 验签 v 值严格 {27,28}（与其余 EIP-712 入口同口径），
     /// 原始 0/1 不做归一化。
     function testPermitRejectsRawVValue() public {
         UVPDockingModule.EntrancePermitV2 memory permit = _permitSigned(1);
@@ -1020,8 +1021,8 @@ contract UVPDockingModuleTest {
     }
 
     // 自建第二份父 plan（route 叶全由调用方给定）。EXEC hook 就绪、同阶段
-    // 兄弟 hook（监听 SIGNAL_SIBLING，永不喂入）保持未就绪——F053/F054/
-    // F056 拒绝路径共用。
+    // 兄弟 hook（监听 SIGNAL_SIBLING，永不喂入）保持未就绪——恒等校验 /
+    // 出生锚 / 端口词表三条拒绝路径共用。
     struct RogueRoute {
         bytes32 planId;
         bytes32 orderId;

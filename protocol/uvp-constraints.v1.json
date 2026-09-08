@@ -150,7 +150,7 @@
       "sources": {
         "rust": "crates/uvp-model/src/lib.rs ObjectMeta deny_unknown_fields（serde 未知字段路径，编译入口即拒绝）"
       },
-      "ruling": "PRD_102 N2 裁决：metadata.uid 从 DSL 输入面移除；携带 uid 的定义按未知字段确定性拒绝，不存在显式/兜底双路径。"
+      "ruling": "metadata.uid 从 DSL 输入面移除；携带 uid 的定义按未知字段确定性拒绝，不存在显式/兜底双路径。"
     },
     {
       "id": "metadata-name-slug-shape",
@@ -175,7 +175,7 @@
       "sources": {
         "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape is_name_slug（NAME_SLUG_PATTERN）"
       },
-      "ruling": "PRD_102 N7 裁决：name 必填非空且为 slug 形态（技术名风格：小写开头，小写字母/数字/下划线/中划线，字节≤100）；校验仅限形态——name 不唯一、不参与关系推断、不代表商店展示名。"
+      "ruling": "name 必填非空且为 slug 形态（技术名风格：小写开头，小写字母/数字/下划线/中划线，字节≤100）；校验仅限形态——name 不唯一、不参与关系推断、不代表商店展示名。"
     },
     {
       "id": "stage-identifier-max-length",
@@ -304,7 +304,7 @@
       "sources": {
         "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape valid_identifier_part（与 stage name 同规则，组合标识 task.stage 落 global_stage.stage_identifier）"
       },
-      "ruling": "F235 登记：taskPatterns name 字符集——首字符 ASCII 字母，其余 ASCII 字母/数字/下划线/中划线；长度由 stage-identifier-max-length 组合规则钉。"
+      "ruling": "taskPatterns name 字符集——首字符 ASCII 字母，其余 ASCII 字母/数字/下划线/中划线；长度由 stage-identifier-max-length 组合规则钉。"
     },
     {
       "id": "stage-name-charset",
@@ -328,7 +328,7 @@
       "sources": {
         "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape valid_identifier_part"
       },
-      "ruling": "F235 登记：stage name 字符集与 taskPatterns name 同规则；跨 task 的同名 stage 合法（stage identifier 含 task 段），task 内重名由唯一性检查拒绝。"
+      "ruling": "stage name 字符集与 taskPatterns name 同规则；跨 task 的同名 stage 合法（stage identifier 含 task 段），task 内重名由唯一性检查拒绝。"
     },
     {
       "id": "executor-supplier-type-closed-enum",
@@ -357,7 +357,7 @@
       "sources": {
         "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape（闭集常量 uvp_model::SUPPLIER_TYPES，与 Go api/core/v0 supplier 常量同源）"
       },
-      "ruling": "F072（Rust 侧）：supplierType 经 executorRoutes 进链上承诺，闭集外的字符串在编译期拒绝；TS/Go/合约镜像状态见 rejectionSurfaces 矩阵。"
+      "ruling": "supplierType 经 executorRoutes 进链上承诺，闭集外的字符串在编译期拒绝；TS/Go/合约镜像状态见 rejectionSurfaces 矩阵。"
     },
     {
       "id": "send-signal-combined-max-length",
@@ -620,7 +620,7 @@
       "sources": {
         "rust": "crates/uvp-compiler/src/dock.rs parse_zhixu_executor_config（D004，order.mode 闭集）"
       },
-      "ruling": "PRD_100 §11 裁决：order.mode 闭集 {new, existing}——new 为本次协作请求一次新的远端运行并连接它；existing 连接明确指定的既有运行，不隐式创建新业务订单。错误码 D004。"
+      "ruling": "order.mode 闭集 {new, existing}——new 为本次协作请求一次新的远端运行并连接它；existing 连接明确指定的既有运行，不隐式创建新业务订单。错误码 D004。"
     },
     {
       "id": "dock-interface-name-pattern",
@@ -644,7 +644,7 @@
       "sources": {
         "rust": "crates/uvp-compiler/src/dock.rs compile_dock_interface（D021）；调用方 interface 字段同规则（D002）"
       },
-      "ruling": "PRD_100 §9.1/§9.3 裁决：dockInterface 下的键为接口名，与端口名同规则 ^[a-z][a-z0-9_]{0,31}$（≤32 字节）；端口名/接口名重复由 map 天然拒绝。"
+      "ruling": "dockInterface 下的键为接口名，与端口名同规则 ^[a-z][a-z0-9_]{0,31}$（≤32 字节）；端口名/接口名重复由 map 天然拒绝。"
     },
     {
       "id": "dock-interface-order-modes",
@@ -673,7 +673,7 @@
       "sources": {
         "rust": "crates/uvp-compiler/src/dock.rs compile_dock_interface（D025）"
       },
-      "ruling": "PRD_100 §11.2 裁决：接口以 orderModes 声明允许的订单方式，取值为 [new]、[existing] 或两者的无重复非空集合；模式不被接口允许时拒绝对接，不自动在创建与引用之间降级。允许 existing 不意味着可以重启已结束阶段或覆盖已有信号。"
+      "ruling": "接口以 orderModes 声明允许的订单方式，取值为 [new]、[existing] 或两者的无重复非空集合；模式不被接口允许时拒绝对接，不自动在创建与引用之间降级。允许 existing 不意味着可以重启已结束阶段或覆盖已有信号。"
     },
     {
       "id": "dock-order-mode-allowed-by-interface",
@@ -700,7 +700,7 @@
       "sources": {
         "rust": "crates/uvp-compiler/src/dock.rs link_dock_routes（D020）"
       },
-      "ruling": "PRD_100 A05 裁决：new/existing 不互相静默替代——调用方声明的 mode 不在目标接口 orderModes 内即响亮拒绝（D020）。"
+      "ruling": "new/existing 不互相静默替代——调用方声明的 mode 不在目标接口 orderModes 内即响亮拒绝（D020）。"
     },
     {
       "id": "dock-at-least-one-mapping",
@@ -727,7 +727,7 @@
       "sources": {
         "rust": "crates/uvp-compiler/src/dock.rs parse_zhixu_executor_config（D019）"
       },
-      "ruling": "PRD_100 §10.1 裁决：至少声明一项输入或输出映射；是否需要业务信号由实际 Stage 决定。"
+      "ruling": "至少声明一项输入或输出映射；是否需要业务信号由实际 Stage 决定。"
     },
     {
       "id": "dock-new-mode-single-input-binding",
@@ -752,7 +752,7 @@
       "sources": {
         "rust": "crates/uvp-compiler/src/dock.rs parse_zhixu_executor_config（D010）"
       },
-      "ruling": "PRD_100 §11.3/A06 裁决：new 模式的建单入口需要确定的出生锚——恰好一条 input 绑定；同一建立动作重试必须复用已创建的远端 Order（幂等）。"
+      "ruling": "new 模式的建单入口需要确定的出生锚——恰好一条 input 绑定；同一建立动作重试必须复用已创建的远端 Order（幂等）。"
     },
     {
       "id": "dock-target-name-slug",
@@ -775,7 +775,7 @@
       "sources": {
         "rust": "crates/uvp-compiler/src/dock.rs parse_zhixu_executor_config（D003，name slug 形态校验；target 可为 null）"
       },
-      "ruling": "PRD_100 §10.1/PRD_102 裁决：跨秩序引用填写目标定义的 metadata.name（slug，与 metadata.name 同规则）；名字到实体的解析由各轨权威承担（链轨内容派生 uid、云轨 DB 唯一名）。target:null 表示运行时选择补齐。"
+      "ruling": "跨秩序引用填写目标定义的 metadata.name（slug，与 metadata.name 同规则）；名字到实体的解析由各轨权威承担（链轨内容派生 uid、云轨 DB 唯一名）。target:null 表示运行时选择补齐。"
     },
     {
       "id": "dock-port-name-pattern",
@@ -801,7 +801,7 @@
         "rust": "crates/uvp-compiler/src/dock.rs valid_port_name / MAX_PORT_NAME_BYTES（D005/D006 引用）",
         "go": "pkg/compiler/validator/zhixu_schema.go validateDockPortName"
       },
-      "ruling": "PRD_100 §9.3 裁决：外部配置使用公开端口名，端口名 ^[a-z][a-z0-9_]{0,31}$（≤32 字节），与接口名同规则。"
+      "ruling": "外部配置使用公开端口名，端口名 ^[a-z][a-z0-9_]{0,31}$（≤32 字节），与接口名同规则。"
     },
     {
       "id": "dock-signalmap-key-max-length",
@@ -910,7 +910,7 @@
       "sources": {
         "rust": "crates/uvp-compiler/src/dock.rs compile_dock_interface（D013：AST 根 kind=signal 判定 + input atom owning-stage 寻址校验）"
       },
-      "ruling": "F096/F117 登记：『出生 hook 恒单一 atom』按语法结构判定（不是去重后依赖计数）；input atom 必须寻址所属 stage。语法手册的对应记载由文档线跟进，本表是单一出处。"
+      "ruling": "『出生 hook 恒单一 atom』按语法结构判定（不是去重后依赖计数）；input atom 必须寻址所属 stage。语法手册的对应记载跟随本表，本表是单一出处。"
     }
   ],
   "rejectionSurfaces": [
@@ -922,7 +922,7 @@
         "go": "none",
         "ts": "mirrored"
       },
-      "note": "镜像债：此类 plan 可 commit、finalize 永久 revert（planId 烧毁）；TS 线预检镜像已补（F075：packages/compiler/src/onchain-hook-plan.ts duplicateCurrentOrderFactKeyIssues（compileOnchainHookPlan preflight + validateOnchainHookPlanArtifact 边界，回归测试 test/onchain-hook-plan.test.ts E16 mirror）），Rust/Go 线仍欠。"
+      "note": "镜像债：此类 plan 可 commit、finalize 永久 revert（planId 烧毁）；TS 线预检镜像已补（packages/compiler/src/onchain-hook-plan.ts duplicateCurrentOrderFactKeyIssues，覆盖 compileOnchainHookPlan preflight 与 validateOnchainHookPlanArtifact 边界，回归测试 test/onchain-hook-plan.test.ts），Rust/Go 线仍欠。"
     },
     {
       "id": "signal-capability-vocabulary-gate",
@@ -932,7 +932,7 @@
         "go": "none",
         "ts": "none"
       },
-      "note": "dock 出生/输入通道不受词表闸是合约侧已知缺口（F055）；编译线词表预检镜像亦缺。"
+      "note": "dock 出生/输入通道不受词表闸是合约侧已知缺口；编译线词表预检镜像亦缺。"
     },
     {
       "id": "hook-delay-upper-bound",
@@ -949,7 +949,7 @@
       "mirrors": {
         "rust": "mirrored（uvp-hook-dsl validate_anchors 编译期 + uvp-replay delay_value 求值期复验）",
         "go": "inherit-ffi（pkg/hookdsl 经 uvp-core FFI 继承）",
-        "ts": "mirrored（onchain-hook-plan validateInstructions 栈机镜像：order-trigger×DELAY、DELAY 缺正锚、NOT 裸操作数，F074）"
+        "ts": "mirrored（onchain-hook-plan validateInstructions 栈机镜像：order-trigger×DELAY、DELAY 缺正锚、NOT 裸操作数）"
       }
     },
     {
@@ -978,7 +978,7 @@
         "go": "none（TrimSpace 只用于判 zhixu 分支，不校验闭集）",
         "ts": "none"
       },
-      "note": "合约侧守卫与 TS/Go 镜像待补（F072 三线）。"
+      "note": "合约侧守卫与 TS/Go 镜像待补。"
     }
   ]
 }

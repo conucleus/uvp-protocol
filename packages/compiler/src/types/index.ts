@@ -14,7 +14,7 @@ export const DOCK_RESOLUTION_SCHEMA_VERSION = "uvp.dock.resolution.v2" as const;
 export type HexString = `0x${string}`;
 export type Address = HexString;
 
-/** PRD_100 §11：route 订单方式与接口 orderModes 的闭集取值。 */
+/** route 订单方式与接口 orderModes 的闭集取值。 */
 export type DockOrderMode = "new" | "existing";
 
 export interface ObjectMeta {
@@ -39,7 +39,7 @@ export interface ZhixuDefinition {
       readonly params?: Record<string, string>;
     };
     readonly taskPatterns: readonly ZhixuTaskPattern[];
-    /** 目标侧公开的具名对接接口 map（接口名 = key，PRD_100 §9）。 */
+    /** 目标侧公开的具名对接接口 map（接口名 = key）。 */
     readonly dockInterface?: DockInterfaceSource;
   };
 }
@@ -129,7 +129,7 @@ export interface DockResolutionManifest {
 export interface DockResolutionTarget {
   /** 目标定义派生身份（zx-<32hex>）；必须与内嵌 definition 派生结果一致。 */
   readonly zhixu: string;
-  /** 内嵌目标定义全文（内容寻址，PRD_102 §5：TS 重算 uid 三方一致校验）。 */
+  /** 内嵌目标定义全文（内容寻址：TS 重算 uid 三方一致校验）。 */
   readonly definition: ZhixuDefinition;
   readonly definitionRefHash: HexString;
   readonly artifactHash: HexString;
@@ -325,7 +325,7 @@ export interface UnresolvedDockRouteV1 {
 export interface HookPlanArtifact {
   readonly schemaVersion: typeof HOOK_PLAN_SCHEMA_VERSION;
   readonly planId: HexString;
-  /** 定义派生身份（zx-<32hex>，PRD_102 §5）。 */
+  /** 定义派生身份（zx-<32hex>）。 */
   readonly zhixuId: string;
   readonly zhixuName: string;
   readonly platform: ZhixuPlatform;
@@ -491,7 +491,7 @@ export interface OnchainCompiledHook {
 export interface OnchainHookPlanArtifact {
   readonly schemaVersion: typeof ONCHAIN_HOOK_PLAN_SCHEMA_VERSION;
   readonly planId: HexString;
-  /** 定义派生身份（zx-<32hex>，PRD_102 §5）。 */
+  /** 定义派生身份（zx-<32hex>）。 */
   readonly zhixuId: string;
   readonly zhixuName: string;
   readonly platform: ZhixuPlatform;

@@ -50,7 +50,7 @@ export function compareByCodeUnit(left: string, right: string): number {
 /**
  * 编译入口：core 产出中性 plan 壳（hooks/依赖索引/中性 dock 声明），
  * 链轨承诺（uid/planId/roots/routeHash/planHash）由 TS 在壳上计算组装
- * （PRD100_102_DESIGN.md §5.2）。resolution manifest 是链轨发布面：TS
+ * （TS 权威实现）。resolution manifest 是链轨发布面：TS
  * 先做内容寻址校验并派生 core linker 消费的中性 name 目录。
  */
 export function compileZhixuHookPlan(

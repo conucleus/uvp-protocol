@@ -32,7 +32,7 @@ test("loads UVP update zhixu yaml and compiles stable on-chain plan", async () =
   assert.equal(hookPlan.platform.network, "base");
   assert.equal(onchain.platform.network, "base");
   assert.equal(hookPlan.planHash, again.planHash);
-  // 身份是内容派生（zx-<32hex>），不是作者手写 uid（PRD_102 N2）。
+  // 身份是内容派生（zx-<32hex>），不是作者手写 uid。
   assert.match(hookPlan.zhixuId, /^zx-[0-9a-f]{32}$/);
   assert.equal(onchain.zhixuId, hookPlan.zhixuId);
   assert.equal(hookPlan.compiledHooks.length, 14);
@@ -84,7 +84,7 @@ test("rejects non-Zhixu yaml at loader boundary", () => {
   );
 });
 
-test("rejects authored metadata.uid as an unknown field (PRD_102 N2)", () => {
+test("rejects authored metadata.uid as an unknown field", () => {
   // uid 由系统从定义内容派生（zx-<32hex>），不是作者可写字段；出现即按
   // 未知字段响亮拒绝——锚点与 Rust serde deny_unknown_fields 的
   // "unknown field `uid`" 同口径（constraints 注册表 metadata-uid-not-an-input）。
@@ -109,7 +109,7 @@ test("rejects authored metadata.uid as an unknown field (PRD_102 N2)", () => {
   );
 });
 
-test("rejects metadata.name that is not a slug (PRD_102 N7)", () => {
+test("rejects metadata.name that is not a slug", () => {
   // 文案锚点与 Rust validate_zhixu_shape 的 NAME_SLUG_PATTERN 对齐
   // （constraints 注册表 metadata-name-slug-shape）。
   for (const badName of ["Probe", "1probe", "probe name", "probe/name", ""]) {

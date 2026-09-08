@@ -34,7 +34,7 @@ function parseStructuredText(raw: string, sourceName: string): unknown {
   }
 }
 
-/** PRD_102 N7：name 是作者技术标签，slug 形态（字节 ≤100）。 */
+/** name 是作者技术标签，slug 形态（字节 ≤100）。 */
 const NAME_SLUG_PATTERN = /^[a-z][a-z0-9_-]{0,99}$/;
 
 function assertZhixuDefinitionShape(
@@ -53,7 +53,7 @@ function assertZhixuDefinitionShape(
   if (!isRecord(value.metadata) || typeof value.metadata.name !== "string") {
     throw new ZhixuLoadError(`${sourceName}.metadata.name is required`);
   }
-  // PRD_102 N2：uid 由系统从定义内容派生（zx-<32hex>），不是作者可写字段。
+  // uid 由系统从定义内容派生（zx-<32hex>），不是作者可写字段。
   // 出现即按未知字段响亮拒绝——与 Rust serde deny_unknown_fields 的
   // "unknown field `uid`" 路径同口径，不存在"写了就用/不写就兜底"分支。
   if ("uid" in value.metadata) {

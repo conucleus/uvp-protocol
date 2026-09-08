@@ -245,7 +245,7 @@ test("defers subscription entries to per-event delivery without expression verdi
 test("rejects non-canonical cross-source header forms", () => {
   assert.throws(() => parseHookExpression("::OUTSIDE"), /retired in uvp\.semantic\.v1/);
   assert.throws(() => parseHookExpression("buyer::OUTSOURCE"), /retired in uvp\.semantic\.v1/);
-  // 旧扇入标头已随 PRD_104 从关键字清单移除：不再有退役清单条目，按
+  // 扇入类旧标头不在关键字清单内：没有退役清单条目，按
   // 通用语法错误拒绝（与 uvp-core 解析器同口径）。词元按字节拼装，
   // 保持全仓 hook 语境的零命中口径。
   const retiredHeader = ["MER", "GE"].join("");
