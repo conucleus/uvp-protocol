@@ -230,9 +230,12 @@ const TS_PROBES = new Map<string, Probe>([
       Object.fromEntries(Object.entries(recomputed).sort(([l], [r]) => (l < r ? -1 : 1)));
     // 变异后按载荷重签 planHash：承诺重算域先于 preflight 校验，未重签会以
     // planHash 不匹配报错而非 TooManyDependencies 镜像。
-    bloated.planHash = hookPlanHashOf(bloated as unknown as HookPlanArtifact);
+    const resigned = {
+      ...bloated,
+      planHash: hookPlanHashOf(bloated as unknown as HookPlanArtifact),
+    };
     assert.throws(
-      () => compileOnchainHookPlan(bloated),
+      () => compileOnchainHookPlan(resigned),
       /exceed the contract limit 1024/,
       "1025 个去重依赖键必须被 preflight 拒绝（TooManyDependencies 镜像）",
     );
