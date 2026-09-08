@@ -14,7 +14,8 @@
   "notes": [
     "error.<line> 存真实错误码/错误名/错误消息锚点（harness 断言用子串匹配）；line 未实现时为 null 且不出现在 applies。",
     "lineParams 只在某线实测参数与 ruling 参数不一致时登记（不对称登记，漂移现场存档）；缺省表示该线与 constraint.params 一致。",
-    "go 线的 hook DSL 约束经 pkg/hookdsl → uvp-core FFI 继承（uvpcore.ParseHook），Go 本地另有防御纵深校验，两者都登记在 error.go / notes。"
+    "go 线的 hook DSL 约束经 pkg/hookdsl → uvp-core FFI 继承（uvpcore.ParseHook），Go 本地另有防御纵深校验，两者都登记在 error.go / notes。",
+    "rejectionSurfaces 是合约拒绝面×实现线镜像状态矩阵（雏形）：登记 Solidity 拒绝面真源与 rust/go/ts 三线镜像状态（mirrored / inherit-ffi / none），供镜像债对账；矩阵不驱动探针，改表由三线 sha256 钉报警。"
   ],
   "rules": [
     {
@@ -280,6 +281,83 @@
         "rust": "crates/uvp-compiler/src/lib.rs is_plain_source_identifier"
       },
       "ruling": "单线登记：rust 强制 stage.source 为 plain identifier；go/ts 无此校验（不对称现状）。"
+    },
+    {
+      "id": "task-pattern-name-charset",
+      "area": "zhixu",
+      "target": "taskPatterns[].name",
+      "constraint": {
+        "type": "pattern",
+        "params": {
+          "regex": "^[A-Za-z][A-Za-z0-9_-]*$",
+          "charset": "ASCII letter first, then ASCII letters, digits, '_' or '-'"
+        }
+      },
+      "error": {
+        "rust": "must start with an ASCII letter and contain only ASCII letters, digits, '_' or '-'",
+        "go": null,
+        "ts": null
+      },
+      "applies": [
+        "rust"
+      ],
+      "sources": {
+        "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape valid_identifier_part（与 stage name 同规则，组合标识 task.stage 落 global_stage.stage_identifier）"
+      },
+      "ruling": "F235 登记：taskPatterns name 字符集——首字符 ASCII 字母，其余 ASCII 字母/数字/下划线/中划线；长度由 stage-identifier-max-length 组合规则钉。"
+    },
+    {
+      "id": "stage-name-charset",
+      "area": "zhixu",
+      "target": "taskPatterns[].stages[].name",
+      "constraint": {
+        "type": "pattern",
+        "params": {
+          "regex": "^[A-Za-z][A-Za-z0-9_-]*$",
+          "charset": "ASCII letter first, then ASCII letters, digits, '_' or '-'"
+        }
+      },
+      "error": {
+        "rust": "must start with an ASCII letter and contain only ASCII letters, digits, '_' or '-'",
+        "go": null,
+        "ts": null
+      },
+      "applies": [
+        "rust"
+      ],
+      "sources": {
+        "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape valid_identifier_part"
+      },
+      "ruling": "F235 登记：stage name 字符集与 taskPatterns name 同规则；跨 task 的同名 stage 合法（stage identifier 含 task 段），task 内重名由唯一性检查拒绝。"
+    },
+    {
+      "id": "executor-supplier-type-closed-enum",
+      "area": "zhixu",
+      "target": "taskPatterns[].stages[].executor.supplierType",
+      "constraint": {
+        "type": "closed_enum",
+        "params": {
+          "values": [
+            "individual",
+            "organization",
+            "zhixu"
+          ],
+          "trim": true,
+          "note": "比对 trim 后进行（与 Go zhixu_schema 的 TrimSpace 判定口径一致）"
+        }
+      },
+      "error": {
+        "rust": "supplierType must be one of",
+        "go": null,
+        "ts": null
+      },
+      "applies": [
+        "rust"
+      ],
+      "sources": {
+        "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape（闭集常量 uvp_model::SUPPLIER_TYPES，与 Go api/core/v0 supplier 常量同源）"
+      },
+      "ruling": "F072（Rust 侧）：supplierType 经 executorRoutes 进链上承诺，闭集外的字符串在编译期拒绝；TS/Go/合约镜像状态见 rejectionSurfaces 矩阵。"
     },
     {
       "id": "send-signal-combined-max-length",
@@ -805,6 +883,102 @@
         "go": "pkg/compiler/validator/zhixu_schema.go validateExecutor"
       },
       "ruling": "簇I 裁决：stage 标识符 + \".\" + signalMap 键组合落 individual_record.signal_name VARCHAR(100)，组合 ≤100。"
+    },
+    {
+      "id": "dock-birth-hook-single-atom-syntax",
+      "area": "dock",
+      "target": "dock 出生阶段 receiveSignals 钩子条件（D013）",
+      "constraint": {
+        "type": "forbidden",
+        "params": {
+          "scope": "D013：出生 hook 的条件必须是单一正向 canonical signal atom",
+          "details": [
+            "判定看去重前的语法结构（cloud AST 根即 kind=signal 节点）：A&A / A|A 等同 atom 组合式不算单 atom（依赖列表是去重产物，计数判定会被伪装绕过）",
+            "input 端口 atom 的 (task, stage) 必须寻址所属 stage：mailbox 地址指向同 source 的其他 stage 同属违规",
+            "否定/计时/订阅形态一律拒绝"
+          ]
+        }
+      },
+      "error": {
+        "rust": "D013",
+        "go": null,
+        "ts": null
+      },
+      "applies": [
+        "rust"
+      ],
+      "sources": {
+        "rust": "crates/uvp-compiler/src/dock.rs compile_dock_interface（D013：AST 根 kind=signal 判定 + input atom owning-stage 寻址校验）"
+      },
+      "ruling": "F096/F117 登记：『出生 hook 恒单一 atom』按语法结构判定（不是去重后依赖计数）；input atom 必须寻址所属 stage。语法手册的对应记载由文档线跟进，本表是单一出处。"
+    }
+  ],
+  "rejectionSurfaces": [
+    {
+      "id": "e16-current-order-factkey-unique-owner",
+      "surface": "relation=0 的事实键 (targetSourceId, signalId) 唯一属主阶段：跨阶段重复声明 revert DuplicateCurrentOrderSignalCapability（UVPPlanMetadataModule E16 注册守卫）",
+      "mirrors": {
+        "rust": "none",
+        "go": "none",
+        "ts": "none"
+      },
+      "note": "镜像债：此类 plan 可 commit、finalize 永久 revert（planId 烧毁）；TS/Rust 预检镜像待补（F075）。"
+    },
+    {
+      "id": "signal-capability-vocabulary-gate",
+      "surface": "提交的事实键必须落在 plan 声明的 signalCapabilities 词表内，词表外 revert InvalidSignalCapability（mint 通道与跨订单 relation≠0 通道，UVPStateMachine/UVPDerivedSignalModule）",
+      "mirrors": {
+        "rust": "none",
+        "go": "none",
+        "ts": "none"
+      },
+      "note": "dock 出生/输入通道不受词表闸是合约侧已知缺口（F055）；编译线词表预检镜像亦缺。"
+    },
+    {
+      "id": "hook-delay-upper-bound",
+      "surface": "DELAY delaySeconds > MAX_HOOK_DELAY_SECONDS（30d）revert HookDelayTooLong（UVPStateMachine._validateHook）",
+      "mirrors": {
+        "rust": "mirrored:rule hook-delay-seconds-range",
+        "go": "mirrored:rule hook-delay-seconds-range",
+        "ts": "mirrored:rule hook-delay-seconds-range"
+      }
+    },
+    {
+      "id": "delay-positive-anchor-invariant",
+      "surface": "DELAY 操作数须含正向信号锚点（hasPosAnchor）；NOT 操作数须裸 SIGNAL；order-trigger hook 禁 DELAY——违者 revert InvalidInstruction（UVPStateMachine._validateHook）",
+      "mirrors": {
+        "rust": "mirrored（uvp-hook-dsl validate_anchors 编译期 + uvp-replay delay_value 求值期复验）",
+        "go": "inherit-ffi（pkg/hookdsl 经 uvp-core FFI 继承）",
+        "ts": "mirrored（onchain-hook-plan validateInstructions 栈机镜像：order-trigger×DELAY、DELAY 缺正锚、NOT 裸操作数，F074）"
+      }
+    },
+    {
+      "id": "plan-dependency-count",
+      "surface": "整计划去重 dependency key 总数 > 1024 revert TooManyDependencies（UVPStateMachine）",
+      "mirrors": {
+        "rust": "none",
+        "go": "none",
+        "ts": "mirrored:rule plan-dependencies-max-count"
+      }
+    },
+    {
+      "id": "signal-capability-count",
+      "surface": "signalCapabilities 条目 > 256 revert TooManySignalCapabilities（UVPPlanMetadataModule.MAX_SIGNAL_CAPABILITIES）",
+      "mirrors": {
+        "rust": "none",
+        "go": "none",
+        "ts": "none"
+      }
+    },
+    {
+      "id": "supplier-type-closed-set",
+      "surface": "executorRoutes 携带的 supplierType 无合约闭集守卫：任意字符串可进链上承诺",
+      "mirrors": {
+        "rust": "mirrored:rule executor-supplier-type-closed-enum",
+        "go": "none（TrimSpace 只用于判 zhixu 分支，不校验闭集）",
+        "ts": "none"
+      },
+      "note": "合约侧守卫与 TS/Go 镜像待补（F072 三线）。"
     }
   ]
 }
