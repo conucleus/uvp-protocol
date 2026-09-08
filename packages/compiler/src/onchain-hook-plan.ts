@@ -682,6 +682,16 @@ function compileConditionInstructions(
         { op: "OR", arity: condition.terms.length },
       ];
     case "delay":
+      // order-trigger hook 内禁止 DELAY（_validateHook 镜像，产出侧第一
+      // 道）：出生事实与订单创建同笔交易，Delay(SIGNAL) 必得 Wait，出生
+      // 路径永久 InvalidTriggerHook。
+      if (options.orderTriggerKind !== "none") {
+        throw new HookPlanCompilationError([
+          `on-chain order-trigger hook (${options.orderTriggerKind}) must not contain DELAY `
+          + `(@${source}::…+${condition.durationSeconds}s); birth facts settle at order creation `
+          + "(contract _validateHook reverts InvalidInstruction)",
+        ]);
+      }
       return [
         ...compileConditionInstructions(condition.expr, source, stageIdentifier, options),
         { op: "DELAY", delaySeconds: condition.durationSeconds },
@@ -1078,7 +1088,11 @@ function validateOnchainCompiledHooks(
       issues.push(`${prefix}.instructions must be an array`);
     } else {
       issues.push(
-        ...validateInstructions(hook.instructions, `${prefix}.instructions`),
+        ...validateInstructions(hook.instructions, `${prefix}.instructions`, {
+          orderTrigger:
+            typeof hook.orderTriggerKind === "string" &&
+            hook.orderTriggerKind !== "none",
+        }),
       );
     }
 
@@ -1148,12 +1162,20 @@ function validateOnchainCompiledHooks(
   return issues;
 }
 
+/**
+ * 镜像 UVPStateMachine._validateHook 的栈机语义（bareSignal/hasPosAnchor
+ * 双轨），形状校验与语义镜像同址：形状坏项计入 issues 后仍按合同口径推进
+ * 栈机，让单次校验暴露全部缺口。
+ */
 function validateInstructions(
   instructions: readonly unknown[],
   path: string,
+  options: { readonly orderTrigger: boolean },
 ): readonly string[] {
   const issues: string[] = [];
   let stackDepth = 0;
+  const bareSignal: boolean[] = [];
+  const hasPosAnchor: boolean[] = [];
 
   for (const [index, instruction] of instructions.entries()) {
     if (!isRecord(instruction)) {
@@ -1201,12 +1223,25 @@ function validateInstructions(
             `${prefix}.signalKey must be keccak256(abi.encodePacked(sourceId, signalId))`,
           );
         }
+        bareSignal[stackDepth] = true;
+        hasPosAnchor[stackDepth] = true;
         stackDepth += 1;
         break;
       case "NOT":
         if (stackDepth < 1) {
           issues.push(`${prefix}.op requires one stack item`);
+          break;
         }
+        // NOT 操作数必须裸 SIGNAL（_validateHook 镜像）：~(A&B)/~Delay(A) 的
+        // 组合否定语义与编译器产物形态分叉，注册边界拒绝。
+        if (!bareSignal[stackDepth - 1]) {
+          issues.push(
+            `${prefix}.op requires a bare SIGNAL operand `
+            + "(contract _validateHook reverts InvalidInstruction for NOT over composite/delayed operands)",
+          );
+        }
+        bareSignal[stackDepth - 1] = false;
+        hasPosAnchor[stackDepth - 1] = false;
         break;
       case "AND":
       case "OR": {
@@ -1220,9 +1255,21 @@ function validateInstructions(
         const arity = Number(instruction.arity);
         if (stackDepth < arity) {
           issues.push(`${prefix}.op requires ${arity} stack items`);
-        } else {
-          stackDepth = stackDepth - arity + 1;
+          break;
         }
+        // And 取任一正锚，Or 需每一分支都有（Or 的缺席分支可单独就绪且
+        // 锚点为 0）——只被 DELAY 的操作数正锚检查消费。
+        const anchored =
+          instruction.op === "AND"
+            ? hasPosAnchor
+                .slice(stackDepth - arity, stackDepth)
+                .some(Boolean)
+            : hasPosAnchor
+                .slice(stackDepth - arity, stackDepth)
+                .every(Boolean);
+        stackDepth = stackDepth - arity + 1;
+        bareSignal[stackDepth - 1] = false;
+        hasPosAnchor[stackDepth - 1] = anchored;
         break;
       }
       case "DELAY":
@@ -1241,7 +1288,25 @@ function validateInstructions(
         }
         if (stackDepth < 1) {
           issues.push(`${prefix}.op requires one stack item`);
+          break;
         }
+        // order-trigger hook 内禁止 DELAY（_validateHook 镜像）：出生事实
+        // 与订单创建同笔交易，DELAY 只会让出生路径永久 InvalidTriggerHook。
+        if (options.orderTrigger) {
+          issues.push(
+            `${prefix}.op DELAY is not allowed on order-trigger hooks `
+            + "(contract _validateHook reverts InvalidInstruction; birth facts settle at order creation)",
+          );
+        }
+        // 延时操作数须含正向信号锚点（validate_anchors 镜像）：全否定/
+        // 缺席的操作数在 value=true 时 anchorAt=0，到期时刻恒在过去。
+        if (!hasPosAnchor[stackDepth - 1]) {
+          issues.push(
+            `${prefix}.op DELAY requires an operand with a positive signal anchor `
+            + "(contract _validateHook reverts InvalidInstruction for delay over purely-negative operands)",
+          );
+        }
+        bareSignal[stackDepth - 1] = false;
         break;
       default:
         issues.push(`${prefix}.op must be one of SIGNAL, NOT, AND, OR, DELAY`);
@@ -1253,6 +1318,13 @@ function validateInstructions(
   // preflight too (stack depth 0 !== 1 below).
   if (stackDepth !== 1) {
     issues.push(`${path} must leave exactly one stack item`);
+  } else if (!hasPosAnchor[0]) {
+    // 整体至少一正锚（validate_anchors 镜像）：纯否定条件在 value=true 时
+    // anchorAt=0，注册边界拒绝。
+    issues.push(
+      `${path} must contain at least one positive signal anchor `
+      + "(contract _validateHook reverts InvalidInstruction for purely-negative hook conditions)",
+    );
   }
 
   return issues;

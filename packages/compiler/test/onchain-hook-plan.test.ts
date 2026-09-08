@@ -1454,11 +1454,13 @@ test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
 
   // 反例 1（沉默 mint trigger）：orderTriggerKind=mint、emitReady=false 的
   // 形态——UVPStateMachine.commitPlan 对 flags=1 恒 revert
-  // SilentOrderTriggerHook，artifact 边界同口径拒绝。
+  // SilentOrderTriggerHook，artifact 边界同口径拒绝。只改出生锚通道钩子
+  // START（裸 SIGNAL 条件）；watcher（TIMEOUT 的 DELAY 条件）保持原样，
+  // trigger×DELAY 是另一条拒绝面（_validateHook），不混入本测试载体。
   const silentMint: OnchainHookPlanArtifact = {
     ...baseOnchain,
     compiledHooks: baseOnchain.compiledHooks.map((hook) =>
-      hook.stageIdentifier === "execution.main"
+      hook.stageIdentifier === "execution.main" && hook.hookName === "START"
         ? { ...hook, orderTriggerKind: "mint" as const, emitReady: false }
         : hook,
     ),
@@ -1477,7 +1479,7 @@ test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
   const silentDock: OnchainHookPlanArtifact = {
     ...baseOnchain,
     compiledHooks: baseOnchain.compiledHooks.map((hook) =>
-      hook.stageIdentifier === "execution.main"
+      hook.stageIdentifier === "execution.main" && hook.hookName === "START"
         ? { ...hook, orderTriggerKind: "dock" as const, emitReady: false }
         : hook,
     ),
@@ -1493,7 +1495,7 @@ test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
   const mutatedSilentPlan = {
     ...silentSourcePlan,
     compiledHooks: silentSourcePlan.compiledHooks.map((hook) =>
-      hook.stageIdentifier === "execution.main"
+      hook.stageIdentifier === "execution.main" && hook.hookName === "START"
         ? { ...hook, orderTriggerKind: "mint" as const, emitReady: false }
         : hook,
     ),
@@ -1505,5 +1507,141 @@ test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
       error.issues.some((issue) =>
         /order trigger without emitReady/.test(issue),
       ),
+  );
+});
+
+test("mirrors _validateHook DELAY/NOT/anchor rejection branches at the artifact boundary", () => {
+  const baseOnchain = compileOnchainHookPlan(
+    compileZhixuHookPlan(baseZhixu, demoManifest),
+  );
+  const rehashed = (artifact: OnchainHookPlanArtifact): OnchainHookPlanArtifact => {
+    const { planHash: _stale, ...payload } = artifact;
+    void _stale;
+    return {
+      ...payload,
+      planHash: hashOnchainPlanPayload(payload as never),
+    } as OnchainHookPlanArtifact;
+  };
+
+  const mutateHookInstructions = (
+    hookName: string,
+    instructions: unknown,
+    extra?: (hook: unknown) => unknown,
+  ): OnchainHookPlanArtifact =>
+    rehashed({
+      ...structuredClone(baseOnchain),
+      compiledHooks: baseOnchain.compiledHooks.map((hook) =>
+        hook.hookName === hookName
+          ? { ...hook, instructions, ...(extra?.(hook) ?? {}) }
+          : hook,
+      ),
+    } as OnchainHookPlanArtifact);
+
+  // 触发条件：F074 主体——order-trigger hook 内出现 DELAY，制品边界必须
+  // 镜像合约 InvalidInstruction（毒制品过验证即 commitPlan 必 revert）。
+  const timeoutInstructions = baseOnchain.compiledHooks
+    .find((hook) => hook.hookName === "TIMEOUT")!
+    .instructions;
+  const triggerDelay = mutateHookInstructions(
+    "START",
+    [...timeoutInstructions.slice(0, 2)],
+    () => ({ orderTriggerKind: "mint" as const }),
+  );
+  const triggerDelayIssues = validateOnchainHookPlanArtifact(triggerDelay);
+  assert.ok(
+    triggerDelayIssues.some((issue) =>
+      /DELAY is not allowed on order-trigger hooks/.test(issue),
+    ),
+    triggerDelayIssues.join("; "),
+  );
+
+  // DELAY 缺正锚：~A 后延时（操作数无正向信号锚点）→ 合约镜像拒绝。
+  const anchorFreeDelay = mutateHookInstructions("TIMEOUT", [
+    timeoutInstructions[0], // SIGNAL
+    { op: "NOT" },
+    { op: "DELAY", delaySeconds: 5 },
+    timeoutInstructions[2], // SIGNAL（补齐栈，聚焦单条拒绝面）
+    { op: "AND", arity: 2 },
+  ]);
+  assert.ok(
+    validateOnchainHookPlanArtifact(anchorFreeDelay).some((issue) =>
+      /DELAY requires an operand with a positive signal anchor/.test(issue),
+    ),
+  );
+
+  // NOT 非裸操作数（F057 合约侧镜像缺口）：~(A&B) 形态。
+  const notOverAnd = mutateHookInstructions("TIMEOUT", [
+    timeoutInstructions[0], // SIGNAL
+    timeoutInstructions[2], // SIGNAL
+    { op: "AND", arity: 2 },
+    { op: "NOT" },
+  ]);
+  assert.ok(
+    validateOnchainHookPlanArtifact(notOverAnd).some((issue) =>
+      /requires a bare SIGNAL operand/.test(issue),
+    ),
+  );
+
+  // 整体纯否定（F057 合约侧镜像缺口）：~A 单钩。
+  const pureNegative = mutateHookInstructions("TIMEOUT", [
+    timeoutInstructions[0], // SIGNAL
+    { op: "NOT" },
+  ]);
+  assert.ok(
+    validateOnchainHookPlanArtifact(pureNegative).some((issue) =>
+      /at least one positive signal anchor/.test(issue),
+    ),
+  );
+
+  // 正例：合法 TIMEOUT（SIGNAL,DELAY,SIGNAL,NOT,AND——DELAY 操作数含正锚、
+  // NOT 操作数裸 SIGNAL、整体含正锚）零镜像 issue。
+  assert.deepEqual(
+    validateOnchainHookPlanArtifact(rehashed(structuredClone(baseOnchain) as OnchainHookPlanArtifact)),
+    [],
+  );
+});
+
+test("rejects DELAY on order-trigger conditions at the compile boundary (F074 产出侧)", () => {
+  // core 的 D013 在 DSL 层已拒绝 input-port 钩子带延时；这里是第二道门：
+  // 手工/漂移的 HookPlanArtifact（trigger 钩子 + delay AST）在 on-chain
+  // 编译入口以合约 _validateHook 同口径拒绝，不产出毒制品。
+  const targetPlan = compileZhixuHookPlan(
+    dockProductionTargetDefinition(),
+    demoManifest,
+  );
+  const triggerHook = targetPlan.compiledHooks.find(
+    (hook) => hook.stageIdentifier === "manufacturing.intake" && hook.hookName === "EXECUTE",
+  );
+  assert.ok(triggerHook, "target fixture must expose the dock entrance trigger hook");
+  assert.equal(triggerHook.orderTriggerKind, "dock");
+  const delayed = {
+    ...targetPlan,
+    compiledHooks: targetPlan.compiledHooks.map((hook) =>
+      hook === triggerHook
+        ? {
+            ...hook,
+            ast: {
+              ...hook.ast,
+              condition: {
+                kind: "delay",
+                durationSeconds: 5,
+                expr: hook.ast.condition,
+                rawDuration: "5s",
+              },
+            },
+          }
+        : hook,
+    ),
+  };
+  assert.throws(
+    () => compileOnchainHookPlan(delayed),
+    (error: unknown) => {
+      assert.ok(error instanceof HookPlanCompilationError);
+      assert.match(
+        error.issues.join("; "),
+        /order-trigger hook \(dock\) must not contain DELAY/,
+      );
+      return true;
+    },
   );
 });
