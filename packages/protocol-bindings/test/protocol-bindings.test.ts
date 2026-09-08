@@ -892,10 +892,11 @@ describe("protocol bindings", () => {
       canonicalJson({ b: 2, a: { d: 4, c: 3 } }),
       '{"a":{"c":3,"d":4},"b":2}',
     );
-    // -0 保留符号（Rust 权威 serde_json 对 f64 -0.0 输出 "-0.0"）；
-    // JSON.stringify 丢符号的 "0" 会与权威哈希分叉。
-    assert.equal(canonicalJson({ n: -0 }), '{"n":-0.0}');
+    // bug_audit #15：浮点拒绝——canonical 哈希输入只收整数，非整值 float
+    // 与负零（f64 -0.0）响亮拒绝（与 @uvp-eth/compiler canonical.ts 同口
+    // 径，三线语料 uvp-core fixtures/canonical/canonical.v1.json 钉死边界）。
     assert.equal(canonicalJson({ n: 0 }), '{"n":0}');
+    assert.throws(() => canonicalJson({ n: -0 }), /float-form numbers.*received -0/);
     assert.throws(
       () => canonicalJson({ optional: undefined }),
       /undefined object properties/,
@@ -915,6 +916,58 @@ describe("protocol bindings", () => {
     assert.equal(
       canonicalJson({ "\u{10FFFF}": 1, "\uFFFE": 2 }),
       `{"\uFFFE":2,"\u{10FFFF}":1}`,
+    );
+    // bug_audit #15：浮点拒绝——canonical 哈希输入只收整数与 -0，
+    // 非整值 float 响亮拒绝（与 @uvp-eth/compiler canonical.ts 同口径，
+    // 三线语料 uvp-core fixtures/canonical/canonical.v1.json 钉死边界）。
+    assert.throws(() => canonicalJson(1.5), /float-form numbers/);
+    assert.throws(() => canonicalJson({ a: [0, 0.5] }), /float-form numbers/);
+    assert.throws(() => canonicalJson(1e-5), /float-form numbers/);
+  });
+
+  it("rejects chain ids at and beyond the 64-bit FFI boundary (bug_audit #19)", () => {
+    const base = {
+      verifyingContract,
+      planId,
+      orderId,
+      sourceId,
+      signalId,
+      payloadHash,
+      idempotencyKey,
+      submitter,
+      deadline,
+    };
+    // 负数 / 零 / 非整数拒绝。
+    assert.throws(
+      () => buildProductSubmitTypedData({ ...base, chainId: -1 }),
+      /chainId must be a positive integer/,
+    );
+    assert.throws(
+      () => buildProductSubmitTypedData({ ...base, chainId: 0 }),
+      /chainId must be a positive integer/,
+    );
+    assert.throws(
+      () => buildProductSubmitTypedData({ ...base, chainId: 31337.5 }),
+      /chainId must be a positive integer/,
+    );
+    // ≥ 2^64 显式拒绝（FFI 域保持 64 位）——number 面上不可精确表示，
+    // 但拒绝必须发生在入口而不是静默取整后放行。
+    assert.throws(
+      () => buildProductSubmitTypedData({ ...base, chainId: 2 ** 64 }),
+      /chainId must be < 2\^64/,
+    );
+    assert.throws(
+      () => buildProductSubmitTypedData({ ...base, chainId: 1e21 }),
+      /chainId must be < 2\^64/,
+    );
+    // 2^53 以上的整数（如 1e19 < 2^64）因无法精确表示同样拒绝。
+    assert.throws(
+      () => buildProductSubmitTypedData({ ...base, chainId: 1e19 }),
+      /chainId must be a safe integer/,
+    );
+    // 边界内正常放行。
+    assert.doesNotThrow(() =>
+      buildProductSubmitTypedData({ ...base, chainId: 31337 }),
     );
   });
 

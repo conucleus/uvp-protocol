@@ -1698,11 +1698,17 @@ export function canonicalJson(value: unknown): string {
     if (!Number.isFinite(value)) {
       throw new TypeError("canonical JSON does not support non-finite numbers");
     }
-    // -0 保留符号（Rust 权威对 serde_json Number 原样透传，f64 -0.0 序列化
-    // 为 "-0.0"）；JSON.stringify 会丢符号输出 "0"，让同一份证据在 TS 与
-    // Rust 权威哈希上分叉。
-    if (Object.is(value, -0)) {
-      return "-0.0";
+    // 浮点拒绝（bug_audit #15）：canonical 哈希输入的数字词表封闭为整数
+    // （u64/i64）——非整值 float 与负零（serde_json 把 "-0"/"-0.0" 都解析
+    // 为 f64 -0.0，权威侧按浮点拒绝）一律响亮拒绝。与 @uvp-eth/compiler
+    // canonical.ts 同口径，三线语料（uvp-core
+    // fixtures/canonical/canonical.v1.json）钉死边界。JS 数字模型无法区分
+    // 1 与源字面量 1.0，整值浮点字面量（不含 -0）的拒绝在 Rust 权威解析侧。
+    if (!Number.isInteger(value) || Object.is(value, -0)) {
+      const token = Object.is(value, -0) ? "-0" : String(value);
+      throw new TypeError(
+        `canonical JSON does not support float-form numbers (integer hash preimages only), received ${token}`,
+      );
     }
     return JSON.stringify(value);
   }
@@ -2341,9 +2347,28 @@ function hashCanonicalJson(domain: string, payload: unknown): Hex {
   return keccak256(stringToHex(`${domain}:${canonicalJson(payload)}`));
 }
 
+/**
+ * chainId 入口校验（bug_audit #19）：跨运行时域的 FFI 字段保持 64 位，
+ * ≥ 2^64 / 负数 / 非整数在 typed-data/EIP-712 入口显式拒绝；2^53 以上的
+ * number 无法精确表示，同样拦截（不得静默取整）。
+ */
+const MAX_CHAIN_ID = 2 ** 64; // exactly representable double (power of two)
+
 function normalizeChainId(value: number): number {
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new Error("chainId must be a positive safe integer");
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new Error(
+      "chainId must be a positive integer (negative, zero, fractional, and non-number values are rejected)",
+    );
+  }
+  if (value >= MAX_CHAIN_ID) {
+    throw new Error(
+      `chainId must be < 2^64 (${MAX_CHAIN_ID}): the cross-runtime domain FFI field stays 64-bit and overflow is rejected explicitly, received ${value}`,
+    );
+  }
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(
+      `chainId must be a safe integer (numbers beyond 2^53 cannot be represented exactly), received ${value}`,
+    );
   }
   return value;
 }
