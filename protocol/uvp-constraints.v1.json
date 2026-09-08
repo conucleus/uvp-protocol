@@ -210,18 +210,12 @@
       "constraint": {
         "type": "max_length",
         "params": {
-          "max": 36,
+          "max": 100,
           "unit": "bytes"
         }
       },
-      "lineParams": {
-        "go": {
-          "max": 100,
-          "note": "Go validateDDLDimensions 实测按 global_stage.source VARCHAR(100) 判 100；rust 按『source 兼任路由键与 sourceId=keccak(source) 哈希输入，订阅路由维度列宽 36』判 36。簇I 裁决 36，go 侧差异在此存档，探针按各线实测值断言。"
-        }
-      },
       "error": {
-        "rust": "exceeds 36 bytes",
+        "rust": "exceeds 100 bytes",
         "go": "exceeds 100 bytes (global_stage.source)",
         "ts": null
       },
@@ -233,7 +227,7 @@
         "rust": "crates/uvp-compiler/src/lib.rs MAX_STAGE_SOURCE_BYTES",
         "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions"
       },
-      "ruling": "簇I 裁决：stage.source ≤36（与订阅 target source 同值）；go 线当前实现 100，属已登记漂移，解冻时应对齐。"
+      "ruling": "bug_audit #14 裁决：DSL 壳字段统一 100 字节（与 metadata.name 同宽、global_stage.source VARCHAR(100) DDL 镜像）；hook_name 的 36 字节上限是链轨落库内幕，不反向约束 DSL 壳字段。rust 线自 36 放宽至 100，与 go 线同值，旧 lineParams 漂移登记随之消除。"
     },
     {
       "id": "stage-source-required",
