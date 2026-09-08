@@ -11,8 +11,10 @@ import {
   hookPlanHashOf,
   prepareDockResolution,
 } from "../src/dock-commitments.js";
+import { validateDockCommitments } from "../src/dock-validation.js";
 import {
   type DockResolutionManifest,
+  type DockResolutionTarget,
   type HookPlanArtifact,
   type ZhixuDefinition,
   type ZhixuStage
@@ -26,7 +28,10 @@ import {
   definitionRefHash,
   definitionUid,
   EMPTY_MERKLE_ROOT,
+  inputPortLeaf,
+  interfaceLeaf,
   merkleRoot,
+  outputPortLeaf,
 } from "../src/dock.js";
 
 const demoManifest = dockDemoResolutionManifest();
@@ -452,6 +457,199 @@ test("rejects resolution manifests whose evmPlanId diverges from the embedded de
         ],
       }),
     /evmPlanId does not match the recomputed/,
+  );
+});
+
+test("neutral resolution manifest carries {source, hook} on every input port (bug_audit #1)", () => {
+  // 发布面 → core 中性 name 目录：input 端口补 source 兄弟键（所属 stage
+  // 的 source 类），shape 与 uvp-core parse_interface_declaration 的必填键
+  // 逐字段对齐——缺该键 core 侧 D008 拒绝，TS 侧发射面必须恒携带。
+  const prepared = prepareDockResolution(demoManifest);
+  const service = prepared.neutral.definitions[0]!.interfaces.find(
+    (entry) => entry.name === "production_service",
+  );
+  assert.ok(service, "demo manifest exposes production_service");
+  assert.deepEqual(service.inputs, {
+    execute: { source: "factory", hook: "manufacturing.intake#EXECUTE" },
+    amend: { source: "factory", hook: "manufacturing.produce#DOCK_AMEND" },
+  });
+  const evidence = prepared.neutral.definitions[0]!.interfaces.find(
+    (entry) => entry.name === "production_evidence",
+  );
+  assert.ok(evidence, "demo manifest exposes production_evidence");
+  assert.deepEqual(evidence.inputs, {});
+});
+
+/**
+ * 就地变异内嵌定义后按内容寻址口径重签 entry：uid/refHash 跟随定义，接口
+ * 承诺链（叶/两根/接口叶）按新 uid 重算——变异定义但不重签会让
+ * prepareTargetEntry 的承诺重算先于本测试聚焦的 neutral 派生路径抛错。
+ */
+interface MutableInterfaceEntry {
+  readonly name: string;
+  readonly orderModes: readonly string[];
+  readonly inputs: readonly {
+    readonly port: string;
+    readonly hookId: string;
+    readonly leafHash: `0x${string}`;
+  }[];
+  readonly outputs: readonly {
+    readonly port: string;
+    readonly canonicalOutputSignal: string;
+    readonly leafHash: `0x${string}`;
+  }[];
+  inputsRoot: `0x${string}`;
+  outputsRoot: `0x${string}`;
+  interfaceRoot: `0x${string}`;
+}
+
+function readdress(entry: DockResolutionTarget): void {
+  const uid = definitionUid(entry.definition);
+  const mutable = entry as {
+    zhixu: string;
+    definitionRefHash: `0x${string}`;
+    evmPlanId?: `0x${string}`;
+  };
+  mutable.zhixu = uid;
+  mutable.definitionRefHash = definitionRefHash(uid);
+  // 变异后的定义推导出不同 planId——evmPlanId 是可选的交叉重算面，摘除
+  // 以聚焦本测试的 neutral 派生路径。
+  delete mutable.evmPlanId;
+  for (const iface of entry.interfaces as readonly MutableInterfaceEntry[]) {
+    const ports = iface as unknown as {
+      inputs: { leafHash: `0x${string}` }[];
+      outputs: { leafHash: `0x${string}` }[];
+    };
+    for (const [index, port] of iface.inputs.entries()) {
+      ports.inputs[index]!.leafHash = inputPortLeaf({
+        uid,
+        interfaceName: iface.name,
+        portName: port.port,
+        hookId: port.hookId,
+      });
+    }
+    for (const [index, port] of iface.outputs.entries()) {
+      ports.outputs[index]!.leafHash = outputPortLeaf({
+        uid,
+        interfaceName: iface.name,
+        portName: port.port,
+        canonicalSignal: port.canonicalOutputSignal,
+      });
+    }
+    iface.inputsRoot = merkleRoot(iface.inputs.map((port) => port.leafHash));
+    iface.outputsRoot = merkleRoot(iface.outputs.map((port) => port.leafHash));
+    iface.interfaceRoot = interfaceLeaf({
+      uid,
+      interfaceName: iface.name,
+      orderModes: iface.orderModes,
+      inputsRoot: iface.inputsRoot,
+      outputsRoot: iface.outputsRoot,
+    });
+  }
+}
+
+test("neutral input-port source derivation fails loud, no fallback (bug_audit #1)", () => {
+  // (a) 所属 stage 缺席：接口声明引用了内嵌定义不存在的 stage——source 无
+  // 从派生，响亮拒绝而不是臆造空串。
+  const missingStageEntry = structuredClone(
+    demoManifest.definitions[0],
+  ) as (typeof demoManifest.definitions)[number];
+  const missingPattern = missingStageEntry.definition.spec.taskPatterns[0]! as unknown as {
+    stages: ZhixuStage[];
+  };
+  missingPattern.stages = missingPattern.stages.filter(
+    (stage) => stage.name !== "intake",
+  );
+  readdress(missingStageEntry);
+  assert.throws(
+    () =>
+      prepareDockResolution({
+        schemaVersion: "uvp.dock.resolution.v2",
+        definitions: [missingStageEntry],
+      }),
+    /stage "manufacturing\.intake" is absent from the embedded definition — the neutral input-port source cannot be derived/,
+  );
+
+  // (b) stage source 空白：core D022 同口径（对无 source 的 stage 拒绝派生）。
+  const blankSourceEntry = structuredClone(
+    demoManifest.definitions[0],
+  ) as (typeof demoManifest.definitions)[number];
+  (
+    blankSourceEntry.definition.spec.taskPatterns[0]!.stages.find(
+      (stage) => stage.name === "intake",
+    ) as unknown as { source: string }
+  ).source = "   ";
+  readdress(blankSourceEntry);
+  assert.throws(
+    () =>
+      prepareDockResolution({
+        schemaVersion: "uvp.dock.resolution.v2",
+        definitions: [blankSourceEntry],
+      }),
+    /declares a blank source — the neutral input-port source cannot be derived/,
+  );
+
+  // (c) 发布面 artifact 端口 source 与内嵌定义 stage source 分叉：manifest
+  // 自不一致（非内容寻址），拒绝。
+  const driftedEntry = structuredClone(
+    demoManifest.definitions[0],
+  ) as (typeof demoManifest.definitions)[number];
+  const serviceInterface = driftedEntry.interfaces.find(
+    (entry) => entry.name === "production_service",
+  )!;
+  const executePort = serviceInterface.inputs.find(
+    (port) => port.port === "execute",
+  )! as unknown as Record<string, unknown>;
+  executePort.source = "counterfeit-source";
+  assert.throws(
+    () =>
+      prepareDockResolution({
+        schemaVersion: "uvp.dock.resolution.v2",
+        definitions: [driftedEntry],
+      }),
+    /declares "counterfeit-source" but the embedded definition's stage "manufacturing\.intake" source is "factory" — the manifest is not content-addressed/,
+  );
+});
+
+test("artifact validators require a non-empty source on input ports (bug_audit #1)", () => {
+  const target = compileZhixuHookPlan(
+    structuredClone(demoManifest.definitions[0]!.definition),
+  );
+  const dockInterface = structuredClone(target.dockInterface!);
+  const executePort = dockInterface.interfaces
+    .find((entry) => entry.name === "production_service")!
+    .inputs.find((port) => port.port === "execute")! as unknown as Record<
+    string,
+    unknown
+  >;
+  delete executePort.source;
+  // source 不入叶哈希：roots 仍自洽，但制品边界的形状校验必须独立报 issue
+  // （hookPlan/onchain 两个边界共用 validateDockCommitments 路径）。
+  const issues = validateDockCommitments({
+    dockRoutes: [],
+    dockRoutesRoot: EMPTY_MERKLE_ROOT,
+    dockInterface,
+    dockInterfaceRoot: dockInterface.interfaceRoot,
+  });
+  assert.ok(
+    issues.some((issue) =>
+      /inputs\[\d+\]\.source must be a non-empty string/.test(issue),
+    ),
+    issues.join("; "),
+  );
+  // 空白串与缺失同口径拒绝。
+  executePort.source = "  ";
+  const blankIssues = validateDockCommitments({
+    dockRoutes: [],
+    dockRoutesRoot: EMPTY_MERKLE_ROOT,
+    dockInterface,
+    dockInterfaceRoot: dockInterface.interfaceRoot,
+  });
+  assert.ok(
+    blankIssues.some((issue) =>
+      /inputs\[\d+\]\.source must be a non-empty string/.test(issue),
+    ),
+    blankIssues.join("; "),
   );
 });
 

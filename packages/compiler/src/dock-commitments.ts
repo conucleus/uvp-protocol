@@ -117,7 +117,13 @@ export function prepareDockResolution(
     byName.set(name, prepared);
     neutralDefinitions.push({
       name,
-      interfaces: entry.interfaces.map(neutralInterfaceOf),
+      interfaces: entry.interfaces.map((interfaceEntry, interfaceIndex) =>
+        neutralInterfaceOf(
+          interfaceEntry,
+          entry.definition,
+          `${path}.interfaces[${interfaceIndex}]`,
+        ),
+      ),
       ...(entry.dockEdges === undefined ? {} : { dockEdges: entry.dockEdges }),
     });
   }
@@ -216,13 +222,38 @@ function prepareTargetEntry(
   };
 }
 
-/** 发布面接口 → core 中性声明（端口 map 形态，键序由 canonical 化消除）。 */
+/**
+ * 发布面接口 → core 中性声明（端口 map 形态，键序由 canonical 化消除）。
+ * input 端口补 `{source, hook}`（bug_audit #1）：source 从内嵌定义所属
+ * stage 的声明 source 派生——缺失/空白即响亮失败，不回退、不臆造；发布面
+ * artifact 端口自带的 source 与之交叉比对，自不一致的 manifest 拒绝
+ * （core parse_interface_declaration 对中性声明按必填键校验同一形状）。
+ */
 function neutralInterfaceOf(
   interfaceEntry: DockInterfaceArtifactInterface,
+  definition: ZhixuDefinition,
+  path: string,
 ): NeutralInterfaceDeclaration {
-  const inputs: Record<string, { hook: string }> = {};
+  const stageSources = flattenStageSources(definition);
+  const inputs: Record<string, { source: string; hook: string }> = {};
   for (const port of interfaceEntry.inputs) {
-    inputs[port.port] = { hook: port.hookId };
+    const stageSource = stageSources.get(port.stageIdentifier);
+    if (stageSource === undefined) {
+      throw new RangeError(
+        `${path}.inputs[${JSON.stringify(port.port)}] references hook ${JSON.stringify(port.hookId)} whose stage ${JSON.stringify(port.stageIdentifier)} is absent from the embedded definition — the neutral input-port source cannot be derived`,
+      );
+    }
+    if (stageSource.trim().length === 0) {
+      throw new RangeError(
+        `${path}.inputs[${JSON.stringify(port.port)}] references stage ${JSON.stringify(port.stageIdentifier)} which declares a blank source — the neutral input-port source cannot be derived`,
+      );
+    }
+    if (port.source !== stageSource) {
+      throw new RangeError(
+        `${path}.inputs[${JSON.stringify(port.port)}].source declares ${JSON.stringify(port.source)} but the embedded definition's stage ${JSON.stringify(port.stageIdentifier)} source is ${JSON.stringify(stageSource)} — the manifest is not content-addressed`,
+      );
+    }
+    inputs[port.port] = { source: stageSource, hook: port.hookId };
   }
   const outputs: Record<string, { signal: string }> = {};
   for (const port of interfaceEntry.outputs) {
@@ -266,6 +297,14 @@ export function buildDockInterfaceArtifact(
               `dockInterface input port ${portName} must reference a hook with exactly one positive canonical signal atom, received ${JSON.stringify(port.hook)}`,
             );
           }
+          // 中性声明的 input 端口 source（所属 stage 的 source 类，core 自
+          // 定义派生）与编译后 hook 原子 source 必须一致（core D013 同口径）：
+          // 分叉即制品自不一致，响亮拒绝（bug_audit #1）。
+          if (port.source !== dependency.source) {
+            throw new RangeError(
+              `dockInterface input port ${portName} declares source ${JSON.stringify(port.source)} but its hook atom source is ${JSON.stringify(dependency.source)} — the neutral declaration and the compiled hook disagree`,
+            );
+          }
           const canonicalInputSignal = `${dependency.source}::${dependency.signalName}`;
           return {
             port: portName,
@@ -274,8 +313,8 @@ export function buildDockInterfaceArtifact(
             hookId: port.hook,
             canonicalInputSignal,
             canonicalInputSignalHash: keccakWord(canonicalInputSignal),
-            source: dependency.source,
-            sourceId: keccakWord(dependency.source),
+            source: port.source,
+            sourceId: keccakWord(port.source),
             signalId: keccakWord(dependency.signalName),
             leafHash: inputPortLeaf({
               uid,
@@ -443,27 +482,24 @@ export function buildDockRoute(
     outputBindings.map((binding) => binding.bindingHash),
   );
 
-  const seams = new Set(
-    [
-      ...neutral.inputBindings.map((binding) => binding.port),
-      ...neutral.outputBindings.map((binding) => binding.port),
-    ].flatMap((portName) => {
-      const input = interfaceEntry.inputs.find(
-        (candidate) => candidate.port === portName,
-      );
-      const output = interfaceEntry.outputs.find(
-        (candidate) => candidate.port === portName,
-      );
-      return input !== undefined
-        ? [input.source]
-        : output !== undefined
-          ? [output.source]
-          : [];
-    }),
+  // D012 双侧镜像（core link_dock_routes，bug_audit #1）：被绑定接口的
+  // 全部 input 端口 source（它们是同一接缝的投递邮箱）+ route-bound 输出
+  // 端口的 canonical signal 前缀，并集必须单一 seam——input 侧跨源寻址
+  // 在编译期拒绝。
+  const seams = new Set<string>(
+    interfaceEntry.inputs.map((port) => port.source),
   );
+  for (const binding of neutral.outputBindings) {
+    const output = interfaceEntry.outputs.find(
+      (candidate) => candidate.port === binding.port,
+    );
+    if (output !== undefined) {
+      seams.add(output.source);
+    }
+  }
   if (seams.size !== 1) {
     throw new RangeError(
-      `dock route ${stageIdentifier} must bind a single target source seam, found ${JSON.stringify([...seams])}`,
+      `dock route ${stageIdentifier} must bind a single target source seam across the interface's input and bound output ports, found ${JSON.stringify([...seams])}`,
     );
   }
 

@@ -347,6 +347,17 @@ function validateInterfaceCommitments(
       inputsComputable = false;
       continue;
     }
+    // bug_audit #1：input 端口必须携带所属 stage 的 source 类（非空字符串）
+    // ——中性 resolution manifest 与 linker 的双侧单源校验都依赖该字段，
+    // 缺失/空白在制品边界响亮拒绝（source 不入叶哈希，独立成 issue）。
+    if (
+      typeof port.source !== "string" ||
+      (port.source as string).trim().length === 0
+    ) {
+      issues.push(
+        `${path}.inputs[${index}].source must be a non-empty string (the owning stage's source class; the neutral manifest and the single-seam validation require it)`,
+      );
+    }
     const recomputed = inputPortLeaf({
       uid,
       interfaceName: name,
