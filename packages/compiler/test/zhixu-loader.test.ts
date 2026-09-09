@@ -138,7 +138,7 @@ test("rejects metadata.name that is not a slug", () => {
   );
 });
 
-test("rejects unknown fields at every structural level (N-51)", () => {
+test("rejects unknown fields at every structural level", () => {
   // 镜像 uvp_model serde deny_unknown_fields：拼错/不受支持的结构字段都是
   // 确定性非法输入，静默忽略会把"看似生效"的定义落成零值。
   const cases: readonly [string, RegExp][] = [

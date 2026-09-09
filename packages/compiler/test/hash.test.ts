@@ -41,7 +41,7 @@ test("canonical JSON is independent of object insertion order", () => {
 });
 
 test("canonical JSON rejects undefined fields and negative zero", () => {
-  // bug_audit #15：负零是 f64 载荷（serde_json 将 "-0"/"-0.0" 都解析为
+  // 负零是 f64 载荷（serde_json 将 "-0"/"-0.0" 都解析为
   // f64 -0.0），权威侧一律拒绝——TS 与之同口径（-0 经 Object.is 可观测，
   // 不存在 JS 表示盲区）；正零 0 是 i64 整数，照常接受。
   assert.throws(
@@ -56,8 +56,8 @@ test("canonical JSON rejects undefined fields and negative zero", () => {
 });
 
 test("canonical JSON number formatting matches the serde_json probe vectors", () => {
-  // 与 uvp-ir canonicalize_number 的实测逐字节对齐。bug_audit #15 后
-  // canonical 哈希输入的数字词表封闭为整数（u64/i64）：整数按十进制整型
+  // 与 uvp-ir canonicalize_number 的实测逐字节对齐。canonical 哈希输入的
+  // 数字词表封闭为整数（u64/i64）：整数按十进制整型
   // 输出；一切浮点形态（0.1/1.5/1e-5/整值浮点/负零）一律响亮拒绝——
   // 语料（uvp-core fixtures/canonical/canonical.v1.json）钉死该边界。
   const cases: readonly [number, string][] = [
@@ -72,7 +72,7 @@ test("canonical JSON number formatting matches the serde_json probe vectors", ()
   assert.equal(canonicalStringify({ a: [0, 1] }), '{"a":[0,1]}');
 });
 
-test("canonical JSON rejects float-form numbers loudly (bug_audit #15)", () => {
+test("canonical JSON rejects float-form numbers loudly", () => {
   // 非整值 float：普通小数、科学计数、整值小数位与嵌套位置全部拒绝，
   // 错误信息带路径与值（响亮失败，不静默截断/取整）。
   const rejected: readonly number[] = [
@@ -133,7 +133,7 @@ test("canonical JSON sorts keys by code point, not UTF-16 code units", () => {
   );
 });
 
-test("u64Word rejects values outside the unsigned 64-bit range (N-49)", () => {
+test("u64Word rejects values outside the unsigned 64-bit range", () => {
   // 负数落成含 '-' 的假 word、≥ 2^64 溢出 32 字节槽位破坏 word 布局——
   // 与 chainId 入口（requireChainId）同口径在词构造处显式拒绝。
   assert.throws(

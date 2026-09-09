@@ -20,7 +20,7 @@ export function canonicalize(value: unknown, path = "$"): CanonicalJsonValue {
     if (!Number.isFinite(value)) {
       throw new TypeError(`${path} must be a finite JSON number`);
     }
-    // 浮点拒绝（bug_audit #15）：canonical 哈希输入的数字词表封闭为整数
+    // 浮点拒绝：canonical 哈希输入的数字词表封闭为整数
     // （u64/i64）——Rust 权威（uvp-ir canonicalize_number）对一切 f64 载荷
     // （分数 1.5、整值浮点 100.0、指数写法 1e2、负零 -0.0）响亮拒绝，三线
     // 共用 uvp-core fixtures/canonical/canonical.v1.json 语料钉死该边界。
@@ -83,7 +83,7 @@ export function canonicalStringify(value: unknown): string {
 }
 
 /**
- * 数字写入器（bug_audit #15 后 canonical 哈希输入只剩整数）：
+ * 数字写入器（canonical 哈希输入只剩整数）：
  * - 整数按十进制整型输出（Rust u64/i64 路径逐字节一致）；
  * - 一切浮点形态（含负零 -0）在 canonicalize 入口已拒绝，本函数不会
  *   收到它们。

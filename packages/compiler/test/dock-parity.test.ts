@@ -594,7 +594,7 @@ test("EIP-712 entrance permit digest matches the golden vector (V2 typehash, ver
   assert.equal(digest, expected.permitDigest);
 });
 
-test("chainId overflow guard rejects >=2^64, negative, and fractional chain ids (bug_audit #19)", () => {
+test("chainId overflow guard rejects >=2^64, negative, and fractional chain ids", () => {
   const inputs = fixture.inputs;
   // 上界内（含 u64 最大值 2^64-1）仍可推导——FFI 域保持 64 位，边界值合法。
   assert.doesNotThrow(() =>
@@ -700,7 +700,7 @@ test("golden routes satisfy the TS commitment recomputation", () => {
 });
 
 test("localOrderKey and targetOrderRefKey keep EVM word ids verbatim", () => {
-  // N-173：合约 preimage 对 bytes32 订单号本字入槽——word 形态输入必须
+  // 合约 preimage 对 bytes32 订单号本字入槽——word 形态输入必须
   // 原样通过，二次哈希会让 TS 预测的实例身份与合约恒不等。
   const word = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" as `0x${string}`;
   assert.equal(localOrderKey(word), word);

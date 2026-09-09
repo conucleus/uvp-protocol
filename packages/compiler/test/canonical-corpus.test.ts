@@ -6,7 +6,7 @@ import test from "node:test";
 import { canonicalStringify } from "../src/index.js";
 
 /**
- * Canonical-JSON 跨语言钉死语料（bug_audit #15）：Rust（uvp-ir
+ * Canonical-JSON 跨语言钉死语料：Rust（uvp-ir
  * canonical_stringify）是权威，语料文件 uvp-core
  * fixtures/canonical/canonical.v1.json 是三线共享的唯一出处（消费方式与
  * hook-core/statemachine 的 semantics-corpus 测试同构）。
@@ -294,7 +294,7 @@ function isExactlyRepresentable(number: RawNumber): boolean {
   return String(number.value) === number.raw;
 }
 
-test("canonical TS behavior aligns with the shared uvp-core corpus (bug_audit #15)", () => {
+test("canonical TS behavior aligns with the shared uvp-core corpus", () => {
   const corpusText = readFileSync(corpusUrl, "utf8");
   const corpus = new RawNumberJsonParser(corpusText).parse() as {
     cases: CorpusCase[];

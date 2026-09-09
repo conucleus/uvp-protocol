@@ -1716,7 +1716,7 @@ test("rejects DELAY on order-trigger conditions at the compile boundary (produce
 });
 
 // ---------------------------------------------------------------------------
-// bug_audit N-3/N-50：supplierType/fileType 闭集 + 制品规范序
+// supplierType/fileType 闭集 + 制品规范序
 // ---------------------------------------------------------------------------
 
 test("rejects supplierType outside the closed enum at the on-chain compile boundary", () => {

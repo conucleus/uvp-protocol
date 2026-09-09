@@ -919,7 +919,7 @@ describe("protocol bindings", () => {
       canonicalJson({ b: 2, a: { d: 4, c: 3 } }),
       '{"a":{"c":3,"d":4},"b":2}',
     );
-    // bug_audit #15：浮点拒绝——canonical 哈希输入只收整数，非整值 float
+    // 浮点拒绝——canonical 哈希输入只收整数，非整值 float
     // 与负零（f64 -0.0）响亮拒绝（与 @uvp-eth/compiler canonical.ts 同口
     // 径，三线语料 uvp-core fixtures/canonical/canonical.v1.json 钉死边界）。
     assert.equal(canonicalJson({ n: 0 }), '{"n":0}');
@@ -944,7 +944,7 @@ describe("protocol bindings", () => {
       canonicalJson({ "\u{10FFFF}": 1, "\uFFFE": 2 }),
       `{"\uFFFE":2,"\u{10FFFF}":1}`,
     );
-    // bug_audit #15：浮点拒绝——canonical 哈希输入只收整数与 -0，
+    // 浮点拒绝——canonical 哈希输入只收整数与 -0，
     // 非整值 float 响亮拒绝（与 @uvp-eth/compiler canonical.ts 同口径，
     // 三线语料 uvp-core fixtures/canonical/canonical.v1.json 钉死边界）。
     assert.throws(() => canonicalJson(1.5), /float-form numbers/);
@@ -952,7 +952,7 @@ describe("protocol bindings", () => {
     assert.throws(() => canonicalJson(1e-5), /float-form numbers/);
   });
 
-  it("rejects chain ids at and beyond the 64-bit FFI boundary (bug_audit #19)", () => {
+  it("rejects chain ids at and beyond the 64-bit FFI boundary", () => {
     const base = {
       verifyingContract,
       planId,

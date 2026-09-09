@@ -1712,7 +1712,7 @@ export function canonicalJson(value: unknown): string {
     if (!Number.isFinite(value)) {
       throw new TypeError("canonical JSON does not support non-finite numbers");
     }
-    // 浮点拒绝（bug_audit #15）：canonical 哈希输入的数字词表封闭为整数
+    // 浮点拒绝：canonical 哈希输入的数字词表封闭为整数
     // （u64/i64）——非整值 float 与负零（serde_json 把 "-0"/"-0.0" 都解析
     // 为 f64 -0.0，权威侧按浮点拒绝）一律响亮拒绝。与 @uvp-eth/compiler
     // canonical.ts 同口径，三线语料（uvp-core
@@ -2362,7 +2362,7 @@ function hashCanonicalJson(domain: string, payload: unknown): Hex {
 }
 
 /**
- * chainId 入口校验（bug_audit #19）：跨运行时域的 FFI 字段保持 64 位，
+ * chainId 入口校验：跨运行时域的 FFI 字段保持 64 位，
  * ≥ 2^64 / 负数 / 非整数在 typed-data/EIP-712 入口显式拒绝；2^53 以上的
  * number 无法精确表示，同样拦截（不得静默取整）。
  */

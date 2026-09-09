@@ -108,7 +108,7 @@ export function u256Word(value: bigint): HexString {
 }
 
 /**
- * chainId 取值域上界（bug_audit #19）：跨运行时域（evmRuntimeDomain 与
+ * chainId 取值域上界：跨运行时域（evmRuntimeDomain 与
  * EIP-712 permit 域）的 FFI 侧字段保持 64 位——TS 编译入口对 ≥ 2^64、
  * 负数与非整数 chainId 显式拒绝（fail-closed），不放宽到 u256。
  */
@@ -139,7 +139,7 @@ export function requireChainId(chainId: bigint | number, path = "chainId"): bigi
   }
   if (value > MAX_CHAIN_ID) {
     throw new RangeError(
-      `${path} must fit the 64-bit range (< 2^64) — the runtime-domain FFI field stays 64-bit and chainId overflow is rejected explicitly (bug_audit #19), received ${chainId}`,
+      `${path} must fit the 64-bit range (< 2^64) — the runtime-domain FFI field stays 64-bit and chainId overflow is rejected explicitly, received ${chainId}`,
     );
   }
   return value;

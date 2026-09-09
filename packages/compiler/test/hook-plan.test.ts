@@ -355,7 +355,7 @@ test("rejects artifacts tampering compiledHooks/planId/source against the carrie
 
 function resolutionEntryWithStaticEdge(withEdges: boolean) {
   // 内嵌定义静态引用 dockDemoTargetName（zhixu 执行器），manifest 声明面
-  // 必须等价携带该出边，否则 core D015 的启动图环检测被绕过（0830F5）。
+  // 必须等价携带该出边，否则 core D015 的启动图环检测被绕过。
   const definition: ZhixuDefinition = {
     apiVersion: "uvp/v0",
     kind: "Zhixu",
@@ -464,7 +464,7 @@ test("rejects resolution manifests whose evmPlanId diverges from the embedded de
   );
 });
 
-test("neutral resolution manifest carries {source, hook} on every input port (bug_audit #1)", () => {
+test("neutral resolution manifest carries {source, hook} on every input port", () => {
   // 发布面 → core 中性 name 目录：input 端口补 source 兄弟键（所属 stage
   // 的 source 类），shape 与 uvp-core parse_interface_declaration 的必填键
   // 逐字段对齐——缺该键 core 侧 D008 拒绝，TS 侧发射面必须恒携带。
@@ -552,7 +552,7 @@ function readdress(entry: DockResolutionTarget): void {
   }
 }
 
-test("neutral input-port source derivation fails loud, no fallback (bug_audit #1)", () => {
+test("neutral input-port source derivation fails loud, no fallback", () => {
   // (a) 所属 stage 缺席：接口声明引用了内嵌定义不存在的 stage——source 无
   // 从派生，响亮拒绝而不是臆造空串。
   const missingStageEntry = structuredClone(
@@ -615,7 +615,7 @@ test("neutral input-port source derivation fails loud, no fallback (bug_audit #1
   );
 });
 
-test("artifact validators require a non-empty source on input ports (bug_audit #1)", () => {
+test("artifact validators require a non-empty source on input ports", () => {
   const target = compileZhixuHookPlan(
     structuredClone(demoManifest.definitions[0]!.definition),
   );
@@ -1577,11 +1577,11 @@ test("compiles existing-mode routes on the cloud-facing hook plan profile", () =
 });
 
 // ---------------------------------------------------------------------------
-// bug_audit N-44/N-52/N-178/N-179：组装阶段错误契约、D013 全量判定、
+// 组装阶段错误契约、D013 全量判定、
 // 比较器字节序、承诺校验 fail-closed
 // ---------------------------------------------------------------------------
 
-test("cross-seam interfaces are rejected as HookPlanCompilationError, never a bare RangeError (N-44)", () => {
+test("cross-seam interfaces are rejected as HookPlanCompilationError, never a bare RangeError", () => {
   // 接口的未绑定 input 端口跨源：core linker（D012 双侧）与 TS 组装层
   // （buildDockRoute seam 检查）同口径拒绝——无论哪一层先命中，编译入口
   // 的对外契约都是 HookPlanCompilationError，组装阶段的裸 RangeError
@@ -1615,7 +1615,7 @@ test("cross-seam interfaces are rejected as HookPlanCompilationError, never a ba
   );
 });
 
-test("dockInterface input ports require the hook to be exactly one positive atom (N-52)", () => {
+test("dockInterface input ports require the hook to be exactly one positive atom", () => {
   // 只查首条依赖会让"正向 + 否定"组合条件伪装成单一 atom；判定必须覆盖
   // 依赖列表全量（core D013 语法判定的制品层镜像）。
   const declaration = {
@@ -1664,7 +1664,7 @@ test("dockInterface input ports require the hook to be exactly one positive atom
   assert.equal(artifact.interfaces[0]!.inputs[0]!.canonicalInputSignal, "factory::manufacturing.intake.execute");
 });
 
-test("compareByCodeUnit orders by Rust byte order, not UTF-16 code units (N-178)", () => {
+test("compareByCodeUnit orders by Rust byte order, not UTF-16 code units", () => {
   // 星面字符（代理对）在 UTF-16 码元序里排在高位 BMP（U+E000..U+FFFF）
   // 之前，与 Rust str Ord（UTF-8 字节序）分叉——规范产物排序必须按字节序。
   assert.ok(compareByCodeUnit("\uFFFD", "\u{1F600}") < 0);
@@ -1673,7 +1673,7 @@ test("compareByCodeUnit orders by Rust byte order, not UTF-16 code units (N-178)
   assert.equal(compareByCodeUnit("prefix", "prefixlonger"), -1);
 });
 
-test("dock commitment validation fails closed on incomplete shapes (N-179)", () => {
+test("dock commitment validation fails closed on incomplete shapes", () => {
   const local = {
     definitionRefHash: `0x${"aa".repeat(32)}` as `0x${string}`,
     stageIdentifier: "task.stage",

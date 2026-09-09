@@ -156,7 +156,7 @@ export interface NeutralResolutionManifest {
 
 /**
  * 中性接口声明（core 产物/解析面共形）：接口名/orderModes/端口原文。
- * input 端口携带 source 兄弟键（bug_audit #1）：hook 引用本身不含 source
+ * input 端口携带 source 兄弟键：hook 引用本身不含 source
  * 维度，中性声明补 `{source, hook}` 后 linker 才能对 input 与 output 两侧
  * 执行同一单源校验（uvp-core parse_interface_declaration 将 source 设为
  * 必填键，缺失/空白即 D008 响亮失败）。

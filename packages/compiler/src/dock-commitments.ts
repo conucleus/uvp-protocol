@@ -224,7 +224,7 @@ function prepareTargetEntry(
 
 /**
  * 发布面接口 → core 中性声明（端口 map 形态，键序由 canonical 化消除）。
- * input 端口补 `{source, hook}`（bug_audit #1）：source 从内嵌定义所属
+ * input 端口补 `{source, hook}`：source 从内嵌定义所属
  * stage 的声明 source 派生——缺失/空白即响亮失败，不回退、不臆造；发布面
  * artifact 端口自带的 source 与之交叉比对，自不一致的 manifest 拒绝
  * （core parse_interface_declaration 对中性声明按必填键校验同一形状）。
@@ -304,7 +304,7 @@ export function buildDockInterfaceArtifact(
           }
           // 中性声明的 input 端口 source（所属 stage 的 source 类，core 自
           // 定义派生）与编译后 hook 原子 source 必须一致（core D013 同口径）：
-          // 分叉即制品自不一致，响亮拒绝（bug_audit #1）。
+          // 分叉即制品自不一致，响亮拒绝。
           if (port.source !== dependency.source) {
             throw new RangeError(
               `dockInterface input port ${portName} declares source ${JSON.stringify(port.source)} but its hook atom source is ${JSON.stringify(dependency.source)} — the neutral declaration and the compiled hook disagree`,
@@ -487,7 +487,7 @@ export function buildDockRoute(
     outputBindings.map((binding) => binding.bindingHash),
   );
 
-  // D012 双侧镜像（core link_dock_routes，bug_audit #1）：被绑定接口的
+  // D012 双侧镜像（core link_dock_routes）：被绑定接口的
   // 全部 input 端口 source（它们是同一接缝的投递邮箱）+ route-bound 输出
   // 端口的 canonical signal 前缀，并集必须单一 seam——input 侧跨源寻址
   // 在编译期拒绝。
