@@ -646,6 +646,16 @@ contract UVPStateMachine {
         if (trigger.submitter == address(0)) {
             revert ZeroSubmitter();
         }
+        // 出生事实零字与其余写入口同口径拒绝：零 capability 的手工 plan 不
+        // 做词表闸，而 _signalStageId 对 sourceId/signalId 为 0 的事实键恒
+        // 返回 0——零字事实是 stage 物化与 executor 门的永久豁免键，且会以
+        // lastSignalSubmitter 污染 HANDOFF 回退链。
+        if (trigger.sourceId == bytes32(0)) {
+            revert ZeroSourceId();
+        }
+        if (trigger.signalId == bytes32(0)) {
+            revert ZeroSignalId();
+        }
         // 出生事实 (sourceId, signalId) 必须在本 plan 的 capability 词表内
         // （relation=0）；无任何 capability 声明的手工 plan 不做该语义闸
         // （与 _signalStageId 的 source==stage 回退一致）。
