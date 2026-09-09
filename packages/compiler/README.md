@@ -25,8 +25,9 @@ args for the two-step `UVPStateMachine.commitPlan` + `finalizePlan` flow.
 - EVM-facing `OnchainHookPlanArtifact`;
 - Solidity registration args for the two-step `UVPStateMachine.commitPlan` +
   `finalizePlan` flow;
-- deterministic `planId`, `planHash`, source `zhixu_hash`, `policy_hash`,
-  `metadata_hash`, and `artifact_hash`;
+- deterministic `planId`, `planHash`, source `zhixuId` and `sourcePlanHash`,
+  plus the `hooksHash` / `metadataHash` / `artifactHash` tuple of the Solidity
+  registration args and the committed `dockRoutesRoot` / `dockInterfaceRoot`;
 - stable hook, stage, source, signal, dependency, and route ids;
 - on-chain selector bindings for order-level executor overlay authority;
 - golden fixtures for compiler, contract, executor-kit, and replay tests.
