@@ -452,7 +452,7 @@ contract DockManifestParityTest {
         revert("dock manifest index out of fixture range");
     }
 
-    /// ETH-7：root 排序去重在函数内拷贝上执行——调用方数组在调用前后
+    /// root 排序去重在函数内拷贝上执行——调用方数组在调用前后
     /// 逐字节不变（含长度），不得被就地截断。
     function testMerkleRootDoesNotMutateCallerArray() public {
         bytes32[] memory leaves = new bytes32[](5);
