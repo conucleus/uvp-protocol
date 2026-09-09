@@ -137,3 +137,87 @@ test("rejects metadata.name that is not a slug", () => {
     ),
   );
 });
+
+test("rejects unknown fields at every structural level (N-51)", () => {
+  // 镜像 uvp_model serde deny_unknown_fields：拼错/不受支持的结构字段都是
+  // 确定性非法输入，静默忽略会把"看似生效"的定义落成零值。
+  const cases: readonly [string, RegExp][] = [
+    [
+      "apiVersion: uvp/v0\nkind: Zhixu\nmetadata:\n  name: probe\nextra: 1\nspec:\n  taskPatterns: []\n",
+      /unknown field `extra` — accepted fields are apiVersion, kind, metadata, spec/,
+    ],
+    [
+      "apiVersion: uvp/v0\nkind: Zhixu\nmetadata:\n  name: probe\n  annotaions: {}\nspec:\n  taskPatterns: []\n",
+      /metadata: unknown field `annotaions` — accepted fields are name, labels, annotations/,
+    ],
+    [
+      "apiVersion: uvp/v0\nkind: Zhixu\nmetadata:\n  name: probe\nspec:\n  taskPatterns: []\n  platfrom: {type: cloud}\n",
+      /spec: unknown field `platfrom` — accepted fields are platform, nucleation, taskPatterns, dockInterface/,
+    ],
+    [
+      [
+        "apiVersion: uvp/v0",
+        "kind: Zhixu",
+        "metadata:",
+        "  name: probe",
+        "spec:",
+        "  platform: {type: cloud}",
+        "  nucleation: {id: core}",
+        "  taskPatterns:",
+        "    - name: main",
+        "      stages:",
+        "        - name: work",
+        "          source: buyer",
+        "          delaiy: 5",
+      ].join("\n"),
+      /stages\[0\]: unknown field `delaiy`/,
+    ],
+    [
+      [
+        "apiVersion: uvp/v0",
+        "kind: Zhixu",
+        "metadata:",
+        "  name: probe",
+        "spec:",
+        "  platform: {type: cloud}",
+        "  nucleation: {id: core}",
+        "  taskPatterns:",
+        "    - name: main",
+        "      stages:",
+        "        - name: work",
+        "          source: buyer",
+        "          executor:",
+        "            supplierType: organization",
+        "            supplierID: org-1",
+        "            suplierID: org-1",
+      ].join("\n"),
+      /executor: unknown field `suplierID` — accepted fields are supplierType, supplierID, zhixuExecutorConfig, selectableResource/,
+    ],
+    [
+      [
+        "apiVersion: uvp/v0",
+        "kind: Zhixu",
+        "metadata:",
+        "  name: probe",
+        "spec:",
+        "  platform: {type: cloud}",
+        "  nucleation: {id: core}",
+        "  taskPatterns: []",
+        "  dockInterface:",
+        "    svc:",
+        "      orderModes: [new]",
+        "      inputs:",
+        "        execute: {hook: main.work#RUN, extra: 1}",
+      ].join("\n"),
+      /inputs\[execute\]: unknown field `extra` — accepted fields are hook/,
+    ],
+  ];
+  for (const [yaml, anchor] of cases) {
+    assert.throws(
+      () => parseZhixuDefinition(yaml, "inline.yaml"),
+      (error: unknown) =>
+        error instanceof ZhixuLoadError && anchor.test(error.message),
+      `未知字段必须被拒绝：${yaml.split("\n").find((line) => /extra|delaiy|suplier|annotaions|platfrom/.test(line)) ?? yaml}`,
+    );
+  }
+});

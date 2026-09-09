@@ -66,6 +66,22 @@ const MAX_PLAN_DEPENDENCIES = 1024;
 // the grammar-level documentation is tracked by the HYGIENE wave.
 const MAX_SIGNAL_CAPABILITIES = 256;
 
+/**
+ * supplierType 闭集（与 uvp_model::SUPPLIER_TYPES / Go supplierTypes 同源，
+ * 注册表 rule executor-supplier-type-closed-enum）：executorRoutes 把
+ * supplierType 烧进链上承诺（executorHash），合约侧无闭集守卫——闭集外的
+ * 字符串（含 "Zhixu" 等大小写变体）必须在链轨编译期拒绝，不是烧进承诺后
+ * 才在消费侧炸开。比对按 trim 后进行（与 Go/Rust 同口径）。
+ */
+const SUPPLIER_TYPES: readonly string[] = ["individual", "organization", "zhixu"];
+
+/**
+ * fileResources 的 fileType 闭集（与 Go fileTypes 同源：
+ * local|http|txcloud|plain_text）：fileResources 经 resourcesHash 进链上
+ * 承诺，拼错的 fileType 不得静默成承诺内容。
+ */
+const FILE_TYPES: readonly string[] = ["local", "http", "txcloud", "plain_text"];
+
 const ONCHAIN_PLAN_HASH_DOMAIN = "uvp:onchain-hook-plan-artifact:v1";
 const ONCHAIN_ROUTE_HASH_DOMAIN = "uvp:onchain-hook-route:v1";
 const ONCHAIN_SELECTOR_BINDING_HASH_DOMAIN =
@@ -326,6 +342,9 @@ export function validateOnchainHookPlanArtifact(
     issues.push(
       ...validateOnchainCompiledHooks(compiledHooks, executorRoutes ?? []),
     );
+    issues.push(
+      ...canonicalOrderIssues(compiledHooks, hookOrderKey, "compiledHooks"),
+    );
     if (dependencyIndex) {
       issues.push(
         ...validateOnchainDependencyIndex(compiledHooks, dependencyIndex),
@@ -384,11 +403,30 @@ export function validateOnchainHookPlanArtifact(
 
   if (executorRoutes) {
     issues.push(...validateOnchainExecutorRoutes(executorRoutes));
+    // 规范序（编译产物的确定性口径）：planHash 覆盖数组顺序，但重排后重签
+    // 的制品能通过承诺对拍——规范序让同一 plan 只有唯一字节数组形态。
+    issues.push(
+      ...canonicalOrderIssues(executorRoutes, routeOrderKey, "executorRoutes"),
+    );
   }
   if (selectorBindings) {
     issues.push(...validateOnchainSelectorBindings(selectorBindings));
+    issues.push(
+      ...canonicalOrderIssues(
+        selectorBindings,
+        selectorBindingOrderKey,
+        "selectorBindings",
+      ),
+    );
   }
   if (signalCapabilities) {
+    issues.push(
+      ...canonicalOrderIssues(
+        signalCapabilities,
+        signalCapabilityOrderKey,
+        "signalCapabilities",
+      ),
+    );
     issues.push(...validateOnchainSignalCapabilities(signalCapabilities));
     issues.push(
       ...duplicateCurrentOrderFactKeyIssues(
@@ -811,6 +849,25 @@ function compileExecutorRoute(
     throw new HookPlanCompilationError([
       `executor route "${route.stageIdentifier}" (supplierType=${String(route.executor.supplierType)}) is missing a non-empty executor.supplierID`,
     ]);
+  }
+  // supplierType 闭集（rule executor-supplier-type-closed-enum 的链轨编译
+  // 入口镜像）：闭集外字符串经 executorHash 进链上承诺后无合约守卫可拦。
+  const supplierType = String(route.executor.supplierType);
+  if (!SUPPLIER_TYPES.includes(supplierType.trim())) {
+    throw new HookPlanCompilationError([
+      `executor route "${route.stageIdentifier}" supplierType must be one of ${SUPPLIER_TYPES.join("|")} (case-sensitive), received ${JSON.stringify(supplierType)}`,
+    ]);
+  }
+  // fileType 闭集（与云侧编译入口同集）：fileResources 进 resourcesHash
+  // 承诺，拼错的 fileType 是确定性输入缺陷，不静默成承诺内容。
+  if (route.fileResources !== undefined) {
+    for (const [key, resource] of Object.entries(route.fileResources)) {
+      if (!FILE_TYPES.includes(String(resource.fileType))) {
+        throw new HookPlanCompilationError([
+          `executor route "${route.stageIdentifier}" fileResources[${JSON.stringify(key)}].fileType must be one of ${FILE_TYPES.join("|")}, received ${JSON.stringify(resource.fileType)}`,
+        ]);
+      }
+    }
   }
   const executorHash = opaqueContentHash(route.executor);
   const resourcesHash =
@@ -1822,6 +1879,16 @@ function validateOnchainExecutorRoutes(
       issues,
     );
     expectNonEmptyString(route.executorType, `${prefix}.executorType`, issues);
+    // 闭集在反序列化边界同口径镜像：executorType 直接进链上承诺（executorHash
+    // 的原文投影），词表外值不得靠重算 planHash 混过制品校验。
+    if (
+      typeof route.executorType === "string" &&
+      !SUPPLIER_TYPES.includes(route.executorType.trim())
+    ) {
+      issues.push(
+        `${prefix}.executorType must be one of ${SUPPLIER_TYPES.join("|")} (case-sensitive), received ${JSON.stringify(route.executorType)}`,
+      );
+    }
     expectString(route.executorId, `${prefix}.executorId`, issues);
     expectHexHash(route.executorHash, `${prefix}.executorHash`, issues);
     expectHexHash(route.resourcesHash, `${prefix}.resourcesHash`, issues);
@@ -2102,6 +2169,75 @@ function compareOnchainHooks(
     compareByCodeUnit(left.hookName, right.hookName) ||
     compareByCodeUnit(left.hookId, right.hookId)
   );
+}
+
+/**
+ * 制品边界的规范序检查：键列与编译侧排序比较子同源（compareOnchainHooks
+ * 等），相邻逆序即报 issue——重排数组后重签 planHash 的制品不再被放行，
+ * 同一 plan 保持唯一数组形态（内容寻址前提）。
+ */
+function canonicalOrderIssues(
+  items: readonly unknown[],
+  keyOf: (item: Record<string, unknown>) => readonly string[],
+  label: string,
+): readonly string[] {
+  const issues: string[] = [];
+  let previous: readonly string[] | undefined;
+  for (const [index, item] of items.entries()) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    const key = keyOf(item);
+    if (previous !== undefined) {
+      let diverged = false;
+      for (let position = 0; position < previous.length; position += 1) {
+        const order = compareByCodeUnit(
+          previous[position] as string,
+          key[position] as string,
+        );
+        if (order > 0) {
+          diverged = true;
+          break;
+        }
+        if (order < 0) {
+          break;
+        }
+      }
+      if (diverged) {
+        issues.push(
+          `${label}[${index}] breaks the canonical order (${key.join(" < ")} must not precede ${(previous as readonly string[]).join(" < ")}); re-sort with the compiler's ordering before serializing`,
+        );
+      }
+    }
+    previous = key;
+  }
+  return issues;
+}
+
+function hookOrderKey(hook: Record<string, unknown>): readonly string[] {
+  return [String(hook.stageIdentifier), String(hook.hookName), String(hook.hookId)];
+}
+
+function routeOrderKey(route: Record<string, unknown>): readonly string[] {
+  return [String(route.stageIdentifier), String(route.routeId)];
+}
+
+function selectorBindingOrderKey(
+  binding: Record<string, unknown>,
+): readonly string[] {
+  return [String(binding.selectorStageId), String(binding.targetStageId), String(binding.bindingHash)];
+}
+
+function signalCapabilityOrderKey(
+  capability: Record<string, unknown>,
+): readonly string[] {
+  return [
+    String(capability.stageId),
+    String(capability.targetSourceId),
+    String(capability.signalId),
+    String(capability.targetOrderRelation),
+    String(capability.capabilityHash),
+  ];
 }
 
 function compareExecutorRoutes(

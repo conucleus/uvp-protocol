@@ -557,6 +557,9 @@ export interface SolidityRegisterExecutorRouteArg {
   readonly stageId: HexString;
   readonly executorType: string;
   readonly executorId: string;
+  /** 与 OnchainExecutorRoute 同面：执行者/资源承诺摘要随 calldata 携带。 */
+  readonly executorHash: HexString;
+  readonly resourcesHash: HexString;
   readonly routeHash: HexString;
 }
 

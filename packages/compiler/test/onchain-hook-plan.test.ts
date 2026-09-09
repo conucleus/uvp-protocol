@@ -1714,3 +1714,135 @@ test("rejects DELAY on order-trigger conditions at the compile boundary (produce
     },
   );
 });
+
+// ---------------------------------------------------------------------------
+// bug_audit N-3/N-50：supplierType/fileType 闭集 + 制品规范序
+// ---------------------------------------------------------------------------
+
+test("rejects supplierType outside the closed enum at the on-chain compile boundary", () => {
+  // 大小写变体在云侧曾是历史绕过面（"Zhixu"）；核心线闭集先拒，这里是
+  // 链轨组装（executorHash 进链上承诺）对漂移/手工 HookPlanArtifact 的
+  // 第二道门。
+  const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
+  const mutated = resign({
+    ...hookPlan,
+    executorRoutes: {
+      ...hookPlan.executorRoutes,
+      "selector.assign": {
+        ...hookPlan.executorRoutes["selector.assign"]!,
+        executor: {
+          ...hookPlan.executorRoutes["selector.assign"]!.executor,
+          supplierType: "Organization",
+        },
+      },
+    },
+  } as typeof hookPlan);
+  assert.throws(
+    () => compileOnchainHookPlan(mutated),
+    (error: unknown) => {
+      assert.ok(error instanceof HookPlanCompilationError);
+      assert.match(
+        error.issues.join("; "),
+        /supplierType must be one of individual\|organization\|zhixu \(case-sensitive\), received "Organization"/,
+      );
+      return true;
+    },
+  );
+});
+
+test("rejects fileResources fileType outside the closed enum at the on-chain compile boundary", () => {
+  const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
+  const route = hookPlan.executorRoutes["selector.assign"]!;
+  const mutated = resign({
+    ...hookPlan,
+    executorRoutes: {
+      ...hookPlan.executorRoutes,
+      "selector.assign": {
+        ...route,
+        fileResources: {
+          contract_template: { fileType: "locale", path: "./template.md" },
+        },
+      },
+    },
+  } as typeof hookPlan);
+  assert.throws(
+    () => compileOnchainHookPlan(mutated),
+    (error: unknown) => {
+      assert.ok(error instanceof HookPlanCompilationError);
+      assert.match(
+        error.issues.join("; "),
+        /fileType must be one of local\|http\|txcloud\|plain_text, received "locale"/,
+      );
+      return true;
+    },
+  );
+});
+
+test("artifact boundary rejects executorType outside the supplier closed enum", () => {
+  const onchain = compileOnchainHookPlan(
+    compileZhixuHookPlanWithManifest(baseZhixu),
+  );
+  const route = onchain.executorRoutes[0]!;
+  const mutated = {
+    ...onchain,
+    executorRoutes: onchain.executorRoutes.map((candidate) =>
+      candidate === route
+        ? { ...candidate, executorType: "Vendor" }
+        : candidate,
+    ),
+  };
+  const { planHash: _drop, ...payload } = mutated;
+  void _drop;
+  const issues = validateOnchainHookPlanArtifact({
+    ...mutated,
+    planHash: hashOnchainPlanPayload(payload),
+  });
+  assert.ok(
+    issues.some((issue) =>
+      /executorType must be one of individual\|organization\|zhixu \(case-sensitive\), received "Vendor"/.test(
+        issue,
+      ),
+    ),
+    `executorType 词表外值应触发闭集 issue，实际 issues：${JSON.stringify(issues)}`,
+  );
+});
+
+test("artifact boundary rejects compiledHooks arrays that break the canonical order", () => {
+  const onchain = compileOnchainHookPlan(
+    compileZhixuHookPlanWithManifest(baseZhixu),
+  );
+  // 重排 + 重建 dependencyIndex（per-key hookIds 跟随制品序）+ 重签
+  // planHash：承诺面全部自洽，唯一缺口是数组序——规范序是同一 plan 的
+  // 唯一形态（内容寻址前提），不得放行。
+  const reversed = [...onchain.compiledHooks].reverse();
+  const index = new Map<string, string[]>();
+  for (const hook of reversed) {
+    for (const dependency of hook.dependencies) {
+      const hookIds = index.get(dependency.signalKey) ?? [];
+      if (!hookIds.includes(hook.hookId)) {
+        hookIds.push(hook.hookId);
+      }
+      index.set(dependency.signalKey, hookIds);
+    }
+  }
+  const dependencyIndex = Object.fromEntries(
+    [...index.entries()].sort(([left], [right]) =>
+      left < right ? -1 : left > right ? 1 : 0,
+    ),
+  ) as OnchainHookPlanArtifact["dependencyIndex"];
+  const reordered = {
+    ...onchain,
+    compiledHooks: reversed,
+    dependencyIndex,
+  };
+  const { planHash: _drop, ...payload } = reordered;
+  void _drop;
+  const issues = validateOnchainHookPlanArtifact({
+    ...reordered,
+    planHash: hashOnchainPlanPayload(payload),
+  });
+  assert.ok(
+    issues.some((issue) => issue.includes("breaks the canonical order")),
+    `重排 compiledHooks 应触发规范序 issue，实际 issues：${JSON.stringify(issues)}`,
+  );
+});
