@@ -198,19 +198,48 @@ describe("product DTO catalog", () => {
     }, {
       orderCount: 2,
       openTaskCount: 1,
-      supplierCount: 3
+      supplierCount: 3,
+      versionLabel: "Route smoke v1"
     });
     assert.equal(activeRow.lifecycleStatus, "active");
     assert.equal(activeRow.nextAction, "持续观察订单、待办和供应商状态");
     assert.equal(activeRow.metricsStatus, "observed");
+    assert.equal(activeRow.versionLabel, "Route smoke v1");
 
-    const summary = storeConsoleSummary([draftRow, activeRow]);
-    assert.equal(summary.totalZhixus, 2);
-    assert.equal(summary.activeZhixus, 1);
+    // versionLabel 缺席时 counts 不得单独宣称 observed（合成 "当前版本"
+    // 只允许发生在 metricsStatus=unknown 之下）。
+    const countsOnlyRow = toStoreZhixuConsoleDTO(summarizeZhixu(zhixu), {
+      orderCount: 2,
+      openTaskCount: 1,
+      supplierCount: 3
+    });
+    assert.equal(countsOnlyRow.metricsStatus, "unknown");
+    assert.equal(countsOnlyRow.versionLabel, "当前版本");
+
+    const secondActiveRow = {
+      ...activeRow,
+      orderCount: 1,
+      openTaskCount: 0,
+      supplierCount: 2
+    };
+    const summary = storeConsoleSummary([draftRow, activeRow, secondActiveRow]);
+    assert.equal(summary.totalZhixus, 3);
+    assert.equal(summary.activeZhixus, 2);
     assert.equal(summary.needsReview, 1);
-    assert.equal(summary.runningOrders, 2);
+    assert.equal(summary.runningOrders, 3);
     assert.equal(summary.openTasks, 1);
-    assert.equal(summary.registeredSuppliers, 3);
+    // 行合计（0 + 3 + 2），不是最大单行。
+    assert.equal(summary.registeredSuppliers, 5);
+  });
+
+  it("keeps createOrderTrigger out of the list summary surface", () => {
+    const zhixu = demoProductCatalog.zhixus[0];
+    assert.ok(zhixu);
+    assert.ok(zhixu.createOrderTrigger);
+
+    const summary = summarizeZhixu(zhixu);
+    assert.equal("createOrderTrigger" in summary, false);
+    assert.ok(!JSON.stringify(summary).includes("triggerHookId"));
   });
 
   it("models ordinary participant fulfillment plugins without real funding claims", () => {
