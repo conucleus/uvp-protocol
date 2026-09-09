@@ -1755,7 +1755,7 @@ contract UVPStateMachineTest {
         require(machine.planExists(planId), "compiler-shaped plan not registered");
     }
 
-    /// order-trigger hook 内禁止 DELAY（0124 F19 邻 / 0557 B-2）：outside
+    /// order-trigger hook 内禁止 DELAY：outside
     /// 出生的事实与订单创建同笔交易（anchorAt=now），Delay(SIGNAL) 必得
     /// Wait，出生路径永久 InvalidTriggerHook——注册边界直接拒绝。
     function testDelayInMintTriggerHookIsRejectedAtCommit() public {
@@ -1982,7 +1982,7 @@ contract UVPStateMachineTest {
         machine.triggerOrderFromOutsideFor(trigger, authorizations, signature);
     }
 
-    /// 零 capability 的手工 plan 不做词表闸——出生事实本身的零字此前是
+    /// 零 capability 的手工 plan 不做词表闸——出生事实的零字事实键是
     /// 唯一放行入口（其余写入口均拒 0）。零字事实键绕过 _signalStageId
     /// （对 0 恒返回 0），是 stage 物化与 executor 门的永久豁免键。
     function testTriggerOrderFromOutsideRejectsZeroSourceId() public {
@@ -2020,7 +2020,7 @@ contract UVPStateMachineTest {
     }
 
     /// FromModule 信号写入口全量拒绝 submitter==0：lastSignalSubmitter=0
-    /// 会污染 dock output 通道与 HANDOFF 签名门（0557 B-10）。
+    /// 会污染 dock output 通道与 HANDOFF 签名门。
     function testCreateDockedOrderFromModuleRejectsZeroSubmitter() public {
         UVPStateMachine machine = _newMachine();
 
@@ -2109,9 +2109,8 @@ contract UVPStateMachineTest {
         _submitTriggerOrderFromOutside(machine, PLAN_ID, ORDER_CREATOR, _defaultAuthorizations(address(this)));
 
         // 模块写事实路径（submitSignalFromModule）：SIGNAL_TRIGGER 的
-        // watcher 位于未物化的 STAGE_AUDIT——修复前 _evaluateHook 对未物化
-        // 阶段的 flags=0 watcher 稳定 revert UnknownHook（整笔回滚，2232
-        // B-2），修复后跳过。
+        // watcher 位于未物化的 STAGE_AUDIT——未物化阶段的 flags=0 watcher
+        // 不进求值（直接跳过，不整笔回滚 UnknownHook）。
         vm.prank(machine.derivedSignalModule());
         machine.submitSignalFromModule(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, address(this)

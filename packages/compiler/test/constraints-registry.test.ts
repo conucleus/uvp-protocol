@@ -1,7 +1,7 @@
 /**
  * uvp-constraints.v1 一致性 harness（TS 线）。
  *
- * 约束注册表 `/Users/uyhendu/project/uvp-eth/uvp-protocol/protocol/uvp-constraints.v1.json`
+ * 约束注册表 `protocol/uvp-constraints.v1.json`（uvp-protocol 仓根）
  * 是跨语言接受面规则（zhixu / hook-dsl / dock / onchain-plan）的单一出处。
  * 本 harness：
  *   1. 钉住注册表 version + sha256 —— 任何一处改表，三线（TS/Rust/Go）测试同声报警；
@@ -52,7 +52,7 @@ const PINNED_VERSION = "uvp.constraints.v1" as const;
 //   uvp-core      crates/uvp-compiler/tests/constraints_registry.rs
 //   miniprogram   pkg/compiler/validator/constraints_registry_test.go
 const PINNED_SHA256 =
-  "90f315b4b38f5520c3c42e455401cdcbe9d8362604913520ba5968e39546a529";
+  "8aefc28d9a3be2a034b8d2ec5a232dba2515337818dc62de927fb4ea5141ec5a";
 
 interface ConstraintsRule {
   readonly id: string;

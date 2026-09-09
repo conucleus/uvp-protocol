@@ -233,7 +233,7 @@
         "rust": "crates/uvp-compiler/src/lib.rs MAX_STAGE_SOURCE_BYTES",
         "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions"
       },
-      "ruling": "bug_audit #14 裁决：DSL 壳字段统一 100 字节（与 metadata.name 同宽、global_stage.source VARCHAR(100) DDL 镜像）；hook_name 的 36 字节上限是链轨落库内幕，不反向约束 DSL 壳字段。rust 线自 36 放宽至 100，与 go 线同值，旧 lineParams 漂移登记随之消除。"
+      "ruling": "DSL 壳字段统一 100 字节（与 metadata.name 同宽、global_stage.source VARCHAR(100) DDL 镜像），rust/go 同值；hook_name 的 36 字节上限是链轨落库内幕，不反向约束 DSL 壳字段。"
     },
     {
       "id": "stage-source-required",

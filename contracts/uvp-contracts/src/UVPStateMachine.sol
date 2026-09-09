@@ -1770,7 +1770,7 @@ contract UVPStateMachine {
         // 实与订单创建同笔交易（anchorAt=now），Delay(SIGNAL) 必得 Wait，
         // 出生路径永久 InvalidTriggerHook；dock entrance 由模块直接标记
         // Ready，DELAY 只是死代码。编译器产物的 trigger hook 恒为裸
-        // SIGNAL；注册边界拒绝（B-2/0557）。
+        // SIGNAL；注册边界拒绝。
         bool orderTrigger = _isOrderTrigger(hook.flags);
         // 裸 SIGNAL 栈标志：NOT 的操作数约束（编码层契约——操作数必须是
         // 裸 SIGNAL 引用）。~(A&B)/~Delay(A) 一类组合否定的取消/锚点语义

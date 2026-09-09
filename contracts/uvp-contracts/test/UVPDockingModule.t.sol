@@ -552,7 +552,7 @@ contract UVPDockingModuleTest {
     }
 
     /// output 绑定指向目标接口从未宣告的端口——outputsRoot membership
-    /// 拒绝（此前只重算绑定哈希入 routeHash，不构成目标侧承诺）。
+    /// 拒绝（重算绑定哈希只入 routeHash，不构成目标侧承诺）。
     function testOpenRejectsUndeclaredOutputPort() public {
         UVPDockingModule.DockOutputBindingArg[] memory outputs = _outputs();
         outputs[2].portKey = ROGUE_PORT;
