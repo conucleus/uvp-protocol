@@ -52,7 +52,7 @@ const PINNED_VERSION = "uvp.constraints.v1" as const;
 //   uvp-core      crates/uvp-compiler/tests/constraints_registry.rs
 //   miniprogram   pkg/compiler/validator/constraints_registry_test.go
 const PINNED_SHA256 =
-  "f81239b230a04c43d11ef758ab586fd6d8cb9471b4d5b56cda2a25d07bd6b4d4";
+  "262c2264ac977250dcbe80fece5234c0d7c16af4201449413cedd588eba30af7";
 
 interface ConstraintsRule {
   readonly id: string;
@@ -167,6 +167,30 @@ const TS_PROBES = new Map<string, Probe>([
     expectZhixuLoadViolation(
       MINIMAL_ZHIXU_YAML.replace("  name: constraints-probe\n", ""),
       "metadata.name is required",
+    );
+  }],
+  ["metadata-name-slug-shape", () => {
+    parseZhixuDefinition(MINIMAL_ZHIXU_YAML, "constraints-probe"); // satisfy
+    expectZhixuLoadViolation(
+      MINIMAL_ZHIXU_YAML.replace("constraints-probe", "Constraints_Probe"),
+      "must match ^[a-z][a-z0-9_-]{0,99}$",
+    );
+  }],
+  ["metadata-name-max-length", () => {
+    parseZhixuDefinition(MINIMAL_ZHIXU_YAML, "constraints-probe"); // satisfy
+    expectZhixuLoadViolation(
+      MINIMAL_ZHIXU_YAML.replace("constraints-probe", "p".repeat(101)),
+      "must match ^[a-z][a-z0-9_-]{0,99}$",
+    );
+  }],
+  ["metadata-uid-not-an-input", () => {
+    parseZhixuDefinition(MINIMAL_ZHIXU_YAML, "constraints-probe"); // satisfy
+    expectZhixuLoadViolation(
+      MINIMAL_ZHIXU_YAML.replace(
+        "  name: constraints-probe\n",
+        "  name: constraints-probe\n  uid: zx-probe\n",
+      ),
+      "unknown field `uid`",
     );
   }],
   ["hook-delay-seconds-range", async () => {

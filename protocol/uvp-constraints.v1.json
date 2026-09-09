@@ -117,15 +117,17 @@
       "error": {
         "rust": "exceeds 100 bytes (global_zhixu.name)",
         "go": "exceeds 100 bytes (global_zhixu.name)",
-        "ts": null
+        "ts": "must match ^[a-z][a-z0-9_-]{0,99}$"
       },
       "applies": [
         "rust",
-        "go"
+        "go",
+        "ts"
       ],
       "sources": {
         "rust": "crates/uvp-compiler/src/lib.rs MAX_IDENTIFIER_BYTES",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions"
+        "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions",
+        "ts": "packages/compiler/src/zhixu-loader.ts assertZhixuDefinitionShape（Buffer.byteLength 上限与 slug 正则同一拒绝面，锚点共用）"
       },
       "ruling": "簇I 裁决：≤100 字节（global_zhixu.name VARCHAR(100) DDL 镜像）。"
     },
@@ -142,13 +144,15 @@
       "error": {
         "rust": "unknown field `uid`",
         "go": null,
-        "ts": null
+        "ts": "unknown field `uid`"
       },
       "applies": [
-        "rust"
+        "rust",
+        "ts"
       ],
       "sources": {
-        "rust": "crates/uvp-model/src/lib.rs ObjectMeta deny_unknown_fields（serde 未知字段路径，编译入口即拒绝）"
+        "rust": "crates/uvp-model/src/lib.rs ObjectMeta deny_unknown_fields（serde 未知字段路径，编译入口即拒绝）",
+        "ts": "packages/compiler/src/zhixu-loader.ts assertZhixuDefinitionShape（uid 专项未知字段拒绝，先于通用未知字段门）"
       },
       "ruling": "metadata.uid 从 DSL 输入面移除；携带 uid 的定义按未知字段确定性拒绝，不存在显式/兜底双路径。"
     },
@@ -167,13 +171,15 @@
       "error": {
         "rust": "must match ^[a-z][a-z0-9_-]{0,99}$",
         "go": null,
-        "ts": null
+        "ts": "must match ^[a-z][a-z0-9_-]{0,99}$"
       },
       "applies": [
-        "rust"
+        "rust",
+        "ts"
       ],
       "sources": {
-        "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape is_name_slug（NAME_SLUG_PATTERN）"
+        "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape is_name_slug（NAME_SLUG_PATTERN）",
+        "ts": "packages/compiler/src/zhixu-loader.ts assertZhixuDefinitionShape NAME_SLUG_PATTERN"
       },
       "ruling": "name 必填非空且为 slug 形态（技术名风格：小写开头，小写字母/数字/下划线/中划线，字节≤100）；校验仅限形态——name 不唯一、不参与关系推断、不代表商店展示名。"
     },
@@ -964,15 +970,15 @@
         "ts": "none"
       }
     },
-    {
-      "id": "supplier-type-closed-set",
-      "surface": "executorRoutes 携带的 supplierType 无合约闭集守卫：任意字符串可进链上承诺",
-      "mirrors": {
-        "rust": "mirrored:rule executor-supplier-type-closed-enum",
-        "go": "none（TrimSpace 只用于判 zhixu 分支，不校验闭集）",
-        "ts": "none"
-      },
-      "note": "合约侧守卫与 TS/Go 镜像待补。"
-    }
+ {
+  "id": "supplier-type-closed-set",
+  "surface": "executorRoutes 携带的 supplierType 无合约闭集守卫：任意字符串可进链上承诺",
+  "mirrors": {
+   "rust": "mirrored:rule executor-supplier-type-closed-enum",
+   "go": "none（TrimSpace 只用于判 zhixu 分支，不校验闭集）",
+   "ts": "mirrored（onchain-hook-plan compileExecutorRoute 编译入口 + validateOnchainExecutorRoutes 制品边界；trim 后比对，与 rust 同口径；fileResources fileType 闭集 {local,http,txcloud,plain_text} 在同入口拒绝）"
+  },
+  "note": "合约侧守卫与 Go 线镜像待补。"
+ }
   ]
 }
