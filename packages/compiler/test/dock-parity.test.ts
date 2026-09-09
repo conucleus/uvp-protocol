@@ -698,3 +698,14 @@ test("golden routes satisfy the TS commitment recomputation", () => {
     interfaceIssues.join("; "),
   );
 });
+
+test("localOrderKey and targetOrderRefKey keep EVM word ids verbatim", () => {
+  // N-173：合约 preimage 对 bytes32 订单号本字入槽——word 形态输入必须
+  // 原样通过，二次哈希会让 TS 预测的实例身份与合约恒不等。
+  const word = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" as `0x${string}`;
+  assert.equal(localOrderKey(word), word);
+  assert.equal(targetOrderRefKey(word), word);
+  // 云轨字符串订单号仍走 keccak word 化。
+  assert.notEqual(localOrderKey("order-fixture-001"), "order-fixture-001");
+  assert.match(localOrderKey("order-fixture-001"), /^0x[0-9a-f]{64}$/u);
+});

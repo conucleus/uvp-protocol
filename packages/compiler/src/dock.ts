@@ -373,12 +373,20 @@ export function cloudRuntimeDomain(
 }
 
 export function localOrderKey(orderId: string): HexString {
-  return keccakWord(orderId);
+  // EVM 轨订单号本身就是 bytes32 word（合约 preimage 本字入槽）：
+  // 已是 word 形态的原样使用，二次哈希会让 TS 预测的 dockInstanceId
+  // 与合约恒不等。云轨字符串订单号才走 keccak(word 化)。
+  return isWordLiteral(orderId) ? (orderId as HexString) : keccakWord(orderId);
 }
 
-/** existing 模式的目标 order 引用在 dockInstanceId preimage 中的 word 形态。 */
+/** existing 模式的目标 order 引用在 dockInstanceId preimage 中的 word 形态。
+ * 链轨不承接 existing（编译边界拒绝），该槽只在云轨字符串引用上取值。 */
 export function targetOrderRefKey(orderRef: string): HexString {
-  return keccakWord(orderRef);
+  return isWordLiteral(orderRef) ? (orderRef as HexString) : keccakWord(orderRef);
+}
+
+function isWordLiteral(value: string): boolean {
+  return /^0x[0-9a-fA-F]{64}$/u.test(value);
 }
 
 /**
