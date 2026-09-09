@@ -26,6 +26,7 @@ import {
   buildApplyStageExecutorPatchForCall,
   buildApplyStageResourcePatchForCall,
   buildDerivedSignalTypedData,
+  buildPlanCommitTypedData,
   buildProductSubmitTypedData,
   buildStageExecutorPatchTypedData,
   buildStageResourcePatchTypedData,
@@ -42,6 +43,7 @@ import {
   STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN,
   STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN,
   recoverDerivedSignalSigner,
+  recoverPlanCommitSigner,
   recoverProductSubmitSigner,
   recoverStageExecutorPatchSigner,
   recoverStageResourcePatchSigner,
@@ -292,6 +294,31 @@ describe("protocol bindings", () => {
 
     assert.equal(
       await recoverProductSubmitSigner(typedData, signature),
+      submitter,
+    );
+  });
+
+  it("builds and recovers a PlanCommit publisher signature", async () => {
+    // commitPlan(PlanCommit, hooks, signature) 是 UVPStateMachine 的签名面
+    // 之一：七个 typed-data builder 中 PlanCommit 不得是唯一没有 recover
+    // 助手的一个（签名面不对称会让发布侧无法离线验证 publisher）。
+    const typedData = buildPlanCommitTypedData({
+      chainId: 31337,
+      verifyingContract,
+      publisher: submitter,
+      hooksHash: payloadHash,
+      metadataHash: idempotencyKey,
+      dockRoutesRoot: planId,
+      dockInterfaceRoot: originPlanId,
+      deadline,
+    });
+    const signature = await account.signTypedData(
+      typedData as unknown as Parameters<typeof account.signTypedData>[0],
+    );
+
+    assert.equal(typedData.primaryType, "UVPStateMachinePlanCommit");
+    assert.equal(
+      await recoverPlanCommitSigner(typedData, signature),
       submitter,
     );
   });

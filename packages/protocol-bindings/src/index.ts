@@ -1327,6 +1327,20 @@ export async function recoverProductSubmitSigner(
   return normalizeAddress(recovered, "recoveredSubmitter");
 }
 
+export async function recoverPlanCommitSigner(
+  typedData: PlanCommitTypedData,
+  signature: Hex | string,
+): Promise<Address> {
+  const recovered = await recoverTypedDataAddress({
+    domain: typedData.domain,
+    types: typedData.types,
+    primaryType: typedData.primaryType,
+    message: typedData.message,
+    signature: normalizeHex(signature, "signature"),
+  } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
+  return normalizeAddress(recovered, "recoveredPublisher");
+}
+
 export async function recoverTriggerOrderFromOutsideSigner(
   typedData: TriggerOrderFromOutsideTypedData,
   signature: Hex | string,
