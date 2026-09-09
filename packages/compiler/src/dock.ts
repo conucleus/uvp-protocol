@@ -80,8 +80,16 @@ export function hexToBytes(value: HexString): Uint8Array {
 }
 
 export function u64Word(value: bigint | number): HexString {
-  const hex = BigInt(value).toString(16).padStart(64, "0");
-  return `0x${hex}` as HexString;
+  // 数值域显式拒绝（与 u256Word 同口径）：负数的 toString 带 '-' 会落成
+  // 含非 hex 字符的假 word，≥ 2^64 则溢出 32 字节槽位破坏 word 布局——
+  // 两者都是静默产出毒承诺，必须在入口响亮失败。
+  const big = BigInt(value);
+  if (big < 0n || big >= 1n << 64n) {
+    throw new RangeError(
+      `value must fit the unsigned 64-bit word range, received ${value}`,
+    );
+  }
+  return `0x${big.toString(16).padStart(64, "0")}` as HexString;
 }
 
 /**

@@ -288,7 +288,12 @@ export function buildDockInterfaceArtifact(
         .sort(([left], [right]) => compareBytes(left, right))
         .map(([portName, port]) => {
           const hook = hooksById.get(port.hook);
-          const dependency = hook?.dependencies[0];
+          // D013 判定必须覆盖依赖列表全量：只看第一条会让"首项正向 + 尾随
+          // 否定/计时依赖"的组合条件伪装成单一 atom 进接口承诺。
+          const dependency =
+            hook !== undefined && hook.dependencies.length === 1
+              ? hook.dependencies[0]
+              : undefined;
           if (
             dependency === undefined ||
             dependency.kind !== "positive"

@@ -211,16 +211,24 @@ function validateDockRouteCommitments(
     );
   }
 
+  // fail-closed：绑定数组缺失/非数组是形状问题，不是"空绑定"——静默按 []
+  // 重算会让携带 EMPTY root 的残缺 route 通过全部承诺对拍。
   const inputBindings = Array.isArray(route.inputBindings)
     ? route.inputBindings
-    : [];
+    : undefined;
   const outputBindings = Array.isArray(route.outputBindings)
     ? route.outputBindings
-    : [];
+    : undefined;
+  if (inputBindings === undefined) {
+    issues.push(`${path}.inputBindings must be an array`);
+  }
+  if (outputBindings === undefined) {
+    issues.push(`${path}.outputBindings must be an array`);
+  }
   const inputHashes: string[] = [];
   const outputHashes: string[] = [];
   let bindingsComputable = true;
-  for (const [index, binding] of inputBindings.entries()) {
+  for (const [index, binding] of (inputBindings ?? []).entries()) {
     if (
       !isRecord(binding) ||
       !isHexHash(binding.bindingHash) ||
@@ -229,6 +237,10 @@ function validateDockRouteCommitments(
       !isHexHash(binding.targetSourceId) ||
       !isHexHash(binding.targetSignalId)
     ) {
+      // 形状坏项显式报 issue：只跳过该条的重算，不静默吞掉。
+      issues.push(
+        `${path}.inputBindings[${index}] must carry bindingHash, localHookName, targetPort, targetSourceId and targetSignalId`,
+      );
       bindingsComputable = false;
       continue;
     }
@@ -247,7 +259,7 @@ function validateDockRouteCommitments(
     }
     inputHashes.push(binding.bindingHash);
   }
-  for (const [index, binding] of outputBindings.entries()) {
+  for (const [index, binding] of (outputBindings ?? []).entries()) {
     if (
       !isRecord(binding) ||
       !isHexHash(binding.bindingHash) ||
@@ -257,6 +269,9 @@ function validateDockRouteCommitments(
       !isHexHash(binding.targetSourceId) ||
       !isHexHash(binding.targetSignalId)
     ) {
+      issues.push(
+        `${path}.outputBindings[${index}] must carry bindingHash, localSourceId, localSignalId, targetPort, targetSourceId and targetSignalId`,
+      );
       bindingsComputable = false;
       continue;
     }
@@ -322,6 +337,9 @@ function validateInterfaceCommitments(
   const issues: string[] = [];
   const name = entry.name;
   if (typeof name !== "string" || name.length === 0) {
+    // 无名接口不得静默跳过承诺重算：它的叶仍参与定义级 root，跳过即绕过
+    // interfaceRoot 对拍。
+    issues.push(`${path}.name must be a non-empty string`);
     return issues;
   }
   if (!Array.isArray(entry.orderModes)) {
@@ -344,6 +362,9 @@ function validateInterfaceCommitments(
       typeof port.port !== "string" ||
       typeof port.hookId !== "string"
     ) {
+      issues.push(
+        `${path}.inputs[${index}] must carry leafHash, port and hookId`,
+      );
       inputsComputable = false;
       continue;
     }
@@ -380,6 +401,9 @@ function validateInterfaceCommitments(
       typeof port.port !== "string" ||
       typeof port.canonicalOutputSignal !== "string"
     ) {
+      issues.push(
+        `${path}.outputs[${index}] must carry leafHash, port and canonicalOutputSignal`,
+      );
       outputsComputable = false;
       continue;
     }

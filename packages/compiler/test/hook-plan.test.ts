@@ -3,11 +3,13 @@ import test from "node:test";
 import {
   assertHookPlanArtifact,
   compileZhixuHookPlan,
+  compareByCodeUnit,
   HookPlanCompilationError,
   HookPlanArtifactValidationError,
   validateHookPlanArtifact
 } from "../src/hook-plan.js";
 import {
+  buildDockInterfaceArtifact,
   hookPlanHashOf,
   prepareDockResolution,
 } from "../src/dock-commitments.js";
@@ -22,7 +24,9 @@ import {
 import {
   dockDemoResolutionManifest,
   dockDemoTargetName,
+  dockProductionTargetDefinition,
   dockSourcingParentDefinition,
+  resolutionManifestFor,
 } from "./dock-demo.js";
 import {
   definitionRefHash,
@@ -1570,4 +1574,194 @@ test("compiles existing-mode routes on the cloud-facing hook plan profile", () =
   assert.equal(plan.dockRoutes[0]?.inputBindingsRoot, EMPTY_MERKLE_ROOT);
   assert.equal(plan.dockRoutes[0]?.outputBindings[0]?.targetPort, "scrap_declared");
   assert.deepEqual(validateHookPlanArtifact(plan), []);
+});
+
+// ---------------------------------------------------------------------------
+// bug_audit N-44/N-52/N-178/N-179：组装阶段错误契约、D013 全量判定、
+// 比较器字节序、承诺校验 fail-closed
+// ---------------------------------------------------------------------------
+
+test("cross-seam interfaces are rejected as HookPlanCompilationError, never a bare RangeError (N-44)", () => {
+  // 接口的未绑定 input 端口跨源：core linker（D012 双侧）与 TS 组装层
+  // （buildDockRoute seam 检查）同口径拒绝——无论哪一层先命中，编译入口
+  // 的对外契约都是 HookPlanCompilationError，组装阶段的裸 RangeError
+  // 不得逃逸。
+  const crossSeamTarget = dockProductionTargetDefinition();
+  crossSeamTarget.spec.dockInterface!.production_service!.inputs!.audit_check = {
+    hook: "manufacturing.audit#CHECK",
+  };
+  (crossSeamTarget.spec.taskPatterns[0]!.stages as ZhixuStage[]).push({
+    name: "audit",
+    source: "auditor",
+    receiveSignals: { CHECK: "auditor::manufacturing.audit.check" },
+    sendSignals: ["report"],
+    executor: { supplierType: "organization", supplierID: "audit-org" },
+  });
+  const crossSeamManifest = resolutionManifestFor(crossSeamTarget);
+  assert.throws(
+    () =>
+      compileZhixuHookPlan(
+        dockSourcingParentDefinition(dockDemoTargetName),
+        crossSeamManifest,
+      ),
+    (error: unknown) => {
+      assert.ok(
+        error instanceof HookPlanCompilationError,
+        `期望 HookPlanCompilationError，实际 ${String(error)}`,
+      );
+      assert.match(error.issues.join("; "), /single target source seam/);
+      return true;
+    },
+  );
+});
+
+test("dockInterface input ports require the hook to be exactly one positive atom (N-52)", () => {
+  // 只查首条依赖会让"正向 + 否定"组合条件伪装成单一 atom；判定必须覆盖
+  // 依赖列表全量（core D013 语法判定的制品层镜像）。
+  const declaration = {
+    name: "production_service",
+    orderModes: ["new"],
+    inputs: {
+      execute: { source: "factory", hook: "manufacturing.intake#EXECUTE" },
+    },
+    outputs: {},
+  };
+  const hooksById = new Map([
+    [
+      "manufacturing.intake#EXECUTE",
+      {
+        hookId: "manufacturing.intake#EXECUTE",
+        stageIdentifier: "manufacturing.intake",
+        dependencies: [
+          { kind: "positive", source: "factory", signalName: "manufacturing.intake.execute" },
+          { kind: "negative", source: "factory", signalName: "manufacturing.produce.cmp" },
+        ],
+      },
+    ],
+  ]) as unknown as Parameters<typeof buildDockInterfaceArtifact>[2];
+  assert.throws(
+    () => buildDockInterfaceArtifact([declaration], "zx-test", hooksById),
+    /exactly one positive canonical signal atom/,
+  );
+
+  const singleAtom = new Map([
+    [
+      "manufacturing.intake#EXECUTE",
+      {
+        hookId: "manufacturing.intake#EXECUTE",
+        stageIdentifier: "manufacturing.intake",
+        dependencies: [
+          { kind: "positive", source: "factory", signalName: "manufacturing.intake.execute" },
+        ],
+      },
+    ],
+  ]) as unknown as Parameters<typeof buildDockInterfaceArtifact>[2];
+  const artifact = buildDockInterfaceArtifact(
+    [declaration],
+    "zx-test",
+    singleAtom,
+  );
+  assert.equal(artifact.interfaces[0]!.inputs[0]!.canonicalInputSignal, "factory::manufacturing.intake.execute");
+});
+
+test("compareByCodeUnit orders by Rust byte order, not UTF-16 code units (N-178)", () => {
+  // 星面字符（代理对）在 UTF-16 码元序里排在高位 BMP（U+E000..U+FFFF）
+  // 之前，与 Rust str Ord（UTF-8 字节序）分叉——规范产物排序必须按字节序。
+  assert.ok(compareByCodeUnit("\uFFFD", "\u{1F600}") < 0);
+  assert.ok(compareByCodeUnit("\u{1F600}", "\uFFFD") > 0);
+  assert.equal(compareByCodeUnit("abc", "abd"), -1);
+  assert.equal(compareByCodeUnit("prefix", "prefixlonger"), -1);
+});
+
+test("dock commitment validation fails closed on incomplete shapes (N-179)", () => {
+  const local = {
+    definitionRefHash: `0x${"aa".repeat(32)}` as `0x${string}`,
+    stageIdentifier: "task.stage",
+  };
+  const routeId = `0x${"bb".repeat(32)}` as `0x${string}`;
+  // (a) 绑定数组缺失：不得按空集重算后放行携带 EMPTY root 的残缺 route。
+  const missingBindings = validateDockCommitments({
+    dockRoutes: [
+      {
+        schemaVersion: "uvp.dockRoute.v2",
+        routeId,
+        local,
+        target: { interfaceName: "svc" },
+        orderMode: "new",
+        inputBindings: "not-an-array",
+        outputBindings: [],
+        inputBindingsRoot: EMPTY_MERKLE_ROOT,
+        outputBindingsRoot: EMPTY_MERKLE_ROOT,
+        routeHash: `0x${"cc".repeat(32)}`,
+      },
+    ],
+    dockRoutesRoot: EMPTY_MERKLE_ROOT,
+    dockInterface: null,
+    dockInterfaceRoot: EMPTY_MERKLE_ROOT,
+  });
+  assert.ok(
+    missingBindings.some((issue) =>
+      issue.endsWith(".inputBindings must be an array"),
+    ),
+    `非数组 inputBindings 应显式报 issue，实际：${JSON.stringify(missingBindings)}`,
+  );
+
+  // (b) 形状坏绑定：报 issue 而不是静默跳过该条的重算。
+  const malformedBinding = validateDockCommitments({
+    dockRoutes: [
+      {
+        schemaVersion: "uvp.dockRoute.v2",
+        routeId,
+        local,
+        target: { interfaceName: "svc" },
+        orderMode: "new",
+        inputBindings: [{ port: "execute" }],
+        outputBindings: [],
+        inputBindingsRoot: EMPTY_MERKLE_ROOT,
+        outputBindingsRoot: EMPTY_MERKLE_ROOT,
+        routeHash: `0x${"cc".repeat(32)}`,
+      },
+    ],
+    dockRoutesRoot: EMPTY_MERKLE_ROOT,
+    dockInterface: null,
+    dockInterfaceRoot: EMPTY_MERKLE_ROOT,
+  });
+  assert.ok(
+    malformedBinding.some((issue) =>
+      issue.includes("must carry bindingHash, localHookName, targetPort, targetSourceId and targetSignalId"),
+    ),
+    `形状坏绑定应显式报 issue，实际：${JSON.stringify(malformedBinding)}`,
+  );
+
+  // (c) 无名接口：不得静默跳过其叶/根承诺重算。
+  const namelessInterface = validateDockCommitments({
+    dockRoutes: [],
+    dockRoutesRoot: EMPTY_MERKLE_ROOT,
+    dockInterface: {
+      schemaVersion: "uvp.dockInterfaceArtifact.v2",
+      definition: {
+        uid: "zx-nameless",
+        definitionRefHash: definitionRefHash("zx-nameless"),
+      },
+      interfaces: [
+        {
+          name: "",
+          orderModes: ["new"],
+          inputs: [],
+          outputs: [],
+          inputsRoot: EMPTY_MERKLE_ROOT,
+          outputsRoot: EMPTY_MERKLE_ROOT,
+          interfaceRoot: `0x${"dd".repeat(32)}`,
+        },
+      ],
+      interfaceRoot: `0x${"ee".repeat(32)}`,
+    },
+    dockInterfaceRoot: `0x${"ee".repeat(32)}`,
+  });
+  assert.ok(
+    namelessInterface.some((issue) =>
+      issue.endsWith(".name must be a non-empty string"),
+    ),
+    `无名接口应显式报 issue，实际：${JSON.stringify(namelessInterface)}`,
+  );
 });

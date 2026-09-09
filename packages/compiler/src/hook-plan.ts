@@ -39,12 +39,16 @@ export class HookPlanArtifactValidationError extends Error {
 }
 
 /**
- * Deterministic code-unit ordering. localeCompare is ICU/locale dependent and
- * must never participate in canonical artifact construction, which has to
- * reproduce byte-identically across environments (Rust side orders by bytes).
+ * Deterministic ordering aligned with Rust str Ord (= UTF-8 byte order, equals
+ * code-point order). localeCompare is ICU/locale dependent and must never
+ * participate in canonical artifact construction; raw UTF-16 code-unit
+ * comparison (<) is equally forbidden — it orders astral-plane characters
+ * (surrogate pairs) before high-BMP keys like U+E000..U+FFFF, diverging from
+ * the Rust authority on identifiers outside the ASCII grammar.
  */
 export function compareByCodeUnit(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
+  const order = compareByCodePoint(left, right);
+  return order < 0 ? -1 : order > 0 ? 1 : 0;
 }
 
 /**
@@ -86,11 +90,21 @@ export function compileZhixuHookPlan(
     ]);
   }
 
-  const artifact = assembleChainTrackHookPlan(
-    definition,
-    shell as HookPlanShell,
-    resolution,
-  );
+  // 组装阶段（承诺重算/接口对应性/D012 seam 等）的语义拒绝同样是编译输入
+  // 问题：不包一层会让裸 RangeError 逃出编译入口，破坏"编译期拒绝一律
+  // HookPlanCompilationError"的调用方契约。
+  let artifact: HookPlanArtifact;
+  try {
+    artifact = assembleChainTrackHookPlan(
+      definition,
+      shell as HookPlanShell,
+      resolution,
+    );
+  } catch (error) {
+    throw new HookPlanCompilationError([
+      error instanceof Error ? error.message : String(error),
+    ]);
+  }
 
   const artifactIssues = validateHookPlanArtifact(artifact);
   if (artifactIssues.length > 0) {

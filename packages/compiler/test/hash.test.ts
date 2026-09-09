@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   canonicalStringify,
-  keccak256Hex
+  keccak256Hex,
+  u64Word
 } from "../src/index.js";
 
 test("keccak256 matches EVM vectors", () => {
@@ -129,5 +130,23 @@ test("canonical JSON sorts keys by code point, not UTF-16 code units", () => {
   assert.equal(
     canonicalStringify({ "\u{1F600}": 2, "\u{10000}": 1 }),
     `{"\u{10000}":1,"\u{1F600}":2}`,
+  );
+});
+
+test("u64Word rejects values outside the unsigned 64-bit range (N-49)", () => {
+  // 负数落成含 '-' 的假 word、≥ 2^64 溢出 32 字节槽位破坏 word 布局——
+  // 与 chainId 入口（requireChainId）同口径在词构造处显式拒绝。
+  assert.throws(
+    () => u64Word(-1),
+    /must fit the unsigned 64-bit word range, received -1/,
+  );
+  assert.throws(
+    () => u64Word(2n ** 64n),
+    /must fit the unsigned 64-bit word range, received 18446744073709551616/,
+  );
+  assert.equal(u64Word(0), `0x${"0".repeat(64)}`);
+  assert.equal(
+    u64Word(2n ** 64n - 1n),
+    `0x${"0".repeat(48)}${"f".repeat(16)}`,
   );
 });
