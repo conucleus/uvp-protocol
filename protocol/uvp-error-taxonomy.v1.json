@@ -261,6 +261,20 @@
       "notes": "Irreversible-from-service: a txHash-bearing terminal fallback is recorded and the nonce stays reserved; blind rebroadcast would risk a second on-chain transaction."
     },
     {
+      "code": "evidence_bind_failed",
+      "condition": "The chain broadcast already succeeded (submission carries a txHash) but the server-side evidence binding (uploaded→bound with on-chain location) failed after the submit; the submission itself is unaffected.",
+      "layer": "application",
+      "producers": ["chain-services"],
+      "retryable": true,
+      "backoff": "reconcile_poll",
+      "dead_letter": false,
+      "benign_scan_outcome": false,
+      "internal_names": {
+        "chain-services": ["evidence_bind_failed"]
+      },
+      "notes": "Retryable because the on-chain commit is done and binding is a service-side state transition: the failed bind is audited, the evidence references stay persisted on the submission record, and the reconcile worker's evidence-bind sweep retries the binding from those references each poll until the proof reports bound."
+    },
+    {
       "code": "malformed_payload",
       "condition": "Deterministic caller-input defect: payload fails validation before any side effect (missing/oversized/illegal fields, unsigned/malformed envelope, prepared submission without planId).",
       "layer": "application",
