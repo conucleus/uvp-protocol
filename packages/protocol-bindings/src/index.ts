@@ -688,12 +688,10 @@ export interface BuildProductSubmitTypedDataInput {
   readonly chainId: number;
   readonly verifyingContract: Address | string;
   /**
-   * 签名域并入 planId。真实签署方必须提供订单的 planId；
-   * 允许缺省（零占位）仅为兼容只校验 surface 形状的下游 gate
-   * （如 uvp-deploy 的 verify-product-signal-map），零占位签名无法
-   * 通过链上 (planId, orderId) 存在性校验，不构成重放面。
+   * 签名域并入 planId：submitSignal 按 (planId, orderId) 复合键锚定订单，
+   * 缺 planId 的签名过不了链上存在性校验，没有可接受的缺省形态。
    */
-  readonly planId?: Hex | string;
+  readonly planId: Hex | string;
   readonly orderId: Hex | string;
   readonly sourceId: Hex | string;
   readonly signalId: Hex | string;
@@ -1090,7 +1088,7 @@ export function buildProductSubmitTypedData(
     },
     primaryType: PRODUCT_SUBMIT_PRIMARY_TYPE,
     message: {
-      planId: normalizeBytes32(input.planId ?? ZERO_BYTES32, "planId"),
+      planId: normalizeBytes32(input.planId, "planId"),
       orderId: normalizeBytes32(input.orderId, "orderId"),
       sourceId: normalizeBytes32(input.sourceId, "sourceId"),
       signalId: normalizeBytes32(input.signalId, "signalId"),
