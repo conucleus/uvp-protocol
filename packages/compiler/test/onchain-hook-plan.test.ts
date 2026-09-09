@@ -1778,7 +1778,11 @@ test("rejects fileResources fileType outside the closed enum at the on-chain com
   );
 });
 
-test("artifact boundary rejects executorType outside the supplier closed enum", () => {
+test("artifact boundary stays vocabulary-neutral on executorType", () => {
+  // 词表闸在编译入口（compileExecutorRoute，与 rust/go 同口径）；制品边界
+  // 与 rust 权威面同构——只校验结构一致性与承诺摘要重算，不自造词表层。
+  // 词表外 executorType 的自洽制品（重签 planHash）在边界放行，责任在
+  // 产出侧的编译入口。
   const onchain = compileOnchainHookPlan(
     compileZhixuHookPlanWithManifest(baseZhixu),
   );
@@ -1797,13 +1801,10 @@ test("artifact boundary rejects executorType outside the supplier closed enum", 
     ...mutated,
     planHash: hashOnchainPlanPayload(payload),
   });
-  assert.ok(
-    issues.some((issue) =>
-      /executorType must be one of individual\|organization\|zhixu \(case-sensitive\), received "Vendor"/.test(
-        issue,
-      ),
-    ),
-    `executorType 词表外值应触发闭集 issue，实际 issues：${JSON.stringify(issues)}`,
+  assert.deepEqual(
+    issues.filter((issue) => issue.includes("executorType must be one of")),
+    [],
+    `制品边界不应校验 executorType 词表，实际 issues：${JSON.stringify(issues)}`,
   );
 });
 

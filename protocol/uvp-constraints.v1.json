@@ -976,7 +976,7 @@
   "mirrors": {
    "rust": "mirrored:rule executor-supplier-type-closed-enum",
    "go": "none（TrimSpace 只用于判 zhixu 分支，不校验闭集）",
-   "ts": "mirrored（onchain-hook-plan compileExecutorRoute 编译入口 + validateOnchainExecutorRoutes 制品边界；trim 后比对，与 rust 同口径；fileResources fileType 闭集 {local,http,txcloud,plain_text} 在同入口拒绝）"
+   "ts": "mirrored（onchain-hook-plan compileExecutorRoute 编译入口；trim 后比对，与 rust 同口径；制品边界不设词表层，与 rust 权威面同构；fileResources fileType 闭集 {local,http,txcloud,plain_text} 在同入口拒绝）"
   },
   "note": "合约侧守卫与 Go 线镜像待补。"
  }

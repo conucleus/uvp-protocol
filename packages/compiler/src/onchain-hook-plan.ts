@@ -1879,16 +1879,6 @@ function validateOnchainExecutorRoutes(
       issues,
     );
     expectNonEmptyString(route.executorType, `${prefix}.executorType`, issues);
-    // 闭集在反序列化边界同口径镜像：executorType 直接进链上承诺（executorHash
-    // 的原文投影），词表外值不得靠重算 planHash 混过制品校验。
-    if (
-      typeof route.executorType === "string" &&
-      !SUPPLIER_TYPES.includes(route.executorType.trim())
-    ) {
-      issues.push(
-        `${prefix}.executorType must be one of ${SUPPLIER_TYPES.join("|")} (case-sensitive), received ${JSON.stringify(route.executorType)}`,
-      );
-    }
     expectString(route.executorId, `${prefix}.executorId`, issues);
     expectHexHash(route.executorHash, `${prefix}.executorHash`, issues);
     expectHexHash(route.resourcesHash, `${prefix}.resourcesHash`, issues);
