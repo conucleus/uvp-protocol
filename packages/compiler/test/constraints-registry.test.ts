@@ -4,7 +4,9 @@
  * 约束注册表 `protocol/uvp-constraints.v1.json`（uvp-protocol 仓根）
  * 是跨语言接受面规则（zhixu / hook-dsl / dock / onchain-plan）的单一出处。
  * 本 harness：
- *   1. 钉住注册表 version + sha256 —— 任何一处改表，三线（TS/Rust/Go）测试同声报警；
+ *   1. 钉住注册表 version，并把实际 sha256 与同目录 meta 文件声明的值比对
+ *      （sha 声明点唯一在 uvp-protocol 仓，改表不同步声明会让三线
+ *      TS/Rust/Go 测试同声报警）；
  *   2. 对 applies 含 "ts" 的每条 rule 生成边界探针（满足/违反各一）打真 validator
  *      （zhixu-loader / onchain-hook-plan），断言真实错误文案锚点；
  *   3. ts 线没有探针 builder 的新 rule 会让本文件硬失败（防静默漏测）。
@@ -47,12 +49,35 @@ const DEFAULT_CONSTRAINTS_PATH = join(
 );
 
 const PINNED_VERSION = "uvp.constraints.v1" as const;
-// sha256(uvp-constraints.v1.json)。改表必须三线同步更新：
-//   uvp-protocol packages/compiler/test/constraints-registry.test.ts
-//   uvp-core      crates/uvp-compiler/tests/constraints_registry.rs
-//   uvp(go)       pkg/compiler/validator/constraints_registry_test.go
-const PINNED_SHA256 =
-  "2f776f56eff245ffd6f764df758bb0f173c9e1f244bb43df61784a37c3aeab3a";
+
+interface ConstraintsMeta {
+  readonly schemaVersion: string;
+  readonly contentSha256: string;
+  readonly algorithm: string;
+}
+
+// 注册表内容 sha 的唯一声明点：与注册表同目录的 meta 文件。声明缺失比
+// sha 不匹配更危险（会让比对退化成摆设），所以读不到/算法不符也硬失败。
+function loadConstraintsMeta(registryPath: string): ConstraintsMeta {
+  const metaPath = join(dirname(registryPath), "uvp-constraints.v1.meta.json");
+  let raw: string;
+  try {
+    raw = readFileSync(metaPath, "utf8");
+  } catch (error) {
+    throw new Error(
+      `[uvp-constraints] 读不到注册表 sha 声明文件（硬失败，不 skip）：${metaPath}\n` +
+        `  - 注册表内容 sha 只在 uvp-protocol 仓 protocol/uvp-constraints.v1.meta.json 声明；\n` +
+        `  原始错误：${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const meta = JSON.parse(raw) as ConstraintsMeta;
+  if (meta.algorithm !== "sha256") {
+    throw new Error(
+      `[uvp-constraints] sha 声明文件 algorithm=${meta.algorithm}，本 harness 只实现 sha256：${metaPath}`,
+    );
+  }
+  return meta;
+}
 
 interface ConstraintsRule {
   readonly id: string;
@@ -61,7 +86,11 @@ interface ConstraintsRule {
   readonly error: { readonly ts: readonly string[] | string | null };
 }
 
-function loadConstraintsTable(): { raw: string; table: { version: string; rules: readonly ConstraintsRule[] } } {
+function loadConstraintsTable(): {
+  path: string;
+  raw: string;
+  table: { version: string; rules: readonly ConstraintsRule[] };
+} {
   const path = process.env[CONSTRAINTS_ENV_VAR] ?? DEFAULT_CONSTRAINTS_PATH;
   let raw: string;
   try {
@@ -74,10 +103,11 @@ function loadConstraintsTable(): { raw: string; table: { version: string; rules:
         `  原始错误：${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  return { raw, table: JSON.parse(raw) };
+  return { path, raw, table: JSON.parse(raw) };
 }
 
-const { raw: TABLE_RAW, table: TABLE } = loadConstraintsTable();
+const { path: TABLE_PATH, raw: TABLE_RAW, table: TABLE } = loadConstraintsTable();
+const META = loadConstraintsMeta(TABLE_PATH);
 
 function sha256Of(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
@@ -91,9 +121,9 @@ test("constraints registry is pinned (version + sha256)", () => {
   );
   assert.equal(
     sha256Of(TABLE_RAW),
-    PINNED_SHA256,
-    "约束注册表内容被修改：请逐条核对规则后同步更新三线 harness 的 sha256 钉" +
-      "（uvp-protocol packages/compiler、uvp-core crates/uvp-compiler、Go pkg/compiler/validator）",
+    META.contentSha256,
+    "约束注册表内容与 meta 声明的 sha256 不一致：请逐条核对规则后，" +
+      "在 uvp-protocol 仓同一提交里更新 protocol/uvp-constraints.v1.meta.json 的 contentSha256",
   );
 });
 
