@@ -1011,7 +1011,7 @@ describe("protocol bindings", () => {
       EXECUTOR_PATCH_MODE_REPLACEMENT,
       "0x7265706c6163656d656e74000000000000000000000000000000000000000000",
     );
-    // 0137#3：payload 哈希必须吃进导出的域常量（域分离）——keccak256(abi
+    // payload 哈希必须吃进导出的域常量（域分离）——keccak256(abi
     // .encode(keccak256(domain), …payload))。独立重算而非同源引用。
     assert.equal(
       STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN,

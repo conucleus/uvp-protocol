@@ -1187,9 +1187,9 @@ contract UVPStateMachine {
     }
 
     /// @notice 阶段是否挂有 order-trigger（mint/dock）hook。出生/订阅阶段
-    ///         的执行者终生不可变（云侧已强制，簇 I 裁决）——stage patch
+    ///         的执行者终生不可变（云侧已强制）——stage patch
     ///         模块读本视图拒绝出生阶段的逐单 executor patch；资源补丁
-    ///         （fileResources-only）不受此门，资源可替换已裁决。
+    ///         （fileResources-only）不受此门，资源可替换。
     function stageHasOrderTriggerHook(bytes32 planId, bytes32 stageId) external view returns (bool) {
         Plan storage plan = _plans[planId];
         for (uint256 i = 0; i < plan.hookIds.length; i++) {

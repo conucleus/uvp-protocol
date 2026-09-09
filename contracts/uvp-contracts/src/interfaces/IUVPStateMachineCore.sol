@@ -117,7 +117,7 @@ interface IUVPStateMachineCore {
         returns (bool);
 
     /// 挂有 order-trigger（mint/dock）hook 的阶段对逐单 executor patch
-    /// 关闭——出生阶段执行者终生不可变（簇 I 裁决），stage patch 模块以
+    /// 关闭——出生阶段执行者终生不可变，stage patch 模块以
     /// 此守门。本 flag 判定只覆盖 mint/dock 出生形态；其它订阅阶段（无
     /// order-trigger hook）的执行者不可变约束由编译器在产物层权威强制，
     /// 链上该视图无法判定。

@@ -681,7 +681,7 @@ test("cross-stage dependency guard fires on deserialized artifacts and follows c
     `expected cross-stage issue, got: ${issues.join("; ")}`,
   );
 
-  // (2) 逐 hook 顺序语义（0212 P3-1）：trigger(A) → trigger(B) → watcher(A)
+  // (2) 逐 hook 顺序语义：trigger(A) → trigger(B) → watcher(A)
   // 共享一键时合约接受（seenStages 只记首个 watcher 的阶段，且 trigger 位
   // AND 累积仍为真；watcher 回到首阶段不触发 CrossStageDependency）——
   // 集合判定会误杀该形态，顺序仿真必须放行。

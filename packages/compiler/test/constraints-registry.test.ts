@@ -50,9 +50,9 @@ const PINNED_VERSION = "uvp.constraints.v1" as const;
 // sha256(uvp-constraints.v1.json)。改表必须三线同步更新：
 //   uvp-protocol packages/compiler/test/constraints-registry.test.ts
 //   uvp-core      crates/uvp-compiler/tests/constraints_registry.rs
-//   miniprogram   pkg/compiler/validator/constraints_registry_test.go
+//   uvp(go)       pkg/compiler/validator/constraints_registry_test.go
 const PINNED_SHA256 =
-  "8aefc28d9a3be2a034b8d2ec5a232dba2515337818dc62de927fb4ea5141ec5a";
+  "2f776f56eff245ffd6f764df758bb0f173c9e1f244bb43df61784a37c3aeab3a";
 
 interface ConstraintsRule {
   readonly id: string;

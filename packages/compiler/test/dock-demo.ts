@@ -100,7 +100,7 @@ export function dockSourcingParentDefinition(targetName: string): ZhixuDefinitio
             {
               name: "confirm",
               source: "purchaser",
-              // P0-4 物化门：零 hook 阶段在链上永不可物化；seed 是执行者
+              // 物化门：零 hook 阶段在链上永不可物化；seed 是执行者
               // 自发入口信号。
               receiveSignals: { ORDER: "purchaser::procurement.confirm.seed" },
               sendSignals: ["cmp", "seed"],

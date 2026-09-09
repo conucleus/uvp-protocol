@@ -79,11 +79,11 @@ contract UVPStagePatchModule {
         bytes32 orderId, bytes32 targetStageId, address expectedExecutor, address previousExecutor
     );
     error StageHasNoSignal(bytes32 orderId, bytes32 targetStageId);
-    /// 出生（mint/dock）阶段的执行者终生不可变（簇 I 裁决，云侧已强制）：
-    /// 逐单 executor patch 在合约侧读 plan hook flags 补门（0212 P1-3）。
-    /// 资源补丁不受此门——资源可替换已裁决。
+    /// 出生（mint/dock）阶段的执行者终生不可变（云侧已强制，合约同口径守门）：
+    /// 逐单 executor patch 在合约侧读 plan hook flags 补门。
+    /// 资源补丁不受此门——资源可替换。
     error StageExecutorPatchForbiddenOnBirthStage(bytes32 orderId, bytes32 targetStageId);
-    /// 同秒平局 fail-closed（F7/O6/ETH-5）：最高 submittedAt 并列且提交者
+    /// 同秒平局 fail-closed：最高 submittedAt 并列且提交者
     /// 不同时，"上一执行者"没有确定序——拒绝而不是按 capability 数组枚举
     /// 序静默取值。
     error StagePreviousExecutorAmbiguous(bytes32 orderId, bytes32 targetStageId, uint64 submittedAt);
@@ -471,7 +471,7 @@ contract UVPStagePatchModule {
         if (!stateMachine.orderExists(planId, orderId)) {
             revert UnknownOrder();
         }
-        // 出生阶段守门（簇 I 裁决）：目标阶段挂有 mint/dock trigger hook 时
+        // 出生阶段守门：目标阶段挂有 mint/dock trigger hook 时
         // 拒绝逐单 executor patch——云侧已强制"订阅/出生阶段终生不可变"，
         // 合约读 flags 补门封死绕行。fileResources-only 资源补丁不经过本
         // 函数（_applyStageResourcePatch），资源可替换已裁决。
@@ -522,7 +522,7 @@ contract UVPStagePatchModule {
         }
 
         address expectedPreviousExecutor = activePatch.exists ? activePatch.executor : latestSignalSubmitter;
-        // 同秒平局 fail-closed（F7/O6/ETH-5）：回退到"最近提交者"判定且
+        // 同秒平局 fail-closed：回退到"最近提交者"判定且
         // 最高 submittedAt 并列不同提交者时，没有确定序——拒绝。active
         // patch 存在时不回退（patch executor 是权威上一执行者），无歧义。
         if (!activePatch.exists && latestAmbiguous) {

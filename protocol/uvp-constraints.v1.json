@@ -1,7 +1,7 @@
 {
   "version": "uvp.constraints.v1",
   "title": "UVP 跨语言验证约束注册表",
-  "description": "簇I 跨轨接受面约束的单一出处。三线 validator（Rust: uvp-core crates/uvp-compiler + uvp-hook-dsl；Go: pkg/compiler/validator + pkg/compiler；TS: uvp-protocol packages/compiler）共用的长度/枚举/字符集/取值域规则在此登记；params 一律从各线代码实测抄录。三线一致性 harness（uvp-protocol packages/compiler/test、uvp-core crates/uvp-compiler/tests、Go pkg/compiler/validator）钉住本文件的 version 与 sha256 并逐 rule 生成边界探针打真 validator：任何一处改表，三线测试同声报警。",
+  "description": "跨轨接受面约束的单一出处。三线 validator（Rust: uvp-core crates/uvp-compiler + uvp-hook-dsl；Go: pkg/compiler/validator + pkg/compiler；TS: uvp-protocol packages/compiler）共用的长度/枚举/字符集/取值域规则在此登记；params 一律从各线代码实测抄录。三线一致性 harness（uvp-protocol packages/compiler/test、uvp-core crates/uvp-compiler/tests、Go pkg/compiler/validator）钉住本文件的 version 与 sha256 并逐 rule 生成边界探针打真 validator：任何一处改表，三线测试同声报警。",
   "constraintTypes": [
     "max_length",
     "min_length",
@@ -45,7 +45,7 @@
         "go": "pkg/compiler/compiler.go Validate -> registry dispatch（uvp/v0/Zhixu 注册键，未命中报 unsupport type）",
         "ts": "packages/compiler/src/zhixu-loader.ts assertZhixuDefinitionShape"
       },
-      "ruling": "簇I 裁决：apiVersion 闭集 {uvp/v0}，大小写敏感，三线同口径拒绝。"
+      "ruling": "apiVersion 闭集 {uvp/v0}，大小写敏感，三线同口径拒绝。"
     },
     {
       "id": "zhixu-kind-closed-enum",
@@ -74,7 +74,7 @@
         "go": "pkg/compiler/compiler.go Validate -> registry dispatch",
         "ts": "packages/compiler/src/zhixu-loader.ts assertZhixuDefinitionShape"
       },
-      "ruling": "簇I 裁决：kind 闭集 {Zhixu}。"
+      "ruling": "kind 闭集 {Zhixu}。"
     },
     {
       "id": "metadata-name-required",
@@ -101,7 +101,7 @@
         "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions",
         "ts": "packages/compiler/src/zhixu-loader.ts assertZhixuDefinitionShape"
       },
-      "ruling": "簇I 裁决：metadata.name 必填非空（rust/go trim 后非空；ts 要求 string）。"
+      "ruling": "metadata.name 必填非空（rust/go trim 后非空；ts 要求 string）。"
     },
     {
       "id": "metadata-name-max-length",
@@ -129,7 +129,7 @@
         "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions",
         "ts": "packages/compiler/src/zhixu-loader.ts assertZhixuDefinitionShape（Buffer.byteLength 上限与 slug 正则同一拒绝面，锚点共用）"
       },
-      "ruling": "簇I 裁决：≤100 字节（global_zhixu.name VARCHAR(100) DDL 镜像）。"
+      "ruling": "≤100 字节（global_zhixu.name VARCHAR(100) DDL 镜像）。"
     },
     {
       "id": "metadata-uid-not-an-input",
@@ -207,7 +207,7 @@
         "rust": "crates/uvp-compiler/src/lib.rs MAX_IDENTIFIER_BYTES",
         "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions"
       },
-      "ruling": "簇I 裁决：stage identifier ≤100 字节（global_stage.stage_identifier VARCHAR(100)）。"
+      "ruling": "stage identifier ≤100 字节（global_stage.stage_identifier VARCHAR(100)）。"
     },
     {
       "id": "stage-source-max-length",
@@ -384,7 +384,7 @@
         "rust": "crates/uvp-compiler/src/lib.rs MAX_SIGNAL_NAME_BYTES",
         "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions（maxSignalNameBytes=100）"
       },
-      "ruling": "簇I 裁决：执行器自发信号拼 task.stage.signal 落 individual_record.signal_name VARCHAR(100)，组合 ≤100；stage 标识符合法不等于组合合法。"
+      "ruling": "执行器自发信号拼 task.stage.signal 落 individual_record.signal_name VARCHAR(100)，组合 ≤100；stage 标识符合法不等于组合合法。"
     },
     {
       "id": "receive-signals-key-max-length",
@@ -410,7 +410,7 @@
         "rust": "crates/uvp-hook-dsl/src/lib.rs parse（hook_name 1..=36）",
         "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions"
       },
-      "ruling": "簇I 裁决：receiveSignals 键 ≤36 字节。rust 在 parse 期以 hook_name 名义拒绝；go 在 schema validator 以 DDL 名义拒绝（CompileHook 经 FFI 亦会拒）。"
+      "ruling": "receiveSignals 键 ≤36 字节。rust 在 parse 期以 hook_name 名义拒绝；go 在 schema validator 以 DDL 名义拒绝（CompileHook 经 FFI 亦会拒）。"
     },
     {
       "id": "hook-source-class-max-length",
@@ -436,7 +436,7 @@
         "rust": "crates/uvp-hook-dsl/src/lib.rs parse（标头 source ≤36）",
         "go": "pkg/compiler/validator/zhixu_schema.go validateStage（defense-in-depth）；实际先由 uvp-core FFI parse 拒绝，锚点两文案任一命中均可"
       },
-      "ruling": "簇I 裁决：hook 标头 source 类 ≤36 字节（hook_dependency.source_zhixu_id VARCHAR(36)）。"
+      "ruling": "hook 标头 source 类 ≤36 字节（hook_dependency.source_zhixu_id VARCHAR(36)）。"
     },
     {
       "id": "hook-source-class-charset",
@@ -486,7 +486,7 @@
         "rust": "crates/uvp-hook-dsl/src/lib.rs parse_subscription",
         "go": "pkg/compiler/validator/zhixu_schema.go validateStage（defense-in-depth）；实测先由 uvp-core FFI 拒绝"
       },
-      "ruling": "簇I 裁决：订阅 source 类 ≤36 字节（hook_dependency.source_zhixu_id VARCHAR(36)），与标头 source 同值。"
+      "ruling": "订阅 source 类 ≤36 字节（hook_dependency.source_zhixu_id VARCHAR(36)），与标头 source 同值。"
     },
     {
       "id": "subscription-target-signal-max-length",
@@ -512,7 +512,7 @@
         "rust": "crates/uvp-hook-dsl/src/lib.rs parse_subscription",
         "go": "pkg/compiler/validator/zhixu_schema.go validateStage（SubscriptionTarget.SignalName / dependencies，maxSignalNameBytes=100）"
       },
-      "ruling": "簇I 裁决：订阅目标信号名 ≤100 字节（signal_name VARCHAR(100)）。"
+      "ruling": "订阅目标信号名 ≤100 字节（signal_name VARCHAR(100)）。"
     },
     {
       "id": "hook-delay-seconds-range",
@@ -541,7 +541,7 @@
         "go": "pkg/hookdsl/hookdsl.go MaxDelaySeconds = 30*24*60*60（判定在 uvp-core FFI）",
         "ts": "packages/compiler/src/onchain-hook-plan.ts MAX_ONCHAIN_HOOK_DELAY_SECONDS = 2_592_000（镜像 UVPStateMachine.MAX_HOOK_DELAY_SECONDS，reverts HookDelayTooLong）"
       },
-      "ruling": "簇I 裁决：延时为正整数、上限 30 天=2592000 秒；三线同值，链上以 HookDelayTooLong 回滚为准。"
+      "ruling": "延时为正整数、上限 30 天=2592000 秒；三线同值，链上以 HookDelayTooLong 回滚为准。"
     },
     {
       "id": "onchain-instruction-op-closed-enum",
@@ -827,7 +827,7 @@
         "rust": "crates/uvp-compiler/src/dock.rs MAX_SIGNAL_MAP_KEY_LENGTH（错误码 D006）",
         "go": "pkg/compiler/validator/zhixu_schema.go validateExecutor"
       },
-      "ruling": "簇I 裁决：signalMap 键（本地 sendSignals 信号名）≤26 字节（\"signalMap.\" + key 共 36 字节列宽，10 字节前缀）。"
+      "ruling": "signalMap 键（本地 sendSignals 信号名）≤26 字节（\"signalMap.\" + key 共 36 字节列宽，10 字节前缀）。"
     },
     {
       "id": "dock-signalmap-key-forbidden-separator",
@@ -855,7 +855,7 @@
         "rust": "crates/uvp-compiler/src/dock.rs parse_zhixu_executor_config（D006）",
         "go": "pkg/compiler/validator/zhixu_schema.go validateExecutor"
       },
-      "ruling": "簇I 裁决：signalMap 键禁止携带 '.'——它是 canonical 信号名 task.stage.signal 的分隔符。"
+      "ruling": "signalMap 键禁止携带 '.'——它是 canonical 信号名 task.stage.signal 的分隔符。"
     },
     {
       "id": "dock-signalmap-key-combined-max-length",
@@ -882,7 +882,7 @@
         "rust": "crates/uvp-compiler/src/dock.rs MAX_SIGNAL_NAME_BYTES（D006）",
         "go": "pkg/compiler/validator/zhixu_schema.go validateExecutor"
       },
-      "ruling": "簇I 裁决：stage 标识符 + \".\" + signalMap 键组合落 individual_record.signal_name VARCHAR(100)，组合 ≤100。"
+      "ruling": "stage 标识符 + \".\" + signalMap 键组合落 individual_record.signal_name VARCHAR(100)，组合 ≤100。"
     },
     {
       "id": "dock-birth-hook-single-atom-syntax",

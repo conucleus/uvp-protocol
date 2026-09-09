@@ -3316,7 +3316,7 @@ contract UVPStateMachineTest {
 
     /// patch 语义测试专用变体：STAGE_AUDIT 挂 EMIT_READY watcher（非出生
     /// 阶段），执行者可逐单 patch。出生阶段（挂 mint/dock trigger 的阶段）
-    /// 的 executor patch 已被合约按簇 I 裁决拒绝，由
+    /// 的 executor patch 被合约拒绝（出生阶段执行者终生不可变），由
     /// testStageExecutorPatchForbiddenOnBirthStage 单独钉住。
     function _patchableSequentialPlan() private pure returns (UVPStateMachine.CompactHook[] memory hooks) {
         hooks = new UVPStateMachine.CompactHook[](3);
@@ -4200,7 +4200,7 @@ contract UVPStateMachineTest {
     }
 
     // ------------------------------------------------------------------
-    // 0212 P1-3 / F7：出生阶段 patch 门 + 同秒平局 fail-closed
+    // 出生阶段 patch 门 + 同秒平局 fail-closed
     // ------------------------------------------------------------------
 
     function testStageExecutorPatchForbiddenOnBirthStage() public {
@@ -4376,7 +4376,7 @@ contract UVPStateMachineTest {
     }
 
     // ------------------------------------------------------------------
-    // 0603 P1-1：hooksHash 冻结向量（与 TS compiler 测试逐字节一致）
+    // hooksHash 冻结向量（与 TS compiler 测试逐字节一致）
     // ------------------------------------------------------------------
 
     function testHooksHashFrozenVectorMatchesTSCompiler() public pure {
