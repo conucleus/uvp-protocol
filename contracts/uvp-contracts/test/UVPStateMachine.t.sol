@@ -418,7 +418,16 @@ contract UVPStateMachineTest {
     function testDerivedSignalUsesPlanCapabilityToWriteBackToTriggerOrigin() public {
         UVPStateMachine machine = _newMachine();
         _registerPlan(machine, _withOrderStart(_sequentialPlan()), _selectorBindings(), _signalCapabilities());
-        _submitTriggerOrderFromOutside(machine, PLAN_ID, ORDER_CREATOR, _defaultAuthorizations(address(this)));
+        // 父单（target 侧）显式授权 SUBMITTER_A 提交派生事实——豁免只认
+        // target 侧授权，子单出生时的 from 侧授权不参与豁免。
+        UVPStateMachine.SignalAuthorization[] memory originAuths = _defaultAuthorizations(address(this));
+        UVPStateMachine.SignalAuthorization[] memory originWithDerived =
+            new UVPStateMachine.SignalAuthorization[](originAuths.length + 1);
+        for (uint256 i = 0; i < originAuths.length; i++) {
+            originWithDerived[i] = originAuths[i];
+        }
+        originWithDerived[originAuths.length] = _authorization(SIGNAL_VERIFY_FAIL, SUBMITTER_A);
+        _submitTriggerOrderFromOutside(machine, PLAN_ID, ORDER_CREATOR, originWithDerived);
         machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY);
         _triggerOrderFromSignalRequest(
             machine,
@@ -534,11 +543,20 @@ contract UVPStateMachineTest {
         machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY);
         _stagePatch(machine).applyStageExecutorPatch(PLAN_ID, ORDER_ID, _stageExecutorPatch(1, SUBMITTER_B, PATCH_HASH));
 
+        // 子单（from 侧）出生授权带上 executor patch 资格，随后把子单
+        // STAGE_AUDIT 的在任执行者设为 SUBMITTER_A——from 侧执行者门放行，
+        // 让用例聚焦目标侧执行者门的拒绝。
+        UVPStateMachine.SignalAuthorization[] memory childAuths =
+            new UVPStateMachine.SignalAuthorization[](3);
+        childAuths[0] = _authorization(SIGNAL_TRIGGER, SUBMITTER_A);
+        childAuths[1] = _authorization(SIGNAL_VERIFY_FAIL, SUBMITTER_A);
+        childAuths[2] = _stageAuthorization(STAGE_INIT, EXECUTOR_PATCH_SIGNAL_ID, address(this));
         _triggerOrderFromSignalRequest(
             machine,
             _signalTriggerRequest(machine, ORDER_ID, bytes32(uint256(2))),
-            _triggeredDerivedSignalAuths(SUBMITTER_A)
+            childAuths
         );
+        _stagePatch(machine).applyStageExecutorPatch(PLAN_ID, LINKED_ORDER_ID, _stageExecutorPatch(1, SUBMITTER_A, PATCH_HASH));
 
         vm.prank(SUBMITTER_A);
         vm.expectRevert(
@@ -2306,10 +2324,10 @@ contract UVPStateMachineTest {
         machine.finalizePlan(planId, bindings, capabilities);
     }
 
-    /// from 侧显式授权按业务事实键 (targetSourceId, signalId) 查
-    /// 询——持有合法显式授权的提交者不得被错误塞 stageId 进 sourceId 槽
-    /// 而拒绝。
-    function testDerivedSignalFromSideExplicitAuthorizationUsesSourceKey() public {
+    /// 派生信号提交者的在任执行者检查豁免仅限 target 侧：from 侧订单上的
+    /// 显式授权（即使按正确的业务事实键 (targetSourceId, signalId) 授予）
+    /// 不构成豁免；target 侧显式授权同键放行。
+    function testDerivedSignalFromSideExplicitAuthorizationDoesNotExempt() public {
         UVPStateMachine machine = _newMachine();
         _registerPlan(
             machine,
@@ -2317,10 +2335,11 @@ contract UVPStateMachineTest {
             _selectorBindings(),
             _derivedActiveSignalCapabilities()
         );
+        // 父单出生时不给 SUBMITTER_A 任何授权（先证明 from 侧豁免已收掉）。
         _submitTriggerOrderFromOutside(machine, PLAN_ID, ORDER_CREATOR, _defaultAuthorizations(address(this)));
         machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY);
-        // 子单授权：from 侧按业务源键显式授权 SUBMITTER_A 提交
-        // (SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL)。
+        // 子单（from 侧）出生授权：按业务源键显式授权 SUBMITTER_A 提交
+        // (SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL)——from 侧授权存在但不豁免。
         _triggerOrderFromSignalRequest(
             machine,
             _signalTriggerRequest(machine, ORDER_ID, bytes32(uint256(2))),
@@ -2328,6 +2347,11 @@ contract UVPStateMachineTest {
         );
 
         vm.prank(SUBMITTER_A);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPStateMachine.UnauthorizedSignalSubmitter.selector, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, SUBMITTER_A
+            )
+        );
         _derivedSignal(machine)
             .submitDerivedSignal(
                 _derivedSignalRequest(
@@ -2341,9 +2365,48 @@ contract UVPStateMachineTest {
                 ),
                 SUBMITTER_A
             );
+
+        // target 侧（父单）按同一业务事实键显式授权后放行——授权键仍是
+        // source id（source id ≠ stage id），不塞 stageId 进 sourceId 槽。
+        UVPStateMachine machine2 = _newMachine();
+        _registerPlan(
+            machine2,
+            _withOrderStart(_patchableSequentialPlan()),
+            _selectorBindings(),
+            _derivedActiveSignalCapabilities()
+        );
+        UVPStateMachine.SignalAuthorization[] memory defaultAuths = _defaultAuthorizations(address(this));
+        UVPStateMachine.SignalAuthorization[] memory parentAuths =
+            new UVPStateMachine.SignalAuthorization[](defaultAuths.length + 1);
+        for (uint256 i = 0; i < defaultAuths.length; i++) {
+            parentAuths[i] = defaultAuths[i];
+        }
+        parentAuths[defaultAuths.length] = _authorization(SIGNAL_VERIFY_FAIL, SUBMITTER_A);
+        _submitTriggerOrderFromOutside(machine2, PLAN_ID, ORDER_CREATOR, parentAuths);
+        machine2.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY);
+        _triggerOrderFromSignalRequest(
+            machine2,
+            _signalTriggerRequest(machine2, ORDER_ID, bytes32(uint256(2))),
+            _triggeredDerivedSignalAuths(SUBMITTER_A)
+        );
+
+        vm.prank(SUBMITTER_A);
+        _derivedSignal(machine2)
+            .submitDerivedSignal(
+                _derivedSignalRequest(
+                    LINKED_ORDER_ID,
+                    STAGE_AUDIT,
+                    ORDER_ID,
+                    SOURCE_BOOTSTRAP,
+                    SIGNAL_VERIFY_FAIL,
+                    PAYLOAD_HASH,
+                    bytes32(uint256(0x9103))
+                ),
+                SUBMITTER_A
+            );
         require(
-            machine.hasSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL),
-            "from-side explicit authorization must pass with the business source key"
+            machine2.hasSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL),
+            "target-side explicit authorization must pass with the business source key"
         );
     }
 
