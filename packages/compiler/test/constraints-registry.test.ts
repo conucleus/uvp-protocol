@@ -52,7 +52,7 @@ const PINNED_VERSION = "uvp.constraints.v1" as const;
 //   uvp-core      crates/uvp-compiler/tests/constraints_registry.rs
 //   miniprogram   pkg/compiler/validator/constraints_registry_test.go
 const PINNED_SHA256 =
-  "262c2264ac977250dcbe80fece5234c0d7c16af4201449413cedd588eba30af7";
+  "90f315b4b38f5520c3c42e455401cdcbe9d8362604913520ba5968e39546a529";
 
 interface ConstraintsRule {
   readonly id: string;
