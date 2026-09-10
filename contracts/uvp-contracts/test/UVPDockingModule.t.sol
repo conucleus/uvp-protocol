@@ -76,7 +76,7 @@ contract UVPDockingModuleTest {
     bytes32 private constant DOMAIN_DEFINITION_REF = keccak256("UVP_DEFINITION_REF_V1");
     bytes32 private constant DOMAIN_INTERFACE = keccak256("UVP_DOCK_INTERFACE_V2");
     bytes32 private constant DOMAIN_INTERFACE_INPUT = keccak256("UVP_DOCK_INTERFACE_INPUT_V2");
-    bytes32 private constant DOMAIN_INTERFACE_OUTPUT = keccak256("UVP_DOCK_INTERFACE_OUTPUT_V2");
+    bytes32 private constant DOMAIN_INTERFACE_OUTPUT = keccak256("UVP_DOCK_INTERFACE_OUTPUT_V3");
     bytes32 private constant DOMAIN_ROUTE_ID = keccak256("UVP_DOCK_ROUTE_ID_V1");
     bytes32 private constant DOMAIN_INPUT_BINDING = keccak256("UVP_DOCK_INPUT_BINDING_V2");
     bytes32 private constant DOMAIN_OUTPUT_BINDING = keccak256("UVP_DOCK_OUTPUT_BINDING_V2");
@@ -127,12 +127,8 @@ contract UVPDockingModuleTest {
     bytes32 private constant SETTLE_PORT = keccak256("settle");
     // 接口 output 端口叶的 canonical 信号 word（叶内容只经 outputsRoot
     // membership 背书；与绑定侧事实键分属不同派生域）。
-    bytes32 private constant OUT_WORD_DONE = keccak256("canonical.done");
-    bytes32 private constant OUT_WORD_PROGRESS = keccak256("canonical.progress");
-    bytes32 private constant OUT_WORD_SETTLE = keccak256("canonical.settle");
     // 目标接口从未宣告的端口/信号 word（拒绝路径）。
     bytes32 private constant ROGUE_PORT = keccak256("rogue_port");
-    bytes32 private constant ROGUE_OUT_WORD = keccak256("canonical.rogue");
     // 词表外事实键（端口已宣告但绑定内容错配的拒绝路径）。
     bytes32 private constant ROGUE_FACT_SOURCE = keccak256("rogue.source");
     bytes32 private constant ROGUE_FACT_SIGNAL = keccak256("rogue.signal");
@@ -352,7 +348,11 @@ contract UVPDockingModuleTest {
     /// 自洽重哈希的输出篡改也会换掉 outputsRoot——routeHash 重算失配。
     function testRejectsSelfHashedOutputTamper() public {
         UVPDockingModule.DockOutputBindingArg[] memory outputs = _outputs();
-        outputs[0].targetSignalId = TARGET_PENDING_SIGNAL;
+        // 篡改 local 侧（端口叶不含 localSourceId/localSignalId）：membership
+        // 照过，路由哈希被自哈希重算——本用例专测"未提交的 route 不构成
+        // 开仓授权"；target 侧篡改由叶 V3 的 membership 先行拒绝（见
+        // testOpenRejectsOutputBoundToDifferentDeclaredFact）。
+        outputs[0].localSignalId = TARGET_PENDING_SIGNAL;
         outputs[0].bindingHash = keccak256(
             abi.encode(
                 DOMAIN_OUTPUT_BINDING,
@@ -559,7 +559,6 @@ contract UVPDockingModuleTest {
     function testOpenRejectsUndeclaredOutputPort() public {
         UVPDockingModule.DockOutputBindingArg[] memory outputs = _outputs();
         outputs[2].portKey = ROGUE_PORT;
-        outputs[2].portSignalWord = ROGUE_OUT_WORD;
         outputs[2].bindingHash = keccak256(
             abi.encode(
                 DOMAIN_OUTPUT_BINDING,
@@ -576,7 +575,7 @@ contract UVPDockingModuleTest {
         _expect(
             abi.encodeWithSelector(
                 UVPDockingModule.DockInterfaceLeafMismatch.selector,
-                _outputPortLeaf(ROGUE_PORT, ROGUE_OUT_WORD),
+                _outputPortLeaf(ROGUE_PORT, TARGET_SOURCE, TARGET_PENDING_SIGNAL),
                 interfaceOutputsRoot
             )
         );
@@ -585,16 +584,39 @@ contract UVPDockingModuleTest {
         );
     }
 
-    /// 端口已宣告（membership 通过）但绑定的事实键不在目标 plan 的产出
-    /// 词表内——canonical 信号 word 与 (targetSourceId,targetSignalId)
-    /// 分属不同派生域，链上无法从 word 复原相等性；词表闸拒绝错配绑定
-    /// 镜像目标接口从未暴露的事实。
+    /// 端口已宣告且绑定即宣告事实（membership 通过），但该事实不在目标
+    /// plan 的产出词表（relation=0 capability）——接口与词表自相矛盾的
+    /// 注册在词表闸被拒：镜像目标接口"宣告了却不产出"的事实不允许开仓。
+    /// 用变体目标 plan 构造（接口承诺原样、词表剔除 TARGET_PENDING_SIGNAL）。
     function testOpenRejectsOutputFactNotDeclaredByTargetPlan() public {
+        bytes32 variantPlan = _registerTargetPlanWithoutPendingCapability();
         UVPDockingModule.DockOutputBindingArg[] memory outputs = _outputs();
-        // 端口叶照旧用已宣告的 (DONE_PORT, OUT_WORD_DONE)——错配只在绑定的
-        // 事实键上：词表外的 (ROGUE_FACT_SOURCE, ROGUE_FACT_SIGNAL)。
-        outputs[0].targetSourceId = ROGUE_FACT_SOURCE;
-        outputs[0].targetSignalId = ROGUE_FACT_SIGNAL;
+        RogueRoute memory route =
+            _registerRogueRouteParentTo(variantPlan, PARENT_EXEC_HOOK, TARGET_SOURCE, TARGET_SIGNAL, outputs);
+        _expect(
+            abi.encodeWithSelector(
+                UVPDockingModule.DockOutputFactNotDeclared.selector, variantPlan, TARGET_SOURCE, TARGET_PENDING_SIGNAL
+            )
+        );
+        docking.openDockedOrder(
+            _rogueOpenRequestTo(route, variantPlan),
+            route.routeProof,
+            _interfaceProof(),
+            _rogueInputs(route),
+            outputs,
+            _permitEmpty()
+        );
+    }
+
+    /// 词表内错配：DONE 端口宣告的事实是 (TARGET_SOURCE, TARGET_SIGNAL)，
+    /// 绑定改指向词表内的另一条事实 (TARGET_SOURCE, TARGET_PENDING_SIGNAL)
+    /// （SETTLE 端口的宣告事实）。端口叶 V3 直接钉事实键分量，错配绑定
+    /// 在 outputsRoot membership 处失配——目标方对"该端口暴露哪条事实"
+    /// 的承诺由此闭合，不再依赖词表闸兜底（词表只证明可产出，不证明
+    /// 经此端口暴露）。
+    function testOpenRejectsOutputBoundToDifferentDeclaredFact() public {
+        UVPDockingModule.DockOutputBindingArg[] memory outputs = _outputs();
+        outputs[0].targetSignalId = TARGET_PENDING_SIGNAL;
         outputs[0].bindingHash = keccak256(
             abi.encode(
                 DOMAIN_OUTPUT_BINDING,
@@ -610,7 +632,9 @@ contract UVPDockingModuleTest {
         RogueRoute memory route = _registerRogueRouteParent(PARENT_EXEC_HOOK, TARGET_SOURCE, TARGET_SIGNAL, outputs);
         _expect(
             abi.encodeWithSelector(
-                UVPDockingModule.DockOutputFactNotDeclared.selector, targetPlanId, ROGUE_FACT_SOURCE, ROGUE_FACT_SIGNAL
+                UVPDockingModule.DockInterfaceLeafMismatch.selector,
+                _outputPortLeaf(DONE_PORT, TARGET_SOURCE, TARGET_PENDING_SIGNAL),
+                interfaceOutputsRoot
             )
         );
         docking.openDockedOrder(
@@ -902,9 +926,9 @@ contract UVPDockingModuleTest {
         );
         // output 端口叶（三叶）：全部宣告进接口 outputsRoot——每条 output
         // 绑定在 open 时必须给出各自端口的 membership proof。
-        donePortLeaf = _outputPortLeaf(DONE_PORT, OUT_WORD_DONE);
-        progressPortLeaf = _outputPortLeaf(PROGRESS_OUT_PORT, OUT_WORD_PROGRESS);
-        settlePortLeaf = _outputPortLeaf(SETTLE_PORT, OUT_WORD_SETTLE);
+        donePortLeaf = _outputPortLeaf(DONE_PORT, TARGET_SOURCE, TARGET_SIGNAL);
+        progressPortLeaf = _outputPortLeaf(PROGRESS_OUT_PORT, TARGET_SOURCE, TARGET_SIGNAL);
+        settlePortLeaf = _outputPortLeaf(SETTLE_PORT, TARGET_SOURCE, TARGET_PENDING_SIGNAL);
         bytes32[] memory portLeaves = new bytes32[](3);
         portLeaves[0] = donePortLeaf;
         portLeaves[1] = progressPortLeaf;
@@ -919,8 +943,10 @@ contract UVPDockingModuleTest {
         );
     }
 
-    function _outputPortLeaf(bytes32 portKey, bytes32 canonicalWord) private pure returns (bytes32) {
-        return keccak256(abi.encode(DOMAIN_INTERFACE_OUTPUT, TARGET_UID_ID, INTERFACE_NAME_ID, portKey, canonicalWord));
+    function _outputPortLeaf(bytes32 portKey, bytes32 sourceId, bytes32 signalId) private pure returns (bytes32) {
+        return keccak256(
+            abi.encode(DOMAIN_INTERFACE_OUTPUT, TARGET_UID_ID, INTERFACE_NAME_ID, portKey, sourceId, signalId)
+        );
     }
 
     /// 三叶树（排序去重后 [p0,p1,p2]：上层 = [H(p0,p1), p2]）的三个
@@ -1045,6 +1071,71 @@ contract UVPDockingModuleTest {
         );
     }
 
+    /// 词表剔除 TARGET_PENDING_SIGNAL 的变体目标 plan：接口承诺原样
+    ///（SETTLE 端口叶仍宣告该事实）——用于构造"接口与词表自相矛盾"的
+    /// 注册，词表闸（DockOutputFactNotDeclared）的可达性测试。
+    function _registerTargetPlanWithoutPendingCapability() private returns (bytes32) {
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](1);
+        instructions[0] = UVPStateMachine.Instruction({
+            op: uint8(UVPStateMachine.InstructionOp.Signal),
+            sourceId: TARGET_SOURCE,
+            signalId: TARGET_SIGNAL,
+            arity: 0,
+            delaySeconds: 0
+        });
+        bytes32[] memory deps = new bytes32[](1);
+        deps[0] = keccak256(abi.encode(TARGET_SOURCE, TARGET_SIGNAL));
+        hooks[0] = UVPStateMachine.CompactHook({
+            hookId: TARGET_ENTRANCE_HOOK,
+            stageId: TARGET_STAGE,
+            hookName: TARGET_HOOK_NAME,
+            flags: FLAG_DOCK | FLAG_EMIT_READY,
+            instructions: instructions,
+            dependencyKeys: deps
+        });
+        UVPStateMachine.Instruction[] memory mintInstructions = new UVPStateMachine.Instruction[](1);
+        mintInstructions[0] = UVPStateMachine.Instruction({
+            op: uint8(UVPStateMachine.InstructionOp.Signal),
+            sourceId: TARGET_OUT_SOURCE,
+            signalId: TARGET_OUT_SIGNAL,
+            arity: 0,
+            delaySeconds: 0
+        });
+        bytes32[] memory mintDeps = new bytes32[](1);
+        mintDeps[0] = keccak256(abi.encode(TARGET_OUT_SOURCE, TARGET_OUT_SIGNAL));
+        hooks[1] = UVPStateMachine.CompactHook({
+            hookId: TARGET_MINT_HOOK,
+            stageId: TARGET_STAGE,
+            hookName: bytes32("MINT"),
+            flags: FLAG_MINT | FLAG_EMIT_READY,
+            instructions: mintInstructions,
+            dependencyKeys: mintDeps
+        });
+        IUVPPlanMetadataModule.StageSelectorBinding[] memory bindings =
+            new IUVPPlanMetadataModule.StageSelectorBinding[](1);
+        bindings[0] =
+            IUVPPlanMetadataModule.StageSelectorBinding({selectorStageId: TARGET_STAGE, targetStageId: TARGET_STAGE});
+        IUVPPlanMetadataModule.SignalCapability[] memory capabilities = new IUVPPlanMetadataModule.SignalCapability[](2);
+        capabilities[0] = IUVPPlanMetadataModule.SignalCapability({
+            stageId: TARGET_STAGE,
+            targetSourceId: TARGET_OUT_SOURCE,
+            signalId: TARGET_OUT_SIGNAL,
+            targetOrderRelation: 0
+        });
+        capabilities[1] = IUVPPlanMetadataModule.SignalCapability({
+            stageId: TARGET_STAGE, targetSourceId: TARGET_SOURCE, signalId: TARGET_SIGNAL, targetOrderRelation: 0
+        });
+        return _commitAndFinalize(
+            hooks,
+            EMPTY_DOCK_ROOT,
+            DockMerkle.root(_single(interfaceLeaf)),
+            TARGET_PUBLISHER_KEY,
+            bindings,
+            capabilities
+        );
+    }
+
     function _registerParentPlan() private returns (bytes32) {
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
         hooks[0] = _parentHook(
@@ -1108,6 +1199,16 @@ contract UVPDockingModuleTest {
     }
 
     function _registerRogueRouteParent(
+        bytes32 entranceHook,
+        bytes32 entranceSource,
+        bytes32 entranceSignal,
+        UVPDockingModule.DockOutputBindingArg[] memory outputs
+    ) private returns (RogueRoute memory route) {
+        return _registerRogueRouteParentTo(targetPlanId, entranceHook, entranceSource, entranceSignal, outputs);
+    }
+
+    function _registerRogueRouteParentTo(
+        bytes32 targetPlan,
         bytes32 entranceHook,
         bytes32 entranceSource,
         bytes32 entranceSignal,
@@ -1183,7 +1284,7 @@ contract UVPDockingModuleTest {
                 route.routeHash,
                 uint256(0), // modeWord new
                 INTERFACE_NAME_ID,
-                targetPlanId
+                targetPlan
             )
         );
         route.linkedOrderId = bytes32(
@@ -1199,12 +1300,21 @@ contract UVPDockingModuleTest {
         view
         returns (UVPDockingModule.OpenDockRequestV2 memory)
     {
+        return _rogueOpenRequestTo(route, targetPlanId);
+    }
+
+    function _rogueOpenRequestTo(RogueRoute memory route, bytes32 targetPlan)
+        private
+        view
+        returns (UVPDockingModule.OpenDockRequestV2 memory)
+    {
         UVPDockingModule.OpenDockRequestV2 memory request = _openRequest(0);
         request.dockInstanceId = route.dockInstanceId;
         request.localPlanId = route.planId;
         request.localOrderId = route.orderId;
         request.routeHash = route.routeHash;
         request.linkedOrderId = route.linkedOrderId;
+        request.targetPlanId = targetPlan;
         return request;
     }
 
@@ -1391,7 +1501,6 @@ contract UVPDockingModuleTest {
             portKey: DONE_PORT,
             targetSourceId: TARGET_SOURCE,
             targetSignalId: TARGET_SIGNAL,
-            portSignalWord: OUT_WORD_DONE,
             bindingHash: outputBinding,
             portProof: donePortProof
         });
@@ -1401,7 +1510,6 @@ contract UVPDockingModuleTest {
             portKey: PROGRESS_OUT_PORT,
             targetSourceId: TARGET_SOURCE,
             targetSignalId: TARGET_SIGNAL,
-            portSignalWord: OUT_WORD_PROGRESS,
             bindingHash: progressOutBinding,
             portProof: progressPortProof
         });
@@ -1411,7 +1519,6 @@ contract UVPDockingModuleTest {
             portKey: SETTLE_PORT,
             targetSourceId: TARGET_SOURCE,
             targetSignalId: TARGET_PENDING_SIGNAL,
-            portSignalWord: OUT_WORD_SETTLE,
             bindingHash: settleBinding,
             portProof: settlePortProof
         });

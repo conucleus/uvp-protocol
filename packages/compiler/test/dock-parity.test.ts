@@ -166,7 +166,7 @@ test("frozen constants match the golden manifest", () => {
   );
   assert.equal(
     fixture.constants.domains.interfaceOutput,
-    "UVP_DOCK_INTERFACE_OUTPUT_V2",
+    "UVP_DOCK_INTERFACE_OUTPUT_V3",
   );
   assert.equal(fixture.constants.domains.inputBinding, "UVP_DOCK_INPUT_BINDING_V2");
   assert.equal(

@@ -138,7 +138,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   // sourcePlanHash/planHash preimage 随定义内容变化；承诺公式本身冻结不变。
   assert.equal(
     onchain.planHash,
-    "0x9692f1889aa59810b9cff28d225dce9ed22e7bcecbf5c0e5ddcb9d2896dc293f",
+    "0xb3549abeb41818702baf836a61faaee3bc16f86e35ce3d0481b9edac0f83837c",
   );
   assert.deepEqual(onchain.selectorBindings, [
     {

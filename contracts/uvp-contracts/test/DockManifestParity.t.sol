@@ -27,7 +27,7 @@ contract DockManifestParityTest {
     bytes32 private constant DOMAIN_DEFINITION_REF = keccak256("UVP_DEFINITION_REF_V1");
     bytes32 private constant DOMAIN_INTERFACE = keccak256("UVP_DOCK_INTERFACE_V2");
     bytes32 private constant DOMAIN_INTERFACE_INPUT = keccak256("UVP_DOCK_INTERFACE_INPUT_V2");
-    bytes32 private constant DOMAIN_INTERFACE_OUTPUT = keccak256("UVP_DOCK_INTERFACE_OUTPUT_V2");
+    bytes32 private constant DOMAIN_INTERFACE_OUTPUT = keccak256("UVP_DOCK_INTERFACE_OUTPUT_V3");
     bytes32 private constant DOMAIN_ROUTE_ID = keccak256("UVP_DOCK_ROUTE_ID_V1");
     bytes32 private constant DOMAIN_INPUT_BINDING = keccak256("UVP_DOCK_INPUT_BINDING_V2");
     bytes32 private constant DOMAIN_OUTPUT_BINDING = keccak256("UVP_DOCK_OUTPUT_BINDING_V2");
@@ -233,13 +233,16 @@ contract DockManifestParityTest {
         bytes32[] memory outPortLeaves = new bytes32[](2);
         for (uint256 i = 0; i < 2; i++) {
             string memory base = string.concat(".expected.interfaceArtifact.interfaces[1].outputs[", vmIndex(i), "]");
+            // 叶 V3 钉事实键分量（sourceId/signalId，manifest 由编译器派生）：
+            // 与 open() 绑定侧重算口径一致，不再经由 canonical word 的异域间接。
             outPortLeaves[i] = keccak256(
                 abi.encode(
                     DOMAIN_INTERFACE_OUTPUT,
                     targetUidId,
                     serviceNameId,
                     keccak256(bytes(_str(manifest, string.concat(base, ".port")))),
-                    keccak256(bytes(_str(manifest, string.concat(base, ".canonicalOutputSignal"))))
+                    _word(manifest, string.concat(base, ".sourceId")),
+                    _word(manifest, string.concat(base, ".signalId"))
                 )
             );
             assertEq(outPortLeaves[i], _word(manifest, string.concat(base, ".leafHash")));

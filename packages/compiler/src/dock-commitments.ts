@@ -13,6 +13,7 @@ import {
   outputBindingHash,
   outputPortLeaf,
   routeHash as routeHashOf,
+  splitCanonicalSignal,
   stageKey,
   stripAnnotations,
 } from "./dock.js";
@@ -729,17 +730,6 @@ function hookNameOfHook(hookId: string): string {
     );
   }
   return hookId.slice(hashIndex + 1);
-}
-
-/** `<source>::<task>.<stage>.<signal>` → [source, `<task>.<stage>.<signal>`]。 */
-function splitCanonicalSignal(signal: string): [string, string] {
-  const separator = signal.indexOf("::");
-  if (separator <= 0) {
-    throw new RangeError(
-      `signal must be <source>::<task>.<stage>.<signal>, received ${JSON.stringify(signal)}`,
-    );
-  }
-  return [signal.slice(0, separator), signal.slice(separator + 2)];
 }
 
 /** 字节序比较（Rust str Ord）；hex word 与 ASCII 标识符上等价于码点序。 */

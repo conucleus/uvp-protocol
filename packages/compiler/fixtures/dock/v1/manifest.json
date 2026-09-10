@@ -11,7 +11,7 @@
       "definitionRef": "UVP_DEFINITION_REF_V1",
       "dockInterface": "UVP_DOCK_INTERFACE_V2",
       "interfaceInput": "UVP_DOCK_INTERFACE_INPUT_V2",
-      "interfaceOutput": "UVP_DOCK_INTERFACE_OUTPUT_V2",
+      "interfaceOutput": "UVP_DOCK_INTERFACE_OUTPUT_V3",
       "routeId": "UVP_DOCK_ROUTE_ID_V1",
       "inputBinding": "UVP_DOCK_INPUT_BINDING_V2",
       "outputBinding": "UVP_DOCK_OUTPUT_BINDING_V2",
@@ -337,7 +337,7 @@
           }
         },
         "definitionRefHash": "0x3085d8ba890395b08454591df427faf64ab6af3c8c343386915c873eff3192b4",
-        "artifactHash": "0x2fd5ff69d18d371012cb2890f3a3089bb5b4099abe0aeb71f9dd1968b83caca5",
+        "artifactHash": "0x7d2de93fc28186ad67558b9230764e6d00d136665bd489ff81be552fcaf0ef5b",
         "published": true,
         "interfaces": [
           {
@@ -354,12 +354,12 @@
                 "source": "factory",
                 "sourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
                 "signalId": "0xbc2ed06bee2b19d5da48e9fb85cc819ca17502d01592b153c975b3d92ba6daf9",
-                "leafHash": "0x3656d79a2911bcd21b9bb94771c032a921410cbd55812f5a70cf457746d3695a"
+                "leafHash": "0xf97cba82494d40ff4a6eba5bf03b4e8ff788cdf87317fde79c4fa665303670bb"
               }
             ],
             "inputsRoot": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
-            "outputsRoot": "0x3656d79a2911bcd21b9bb94771c032a921410cbd55812f5a70cf457746d3695a",
-            "interfaceRoot": "0x516926be24b756fa043de7bffa7d3afc0151e8533a89f5469a997f4b22d086e9"
+            "outputsRoot": "0xf97cba82494d40ff4a6eba5bf03b4e8ff788cdf87317fde79c4fa665303670bb",
+            "interfaceRoot": "0x1e59dec0f5fe820b855a2a6a72113494c5d76fa689229426cc7c63cc6fb4b323"
           },
           {
             "name": "production_service",
@@ -400,7 +400,7 @@
                 "source": "factory",
                 "sourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
                 "signalId": "0x3ed20177708f3d168b4f2d8b4de029d2021dfa818b0b60f0c33a18b7edf72b88",
-                "leafHash": "0x33b08c76ba99accc4bcb5654b09ab9f54eff0b80dc6393712d61a44357e7ba12"
+                "leafHash": "0xe5c0664f2b7a3501e19e2dd69068b1b2ebff949f7cc2a5913bbc9632fb120a50"
               },
               {
                 "port": "started",
@@ -409,16 +409,16 @@
                 "source": "factory",
                 "sourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
                 "signalId": "0x1ad5e81d6c2669d986cbb6753af9bcfaa8edea699805586268405b4a1dc273d9",
-                "leafHash": "0x0ec08d76085eb5ed8b1dc152c4ad56202c0f8f1853170be4509fa8326ea55862"
+                "leafHash": "0xeab05adc017eb7615d30d8743360b7f1f85e3c1cc20dec852f1d5e186b20f751"
               }
             ],
             "inputsRoot": "0x8602a79ba2b07430666b74ce162dbbcc9df23f19f8bad372049a72a892ba3e05",
-            "outputsRoot": "0xc1f4bdee031ef5e46573a034af0e448a97e0fa1f7968628551336ad63a4269a4",
-            "interfaceRoot": "0x6606c6ba39b2e413e9debf9dad029ce23f47c6e410e6730c25a1570ae77b556b"
+            "outputsRoot": "0x7bb3d7bc060aa05cf8a3342bd33f252d299d01e3c3b9e934c54c0fb2023a21b2",
+            "interfaceRoot": "0x7d7a7dd35ea3d2eba8d57d6c00e27dde9bf651dc6523d5e6639fee72324e8c3c"
           }
         ],
         "evmPlanId": "0xa217a05f605edc13ae024f9e3baf15de239735c634a398cd9b77be86da3fb545",
-        "cloudArtifactId": "artifact://0x2fd5ff69d18d371012cb2890f3a3089bb5b4099abe0aeb71f9dd1968b83caca5"
+        "cloudArtifactId": "artifact://0x7d2de93fc28186ad67558b9230764e6d00d136665bd489ff81be552fcaf0ef5b"
       }
     ]
   },
@@ -426,14 +426,14 @@
     "targetDefinitionRefHash": "0x3085d8ba890395b08454591df427faf64ab6af3c8c343386915c873eff3192b4",
     "parentDefinitionRefHash": "0xfbb16085724fcf01db1b8570595cd257a63c0b503e27619f6c376a53b5717e81",
     "targetPlanId": "0xa217a05f605edc13ae024f9e3baf15de239735c634a398cd9b77be86da3fb545",
-    "targetArtifactHash": "0x2fd5ff69d18d371012cb2890f3a3089bb5b4099abe0aeb71f9dd1968b83caca5",
+    "targetArtifactHash": "0x7d2de93fc28186ad67558b9230764e6d00d136665bd489ff81be552fcaf0ef5b",
     "interfaceArtifact": {
       "schemaVersion": "uvp.dockInterfaceArtifact.v2",
       "definition": {
         "uid": "zx-459b6f6c0e1fe47ace72be19ef0fad4d",
         "definitionRefHash": "0x3085d8ba890395b08454591df427faf64ab6af3c8c343386915c873eff3192b4"
       },
-      "interfaceRoot": "0x427c26899f67f4b2dd8d23f6d3ff37faa682449cfd79236104ac89a8e98341ff",
+      "interfaceRoot": "0x91b218ed9ecd83825428ddaad58bf36e4f4ab676fd5e3519a63d0c33d14f4faf",
       "interfaces": [
         {
           "name": "production_evidence",
@@ -449,12 +449,12 @@
               "source": "factory",
               "sourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
               "signalId": "0xbc2ed06bee2b19d5da48e9fb85cc819ca17502d01592b153c975b3d92ba6daf9",
-              "leafHash": "0x3656d79a2911bcd21b9bb94771c032a921410cbd55812f5a70cf457746d3695a"
+              "leafHash": "0xf97cba82494d40ff4a6eba5bf03b4e8ff788cdf87317fde79c4fa665303670bb"
             }
           ],
           "inputsRoot": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
-          "outputsRoot": "0x3656d79a2911bcd21b9bb94771c032a921410cbd55812f5a70cf457746d3695a",
-          "interfaceRoot": "0x516926be24b756fa043de7bffa7d3afc0151e8533a89f5469a997f4b22d086e9"
+          "outputsRoot": "0xf97cba82494d40ff4a6eba5bf03b4e8ff788cdf87317fde79c4fa665303670bb",
+          "interfaceRoot": "0x1e59dec0f5fe820b855a2a6a72113494c5d76fa689229426cc7c63cc6fb4b323"
         },
         {
           "name": "production_service",
@@ -495,7 +495,7 @@
               "source": "factory",
               "sourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
               "signalId": "0x3ed20177708f3d168b4f2d8b4de029d2021dfa818b0b60f0c33a18b7edf72b88",
-              "leafHash": "0x33b08c76ba99accc4bcb5654b09ab9f54eff0b80dc6393712d61a44357e7ba12"
+              "leafHash": "0xe5c0664f2b7a3501e19e2dd69068b1b2ebff949f7cc2a5913bbc9632fb120a50"
             },
             {
               "port": "started",
@@ -504,12 +504,12 @@
               "source": "factory",
               "sourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
               "signalId": "0x1ad5e81d6c2669d986cbb6753af9bcfaa8edea699805586268405b4a1dc273d9",
-              "leafHash": "0x0ec08d76085eb5ed8b1dc152c4ad56202c0f8f1853170be4509fa8326ea55862"
+              "leafHash": "0xeab05adc017eb7615d30d8743360b7f1f85e3c1cc20dec852f1d5e186b20f751"
             }
           ],
           "inputsRoot": "0x8602a79ba2b07430666b74ce162dbbcc9df23f19f8bad372049a72a892ba3e05",
-          "outputsRoot": "0xc1f4bdee031ef5e46573a034af0e448a97e0fa1f7968628551336ad63a4269a4",
-          "interfaceRoot": "0x6606c6ba39b2e413e9debf9dad029ce23f47c6e410e6730c25a1570ae77b556b"
+          "outputsRoot": "0x7bb3d7bc060aa05cf8a3342bd33f252d299d01e3c3b9e934c54c0fb2023a21b2",
+          "interfaceRoot": "0x7d7a7dd35ea3d2eba8d57d6c00e27dde9bf651dc6523d5e6639fee72324e8c3c"
         }
       ]
     },
@@ -532,10 +532,10 @@
           "zhixuUid": "zx-459b6f6c0e1fe47ace72be19ef0fad4d",
           "zhixuName": "friction_wheel_production",
           "interfaceName": "production_service",
-          "interfaceRoot": "0x6606c6ba39b2e413e9debf9dad029ce23f47c6e410e6730c25a1570ae77b556b",
-          "dockInterfaceRoot": "0x427c26899f67f4b2dd8d23f6d3ff37faa682449cfd79236104ac89a8e98341ff",
-          "artifactHash": "0x2fd5ff69d18d371012cb2890f3a3089bb5b4099abe0aeb71f9dd1968b83caca5",
-          "cloudArtifactId": "artifact://0x2fd5ff69d18d371012cb2890f3a3089bb5b4099abe0aeb71f9dd1968b83caca5",
+          "interfaceRoot": "0x7d7a7dd35ea3d2eba8d57d6c00e27dde9bf651dc6523d5e6639fee72324e8c3c",
+          "dockInterfaceRoot": "0x91b218ed9ecd83825428ddaad58bf36e4f4ab676fd5e3519a63d0c33d14f4faf",
+          "artifactHash": "0x7d2de93fc28186ad67558b9230764e6d00d136665bd489ff81be552fcaf0ef5b",
+          "cloudArtifactId": "artifact://0x7d2de93fc28186ad67558b9230764e6d00d136665bd489ff81be552fcaf0ef5b",
           "evmPlanId": "0xa217a05f605edc13ae024f9e3baf15de239735c634a398cd9b77be86da3fb545"
         },
         "orderMode": "new",
@@ -594,10 +594,10 @@
           "zhixuUid": "zx-459b6f6c0e1fe47ace72be19ef0fad4d",
           "zhixuName": "friction_wheel_production",
           "interfaceName": "production_evidence",
-          "interfaceRoot": "0x516926be24b756fa043de7bffa7d3afc0151e8533a89f5469a997f4b22d086e9",
-          "dockInterfaceRoot": "0x427c26899f67f4b2dd8d23f6d3ff37faa682449cfd79236104ac89a8e98341ff",
-          "artifactHash": "0x2fd5ff69d18d371012cb2890f3a3089bb5b4099abe0aeb71f9dd1968b83caca5",
-          "cloudArtifactId": "artifact://0x2fd5ff69d18d371012cb2890f3a3089bb5b4099abe0aeb71f9dd1968b83caca5",
+          "interfaceRoot": "0x1e59dec0f5fe820b855a2a6a72113494c5d76fa689229426cc7c63cc6fb4b323",
+          "dockInterfaceRoot": "0x91b218ed9ecd83825428ddaad58bf36e4f4ab676fd5e3519a63d0c33d14f4faf",
+          "artifactHash": "0x7d2de93fc28186ad67558b9230764e6d00d136665bd489ff81be552fcaf0ef5b",
+          "cloudArtifactId": "artifact://0x7d2de93fc28186ad67558b9230764e6d00d136665bd489ff81be552fcaf0ef5b",
           "evmPlanId": "0xa217a05f605edc13ae024f9e3baf15de239735c634a398cd9b77be86da3fb545"
         },
         "orderMode": "existing",
@@ -638,7 +638,7 @@
       "0x01fd206a8bfdc37b1297f32b8fbdca29be6b6435c283e0eafe9f371832ec97b2"
     ],
     "interfaceLeafProof": [
-      "0x516926be24b756fa043de7bffa7d3afc0151e8533a89f5469a997f4b22d086e9"
+      "0x1e59dec0f5fe820b855a2a6a72113494c5d76fa689229426cc7c63cc6fb4b323"
     ],
     "inputPortLeafProof": [
       "0xb994de1ded0648d67ade20ba8ecf7cee049e28a29d0812b9a150d7b23b582e22"

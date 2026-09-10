@@ -33,7 +33,7 @@ export const DEFINITION_UID_DOMAIN = "uvp:definition-uid:v1";
 export const DOMAIN_DEFINITION_REF = "UVP_DEFINITION_REF_V1";
 export const DOMAIN_INTERFACE = "UVP_DOCK_INTERFACE_V2";
 export const DOMAIN_INTERFACE_INPUT = "UVP_DOCK_INTERFACE_INPUT_V2";
-export const DOMAIN_INTERFACE_OUTPUT = "UVP_DOCK_INTERFACE_OUTPUT_V2";
+export const DOMAIN_INTERFACE_OUTPUT = "UVP_DOCK_INTERFACE_OUTPUT_V3";
 export const DOMAIN_ROUTE_ID = "UVP_DOCK_ROUTE_ID_V1";
 export const DOMAIN_INPUT_BINDING = "UVP_DOCK_INPUT_BINDING_V2";
 export const DOMAIN_OUTPUT_BINDING = "UVP_DOCK_OUTPUT_BINDING_V2";
@@ -489,19 +489,39 @@ export function inputPortLeaf(input: {
   ]);
 }
 
-/** `outputPortLeaf_v2 = H(UVP_DOCK_INTERFACE_OUTPUT_V2; keccak(uid), keccak(interfaceName), keccak(portName), keccak(canonicalSignal))`。 */
+/**
+ * `outputPortLeaf_v3 = H(UVP_DOCK_INTERFACE_OUTPUT_V3; keccak(uid),
+ * keccak(interfaceName), keccak(portName), keccak(source), keccak(signalName))`。
+ * 叶钉事实键分量（= 绑定侧 targetSourceId/targetSignalId 的派生输入）：
+ * 此前叶承诺 canonical 信号 word，与绑定侧分量哈希分属不同派生域，链上
+ * 无法互证相等——调用方可把端口绑到词表内另一条事实，目标方"经此端口
+ * 暴露该事实"的承诺被架空。
+ */
 export function outputPortLeaf(input: {
   readonly uid: string;
   readonly interfaceName: string;
   readonly portName: string;
   readonly canonicalSignal: string;
 }): HexString {
+  const [source, signalName] = splitCanonicalSignal(input.canonicalSignal);
   return keccakWords(DOMAIN_INTERFACE_OUTPUT, [
     keccakWord(input.uid),
     interfaceNameKey(input.interfaceName),
     portKey(input.portName),
-    canonicalSignalHash(input.canonicalSignal),
+    keccakWord(source),
+    keccakWord(signalName),
   ]);
+}
+
+/** `<source>::<task>.<stage>.<signal>` → [source, `<task>.<stage>.<signal>`]。 */
+export function splitCanonicalSignal(signal: string): [string, string] {
+  const separator = signal.indexOf("::");
+  if (separator <= 0) {
+    throw new RangeError(
+      `signal must be <source>::<task>.<stage>.<signal>, received ${JSON.stringify(signal)}`,
+    );
+  }
+  return [signal.slice(0, separator), signal.slice(separator + 2)];
 }
 
 /**

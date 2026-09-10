@@ -229,7 +229,6 @@ describe("Product DTO protocol surface", () => {
       "portKey",
       "targetSourceId",
       "targetSignalId",
-      "portSignalWord",
       "bindingHash",
       "portProof"
     ]);

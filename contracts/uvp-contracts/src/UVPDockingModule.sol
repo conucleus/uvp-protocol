@@ -7,7 +7,7 @@ import {DockMerkle} from "./libraries/DockMerkle.sol";
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
 import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 
-/// @title UVPDockingModule — 统一 Zhixu DockRoute（abiVersion 4.0）
+/// @title UVPDockingModule — 统一 Zhixu DockRoute（abiVersion 4.2）
 /// @notice 所有 Zhixu dock 来自 committed route：openDockedOrder 在一笔
 ///          交易内原子完成 child 创建、link 登记、entrance fact 写入；
 ///          submitDockedInput / submitDockedSignal permissionless：keeper
@@ -80,7 +80,7 @@ contract UVPDockingModule {
     struct DockInterfaceCommitmentV2 {
         uint8 orderModesWord; // bit0=new bit1=existing；new 路由要求 bit0
         bytes32 inputsRoot; // merkle(该接口全部 inputPortLeaf_v2)
-        bytes32 outputsRoot; // merkle(该接口全部 outputPortLeaf_v2)
+        bytes32 outputsRoot; // merkle(该接口全部 outputPortLeaf_v3)
     }
 
     /// 两级接口证明：entrance 端口叶 → 接口 inputsRoot；接口叶 → plan 的

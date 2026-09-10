@@ -1,6 +1,6 @@
 # Zhixu Dock v2 word 布局规格（链轨内部，冻结）
 
-链轨哈希层的唯一权威规格。全部公式冻结于 `UVPDockingModule` abiVersion 4.0，
+链轨哈希层的唯一权威规格。全部公式冻结于 `UVPDockingModule` abiVersion 4.2，
 实现 = 本包 `src/dock.ts`（TS 权威），Solidity（`DockMerkle` /
 `UVPDockingModule`）与 Foundry `DockManifestParity.t.sol` 逐字节对拍钉死。
 golden 向量由 `pnpm --filter @uvp-eth/compiler generate:dock-fixtures` 生成
@@ -37,7 +37,7 @@ golden 向量由 `pnpm --filter @uvp-eth/compiler generate:dock-fixtures` 生成
 | DOMAIN_DEFINITION_REF | `UVP_DEFINITION_REF_V1` |
 | DOMAIN_INTERFACE | `UVP_DOCK_INTERFACE_V2` |
 | DOMAIN_INTERFACE_INPUT | `UVP_DOCK_INTERFACE_INPUT_V2` |
-| DOMAIN_INTERFACE_OUTPUT | `UVP_DOCK_INTERFACE_OUTPUT_V2` |
+| DOMAIN_INTERFACE_OUTPUT | `UVP_DOCK_INTERFACE_OUTPUT_V3` |
 | DOMAIN_ROUTE_ID | `UVP_DOCK_ROUTE_ID_V1` |
 | DOMAIN_INPUT_BINDING | `UVP_DOCK_INPUT_BINDING_V2` |
 | DOMAIN_OUTPUT_BINDING | `UVP_DOCK_OUTPUT_BINDING_V2` |
@@ -82,8 +82,8 @@ definitionRefHash = H("UVP_DEFINITION_REF_V1"; keccak(uid))
 ```
 inputPortLeaf_v2  = H(UVP_DOCK_INTERFACE_INPUT_V2;  keccak(uid), keccak(interfaceName),
                       keccak(portName), keccak(hookRef))
-outputPortLeaf_v2 = H(UVP_DOCK_INTERFACE_OUTPUT_V2; keccak(uid), keccak(interfaceName),
-                      keccak(portName), keccak(canonicalSignal))
+outputPortLeaf_v3 = H(UVP_DOCK_INTERFACE_OUTPUT_V3; keccak(uid), keccak(interfaceName),
+                      keccak(portName), targetSourceId, targetSignalId)
 inputsRoot/outputsRoot = merkle(leaf…)
 interfaceLeaf_v2  = H(UVP_DOCK_INTERFACE_V2; keccak(uid), keccak(interfaceName),
                       orderModesWord, inputsRoot, outputsRoot)
@@ -91,8 +91,11 @@ dockInterfaceRoot = merkle(interfaces[].interfaceLeaf)
 ```
 
 `hookRef` = `<task>.<stage>#<receiveHookName>` 原文；`canonicalSignal` =
-`<source>::<task>.<stage>.<signal>` 原文。sourceId（`keccak(source)`）/
-signalId（`keccak(task.stage.signal)`）是运行期寻址数据，随产物携带但不入叶。
+`<source>::<task>.<stage>.<signal>` 原文。output 叶的
+`targetSourceId = keccak(source)`、`targetSignalId = keccak(task.stage.signal)`
+与 §4.3 绑定侧 target 分量同派生输入：链上 membership 校验由此可与
+binding 承诺的事实键互证。输入端口无信号身份，叶以 `hookRef` 钉接收
+钩子。
 
 ### 4.3 route 承诺（调用方侧）
 
@@ -213,9 +216,9 @@ EMPTY_MERKLE_ROOT      = 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad
 targetUid              = zx-459b6f6c0e1fe47ace72be19ef0fad4d
 targetDefinitionRefHash= 0x3085d8ba890395b08454591df427faf64ab6af3c8c343386915c873eff3192b4
 targetPlanId           = 0xa217a05f605edc13ae024f9e3baf15de239735c634a398cd9b77be86da3fb545
-targetArtifactHash     = 0x2fd5ff69d18d371012cb2890f3a3089bb5b4099abe0aeb71f9dd1968b83caca5
-production_service.interfaceRoot = 0x6606c6ba39b2e413e9debf9dad029ce23f47c6e410e6730c25a1570ae77b556b
-targetDockInterfaceRoot= 0x427c26899f67f4b2dd8d23f6d3ff37faa682449cfd79236104ac89a8e98341ff
+targetArtifactHash     = 0x7d2de93fc28186ad67558b9230764e6d00d136665bd489ff81be552fcaf0ef5b
+production_service.interfaceRoot = 0x7d7a7dd35ea3d2eba8d57d6c00e27dde9bf651dc6523d5e6639fee72324e8c3c
+targetDockInterfaceRoot= 0x91b218ed9ecd83825428ddaad58bf36e4f4ab676fd5e3519a63d0c33d14f4faf
 evmRuntimeDomain(31337, 0x5FbDB2315678afecb367f032d93F642f64180aa3)
                        = 0xa94a0dfb7ca902548259fc0032f6f1cbf654f1f291c31b748af22732e6c7001e
 cloudRuntimeDomain("uvp-cloud-deployment-fixture", "uvp-cloud-security-fixture")
