@@ -546,17 +546,15 @@ contract UVPStateMachineTest {
         // 子单（from 侧）出生授权带上 executor patch 资格，随后把子单
         // STAGE_AUDIT 的在任执行者设为 SUBMITTER_A——from 侧执行者门放行，
         // 让用例聚焦目标侧执行者门的拒绝。
-        UVPStateMachine.SignalAuthorization[] memory childAuths =
-            new UVPStateMachine.SignalAuthorization[](3);
+        UVPStateMachine.SignalAuthorization[] memory childAuths = new UVPStateMachine.SignalAuthorization[](3);
         childAuths[0] = _authorization(SIGNAL_TRIGGER, SUBMITTER_A);
         childAuths[1] = _authorization(SIGNAL_VERIFY_FAIL, SUBMITTER_A);
         childAuths[2] = _stageAuthorization(STAGE_INIT, EXECUTOR_PATCH_SIGNAL_ID, address(this));
         _triggerOrderFromSignalRequest(
-            machine,
-            _signalTriggerRequest(machine, ORDER_ID, bytes32(uint256(2))),
-            childAuths
+            machine, _signalTriggerRequest(machine, ORDER_ID, bytes32(uint256(2))), childAuths
         );
-        _stagePatch(machine).applyStageExecutorPatch(PLAN_ID, LINKED_ORDER_ID, _stageExecutorPatch(1, SUBMITTER_A, PATCH_HASH));
+        _stagePatch(machine)
+            .applyStageExecutorPatch(PLAN_ID, LINKED_ORDER_ID, _stageExecutorPatch(1, SUBMITTER_A, PATCH_HASH));
 
         vm.prank(SUBMITTER_A);
         vm.expectRevert(
@@ -1818,11 +1816,7 @@ contract UVPStateMachineTest {
         instructions[0] = _signal(SIGNAL_TRIGGER);
         instructions[1] = _signal(SIGNAL_INIT_CMP);
         instructions[2] = UVPStateMachine.Instruction({
-            op: uint8(5),
-            sourceId: bytes32(0),
-            signalId: bytes32(0),
-            arity: 2,
-            delaySeconds: 0
+            op: uint8(5), sourceId: bytes32(0), signalId: bytes32(0), arity: 2, delaySeconds: 0
         });
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
         hooks[0] = _hookWithFlags(
@@ -2385,7 +2379,11 @@ contract UVPStateMachineTest {
         vm.prank(SUBMITTER_A);
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStateMachine.UnauthorizedSignalSubmitter.selector, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, SUBMITTER_A
+                UVPStateMachine.UnauthorizedSignalSubmitter.selector,
+                ORDER_ID,
+                SOURCE_BOOTSTRAP,
+                SIGNAL_VERIFY_FAIL,
+                SUBMITTER_A
             )
         );
         _derivedSignal(machine)
@@ -3490,7 +3488,11 @@ contract UVPStateMachineTest {
 
     function _not() private pure returns (UVPStateMachine.Instruction memory) {
         return UVPStateMachine.Instruction({
-            op: uint8(UVPStateMachine.InstructionOp.Not), sourceId: bytes32(0), signalId: bytes32(0), arity: 0, delaySeconds: 0
+            op: uint8(UVPStateMachine.InstructionOp.Not),
+            sourceId: bytes32(0),
+            signalId: bytes32(0),
+            arity: 0,
+            delaySeconds: 0
         });
     }
 
@@ -4486,7 +4488,7 @@ contract ReenteringMetadataModule is IUVPPlanMetadataModule {
         revert("unused");
     }
 
-    function planSignalCapabilityAt(bytes32, uint256) external pure returns (bytes32, bytes32, bytes32, uint8) {
+    function currentOrderFactStage(bytes32, bytes32, bytes32) external pure returns (bytes32) {
         revert("unused");
     }
 

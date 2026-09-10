@@ -1006,7 +1006,11 @@ contract UVPDockingModuleTest {
     ) private pure returns (UVPStateMachine.CompactHook memory) {
         UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](1);
         instructions[0] = UVPStateMachine.Instruction({
-            op: uint8(UVPStateMachine.InstructionOp.Signal), sourceId: sourceId, signalId: signalId, arity: 0, delaySeconds: 0
+            op: uint8(UVPStateMachine.InstructionOp.Signal),
+            sourceId: sourceId,
+            signalId: signalId,
+            arity: 0,
+            delaySeconds: 0
         });
         bytes32[] memory deps = new bytes32[](1);
         deps[0] = keccak256(abi.encode(sourceId, signalId));

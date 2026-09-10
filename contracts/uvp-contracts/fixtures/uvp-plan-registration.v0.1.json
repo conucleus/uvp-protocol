@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "uvp-eth.contractAbiFixture.v2",
+  "contractName": "UVPPlanRegistration",
+  "abiVersion": "0.1",
+  "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPPlanRegistration.sol",
+  "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPPlanRegistration.sol/UVPPlanRegistration.json",
+  "compiler": {
+    "name": "solc",
+    "version": "0.8.24+commit.e11b9ed9"
+  },
+  "hashes": {
+    "abiHash": "0xa990e00734cbc0b20923debd4182e01ecb21f7ae530de62bea993a081b0de0e5",
+    "bytecodeHash": "0x50b7e386bb5785d340ad7552a8610050b533aed79fe1a389669b30ab3b3be062",
+    "deployedBytecodeHash": "0xba334125f21142daafd71c1b48390f9ecf0c0a5ef915ae7836efa3a7c53bcab9",
+    "artifactHash": "0xbb8862d7b4334ce4f7d072ca97025bd8ae70f4d49eee4c9829e5fb9212e61aa3"
+  },
+  "events": {
+    "PlanCommitted": {
+      "signature": "PlanCommitted(bytes32,bytes32,address,bytes32,bytes32,uint256,bytes32,bytes32)",
+      "topic": "0x0a2a43fad4e88651b5b2082fcbe630a630b0a9f125ca4c68ee51482b85a2c91b"
+    },
+    "PlanFinalized": {
+      "signature": "PlanFinalized(bytes32,bytes32,bytes32)",
+      "topic": "0x47b4ed0992cb3930f05422a2d28f9fedbc6f166ae64f37838fff35e0ca686b82"
+    },
+    "PlanPublisherRecorded": {
+      "signature": "PlanPublisherRecorded(bytes32,address)",
+      "topic": "0x0e3566d89d3ecd84eb7712329920f7ce99b6142ab4cbde4324ff9fae8ec3a2f3"
+    },
+    "PlanRegistered": {
+      "signature": "PlanRegistered(bytes32,bytes32,uint256)",
+      "topic": "0x979e3b71a04f8380bc947d476d6c9bb27aa40ad81a622686d37e5d6b88512bfd"
+    }
+  },
+  "functions": {}
+}

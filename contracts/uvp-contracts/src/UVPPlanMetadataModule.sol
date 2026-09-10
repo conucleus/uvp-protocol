@@ -115,7 +115,12 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
         //   inputsRoot, outputsRoot)，与 Rust/TS 逐字节一致。
         bytes32 interfaceLeaf = keccak256(
             abi.encode(
-                _DOMAIN_DOCK_INTERFACE, definitionUidId, interfaceNameId, uint256(orderModesWord), inputsRoot, outputsRoot
+                _DOMAIN_DOCK_INTERFACE,
+                definitionUidId,
+                interfaceNameId,
+                uint256(orderModesWord),
+                inputsRoot,
+                outputsRoot
             )
         );
         return DockMerkle.verify(_metadata[planId].dockInterfaceRoot, interfaceLeaf, proof);
@@ -142,15 +147,17 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
         return _metadata[planId].signalCapabilityKeys.length;
     }
 
-    function planSignalCapabilityAt(bytes32 planId, uint256 index)
-        external
-        view
-        returns (bytes32 stageId, bytes32 targetSourceId, bytes32 signalId, uint8 targetOrderRelation)
-    {
+    /// E16 属主索引读取：relation=0 capability 注册时已保证同一事实键唯一
+    /// 属主（DuplicateCurrentOrderSignalCapability 在注册边界拒绝竞争声明），
+    /// 这里按键直读即可。relation=1 不落该索引，恒返回 0；零键归零；
+    /// 未知计划与其它读面同口径 revert。状态机 _signalStageId 的单次查询取代
+    /// capability 逐项扫描，主合约 runtime 与热路径查询次数同步下降。
+    function currentOrderFactStage(bytes32 planId, bytes32 sourceId, bytes32 signalId) external view returns (bytes32) {
         _requireKnownPlan(planId);
-        PlanMetadata storage metadata = _metadata[planId];
-        SignalCapability storage capability = metadata.signalCapabilities[metadata.signalCapabilityKeys[index]];
-        return (capability.stageId, capability.targetSourceId, capability.signalId, capability.targetOrderRelation);
+        if (sourceId == bytes32(0) || signalId == bytes32(0)) {
+            return bytes32(0);
+        }
+        return _currentOrderFactStages[planId][keccak256(abi.encode(sourceId, signalId))];
     }
 
     function stageSignalCapabilityCount(bytes32 planId, bytes32 stageId) external view returns (uint256) {

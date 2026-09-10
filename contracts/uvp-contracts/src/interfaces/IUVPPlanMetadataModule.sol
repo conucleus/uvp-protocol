@@ -42,10 +42,12 @@ interface IUVPPlanMetadataModule {
 
     function planSignalCapabilityCount(bytes32 planId) external view returns (uint256);
 
-    function planSignalCapabilityAt(bytes32 planId, uint256 index)
+    /// E16 属主索引读取：relation=0 capability 注册时落库的
+    /// (sourceId, signalId) → 唯一属主阶段。未知计划 revert，零键归零。
+    function currentOrderFactStage(bytes32 planId, bytes32 sourceId, bytes32 signalId)
         external
         view
-        returns (bytes32 stageId, bytes32 targetSourceId, bytes32 signalId, uint8 targetOrderRelation);
+        returns (bytes32 stageId);
 
     function stageSignalCapabilityCount(bytes32 planId, bytes32 stageId) external view returns (uint256);
 

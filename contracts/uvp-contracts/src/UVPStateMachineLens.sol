@@ -49,13 +49,7 @@ interface IUVPDockingModuleLens {
     function getDockInputBinding(bytes32 dockInstanceId, bytes32 inputBindingHash)
         external
         view
-        returns (
-            bytes32 localHookId,
-            bytes32 portKey,
-            bytes32 targetSourceId,
-            bytes32 targetSignalId,
-            bool exists
-        );
+        returns (bytes32 localHookId, bytes32 portKey, bytes32 targetSourceId, bytes32 targetSignalId, bool exists);
 
     function getDockOutputBinding(bytes32 dockInstanceId, bytes32 outputBindingHash)
         external
@@ -185,13 +179,7 @@ contract UVPStateMachineLens {
     function getDockInputBinding(bytes32 dockInstanceId, bytes32 inputBindingHash)
         external
         view
-        returns (
-            bytes32 localHookId,
-            bytes32 portKey,
-            bytes32 targetSourceId,
-            bytes32 targetSignalId,
-            bool exists
-        )
+        returns (bytes32 localHookId, bytes32 portKey, bytes32 targetSourceId, bytes32 targetSignalId, bool exists)
     {
         return IUVPDockingModuleLens(_moduleDirectory.dockingModule())
             .getDockInputBinding(dockInstanceId, inputBindingHash);
