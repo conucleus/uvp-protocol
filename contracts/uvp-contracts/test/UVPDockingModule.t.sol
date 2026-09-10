@@ -610,10 +610,7 @@ contract UVPDockingModuleTest {
         RogueRoute memory route = _registerRogueRouteParent(PARENT_EXEC_HOOK, TARGET_SOURCE, TARGET_SIGNAL, outputs);
         _expect(
             abi.encodeWithSelector(
-                UVPDockingModule.DockOutputFactNotDeclared.selector,
-                targetPlanId,
-                ROGUE_FACT_SOURCE,
-                ROGUE_FACT_SIGNAL
+                UVPDockingModule.DockOutputFactNotDeclared.selector, targetPlanId, ROGUE_FACT_SOURCE, ROGUE_FACT_SIGNAL
             )
         );
         docking.openDockedOrder(
@@ -1030,10 +1027,7 @@ contract UVPDockingModuleTest {
             targetOrderRelation: 0 // SIGNAL_TARGET_CURRENT_ORDER
         });
         capabilities[1] = IUVPPlanMetadataModule.SignalCapability({
-            stageId: TARGET_STAGE,
-            targetSourceId: TARGET_SOURCE,
-            signalId: TARGET_SIGNAL,
-            targetOrderRelation: 0
+            stageId: TARGET_STAGE, targetSourceId: TARGET_SOURCE, signalId: TARGET_SIGNAL, targetOrderRelation: 0
         });
         capabilities[2] = IUVPPlanMetadataModule.SignalCapability({
             stageId: TARGET_STAGE,

@@ -769,24 +769,22 @@ contract UVPStateMachineTest {
         (uint8 previousV, bytes32 previousR, bytes32 previousS) = vm.sign(WRONG_SUBMITTER_PRIVATE_KEY, digest);
 
         vm.prank(UNAUTHORIZED_SUBMITTER);
-        _stagePatch(machine).applyStageExecutorPatchFor(
-            PLAN_ID,
-            ORDER_ID,
-            patch,
-            selector,
-            deadline,
-            _packedSignature(selectorV, selectorR, selectorS),
-            _packedSignature(previousV, previousR, previousS)
-        );
+        _stagePatch(machine)
+            .applyStageExecutorPatchFor(
+                PLAN_ID,
+                ORDER_ID,
+                patch,
+                selector,
+                deadline,
+                _packedSignature(selectorV, selectorR, selectorS),
+                _packedSignature(previousV, previousR, previousS)
+            );
         require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == SUBMITTER_B, "handoff not applied");
     }
 
     /// 回退事实机器：overlay 词表 + 出生附加未声明回退键的显式提交权，
     /// assign #1 后待用。
-    function _fallbackFactMachine(address selector, address executor)
-        private
-        returns (UVPStateMachine machine)
-    {
+    function _fallbackFactMachine(address selector, address executor) private returns (UVPStateMachine machine) {
         machine = _newMachine();
         _registerPlan(
             machine, _withOrderStart(_patchableSequentialPlan()), _selectorBindings(), _overlaySignalCapabilities()
@@ -801,7 +799,9 @@ contract UVPStateMachineTest {
         _submitTriggerOrderFromOutside(machine, PLAN_ID, ORDER_CREATOR, authorizations);
         // SIGNAL_INIT_CMP 令 STAGE_AUDIT 的 EMIT_READY hook Ready 并物化该阶段。
         vm.prank(selector);
-        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, PAYLOAD_HASH, bytes32(uint256(0x9130)));
+        machine.submitSignal(
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, PAYLOAD_HASH, bytes32(uint256(0x9130))
+        );
         _activateInitialStageExecutor(machine, selector, executor);
     }
 

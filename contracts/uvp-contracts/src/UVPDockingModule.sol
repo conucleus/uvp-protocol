@@ -106,9 +106,6 @@ contract UVPDockingModule {
         bytes32 portKey;
         bytes32 targetSourceId;
         bytes32 targetSignalId;
-        // 接口 output 端口叶的 canonical 输出信号 word：叶内容经 outputsRoot
-        // membership 由目标接口承诺背书（调用方不得自报叶值）。
-        bytes32 portSignalWord;
         bytes32 bindingHash;
         bytes32[] portProof;
     }
@@ -238,7 +235,12 @@ contract UVPDockingModule {
 
     bytes32 private constant _DOMAIN_DEFINITION_REF = keccak256("UVP_DEFINITION_REF_V1");
     bytes32 private constant _DOMAIN_INTERFACE_INPUT = keccak256("UVP_DOCK_INTERFACE_INPUT_V2");
-    bytes32 private constant _DOMAIN_INTERFACE_OUTPUT = keccak256("UVP_DOCK_INTERFACE_OUTPUT_V2");
+    // output 端口叶 V3：叶直接钉绑定侧的事实键分量 (targetSourceId,
+    // targetSignalId)。此前叶承诺 canonical 信号 word（keccak("src::name")），
+    // 与绑定侧分量哈希分属不同派生域——链上无法互证两者指同一事实，调用
+    // 方可把 DONE 端口绑到词表内另一个事实，目标方承诺被架空。分量入叶后
+    // 错配绑定在 membership 处直接失配。
+    bytes32 private constant _DOMAIN_INTERFACE_OUTPUT = keccak256("UVP_DOCK_INTERFACE_OUTPUT_V3");
     bytes32 private constant _DOMAIN_ROUTE_ID = keccak256("UVP_DOCK_ROUTE_ID_V1");
     bytes32 private constant _DOMAIN_SOURCE_FACT_SET_ZERO = bytes32(0);
     bytes32 private constant _DOMAIN_INPUT_BINDING = keccak256("UVP_DOCK_INPUT_BINDING_V2");
@@ -367,14 +369,17 @@ contract UVPDockingModule {
             // output 端口 membership（input 侧同款二级承诺）：端口叶由承诺
             // 输入重算，必须落在目标接口 outputsRoot 内——否则已提交 route
             // 可把输出绑到目标接口从未宣告的端口（只重算绑定哈希入 routeHash
-            // 不构成目标侧承诺）。
+            // 不构成目标侧承诺）。叶 V3 以绑定自己的事实键分量为承诺内容：
+            // 绑到"另一个合法事实"同样失配，目标方对每端口暴露哪条事实的
+            // 承诺由此闭合。
             bytes32 outputPortLeaf = keccak256(
                 abi.encode(
                     _DOMAIN_INTERFACE_OUTPUT,
                     request.targetUidId,
                     request.interfaceNameId,
                     outputs[i].portKey,
-                    outputs[i].portSignalWord
+                    outputs[i].targetSourceId,
+                    outputs[i].targetSignalId
                 )
             );
             if (!DockMerkle.verify(interfaceProof.commitment.outputsRoot, outputPortLeaf, outputs[i].portProof)) {
@@ -427,9 +432,11 @@ contract UVPDockingModule {
         //     词表闸同口径放行。
         if (planMetadataModule.planSignalCapabilityCount(request.targetPlanId) != 0) {
             for (uint256 i = 0; i < outputs.length; i++) {
-                if (planMetadataModule.currentOrderFactStage(
-                        request.targetPlanId, outputs[i].targetSourceId, outputs[i].targetSignalId
-                    ) == bytes32(0)) {
+                if (
+                    planMetadataModule.currentOrderFactStage(
+                            request.targetPlanId, outputs[i].targetSourceId, outputs[i].targetSignalId
+                        ) == bytes32(0)
+                ) {
                     revert DockOutputFactNotDeclared(
                         request.targetPlanId, outputs[i].targetSourceId, outputs[i].targetSignalId
                     );
