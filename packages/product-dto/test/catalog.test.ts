@@ -127,6 +127,21 @@ describe("product DTO catalog", () => {
     assert.equal("writerWallet" in (demoResourcePatchTask.addOnManifest?.actions[0]?.inputBindings ?? {}), false);
   });
 
+  it("keeps submit_signal manifests free of a hard-coded confirm intent on dispute slots", () => {
+    // 共享 helper 同时喂给 confirm 型与 dispute 型槽位：硬编码 intent 会让
+    // dispute_material 槽位的 manifest 声明覆盖插件类型推导，争议任务以
+    // confirm_stage 提交。未声明时由客户端按 capabilityPlugin.pluginKind 推导。
+    const disputeSlot = demoProductCatalog.zhixus[0]?.roleSlots.find((slot) => slot.slotId === "dispute");
+    assert.ok(disputeSlot);
+    assert.ok(disputeSlot.capabilityPlugins?.some((plugin) => plugin.pluginKind === "dispute_material"));
+    const submitActions = (disputeSlot.addOnManifest?.actions ?? [])
+      .filter((action) => action.actionKind === "submit_signal");
+    assert.ok(submitActions.length > 0);
+    for (const action of submitActions) {
+      assert.equal(action.intent, undefined);
+    }
+  });
+
   it("exports the customs scenario fixture with role-slot manifests", () => {
     const zhixu = customsProductCatalog.zhixus[0];
     assert.ok(zhixu);

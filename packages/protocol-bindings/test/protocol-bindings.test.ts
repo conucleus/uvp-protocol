@@ -32,6 +32,7 @@ import {
   buildStageResourcePatchTypedData,
   buildSubmitDerivedSignalForCall,
   buildSubmitSignalForCall,
+  buildTriggerOrderFromOutsideForCall,
   buildTriggerOrderFromSignalForCall,
   buildTriggerOrderFromSignalTypedData,
   canonicalJson,
@@ -1221,7 +1222,105 @@ describe("protocol bindings", () => {
       "0x012893657d8eb2efad4de0a91bcd0e39ad9837745dec3ea923737ea803fc8e3d",
     );
   });
+
+  it("rejects unsafe-range integers in canonical JSON (2^60, 1e21)", () => {
+    // 2609100052 C-2 同型：|x| >= 2^53 已丢精度、>=1e21 输出指数形式——与
+    // @uvp-eth/compiler canonical.ts 同口径响亮拒绝（大整数以 string/hex
+    // word 携带）。
+    assert.throws(
+      () => canonicalJson({ n: 2 ** 60 }),
+      /beyond the safe integer range 2\^53-1.*received 1152921504606847000/,
+    );
+    assert.throws(
+      () => canonicalJson({ n: 1e21 }),
+      /beyond the safe integer range 2\^53-1.*received 1e\+21/,
+    );
+    assert.equal(
+      canonicalJson({ n: Number.MAX_SAFE_INTEGER }),
+      `{"n":${Number.MAX_SAFE_INTEGER}}`,
+    );
+  });
+
+  it("rejects zero sourceId at the trigger/authorization boundary (ZeroSourceId mirror)", () => {
+    // L-4：合约 triggerOrderFromOutsideFor / _authorizeSignalSubmitter 对
+    // sourceId==0 revert ZeroSourceId——签名摘要工具的可编码集不得大于
+    // 合约接受集（可构造必败调用）。
+    const signature = "0x" + "11".repeat(65);
+    const config = {
+      stateMachineAddress: "0x8888888888888888888888888888888888888888",
+    };
+    assert.throws(
+      () =>
+        buildTriggerOrderFromOutsideForCall(config, {
+          planId,
+          creator: executor,
+          triggerHookId,
+          triggerStageId,
+          sourceId: zeroBytes32,
+          signalId,
+          payloadHash,
+          idempotencyKey,
+          submitter: executor,
+          deadline,
+          authorizations: [],
+          signature,
+        }),
+      /sourceId must be non-zero/,
+    );
+    assert.throws(
+      () =>
+        buildTriggerOrderFromOutsideForCall(config, {
+          planId,
+          creator: executor,
+          triggerHookId,
+          triggerStageId,
+          sourceId,
+          signalId,
+          payloadHash,
+          idempotencyKey,
+          submitter: executor,
+          deadline,
+          authorizations: [
+            {
+              sourceId: zeroBytes32,
+              signalId,
+              submitter: executor,
+              role,
+              metadataHash: payloadHash,
+            },
+          ],
+          signature,
+        }),
+      /authorization\.sourceId must be non-zero/,
+    );
+    // 非零 sourceId 照常可编码（回归护栏）。
+    assert.doesNotThrow(() =>
+      buildTriggerOrderFromOutsideForCall(config, {
+        planId,
+        creator: executor,
+        triggerHookId,
+        triggerStageId,
+        sourceId,
+        signalId,
+        payloadHash,
+        idempotencyKey,
+        submitter: executor,
+        deadline,
+        authorizations: [
+          {
+            sourceId,
+            signalId,
+            submitter: executor,
+            role,
+            metadataHash: payloadHash,
+          },
+        ],
+        signature,
+      }),
+    );
+  });
 });
+
 
 function bytes32(suffix: string): `0x${string}` {
   return `0x${suffix.padStart(64, "0")}`;

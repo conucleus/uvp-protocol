@@ -89,14 +89,15 @@ the TypeScript `statemachine` oracle.
   `PlanPublisherRecorded`, `OrderRegistered`, `OrderMaterialized`,
   `OrderRelayerRecorded`, `OrderTriggered`, `SignalSubmitterAuthorized`, `SignalSubmitted`,
   `StageMaterialized`, `HookStatusChanged`, `HookReady`, `TimerPoked`,
-  `StageExecutorPatchApplied`,
-  `StageResourcePatchApplied`, `StageExecutorActivated`, and
+  `StageExecutorActivated`, and
   `StageExecutorSignalDelegated`;
 - docking module event topics for `DockOpened`, `DockInputSubmitted`, and
   `DockOutputSubmitted`; order-link module event topics for
   `OrderLinked`; plan-metadata module event topics for
   `StageSelectorBindingRegistered` and `SignalCapabilityRegistered`; derived
-  signal module event topics for `DerivedSignalSubmitted`; and deployment
+  signal module event topics for `DerivedSignalSubmitted`; stage-patch module
+  (`UVPStagePatchModule`) event topics for `StageExecutorPatchApplied` and
+  `StageResourcePatchApplied`; and deployment
   registry event topics for `DeploymentRegistered`, `DeploymentCanaryMarked`,
   `DeploymentActivated`, `DeploymentDeprecated`, and `DeploymentRetired`;
 - ABI hash, bytecode hash, deployed bytecode hash, canonical artifact hash, and

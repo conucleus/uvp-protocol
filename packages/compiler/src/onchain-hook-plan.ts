@@ -268,12 +268,44 @@ export function compileZhixuRegisterPlanArgs(
   );
 }
 
+/**
+ * OnchainHookPlanArtifact 的封闭字段集（与 types/index.ts 声明同步）：
+ * planHash 只覆盖这些字段——未声明额外字段不进哈希，放行会让"同一 plan
+ * 唯一字节数组形态"承诺失效（两个仅多余字段不同的制品共享 planHash）。
+ */
+const ONCHAIN_ARTIFACT_FIELDS: readonly string[] = [
+  "schemaVersion",
+  "planId",
+  "zhixuId",
+  "zhixuName",
+  "platform",
+  "sourcePlanHash",
+  "compiledHooks",
+  "dependencyIndex",
+  "executorRoutes",
+  "dockInterface",
+  "dockRoutes",
+  "dockRoutesRoot",
+  "dockInterfaceRoot",
+  "selectorBindings",
+  "signalCapabilities",
+  "planHash",
+];
+
 export function validateOnchainHookPlanArtifact(
   value: unknown,
 ): readonly string[] {
   const issues: string[] = [];
   if (!isRecord(value)) {
     return ["artifact must be an object"];
+  }
+
+  for (const key of Object.keys(value)) {
+    if (!ONCHAIN_ARTIFACT_FIELDS.includes(key)) {
+      issues.push(
+        `unknown field \`${key}\` on the artifact — planHash does not cover undeclared fields, so the artifact would not be the plan's unique byte form; remove it or recompile`,
+      );
+    }
   }
 
   expectLiteral(
@@ -451,26 +483,34 @@ export function validateOnchainHookPlanArtifact(
   }
 
   if (isPlanHashRecomputable(value)) {
-    const expectedPlanHash = hashOnchainPlanPayload({
-      schemaVersion: value.schemaVersion,
-      planId: value.planId,
-      zhixuId: value.zhixuId,
-      zhixuName: value.zhixuName,
-      platform: value.platform,
-      sourcePlanHash: value.sourcePlanHash,
-      compiledHooks: value.compiledHooks,
-      dependencyIndex: value.dependencyIndex,
-      executorRoutes: value.executorRoutes,
-      dockInterface: value.dockInterface,
-      dockRoutes: value.dockRoutes,
-      dockRoutesRoot: value.dockRoutesRoot,
-      dockInterfaceRoot: value.dockInterfaceRoot,
-      selectorBindings: value.selectorBindings,
-      signalCapabilities: value.signalCapabilities,
-    });
-    if (value.planHash !== expectedPlanHash) {
+    // 姊妹实现 hook-plan.ts 同口径：重算抛错（负载深层携带 undefined/非
+    // JSON 值）按 issue 报告，校验器的契约是返回 issues 而非抛裸 TypeError。
+    try {
+      const expectedPlanHash = hashOnchainPlanPayload({
+        schemaVersion: value.schemaVersion,
+        planId: value.planId,
+        zhixuId: value.zhixuId,
+        zhixuName: value.zhixuName,
+        platform: value.platform,
+        sourcePlanHash: value.sourcePlanHash,
+        compiledHooks: value.compiledHooks,
+        dependencyIndex: value.dependencyIndex,
+        executorRoutes: value.executorRoutes,
+        dockInterface: value.dockInterface,
+        dockRoutes: value.dockRoutes,
+        dockRoutesRoot: value.dockRoutesRoot,
+        dockInterfaceRoot: value.dockInterfaceRoot,
+        selectorBindings: value.selectorBindings,
+        signalCapabilities: value.signalCapabilities,
+      });
+      if (value.planHash !== expectedPlanHash) {
+        issues.push(
+          "planHash must match the canonical on-chain HookPlan payload",
+        );
+      }
+    } catch {
       issues.push(
-        "planHash must match the canonical on-chain HookPlan payload",
+        "planHash preimage is not canonicalizable (payload carries undefined or non-JSON values)",
       );
     }
   }

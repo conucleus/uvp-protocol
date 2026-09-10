@@ -113,10 +113,44 @@ export function compileZhixuHookPlan(
   return artifact;
 }
 
+/**
+ * HookPlanArtifact 的封闭字段集（与 types/index.ts 声明同步）：planHash 只
+ * 覆盖这些字段（unresolvedDockRoutes 仅非空时入哈希与制品）——未声明额外
+ * 字段不进哈希，放行会让"同一 plan 唯一字节数组形态"承诺失效（两个仅
+ * 多余字段不同的制品共享 planHash）。
+ */
+const HOOK_PLAN_ARTIFACT_FIELDS: readonly string[] = [
+  "schemaVersion",
+  "planId",
+  "zhixuId",
+  "zhixuName",
+  "platform",
+  "compiledHooks",
+  "dependencyIndex",
+  "executorRoutes",
+  "dockInterface",
+  "dockRoutes",
+  "unresolvedDockRoutes",
+  "dockRoutesRoot",
+  "dockInterfaceRoot",
+  "selectedStageBindings",
+  "signalCapabilities",
+  "source",
+  "planHash",
+];
+
 export function validateHookPlanArtifact(value: unknown): readonly string[] {
   const issues: string[] = [];
   if (!isRecord(value)) {
     return ["artifact must be an object"];
+  }
+
+  for (const key of Object.keys(value)) {
+    if (!HOOK_PLAN_ARTIFACT_FIELDS.includes(key)) {
+      issues.push(
+        `unknown field \`${key}\` on the artifact — planHash does not cover undeclared fields, so the artifact would not be the plan's unique byte form; remove it or recompile`,
+      );
+    }
   }
 
   expectLiteral(value.schemaVersion, HOOK_PLAN_SCHEMA_VERSION, "schemaVersion", issues);

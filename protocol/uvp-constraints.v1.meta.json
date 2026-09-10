@@ -1,1 +1,5 @@
-{"schemaVersion":"uvp.constraints-meta.v1","contentSha256":"2f776f56eff245ffd6f764df758bb0f173c9e1f244bb43df61784a37c3aeab3a","algorithm":"sha256"}
+{
+  "schemaVersion": "uvp.constraints-meta.v1",
+  "contentSha256": "ef1584ef503da466953d230a6c25e66d578ffb45893e3edef9c0bb58a3012c50",
+  "algorithm": "sha256"
+}

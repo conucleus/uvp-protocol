@@ -1847,3 +1847,42 @@ test("artifact boundary rejects compiledHooks arrays that break the canonical or
     `重排 compiledHooks 应触发规范序 issue，实际 issues：${JSON.stringify(issues)}`,
   );
 });
+
+test("collects non-canonicalizable planHash payloads as issues instead of throwing (L8)", () => {
+  // 2609100741 L8：顶层形状门（isPlanHashRecomputable）不检深层值——负载
+  // 携带非 JSON 值（bigint）时旧口径让 canonicalize 的裸 TypeError 逃出，
+  // 违反"校验器返回 issues"契约（姊妹实现 hook-plan.ts 有 try/catch）。
+  const onchain = compileOnchainHookPlan(
+    compileZhixuHookPlan(baseZhixu, demoManifest),
+  );
+  const poisoned = structuredClone(onchain) as unknown as {
+    compiledHooks: Array<{
+      dependencies: Array<Record<string, unknown>>;
+    }>;
+  };
+  poisoned.compiledHooks[0]!.dependencies[0]!.signalKey = 1n as never;
+  const issues = validateOnchainHookPlanArtifact(poisoned);
+  assert.ok(
+    issues.includes(
+      "planHash preimage is not canonicalizable (payload carries undefined or non-JSON values)",
+    ),
+    `expected a canonicalizability issue, got: ${JSON.stringify(issues)}`,
+  );
+  // 不抛裸异常：validateOnchainHookPlanArtifact 对毒负载整体返回 issues。
+  assert.doesNotThrow(() => validateOnchainHookPlanArtifact(poisoned));
+});
+
+test("rejects undeclared extra fields on on-chain HookPlan artifacts (L9)", () => {
+  // planHash 只覆盖声明字段：多余字段不进哈希，放行会让"同一 plan 唯一
+  // 字节数组形态"承诺失效（2609100741 L9）。
+  const onchain = compileOnchainHookPlan(
+    compileZhixuHookPlan(baseZhixu, demoManifest),
+  );
+  const issues = validateOnchainHookPlanArtifact({
+    ...onchain,
+    note: "hand-added",
+  });
+  assert.deepEqual(issues, [
+    "unknown field `note` on the artifact — planHash does not cover undeclared fields, so the artifact would not be the plan's unique byte form; remove it or recompile",
+  ]);
+});

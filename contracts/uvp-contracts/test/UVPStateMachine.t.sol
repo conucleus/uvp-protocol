@@ -55,6 +55,9 @@ contract UVPStateMachineTest {
     bytes32 private constant SIGNAL_VERIFY_FAIL = bytes32(uint256(0x4004));
     bytes32 private constant SIGNAL_STAGE_DONE = bytes32(uint256(0x4005));
     bytes32 private constant SIGNAL_STAGE_REVIEW = bytes32(uint256(0x4006));
+    /// 词表外的回退事实键（sourceId==stageId、无 capability 声明）——
+    /// _recordSignal 的 source==stage 回退归属用它落事实。
+    bytes32 private constant SIGNAL_FALLBACK = bytes32(uint256(0x4010));
     bytes32 private constant EXECUTOR_PATCH_SIGNAL_ID =
         0xbbb1770c9313f4029a89e03f4719037cdad52864ab4da5f623bc7c8a0c489e97;
     bytes32 private constant RESOURCE_PATCH_SIGNAL_ID =
@@ -722,6 +725,84 @@ contract UVPStateMachineTest {
             abi.encodeWithSelector(UVPStateMachine.StageExecutorNotAssigned.selector, ORDER_ID, STAGE_AUDIT)
         );
         machine.submitSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, PAYLOAD_HASH, IDEMPOTENCY_KEY);
+    }
+
+    /// 回退事实（sourceId==stageId 且键不在 capability 词表内）按
+    /// _recordSignal 的 source==stage 回退归属目标阶段——assign 时序闸
+    /// 必须同口径计数：否则第二次 assign 不触发 StageAlreadyHasSignal，
+    /// 在任执行者被无签名替换。
+    function testAssignRejectedAfterFallbackStageFact() public {
+        address selector = vm.addr(SUBMITTER_PRIVATE_KEY);
+        address executor = vm.addr(WRONG_SUBMITTER_PRIVATE_KEY);
+        UVPStateMachine machine = _fallbackFactMachine(selector, executor);
+
+        // 回退事实：键未声明 + sourceId 即阶段 id——归属 STAGE_AUDIT，
+        // 不出现在 stage patch 的 capability 枚举内。
+        vm.prank(executor);
+        machine.submitSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_FALLBACK, PAYLOAD_HASH, bytes32(uint256(0x9131)));
+        require(machine.sourceSignalCount(PLAN_ID, ORDER_ID, STAGE_AUDIT) == 1, "fallback fact not recorded");
+
+        vm.prank(selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, ORDER_ID, STAGE_AUDIT)
+        );
+        _stagePatch(machine)
+            .applyStageExecutorPatch(PLAN_ID, ORDER_ID, _stageExecutorPatch(2, SUBMITTER_B, PATCH_HASH_2));
+    }
+
+    /// 回退事实计入后阶段不被顶死：handoff 以在任执行者签名正常换人
+    /// （修复前 signalCount==0 会在同一场景误报 StageHasNoSignal）。
+    function testHandoffSucceedsAfterFallbackStageFact() public {
+        address selector = vm.addr(SUBMITTER_PRIVATE_KEY);
+        address executor = vm.addr(WRONG_SUBMITTER_PRIVATE_KEY);
+        UVPStateMachine machine = _fallbackFactMachine(selector, executor);
+
+        vm.prank(executor);
+        machine.submitSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_FALLBACK, PAYLOAD_HASH, bytes32(uint256(0x9131)));
+
+        UVPStagePatchModule.StageExecutorPatch memory patch = _stageExecutorPatchWithMode(
+            2, SUBMITTER_B, PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, executor, bytes32(0), bytes32(0)
+        );
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes32 digest = _stagePatch(machine).stageExecutorPatchDigest(PLAN_ID, ORDER_ID, patch, selector, deadline);
+        (uint8 selectorV, bytes32 selectorR, bytes32 selectorS) = vm.sign(SUBMITTER_PRIVATE_KEY, digest);
+        (uint8 previousV, bytes32 previousR, bytes32 previousS) = vm.sign(WRONG_SUBMITTER_PRIVATE_KEY, digest);
+
+        vm.prank(UNAUTHORIZED_SUBMITTER);
+        _stagePatch(machine).applyStageExecutorPatchFor(
+            PLAN_ID,
+            ORDER_ID,
+            patch,
+            selector,
+            deadline,
+            _packedSignature(selectorV, selectorR, selectorS),
+            _packedSignature(previousV, previousR, previousS)
+        );
+        require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == SUBMITTER_B, "handoff not applied");
+    }
+
+    /// 回退事实机器：overlay 词表 + 出生附加未声明回退键的显式提交权，
+    /// assign #1 后待用。
+    function _fallbackFactMachine(address selector, address executor)
+        private
+        returns (UVPStateMachine machine)
+    {
+        machine = _newMachine();
+        _registerPlan(
+            machine, _withOrderStart(_patchableSequentialPlan()), _selectorBindings(), _overlaySignalCapabilities()
+        );
+        UVPStateMachine.SignalAuthorization[] memory base = _overlayAuthorizations(selector, executor, SUBMITTER_B);
+        UVPStateMachine.SignalAuthorization[] memory authorizations =
+            new UVPStateMachine.SignalAuthorization[](base.length + 1);
+        for (uint256 i = 0; i < base.length; i++) {
+            authorizations[i] = base[i];
+        }
+        authorizations[base.length] = _stageAuthorization(STAGE_AUDIT, SIGNAL_FALLBACK, executor);
+        _submitTriggerOrderFromOutside(machine, PLAN_ID, ORDER_CREATOR, authorizations);
+        // SIGNAL_INIT_CMP 令 STAGE_AUDIT 的 EMIT_READY hook Ready 并物化该阶段。
+        vm.prank(selector);
+        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, PAYLOAD_HASH, bytes32(uint256(0x9130)));
+        _activateInitialStageExecutor(machine, selector, executor);
     }
 
     function testApplyStageExecutorPatchAssignRejectsUnexpectedGovernanceFields() public {

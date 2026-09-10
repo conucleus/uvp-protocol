@@ -11,18 +11,22 @@ import { canonicalStringify } from "../src/index.js";
  * fixtures/canonical/canonical.v1.json 是三线共享的唯一出处（消费方式与
  * hook-core/statemachine 的 semantics-corpus 测试同构）。
  *
- * JS 数字模型的固有边界决定了 TS 消费侧的三条口径：
+ * JS 数字模型的固有边界决定了 TS 消费侧的四条口径：
  * 1. 纯整数 token（无 '.'/'e'）且可精确表示 → 与 expectCanonical 逐字节
  *    相等（Rust u64/i64 路径）。
  * 2. 语料 input 含 JS 可见浮点（非整数 number 或负零 -0，两者经
  *    Number.isInteger/Object.is 在 JS 均可观测）→ TS canonicalize 响亮
  *    拒绝，与语料 expectReject 用例同口径（#15：浮点拒绝含负零——
  *    serde_json 把 "-0"/"-0.0" 都解析为 f64 -0.0）。
- * 3. 整值浮点 token（100.0、1e2、1e15 等）在 JSON.parse 后与整数不可
- *    区分——TS 按抹平后的整数放行，字节级区分是 JS 不可表示的分叉；
- *    |x| > 2^53 的整数 token 同理丢精度。这两类不做逐字节断言，只断言
- *    行为方向与语料一致（Rust 侧对整值浮点字面量的拒绝发生在解析边界，
- *    先于 JS 可观察面）。
+ * 3. |x| ≥ 2^53 的整值（含 1e21 指数形态）在 JS 侧已丢精度——TS 一律
+ *    响亮拒绝（绝不哈希抹平后的另一个整数；≥1e21 还会被 JSON.stringify
+ *    写成指数形式，违反"整数按十进制整型输出"）。语料中 "u64 beyond
+ *    double precision stays an integer" 是 Rust u64 权威的接受向量，TS
+ *    消费侧无法逐字节复现，必须拒绝（大整数载荷以 string/hex word 携带）。
+ * 4. 整值浮点 token（100.0、1e2、1e15 等抹平后仍是安全整数）在
+ *    JSON.parse 后与整数不可区分——TS 按抹平后的整数放行，字节级区分是
+ *    JS 不可表示的分叉；不做逐字节断言，只断言行为方向与语料一致
+ *    （Rust 侧对整值浮点字面量的拒绝发生在解析边界，先于 JS 可观察面）。
  */
 const corpusUrl = new URL(
   "../../../../uvp-core/fixtures/canonical/canonical.v1.json",
@@ -333,11 +337,26 @@ test("canonical TS behavior aligns with the shared uvp-core corpus", () => {
       continue;
     }
 
+    if (numbers.some((n) => !Number.isSafeInteger(n.value))) {
+      // 口径 3：超出安全整数范围的整值（≥ 2^53，含 1e21 指数形态）在 JS
+      // 侧已丢精度——TS 一律响亮拒绝，绝不哈希抹平后的另一个整数。语料
+      // 的 "u64 beyond double precision stays an integer" 是 Rust u64 权威
+      // 的接受向量；TS 消费侧无法逐字节复现它，必须拒绝（大整数载荷以
+      // string/hex word 携带），否则两线对同一输入产出分叉哈希。
+      assert.throws(
+        () => canonicalStringify(input),
+        /must be a safe integer: canonical JSON hash preimages reject integers beyond 2\^53-1/,
+        `${case_.name}: erased-precision integers must be rejected loudly on the TS side`,
+      );
+      rejected += 1;
+      continue;
+    }
+
     if (floatFormToken || !exactIntegers) {
-      // 口径 3：整值浮点 token（JSON.parse 抹平为整数）或超精度整数
-      // token——TS 按抹平后的整数放行（不抛）；Rust 权威在解析边界拒绝
-      // 整值浮点字面量，语料将其钉为 expectReject。字节级区分是 JS 不可
-      // 表示的分叉：断言止于"TS 不抛"，语料的拒绝标记记录权威侧行为。
+      // 口径 4：抹平后仍是安全整数的整值浮点 token（1.0/1e2）——TS 按抹平
+      // 后的整数放行（不抛）；Rust 权威在解析边界拒绝整值浮点字面量，语料
+      // 将其钉为 expectReject。字节级区分是 JS 不可表示的分叉：断言止于
+      // "TS 不抛"，语料的拒绝标记记录权威侧行为。
       assert.doesNotThrow(
         () => canonicalStringify(input),
         `${case_.name}: erased-integer input must stay canonicalizable on the TS side`,
@@ -365,4 +384,27 @@ test("canonical TS behavior aligns with the shared uvp-core corpus", () => {
   assert.ok(byteAligned > 0, "corpus must keep byte-aligned integer vectors");
   assert.ok(rejected > 0, "corpus must keep JS-visible float rejection cases");
   assert.ok(jsErasedDivergence > 0, "corpus must keep integral-float divergence cases");
+});
+
+test("rejects integers beyond the safe range loudly (2^60, 1e21)", () => {
+  // 2609100052 C-2 / 2609100054 R4-1 / 2609100328 L6：Number.isInteger 对
+  // ≥2^53 已丢精度的值仍真，≥1e21 还会被 JSON.stringify 输出指数形式
+  // ——一律响亮拒绝，杜绝产出与 Rust 权威分叉的哈希输入。
+  assert.throws(
+    () => canonicalStringify({ a: 2 ** 60 }),
+    /must be a safe integer: canonical JSON hash preimages reject integers beyond 2\^53-1.*received 1152921504606847000/,
+  );
+  assert.throws(
+    () => canonicalStringify({ a: 1e21 }),
+    /must be a safe integer: canonical JSON hash preimages reject integers beyond 2\^53-1.*received 1e\+21/,
+  );
+  assert.throws(
+    () => canonicalStringify([-(2 ** 60)]),
+    /must be a safe integer/,
+  );
+  // 安全整数边界内（含 MAX_SAFE_INTEGER）照常按十进制整型输出。
+  assert.equal(
+    canonicalStringify({ a: Number.MAX_SAFE_INTEGER }),
+    `{"a":${Number.MAX_SAFE_INTEGER}}`,
+  );
 });

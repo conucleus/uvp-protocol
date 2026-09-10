@@ -1765,3 +1765,145 @@ test("dock commitment validation fails closed on incomplete shapes", () => {
     `无名接口应显式报 issue，实际：${JSON.stringify(namelessInterface)}`,
   );
 });
+
+test("dock commitment recomputation fails closed on garbage/missing route-level roots (I-4)", () => {
+  // 2609100550 I-4：承诺字段非 hex（如 0xzz…）或缺失时旧口径静默跳过全部
+  // 比对义务——垃圾值必须显式报 issue 且不豁免 root/routeHash 对拍。
+  const plan = compileZhixuHookPlan(baseZhixu, demoManifest);
+
+  const mutateRoute = (
+    mutate: (route: Record<string, unknown>) => void,
+  ): readonly string[] => {
+    const mutated = structuredClone(plan) as unknown as {
+      dockRoutes: Record<string, unknown>[];
+    };
+    mutate(mutated.dockRoutes[0]!);
+    return validateDockCommitments(mutated);
+  };
+
+  // inputBindingsRoot 垃圾值 → 形状 issue + root 对拍 issue。
+  const garbageIssues = mutateRoute((route) => {
+    route.inputBindingsRoot = "0xzz-garbage";
+  });
+  assert.ok(
+    garbageIssues.includes(
+      "artifact.dockRoutes[0].inputBindingsRoot must be a lowercase 32-byte hex hash",
+    ),
+    `expected explicit shape issue, got: ${JSON.stringify(garbageIssues)}`,
+  );
+  assert.ok(
+    garbageIssues.includes(
+      "artifact.dockRoutes[0].inputBindingsRoot must match the recomputed root over input binding hashes",
+    ),
+    `expected root comparison issue, got: ${JSON.stringify(garbageIssues)}`,
+  );
+
+  // inputBindingsRoot 缺失 → 同口径显式 issue（routeHash 重算依赖它）。
+  const missingIssues = mutateRoute((route) => {
+    delete route.inputBindingsRoot;
+  });
+  assert.ok(
+    missingIssues.includes(
+      "artifact.dockRoutes[0].inputBindingsRoot must be a lowercase 32-byte hex hash",
+    ) &&
+      missingIssues.includes(
+        "artifact.dockRoutes[0].inputBindingsRoot must match the recomputed root over input binding hashes",
+      ),
+    `missing field must produce explicit issues, got: ${JSON.stringify(missingIssues)}`,
+  );
+
+  // routeHash 三条件门控字段 target.definitionRefHash 垃圾 → 显式 issue，
+  // 不再静默跳过 routeHash 重算。
+  const targetIssues = mutateRoute((route) => {
+    (route.target as Record<string, unknown>).definitionRefHash = "0xzz";
+  });
+  assert.ok(
+    targetIssues.includes(
+      "artifact.dockRoutes[0].target.definitionRefHash must be a lowercase 32-byte hex hash",
+    ),
+    `expected target.definitionRefHash shape issue, got: ${JSON.stringify(targetIssues)}`,
+  );
+
+  // 完整制品边界同口径聚合（validateHookPlanArtifact 的调用方看到的不是静默零 issue）。
+  const garbagePlan = structuredClone(plan) as unknown as {
+    dockRoutes: Record<string, unknown>[];
+  };
+  garbagePlan.dockRoutes[0]!.inputBindingsRoot = "0xzz-garbage";
+  assert.ok(
+    validateHookPlanArtifact(garbagePlan).includes(
+      "artifact.dockRoutes[0].inputBindingsRoot must be a lowercase 32-byte hex hash",
+    ),
+  );
+});
+
+test("interface commitment recomputation fails closed on garbage roots (I-4)", () => {
+  // 单接口 root 非 hex：旧口径静默 continue 使定义级 dockInterfaceRoot 比对
+  // 整段失效——必须逐接口显式报 issue。
+  const target = compileZhixuHookPlan(
+    structuredClone(demoManifest.definitions[0]!.definition),
+  );
+  const base = structuredClone(target.dockInterface!);
+  const entryIndex = base.interfaces.findIndex(
+    (entry) => entry.name === "production_service",
+  );
+  assert.ok(entryIndex >= 0, "fixture guard: production_service must exist");
+  const run = (
+    mutate: (iface: typeof base) => void,
+  ): readonly string[] => {
+    const iface = structuredClone(base);
+    mutate(iface);
+    return validateDockCommitments({
+      dockRoutes: [],
+      dockRoutesRoot: EMPTY_MERKLE_ROOT,
+      dockInterface: iface,
+      dockInterfaceRoot: iface.interfaceRoot,
+    });
+  };
+
+  // 接口内 inputsRoot 垃圾 → 形状 issue + root 对拍 issue。
+  const inputsRootIssues = run((iface) => {
+    (iface.interfaces[entryIndex!] as unknown as Record<string, unknown>).inputsRoot = "0xzz";
+  });
+  assert.ok(
+    inputsRootIssues.includes(
+      `artifact.dockInterface.interfaces[${entryIndex}].inputsRoot must be a lowercase 32-byte hex hash`,
+    ) &&
+      inputsRootIssues.includes(
+        `artifact.dockInterface.interfaces[${entryIndex}].inputsRoot must match the recomputed root over input-port leaves`,
+      ),
+    `expected explicit inputsRoot issues, got: ${JSON.stringify(inputsRootIssues)}`,
+  );
+
+  // 单接口 interfaceRoot 垃圾 → 逐接口显式 issue（定义级比对由该 issue 判废，
+  // 不再静默解除）。
+  const entryRootIssues = run((iface) => {
+    (iface.interfaces[entryIndex!] as unknown as Record<string, unknown>).interfaceRoot = "0xzz";
+  });
+  assert.ok(
+    entryRootIssues.includes(
+      `artifact.dockInterface.interfaces[${entryIndex}].interfaceRoot must be a lowercase 32-byte hex hash`,
+    ),
+    `expected explicit interfaceRoot issue, got: ${JSON.stringify(entryRootIssues)}`,
+  );
+
+  // 定义级 interfaceRoot 垃圾 → 同样显式 issue。
+  const definitionRootIssues = run((iface) => {
+    (iface as unknown as Record<string, unknown>).interfaceRoot = "0xzz";
+  });
+  assert.ok(
+    definitionRootIssues.includes(
+      "artifact.dockInterface.interfaceRoot must be a lowercase 32-byte hex hash",
+    ),
+    `expected explicit definition-level interfaceRoot issue, got: ${JSON.stringify(definitionRootIssues)}`,
+  );
+});
+
+test("rejects undeclared extra fields on HookPlan artifacts", () => {
+  // planHash 只覆盖声明字段：多余字段不进哈希，放行会让"同一 plan 唯一
+  // 字节数组形态"承诺失效（2609100741 L9）。
+  const plan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  const withExtra = resign({ ...plan, note: "hand-added" });
+  assert.deepEqual(validateHookPlanArtifact(withExtra), [
+    "unknown field `note` on the artifact — planHash does not cover undeclared fields, so the artifact would not be the plan's unique byte form; remove it or recompile",
+  ]);
+});

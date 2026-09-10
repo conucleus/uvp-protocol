@@ -103,7 +103,7 @@ export const STATE_MACHINE_ABI = parseAbi([
   "function getSignalAuthorization(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,address submitter) view returns (bool exists,bytes32 role,bytes32 metadataHash)",
   "function hasSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId) view returns (bool)",
   "function getSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId) view returns (bool exists,bytes32 payloadHash,bytes32 idempotencyKey,uint64 submittedAt,address submitter)",
-  "function getHookStatus(bytes32 planId,bytes32 orderId,bytes32 hookId) view returns (uint8 status,uint64 dueAt,bool exists)",
+  "function getHookStatus(bytes32 planId,bytes32 orderId,bytes32 hookId) view returns (uint8 status,uint64 dueAt,bool readyEmitted)",
   "function activeStageExecutor(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (address)",
   "function pokeTimer(bytes32 planId,bytes32 orderId,bytes32 hookId)",
   "function planHookDependsOn(bytes32 planId,bytes32 hookId,bytes32 sourceId,bytes32 signalId) view returns (bool)",
@@ -1722,6 +1722,14 @@ export function canonicalJson(value: unknown): string {
         `canonical JSON does not support float-form numbers (integer hash preimages only), received ${token}`,
       );
     }
+    // 安全整数边界：|x| ≥ 2^53 的 number 在 JS 侧已丢精度，且 ≥1e21 经
+    // JSON.stringify 输出指数形式——与 compiler canonical.ts 同口径响亮
+    // 拒绝（大整数载荷以 string/hex word 携带）。
+    if (!Number.isSafeInteger(value)) {
+      throw new TypeError(
+        `canonical JSON does not support integers beyond the safe integer range 2^53-1 (precision loss / exponential stringification), received ${value}`,
+      );
+    }
     return JSON.stringify(value);
   }
 
@@ -1989,7 +1997,10 @@ function normalizeSignalAuthorization(
   authorization: SignalAuthorizationPayload,
 ): SignalAuthorizationCallTuple {
   return [
-    normalizeBytes32(authorization.sourceId, "authorization.sourceId"),
+    // 零字闸镜像：UVPStateMachine._authorizeSignalSubmitter 对
+    // sourceId==0 revert ZeroSourceId（sourceId==0 的事实键绕过
+    // _signalStageId，等于签出一扇永久豁免门）——与 signalId 同口径拒绝。
+    normalizeNonZeroBytes32(authorization.sourceId, "authorization.sourceId"),
     normalizeNonZeroBytes32(authorization.signalId, "authorization.signalId"),
     normalizeAddress(authorization.submitter, "authorization.submitter"),
     normalizeBytes32(authorization.role, "authorization.role"),
@@ -2018,7 +2029,9 @@ function normalizeTriggerOrderFromOutside(
     normalizeAddress(trigger.creator, "creator"),
     normalizeNonZeroBytes32(trigger.triggerHookId, "triggerHookId"),
     normalizeNonZeroBytes32(trigger.triggerStageId, "triggerStageId"),
-    normalizeBytes32(trigger.sourceId, "sourceId"),
+    // 零字闸镜像：triggerOrderFromOutsideFor 对 sourceId==0 revert
+    // ZeroSourceId（零字出生事实是 stage 物化与 executor 门的永久豁免键）。
+    normalizeNonZeroBytes32(trigger.sourceId, "sourceId"),
     normalizeNonZeroBytes32(trigger.signalId, "signalId"),
     normalizeBytes32(trigger.payloadHash, "payloadHash"),
     normalizeBytes32(trigger.idempotencyKey, "idempotencyKey"),

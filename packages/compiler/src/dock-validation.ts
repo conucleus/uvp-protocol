@@ -129,13 +129,31 @@ export function validateDockCommitments(
 
   const interfaceRoots: string[] = [];
   let allInterfaceRootsValid = true;
-  for (const entry of interfaces) {
-    if (!isRecord(entry) || !isHexHash(entry.interfaceRoot)) {
+  for (const [index, entry] of interfaces.entries()) {
+    if (!isRecord(entry)) {
+      // 形状 issue 已由上方逐 entry 承诺重算产出（interfaces[i] must be an
+      // object），此处只标记聚合不可继续，不重复报。
+      allInterfaceRootsValid = false;
+      continue;
+    }
+    // fail-closed：单接口 root 非 hex 是显式 issue——静默 continue 会让
+    // 定义级 dockInterfaceRoot/interfaceRoot 对拍整段失效（垃圾值即绕过）。
+    if (!isHexHash(entry.interfaceRoot)) {
+      issues.push(
+        `${path}.dockInterface.interfaces[${index}].interfaceRoot must be a lowercase 32-byte hex hash`,
+      );
       allInterfaceRootsValid = false;
       continue;
     }
     interfaceRoots.push(entry.interfaceRoot as string);
   }
+  // 定义级 interfaceRoot 非 hex 同样显式报 issue：它是 root 对拍的被检值，
+  // 垃圾值不得静默解除比对义务。
+  expectHexHashCommitment(
+    dockInterface.interfaceRoot,
+    `${path}.dockInterface.interfaceRoot`,
+    issues,
+  );
   if (allInterfaceRootsValid && isHexHash(dockInterface.interfaceRoot)) {
     const expectedRoot = merkleRoot(interfaceRoots as `0x${string}`[]);
     if (dockInterface.interfaceRoot !== expectedRoot) {
@@ -295,18 +313,40 @@ function validateDockRouteCommitments(
   if (bindingsComputable) {
     const inputsRoot = merkleRoot(inputHashes as `0x${string}`[]);
     const outputsRoot = merkleRoot(outputHashes as `0x${string}`[]);
-    if (isHexHash(route.inputBindingsRoot) && route.inputBindingsRoot !== inputsRoot) {
+    // fail-closed：承诺字段非 hex/缺失一律显式报 issue，再按重算结果比对。
+    // 非字面量（含垃圾值 0xzz…/number/undefined）与重算 root 恒不等，
+    // 比对义务不因字段形状坏而豁免。
+    expectHexHashCommitment(
+      route.inputBindingsRoot,
+      `${path}.inputBindingsRoot`,
+      issues,
+    );
+    expectHexHashCommitment(
+      route.outputBindingsRoot,
+      `${path}.outputBindingsRoot`,
+      issues,
+    );
+    if (route.inputBindingsRoot !== inputsRoot) {
       issues.push(
         `${path}.inputBindingsRoot must match the recomputed root over input binding hashes`,
       );
     }
-    if (isHexHash(route.outputBindingsRoot) && route.outputBindingsRoot !== outputsRoot) {
+    if (route.outputBindingsRoot !== outputsRoot) {
       issues.push(
         `${path}.outputBindingsRoot must match the recomputed root over output binding hashes`,
       );
     }
+    expectHexHashCommitment(
+      target?.definitionRefHash,
+      `${path}.target.definitionRefHash`,
+      issues,
+    );
+    // routeHash 重算以三个 word 全部在场为前提；字段缺失/畸形时上面的
+    // issue 已把该 route 判废，重算本身无意义（臆造占位 word 只会产出
+    // 必然不匹配的二次噪声），在此跳过重算而不是静默放过整条 route。
     if (
-      isHexHash(target?.definitionRefHash) &&
+      target !== undefined &&
+      isHexHash(target.definitionRefHash) &&
       isHexHash(route.inputBindingsRoot) &&
       isHexHash(route.outputBindingsRoot)
     ) {
@@ -426,12 +466,17 @@ function validateInterfaceCommitments(
   }
   const inputsRoot = merkleRoot(inputLeaves as `0x${string}`[]);
   const outputsRoot = merkleRoot(outputLeaves as `0x${string}`[]);
-  if (isHexHash(entry.inputsRoot) && entry.inputsRoot !== inputsRoot) {
+  // fail-closed：root/interfaceRoot 非 hex/缺失一律显式报 issue，且比对
+  // 不豁免——非字面量与重算 root 恒不等，形状坏项不得静默跳过对拍。
+  expectHexHashCommitment(entry.inputsRoot, `${path}.inputsRoot`, issues);
+  expectHexHashCommitment(entry.outputsRoot, `${path}.outputsRoot`, issues);
+  expectHexHashCommitment(entry.interfaceRoot, `${path}.interfaceRoot`, issues);
+  if (entry.inputsRoot !== inputsRoot) {
     issues.push(
       `${path}.inputsRoot must match the recomputed root over input-port leaves`,
     );
   }
-  if (isHexHash(entry.outputsRoot) && entry.outputsRoot !== outputsRoot) {
+  if (entry.outputsRoot !== outputsRoot) {
     issues.push(
       `${path}.outputsRoot must match the recomputed root over output-port leaves`,
     );
@@ -469,4 +514,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isHexHash(value: unknown): value is `0x${string}` {
   return typeof value === "string" && /^0x[0-9a-f]{64}$/.test(value);
+}
+
+/**
+ * 承诺字段的 fail-closed 形状门：非 lowercase 32-byte hex（含缺失/垃圾值
+ * 如 0xzz…）一律产出显式 issue。比对义务不因形状坏而解除——调用方在
+ * issue 在场时继续/停止重算都判定制品无效，静默跳过才是漏洞。
+ */
+function expectHexHashCommitment(
+  value: unknown,
+  path: string,
+  issues: string[],
+): void {
+  if (!isHexHash(value)) {
+    issues.push(`${path} must be a lowercase 32-byte hex hash`);
+  }
 }

@@ -150,14 +150,20 @@ function assertZhixuDefinitionShape(
       `spec.taskPatterns[${patternIndex}]`,
       sourceName,
     );
+    // stages 形状在本层响亮拒绝：loader 的声明契约是镜像 uvp_model 的
+    // serde 形状面（typed 反序列化对缺失/非数组的 stages、非 map 的
+    // stage 条目都会响亮失败），静默 return 会让残缺 pattern 携带"已过
+    // loader 校验"的假象离开本层。
     if (!Array.isArray(pattern.stages)) {
-      return;
+      throw new ZhixuLoadError(
+        `${sourceName}.spec.taskPatterns[${patternIndex}].stages must be an array`,
+      );
     }
     pattern.stages.forEach((stage, stageIndex) => {
-      if (!isRecord(stage)) {
-        return;
-      }
       const stagePath = `spec.taskPatterns[${patternIndex}].stages[${stageIndex}]`;
+      if (!isRecord(stage)) {
+        throw new ZhixuLoadError(`${sourceName}.${stagePath} must be an object`);
+      }
       rejectUnknownFields(stage, "stage", stagePath, sourceName);
       if (isRecord(stage.executor)) {
         rejectUnknownFields(

@@ -90,30 +90,38 @@ export function uvpCoreCompatibility(): UvpCoreCompatibility {
     );
   }
   const buildFingerprint = uvpCoreBuildFingerprint();
-  if (buildFingerprint !== undefined) {
-    if (buildFingerprint.startsWith("no-git-")) {
-      // uvp-node build.rs contract: `no-git-` means the dylib was built outside
-      // a git checkout, so its provenance is unknowable — refuse instead of
-      // silently passing.
-      throw new Error(
-        `incompatible uvp-core: native build fingerprint ${buildFingerprint} has no git provenance; ` +
-        "rebuild the native module from a git checkout of uvp-core"
-      );
-    }
-    const fingerprintRev = buildFingerprint.replace(/^git-/, "");
-    const head = checkedOutUvpCoreHead();
-    if (head !== undefined && !sameRev(fingerprintRev, head)) {
-      throw new Error(
-        `stale uvp-core native module: build fingerprint ${buildFingerprint} ` +
-        `does not match the checked-out uvp-core HEAD ${head}; ` +
-        "rebuild with `pnpm --filter @conucleus/uvp-core-node build`"
-      );
-    }
+  if (buildFingerprint === undefined) {
+    // 与 Go 桥同场景硬失败：旧版 @conucleus/uvp-core-node 未导出
+    // buildFingerprint 时，版本/语义探针可能双双通过而 dylib 行为已变
+    // ——静默跳过等于拆除陈旧产物防线（napi 打包产物的 JS 包装必须
+    // re-export buildFingerprint，见 uvp-node index.cjs）。
+    throw new Error(
+      "incompatible uvp-core: the loaded native module does not export buildFingerprint; " +
+        "the stale-build fingerprint gate cannot run — update/rebuild @conucleus/uvp-core-node so the gate is live",
+    );
+  }
+  if (buildFingerprint.startsWith("no-git-")) {
+    // uvp-node build.rs contract: `no-git-` means the dylib was built outside
+    // a git checkout, so its provenance is unknowable — refuse instead of
+    // silently passing.
+    throw new Error(
+      `incompatible uvp-core: native build fingerprint ${buildFingerprint} has no git provenance; ` +
+      "rebuild the native module from a git checkout of uvp-core"
+    );
+  }
+  const fingerprintRev = buildFingerprint.replace(/^git-/, "");
+  const head = checkedOutUvpCoreHead();
+  if (head !== undefined && !sameRev(fingerprintRev, head)) {
+    throw new Error(
+      `stale uvp-core native module: build fingerprint ${buildFingerprint} ` +
+      `does not match the checked-out uvp-core HEAD ${head}; ` +
+      "rebuild with `pnpm --filter @conucleus/uvp-core-node build`"
+    );
   }
   return {
     coreVersion,
     semanticVersion: runtimeSemanticVersion,
-    ...(buildFingerprint === undefined ? {} : { buildFingerprint }),
+    buildFingerprint,
   };
 }
 

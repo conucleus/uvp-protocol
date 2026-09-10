@@ -36,6 +36,16 @@ export function canonicalize(value: unknown, path = "$"): CanonicalJsonValue {
         `${path} must be an integer: canonical JSON hash preimages reject float-form numbers, received ${token}`,
       );
     }
+    // 安全整数边界：|x| ≥ 2^53 的 number 在 JS 侧已丢精度（JSON.parse 即
+    // 抹平），放行会让哈希输入与任何一方的真实整值不一致；且 ≥1e21 的
+    // number 经 JSON.stringify 输出指数形式（1e+21），违反"整数按十进制
+    // 整型输出"。与 Rust 权威对齐响亮拒绝——大整数载荷必须以 string/hex
+    // word 携带，不得走 canonical JSON 数字面量。
+    if (!Number.isSafeInteger(value)) {
+      throw new TypeError(
+        `${path} must be a safe integer: canonical JSON hash preimages reject integers beyond 2^53-1 (JS numbers lose precision and stringify to exponential form past 1e21; carry large integers as strings or hex words), received ${value}`,
+      );
+    }
     return value as number;
   }
 
@@ -83,15 +93,16 @@ export function canonicalStringify(value: unknown): string {
 }
 
 /**
- * 数字写入器（canonical 哈希输入只剩整数）：
+ * 数字写入器（canonical 哈希输入只剩安全整数）：
  * - 整数按十进制整型输出（Rust u64/i64 路径逐字节一致）；
- * - 一切浮点形态（含负零 -0）在 canonicalize 入口已拒绝，本函数不会
- *   收到它们。
+ * - 一切浮点形态（含负零 -0）与安全整数范围外的整值在 canonicalize
+ *   入口已拒绝，本函数不会收到它们（安全整数范围内 JSON.stringify 恒为
+ *   十进制整型，无指数形式）。
  *
  * 已知 JS 不可表示分叉（记录，非实现缺口）：源字面量 100.0/1e2（整值
  * f64）在 Rust 权威侧按浮点拒绝，而 JS 数字模型无法将其与 u64 100 区分
  * （JSON.parse 即抹平），只能按整数放行——整值浮点字面量的拒绝在 Rust
- * 权威解析侧；|x| > 2^53 的整数在 JS 侧丢精度。语料（uvp-core
+ * 权威解析侧。语料（uvp-core
  * fixtures/canonical/canonical.v1.json）中依赖该区分的用例在 TS 消费侧
  * 按已知分叉显式登记。
  */

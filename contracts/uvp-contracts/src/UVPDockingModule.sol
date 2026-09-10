@@ -171,6 +171,9 @@ contract UVPDockingModule {
     error DockDepthMismatch(uint8 claimed, uint8 actual);
     error DockEntranceLeafMismatch(bytes32 field);
     error DockEntranceFactNotDeclared(bytes32 targetHookId, bytes32 targetSourceId, bytes32 targetSignalId);
+    /// output 绑定的事实键不在目标 plan 声明的产出词表（relation=0
+    /// capability）内——错配绑定不得把目标接口未暴露的事实镜像进父单。
+    error DockOutputFactNotDeclared(bytes32 targetPlanId, bytes32 targetSourceId, bytes32 targetSignalId);
     error DockHookNotInputBound(bytes32 localPlanId, bytes32 localOrderId, bytes32 localHookId);
     error DockPermitExpired(uint256 deadline);
     error DockPermitInvalidSigner(address expected, address recovered);
@@ -413,6 +416,25 @@ contract UVPDockingModule {
                 request.targetPlanId, request.targetHookId, inputs[0].targetSourceId, inputs[0].targetSignalId
             )) {
             revert DockEntranceFactNotDeclared(request.targetHookId, inputs[0].targetSourceId, inputs[0].targetSignalId);
+        }
+        // 8.6 output 事实键钉在目标 plan 自己声明的产出词表上（与 8.5 的
+        //     planHookDependsOn 钉死风格对称）：接口 output 端口叶承诺的是
+        //     canonical 信号 word（keccak("source::signalName")），与绑定侧
+        //     (targetSourceId, targetSignalId)（各自 keccak）分属不同派生域，
+        //     链上无法从 word 复原两者相等——不钉词表时，已提交 route 的
+        //     发布者可错配绑定，把目标接口从未通过端口暴露的事实镜像进
+        //     父单。无任何 capability 声明的手工目标 plan 与 mint/output
+        //     词表闸同口径放行。
+        if (planMetadataModule.planSignalCapabilityCount(request.targetPlanId) != 0) {
+            for (uint256 i = 0; i < outputs.length; i++) {
+                if (planMetadataModule.currentOrderFactStage(
+                        request.targetPlanId, outputs[i].targetSourceId, outputs[i].targetSignalId
+                    ) == bytes32(0)) {
+                    revert DockOutputFactNotDeclared(
+                        request.targetPlanId, outputs[i].targetSourceId, outputs[i].targetSignalId
+                    );
+                }
+            }
         }
 
         // 9. 身份推导重算（keeper 不可自报 ID）。localOrderKey 为 bytes32
@@ -679,6 +701,14 @@ contract UVPDockingModule {
             keccak256(abi.encode(_DOMAIN_OUTPUT_IDEMPOTENCY, dockInstanceId, outputBindingHash, targetFactId));
 
         _outputDelivered[dockInstanceId][outputBindingHash] = true;
+        // 镜像事实的记账提交者取父单 creator（与 open/entrance 的"dock 通道
+        // 事实提交者记 creator"同口径），不记子单事实的 originalSubmitter：
+        // 后者是外部（子）plan 的参与方地址，写入父单
+        // lastSignalSubmitter 会钉进 HANDOFF 无 active patch 时的"上一
+        // 执行者"回退链——open 路径对 keeper 已同理由规避。子侧归因由
+        // DockOutputSubmitted 携带 originalSubmitter 保留，链上事实归因
+        // 仍可从事件完整重建。
+        address parentCreator = stateMachine.orderCreator(dock.localPlanId, dock.localOrderId);
         stateMachine.submitSignalFromModule(
             dock.localPlanId,
             dock.localOrderId,
@@ -686,7 +716,7 @@ contract UVPDockingModule {
             binding.localSignalId,
             payloadHash,
             idempotencyKey,
-            originalSubmitter
+            parentCreator
         );
 
         emit DockOutputSubmitted(

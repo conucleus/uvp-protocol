@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStagePatchModule",
-  "abiVersion": "0.2",
+  "abiVersion": "0.3",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStagePatchModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStagePatchModule.sol/UVPStagePatchModule.json",
   "compiler": {
@@ -10,9 +10,9 @@
   },
   "hashes": {
     "abiHash": "0x0413f34a9bc87538ae15b88b707a2ec44b926292ea84c24d161db9dc28a04533",
-    "bytecodeHash": "0xfde59bbcfbd66c3642f31f27300f447a48be1e788ca9d8ff985330de9dd66830",
-    "deployedBytecodeHash": "0xbf0bba589254c40ea2db01867e2792a284428215202a7a813626eddc4b6165da",
-    "artifactHash": "0x5db61bddb4acf99531b40f927bf26051692dc49f02783e753a5974c163cb72a1"
+    "bytecodeHash": "0x5aeb36d5d9260efe0257c35fa7e7f142e11110301ddf521e15adf34aa975a5f5",
+    "deployedBytecodeHash": "0xb9a437fbd02b5e83ca1d3344ba8348a85fa63d6256ba5e748b92c721e3700dac",
+    "artifactHash": "0x6a0be7842e11204c524af30a5feb3f4c5cd31f8869d2879a0fa8f6ebfed6c1e9"
   },
   "events": {
     "StageExecutorPatchApplied": {

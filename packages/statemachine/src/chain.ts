@@ -358,9 +358,16 @@ export function compareChainEvents(a: ChainEventBase, b: ChainEventBase): number
   if (a.blockNumber !== b.blockNumber) {
     return a.blockNumber - b.blockNumber;
   }
-  if (a.transactionIndex !== undefined && b.transactionIndex !== undefined &&
-      a.transactionIndex !== b.transactionIndex) {
-    return a.transactionIndex - b.transactionIndex;
+  // transactionIndex 的确定性缺席规则：缺失视为排在末位（+∞），且同维度
+  // 一致应用。旧口径只在"双方都有且不等"时才比该维度——混合有无时直接
+  // 落到 logIndex/txHash，同一事件集按不同两两比较会得出矛盾序（如
+  // A(无 txIdx, log 5) == B(txIdx 0, log 5)、B < C(txIdx 1)、A > C），排序
+  // 结果依赖比较顺序、不再传递。enrichment 缺 txIdx 的事件因此全部排在
+  // 同块已 enrichment 事件之后，顺序仍然确定。
+  const aTxIndex = a.transactionIndex ?? Number.POSITIVE_INFINITY;
+  const bTxIndex = b.transactionIndex ?? Number.POSITIVE_INFINITY;
+  if (aTxIndex !== bTxIndex) {
+    return aTxIndex < bTxIndex ? -1 : 1;
   }
   if (a.logIndex !== b.logIndex) {
     return a.logIndex - b.logIndex;

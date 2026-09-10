@@ -1,6 +1,6 @@
 # Zhixu Dock v2 word 布局规格（链轨内部，冻结）
 
-链轨哈希层的唯一权威规格。全部公式冻结于 `UVPDockingModule` abiVersion 3.0，
+链轨哈希层的唯一权威规格。全部公式冻结于 `UVPDockingModule` abiVersion 4.0，
 实现 = 本包 `src/dock.ts`（TS 权威），Solidity（`DockMerkle` /
 `UVPDockingModule`）与 Foundry `DockManifestParity.t.sol` 逐字节对拍钉死。
 golden 向量由 `pnpm --filter @uvp-eth/compiler generate:dock-fixtures` 生成
@@ -22,7 +22,12 @@ golden 向量由 `pnpm --filter @uvp-eth/compiler generate:dock-fixtures` 生成
 - **地址 word**：左补 12 字节零，hex 小写。
 - **canonical JSON 域**（`uvp:` 前缀族）：
   `keccak256(domain + ":" + canonical_json)`，canonical JSON 键按码点排序
-  （= Rust BTreeMap 字节序）、`-0` 保留符号、无空白。
+  （= Rust BTreeMap 字节序）、无空白。数字词表封闭为整数：一切浮点形态
+  （分数、整值浮点、指数写法）与负零 `-0` 三线一致响亮拒绝（Rust 权威
+  按 f64 载荷拒绝，TS 同口径见 `canonical.ts`）；整数按十进制整型输出，
+  超出 JS 安全整数范围（|x| > 2^53-1）的整值在 TS 线无法精确表示、一律
+  响亮拒绝（大整数载荷必须以 string/hex word 携带，不得走 canonical JSON
+  数字面量）。
 
 ## 2. 冻结域串（keccak 的第一 word 输入）
 
@@ -124,13 +129,16 @@ targetOrderRefKey = keccak(orderRef)
 
 dockInstanceId_v2 = H(UVP_DOCK_INSTANCE_V2; runtimeDomain, localPlanId,
                      localDefinitionRefHash, localOrderKey, routeId, routeHash,
-                     modeWord, keccak(interfaceName)
-                     [, targetOrderRefKey])   // new 恰 8 word；existing 追加第 9 word
+                     modeWord, keccak(interfaceName), targetPlanId
+                     [, targetOrderRefKey])   // new 恰 9 word；existing 追加第 10 word
 linkedOrderId = H(UVP_DOCK_ORDER_V1; dockInstanceId, targetDefinitionRefHash)
                  | (1 << 255)
 ```
 
 `localPlanId` 与产物 `planId` 同源（route 的 `local.planId` 承诺字段）。
+第 9 word `targetPlanId` 是对接目标 plan 的派生 planId（resolution manifest
+的 `evmPlanId`）：接口承诺 word 可被第三方复制进自建 plan，实例/子单身份
+必须与对接目标 plan 绑定。
 
 `localOrderKey` 的双轨口径（三条实现两形态，规格显式钉死）：
 - **字符串 order id 轨**（TS 承诺层 `localOrderKey()`、云轨 Go）：order id
@@ -170,7 +178,10 @@ planHash = keccak256("uvp:hook-plan-artifact:v1:" + canonical_json(制品载荷)
 ```
 
 planHash 载荷 = 最终制品全部字段 + `source`（canonical 化的定义快照，剔除
-`metadata.annotations`；不随制品下发）。`uvp:onchain-hook-plan-artifact:v1`
+`metadata.annotations`）。`source` 是制品必携必填字段（`HookPlanArtifact.source`）：
+制品边界对其缺失/非 canonical 形态响亮拒绝并按携带字段重算 planHash——
+"同一 plan 唯一字节数组形态"的承诺以它随制品下发为前提。
+`uvp:onchain-hook-plan-artifact:v1`
 （onchain 制品 planHash）与 `uvp.plan.runtime.v2`（PlanCommit 五域运行时
 哈希，`keccak256(abi.encode(...))` 形态）见 `onchain-hook-plan.ts`。
 
@@ -181,7 +192,7 @@ typehash = UVPDockEntrancePermitV2(bytes32 targetPlanId,bytes32 targetEntrancePo
           bytes32 interfaceNameId,bytes32 localPlanId,bytes32 routeHash,
           bytes32 dockInstanceId,bytes32 linkedOrderId,uint256 feeLimit,
           uint256 nonce,uint256 deadline)
-domain = { name: "UVPDockingModule", version: "3", chainId, verifyingContract }
+domain = { name: "UVPDockingModule", version: "4", chainId, verifyingContract }
 ```
 
 EIP-712 的 structHash/typehash/domain 编码按规范

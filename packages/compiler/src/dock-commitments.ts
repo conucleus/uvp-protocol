@@ -44,7 +44,7 @@ import {
 /**
  * 链轨承诺层：uvp-core 只产出中性 plan 壳（无哈希、无派生身份），本模块
  * 在壳上计算全部链上承诺（TS 权威实现）。
- * 公式与 word 布局冻结于 UVPDockingModule abiVersion 3.0（规格见
+ * 公式与 word 布局冻结于 UVPDockingModule abiVersion 4.0（规格见
  * docs/dock-word-layout.md），Solidity 逐字节对拍钉死。
  */
 

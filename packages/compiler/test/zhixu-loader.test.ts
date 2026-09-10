@@ -221,3 +221,43 @@ test("rejects unknown fields at every structural level", () => {
     );
   }
 });
+
+test("rejects taskPatterns whose stages are missing or malformed (no silent pass-through)", () => {
+  // 2609100328 疑点10：loader 声明契约 = 镜像 uvp_model 的 serde 形状面
+  // （typed 反序列化对 stages 缺失/非数组、非 map 的 stage 条目响亮失败），
+  // 静默 return 会让残缺 pattern 带着"已过 loader 校验"的假象离开本层。
+  const head = [
+    "apiVersion: uvp/v0",
+    "kind: Zhixu",
+    "metadata:",
+    "  name: loader-probe",
+    "spec:",
+    "  platform:",
+    "    type: cloud",
+  ].join("\n");
+
+  assert.throws(
+    () =>
+      parseZhixuDefinition(
+        [head, "  taskPatterns:", "    - name: taskA"].join("\n"),
+        "loader-probe",
+      ),
+    /taskPatterns\[0\]\.stages must be an array/,
+  );
+  assert.throws(
+    () =>
+      parseZhixuDefinition(
+        [head, "  taskPatterns:", "    - name: taskA", "      stages: nope"].join("\n"),
+        "loader-probe",
+      ),
+    /taskPatterns\[0\]\.stages must be an array/,
+  );
+  assert.throws(
+    () =>
+      parseZhixuDefinition(
+        [head, "  taskPatterns:", "    - name: taskA", "      stages:", "        - plain-string"].join("\n"),
+        "loader-probe",
+      ),
+    /taskPatterns\[0\]\.stages\[0\] must be an object/,
+  );
+});

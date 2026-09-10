@@ -628,12 +628,15 @@ contract UVPStagePatchModule {
             || mode == EXECUTOR_PATCH_MODE_REPLACEMENT;
     }
 
-    /// Count signals belonging to the target stage by its compiled capability
-    /// declarations. A production source id is not the stage id: the former
-    /// identifies a business source/class while the latter identifies the
-    /// stage path. Looking up sourceSignalCount with targetStageId therefore
-    /// lets assign patches through after a real stage signal and makes
-    /// handoff/replacement read the wrong previous submitter.
+    /// Stage facts reach the target stage through two attribution paths that
+    /// _recordSignal treats identically: compiled capability declarations
+    /// (relation=0, enumerable per stage) and the source==stage fallback for
+    /// keys outside the declared vocabulary. Counting only the enumerable
+    /// path would let a fallback fact bypass the assign gate and strip a
+    /// sitting executor without any signature. The fallback flow's per-key
+    /// submittedAt is not enumerable here, so ordering cannot be rebuilt
+    /// across flows: when both flows hold facts with differing last
+    /// submitters, the previous-executor fallback must fail closed.
     function _stageSignalState(bytes32 planId, bytes32 orderId, bytes32 stageId)
         private
         view
@@ -660,6 +663,26 @@ contract UVPStagePatchModule {
                 latestSubmitter = submitter;
                 latestAmbiguous = false;
             } else if (submittedAt == latestSubmittedAt && submitter != latestSubmitter) {
+                latestAmbiguous = true;
+            }
+        }
+        // 并入 source==stage 回退归属的事实：_recordSignal 对两条归属
+        // 路径一视同仁，时序闸必须同口径计数，否则回退事实会绕过
+        // assign 闸、在任执行者被无签名替换。count 只被消费零/非零，
+        // 两流并存时同一事实双计不翻转判定；同键被其它阶段声明的跨
+        // 阶段词表只可能把"无信号"过计为"有信号"——同为 fail-closed
+        // 方向。
+        uint256 fallbackCount = stateMachine.sourceSignalCount(planId, orderId, stageId);
+        if (fallbackCount != 0) {
+            count += fallbackCount;
+            address fallbackSubmitter = stateMachine.lastSignalSubmitter(planId, orderId, stageId);
+            if (count == fallbackCount) {
+                // 纯回退流：capability 枚举无事实，lastSignalSubmitter
+                // 即写入序最近提交者。
+                latestSubmitter = fallbackSubmitter;
+            } else if (fallbackSubmitter != latestSubmitter) {
+                // 两流并存：回退事实逐键 submittedAt 不可枚举、无法跨流
+                // 定序——末位提交者不一致时按同秒并列同款 fail-closed。
                 latestAmbiguous = true;
             }
         }

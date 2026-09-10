@@ -539,7 +539,9 @@ function submitSignalAddOnManifest(input: {
         actionKind: "submit_signal",
         label: input.actionLabel,
         primary: true,
-        intent: "confirm_stage",
+        // 不硬编码 intent：共享 helper 会同时喂给 confirm 型与 dispute 型
+        // 插件槽位，硬编码 confirm_stage 会让 dispute_material 槽位的
+        // manifest 声明覆盖插件类型推导，争议任务以确认口径提交。
         inputBindings: {
           walletAddress: `${input.roleSlotId}.wallet`,
           evidenceIds: `${input.roleSlotId}.evidence`,

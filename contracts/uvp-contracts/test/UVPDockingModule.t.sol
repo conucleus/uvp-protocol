@@ -133,6 +133,9 @@ contract UVPDockingModuleTest {
     // 目标接口从未宣告的端口/信号 word（拒绝路径）。
     bytes32 private constant ROGUE_PORT = keccak256("rogue_port");
     bytes32 private constant ROGUE_OUT_WORD = keccak256("canonical.rogue");
+    // 词表外事实键（端口已宣告但绑定内容错配的拒绝路径）。
+    bytes32 private constant ROGUE_FACT_SOURCE = keccak256("rogue.source");
+    bytes32 private constant ROGUE_FACT_SIGNAL = keccak256("rogue.signal");
     // 同阶段的兄弟 hook（EMIT_READY，但从未就绪）——冒名开仓路径。
     bytes32 private constant PARENT_SIBLING_HOOK = keccak256("parent.exec#SIBLING");
     bytes32 private constant PAYLOAD = bytes32(uint256(0xBEEF));
@@ -582,6 +585,64 @@ contract UVPDockingModuleTest {
         );
     }
 
+    /// 端口已宣告（membership 通过）但绑定的事实键不在目标 plan 的产出
+    /// 词表内——canonical 信号 word 与 (targetSourceId,targetSignalId)
+    /// 分属不同派生域，链上无法从 word 复原相等性；词表闸拒绝错配绑定
+    /// 镜像目标接口从未暴露的事实。
+    function testOpenRejectsOutputFactNotDeclaredByTargetPlan() public {
+        UVPDockingModule.DockOutputBindingArg[] memory outputs = _outputs();
+        // 端口叶照旧用已宣告的 (DONE_PORT, OUT_WORD_DONE)——错配只在绑定的
+        // 事实键上：词表外的 (ROGUE_FACT_SOURCE, ROGUE_FACT_SIGNAL)。
+        outputs[0].targetSourceId = ROGUE_FACT_SOURCE;
+        outputs[0].targetSignalId = ROGUE_FACT_SIGNAL;
+        outputs[0].bindingHash = keccak256(
+            abi.encode(
+                DOMAIN_OUTPUT_BINDING,
+                routeId,
+                INTERFACE_NAME_ID,
+                outputs[0].localSourceId,
+                outputs[0].localSignalId,
+                outputs[0].portKey,
+                outputs[0].targetSourceId,
+                outputs[0].targetSignalId
+            )
+        );
+        RogueRoute memory route = _registerRogueRouteParent(PARENT_EXEC_HOOK, TARGET_SOURCE, TARGET_SIGNAL, outputs);
+        _expect(
+            abi.encodeWithSelector(
+                UVPDockingModule.DockOutputFactNotDeclared.selector,
+                targetPlanId,
+                ROGUE_FACT_SOURCE,
+                ROGUE_FACT_SIGNAL
+            )
+        );
+        docking.openDockedOrder(
+            _rogueOpenRequest(route), route.routeProof, _interfaceProof(), _rogueInputs(route), outputs, _permitEmpty()
+        );
+    }
+
+    /// dock output 镜像事实的记账提交者取父单 creator（与 open/entrance 的
+    /// "dock 通道事实提交者记 creator"同口径），不取子单事实的
+    /// originalSubmitter——外部 plan 参与方地址不得钉进父单
+    /// lastSignalSubmitter（HANDOFF 无 active patch 时的"上一执行者"
+    /// 回退链）。子侧归因由 DockOutputSubmitted 携带 originalSubmitter。
+    function testSubmitDockedSignalRecordsParentCreatorAsParentFactSubmitter() public {
+        assertTrue(_open());
+        vm.prank(KEEPER);
+        assertTrue(docking.submitDockedSignal(dockInstanceId, outputBinding));
+        (,,,, address parentFactSubmitter) =
+            machine.getSignal(parentPlanId, PARENT_ORDER_ID, LOCAL_MAPPED_SOURCE, LOCAL_MAPPED_SIGNAL);
+        require(parentFactSubmitter == ORDER_CREATOR, "mirrored fact must be booked to the parent order creator");
+        require(
+            machine.lastSignalSubmitter(parentPlanId, PARENT_ORDER_ID, LOCAL_MAPPED_SOURCE) == ORDER_CREATOR,
+            "parent lastSignalSubmitter must stay on the parent consent chain"
+        );
+        require(
+            parentFactSubmitter != machine.lastSignalSubmitter(targetPlanId, linkedOrderId, TARGET_SOURCE),
+            "child-side submitter must not leak into the parent bookkeeping"
+        );
+    }
+
     /// targetPlanId 进 dockInstanceId preimage——换目标 plan 即换实例
     /// 身份；接口承诺 word 可被复制，plan 身份不可冒名。
     function testDockInstancePreimageBindsTargetPlan() public {
@@ -958,12 +1019,27 @@ contract UVPDockingModuleTest {
             new IUVPPlanMetadataModule.StageSelectorBinding[](1);
         bindings[0] =
             IUVPPlanMetadataModule.StageSelectorBinding({selectorStageId: TARGET_STAGE, targetStageId: TARGET_STAGE});
-        IUVPPlanMetadataModule.SignalCapability[] memory capabilities = new IUVPPlanMetadataModule.SignalCapability[](1);
+        // 词表（编译器产物同口径）：出生事实 + 两个 output 绑定镜像的事实
+        // 都按 relation=0 capability 声明——open 的 output 事实键词表闸
+        // （DockOutputFactNotDeclared）以此为产出词表。
+        IUVPPlanMetadataModule.SignalCapability[] memory capabilities = new IUVPPlanMetadataModule.SignalCapability[](3);
         capabilities[0] = IUVPPlanMetadataModule.SignalCapability({
             stageId: TARGET_STAGE,
             targetSourceId: TARGET_OUT_SOURCE,
             signalId: TARGET_OUT_SIGNAL,
             targetOrderRelation: 0 // SIGNAL_TARGET_CURRENT_ORDER
+        });
+        capabilities[1] = IUVPPlanMetadataModule.SignalCapability({
+            stageId: TARGET_STAGE,
+            targetSourceId: TARGET_SOURCE,
+            signalId: TARGET_SIGNAL,
+            targetOrderRelation: 0
+        });
+        capabilities[2] = IUVPPlanMetadataModule.SignalCapability({
+            stageId: TARGET_STAGE,
+            targetSourceId: TARGET_SOURCE,
+            signalId: TARGET_PENDING_SIGNAL,
+            targetOrderRelation: 0
         });
         return _commitAndFinalize(
             hooks,

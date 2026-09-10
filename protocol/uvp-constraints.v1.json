@@ -216,13 +216,13 @@
       "constraint": {
         "type": "max_length",
         "params": {
-          "max": 100,
+          "max": 36,
           "unit": "bytes"
         }
       },
       "error": {
-        "rust": "exceeds 100 bytes",
-        "go": "exceeds 100 bytes (global_stage.source)",
+        "rust": "exceeds 36 bytes",
+        "go": "exceeds 36 bytes (hook/subscription source namespace)",
         "ts": null
       },
       "applies": [
@@ -233,7 +233,7 @@
         "rust": "crates/uvp-compiler/src/lib.rs MAX_STAGE_SOURCE_BYTES",
         "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions"
       },
-      "ruling": "DSL 壳字段统一 100 字节（与 metadata.name 同宽、global_stage.source VARCHAR(100) DDL 镜像），rust/go 同值；hook_name 的 36 字节上限是链轨落库内幕，不反向约束 DSL 壳字段。"
+      "ruling": "壳层 source 上限与 hook 标头/订阅目标的 source 类上限收敛到 36（同一 source 类命名空间，37-100 字节是\"声明即死\"命名空间：hook/订阅引用在解析层被拒）；严于落库列宽（source_zhixu_id VARCHAR(64)、global_stage.source VARCHAR(100)）。rust 与 go 两线均已收敛到 36。"
     },
     {
       "id": "stage-source-required",
@@ -342,8 +342,8 @@
             "organization",
             "zhixu"
           ],
-          "trim": true,
-          "note": "比对 trim 后进行（与 Go zhixu_schema 的 TrimSpace 判定口径一致）"
+          "trim": false,
+          "note": "精确匹配、不 trim：带首尾空白的变体（\" organization \"）按闭集外拒绝而非归一化放行（与 Go 侧严格枚举闸同口径；trim 归一会让产物携带原文、比对侧按精确值分叉）"
         }
       },
       "error": {
@@ -357,7 +357,7 @@
       "sources": {
         "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape（闭集常量 uvp_model::SUPPLIER_TYPES，与 Go api/core/v0 supplier 常量同源）"
       },
-      "ruling": "supplierType 经 executorRoutes 进链上承诺，闭集外的字符串在编译期拒绝；TS/Go/合约镜像状态见 rejectionSurfaces 矩阵。"
+      "ruling": "supplierType 经 executorRoutes 进链上承诺，闭集外的字符串（含空白变体）在编译期精确匹配拒绝；TS/Go/合约镜像状态见 rejectionSurfaces 矩阵。"
     },
     {
       "id": "send-signal-combined-max-length",
@@ -436,7 +436,7 @@
         "rust": "crates/uvp-hook-dsl/src/lib.rs parse（标头 source ≤36）",
         "go": "pkg/compiler/validator/zhixu_schema.go validateStage（defense-in-depth）；实际先由 uvp-core FFI parse 拒绝，锚点两文案任一命中均可"
       },
-      "ruling": "hook 标头 source 类 ≤36 字节（hook_dependency.source_zhixu_id VARCHAR(36)）。"
+      "ruling": "hook 标头 source 类 ≤36 字节；落库列 hook_dependency.source_zhixu_id 实宽 VARCHAR(64)（uvp/database/core-ddl.sql），36 字节编译期上限三线一致且严于列宽，注记按 DDL 真源修正。"
     },
     {
       "id": "hook-source-class-charset",
@@ -486,7 +486,7 @@
         "rust": "crates/uvp-hook-dsl/src/lib.rs parse_subscription",
         "go": "pkg/compiler/validator/zhixu_schema.go validateStage（defense-in-depth）；实测先由 uvp-core FFI 拒绝"
       },
-      "ruling": "订阅 source 类 ≤36 字节（hook_dependency.source_zhixu_id VARCHAR(36)），与标头 source 同值。"
+      "ruling": "订阅 source 类 ≤36 字节，与标头 source 同值；落库列 hook_dependency.source_zhixu_id 实宽 VARCHAR(64)（uvp/database/core-ddl.sql），36 字节编译期上限三线一致且严于列宽，注记按 DDL 真源修正。"
     },
     {
       "id": "subscription-target-signal-max-length",
@@ -967,18 +967,18 @@
       "mirrors": {
         "rust": "none",
         "go": "none",
-        "ts": "none"
+        "ts": "mirrored（onchain-hook-plan signalCapabilityCountIssues：编译入口 compileOnchainHookPlan preflight 与制品边界 validateOnchainHookPlanArtifact 双边界同口径拒绝，MAX_SIGNAL_CAPABILITIES=256）"
       }
     },
- {
-  "id": "supplier-type-closed-set",
-  "surface": "executorRoutes 携带的 supplierType 无合约闭集守卫：任意字符串可进链上承诺",
-  "mirrors": {
-   "rust": "mirrored:rule executor-supplier-type-closed-enum",
-   "go": "none（TrimSpace 只用于判 zhixu 分支，不校验闭集）",
-   "ts": "mirrored（onchain-hook-plan compileExecutorRoute 编译入口；trim 后比对，与 rust 同口径；制品边界不设词表层，与 rust 权威面同构；fileResources fileType 闭集 {local,http,txcloud,plain_text} 在同入口拒绝）"
-  },
-  "note": "合约侧守卫与 Go 线镜像待补。"
- }
+    {
+      "id": "supplier-type-closed-set",
+      "surface": "executorRoutes 携带的 supplierType 无合约闭集守卫：任意字符串可进链上承诺",
+      "mirrors": {
+        "rust": "mirrored:rule executor-supplier-type-closed-enum",
+        "go": "none（TrimSpace 只用于判 zhixu 分支，不校验闭集）",
+        "ts": "mirrored（onchain-hook-plan compileExecutorRoute 编译入口；trim 后比对，与 rust 同口径；制品边界不设词表层，与 rust 权威面同构；fileResources fileType 闭集 {local,http,txcloud,plain_text} 在同入口拒绝）"
+      },
+      "note": "合约侧守卫与 Go 线镜像待补。"
+    }
   ]
 }

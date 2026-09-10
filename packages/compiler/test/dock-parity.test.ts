@@ -709,3 +709,77 @@ test("localOrderKey and targetOrderRefKey keep EVM word ids verbatim", () => {
   assert.notEqual(localOrderKey("order-fixture-001"), "order-fixture-001");
   assert.match(localOrderKey("order-fixture-001"), /^0x[0-9a-f]{64}$/u);
 });
+
+test("permit nonce/deadline reject non-canonical string and unsafe number forms (L10)", () => {
+  // 2609100741 L10：BigInt("0x10") 静默按 16 进制解析，两个哈希线对同一
+  // 字符串得到不同 word——与 protocol-bindings normalizeUint* 同口径：
+  // 只收 bigint/安全 number/规范十进制字符串。
+  const permitInput = {
+    chainId: 31337,
+    verifyingContract: fixture.inputs.dockingModuleAddress,
+    targetPlanId: expected.targetPlanId,
+    targetEntrancePortId: interfaceNameKey("execute"),
+    interfaceNameId: interfaceNameKey("production_service"),
+    localPlanId: fixture.inputs.parentPlanIdWord,
+    routeHash: findRoute("production_service").routeHash,
+    dockInstanceId: expected.dockInstanceId,
+    linkedOrderId: expected.linkedOrderId,
+  };
+  // 0x 前缀形态：拒绝（不是静默的进制换算）。
+  assert.throws(
+    () =>
+      eip712PermitDigest({
+        ...permitInput,
+        nonce: "0x10" as unknown as number,
+        deadline: 2000000000,
+      }),
+    /permit nonce must be an integer \(bigint, safe number, or canonical base-10 string/,
+  );
+  assert.throws(
+    () =>
+      eip712PermitDigest({
+        ...permitInput,
+        nonce: 1,
+        deadline: "0x10" as unknown as number,
+      }),
+    /permit deadline must be an integer \(bigint, safe number, or canonical base-10 string/,
+  );
+  // 前导零 / 小数 / 负数字符串同样拒绝。
+  for (const bad of ["01", "1.0", "-1", "1e3", ""]) {
+    assert.throws(
+      () =>
+        eip712PermitDigest({
+          ...permitInput,
+          nonce: bad as unknown as number,
+          deadline: 2000000000,
+        }),
+      /permit nonce must be an integer/,
+      `nonce=${JSON.stringify(bad)} must be rejected`,
+    );
+  }
+  // 超精度 number：拒绝（2^53 以上已丢精度）。
+  assert.throws(
+    () =>
+      eip712PermitDigest({
+        ...permitInput,
+        nonce: 2 ** 60,
+        deadline: 2000000000,
+      }),
+    /permit nonce must be a safe integer/,
+  );
+  // 规范十进制字符串照常可推导（与 bindings normalizeUintString 同口径）。
+  assert.doesNotThrow(() =>
+    eip712PermitDigest({
+      ...permitInput,
+      nonce: "1",
+      deadline: "2000000000",
+    }),
+  );
+  assert.doesNotThrow(() =>
+    eip712PermitDigest({
+      ...permitInput,
+      nonce: 1n,
+      deadline: 2000000000n,
+    }),
+  );
+});

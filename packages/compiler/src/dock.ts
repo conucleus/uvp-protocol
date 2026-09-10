@@ -83,13 +83,43 @@ export function u64Word(value: bigint | number): HexString {
   // 数值域显式拒绝（与 u256Word 同口径）：负数的 toString 带 '-' 会落成
   // 含非 hex 字符的假 word，≥ 2^64 则溢出 32 字节槽位破坏 word 布局——
   // 两者都是静默产出毒承诺，必须在入口响亮失败。
-  const big = BigInt(value);
+  const big = requireUintWord(value, "u64 word value");
   if (big < 0n || big >= 1n << 64n) {
     throw new RangeError(
       `value must fit the unsigned 64-bit word range, received ${value}`,
     );
   }
   return `0x${big.toString(16).padStart(64, "0")}` as HexString;
+}
+
+/**
+ * u64/u256 数值槽的表示形态入口（符号/值域由各 word 构造器的既有区间检查
+ * 把守）：string 只收规范非负十进制形态——BigInt("0x10") 会静默按 16 进制
+ * 解析，两个哈希线对同一字符串得到不同 word；number 必须是安全整数
+ * （2^53 以上已丢精度，不静默取整）。permit nonce/deadline、sequence、
+ * occurrence 等全部经此收敛（与 protocol-bindings normalizeUint* 同口径）。
+ */
+function requireUintWord(
+  value: bigint | number | string,
+  path: string,
+): bigint {
+  if (typeof value === "bigint") {
+    return value;
+  }
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value)) {
+      throw new RangeError(
+        `${path} must be a safe integer, received ${value}`,
+      );
+    }
+    return BigInt(value);
+  }
+  if (typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value)) {
+    return BigInt(value);
+  }
+  throw new RangeError(
+    `${path} must be an integer (bigint, safe number, or canonical base-10 string — 0x-prefixed/other forms are rejected), received ${String(value)}`,
+  );
 }
 
 /**
@@ -699,8 +729,11 @@ export function eip712PermitStructHash(input: {
   readonly routeHash: HexString;
   readonly dockInstanceId: HexString;
   readonly linkedOrderId: HexString;
-  readonly nonce: bigint | number;
-  readonly deadline: bigint | number;
+  // nonce/deadline 收 bigint/安全 number/规范十进制字符串（requireUintWord
+  // 严格口径；0x 前缀等非规范形态响亮拒绝），与 protocol-bindings
+  // normalizeUint* 的公共载荷类型一致。
+  readonly nonce: bigint | number | string;
+  readonly deadline: bigint | number | string;
 }): HexString {
   return keccak256(
     concatWords([
@@ -713,8 +746,8 @@ export function eip712PermitStructHash(input: {
       input.dockInstanceId,
       input.linkedOrderId,
       u256Word(0n),
-      u256Word(BigInt(input.nonce)),
-      u256Word(BigInt(input.deadline)),
+      u256Word(requireUintWord(input.nonce, "permit nonce")),
+      u256Word(requireUintWord(input.deadline, "permit deadline")),
     ]),
   ) as HexString;
 }
@@ -730,13 +763,17 @@ export function eip712PermitDigest(input: {
   readonly routeHash: HexString;
   readonly dockInstanceId: HexString;
   readonly linkedOrderId: HexString;
-  readonly nonce: bigint | number;
-  readonly deadline: bigint | number;
+  // nonce/deadline 收 bigint/安全 number/规范十进制字符串（requireUintWord
+  // 严格口径；0x 前缀等非规范形态响亮拒绝），与 protocol-bindings
+  // normalizeUint* 的公共载荷类型一致。
+  readonly nonce: bigint | number | string;
+  readonly deadline: bigint | number | string;
 }): HexString {
   // nonce 序列从 1 起（UVPDockingModule usedEntrancePermitNonce 的 storage
   // 缺省 0 即单调下界）：nonce=0 的 permit 链上恒拒，在此响亮拒绝而不是
-  // 让签发方产出一个必定回退的签名。
-  if (BigInt(input.nonce) < 1n) {
+  // 让签发方产出一个必定回退的签名。"0x…" 等非规范字符串形态在此一并
+  // 拒绝（requireUintWord 与 protocol-bindings 同口径）。
+  if (requireUintWord(input.nonce, "permit nonce") < 1n) {
     throw new RangeError(
       "entrance permit nonce sequence starts at 1 (the contract's usedEntrancePermitNonce storage defaults to 0, so nonce=0 always reverts)",
     );
