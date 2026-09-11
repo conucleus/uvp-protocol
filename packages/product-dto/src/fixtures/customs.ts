@@ -15,7 +15,8 @@ import {
   type ZhixuStageDTO
 } from "../domain/index.js";
 
-export const CUSTOMS_ZHIXU_ID = "customs-completion";
+/** 派生身份演示值（zx-+32hex，与编译产物 zhixuId 同形态）。 */
+export const CUSTOMS_ZHIXU_ID = "zx-dbfac16c36b253ae56bc322280a3a66d";
 export const CUSTOMS_ORDER_ID = "order-customs-001";
 
 export const customsStageIds = {
@@ -56,8 +57,9 @@ export const customsWallets = {
 
 export const customsPlanIds = {
   planId: "0x336d9b556f7ffa00c83f49600554819055a4a3b300f82abca70b401f6b161ddc",
-  planHash: "0xfb496c082967f755145cd0e9473828931fa8ab27b195c22450ca74c968b1ddd6",
-  artifactHash: "0x55cc801d49aab1f7fd4c0f08a84459e40d7281129ef8e956280796f5b67922e6"
+  // 派生身份(zx-)+当前编译器 canonical payload 重算钉住。
+  planHash: "0xf6eaeabe4e155834fa0ba5d6bd1f077d63ca99bc6e32987aadcd54badf1e9f94",
+  artifactHash: "0x371f2561e189cd80ff95121a5dbb4daa785e22d70afd72b87a64bedcd28dc10d"
 } as const;
 
 export const customsResourceManifest: ProductResourceManifestDTO = {
@@ -617,8 +619,7 @@ export const customsOnchainHookPlanArtifact = {
   dockInterfaceRoot: "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
   planId: customsPlanIds.planId,
   zhixuId: CUSTOMS_ZHIXU_ID,
-  version: "1",
-  zhixuName: "Customs Completion",
+  zhixuName: "customs_completion",
   platform: {
     type: "blockchain",
     provider: "eth"

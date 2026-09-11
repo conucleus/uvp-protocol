@@ -13,7 +13,9 @@ args for the two-step `UVPStateMachine.commitPlan` + `finalizePlan` flow.
 - Hook DSL expressions under `receiveSignals`;
 - selected-stage executor bindings and supplier `signalMap` data;
 - the target-side `spec.dockInterface` and, for a `supplierType=zhixu`
-  route, a `uvp.dock.resolution.v1` resolution manifest;
+  route, a `uvp.dock.resolution.v2` resolution manifest (chain-track
+  publishing face: TS validates the content addressing and derives the
+  neutral name catalog the uvp-core linker consumes);
 - target platform metadata, currently `platform.type=blockchain`,
   `platform.provider=eth`, and optional `platform.network` such as `base` for
   this track.
@@ -23,27 +25,36 @@ args for the two-step `UVPStateMachine.commitPlan` + `finalizePlan` flow.
 - EVM-facing `OnchainHookPlanArtifact`;
 - Solidity registration args for the two-step `UVPStateMachine.commitPlan` +
   `finalizePlan` flow;
-- deterministic `planId`, `planHash`, source `zhixu_hash`, `policy_hash`,
-  `metadata_hash`, and `artifact_hash`;
+- deterministic `planId`, `planHash`, source `zhixuId` and `sourcePlanHash`,
+  plus the `hooksHash` / `metadataHash` / `artifactHash` tuple of the Solidity
+  registration args and the committed `dockRoutesRoot` / `dockInterfaceRoot`;
 - stable hook, stage, source, signal, dependency, and route ids;
 - on-chain selector bindings for order-level executor overlay authority;
 - golden fixtures for compiler, contract, executor-kit, and replay tests.
+  Dock commitments are computed by this package (the chain-track hash-layer
+  authority; frozen word layout in `docs/dock-word-layout.md`), and the dock
+  golden manifest regenerates via
+  `pnpm --filter @uvp-eth/compiler generate:dock-fixtures`.
 
 ## MVP Constraint
 
 The supported compiler surface is the chain artifact path:
 
 - `receiveSignals` hook parsing;
-- `trigger` reference validation;
 - `selectedStages` binding validation;
 - static executor route extraction;
 - `supplierType=zhixu` `signalMap` compilation and same-source validation.
 
 Executor topology follows the UVP closure rule: a stage without a
-fixed `executor.supplierID` is valid only when it can be reached through
-`selectedStages` from a stage that does name a fixed executor. Selector loops or
-selector chains with no fixed executor anchor are rejected, so product flows
-cannot publish order stages that nobody is authorized to select or perform.
+fixed `executor.supplierID` passes the closure rule only when it can be reached
+through `selectedStages` from a stage that does name a fixed executor. Selector
+loops or selector chains with no fixed executor anchor are rejected. On top of
+the closure rule, the Rust materialization gate (mirrored at the on-chain
+artifact boundary) additionally requires every declared stage to compile at
+least one hook with a materialization bit (mint/dock order trigger or a static
+executor's EMIT_READY receive hook) — an executor-less selected stage is
+therefore rejected even when it is reachable, because on-chain stages
+materialize only through their own hooks.
 
 Do not execute hooks in this module. Runtime evaluation belongs in
 `hook-core`/`statemachine`.

@@ -7,6 +7,16 @@ import {
   type DockResolutionManifest,
 } from "./types/index.js";
 import { validateDockCommitments } from "./dock-validation.js";
+import { compareByCodePoint } from "./canonical.js";
+import { hashCanonical } from "./hash.js";
+import {
+  assembleChainTrackHookPlan,
+  hookPlanPayloadForHash,
+  planIdOf,
+  prepareDockResolution,
+  HOOK_PLAN_HASH_DOMAIN,
+  type HookPlanShell,
+} from "./dock-commitments.js";
 
 export class HookPlanCompilationError extends Error {
   readonly issues: readonly string[];
@@ -29,14 +39,24 @@ export class HookPlanArtifactValidationError extends Error {
 }
 
 /**
- * Deterministic code-unit ordering. localeCompare is ICU/locale dependent and
- * must never participate in canonical artifact construction, which has to
- * reproduce byte-identically across environments (Rust side orders by bytes).
+ * Deterministic ordering aligned with Rust str Ord (= UTF-8 byte order, equals
+ * code-point order). localeCompare is ICU/locale dependent and must never
+ * participate in canonical artifact construction; raw UTF-16 code-unit
+ * comparison (<) is equally forbidden — it orders astral-plane characters
+ * (surrogate pairs) before high-BMP keys like U+E000..U+FFFF, diverging from
+ * the Rust authority on identifiers outside the ASCII grammar.
  */
 export function compareByCodeUnit(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
+  const order = compareByCodePoint(left, right);
+  return order < 0 ? -1 : order > 0 ? 1 : 0;
 }
 
+/**
+ * 编译入口：core 产出中性 plan 壳（hooks/依赖索引/中性 dock 声明），
+ * 链轨承诺（uid/planId/roots/routeHash/planHash）由 TS 在壳上计算组装
+ * （TS 权威实现）。resolution manifest 是链轨发布面：TS
+ * 先做内容寻址校验并派生 core linker 消费的中性 name 目录。
+ */
 export function compileZhixuHookPlan(
   definition: ZhixuDefinition,
   resolutionManifest?: DockResolutionManifest,
@@ -46,14 +66,23 @@ export function compileZhixuHookPlan(
     throw new HookPlanCompilationError(issues);
   }
 
-  let artifact: unknown;
+  let resolution;
+  if (resolutionManifest !== undefined) {
+    try {
+      resolution = prepareDockResolution(resolutionManifest);
+    } catch (error) {
+      throw new HookPlanCompilationError([
+        error instanceof Error ? error.message : String(error)
+      ]);
+    }
+  }
+
+  let shell: unknown;
   try {
-    artifact = compileWithUvpCore({
+    shell = compileWithUvpCore({
       target: "hook_plan",
       definition,
-      ...(resolutionManifest === undefined
-        ? {}
-        : { resolutionManifest }),
+      ...(resolution === undefined ? {} : { resolutionManifest: resolution.neutral }),
     });
   } catch (error) {
     throw new HookPlanCompilationError([
@@ -61,12 +90,54 @@ export function compileZhixuHookPlan(
     ]);
   }
 
+  // 组装阶段（承诺重算/接口对应性/D012 seam 等）的语义拒绝同样是编译输入
+  // 问题：不包一层会让裸 RangeError 逃出编译入口，破坏"编译期拒绝一律
+  // HookPlanCompilationError"的调用方契约。
+  let artifact: HookPlanArtifact;
+  try {
+    artifact = assembleChainTrackHookPlan(
+      definition,
+      shell as HookPlanShell,
+      resolution,
+    );
+  } catch (error) {
+    throw new HookPlanCompilationError([
+      error instanceof Error ? error.message : String(error),
+    ]);
+  }
+
   const artifactIssues = validateHookPlanArtifact(artifact);
   if (artifactIssues.length > 0) {
     throw new HookPlanArtifactValidationError(artifactIssues);
   }
-  return artifact as HookPlanArtifact;
+  return artifact;
 }
+
+/**
+ * HookPlanArtifact 的封闭字段集（与 types/index.ts 声明同步）：planHash 只
+ * 覆盖这些字段（unresolvedDockRoutes 仅非空时入哈希与制品）——未声明额外
+ * 字段不进哈希，放行会让"同一 plan 唯一字节数组形态"承诺失效（两个仅
+ * 多余字段不同的制品共享 planHash）。
+ */
+const HOOK_PLAN_ARTIFACT_FIELDS: readonly string[] = [
+  "schemaVersion",
+  "planId",
+  "zhixuId",
+  "zhixuName",
+  "platform",
+  "compiledHooks",
+  "dependencyIndex",
+  "executorRoutes",
+  "dockInterface",
+  "dockRoutes",
+  "unresolvedDockRoutes",
+  "dockRoutesRoot",
+  "dockInterfaceRoot",
+  "selectedStageBindings",
+  "signalCapabilities",
+  "source",
+  "planHash",
+];
 
 export function validateHookPlanArtifact(value: unknown): readonly string[] {
   const issues: string[] = [];
@@ -74,15 +145,60 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
     return ["artifact must be an object"];
   }
 
+  for (const key of Object.keys(value)) {
+    if (!HOOK_PLAN_ARTIFACT_FIELDS.includes(key)) {
+      issues.push(
+        `unknown field \`${key}\` on the artifact — planHash does not cover undeclared fields, so the artifact would not be the plan's unique byte form; remove it or recompile`,
+      );
+    }
+  }
+
   expectLiteral(value.schemaVersion, HOOK_PLAN_SCHEMA_VERSION, "schemaVersion", issues);
   expectHexHash(value.planId, "planId", issues);
   expectNonEmptyString(value.zhixuId, "zhixuId", issues);
-  expectNonEmptyString(value.version, "version", issues);
   expectNonEmptyString(value.zhixuName, "zhixuName", issues);
   if (!isPlatform(value.platform)) {
     issues.push("platform must be an object with a non-empty type");
   }
   expectHexHash(value.planHash, "planHash", issues);
+
+  // 承诺重算（对齐 onchain 侧 hashOnchainPlanPayload 的边界口径）：planId
+  // 与 planHash 都从携带字段独立重推导——篡改 compiledHooks/source 后保留
+  // 旧 planHash 的毒制品在此拒绝，不等到链上。重算抛错（负载携带非 JSON
+  // 值）同样按 issue 报告，校验器的契约是返回 issues 而非抛出。
+  if (isPlatform(value.platform) && typeof value.zhixuId === "string" && typeof value.zhixuName === "string") {
+    try {
+      const recomputedPlanId = planIdOf(value.zhixuId, value.zhixuName, value.platform);
+      if (typeof value.planId === "string" && value.planId !== recomputedPlanId) {
+        issues.push(
+          "planId must match the recomputed H(uvp:hook-plan-id:v1; compiler/platform/zhixuId/zhixuName)",
+        );
+      }
+    } catch {
+      issues.push("planId preimage is not canonicalizable (platform carries non-JSON values)");
+    }
+  }
+  if (value.source === undefined) {
+    issues.push(
+      "source is required (the canonical annotation-stripped definition snapshot in the planHash preimage)",
+    );
+  } else if (typeof value.planHash === "string" && /^0x[0-9a-f]{64}$/.test(value.planHash)) {
+    try {
+      const recomputedPlanHash = hashCanonical(
+        HOOK_PLAN_HASH_DOMAIN,
+        hookPlanPayloadForHash(value as Omit<HookPlanArtifact, "planHash">),
+      );
+      if (value.planHash !== recomputedPlanHash) {
+        issues.push(
+          "planHash must match the recomputed H(uvp:hook-plan-artifact:v1; payload) over the carried fields",
+        );
+      }
+    } catch {
+      issues.push(
+        "planHash preimage is not canonicalizable (payload carries undefined or non-JSON values)",
+      );
+    }
+  }
 
   const compiledHooks = Array.isArray(value.compiledHooks) ? value.compiledHooks : undefined;
   if (!compiledHooks) {
@@ -97,6 +213,9 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
   }
   if (!Array.isArray(value.dockRoutes)) {
     issues.push("dockRoutes must be an array");
+  }
+  if (value.unresolvedDockRoutes !== undefined) {
+    issues.push(...validateUnresolvedDockRoutes(value.unresolvedDockRoutes));
   }
   expectHexHash(value.dockRoutesRoot as unknown, "dockRoutesRoot", issues);
   expectHexHash(value.dockInterfaceRoot as unknown, "dockInterfaceRoot", issues);
@@ -152,6 +271,97 @@ export function assertHookPlanArtifact(value: unknown): asserts value is HookPla
   if (issues.length > 0) {
     throw new HookPlanArtifactValidationError(issues);
   }
+}
+
+// 端口名形态（与 Rust valid_port_name 同规则）：^[a-z][a-z0-9_]{0,31}$。
+function isPortName(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[a-z][a-z0-9_]{0,31}$/.test(value)
+  );
+}
+
+/**
+ * 未解析 route 声明面（§8.8）逐元素校验：mode 枚举、端口名形态、至少一
+ * 条映射（D019 镜像）与基础身份字段。承诺字段不得在场——未解析 route 无
+ * 哈希可承诺，出现即毒产物。
+ */
+function validateUnresolvedDockRoutes(
+  routes: unknown,
+): readonly string[] {
+  const issues: string[] = [];
+  if (!Array.isArray(routes)) {
+    return ["unresolvedDockRoutes must be an array when present"];
+  }
+  for (const [index, route] of routes.entries()) {
+    const prefix = `unresolvedDockRoutes[${index}]`;
+    if (!isRecord(route)) {
+      issues.push(`${prefix} must be an object`);
+      continue;
+    }
+    expectLiteral(
+      route.schemaVersion,
+      "uvp.dockRoute.unresolved.v1",
+      `${prefix}.schemaVersion`,
+      issues,
+    );
+    expectNonEmptyString(route.stageIdentifier, `${prefix}.stageIdentifier`, issues);
+    expectHexHash(route.stageId, `${prefix}.stageId`, issues);
+    expectHexHash(route.localDefinitionRefHash, `${prefix}.localDefinitionRefHash`, issues);
+    expectHexHash(route.localPlanId, `${prefix}.localPlanId`, issues);
+    expectNonEmptyString(route.localSource, `${prefix}.localSource`, issues);
+    expectNonEmptyString(route.interfaceName, `${prefix}.interfaceName`, issues);
+    expectOneOf(route.orderMode, ["new", "existing"], `${prefix}.orderMode`, issues);
+    for (const absent of ["routeId", "routeHash", "target", "sourceSeam"]) {
+      if (route[absent] !== undefined) {
+        issues.push(`${prefix}.${absent} must not be present on an unresolved route`);
+      }
+    }
+
+    const inputs = Array.isArray(route.inputBindings) ? route.inputBindings : undefined;
+    const outputs = Array.isArray(route.outputBindings) ? route.outputBindings : undefined;
+    if (!inputs) {
+      issues.push(`${prefix}.inputBindings must be an array`);
+    }
+    if (!outputs) {
+      issues.push(`${prefix}.outputBindings must be an array`);
+    }
+    if (inputs) {
+      for (const [bindingIndex, binding] of inputs.entries()) {
+        const bindingPath = `${prefix}.inputBindings[${bindingIndex}]`;
+        if (!isRecord(binding)) {
+          issues.push(`${bindingPath} must be an object`);
+          continue;
+        }
+        if (typeof binding.hookId !== "string" || !binding.hookId.includes("#")) {
+          issues.push(`${bindingPath}.hookId must be a full hook identifier <task>.<stage>#<channel>`);
+        }
+        if (!isPortName(binding.port)) {
+          issues.push(`${bindingPath}.port must match ^[a-z][a-z0-9_]{0,31}$`);
+        }
+      }
+    }
+    if (outputs) {
+      for (const [bindingIndex, binding] of outputs.entries()) {
+        const bindingPath = `${prefix}.outputBindings[${bindingIndex}]`;
+        if (!isRecord(binding)) {
+          issues.push(`${bindingPath} must be an object`);
+          continue;
+        }
+        expectNonEmptyString(binding.signal, `${bindingPath}.signal`, issues);
+        if (!isPortName(binding.port)) {
+          issues.push(`${bindingPath}.port must match ^[a-z][a-z0-9_]{0,31}$`);
+        }
+      }
+    }
+    // D019 镜像：route 至少声明一项输入或输出映射。
+    if (inputs !== undefined && outputs !== undefined && inputs.length + outputs.length === 0) {
+      issues.push(
+        `${prefix} must declare at least one input or output binding (a route maps an input or an output)`,
+      );
+    }
+  }
+  return issues;
 }
 
 function validateCompiledHooks(hooks: readonly unknown[]): readonly string[] {
@@ -296,8 +506,14 @@ function validateDependencyIndex(
 
   const expected = Object.fromEntries(
     [...recomputed.entries()]
-      .sort(([left], [right]) => compareByCodeUnit(left, right))
-      .map(([key, hookIds]) => [key, [...hookIds].sort()])
+      // Rust 权威是 BTreeMap<String, BTreeSet<String>>（字节序 = 码点序）；
+      // 默认 .sort() 按 UTF-16 码元比较，会把星面字符（代理对）排到
+      // U+E000..U+FFFF 的高 BMP 键之前，误拒合法 Rust 产物。
+      .sort(([left], [right]) => compareByCodePoint(left, right))
+      .map(([key, hookIds]) => [
+        key,
+        [...hookIds].sort(compareByCodePoint),
+      ])
   );
   if (JSON.stringify(expected) !== JSON.stringify(dependencyIndex)) {
     issues.push("dependencyIndex must match compiled hook dependencies");

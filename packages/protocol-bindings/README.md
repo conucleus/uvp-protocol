@@ -36,10 +36,13 @@ pnpm --filter @uvp-eth/protocol-bindings build
   `applyStageExecutorPatchFor` calldata with `selectorSignature` and
   `previousExecutorSignature`; pass `0x` when the selected mode does not
   require previous-executor consent.
-- `hashStageExecutorPatchPayload` commits to selector stage, target stage,
-  executor, role, executor metadata hash, mode, previous executor, approval
-  source/signal ids, nonce, and metadata URI. It does not include file resource
-  fields.
+- `hashStageExecutorPatchPayload` commits to the
+  `uvp:stage-executor-patch-payload:v1` domain
+  (`STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN`, hashed as the leading
+  `keccak256(domain)` word of the abi-encoded preimage) plus selector stage,
+  target stage, executor, role, executor metadata hash, mode, previous
+  executor, approval source/signal ids, nonce, and metadata URI. It does not
+  include file resource fields.
 - Use the zero address or zero `bytes32` for unused `previousExecutor` and
   approval fields so those absences are still explicit in the signed payload.
 
@@ -51,8 +54,12 @@ pnpm --filter @uvp-eth/protocol-bindings build
   wallet from a resource patch signature.
 - `buildApplyStageResourcePatchForCall` encodes
   `applyStageResourcePatchFor` calldata.
-- `hashStageResourcePatchPayload` commits to selector stage, target stage,
-  resource key, manifest hash, policy hash, nonce, and manifest URI.
+- `hashStageResourcePatchPayload` commits to the
+  `uvp:stage-resource-patch-payload:v1` domain
+  (`STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN`, hashed as the leading
+  `keccak256(domain)` word of the abi-encoded preimage) plus selector stage,
+  target stage, resource key, manifest hash, policy hash, nonce, and
+  manifest URI.
 
 ## Resource Manifest Helpers
 

@@ -79,11 +79,11 @@ contract UVPStagePatchModule {
         bytes32 orderId, bytes32 targetStageId, address expectedExecutor, address previousExecutor
     );
     error StageHasNoSignal(bytes32 orderId, bytes32 targetStageId);
-    /// 出生（mint/dock）阶段的执行者终生不可变（簇 I 裁决，云侧已强制）：
-    /// 逐单 executor patch 在合约侧读 plan hook flags 补门（0212 P1-3）。
-    /// 资源补丁不受此门——资源可替换已裁决。
+    /// 出生（mint/dock）阶段的执行者终生不可变（云侧已强制，合约同口径守门）：
+    /// 逐单 executor patch 在合约侧读 plan hook flags 补门。
+    /// 资源补丁不受此门——资源可替换。
     error StageExecutorPatchForbiddenOnBirthStage(bytes32 orderId, bytes32 targetStageId);
-    /// 同秒平局 fail-closed（F7/O6/ETH-5）：最高 submittedAt 并列且提交者
+    /// 同秒平局 fail-closed：最高 submittedAt 并列且提交者
     /// 不同时，"上一执行者"没有确定序——拒绝而不是按 capability 数组枚举
     /// 序静默取值。
     error StagePreviousExecutorAmbiguous(bytes32 orderId, bytes32 targetStageId, uint64 submittedAt);
@@ -471,7 +471,7 @@ contract UVPStagePatchModule {
         if (!stateMachine.orderExists(planId, orderId)) {
             revert UnknownOrder();
         }
-        // 出生阶段守门（簇 I 裁决）：目标阶段挂有 mint/dock trigger hook 时
+        // 出生阶段守门：目标阶段挂有 mint/dock trigger hook 时
         // 拒绝逐单 executor patch——云侧已强制"订阅/出生阶段终生不可变"，
         // 合约读 flags 补门封死绕行。fileResources-only 资源补丁不经过本
         // 函数（_applyStageResourcePatch），资源可替换已裁决。
@@ -522,7 +522,7 @@ contract UVPStagePatchModule {
         }
 
         address expectedPreviousExecutor = activePatch.exists ? activePatch.executor : latestSignalSubmitter;
-        // 同秒平局 fail-closed（F7/O6/ETH-5）：回退到"最近提交者"判定且
+        // 同秒平局 fail-closed：回退到"最近提交者"判定且
         // 最高 submittedAt 并列不同提交者时，没有确定序——拒绝。active
         // patch 存在时不回退（patch executor 是权威上一执行者），无歧义。
         if (!activePatch.exists && latestAmbiguous) {
@@ -628,12 +628,15 @@ contract UVPStagePatchModule {
             || mode == EXECUTOR_PATCH_MODE_REPLACEMENT;
     }
 
-    /// Count signals belonging to the target stage by its compiled capability
-    /// declarations. A production source id is not the stage id: the former
-    /// identifies a business source/class while the latter identifies the
-    /// stage path. Looking up sourceSignalCount with targetStageId therefore
-    /// lets assign patches through after a real stage signal and makes
-    /// handoff/replacement read the wrong previous submitter.
+    /// Stage facts reach the target stage through two attribution paths that
+    /// _recordSignal treats identically: compiled capability declarations
+    /// (relation=0, enumerable per stage) and the source==stage fallback for
+    /// keys outside the declared vocabulary. Counting only the enumerable
+    /// path would let a fallback fact bypass the assign gate and strip a
+    /// sitting executor without any signature. The fallback flow's per-key
+    /// submittedAt is not enumerable here, so ordering cannot be rebuilt
+    /// across flows: when both flows hold facts with differing last
+    /// submitters, the previous-executor fallback must fail closed.
     function _stageSignalState(bytes32 planId, bytes32 orderId, bytes32 stageId)
         private
         view
@@ -660,6 +663,26 @@ contract UVPStagePatchModule {
                 latestSubmitter = submitter;
                 latestAmbiguous = false;
             } else if (submittedAt == latestSubmittedAt && submitter != latestSubmitter) {
+                latestAmbiguous = true;
+            }
+        }
+        // 并入 source==stage 回退归属的事实：_recordSignal 对两条归属
+        // 路径一视同仁，时序闸必须同口径计数，否则回退事实会绕过
+        // assign 闸、在任执行者被无签名替换。count 只被消费零/非零，
+        // 两流并存时同一事实双计不翻转判定；同键被其它阶段声明的跨
+        // 阶段词表只可能把"无信号"过计为"有信号"——同为 fail-closed
+        // 方向。
+        uint256 fallbackCount = stateMachine.sourceSignalCount(planId, orderId, stageId);
+        if (fallbackCount != 0) {
+            count += fallbackCount;
+            address fallbackSubmitter = stateMachine.lastSignalSubmitter(planId, orderId, stageId);
+            if (count == fallbackCount) {
+                // 纯回退流：capability 枚举无事实，lastSignalSubmitter
+                // 即写入序最近提交者。
+                latestSubmitter = fallbackSubmitter;
+            } else if (fallbackSubmitter != latestSubmitter) {
+                // 两流并存：回退事实逐键 submittedAt 不可枚举、无法跨流
+                // 定序——末位提交者不一致时按同秒并列同款 fail-closed。
                 latestAmbiguous = true;
             }
         }

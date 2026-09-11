@@ -127,6 +127,21 @@ describe("product DTO catalog", () => {
     assert.equal("writerWallet" in (demoResourcePatchTask.addOnManifest?.actions[0]?.inputBindings ?? {}), false);
   });
 
+  it("keeps submit_signal manifests free of a hard-coded confirm intent on dispute slots", () => {
+    // 共享 helper 同时喂给 confirm 型与 dispute 型槽位：硬编码 intent 会让
+    // dispute_material 槽位的 manifest 声明覆盖插件类型推导，争议任务以
+    // confirm_stage 提交。未声明时由客户端按 capabilityPlugin.pluginKind 推导。
+    const disputeSlot = demoProductCatalog.zhixus[0]?.roleSlots.find((slot) => slot.slotId === "dispute");
+    assert.ok(disputeSlot);
+    assert.ok(disputeSlot.capabilityPlugins?.some((plugin) => plugin.pluginKind === "dispute_material"));
+    const submitActions = (disputeSlot.addOnManifest?.actions ?? [])
+      .filter((action) => action.actionKind === "submit_signal");
+    assert.ok(submitActions.length > 0);
+    for (const action of submitActions) {
+      assert.equal(action.intent, undefined);
+    }
+  });
+
   it("exports the customs scenario fixture with role-slot manifests", () => {
     const zhixu = customsProductCatalog.zhixus[0];
     assert.ok(zhixu);
@@ -198,19 +213,48 @@ describe("product DTO catalog", () => {
     }, {
       orderCount: 2,
       openTaskCount: 1,
-      supplierCount: 3
+      supplierCount: 3,
+      versionLabel: "Route smoke v1"
     });
     assert.equal(activeRow.lifecycleStatus, "active");
     assert.equal(activeRow.nextAction, "持续观察订单、待办和供应商状态");
     assert.equal(activeRow.metricsStatus, "observed");
+    assert.equal(activeRow.versionLabel, "Route smoke v1");
 
-    const summary = storeConsoleSummary([draftRow, activeRow]);
-    assert.equal(summary.totalZhixus, 2);
-    assert.equal(summary.activeZhixus, 1);
+    // versionLabel 缺席时 counts 不得单独宣称 observed（合成 "当前版本"
+    // 只允许发生在 metricsStatus=unknown 之下）。
+    const countsOnlyRow = toStoreZhixuConsoleDTO(summarizeZhixu(zhixu), {
+      orderCount: 2,
+      openTaskCount: 1,
+      supplierCount: 3
+    });
+    assert.equal(countsOnlyRow.metricsStatus, "unknown");
+    assert.equal(countsOnlyRow.versionLabel, "当前版本");
+
+    const secondActiveRow = {
+      ...activeRow,
+      orderCount: 1,
+      openTaskCount: 0,
+      supplierCount: 2
+    };
+    const summary = storeConsoleSummary([draftRow, activeRow, secondActiveRow]);
+    assert.equal(summary.totalZhixus, 3);
+    assert.equal(summary.activeZhixus, 2);
     assert.equal(summary.needsReview, 1);
-    assert.equal(summary.runningOrders, 2);
+    assert.equal(summary.runningOrders, 3);
     assert.equal(summary.openTasks, 1);
-    assert.equal(summary.registeredSuppliers, 3);
+    // 行合计（0 + 3 + 2），不是最大单行。
+    assert.equal(summary.registeredSuppliers, 5);
+  });
+
+  it("keeps createOrderTrigger out of the list summary surface", () => {
+    const zhixu = demoProductCatalog.zhixus[0];
+    assert.ok(zhixu);
+    assert.ok(zhixu.createOrderTrigger);
+
+    const summary = summarizeZhixu(zhixu);
+    assert.equal("createOrderTrigger" in summary, false);
+    assert.ok(!JSON.stringify(summary).includes("triggerHookId"));
   });
 
   it("models ordinary participant fulfillment plugins without real funding claims", () => {
@@ -240,14 +284,41 @@ describe("product DTO catalog", () => {
     const ordinaryFundingCopy = [
       demoProductCatalog.zhixus[0]?.supportedPaymentMethods.join(" "),
       demoProductCatalog.zhixus[0]?.roleSlots.find((slot) => slot.slotId === "funds")?.duty,
-      demoProductCatalog.zhixus[0]?.dockableModules.find((module) => module.moduleId === "funds-protection")?.desc,
-      demoProductCatalog.zhixus[0]?.dockableModules.find((module) => module.moduleId === "funds-protection")?.ports.join(" "),
+      demoProductCatalog.zhixus[0]?.dockableModules.find((module) => module.interfaceName === "funds_protection")?.desc,
+      demoProductCatalog.zhixus[0]?.dockableModules
+        .find((module) => module.interfaceName === "funds_protection")
+        ?.inputs.map((port) => port.label)
+        .join(" "),
       demoPaymentTask.title,
       demoPaymentTask.subtitle,
       demoPaymentTask.fundingImpact,
       ...demoPaymentTask.responsibilityStatements.map((statement) => `${statement.title} ${statement.desc}`)
     ].join(" ");
     assert.doesNotMatch(ordinaryFundingCopy, /退款条件|资金托管|托管适配器|划转资金|释放资金|退款资金|结算保证/u);
+  });
+
+  it("pins the demo dockable modules to the named-interface v2 shape", () => {
+    const modules = demoProductCatalog.zhixus[0]?.dockableModules ?? [];
+    assert.deepEqual(
+      modules.map((module) => [module.interfaceName, module.orderModes.join("|")]),
+      [
+        ["funds_protection", "new"],
+        ["logistics_delivery", "new"],
+        ["inspection_acceptance", "new|existing"],
+        ["dispute_resolution", "existing"]
+      ]
+    );
+    for (const module of modules) {
+      for (const port of module.inputs) {
+        assert.match(port.hook ?? "", /^[\w.-]+#[\w.-]+$/u);
+      }
+      for (const port of module.outputs) {
+        assert.match(port.signal ?? "", /^[\w.-]+::[\w.-]+$/u);
+      }
+    }
+    // new ∈ orderModes 的接口必须有入口端口（建单型服务）。
+    const serviceLike = modules.filter((module) => module.orderModes.includes("new"));
+    assert.ok(serviceLike.every((module) => module.inputs.length > 0));
   });
 
   it("expresses funding and guarantee options as standard signal containers", () => {

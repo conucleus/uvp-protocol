@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { decodeEventLog, decodeFunctionData, toEventHash } from "viem";
+import {
+  concatHex,
+  decodeEventLog,
+  decodeFunctionData,
+  encodeAbiParameters,
+  hashTypedData,
+  keccak256,
+  stringToHex,
+  toEventHash,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
   UnsupportedChainTargetError,
@@ -16,11 +25,14 @@ import {
   STAGE_PATCH_MODULE_ABI,
   buildApplyStageExecutorPatchForCall,
   buildApplyStageResourcePatchForCall,
+  buildDerivedSignalTypedData,
+  buildPlanCommitTypedData,
   buildProductSubmitTypedData,
   buildStageExecutorPatchTypedData,
   buildStageResourcePatchTypedData,
   buildSubmitDerivedSignalForCall,
   buildSubmitSignalForCall,
+  buildTriggerOrderFromOutsideForCall,
   buildTriggerOrderFromSignalForCall,
   buildTriggerOrderFromSignalTypedData,
   canonicalJson,
@@ -29,6 +41,10 @@ import {
   hashResourceManifest,
   hashStageExecutorPatchPayload,
   hashStageResourcePatchPayload,
+  STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN,
+  STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN,
+  recoverDerivedSignalSigner,
+  recoverPlanCommitSigner,
   recoverProductSubmitSigner,
   recoverStageExecutorPatchSigner,
   recoverStageResourcePatchSigner,
@@ -166,8 +182,8 @@ const signalAuthorizations = [
 ] as const;
 
 describe("protocol bindings", () => {
-  it("exposes frozen v0.9 plan-scoped hook observation events", () => {
-    // 全部订单级事件补 planId（v0.9 冻结口径）。
+  it("exposes frozen v0.10 plan-scoped hook observation events", () => {
+    // 全部订单级事件补 planId（v0.10 冻结口径，UVPStateMachine EIP-712 版本 0.10）。
     assert.equal(
       toEventHash("HookStatusChanged(bytes32,bytes32,bytes32,uint8,uint8,uint64)"),
       "0xa0c688f78d307bee6d38b69ad4c19b02d9e1be8c6772327015b60fd21ec38fd2"
@@ -279,6 +295,31 @@ describe("protocol bindings", () => {
 
     assert.equal(
       await recoverProductSubmitSigner(typedData, signature),
+      submitter,
+    );
+  });
+
+  it("builds and recovers a PlanCommit publisher signature", async () => {
+    // commitPlan(PlanCommit, hooks, signature) 是 UVPStateMachine 的签名面
+    // 之一：七个 typed-data builder 中 PlanCommit 不得是唯一没有 recover
+    // 助手的一个（签名面不对称会让发布侧无法离线验证 publisher）。
+    const typedData = buildPlanCommitTypedData({
+      chainId: 31337,
+      verifyingContract,
+      publisher: submitter,
+      hooksHash: payloadHash,
+      metadataHash: idempotencyKey,
+      dockRoutesRoot: planId,
+      dockInterfaceRoot: originPlanId,
+      deadline,
+    });
+    const signature = await account.signTypedData(
+      typedData as unknown as Parameters<typeof account.signTypedData>[0],
+    );
+
+    assert.equal(typedData.primaryType, "UVPStateMachinePlanCommit");
+    assert.equal(
+      await recoverPlanCommitSigner(typedData, signature),
       submitter,
     );
   });
@@ -623,6 +664,111 @@ describe("protocol bindings", () => {
     assert.match(call.data, /^0x[0-9a-f]+$/);
   });
 
+  it("builds derived signal typed data whose digest matches the module formula", async () => {
+    const typedData = buildDerivedSignalTypedData({
+      fromPlanId: planId,
+      fromOrderId: orderId,
+      fromStageId: targetStageId,
+      targetPlanId,
+      targetOrderId: bytes32("11"),
+      targetSourceId: sourceId,
+      signalId,
+      payloadHash,
+      idempotencyKey,
+      submitter,
+      deadline,
+      chainId: 31337,
+      verifyingContract,
+    });
+
+    assert.equal(typedData.domain.name, "UVPDerivedSignalModule");
+    assert.equal(typedData.domain.version, "0.6");
+    assert.equal(typedData.primaryType, "UVPDerivedSignalModuleSignal");
+
+    // 与 UVPDerivedSignalModule.derivedSignalDigest 的链上公式逐字段对拍：
+    // typehash（字段名/顺序即冻结面）、domain separator、struct hash。
+    const typehash = keccak256(
+      stringToHex(
+        "UVPDerivedSignalModuleSignal(bytes32 fromPlanId,bytes32 fromOrderId,bytes32 fromStageId,bytes32 targetPlanId,bytes32 targetOrderId,bytes32 targetSourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)",
+      ),
+    );
+    const domainSeparator = keccak256(
+      encodeAbiParameters(
+        [
+          { name: "typehash", type: "bytes32" },
+          { name: "name", type: "bytes32" },
+          { name: "version", type: "bytes32" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        [
+          keccak256(
+            stringToHex(
+              "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
+            ),
+          ),
+          keccak256(stringToHex("UVPDerivedSignalModule")),
+          keccak256(stringToHex("0.6")),
+          31337n,
+          verifyingContract,
+        ],
+      ),
+    );
+    const structHash = keccak256(
+      encodeAbiParameters(
+        [
+          { name: "typehash", type: "bytes32" },
+          { name: "fromPlanId", type: "bytes32" },
+          { name: "fromOrderId", type: "bytes32" },
+          { name: "fromStageId", type: "bytes32" },
+          { name: "targetPlanId", type: "bytes32" },
+          { name: "targetOrderId", type: "bytes32" },
+          { name: "targetSourceId", type: "bytes32" },
+          { name: "signalId", type: "bytes32" },
+          { name: "payloadHash", type: "bytes32" },
+          { name: "idempotencyKey", type: "bytes32" },
+          { name: "submitter", type: "address" },
+          { name: "deadline", type: "uint256" },
+        ],
+        [
+          typehash,
+          planId,
+          orderId,
+          targetStageId,
+          targetPlanId,
+          bytes32("11"),
+          sourceId,
+          signalId,
+          payloadHash,
+          idempotencyKey,
+          submitter,
+          BigInt(deadline),
+        ],
+      ),
+    );
+    const expectedDigest = keccak256(
+      concatHex(["0x1901", domainSeparator, structHash]),
+    );
+    assert.equal(
+      await hashTypedData({
+        domain: typedData.domain,
+        types: typedData.types,
+        primaryType: typedData.primaryType,
+        message: typedData.message,
+      }),
+      expectedDigest,
+    );
+
+    // 签名/恢复闭环：module 的 submitter 即 EIP-712 签名者。
+    const signature = await account.signTypedData({
+      domain: typedData.domain,
+      types: typedData.types,
+      primaryType: typedData.primaryType,
+      message: typedData.message,
+    });
+    assert.equal(await recoverDerivedSignalSigner(typedData, signature), submitter);
+  });
+
   it("builds applyStageExecutorPatchFor calls from the stage patch module ABI", () => {
     const selectorSignature = `0x${"bb".repeat(65)}` as const;
     const previousExecutorSignature = `0x${"dd".repeat(65)}` as const;
@@ -774,7 +920,11 @@ describe("protocol bindings", () => {
       canonicalJson({ b: 2, a: { d: 4, c: 3 } }),
       '{"a":{"c":3,"d":4},"b":2}',
     );
-    assert.equal(canonicalJson({ n: -0 }), '{"n":0}');
+    // 浮点拒绝——canonical 哈希输入只收整数，非整值 float
+    // 与负零（f64 -0.0）响亮拒绝（与 @uvp-eth/compiler canonical.ts 同口
+    // 径，三线语料 uvp-core fixtures/canonical/canonical.v1.json 钉死边界）。
+    assert.equal(canonicalJson({ n: 0 }), '{"n":0}');
+    assert.throws(() => canonicalJson({ n: -0 }), /float-form numbers.*received -0/);
     assert.throws(
       () => canonicalJson({ optional: undefined }),
       /undefined object properties/,
@@ -795,6 +945,58 @@ describe("protocol bindings", () => {
       canonicalJson({ "\u{10FFFF}": 1, "\uFFFE": 2 }),
       `{"\uFFFE":2,"\u{10FFFF}":1}`,
     );
+    // 浮点拒绝——canonical 哈希输入只收整数与 -0，
+    // 非整值 float 响亮拒绝（与 @uvp-eth/compiler canonical.ts 同口径，
+    // 三线语料 uvp-core fixtures/canonical/canonical.v1.json 钉死边界）。
+    assert.throws(() => canonicalJson(1.5), /float-form numbers/);
+    assert.throws(() => canonicalJson({ a: [0, 0.5] }), /float-form numbers/);
+    assert.throws(() => canonicalJson(1e-5), /float-form numbers/);
+  });
+
+  it("rejects chain ids at and beyond the 64-bit FFI boundary", () => {
+    const base = {
+      verifyingContract,
+      planId,
+      orderId,
+      sourceId,
+      signalId,
+      payloadHash,
+      idempotencyKey,
+      submitter,
+      deadline,
+    };
+    // 负数 / 零 / 非整数拒绝。
+    assert.throws(
+      () => buildProductSubmitTypedData({ ...base, chainId: -1 }),
+      /chainId must be a positive integer/,
+    );
+    assert.throws(
+      () => buildProductSubmitTypedData({ ...base, chainId: 0 }),
+      /chainId must be a positive integer/,
+    );
+    assert.throws(
+      () => buildProductSubmitTypedData({ ...base, chainId: 31337.5 }),
+      /chainId must be a positive integer/,
+    );
+    // ≥ 2^64 显式拒绝（FFI 域保持 64 位）——number 面上不可精确表示，
+    // 但拒绝必须发生在入口而不是静默取整后放行。
+    assert.throws(
+      () => buildProductSubmitTypedData({ ...base, chainId: 2 ** 64 }),
+      /chainId must be < 2\^64/,
+    );
+    assert.throws(
+      () => buildProductSubmitTypedData({ ...base, chainId: 1e21 }),
+      /chainId must be < 2\^64/,
+    );
+    // 2^53 以上的整数（如 1e19 < 2^64）因无法精确表示同样拒绝。
+    assert.throws(
+      () => buildProductSubmitTypedData({ ...base, chainId: 1e19 }),
+      /chainId must be a safe integer/,
+    );
+    // 边界内正常放行。
+    assert.doesNotThrow(() =>
+      buildProductSubmitTypedData({ ...base, chainId: 31337 }),
+    );
   });
 
   it("hashes split patch payloads canonically", () => {
@@ -809,6 +1011,82 @@ describe("protocol bindings", () => {
     assert.equal(
       EXECUTOR_PATCH_MODE_REPLACEMENT,
       "0x7265706c6163656d656e74000000000000000000000000000000000000000000",
+    );
+    // payload 哈希必须吃进导出的域常量（域分离）——keccak256(abi
+    // .encode(keccak256(domain), …payload))。独立重算而非同源引用。
+    assert.equal(
+      STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN,
+      "uvp:stage-executor-patch-payload:v1",
+    );
+    assert.equal(
+      STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN,
+      "uvp:stage-resource-patch-payload:v1",
+    );
+    assert.equal(
+      assignExecutorPatchHash,
+      keccak256(
+        encodeAbiParameters(
+          [
+            { name: "domain", type: "bytes32" },
+            { name: "selectorStageId", type: "bytes32" },
+            { name: "targetStageId", type: "bytes32" },
+            { name: "executor", type: "address" },
+            { name: "role", type: "bytes32" },
+            { name: "executorMetadataHash", type: "bytes32" },
+            { name: "mode", type: "bytes32" },
+            { name: "previousExecutor", type: "address" },
+            { name: "approvalSourceId", type: "bytes32" },
+            { name: "approvalSignalId", type: "bytes32" },
+            { name: "patchNonce", type: "uint256" },
+            { name: "metadataURI", type: "string" },
+          ],
+          [
+            keccak256(
+              stringToHex(STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN),
+            ),
+            selectorStageId,
+            targetStageId,
+            executor,
+            role,
+            executorMetadataHash,
+            EXECUTOR_PATCH_MODE_ASSIGN,
+            zeroAddress,
+            zeroBytes32,
+            zeroBytes32,
+            BigInt(executorPatchNonce),
+            metadataURI,
+          ],
+        ),
+      ),
+    );
+    assert.equal(
+      resourcePatchHash,
+      keccak256(
+        encodeAbiParameters(
+          [
+            { name: "domain", type: "bytes32" },
+            { name: "selectorStageId", type: "bytes32" },
+            { name: "targetStageId", type: "bytes32" },
+            { name: "resourceKey", type: "bytes32" },
+            { name: "manifestHash", type: "bytes32" },
+            { name: "policyHash", type: "bytes32" },
+            { name: "patchNonce", type: "uint256" },
+            { name: "manifestURI", type: "string" },
+          ],
+          [
+            keccak256(
+              stringToHex(STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN),
+            ),
+            selectorStageId,
+            targetStageId,
+            resourceKey,
+            manifestHash,
+            policyHash,
+            BigInt(resourcePatchNonce),
+            manifestURI,
+          ],
+        ),
+      ),
     );
     assert.equal(
       assignExecutorPatchHash,
@@ -944,7 +1222,105 @@ describe("protocol bindings", () => {
       "0x012893657d8eb2efad4de0a91bcd0e39ad9837745dec3ea923737ea803fc8e3d",
     );
   });
+
+  it("rejects unsafe-range integers in canonical JSON (2^60, 1e21)", () => {
+    // 2609100052 C-2 同型：|x| >= 2^53 已丢精度、>=1e21 输出指数形式——与
+    // @uvp-eth/compiler canonical.ts 同口径响亮拒绝（大整数以 string/hex
+    // word 携带）。
+    assert.throws(
+      () => canonicalJson({ n: 2 ** 60 }),
+      /beyond the safe integer range 2\^53-1.*received 1152921504606847000/,
+    );
+    assert.throws(
+      () => canonicalJson({ n: 1e21 }),
+      /beyond the safe integer range 2\^53-1.*received 1e\+21/,
+    );
+    assert.equal(
+      canonicalJson({ n: Number.MAX_SAFE_INTEGER }),
+      `{"n":${Number.MAX_SAFE_INTEGER}}`,
+    );
+  });
+
+  it("rejects zero sourceId at the trigger/authorization boundary (ZeroSourceId mirror)", () => {
+    // L-4：合约 triggerOrderFromOutsideFor / _authorizeSignalSubmitter 对
+    // sourceId==0 revert ZeroSourceId——签名摘要工具的可编码集不得大于
+    // 合约接受集（可构造必败调用）。
+    const signature = "0x" + "11".repeat(65);
+    const config = {
+      stateMachineAddress: "0x8888888888888888888888888888888888888888",
+    };
+    assert.throws(
+      () =>
+        buildTriggerOrderFromOutsideForCall(config, {
+          planId,
+          creator: executor,
+          triggerHookId,
+          triggerStageId,
+          sourceId: zeroBytes32,
+          signalId,
+          payloadHash,
+          idempotencyKey,
+          submitter: executor,
+          deadline,
+          authorizations: [],
+          signature,
+        }),
+      /sourceId must be non-zero/,
+    );
+    assert.throws(
+      () =>
+        buildTriggerOrderFromOutsideForCall(config, {
+          planId,
+          creator: executor,
+          triggerHookId,
+          triggerStageId,
+          sourceId,
+          signalId,
+          payloadHash,
+          idempotencyKey,
+          submitter: executor,
+          deadline,
+          authorizations: [
+            {
+              sourceId: zeroBytes32,
+              signalId,
+              submitter: executor,
+              role,
+              metadataHash: payloadHash,
+            },
+          ],
+          signature,
+        }),
+      /authorization\.sourceId must be non-zero/,
+    );
+    // 非零 sourceId 照常可编码（回归护栏）。
+    assert.doesNotThrow(() =>
+      buildTriggerOrderFromOutsideForCall(config, {
+        planId,
+        creator: executor,
+        triggerHookId,
+        triggerStageId,
+        sourceId,
+        signalId,
+        payloadHash,
+        idempotencyKey,
+        submitter: executor,
+        deadline,
+        authorizations: [
+          {
+            sourceId,
+            signalId,
+            submitter: executor,
+            role,
+            metadataHash: payloadHash,
+          },
+        ],
+        signature,
+      }),
+    );
+  });
 });
+
 
 function bytes32(suffix: string): `0x${string}` {
   return `0x${suffix.padStart(64, "0")}`;

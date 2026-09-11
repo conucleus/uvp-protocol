@@ -1,150 +1,258 @@
 {
   "version": "uvp.constraints.v1",
   "title": "UVP 跨语言验证约束注册表",
-  "description": "簇I 跨轨接受面约束的单一出处。三线 validator（Rust: uvp-core crates/uvp-compiler + uvp-hook-dsl；Go: pkg/compiler/validator + pkg/compiler；TS: uvp-protocol packages/compiler）共用的长度/枚举/字符集/取值域规则在此登记；params 一律从各线代码实测抄录。三线一致性 harness（uvp-protocol packages/compiler/test、uvp-core crates/uvp-compiler/tests、Go pkg/compiler/validator）钉住本文件的 version 与 sha256 并逐 rule 生成边界探针打真 validator：任何一处改表，三线测试同声报警。",
-  "constraintTypes": ["max_length", "min_length", "pattern", "closed_enum", "integer_range", "forbidden", "required"],
+  "description": "跨轨接受面约束的单一出处。三线 validator（Rust: uvp-core crates/uvp-compiler + uvp-hook-dsl；Go: pkg/compiler/validator + pkg/compiler；TS: uvp-protocol packages/compiler）共用的长度/枚举/字符集/取值域规则在此登记；params 一律从各线代码实测抄录。三线一致性 harness（uvp-protocol packages/compiler/test、uvp-core crates/uvp-compiler/tests、Go pkg/compiler/validator）钉住本文件的 version 与 sha256 并逐 rule 生成边界探针打真 validator：任何一处改表，三线测试同声报警。",
+  "constraintTypes": [
+    "max_length",
+    "min_length",
+    "pattern",
+    "closed_enum",
+    "integer_range",
+    "forbidden",
+    "required"
+  ],
   "notes": [
     "error.<line> 存真实错误码/错误名/错误消息锚点（harness 断言用子串匹配）；line 未实现时为 null 且不出现在 applies。",
     "lineParams 只在某线实测参数与 ruling 参数不一致时登记（不对称登记，漂移现场存档）；缺省表示该线与 constraint.params 一致。",
-    "go 线的 hook DSL 约束经 pkg/hookdsl → uvp-core FFI 继承（uvpcore.ParseHook），Go 本地另有防御纵深校验，两者都登记在 error.go / notes。"
+    "go 线的 hook DSL 约束经 pkg/hookdsl → uvp-core FFI 继承（uvpcore.ParseHook），Go 本地另有防御纵深校验，两者都登记在 error.go / notes。",
+    "rejectionSurfaces 是合约拒绝面×实现线镜像状态矩阵（雏形）：登记 Solidity 拒绝面真源与 rust/go/ts 三线镜像状态（mirrored / inherit-ffi / none），供镜像债对账；矩阵不驱动探针，改表由三线 sha256 钉报警。"
   ],
   "rules": [
     {
       "id": "zhixu-api-version-closed-enum",
       "area": "zhixu",
       "target": "apiVersion",
-      "constraint": { "type": "closed_enum", "params": { "values": ["uvp/v0"] } },
+      "constraint": {
+        "type": "closed_enum",
+        "params": {
+          "values": [
+            "uvp/v0"
+          ]
+        }
+      },
       "error": {
         "rust": "apiVersion must be uvp/v0",
         "go": "unsupport type",
         "ts": "apiVersion must be uvp/v0"
       },
-      "applies": ["rust", "go", "ts"],
+      "applies": [
+        "rust",
+        "go",
+        "ts"
+      ],
       "sources": {
         "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape",
         "go": "pkg/compiler/compiler.go Validate -> registry dispatch（uvp/v0/Zhixu 注册键，未命中报 unsupport type）",
         "ts": "packages/compiler/src/zhixu-loader.ts assertZhixuDefinitionShape"
       },
-      "ruling": "簇I 裁决：apiVersion 闭集 {uvp/v0}，大小写敏感，三线同口径拒绝。"
+      "ruling": "apiVersion 闭集 {uvp/v0}，大小写敏感，三线同口径拒绝。"
     },
     {
       "id": "zhixu-kind-closed-enum",
       "area": "zhixu",
       "target": "kind",
-      "constraint": { "type": "closed_enum", "params": { "values": ["Zhixu"] } },
+      "constraint": {
+        "type": "closed_enum",
+        "params": {
+          "values": [
+            "Zhixu"
+          ]
+        }
+      },
       "error": {
         "rust": "kind must be Zhixu",
         "go": "unsupport type",
         "ts": "kind must be Zhixu"
       },
-      "applies": ["rust", "go", "ts"],
+      "applies": [
+        "rust",
+        "go",
+        "ts"
+      ],
       "sources": {
         "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape",
         "go": "pkg/compiler/compiler.go Validate -> registry dispatch",
         "ts": "packages/compiler/src/zhixu-loader.ts assertZhixuDefinitionShape"
       },
-      "ruling": "簇I 裁决：kind 闭集 {Zhixu}。"
+      "ruling": "kind 闭集 {Zhixu}。"
     },
     {
       "id": "metadata-name-required",
       "area": "zhixu",
       "target": "metadata.name",
-      "constraint": { "type": "required", "params": { "trim": true } },
+      "constraint": {
+        "type": "required",
+        "params": {
+          "trim": true
+        }
+      },
       "error": {
         "rust": "metadata.name must be non-empty",
         "go": "metadata.name is required and cannot be blank",
         "ts": "metadata.name is required"
       },
-      "applies": ["rust", "go", "ts"],
+      "applies": [
+        "rust",
+        "go",
+        "ts"
+      ],
       "sources": {
         "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape",
         "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions",
         "ts": "packages/compiler/src/zhixu-loader.ts assertZhixuDefinitionShape"
       },
-      "ruling": "簇I 裁决：metadata.name 必填非空（rust/go trim 后非空；ts 要求 string）。"
+      "ruling": "metadata.name 必填非空（rust/go trim 后非空；ts 要求 string）。"
     },
     {
       "id": "metadata-name-max-length",
       "area": "zhixu",
       "target": "metadata.name",
-      "constraint": { "type": "max_length", "params": { "max": 100, "unit": "bytes" } },
+      "constraint": {
+        "type": "max_length",
+        "params": {
+          "max": 100,
+          "unit": "bytes"
+        }
+      },
       "error": {
         "rust": "exceeds 100 bytes (global_zhixu.name)",
         "go": "exceeds 100 bytes (global_zhixu.name)",
-        "ts": null
+        "ts": "must match ^[a-z][a-z0-9_-]{0,99}$"
       },
-      "applies": ["rust", "go"],
+      "applies": [
+        "rust",
+        "go",
+        "ts"
+      ],
       "sources": {
         "rust": "crates/uvp-compiler/src/lib.rs MAX_IDENTIFIER_BYTES",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions"
+        "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions",
+        "ts": "packages/compiler/src/zhixu-loader.ts assertZhixuDefinitionShape（Buffer.byteLength 上限与 slug 正则同一拒绝面，锚点共用）"
       },
-      "ruling": "簇I 裁决：≤100 字节（global_zhixu.name VARCHAR(100) DDL 镜像）。"
+      "ruling": "≤100 字节（global_zhixu.name VARCHAR(100) DDL 镜像）。"
     },
     {
-      "id": "metadata-uid-max-length",
+      "id": "metadata-uid-not-an-input",
       "area": "zhixu",
       "target": "metadata.uid",
-      "constraint": { "type": "max_length", "params": { "max": 64, "unit": "bytes" } },
+      "constraint": {
+        "type": "forbidden",
+        "params": {
+          "reason": "DSL 壳不携带任何派生身份：跨轨引用一律走 name，名字到实体的解析是各轨权威的事。uid 不是作者可写字段；出现即按未知字段响亮拒绝，不存在『写了就用/不写就兜底』的分支"
+        }
+      },
       "error": {
-        "rust": "exceeds 64 bytes (global_zhixu.uid)",
-        "go": "exceeds 64 bytes (global_zhixu.uid)",
-        "ts": null
+        "rust": "unknown field `uid`",
+        "go": null,
+        "ts": "unknown field `uid`"
       },
-      "applies": ["rust", "go"],
+      "applies": [
+        "rust",
+        "ts"
+      ],
       "sources": {
-        "rust": "crates/uvp-compiler/src/lib.rs MAX_UID_BYTES",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions"
+        "rust": "crates/uvp-model/src/lib.rs ObjectMeta deny_unknown_fields（serde 未知字段路径，编译入口即拒绝）",
+        "ts": "packages/compiler/src/zhixu-loader.ts assertZhixuDefinitionShape（uid 专项未知字段拒绝，先于通用未知字段门）"
       },
-      "ruling": "簇I 裁决：uid ≤64 字节（global_zhixu.uid VARCHAR(64)）。rust/go 均对 trim 后判长、空串放行（uid 可缺省）。"
+      "ruling": "metadata.uid 从 DSL 输入面移除；携带 uid 的定义按未知字段确定性拒绝，不存在显式/兜底双路径。"
+    },
+    {
+      "id": "metadata-name-slug-shape",
+      "area": "zhixu",
+      "target": "metadata.name",
+      "constraint": {
+        "type": "pattern",
+        "params": {
+          "regex": "^[a-z][a-z0-9_-]{0,99}$",
+          "maxBytes": 100,
+          "unit": "bytes"
+        }
+      },
+      "error": {
+        "rust": "must match ^[a-z][a-z0-9_-]{0,99}$",
+        "go": null,
+        "ts": "must match ^[a-z][a-z0-9_-]{0,99}$"
+      },
+      "applies": [
+        "rust",
+        "ts"
+      ],
+      "sources": {
+        "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape is_name_slug（NAME_SLUG_PATTERN）",
+        "ts": "packages/compiler/src/zhixu-loader.ts assertZhixuDefinitionShape NAME_SLUG_PATTERN"
+      },
+      "ruling": "name 必填非空且为 slug 形态（技术名风格：小写开头，小写字母/数字/下划线/中划线，字节≤100）；校验仅限形态——name 不唯一、不参与关系推断、不代表商店展示名。"
     },
     {
       "id": "stage-identifier-max-length",
       "area": "zhixu",
       "target": "taskPatterns[].stages[] 组合标识 {taskName}.{stageName}",
-      "constraint": { "type": "max_length", "params": { "max": 100, "unit": "bytes" } },
+      "constraint": {
+        "type": "max_length",
+        "params": {
+          "max": 100,
+          "unit": "bytes"
+        }
+      },
       "error": {
         "rust": "exceeds 100 bytes (global_stage.stage_identifier)",
         "go": "exceeds 100 bytes (global_stage.stage_identifier)",
         "ts": null
       },
-      "applies": ["rust", "go"],
+      "applies": [
+        "rust",
+        "go"
+      ],
       "sources": {
         "rust": "crates/uvp-compiler/src/lib.rs MAX_IDENTIFIER_BYTES",
         "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions"
       },
-      "ruling": "簇I 裁决：stage identifier ≤100 字节（global_stage.stage_identifier VARCHAR(100)）。"
+      "ruling": "stage identifier ≤100 字节（global_stage.stage_identifier VARCHAR(100)）。"
     },
     {
       "id": "stage-source-max-length",
       "area": "zhixu",
       "target": "taskPatterns[].stages[].source",
-      "constraint": { "type": "max_length", "params": { "max": 36, "unit": "bytes" } },
-      "lineParams": {
-        "go": { "max": 100, "note": "Go validateDDLDimensions 实测按 global_stage.source VARCHAR(100) 判 100；rust 按『source 兼任路由键与 sourceId=keccak(source) 哈希输入，订阅路由维度列宽 36』判 36。簇I 裁决 36，go 侧差异在此存档，探针按各线实测值断言。" }
+      "constraint": {
+        "type": "max_length",
+        "params": {
+          "max": 36,
+          "unit": "bytes"
+        }
       },
       "error": {
         "rust": "exceeds 36 bytes",
-        "go": "exceeds 100 bytes (global_stage.source)",
+        "go": "exceeds 36 bytes (hook/subscription source namespace)",
         "ts": null
       },
-      "applies": ["rust", "go"],
+      "applies": [
+        "rust",
+        "go"
+      ],
       "sources": {
         "rust": "crates/uvp-compiler/src/lib.rs MAX_STAGE_SOURCE_BYTES",
         "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions"
       },
-      "ruling": "簇I 裁决：stage.source ≤36（与订阅 target source 同值）；go 线当前实现 100，属已登记漂移，解冻时应对齐。"
+      "ruling": "壳层 source 上限与 hook 标头/订阅目标的 source 类上限收敛到 36（同一 source 类命名空间，37-100 字节是\"声明即死\"命名空间：hook/订阅引用在解析层被拒）；严于落库列宽（source_zhixu_id VARCHAR(64)、global_stage.source VARCHAR(100)）。rust 与 go 两线均已收敛到 36。"
     },
     {
       "id": "stage-source-required",
       "area": "zhixu",
       "target": "taskPatterns[].stages[].source",
-      "constraint": { "type": "required", "params": { "trim": true } },
+      "constraint": {
+        "type": "required",
+        "params": {
+          "trim": true
+        }
+      },
       "error": {
         "rust": "source must be non-empty",
         "go": null,
         "ts": null
       },
-      "applies": ["rust"],
+      "applies": [
+        "rust"
+      ],
       "sources": {
         "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape（空串会以空键混进 mintedSources）"
       },
@@ -154,80 +262,201 @@
       "id": "stage-source-charset",
       "area": "zhixu",
       "target": "taskPatterns[].stages[].source",
-      "constraint": { "type": "pattern", "params": { "regex": "^[A-Za-z0-9_-]+$", "charset": "ASCII letters, digits, '_' or '-'" } },
+      "constraint": {
+        "type": "pattern",
+        "params": {
+          "regex": "^[A-Za-z0-9_-]+$",
+          "charset": "ASCII letters, digits, '_' or '-'"
+        }
+      },
       "error": {
         "rust": "must be a plain identifier (ASCII letters, digits, '_' or '-')",
         "go": null,
         "ts": null
       },
-      "applies": ["rust"],
+      "applies": [
+        "rust"
+      ],
       "sources": {
         "rust": "crates/uvp-compiler/src/lib.rs is_plain_source_identifier"
       },
       "ruling": "单线登记：rust 强制 stage.source 为 plain identifier；go/ts 无此校验（不对称现状）。"
     },
     {
+      "id": "task-pattern-name-charset",
+      "area": "zhixu",
+      "target": "taskPatterns[].name",
+      "constraint": {
+        "type": "pattern",
+        "params": {
+          "regex": "^[A-Za-z][A-Za-z0-9_-]*$",
+          "charset": "ASCII letter first, then ASCII letters, digits, '_' or '-'"
+        }
+      },
+      "error": {
+        "rust": "must start with an ASCII letter and contain only ASCII letters, digits, '_' or '-'",
+        "go": null,
+        "ts": null
+      },
+      "applies": [
+        "rust"
+      ],
+      "sources": {
+        "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape valid_identifier_part（与 stage name 同规则，组合标识 task.stage 落 global_stage.stage_identifier）"
+      },
+      "ruling": "taskPatterns name 字符集——首字符 ASCII 字母，其余 ASCII 字母/数字/下划线/中划线；长度由 stage-identifier-max-length 组合规则钉。"
+    },
+    {
+      "id": "stage-name-charset",
+      "area": "zhixu",
+      "target": "taskPatterns[].stages[].name",
+      "constraint": {
+        "type": "pattern",
+        "params": {
+          "regex": "^[A-Za-z][A-Za-z0-9_-]*$",
+          "charset": "ASCII letter first, then ASCII letters, digits, '_' or '-'"
+        }
+      },
+      "error": {
+        "rust": "must start with an ASCII letter and contain only ASCII letters, digits, '_' or '-'",
+        "go": null,
+        "ts": null
+      },
+      "applies": [
+        "rust"
+      ],
+      "sources": {
+        "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape valid_identifier_part"
+      },
+      "ruling": "stage name 字符集与 taskPatterns name 同规则；跨 task 的同名 stage 合法（stage identifier 含 task 段），task 内重名由唯一性检查拒绝。"
+    },
+    {
+      "id": "executor-supplier-type-closed-enum",
+      "area": "zhixu",
+      "target": "taskPatterns[].stages[].executor.supplierType",
+      "constraint": {
+        "type": "closed_enum",
+        "params": {
+          "values": [
+            "individual",
+            "organization",
+            "zhixu"
+          ],
+          "trim": false,
+          "note": "精确匹配、不 trim：带首尾空白的变体（\" organization \"）按闭集外拒绝而非归一化放行（与 Go 侧严格枚举闸同口径；trim 归一会让产物携带原文、比对侧按精确值分叉）"
+        }
+      },
+      "error": {
+        "rust": "supplierType must be one of",
+        "go": null,
+        "ts": null
+      },
+      "applies": [
+        "rust"
+      ],
+      "sources": {
+        "rust": "crates/uvp-compiler/src/lib.rs validate_zhixu_shape（闭集常量 uvp_model::SUPPLIER_TYPES，与 Go api/core/v0 supplier 常量同源）"
+      },
+      "ruling": "supplierType 经 executorRoutes 进链上承诺，闭集外的字符串（含空白变体）在编译期精确匹配拒绝；TS/Go/合约镜像状态见 rejectionSurfaces 矩阵。"
+    },
+    {
       "id": "send-signal-combined-max-length",
       "area": "zhixu",
       "target": "stageIdentifier + \".\" + sendSignal 组合信号名",
-      "constraint": { "type": "max_length", "params": { "max": 100, "unit": "bytes", "formula": "len(stageIdentifier) + 1 + len(signal)" } },
+      "constraint": {
+        "type": "max_length",
+        "params": {
+          "max": 100,
+          "unit": "bytes",
+          "formula": "len(stageIdentifier) + 1 + len(signal)"
+        }
+      },
       "error": {
         "rust": "exceeds 100 bytes combined (individual_record.signal_name)",
         "go": "exceeds 100 bytes combined (individual_record.signal_name)",
         "ts": null
       },
-      "applies": ["rust", "go"],
+      "applies": [
+        "rust",
+        "go"
+      ],
       "sources": {
         "rust": "crates/uvp-compiler/src/lib.rs MAX_SIGNAL_NAME_BYTES",
         "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions（maxSignalNameBytes=100）"
       },
-      "ruling": "簇I 裁决：执行器自发信号拼 task.stage.signal 落 individual_record.signal_name VARCHAR(100)，组合 ≤100；stage 标识符合法不等于组合合法。"
+      "ruling": "执行器自发信号拼 task.stage.signal 落 individual_record.signal_name VARCHAR(100)，组合 ≤100；stage 标识符合法不等于组合合法。"
     },
     {
       "id": "receive-signals-key-max-length",
       "area": "hook-dsl",
       "target": "receiveSignals 键（= hook_name，落 global_hook.hook_name）",
-      "constraint": { "type": "max_length", "params": { "max": 36, "unit": "bytes" } },
+      "constraint": {
+        "type": "max_length",
+        "params": {
+          "max": 36,
+          "unit": "bytes"
+        }
+      },
       "error": {
         "rust": "hook_name must be 1-36 characters",
         "go": "hook_name must be 1-36 characters（go 线可达路径是 uvp-core FFI 文案；Go 本地文案 exceeds 36 bytes (global_hook.hook_name) 因 validateTaskPatterns 先行返回而不可达）",
         "ts": null
       },
-      "applies": ["rust", "go"],
+      "applies": [
+        "rust",
+        "go"
+      ],
       "sources": {
         "rust": "crates/uvp-hook-dsl/src/lib.rs parse（hook_name 1..=36）",
         "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions"
       },
-      "ruling": "簇I 裁决：receiveSignals 键 ≤36 字节。rust 在 parse 期以 hook_name 名义拒绝；go 在 schema validator 以 DDL 名义拒绝（CompileHook 经 FFI 亦会拒）。"
+      "ruling": "receiveSignals 键 ≤36 字节。rust 在 parse 期以 hook_name 名义拒绝；go 在 schema validator 以 DDL 名义拒绝（CompileHook 经 FFI 亦会拒）。"
     },
     {
       "id": "hook-source-class-max-length",
       "area": "hook-dsl",
       "target": "hook 标头 source 类 `{source}::condition`",
-      "constraint": { "type": "max_length", "params": { "max": 36, "unit": "bytes" } },
+      "constraint": {
+        "type": "max_length",
+        "params": {
+          "max": 36,
+          "unit": "bytes"
+        }
+      },
       "error": {
         "rust": "hook source class exceeds the maximum length of 36",
         "go": "hook source class exceeds the maximum length of 36（go 线可达路径是 uvp-core FFI 文案；Go 本地纵深文案 source class exceeds 36 bytes 被 FFI 先行拒绝，实测不可达）",
         "ts": null
       },
-      "applies": ["rust", "go"],
+      "applies": [
+        "rust",
+        "go"
+      ],
       "sources": {
         "rust": "crates/uvp-hook-dsl/src/lib.rs parse（标头 source ≤36）",
         "go": "pkg/compiler/validator/zhixu_schema.go validateStage（defense-in-depth）；实际先由 uvp-core FFI parse 拒绝，锚点两文案任一命中均可"
       },
-      "ruling": "簇I 裁决：hook 标头 source 类 ≤36 字节（hook_dependency.source_zhixu_id VARCHAR(36)）。"
+      "ruling": "hook 标头 source 类 ≤36 字节；落库列 hook_dependency.source_zhixu_id 实宽 VARCHAR(64)（uvp/database/core-ddl.sql），36 字节编译期上限三线一致且严于列宽，注记按 DDL 真源修正。"
     },
     {
       "id": "hook-source-class-charset",
       "area": "hook-dsl",
       "target": "hook 标头 source 类",
-      "constraint": { "type": "pattern", "params": { "regex": "^[A-Za-z0-9_-]+$", "charset": "plain identifier" } },
+      "constraint": {
+        "type": "pattern",
+        "params": {
+          "regex": "^[A-Za-z0-9_-]+$",
+          "charset": "plain identifier"
+        }
+      },
       "error": {
         "rust": "hook source must be a plain identifier",
         "go": null,
         "ts": null
       },
-      "applies": ["rust"],
+      "applies": [
+        "rust"
+      ],
       "sources": {
         "rust": "crates/uvp-hook-dsl/src/lib.rs parse（is_plain_identifier）"
       },
@@ -237,65 +466,107 @@
       "id": "subscription-target-source-max-length",
       "area": "hook-dsl",
       "target": "订阅目标 `::ANCHOR(@source::task.stage.signal)` 的 @source",
-      "constraint": { "type": "max_length", "params": { "max": 36, "unit": "bytes" } },
+      "constraint": {
+        "type": "max_length",
+        "params": {
+          "max": 36,
+          "unit": "bytes"
+        }
+      },
       "error": {
         "rust": "subscription source exceeds the maximum length of 36",
         "go": "subscription source exceeds the maximum length of 36（go 线可达路径是 uvp-core FFI 文案；Go 本地纵深文案 subscription source class exceeds 36 bytes 被 FFI 先行拒绝，实测不可达）",
         "ts": null
       },
-      "applies": ["rust", "go"],
+      "applies": [
+        "rust",
+        "go"
+      ],
       "sources": {
         "rust": "crates/uvp-hook-dsl/src/lib.rs parse_subscription",
         "go": "pkg/compiler/validator/zhixu_schema.go validateStage（defense-in-depth）；实测先由 uvp-core FFI 拒绝"
       },
-      "ruling": "簇I 裁决：订阅 source 类 ≤36 字节（hook_dependency.source_zhixu_id VARCHAR(36)），与标头 source 同值。"
+      "ruling": "订阅 source 类 ≤36 字节，与标头 source 同值；落库列 hook_dependency.source_zhixu_id 实宽 VARCHAR(64)（uvp/database/core-ddl.sql），36 字节编译期上限三线一致且严于列宽，注记按 DDL 真源修正。"
     },
     {
       "id": "subscription-target-signal-max-length",
       "area": "hook-dsl",
       "target": "订阅目标 signal 全名",
-      "constraint": { "type": "max_length", "params": { "max": 100, "unit": "bytes" } },
+      "constraint": {
+        "type": "max_length",
+        "params": {
+          "max": 100,
+          "unit": "bytes"
+        }
+      },
       "error": {
         "rust": "subscription target signal exceeds the maximum length of 100",
         "go": "subscription target signal exceeds the maximum length of 100（go 线可达路径是 uvp-core FFI 文案；Go 本地文案 exceeds 100 bytes (hook_dependency.signal_name) 被 FFI 先行拒绝，实测不可达）",
         "ts": null
       },
-      "applies": ["rust", "go"],
+      "applies": [
+        "rust",
+        "go"
+      ],
       "sources": {
         "rust": "crates/uvp-hook-dsl/src/lib.rs parse_subscription",
         "go": "pkg/compiler/validator/zhixu_schema.go validateStage（SubscriptionTarget.SignalName / dependencies，maxSignalNameBytes=100）"
       },
-      "ruling": "簇I 裁决：订阅目标信号名 ≤100 字节（signal_name VARCHAR(100)）。"
+      "ruling": "订阅目标信号名 ≤100 字节（signal_name VARCHAR(100)）。"
     },
     {
       "id": "hook-delay-seconds-range",
       "area": "hook-dsl",
       "target": "delay 操作的 durationSeconds（DSL `+<duration>` / on-chain instruction delaySeconds）",
-      "constraint": { "type": "integer_range", "params": { "min": 1, "max": 2592000, "maxHuman": "30d（30*24*60*60）" } },
+      "constraint": {
+        "type": "integer_range",
+        "params": {
+          "min": 1,
+          "max": 2592000,
+          "maxHuman": "30d（30*24*60*60）"
+        }
+      },
       "error": {
         "rust": "exceeds the maximum allowed delay of 2592000s；零延时文案 invalid duration",
         "go": "exceeds the maximum allowed delay of 2592000s（经 uvp-core FFI；本地常量 pkg/hookdsl MaxDelaySeconds 同值）；零延时文案 invalid duration",
         "ts": "delaySeconds must be a positive safe integer；上限文案 must not exceed 2592000 (contract MAX_HOOK_DELAY_SECONDS = 30 days, reverts HookDelayTooLong)"
       },
-      "applies": ["rust", "go", "ts"],
+      "applies": [
+        "rust",
+        "go",
+        "ts"
+      ],
       "sources": {
         "rust": "crates/uvp-hook-dsl/src/lib.rs MAX_DELAY_SECONDS = 30*24*60*60",
         "go": "pkg/hookdsl/hookdsl.go MaxDelaySeconds = 30*24*60*60（判定在 uvp-core FFI）",
         "ts": "packages/compiler/src/onchain-hook-plan.ts MAX_ONCHAIN_HOOK_DELAY_SECONDS = 2_592_000（镜像 UVPStateMachine.MAX_HOOK_DELAY_SECONDS，reverts HookDelayTooLong）"
       },
-      "ruling": "簇I 裁决：延时为正整数、上限 30 天=2592000 秒；三线同值，链上以 HookDelayTooLong 回滚为准。"
+      "ruling": "延时为正整数、上限 30 天=2592000 秒；三线同值，链上以 HookDelayTooLong 回滚为准。"
     },
     {
       "id": "onchain-instruction-op-closed-enum",
       "area": "onchain-plan",
       "target": "on-chain HookPlan compiledHooks[].instructions[].op",
-      "constraint": { "type": "closed_enum", "params": { "values": ["SIGNAL", "NOT", "AND", "OR", "DELAY"] } },
+      "constraint": {
+        "type": "closed_enum",
+        "params": {
+          "values": [
+            "SIGNAL",
+            "NOT",
+            "AND",
+            "OR",
+            "DELAY"
+          ]
+        }
+      },
       "error": {
         "rust": null,
         "go": null,
         "ts": "op must be one of SIGNAL, NOT, AND, OR, DELAY"
       },
-      "applies": ["ts"],
+      "applies": [
+        "ts"
+      ],
       "sources": {
         "ts": "packages/compiler/src/onchain-hook-plan.ts validateOnchainCompiledHooks（对齐 UVPStateMachine._validateHook 的合法 op 集）"
       },
@@ -305,136 +576,409 @@
       "id": "plan-dependencies-max-count",
       "area": "onchain-plan",
       "target": "整计划去重后的 dependency key 总数",
-      "constraint": { "type": "integer_range", "params": { "min": 1, "max": 1024 } },
+      "constraint": {
+        "type": "integer_range",
+        "params": {
+          "min": 1,
+          "max": 1024
+        }
+      },
       "error": {
         "rust": null,
         "go": null,
         "ts": "exceed the contract limit 1024 (commitPlan reverts TooManyDependencies)"
       },
-      "applies": ["ts"],
+      "applies": [
+        "ts"
+      ],
       "sources": {
         "ts": "packages/compiler/src/onchain-hook-plan.ts MAX_PLAN_DEPENDENCIES = 1024（镜像 UVPStateMachine.MAX_PLAN_DEPENDENCIES，reverts TooManyDependencies）"
       },
       "ruling": "单线登记：MAX_PLAN_DEPENDENCIES=1024 权威在 Solidity 契约 UVPStateMachine，TS preflight 同口径预检；rust/go 编译线无此上限。"
     },
     {
-      "id": "dock-schema-version-closed-enum",
+      "id": "dock-order-mode-closed-enum",
       "area": "dock",
-      "target": "executor.zhixuExecutorConfig.schemaVersion",
-      "constraint": { "type": "closed_enum", "params": { "values": ["uvp.dock.v1"] } },
+      "target": "executor.zhixuExecutorConfig.order.mode",
+      "constraint": {
+        "type": "closed_enum",
+        "params": {
+          "values": [
+            "new",
+            "existing"
+          ]
+        }
+      },
       "error": {
-        "rust": "D002",
-        "go": "zhixuExecutorConfig.schemaVersion must be \"uvp.dock.v1\"",
+        "rust": "D004 must be \"new\" or \"existing\"",
+        "go": null,
         "ts": null
       },
-      "applies": ["rust", "go"],
+      "applies": [
+        "rust"
+      ],
       "sources": {
-        "rust": "crates/uvp-compiler/src/dock.rs parse_zhixu_executor_config（DOCK_SCHEMA_VERSION，错误码 D002）",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateExecutor（D002）"
+        "rust": "crates/uvp-compiler/src/dock.rs parse_zhixu_executor_config（D004，order.mode 闭集）"
       },
-      "ruling": "簇I 裁决：dock 委托配置 schemaVersion 闭集 {uvp.dock.v1}，错误码 D002。"
+      "ruling": "order.mode 闭集 {new, existing}——new 为本次协作请求一次新的远端运行并连接它；existing 连接明确指定的既有运行，不隐式创建新业务订单。错误码 D004。"
     },
     {
-      "id": "dock-order-id-policy-closed-enum",
+      "id": "dock-interface-name-pattern",
       "area": "dock",
-      "target": "executor.zhixuExecutorConfig.order.idPolicy",
-      "constraint": { "type": "closed_enum", "params": { "values": ["derived-v1"] } },
+      "target": "spec.dockInterface 接口名（与 zhixuExecutorConfig.interface 同规则）",
+      "constraint": {
+        "type": "pattern",
+        "params": {
+          "regex": "^[a-z][a-z0-9_]{0,31}$",
+          "maxBytes": 32
+        }
+      },
       "error": {
-        "rust": "D004",
-        "go": "zhixuExecutorConfig.order.idPolicy must be \"derived-v1\"",
+        "rust": "D021 interface name must match ^[a-z][a-z0-9_]{0,31}$ (same rule as port names)",
+        "go": null,
         "ts": null
       },
-      "applies": ["rust", "go"],
+      "applies": [
+        "rust"
+      ],
       "sources": {
-        "rust": "crates/uvp-compiler/src/dock.rs parse_zhixu_executor_config（D004）",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateExecutor（D004）"
+        "rust": "crates/uvp-compiler/src/dock.rs compile_dock_interface（D021）；调用方 interface 字段同规则（D002）"
       },
-      "ruling": "簇I 裁决：订单 ID 策略闭集 {derived-v1}（order.idPolicy=derived-v1，字符串 orderID 先 keccak 派生），错误码 D004。"
+      "ruling": "dockInterface 下的键为接口名，与端口名同规则 ^[a-z][a-z0-9_]{0,31}$（≤32 字节）；端口名/接口名重复由 map 天然拒绝。"
     },
     {
-      "id": "dock-target-version-exact",
+      "id": "dock-interface-order-modes",
       "area": "dock",
-      "target": "executor.zhixuExecutorConfig.target.version",
-      "constraint": { "type": "pattern", "params": { "regex": "^[0-9A-Za-z.+-]+$", "forbiddenValues": ["latest"], "forbidEmpty": true, "note": "精确已发布不可变版本；拒绝 latest、空白与任何范围/通配语法" } },
+      "target": "spec.dockInterface.<interface>.orderModes",
+      "constraint": {
+        "type": "closed_enum",
+        "params": {
+          "values": [
+            "new",
+            "existing"
+          ],
+          "nonEmpty": true,
+          "unique": true,
+          "implies": "new ∈ orderModes ⇒ 至少一个 input 端口（建单型服务必须有入口）"
+        }
+      },
       "error": {
-        "rust": "D003",
-        "go": "must be an exact published version",
+        "rust": "D025 orderModes must be a non-empty subset of {new, existing} without duplicates",
+        "go": null,
         "ts": null
       },
-      "applies": ["rust", "go"],
+      "applies": [
+        "rust"
+      ],
       "sources": {
-        "rust": "crates/uvp-compiler/src/dock.rs is_exact_version（白名单 [0-9A-Za-z.+-]，错误码 D003）",
-        "go": "pkg/compiler/validator/zhixu_schema.go isExactDockVersion（同白名单）"
+        "rust": "crates/uvp-compiler/src/dock.rs compile_dock_interface（D025）"
       },
-      "ruling": "簇I 裁决：目标版本白名单字符集 [0-9A-Za-z.+-] 且禁止 latest/空；与 Go 镜像同集，错误码 D003。"
+      "ruling": "接口以 orderModes 声明允许的订单方式，取值为 [new]、[existing] 或两者的无重复非空集合；模式不被接口允许时拒绝对接，不自动在创建与引用之间降级。允许 existing 不意味着可以重启已结束阶段或覆盖已有信号。"
+    },
+    {
+      "id": "dock-order-mode-allowed-by-interface",
+      "area": "dock",
+      "target": "executor.zhixuExecutorConfig.order.mode 相对目标接口 orderModes",
+      "constraint": {
+        "type": "closed_enum",
+        "params": {
+          "values": [
+            "new",
+            "existing"
+          ],
+          "scope": "mode 必须 ∈ 所绑定接口的 orderModes（link 期校验）"
+        }
+      },
+      "error": {
+        "rust": "D020 allows orderModes",
+        "go": null,
+        "ts": null
+      },
+      "applies": [
+        "rust"
+      ],
+      "sources": {
+        "rust": "crates/uvp-compiler/src/dock.rs link_dock_routes（D020）"
+      },
+      "ruling": "new/existing 不互相静默替代——调用方声明的 mode 不在目标接口 orderModes 内即响亮拒绝（D020）。"
+    },
+    {
+      "id": "dock-at-least-one-mapping",
+      "area": "dock",
+      "target": "executor.zhixuExecutorConfig.{inputMap,signalMap}",
+      "constraint": {
+        "type": "required",
+        "params": {
+          "anyOf": [
+            "inputMap",
+            "signalMap"
+          ],
+          "note": "至少声明一项输入或输出映射；无需虚构业务 str/cmp 映射来满足格式"
+        }
+      },
+      "error": {
+        "rust": "D019 at least one of inputMap/signalMap must bind a port",
+        "go": null,
+        "ts": null
+      },
+      "applies": [
+        "rust"
+      ],
+      "sources": {
+        "rust": "crates/uvp-compiler/src/dock.rs parse_zhixu_executor_config（D019）"
+      },
+      "ruling": "至少声明一项输入或输出映射；是否需要业务信号由实际 Stage 决定。"
+    },
+    {
+      "id": "dock-new-mode-single-input-binding",
+      "area": "dock",
+      "target": "executor.zhixuExecutorConfig.inputMap（order.mode=new 时）",
+      "constraint": {
+        "type": "integer_range",
+        "params": {
+          "min": 1,
+          "max": 1,
+          "scope": "order.mode=new；mode=existing 时 inputMap 0..N 条"
+        }
+      },
+      "error": {
+        "rust": "D010 order.mode new requires exactly one inputMap binding",
+        "go": null,
+        "ts": null
+      },
+      "applies": [
+        "rust"
+      ],
+      "sources": {
+        "rust": "crates/uvp-compiler/src/dock.rs parse_zhixu_executor_config（D010）"
+      },
+      "ruling": "new 模式的建单入口需要确定的出生锚——恰好一条 input 绑定；同一建立动作重试必须复用已创建的远端 Order（幂等）。"
+    },
+    {
+      "id": "dock-target-name-slug",
+      "area": "dock",
+      "target": "executor.zhixuExecutorConfig.target.zhixu",
+      "constraint": {
+        "type": "required_non_empty",
+        "params": {
+          "note": "target 必填键：值为 {zhixu: <目标定义 metadata.name>}（slug，^[a-z][a-z0-9_-]{0,99}$）或显式 null（动态选择，运行时由选择记录补齐）；target 只携带 zhixu，残留键按未知字段确定性拒绝"
+        }
+      },
+      "error": {
+        "rust": "D003 target.zhixu must be the target definition's metadata.name, matching ^[a-z][a-z0-9_-]{0,99}$",
+        "go": null,
+        "ts": null
+      },
+      "applies": [
+        "rust"
+      ],
+      "sources": {
+        "rust": "crates/uvp-compiler/src/dock.rs parse_zhixu_executor_config（D003，name slug 形态校验；target 可为 null）"
+      },
+      "ruling": "跨秩序引用填写目标定义的 metadata.name（slug，与 metadata.name 同规则）；名字到实体的解析由各轨权威承担（链轨内容派生 uid、云轨 DB 唯一名）。target:null 表示运行时选择补齐。"
     },
     {
       "id": "dock-port-name-pattern",
       "area": "dock",
       "target": "zhixuExecutorConfig.inputMap/signalMap 的 value（目标端口名）",
-      "constraint": { "type": "pattern", "params": { "regex": "^[a-z][a-z0-9_]{0,31}$", "maxBytes": 32 } },
+      "constraint": {
+        "type": "pattern",
+        "params": {
+          "regex": "^[a-z][a-z0-9_]{0,31}$",
+          "maxBytes": 32
+        }
+      },
       "error": {
         "rust": "D005/D006 value must be a port name matching ^[a-z][a-z0-9_]{0,31}$",
         "go": "must match ^[a-z][a-z0-9_]{0,31}$",
         "ts": null
       },
-      "applies": ["rust", "go"],
+      "applies": [
+        "rust",
+        "go"
+      ],
       "sources": {
         "rust": "crates/uvp-compiler/src/dock.rs valid_port_name / MAX_PORT_NAME_BYTES（D005/D006 引用）",
         "go": "pkg/compiler/validator/zhixu_schema.go validateDockPortName"
       },
-      "ruling": "簇I 裁决：端口名 ^[a-z][a-z0-9_]{0,31}$（PRD94 §3.2），≤32 字节。"
+      "ruling": "外部配置使用公开端口名，端口名 ^[a-z][a-z0-9_]{0,31}$（≤32 字节），与接口名同规则。"
     },
     {
       "id": "dock-signalmap-key-max-length",
       "area": "dock",
       "target": "executor.zhixuExecutorConfig.signalMap 键",
-      "constraint": { "type": "max_length", "params": { "max": 26, "unit": "bytes" } },
+      "constraint": {
+        "type": "max_length",
+        "params": {
+          "max": 26,
+          "unit": "bytes"
+        }
+      },
       "error": {
         "rust": "D006",
         "go": "must be at most 26 bytes",
         "ts": null
       },
-      "applies": ["rust", "go"],
+      "applies": [
+        "rust",
+        "go"
+      ],
       "sources": {
         "rust": "crates/uvp-compiler/src/dock.rs MAX_SIGNAL_MAP_KEY_LENGTH（错误码 D006）",
         "go": "pkg/compiler/validator/zhixu_schema.go validateExecutor"
       },
-      "ruling": "簇I 裁决：signalMap 键 ≤26 字节（运行期 hook_name = \"signalMap.\" + key 共 36 字节列宽，10 字节前缀）。"
+      "ruling": "signalMap 键（本地 sendSignals 信号名）≤26 字节（\"signalMap.\" + key 共 36 字节列宽，10 字节前缀）。"
     },
     {
       "id": "dock-signalmap-key-forbidden-separator",
       "area": "dock",
       "target": "executor.zhixuExecutorConfig.signalMap 键",
-      "constraint": { "type": "forbidden", "params": { "substrings": ["."], "reason": "'.' 是 canonical 信号名 task.stage.signal 的分隔符，键是运行期 hook 命名空间" } },
+      "constraint": {
+        "type": "forbidden",
+        "params": {
+          "substrings": [
+            "."
+          ],
+          "reason": "'.' 是 canonical 信号名 task.stage.signal 的分隔符，键是运行期 hook 命名空间"
+        }
+      },
       "error": {
         "rust": "D006",
         "go": "must not contain '.'",
         "ts": null
       },
-      "applies": ["rust", "go"],
+      "applies": [
+        "rust",
+        "go"
+      ],
       "sources": {
         "rust": "crates/uvp-compiler/src/dock.rs parse_zhixu_executor_config（D006）",
         "go": "pkg/compiler/validator/zhixu_schema.go validateExecutor"
       },
-      "ruling": "簇I 裁决：signalMap 键禁止携带 '.'。"
+      "ruling": "signalMap 键禁止携带 '.'——它是 canonical 信号名 task.stage.signal 的分隔符。"
     },
     {
       "id": "dock-signalmap-key-combined-max-length",
       "area": "dock",
       "target": "stageIdentifier + \".\" + signalMap 键 组合信号名",
-      "constraint": { "type": "max_length", "params": { "max": 100, "unit": "bytes", "formula": "len(stageIdentifier) + 1 + len(key)" } },
+      "constraint": {
+        "type": "max_length",
+        "params": {
+          "max": 100,
+          "unit": "bytes",
+          "formula": "len(stageIdentifier) + 1 + len(key)"
+        }
+      },
       "error": {
         "rust": "D006",
         "go": "exceeds 100 (individual_record.signal_name)",
         "ts": null
       },
-      "applies": ["rust", "go"],
+      "applies": [
+        "rust",
+        "go"
+      ],
       "sources": {
         "rust": "crates/uvp-compiler/src/dock.rs MAX_SIGNAL_NAME_BYTES（D006）",
         "go": "pkg/compiler/validator/zhixu_schema.go validateExecutor"
       },
-      "ruling": "簇I 裁决：signalMap 键拼 canonical 信号名落 individual_record.signal_name VARCHAR(100)，组合 ≤100。"
+      "ruling": "stage 标识符 + \".\" + signalMap 键组合落 individual_record.signal_name VARCHAR(100)，组合 ≤100。"
+    },
+    {
+      "id": "dock-birth-hook-single-atom-syntax",
+      "area": "dock",
+      "target": "dock 出生阶段 receiveSignals 钩子条件（D013）",
+      "constraint": {
+        "type": "forbidden",
+        "params": {
+          "scope": "D013：出生 hook 的条件必须是单一正向 canonical signal atom",
+          "details": [
+            "判定看去重前的语法结构（cloud AST 根即 kind=signal 节点）：A&A / A|A 等同 atom 组合式不算单 atom（依赖列表是去重产物，计数判定会被伪装绕过）",
+            "input 端口 atom 的 (task, stage) 必须寻址所属 stage：mailbox 地址指向同 source 的其他 stage 同属违规",
+            "否定/计时/订阅形态一律拒绝"
+          ]
+        }
+      },
+      "error": {
+        "rust": "D013",
+        "go": null,
+        "ts": null
+      },
+      "applies": [
+        "rust"
+      ],
+      "sources": {
+        "rust": "crates/uvp-compiler/src/dock.rs compile_dock_interface（D013：AST 根 kind=signal 判定 + input atom owning-stage 寻址校验）"
+      },
+      "ruling": "『出生 hook 恒单一 atom』按语法结构判定（不是去重后依赖计数）；input atom 必须寻址所属 stage。语法手册的对应记载跟随本表，本表是单一出处。"
+    }
+  ],
+  "rejectionSurfaces": [
+    {
+      "id": "e16-current-order-factkey-unique-owner",
+      "surface": "relation=0 的事实键 (targetSourceId, signalId) 唯一属主阶段：跨阶段重复声明 revert DuplicateCurrentOrderSignalCapability（UVPPlanMetadataModule E16 注册守卫）",
+      "mirrors": {
+        "rust": "none",
+        "go": "none",
+        "ts": "mirrored"
+      },
+      "note": "镜像债：此类 plan 可 commit、finalize 永久 revert（planId 烧毁）；TS 线预检镜像已补（packages/compiler/src/onchain-hook-plan.ts duplicateCurrentOrderFactKeyIssues，覆盖 compileOnchainHookPlan preflight 与 validateOnchainHookPlanArtifact 边界，回归测试 test/onchain-hook-plan.test.ts），Rust/Go 线仍欠。"
+    },
+    {
+      "id": "signal-capability-vocabulary-gate",
+      "surface": "提交的事实键必须落在 plan 声明的 signalCapabilities 词表内，词表外 revert InvalidSignalCapability（mint 通道与跨订单 relation≠0 通道，UVPStateMachine/UVPDerivedSignalModule）",
+      "mirrors": {
+        "rust": "none",
+        "go": "none",
+        "ts": "none"
+      },
+      "note": "dock 出生/输入通道不受词表闸是合约侧已知缺口；编译线词表预检镜像亦缺。"
+    },
+    {
+      "id": "hook-delay-upper-bound",
+      "surface": "DELAY delaySeconds > MAX_HOOK_DELAY_SECONDS（30d）revert HookDelayTooLong（UVPStateMachine._validateHook）",
+      "mirrors": {
+        "rust": "mirrored:rule hook-delay-seconds-range",
+        "go": "mirrored:rule hook-delay-seconds-range",
+        "ts": "mirrored:rule hook-delay-seconds-range"
+      }
+    },
+    {
+      "id": "delay-positive-anchor-invariant",
+      "surface": "DELAY 操作数须含正向信号锚点（hasPosAnchor）；NOT 操作数须裸 SIGNAL；order-trigger hook 禁 DELAY——违者 revert InvalidInstruction（UVPStateMachine._validateHook）",
+      "mirrors": {
+        "rust": "mirrored（uvp-hook-dsl validate_anchors 编译期 + uvp-replay delay_value 求值期复验）",
+        "go": "inherit-ffi（pkg/hookdsl 经 uvp-core FFI 继承）",
+        "ts": "mirrored（onchain-hook-plan validateInstructions 栈机镜像：order-trigger×DELAY、DELAY 缺正锚、NOT 裸操作数）"
+      }
+    },
+    {
+      "id": "plan-dependency-count",
+      "surface": "整计划去重 dependency key 总数 > 1024 revert TooManyDependencies（UVPStateMachine）",
+      "mirrors": {
+        "rust": "none",
+        "go": "none",
+        "ts": "mirrored:rule plan-dependencies-max-count"
+      }
+    },
+    {
+      "id": "signal-capability-count",
+      "surface": "signalCapabilities 条目 > 256 revert TooManySignalCapabilities（UVPPlanMetadataModule.MAX_SIGNAL_CAPABILITIES）",
+      "mirrors": {
+        "rust": "none",
+        "go": "none",
+        "ts": "mirrored（onchain-hook-plan signalCapabilityCountIssues：编译入口 compileOnchainHookPlan preflight 与制品边界 validateOnchainHookPlanArtifact 双边界同口径拒绝，MAX_SIGNAL_CAPABILITIES=256）"
+      }
+    },
+    {
+      "id": "supplier-type-closed-set",
+      "surface": "executorRoutes 携带的 supplierType 无合约闭集守卫：任意字符串可进链上承诺",
+      "mirrors": {
+        "rust": "mirrored:rule executor-supplier-type-closed-enum",
+        "go": "none（TrimSpace 只用于判 zhixu 分支，不校验闭集）",
+        "ts": "mirrored（onchain-hook-plan compileExecutorRoute 编译入口；trim 后比对，与 rust 同口径；制品边界不设词表层，与 rust 权威面同构；fileResources fileType 闭集 {local,http,txcloud,plain_text} 在同入口拒绝）"
+      },
+      "note": "合约侧守卫与 Go 线镜像待补。"
     }
   ]
 }

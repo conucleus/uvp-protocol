@@ -31,7 +31,7 @@ export const STATE_MACHINE_ABI = parseAbi([
   "event OrderRelayerRecorded(bytes32 indexed planId,bytes32 indexed orderId,address indexed relayer,address creator)",
   "event SignalSubmitterAuthorized(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)",
   "event StageMaterialized(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed stageId,bytes32 triggerHookId,bytes32 sourceId,bytes32 signalId)",
-  "event OrderTriggered(bytes32 indexed orderId,bytes32 indexed planId,bytes32 indexed triggerStageId,bytes32 sourceId,bytes32 signalId,address submitter)",
+  "event OrderTriggered(bytes32 indexed orderId,bytes32 indexed planId,bytes32 indexed triggerStageId,bytes32 triggerHookId,bytes32 sourceId,bytes32 signalId,address submitter)",
   "event StageExecutorActivated(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,address executor,bytes32 role,bytes32 metadataHash,uint256 patchNonce,string metadataURI)",
   "event StageExecutorSignalDelegated(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 sourceId,bytes32 signalId,address executor,bytes32 role,bytes32 metadataHash,uint256 patchNonce)",
   "function owner() view returns (address)",
@@ -74,8 +74,20 @@ export const STATE_MACHINE_ABI = parseAbi([
   "function SIGNAL_TARGET_CURRENT_ORDER() view returns (uint8)",
   "function SIGNAL_TARGET_TRIGGER_ORIGIN() view returns (uint8)",
   "function DOCK_ORDER_NAMESPACE_MASK() view returns (bytes32)",
+  "function DERIVED_SIGNAL_MODULE_ID() view returns (bytes32)",
+  "function DOCKING_MODULE_ID() view returns (bytes32)",
+  "function HOOK_FLAG_EMIT_READY() view returns (uint8)",
+  "function HOOK_FLAG_ORDER_TRIGGER_DOCK() view returns (uint8)",
+  "function HOOK_FLAG_ORDER_TRIGGER_MINT() view returns (uint8)",
+  "function LENS_MODULE_ID() view returns (bytes32)",
+  "function MAX_HOOK_DELAY_SECONDS() view returns (uint64)",
+  "function MAX_PLAN_DEPENDENCIES() view returns (uint256)",
+  "function ORDER_LINK_MODULE_ID() view returns (bytes32)",
+  "function PLAN_METADATA_MODULE_ID() view returns (bytes32)",
+  "function STAGE_PATCH_MODULE_ID() view returns (bytes32)",
   "function sourceSignalCount(bytes32 planId,bytes32 orderId,bytes32 sourceId) view returns (uint256)",
   "function lastSignalSubmitter(bytes32 planId,bytes32 orderId,bytes32 sourceId) view returns (address)",
+  "function hasSourceSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId) view returns (bool)",
   "function hasTriggerOriginConsent(bytes32 originPlanId,bytes32 originOrderId,bytes32 originSourceId,bytes32 originSignalId,address party) view returns (bool)",
   "function DOMAIN_SEPARATOR() view returns (bytes32)",
   "function planExists(bytes32 planId) view returns (bool)",
@@ -85,7 +97,16 @@ export const STATE_MACHINE_ABI = parseAbi([
   "function planPublisher(bytes32 planId) view returns (address)",
   "function orderRelayer(bytes32 planId,bytes32 orderId) view returns (address)",
   "function orderCreator(bytes32 planId,bytes32 orderId) view returns (address)",
+  "function orderExists(bytes32 planId,bytes32 orderId) view returns (bool)",
   "function hasExplicitSignalAuthorization(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,address submitter) view returns (bool)",
+  "function isSignalSubmitterAuthorized(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,address submitter) view returns (bool)",
+  "function getSignalAuthorization(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,address submitter) view returns (bool exists,bytes32 role,bytes32 metadataHash)",
+  "function hasSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId) view returns (bool)",
+  "function getSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId) view returns (bool exists,bytes32 payloadHash,bytes32 idempotencyKey,uint64 submittedAt,address submitter)",
+  "function getHookStatus(bytes32 planId,bytes32 orderId,bytes32 hookId) view returns (uint8 status,uint64 dueAt,bool readyEmitted)",
+  "function activeStageExecutor(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (address)",
+  "function pokeTimer(bytes32 planId,bytes32 orderId,bytes32 hookId)",
+  "function planHookDependsOn(bytes32 planId,bytes32 hookId,bytes32 sourceId,bytes32 signalId) view returns (bool)",
 ]);
 
 export const ORDER_LINK_MODULE_ABI = parseAbi([
@@ -124,23 +145,22 @@ export const DERIVED_SIGNAL_MODULE_ABI = parseAbi([
 ]);
 
 export const DOCKING_MODULE_ABI = parseAbi([
-  "event DockOpened(bytes32 indexed dockInstanceId,bytes32 indexed localOrderId,bytes32 indexed linkedOrderId,bytes32 localPlanId,bytes32 targetPlanId,bytes32 routeId,bytes32 routeHash,uint8 depth,address opener)",
+  "event DockOpened(bytes32 indexed dockInstanceId,bytes32 indexed localOrderId,bytes32 indexed linkedOrderId,bytes32 interfaceNameId,bytes32 localPlanId,bytes32 targetPlanId,bytes32 routeId,bytes32 routeHash,uint8 depth,address opener)",
   "event DockInputSubmitted(bytes32 indexed dockInstanceId,bytes32 indexed linkedOrderId,bytes32 indexed inputBindingHash,bytes32 localPlanId,bytes32 localOrderId,bytes32 targetPlanId,bytes32 targetSignalId,bytes32 payloadHash,address submitter)",
   "event DockOutputSubmitted(bytes32 indexed dockInstanceId,bytes32 indexed linkedOrderId,bytes32 indexed outputBindingHash,bytes32 localPlanId,bytes32 localOrderId,bytes32 targetPlanId,bytes32 targetSignalId,bytes32 localSignalId,bytes32 payloadHash,address submitter)",
-  "event DockTerminal(bytes32 indexed dockInstanceId,uint8 terminal)",
-  "function openDockedOrder((bytes32 dockInstanceId,bytes32 localPlanId,bytes32 localOrderId,bytes32 localStageId,bytes32 localHookId,bytes32 localDefinitionRefHash,bytes32 routeId,bytes32 routeHash,bytes32 targetDefinitionRefHash,bytes32 targetArtifactHash,bytes32 targetInterfaceRoot,bytes32 sourceSeamId,bytes32 entrancePortKey,bytes32 entranceBindingHash,uint8 accessPolicy,bytes32 inputsRoot,bytes32 outputsRoot,bytes32 targetPlanId,bytes32 linkedOrderId,bytes32 targetStageId,bytes32 targetHookId,bytes32 targetSourceId,bytes32 targetSignalId,uint8 parentDepth) request,bytes32[] routeProof,(bytes32 leafHash,bytes32 portKey,uint8 kind,bytes32 hookKey,bytes32 sourceId,bytes32 signalId,uint8 accessPolicy) entranceLeaf,bytes32[] interfaceProof,(bytes32 localHookId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,uint8 kind,bytes32 bindingHash)[] inputs,(bytes32 localSourceId,bytes32 localSignalId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,uint8 terminal,bytes32 bindingHash)[] outputs,(uint256 nonce,uint256 deadline,bytes signature) permit) returns (bool opened)",
+  "function openDockedOrder((bytes32 dockInstanceId,bytes32 localPlanId,bytes32 localOrderId,bytes32 localStageId,bytes32 localHookId,bytes32 localDefinitionRefHash,bytes32 routeId,bytes32 routeHash,bytes32 interfaceNameId,bytes32 targetUidId,bytes32 targetDefinitionRefHash,bytes32 targetPlanId,bytes32 linkedOrderId,bytes32 targetStageId,bytes32 targetHookId,uint8 parentDepth) request,bytes32[] routeProof,((bytes32 leafHash,bytes32 portKey,bytes32 hookKey) entranceLeaf,bytes32[] portProof,(uint8 orderModesWord,bytes32 inputsRoot,bytes32 outputsRoot) commitment,bytes32[] interfaceProof) interfaceProof,(bytes32 localHookId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,bytes32 bindingHash)[] inputs,(bytes32 localSourceId,bytes32 localSignalId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,bytes32 bindingHash,bytes32[] portProof)[] outputs,(uint256 nonce,uint256 deadline,bytes signature) permit) returns (bool opened)",
   "function submitDockedInput(bytes32 dockInstanceId,bytes32 localHookId,bytes32 inputBindingHash) returns (bool submitted)",
   "function submitDockedSignal(bytes32 dockInstanceId,bytes32 outputBindingHash) returns (bool submitted)",
-  "function getActiveDock(bytes32 dockInstanceId) view returns (bytes32 localPlanId,bytes32 localOrderId,bytes32 localStageId,bytes32 routeId,bytes32 routeHash,bytes32 targetPlanId,bytes32 linkedOrderId,uint8 depth,uint8 status,bool exists)",
-  "function getDockInputBinding(bytes32 dockInstanceId,bytes32 inputBindingHash) view returns (bytes32 localHookId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,uint8 kind,bool exists)",
-  "function getDockOutputBinding(bytes32 dockInstanceId,bytes32 outputBindingHash) view returns (bytes32 localSourceId,bytes32 localSignalId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,uint8 terminal,bool exists)",
+  "function getActiveDock(bytes32 dockInstanceId) view returns (bytes32 localPlanId,bytes32 localOrderId,bytes32 localStageId,bytes32 routeId,bytes32 routeHash,bytes32 targetPlanId,bytes32 linkedOrderId,bytes32 interfaceNameId,uint8 depth,bool exists)",
+  "function getDockInputBinding(bytes32 dockInstanceId,bytes32 inputBindingHash) view returns (bytes32 localHookId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,bool exists)",
+  "function getDockOutputBinding(bytes32 dockInstanceId,bytes32 outputBindingHash) view returns (bytes32 localSourceId,bytes32 localSignalId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,bool exists)",
   "function dockInputDelivered(bytes32 dockInstanceId,bytes32 inputBindingHash) view returns (bool)",
   "function dockOutputDelivered(bytes32 dockInstanceId,bytes32 outputBindingHash) view returns (bool)",
   "function dockByLocalRoute(bytes32 localRouteInstanceKey) view returns (bytes32)",
   "function dockByTargetOrder(bytes32 targetEndpointKey) view returns (bytes32)",
   "function dockDepthOfOrder(bytes32 planId,bytes32 orderId) view returns (uint8)",
   "function usedEntrancePermitNonce(bytes32 dockInstanceId) view returns (uint256)",
-  "function entrancePermitDigest(bytes32 targetPlanId,bytes32 targetEntrancePortId,bytes32 localPlanId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,uint256 nonce,uint256 deadline) view returns (bytes32)",
+  "function entrancePermitDigest(bytes32 targetPlanId,bytes32 targetEntrancePortId,bytes32 interfaceNameId,bytes32 localPlanId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,uint256 nonce,uint256 deadline) view returns (bytes32)",
   "function DOMAIN_SEPARATOR() view returns (bytes32)",
   "function stateMachine() view returns (address)",
   "function planMetadataModule() view returns (address)",
@@ -150,9 +170,9 @@ export const STATE_MACHINE_LENS_ABI = parseAbi([
   "function stateMachine() view returns (address)",
   "function getActiveStageExecutorPatch(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bool exists,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 patchHash,uint256 patchNonce,string metadataURI)",
   "function getActiveStageResourcePatch(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 resourceKey) view returns (bool exists,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI)",
-  "function getActiveDock(bytes32 dockInstanceId) view returns (bytes32 localPlanId,bytes32 localOrderId,bytes32 localStageId,bytes32 routeId,bytes32 routeHash,bytes32 targetPlanId,bytes32 linkedOrderId,uint8 depth,uint8 status,bool exists)",
-  "function getDockInputBinding(bytes32 dockInstanceId,bytes32 inputBindingHash) view returns (bytes32 localHookId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,uint8 kind,bool exists)",
-  "function getDockOutputBinding(bytes32 dockInstanceId,bytes32 outputBindingHash) view returns (bytes32 localSourceId,bytes32 localSignalId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,uint8 terminal,bool exists)",
+  "function getActiveDock(bytes32 dockInstanceId) view returns (bytes32 localPlanId,bytes32 localOrderId,bytes32 localStageId,bytes32 routeId,bytes32 routeHash,bytes32 targetPlanId,bytes32 linkedOrderId,bytes32 interfaceNameId,uint8 depth,bool exists)",
+  "function getDockInputBinding(bytes32 dockInstanceId,bytes32 inputBindingHash) view returns (bytes32 localHookId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,bool exists)",
+  "function getDockOutputBinding(bytes32 dockInstanceId,bytes32 outputBindingHash) view returns (bytes32 localSourceId,bytes32 localSignalId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,bool exists)",
   "function dockInputDelivered(bytes32 dockInstanceId,bytes32 inputBindingHash) view returns (bool)",
   "function dockOutputDelivered(bytes32 dockInstanceId,bytes32 outputBindingHash) view returns (bool)",
   "function planSelectorBindingCount(bytes32 planId) view returns (uint256)",
@@ -306,6 +326,22 @@ export const TRIGGER_ORDER_FROM_SIGNAL_TYPED_DATA_FIELDS: readonly ProductSubmit
     { name: "deadline", type: "uint256" },
   ];
 
+// 与 UVPDerivedSignalModule._DERIVED_SIGNAL_TYPEHASH 逐字段一致。
+export const DERIVED_SIGNAL_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] =
+  [
+    { name: "fromPlanId", type: "bytes32" },
+    { name: "fromOrderId", type: "bytes32" },
+    { name: "fromStageId", type: "bytes32" },
+    { name: "targetPlanId", type: "bytes32" },
+    { name: "targetOrderId", type: "bytes32" },
+    { name: "targetSourceId", type: "bytes32" },
+    { name: "signalId", type: "bytes32" },
+    { name: "payloadHash", type: "bytes32" },
+    { name: "idempotencyKey", type: "bytes32" },
+    { name: "submitter", type: "address" },
+    { name: "deadline", type: "uint256" },
+  ];
+
 export const STAGE_EXECUTOR_PATCH_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] =
   [
     { name: "planId", type: "bytes32" },
@@ -428,6 +464,46 @@ export interface TriggerOrderFromSignalPayload {
   readonly idempotencyKey: Hex | string;
   readonly submitter: Address | string;
   readonly deadline: bigint | number | string;
+}
+
+export interface DerivedSignalPayload {
+  readonly fromPlanId: Hex | string;
+  readonly fromOrderId: Hex | string;
+  readonly fromStageId: Hex | string;
+  readonly targetPlanId: Hex | string;
+  readonly targetOrderId: Hex | string;
+  readonly targetSourceId: Hex | string;
+  readonly signalId: Hex | string;
+  readonly payloadHash: Hex | string;
+  readonly idempotencyKey: Hex | string;
+  readonly submitter: Address | string;
+  readonly deadline: bigint | number | string;
+}
+
+export interface DerivedSignalTypedData {
+  readonly domain: {
+    readonly name: typeof DERIVED_SIGNAL_DOMAIN_NAME;
+    readonly version: typeof DERIVED_SIGNAL_DOMAIN_VERSION;
+    readonly chainId: number;
+    readonly verifyingContract: Address;
+  };
+  readonly types: {
+    readonly UVPDerivedSignalModuleSignal: readonly ProductSubmitTypedDataField[];
+  };
+  readonly primaryType: typeof DERIVED_SIGNAL_PRIMARY_TYPE;
+  readonly message: {
+    readonly fromPlanId: Hex;
+    readonly fromOrderId: Hex;
+    readonly fromStageId: Hex;
+    readonly targetPlanId: Hex;
+    readonly targetOrderId: Hex;
+    readonly targetSourceId: Hex;
+    readonly signalId: Hex;
+    readonly payloadHash: Hex;
+    readonly idempotencyKey: Hex;
+    readonly submitter: Address;
+    readonly deadline: string;
+  };
 }
 
 export interface TriggerOrderFromOutsideTypedData {
@@ -612,12 +688,10 @@ export interface BuildProductSubmitTypedDataInput {
   readonly chainId: number;
   readonly verifyingContract: Address | string;
   /**
-   * 签名域并入 planId。真实签署方必须提供订单的 planId；
-   * 允许缺省（零占位）仅为兼容只校验 surface 形状的下游 gate
-   * （如 uvp-deploy 的 verify-product-signal-map），零占位签名无法
-   * 通过链上 (planId, orderId) 存在性校验，不构成重放面。
+   * 签名域并入 planId：submitSignal 按 (planId, orderId) 复合键锚定订单，
+   * 缺 planId 的签名过不了链上存在性校验，没有可接受的缺省形态。
    */
-  readonly planId?: Hex | string;
+  readonly planId: Hex | string;
   readonly orderId: Hex | string;
   readonly sourceId: Hex | string;
   readonly signalId: Hex | string;
@@ -644,6 +718,12 @@ export interface BuildTriggerOrderFromSignalTypedDataInput
   readonly chainId: number;
   readonly verifyingContract: Address | string;
   readonly authorizations: readonly SignalAuthorizationPayload[];
+}
+
+export interface BuildDerivedSignalTypedDataInput
+  extends DerivedSignalPayload {
+  readonly chainId: number;
+  readonly verifyingContract: Address | string;
 }
 
 export interface BuildStageExecutorPatchTypedDataInput
@@ -765,11 +845,6 @@ export interface DerivedSignalModuleCallConfig {
   readonly chainId?: number;
 }
 
-export interface DockingModuleCallConfig {
-  readonly dockingModuleAddress: Address | string;
-  readonly chainId?: number;
-}
-
 export interface OrderLinkModuleCallConfig {
   readonly orderLinkModuleAddress: Address | string;
   readonly chainId?: number;
@@ -777,7 +852,6 @@ export interface OrderLinkModuleCallConfig {
 
 export type ApplyStageExecutorPatchForCallConfig = StagePatchModuleCallConfig;
 export type ApplyStageResourcePatchForCallConfig = StagePatchModuleCallConfig;
-export type SubmitDockedSignalCallConfig = DockingModuleCallConfig;
 export type SubmitDerivedSignalForCallConfig = DerivedSignalModuleCallConfig;
 export type TriggerOrderFromOutsideForCallConfig = SubmitSignalForCallConfig;
 export type TriggerOrderFromSignalForCallConfig = OrderLinkModuleCallConfig;
@@ -1008,7 +1082,7 @@ export function buildProductSubmitTypedData(
     },
     primaryType: PRODUCT_SUBMIT_PRIMARY_TYPE,
     message: {
-      planId: normalizeBytes32(input.planId ?? ZERO_BYTES32, "planId"),
+      planId: normalizeBytes32(input.planId, "planId"),
       orderId: normalizeBytes32(input.orderId, "orderId"),
       sourceId: normalizeBytes32(input.sourceId, "sourceId"),
       signalId: normalizeBytes32(input.signalId, "signalId"),
@@ -1121,6 +1195,39 @@ export function buildTriggerOrderFromSignalTypedData(
   };
 }
 
+export function buildDerivedSignalTypedData(
+  input: BuildDerivedSignalTypedDataInput,
+): DerivedSignalTypedData {
+  return {
+    domain: {
+      name: DERIVED_SIGNAL_DOMAIN_NAME,
+      version: DERIVED_SIGNAL_DOMAIN_VERSION,
+      chainId: normalizeChainId(input.chainId),
+      verifyingContract: normalizeAddress(
+        input.verifyingContract,
+        "verifyingContract",
+      ),
+    },
+    types: {
+      UVPDerivedSignalModuleSignal: DERIVED_SIGNAL_TYPED_DATA_FIELDS,
+    },
+    primaryType: DERIVED_SIGNAL_PRIMARY_TYPE,
+    message: {
+      fromPlanId: normalizeBytes32(input.fromPlanId, "fromPlanId"),
+      fromOrderId: normalizeBytes32(input.fromOrderId, "fromOrderId"),
+      fromStageId: normalizeBytes32(input.fromStageId, "fromStageId"),
+      targetPlanId: normalizeBytes32(input.targetPlanId, "targetPlanId"),
+      targetOrderId: normalizeBytes32(input.targetOrderId, "targetOrderId"),
+      targetSourceId: normalizeBytes32(input.targetSourceId, "targetSourceId"),
+      signalId: normalizeBytes32(input.signalId, "signalId"),
+      payloadHash: normalizeBytes32(input.payloadHash, "payloadHash"),
+      idempotencyKey: normalizeBytes32(input.idempotencyKey, "idempotencyKey"),
+      submitter: normalizeAddress(input.submitter, "submitter"),
+      deadline: normalizeUintString(input.deadline, "deadline"),
+    },
+  };
+}
+
 export function buildStageExecutorPatchTypedData(
   input: BuildStageExecutorPatchTypedDataInput,
 ): StageExecutorPatchTypedData {
@@ -1212,6 +1319,20 @@ export async function recoverProductSubmitSigner(
   return normalizeAddress(recovered, "recoveredSubmitter");
 }
 
+export async function recoverPlanCommitSigner(
+  typedData: PlanCommitTypedData,
+  signature: Hex | string,
+): Promise<Address> {
+  const recovered = await recoverTypedDataAddress({
+    domain: typedData.domain,
+    types: typedData.types,
+    primaryType: typedData.primaryType,
+    message: typedData.message,
+    signature: normalizeHex(signature, "signature"),
+  } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
+  return normalizeAddress(recovered, "recoveredPublisher");
+}
+
 export async function recoverTriggerOrderFromOutsideSigner(
   typedData: TriggerOrderFromOutsideTypedData,
   signature: Hex | string,
@@ -1238,6 +1359,20 @@ export async function recoverTriggerOrderFromSignalSigner(
     signature: normalizeHex(signature, "signature"),
   } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
   return normalizeAddress(recovered, "recoveredTriggerOrderSigner");
+}
+
+export async function recoverDerivedSignalSigner(
+  typedData: DerivedSignalTypedData,
+  signature: Hex | string,
+): Promise<Address> {
+  const recovered = await recoverTypedDataAddress({
+    domain: typedData.domain,
+    types: typedData.types,
+    primaryType: typedData.primaryType,
+    message: typedData.message,
+    signature: normalizeHex(signature, "signature"),
+  } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
+  return normalizeAddress(recovered, "recoveredDerivedSignalSigner");
 }
 
 export async function recoverStageExecutorPatchSigner(
@@ -1463,99 +1598,6 @@ export function buildApplyStageResourcePatchForCall(
   };
 }
 
-export interface SubmitDockedSignalCallArgs {
-  readonly dockInstanceId: Hex | string;
-  readonly outputBindingHash: Hex | string;
-}
-
-export interface SubmitDockedInputCallArgs {
-  readonly dockInstanceId: Hex | string;
-  readonly localHookId: Hex | string;
-  readonly inputBindingHash: Hex | string;
-}
-
-export interface SubmitDockedSignalCall {
-  readonly address: Address;
-  readonly abi: typeof DOCKING_MODULE_ABI;
-  readonly functionName: "submitDockedSignal";
-  readonly args: readonly [Hex, Hex];
-  readonly data: Hex;
-  readonly chainId?: number;
-}
-
-export interface SubmitDockedInputCall {
-  readonly address: Address;
-  readonly abi: typeof DOCKING_MODULE_ABI;
-  readonly functionName: "submitDockedInput";
-  readonly args: readonly [Hex, Hex, Hex];
-  readonly data: Hex;
-  readonly chainId?: number;
-}
-
-// openDockedOrder 的嵌套 tuple 会让 viem 对完整 DOCKING_MODULE_ABI 的类型推断
-// 超过 TS 递归上限；编码层用等价的最小 ABI（selector 相同，calldata 逐字节一致）。
-const DOCK_SUBMIT_SIGNAL_ABI = parseAbi([
-  "function submitDockedSignal(bytes32 dockInstanceId,bytes32 outputBindingHash) returns (bool)",
-]);
-const DOCK_SUBMIT_INPUT_ABI = parseAbi([
-  "function submitDockedInput(bytes32 dockInstanceId,bytes32 localHookId,bytes32 inputBindingHash) returns (bool)",
-]);
-
-export function buildSubmitDockedSignalCall(
-  config: SubmitDockedSignalCallConfig,
-  args: SubmitDockedSignalCallArgs,
-): SubmitDockedSignalCall {
-  const normalizedArgs = [
-    normalizeBytes32(args.dockInstanceId, "dockInstanceId"),
-    normalizeBytes32(args.outputBindingHash, "outputBindingHash"),
-  ] as const;
-
-  const data = encodeFunctionData({
-    abi: DOCK_SUBMIT_SIGNAL_ABI,
-    functionName: "submitDockedSignal",
-    args: normalizedArgs,
-  });
-  const call: SubmitDockedSignalCall = {
-    address: normalizeAddress(config.dockingModuleAddress, "dockingModuleAddress"),
-    abi: DOCKING_MODULE_ABI,
-    functionName: "submitDockedSignal",
-    args: normalizedArgs,
-    data,
-    ...(config.chainId !== undefined
-      ? { chainId: normalizeChainId(config.chainId) }
-      : {}),
-  };
-  return call;
-}
-
-export function buildSubmitDockedInputCall(
-  config: SubmitDockedSignalCallConfig,
-  args: SubmitDockedInputCallArgs,
-): SubmitDockedInputCall {
-  const normalizedArgs = [
-    normalizeBytes32(args.dockInstanceId, "dockInstanceId"),
-    normalizeBytes32(args.localHookId, "localHookId"),
-    normalizeBytes32(args.inputBindingHash, "inputBindingHash"),
-  ] as const;
-
-  const data = encodeFunctionData({
-    abi: DOCK_SUBMIT_INPUT_ABI,
-    functionName: "submitDockedInput",
-    args: normalizedArgs,
-  });
-  const call: SubmitDockedInputCall = {
-    address: normalizeAddress(config.dockingModuleAddress, "dockingModuleAddress"),
-    abi: DOCKING_MODULE_ABI,
-    functionName: "submitDockedInput",
-    args: normalizedArgs,
-    data,
-    ...(config.chainId !== undefined
-      ? { chainId: normalizeChainId(config.chainId) }
-      : {}),
-  };
-  return call;
-}
-
 export function canonicalJson(value: unknown): string {
   if (value === null) {
     return "null";
@@ -1568,6 +1610,26 @@ export function canonicalJson(value: unknown): string {
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
       throw new TypeError("canonical JSON does not support non-finite numbers");
+    }
+    // 浮点拒绝：canonical 哈希输入的数字词表封闭为整数
+    // （u64/i64）——非整值 float 与负零（serde_json 把 "-0"/"-0.0" 都解析
+    // 为 f64 -0.0，权威侧按浮点拒绝）一律响亮拒绝。与 @uvp-eth/compiler
+    // canonical.ts 同口径，三线语料（uvp-core
+    // fixtures/canonical/canonical.v1.json）钉死边界。JS 数字模型无法区分
+    // 1 与源字面量 1.0，整值浮点字面量（不含 -0）的拒绝在 Rust 权威解析侧。
+    if (!Number.isInteger(value) || Object.is(value, -0)) {
+      const token = Object.is(value, -0) ? "-0" : String(value);
+      throw new TypeError(
+        `canonical JSON does not support float-form numbers (integer hash preimages only), received ${token}`,
+      );
+    }
+    // 安全整数边界：|x| ≥ 2^53 的 number 在 JS 侧已丢精度，且 ≥1e21 经
+    // JSON.stringify 输出指数形式——与 compiler canonical.ts 同口径响亮
+    // 拒绝（大整数载荷以 string/hex word 携带）。
+    if (!Number.isSafeInteger(value)) {
+      throw new TypeError(
+        `canonical JSON does not support integers beyond the safe integer range 2^53-1 (precision loss / exponential stringification), received ${value}`,
+      );
     }
     return JSON.stringify(value);
   }
@@ -1650,9 +1712,13 @@ export function hashStageExecutorPatchPayload(
   payload: StageExecutorPatchPayload,
 ): Hex {
   const normalized = normalizeStageExecutorPatchPayload(payload);
+  // 域分离：payload 哈希以 keccak256(STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN)
+  // 开头，与 executor/resource 两个 patch 族的 preimage 分域——域常量必须
+  // 真正进入 preimage，只在定义处引用等于没有分域。
   return keccak256(
     encodeAbiParameters(
       [
+        { name: "domain", type: "bytes32" },
         { name: "selectorStageId", type: "bytes32" },
         { name: "targetStageId", type: "bytes32" },
         { name: "executor", type: "address" },
@@ -1666,6 +1732,7 @@ export function hashStageExecutorPatchPayload(
         { name: "metadataURI", type: "string" },
       ],
       [
+        keccak256(stringToHex(STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN)),
         normalized.selectorStageId,
         normalized.targetStageId,
         normalized.executor,
@@ -1686,9 +1753,12 @@ export function hashStageResourcePatchPayload(
   payload: StageResourcePatchPayload,
 ): Hex {
   const normalized = normalizeStageResourcePatchPayload(payload);
+  // 域分离：与 executor patch 同构，域字取自
+  // STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN。
   return keccak256(
     encodeAbiParameters(
       [
+        { name: "domain", type: "bytes32" },
         { name: "selectorStageId", type: "bytes32" },
         { name: "targetStageId", type: "bytes32" },
         { name: "resourceKey", type: "bytes32" },
@@ -1698,6 +1768,7 @@ export function hashStageResourcePatchPayload(
         { name: "manifestURI", type: "string" },
       ],
       [
+        keccak256(stringToHex(STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN)),
         normalized.selectorStageId,
         normalized.targetStageId,
         normalized.resourceKey,
@@ -1827,7 +1898,10 @@ function normalizeSignalAuthorization(
   authorization: SignalAuthorizationPayload,
 ): SignalAuthorizationCallTuple {
   return [
-    normalizeBytes32(authorization.sourceId, "authorization.sourceId"),
+    // 零字闸镜像：UVPStateMachine._authorizeSignalSubmitter 对
+    // sourceId==0 revert ZeroSourceId（sourceId==0 的事实键绕过
+    // _signalStageId，等于签出一扇永久豁免门）——与 signalId 同口径拒绝。
+    normalizeNonZeroBytes32(authorization.sourceId, "authorization.sourceId"),
     normalizeNonZeroBytes32(authorization.signalId, "authorization.signalId"),
     normalizeAddress(authorization.submitter, "authorization.submitter"),
     normalizeBytes32(authorization.role, "authorization.role"),
@@ -1856,7 +1930,9 @@ function normalizeTriggerOrderFromOutside(
     normalizeAddress(trigger.creator, "creator"),
     normalizeNonZeroBytes32(trigger.triggerHookId, "triggerHookId"),
     normalizeNonZeroBytes32(trigger.triggerStageId, "triggerStageId"),
-    normalizeBytes32(trigger.sourceId, "sourceId"),
+    // 零字闸镜像：triggerOrderFromOutsideFor 对 sourceId==0 revert
+    // ZeroSourceId（零字出生事实是 stage 物化与 executor 门的永久豁免键）。
+    normalizeNonZeroBytes32(trigger.sourceId, "sourceId"),
     normalizeNonZeroBytes32(trigger.signalId, "signalId"),
     normalizeBytes32(trigger.payloadHash, "payloadHash"),
     normalizeBytes32(trigger.idempotencyKey, "idempotencyKey"),
@@ -2197,9 +2273,28 @@ function hashCanonicalJson(domain: string, payload: unknown): Hex {
   return keccak256(stringToHex(`${domain}:${canonicalJson(payload)}`));
 }
 
+/**
+ * chainId 入口校验：跨运行时域的 FFI 字段保持 64 位，
+ * ≥ 2^64 / 负数 / 非整数在 typed-data/EIP-712 入口显式拒绝；2^53 以上的
+ * number 无法精确表示，同样拦截（不得静默取整）。
+ */
+const MAX_CHAIN_ID = 2 ** 64; // exactly representable double (power of two)
+
 function normalizeChainId(value: number): number {
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new Error("chainId must be a positive safe integer");
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new Error(
+      "chainId must be a positive integer (negative, zero, fractional, and non-number values are rejected)",
+    );
+  }
+  if (value >= MAX_CHAIN_ID) {
+    throw new Error(
+      `chainId must be < 2^64 (${MAX_CHAIN_ID}): the cross-runtime domain FFI field stays 64-bit and overflow is rejected explicitly, received ${value}`,
+    );
+  }
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(
+      `chainId must be a safe integer (numbers beyond 2^53 cannot be represented exactly), received ${value}`,
+    );
   }
   return value;
 }

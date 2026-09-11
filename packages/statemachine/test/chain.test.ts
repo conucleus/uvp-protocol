@@ -31,6 +31,18 @@ test("chain-mode replay matches hook expectations from stable chain events", asy
   assert.deepEqual(result.mismatches, []);
   assert.deepEqual(result.observed, result.expected);
 
+  // Golden legality gate: the fixture's DELAY-carrying hook (TIMEOUT) must be
+  // a non-trigger watcher. order-trigger hooks carrying DELAY are unregistrable
+  // on-chain (UVPStateMachine._validateHook reverts InvalidInstruction at
+  // commitPlan), so a golden fixture must not carry that shape.
+  const timeoutHook = events
+    .flatMap((event) =>
+      event.eventName === "PlanRegistered" ? event.plan.compiledHooks : []
+    )
+    .find((hook) => hook.instructions.some((instruction) => instruction.op === "DELAY"));
+  assert.notEqual(timeoutHook, undefined);
+  assert.equal(timeoutHook?.orderTriggerKind, "none");
+
   const cancelOrder = result.state.orders[
     "0x312bed89090d5be24d38a236e312f8734d64dff50f8da3376542bee659dbb35d::order-cancel"
   ];
@@ -124,14 +136,16 @@ test("chain-mode keeps AND delayed branches waiting until the latest live timer"
       plan: {
         planId: andLatestWaitPlanId,
         zhixuId: "chain-parity",
-        version: "test",
         compiledHooks: [
           {
             hookId: andLatestWaitHookId,
             stageId: andLatestWaitStageId,
             stageIdentifier: "latest-wait-stage",
             hookName: "latest-wait-hook",
-            orderTriggerKind: "mint",
+            // order-trigger（mint/dock）hook 携 DELAY 在 commitPlan 即 revert
+            // InvalidInstruction——链上不可注册；本场景只验证 AND 延时分支
+            // 的等待语义，按合法 watcher（none）形态构造。
+            orderTriggerKind: "none",
             emitReady: true,
             instructions: [
               {
@@ -281,7 +295,6 @@ test("chain replay derives order-link birth facts from HookReady", () => {
       plan: {
         planId,
         zhixuId: "order-link-birth",
-        version: "test",
         compiledHooks: [
           {
             hookId,
@@ -402,7 +415,6 @@ test("chain replay exposes duplicated birth HookReady as a mismatch", () => {
       plan: {
         planId,
         zhixuId: "order-link-birth",
-        version: "test",
         compiledHooks: [
           {
             hookId,
@@ -441,4 +453,86 @@ test("chain replay exposes duplicated birth HookReady as a mismatch", () => {
   assert.ok(mismatchError !== undefined, "duplicated birth HookReady must fail loudly");
   assert.equal(mismatchError.mismatches.length, 1);
   assert.equal(mismatchError.mismatches[0]?.reason, "missing-observed");
+});
+
+test("compareChainEvents stays a total order with mixed transactionIndex presence", () => {
+  // 缺失 txIdx 必须恒排末位且同维度一致应用：只在"双方都有且不等"时才比
+  // transactionIndex、混合有无时落到 logIndex/txHash 的比较不传递——反例
+  // 三元组 A(无 txIdx, log 5) / B(txIdx 0, log 5) / C(txIdx 1, log 3) 按
+  // 两两比较得出 A==B、B<C、A>C 的矛盾序，排序结果依赖输入顺序。
+  const hash = `0x${"ab".repeat(32)}` as `0x${string}`;
+  const event = (
+    blockNumber: number,
+    transactionIndex: number | undefined,
+    logIndex: number,
+    transactionHash: `0x${string}`,
+  ): Parameters<typeof compareChainEvents>[0] => ({
+    eventName: "OrderRegistered",
+    blockNumber,
+    ...(transactionIndex === undefined ? {} : { transactionIndex }),
+    logIndex,
+    transactionHash,
+  });
+  const A = event(1, undefined, 5, hash);
+  const B = event(1, 0, 5, hash);
+  const C = event(1, 1, 3, hash);
+
+  // 旧口径的环：A==B（logIndex 相等后落 txHash 相等）但 B<C 而 A>C。
+  // 新口径：缺失 txIdx 排末位 → B < C < A，三对两两一致。
+  assert.equal(compareChainEvents(B, C) < 0, true);
+  assert.equal(compareChainEvents(C, A) < 0, true);
+  assert.equal(compareChainEvents(B, A) < 0, true);
+  assert.equal(compareChainEvents(A, B) > 0, true);
+  assert.equal(compareChainEvents(A, A), 0);
+  assert.equal(compareChainEvents(B, B), 0);
+
+  // 排序结果与输入顺序无关（确定性/传递性的可观察面）。
+  const permutations = [
+    [A, B, C],
+    [A, C, B],
+    [B, A, C],
+    [B, C, A],
+    [C, A, B],
+    [C, B, A],
+  ];
+  const ordered = permutations.map((items) => [...items].sort(compareChainEvents));
+  for (const candidate of ordered) {
+    assert.deepEqual(candidate, [B, C, A]);
+  }
+
+  // 性质检查：构造集上比较器满足反对称 + 传递（无环）。
+  const pool = [
+    event(1, undefined, 0, hash),
+    event(1, 0, 0, hash),
+    event(1, 0, 3, hash),
+    event(1, 2, 1, hash),
+    event(2, undefined, 0, hash),
+    event(2, 7, 9, hash),
+    A,
+    B,
+    C,
+  ];
+  for (const x of pool) {
+    for (const y of pool) {
+      const xy = compareChainEvents(x, y);
+      const yx = compareChainEvents(y, x);
+      // 反对称（含相等当且仅当同键）。Math.sign(±0) 得 ±0，node:assert 的
+      // strictEqual 按 Object.is 区分——先归一到普通 0。
+      assert.equal(Math.sign(xy) || 0, -(Math.sign(yx) || 0) || 0);
+      const sameKey =
+        x.blockNumber === y.blockNumber &&
+        x.transactionIndex === y.transactionIndex &&
+        x.logIndex === y.logIndex &&
+        x.transactionHash === y.transactionHash;
+      assert.equal(xy === 0, sameKey);
+      for (const z of pool) {
+        const yz = compareChainEvents(y, z);
+        const xz = compareChainEvents(x, z);
+        // 传递性：x<y && y<z ⇒ x<z（用 sign 归一 NaN 防假阴）。
+        if (xy < 0 && yz < 0) {
+          assert.equal(xz < 0, true);
+        }
+      }
+    }
+  }
 });

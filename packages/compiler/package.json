@@ -16,7 +16,8 @@
   "scripts": {
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "generate:dock-fixtures": "tsx scripts/gen-dock-fixtures.ts"
   },
   "dependencies": {
     "@uvp-eth/hook-core": "workspace:*",

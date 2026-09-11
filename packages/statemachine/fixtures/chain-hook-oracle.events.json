@@ -71,7 +71,7 @@
               "arity": 2
             }
           ],
-          "orderTriggerKind": "mint",
+          "orderTriggerKind": "none",
           "emitReady": true
         }
       ],

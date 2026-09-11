@@ -162,7 +162,11 @@ contract UVPDeploymentRegistry {
             Deployment storage previous = _deployments[previousDeploymentId];
             if (previous.exists && previous.status == DeploymentStatus.Active) {
                 previous.status = DeploymentStatus.Deprecated;
-                emit DeploymentDeprecated(previousDeploymentId, evidenceHash, evidenceURI);
+                // 取证口径：本事件描述的是【被废弃】部署，必须携带其自身
+                // 的 evidence（canary/激活时存证的哈希与登记 URI）——
+                // 新部署的激活证据属于 DeploymentActivated，错位会让审计
+                // 把废弃归因挂到新部署的证据上。
+                emit DeploymentDeprecated(previousDeploymentId, previous.evidenceHash, previous.metadataURI);
             }
         }
 
