@@ -944,9 +944,10 @@ contract UVPDockingModuleTest {
     }
 
     function _outputPortLeaf(bytes32 portKey, bytes32 sourceId, bytes32 signalId) private pure returns (bytes32) {
-        return keccak256(
-            abi.encode(DOMAIN_INTERFACE_OUTPUT, TARGET_UID_ID, INTERFACE_NAME_ID, portKey, sourceId, signalId)
-        );
+        return
+            keccak256(
+                abi.encode(DOMAIN_INTERFACE_OUTPUT, TARGET_UID_ID, INTERFACE_NAME_ID, portKey, sourceId, signalId)
+            );
     }
 
     /// 三叶树（排序去重后 [p0,p1,p2]：上层 = [H(p0,p1), p2]）的三个
