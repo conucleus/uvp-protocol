@@ -354,7 +354,7 @@ contract DockManifestParityTest {
         view
         returns (bytes32)
     {
-        // 域 version 随 abiVersion 4.0 换 "4"（typehash V2 形状不变）。
+        // 域 version 取 "4"（abiVersion 4.2 线；typehash V2 形状）。
         bytes32 permitDomainSeparator = keccak256(
             abi.encode(
                 EIP712_DOMAIN_TYPEHASH,

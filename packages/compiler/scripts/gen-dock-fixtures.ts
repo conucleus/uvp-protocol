@@ -149,7 +149,7 @@ function parentSourcingDefinition(targetName: string): ZhixuDefinition {
             {
               name: "confirm",
               source: "purchaser",
-              // P0-4 物化门：零 hook 阶段在链上永不可物化、信号没有
+              // 物化门：零 hook 阶段在链上永不可物化、信号没有
               // 钩子可挂；seed 是执行者自发入口信号。
               receiveSignals: { ORDER: "purchaser::procurement.confirm.seed" },
               sendSignals: ["cmp", "seed"],

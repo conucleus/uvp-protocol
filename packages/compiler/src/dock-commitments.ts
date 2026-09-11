@@ -40,12 +40,13 @@ import {
   type NeutralResolutionManifest,
   type NeutralUnresolvedDockRoute,
   type ZhixuDefinition,
+  type ZhixuPlatform,
 } from "./types/index.js";
 
 /**
  * 链轨承诺层：uvp-core 只产出中性 plan 壳（无哈希、无派生身份），本模块
  * 在壳上计算全部链上承诺（TS 权威实现）。
- * 公式与 word 布局冻结于 UVPDockingModule abiVersion 4.0（规格见
+ * 公式与 word 布局冻结于 UVPDockingModule abiVersion 4.2（规格见
  * docs/dock-word-layout.md），Solidity 逐字节对拍钉死。
  */
 
@@ -138,6 +139,23 @@ export function prepareDockResolution(
 }
 
 /**
+ * planId preimage 的 platform 归一（Rust 权威 normalize_platform_value
+ * 同口径）：空 params 不入 preimage，其余键按原文。内嵌定义允许携带
+ * params:{}，跳过归一会把空对象当成 preimage 分叉误拒 manifest。
+ */
+function normalizePlatformPreimage(platform: ZhixuPlatform): ZhixuPlatform {
+  if (
+    platform.params === undefined ||
+    Object.keys(platform.params).length > 0
+  ) {
+    return platform;
+  }
+  const normalized = { ...platform };
+  delete normalized.params;
+  return normalized;
+}
+
+/**
  * 单个发布面 entry 的内容寻址校验（链轨内务，不入 core）：uid/引用哈希从
  * 内嵌定义全文重算，接口叶/根由 manifest 数据逐 word 重算——自不一致的
  * manifest 在编译期拒绝，不推迟到运行期。
@@ -166,12 +184,15 @@ function prepareTargetEntry(
   // evmPlanId 是目标定义的派生 planId（同 keyed preimage：compiler/platform/
   // zhixuId/zhixuName），可从内嵌定义独立重算——manifest 自身可重算的
   // 承诺面到此为止（artifactHash = 目标 plan 的 planHash，目标 plan 不在
-  // manifest 内，无法在此重算，信任边界在发布流程）。
+  // manifest 内，无法在此重算，信任边界在发布流程）。preimage 的 platform
+  // 与 Rust 权威 normalize_platform_value 同口径归一（空 params 不入
+  // preimage）：内嵌定义允许携带 params:{}，以原文重算会把空对象当成
+  // preimage 分叉误拒 manifest。
   if (entry.evmPlanId !== undefined) {
     const recomputedPlanId = planIdOf(
       uid,
       entry.definition.metadata.name,
-      entry.definition.spec.platform,
+      normalizePlatformPreimage(entry.definition.spec.platform),
     );
     if (entry.evmPlanId !== recomputedPlanId) {
       throw new RangeError(
@@ -490,8 +511,10 @@ export function buildDockRoute(
 
   // D012 双侧镜像（core link_dock_routes）：被绑定接口的
   // 全部 input 端口 source（它们是同一接缝的投递邮箱）+ route-bound 输出
-  // 端口的 canonical signal 前缀，并集必须单一 seam——input 侧跨源寻址
-  // 在编译期拒绝。
+  // 端口的 canonical signal 前缀，并集不得多于一个 seam——input 侧跨源
+  // 寻址在编译期拒绝。与 core 权威同谓词（>1 才拒）：并集为空需要接口
+  // 无 input 端口且 route 无输出绑定，与 D019（至少一项绑定）矛盾，
+  // 不可达。
   const seams = new Set<string>(
     interfaceEntry.inputs.map((port) => port.source),
   );
@@ -503,7 +526,7 @@ export function buildDockRoute(
       seams.add(output.source);
     }
   }
-  if (seams.size !== 1) {
+  if (seams.size > 1) {
     throw new RangeError(
       `dock route ${stageIdentifier} must bind a single target source seam across the interface's input and bound output ports, found ${JSON.stringify([...seams])}`,
     );

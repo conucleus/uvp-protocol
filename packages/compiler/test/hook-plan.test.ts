@@ -1036,11 +1036,11 @@ test("rejects unbound stages", () => {
 });
 
 test("rejects executor-less selected-stage chains at the materialization gate", () => {
-  // 物化门（P0-4）后 Rust 权威：每个阶段声明都必须自带物化位（order-trigger
+  // 物化门以 Rust 权威为准：每个阶段声明都必须自带物化位（order-trigger
   // mint/dock 入口或静态 executor 的 receive hook）——仅靠 selectedStages
-  // 锚定静态执行者不再让 executor-less 阶段合法（链上阶段只能由本阶段的
-  // hook 物化，submitSignal 要求源阶段已物化，零 hook 阶段恒 UnknownHook）。
-  // 以 Rust 为准：该形态从"接受"改为拒绝。
+  // 锚定静态执行者不让 executor-less 阶段合法（链上阶段只能由本阶段的
+  // hook 物化，submitSignal 要求源阶段已物化，零 hook 阶段恒 UnknownHook），
+  // 该形态必须拒绝。
   assertCompilationIssues(
     topologyZhixu([
       {

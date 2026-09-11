@@ -455,12 +455,11 @@ test("chain replay exposes duplicated birth HookReady as a mismatch", () => {
   assert.equal(mismatchError.mismatches[0]?.reason, "missing-observed");
 });
 
-test("compareChainEvents stays a total order with mixed transactionIndex presence (P2-5)", () => {
-  // 2609100741 P2-5 / 2609100328 疑点12：旧口径只在"双方都有且不等"时才比
-  // transactionIndex，混合有无时落到 logIndex/txHash——反例三元组
-  // A(无 txIdx, log 5) / B(txIdx 0, log 5) / C(txIdx 1, log 3) 按两两比较
-  // 得出 A==B、B<C、A>C 的矛盾序，排序结果依赖输入顺序。修复后缺失
-  // txIdx 恒排末位且同维度一致应用：全序确定、无环。
+test("compareChainEvents stays a total order with mixed transactionIndex presence", () => {
+  // 缺失 txIdx 必须恒排末位且同维度一致应用：只在"双方都有且不等"时才比
+  // transactionIndex、混合有无时落到 logIndex/txHash 的比较不传递——反例
+  // 三元组 A(无 txIdx, log 5) / B(txIdx 0, log 5) / C(txIdx 1, log 3) 按
+  // 两两比较得出 A==B、B<C、A>C 的矛盾序，排序结果依赖输入顺序。
   const hash = `0x${"ab".repeat(32)}` as `0x${string}`;
   const event = (
     blockNumber: number,

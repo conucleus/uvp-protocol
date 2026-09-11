@@ -750,8 +750,8 @@ test("cross-stage dependency guard fires on deserialized artifacts and follows c
 });
 
 test("rejects plans whose sendSignals vocabulary exceeds the gas-bounded capability cap", () => {
-  // G-18：sendSignals 总量编译为 signalCapabilities；超上限在编译与反序列
-  // 化两个边界同口径拒绝（_signalStageId 每次信号提交线性扫描 capabilities）。
+  // sendSignals 总量编译为 signalCapabilities；超上限在编译与反序列化两
+  // 个边界同口径拒绝（合约逐条写存储的注册循环 gas 随表规模无界增长）。
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   const template = onchain.signalCapabilities[0];
   assert.ok(template);
@@ -1281,7 +1281,7 @@ test("flags stages whose hooks can never materialize on-chain", () => {
   );
 });
 
-test("rejects stages that compile to zero hooks (P0-4 materialization gate)", () => {
+test("rejects stages that compile to zero hooks (materialization gate)", () => {
   const zeroHookIssues = (issues: readonly string[]): readonly string[] =>
     issues.filter((issue) =>
       /declares no receiveSignals and compiles to zero hooks/.test(issue),

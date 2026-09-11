@@ -11,7 +11,7 @@ import type {
 /**
  * Zhixu Dock v2 跨运行时哈希库（链轨权威实现）。
  *
- * word 布局定稿冻结于 UVPDockingModule abiVersion 4.0（规格 =
+ * word 布局定稿冻结于 UVPDockingModule abiVersion 4.2（规格 =
  * packages/compiler/docs/dock-word-layout.md）：
  * - 所有 commitment = `keccak256(keccak256(domain) ‖ words…)`，等价于
  *   Solidity `keccak256(abi.encode(keccak256(domain), …))`；
@@ -493,9 +493,9 @@ export function inputPortLeaf(input: {
  * `outputPortLeaf_v3 = H(UVP_DOCK_INTERFACE_OUTPUT_V3; keccak(uid),
  * keccak(interfaceName), keccak(portName), keccak(source), keccak(signalName))`。
  * 叶钉事实键分量（= 绑定侧 targetSourceId/targetSignalId 的派生输入）：
- * 此前叶承诺 canonical 信号 word，与绑定侧分量哈希分属不同派生域，链上
- * 无法互证相等——调用方可把端口绑到词表内另一条事实，目标方"经此端口
- * 暴露该事实"的承诺被架空。
+ * 若叶只承诺 canonical 信号 word 而不拆分量，与绑定侧分量哈希分属不同
+ * 派生域，链上无法互证相等——调用方可把端口绑到词表内另一条事实，
+ * 目标方"经此端口暴露该事实"的承诺被架空。
  */
 export function outputPortLeaf(input: {
   readonly uid: string;
@@ -713,7 +713,7 @@ export function dockRoutesRootOf(routes: readonly DockRouteV2[]): HexString {
 export const PERMIT_TYPEHASH =
   "UVPDockEntrancePermitV2(bytes32 targetPlanId,bytes32 targetEntrancePortId,bytes32 interfaceNameId,bytes32 localPlanId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,uint256 feeLimit,uint256 nonce,uint256 deadline)";
 
-/** 链侧 docking module EIP-712 域 version（abiVersion 4.0 线）。 */
+/** 链侧 docking module EIP-712 域 version（abiVersion 4.2 线）。 */
 export const PERMIT_DOMAIN_VERSION = "4";
 export const PERMIT_DOMAIN_NAME = "UVPDockingModule";
 export const PERMIT_DOMAIN_TYPE =

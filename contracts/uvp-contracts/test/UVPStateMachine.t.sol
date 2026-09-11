@@ -2127,8 +2127,8 @@ contract UVPStateMachineTest {
         );
     }
 
-    /// G-18 链上强制：能力表超过 MAX_SIGNAL_CAPABILITIES 时每次信号提交
-    /// 的 gas 随 plan 规模无界增长（手签超大能力表 plan 毒化全体提交者）。
+    /// 链上强制：能力表超过 MAX_SIGNAL_CAPABILITIES 时逐条写存储的注册
+    /// 循环 gas 随表规模无界增长（手签超大能力表 plan 毒化注册边界）。
     function testFinalizePlanRejectsSignalCapabilitiesAboveLimit() public {
         UVPStateMachine machine = _newMachine();
         UVPPlanMetadataModule metadata = _planMetadataModules[address(machine)];

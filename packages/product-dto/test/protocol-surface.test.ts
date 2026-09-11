@@ -216,8 +216,8 @@ describe("Product DTO protocol surface", () => {
       (item) => item.type === "event" && item.name === "DockOpened"
     );
     assert.ok(dockOpened?.inputs?.some((input) => input.name === "interfaceNameId"),
-      "DockOpened must carry interfaceNameId (named-interface dock, abiVersion 4.0)");
-    // v4.0：output 绑定自带端口叶 word + membership 证明（调用方不得自报叶值）。
+      "DockOpened must carry interfaceNameId (named-interface dock, abiVersion 4.2)");
+    // output 绑定自带端口叶 word + membership 证明（调用方不得自报叶值）。
     const openDockedOrder = protocol.DOCKING_MODULE_ABI.find(
       (item) => item.type === "function" && item.name === "openDockedOrder"
     );

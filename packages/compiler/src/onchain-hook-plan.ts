@@ -57,13 +57,13 @@ const MAX_ONCHAIN_HOOK_DELAY_SECONDS = 2_592_000;
 // preflight must reject plans with more than 1024 distinct dependency keys.
 const MAX_PLAN_DEPENDENCIES = 1024;
 // Documented cap on compiled signal capabilities (= the plan-wide total of
-// sendSignals declarations). UVPStateMachine._signalStageId linearly scans
-// the capability list on EVERY materialized-source signal submission, and
-// _requireStageExecutorAssigned / hasTriggerOriginConsent repeat that scan —
-// without a cap the per-submission gas is plan-controlled and unbounded
-// (G-18). 256 keeps the scan under ~5k gas per call while staying far above
-// any realistic sendSignals vocabulary. Rust uvp-core must mirror this cap;
-// the grammar-level documentation is tracked by the HYGIENE wave.
+// sendSignals declarations). UVPPlanMetadataModule._registerSignalCapabilities
+// writes one storage slot per capability at plan registration, so an
+// oversized hand-signed table makes registration gas plan-controlled and
+// unbounded; the contract reverts TooManySignalCapabilities at the same 256.
+// Stage-ownership lookups are single-key owner-index reads
+// (_signalStageId -> currentOrderFactStage), so the cap bounds registration
+// cost, not per-submission queries. Rust uvp-core mirrors this cap.
 const MAX_SIGNAL_CAPABILITIES = 256;
 
 /**
@@ -147,7 +147,7 @@ export function compileOnchainHookPlan(
   const crossStageIssues = crossStageDependencyIssues(compiledHooks);
   // 不可物化阶段（无 order-trigger / EMIT_READY hook 的阶段）不得挂任何
   // receive hook，且阶段声明不得编译为零 hook——纯 flags=0 watcher 不物化
-  // 阶段，零 hook 阶段同样不物化（P0-4），链上对该阶段的任何求值都是不可
+  // 阶段，零 hook 阶段同样不物化，链上对该阶段的任何求值都是不可
   // 恢复死锁（Rust 编译器是第一道，这里是 artifact 边界的第二道）。
   const materializationIssues = unmaterializableStageIssues(
     compiledHooks,
@@ -1651,7 +1651,9 @@ function unmaterializableStageIssues(
  *   运行时语义），on-chain 编译必须显式拒绝，不得静默降级为 new 或吞掉；
  * - 未解析目标（target 缺失/非对象/无 zhixuUid，含 `target: null` 的动态
  *   选择 route）：on-chain 没有运行时选择面，按 UNRESOLVED_DOCK_TARGET
- *   口径拒绝（与 Rust 无 manifest 时的编译期错误同锚点）。
+ *   口径拒绝（与 Rust 无 manifest 时的编译期错误同锚点）；
+ * - new 模式恰一条 input 绑定（Rust D010 / 合约 DockBindingCountInvalid
+ *   镜像）：出生锚必须唯一确定，inputBindings 数 ≠1 在两个边界同口径拒绝。
  * 编译入口（compileOnchainHookPlan preflight）与反序列化边界
  * （validateOnchainHookPlanArtifact）共用本门。
  */
@@ -1671,6 +1673,15 @@ function onchainDockTrackIssues(routes: readonly unknown[]): readonly string[] {
         `dock route ${stageIdentifier} uses order mode "existing", which on-chain targets do not support; ` +
           "the on-chain track requires an explicit rejection instead of a silent fallback — " +
           'serve this route from a cloud runtime or bind an interface with order mode "new"',
+      );
+    }
+    if (
+      route.orderMode === "new" &&
+      (Array.isArray(route.inputBindings) ? route.inputBindings.length : 0) !== 1
+    ) {
+      issues.push(
+        `DOCK_BINDING_COUNT_INVALID: dock route ${stageIdentifier} uses order mode "new" and must declare exactly one input binding (the birth anchor), found ` +
+          (Array.isArray(route.inputBindings) ? route.inputBindings.length : 0),
       );
     }
     const target = route.target;
@@ -1783,9 +1794,10 @@ function planDependencyCountIssues(
 }
 
 /**
- * G-18 镜像：sendSignals 声明总量（编译为 signalCapabilities）超过
- * MAX_SIGNAL_CAPABILITIES 时 _signalStageId 的线性扫描会让每次信号提交的
- * gas 随 plan 规模无界增长——预检在编译/反序列化两个边界同口径拒绝。
+ * 能力表规模预检：sendSignals 声明总量（编译为 signalCapabilities）超过
+ * MAX_SIGNAL_CAPABILITIES 时，UVPPlanMetadataModule 逐条写存储的注册循环
+ * gas 随表规模无界增长（合约注册边界 revert TooManySignalCapabilities）
+ * ——预检在编译/反序列化两个边界同口径拒绝。
  */
 function signalCapabilityCountIssues(
   capabilities: readonly unknown[],
@@ -1793,7 +1805,7 @@ function signalCapabilityCountIssues(
   if (capabilities.length > MAX_SIGNAL_CAPABILITIES) {
     return [
       `signal capabilities ${capabilities.length} exceed the documented limit ${MAX_SIGNAL_CAPABILITIES} `
-      + "(UVPStateMachine._signalStageId linearly scans capabilities per signal submission; unbounded plan-controlled gas)",
+      + "(UVPPlanMetadataModule registers each capability with a storage write; unbounded plan-controlled registration gas)",
     ];
   }
   return [];
@@ -1809,7 +1821,7 @@ function signalCapabilityCountIssues(
  * plans the contract accepts (e.g. trigger(A) → trigger(B) → watcher(A)),
  * so the sequential scan is load-bearing, not an optimization.
  *
- * Field mapping note (0300 M-7): artifacts carry `orderTriggerKind`
+ * Field mapping note: artifacts carry `orderTriggerKind`
  * ("none" | "mint" | "dock") — there is no `isOrderTrigger` boolean, neither
  * at compile time nor in deserialized artifacts. The trigger flag is always
  * derived as `orderTriggerKind !== "none"`; reading a boolean field here

@@ -35,9 +35,9 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     uint8 public constant SIGNAL_TARGET_CURRENT_ORDER = 0;
     uint8 public constant SIGNAL_TARGET_TRIGGER_ORIGIN = 1;
 
-    // G-18 链上强制：能力表超过该上限时 _signalStageId 的线性扫描会让
-    // 每次信号提交的 gas 随 plan 规模无界增长（手签超大能力表 plan 毒化
-    // 全体提交者）。TS/Rust 编译器以同一数值预检；这里是注册边界兜底。
+    // 链上强制：能力表超过该上限时逐条写存储的注册循环 gas 随表规模
+    // 无界增长（手签超大能力表 plan 毒化注册边界）。TS/Rust 编译器以
+    // 同一数值预检；这里是注册边界兜底。
     uint256 public constant MAX_SIGNAL_CAPABILITIES = 256;
 
     bytes32 private constant _DOMAIN_DOCK_INTERFACE = keccak256("UVP_DOCK_INTERFACE_V2");
@@ -45,9 +45,8 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     mapping(bytes32 planId => PlanMetadata metadata) private _metadata;
     mapping(bytes32 planId => bool finalized) public planMetadataFinalized;
     // E16 注册守卫：relation=0 的事实键 → 唯一属主阶段。同一
-    // (sourceId, signalId) 被两个阶段以 relation=0 重复声明会让
-    // UVPStateMachine._signalStageId 按数组序"取首个匹配"，阶段归属静默
-    // 漂移——注册边界直接拒绝。
+    // (sourceId, signalId) 被两个阶段以 relation=0 重复声明会让属主索引
+    // 后写覆盖先写，_signalStageId 的阶段归属静默漂移——注册边界直接拒绝。
     mapping(bytes32 planId => mapping(bytes32 factKey => bytes32 stageId)) private _currentOrderFactStages;
 
     event StageSelectorBindingRegistered(
@@ -260,7 +259,7 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
                 revert InvalidSignalCapability();
             }
             // E16：relation=0 的事实键唯一属主。跨阶段重复声明在此拒绝，
-            // 而不是让状态机侧 _signalStageId 按数组序取首个匹配。
+            // 不让属主索引发生后写覆盖。
             if (capability.targetOrderRelation == SIGNAL_TARGET_CURRENT_ORDER) {
                 bytes32 factKey = keccak256(abi.encode(capability.targetSourceId, capability.signalId));
                 bytes32 ownerStageId = _currentOrderFactStages[planId][factKey];

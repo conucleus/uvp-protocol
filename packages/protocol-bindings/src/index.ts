@@ -845,11 +845,6 @@ export interface DerivedSignalModuleCallConfig {
   readonly chainId?: number;
 }
 
-export interface DockingModuleCallConfig {
-  readonly dockingModuleAddress: Address | string;
-  readonly chainId?: number;
-}
-
 export interface OrderLinkModuleCallConfig {
   readonly orderLinkModuleAddress: Address | string;
   readonly chainId?: number;
@@ -857,7 +852,6 @@ export interface OrderLinkModuleCallConfig {
 
 export type ApplyStageExecutorPatchForCallConfig = StagePatchModuleCallConfig;
 export type ApplyStageResourcePatchForCallConfig = StagePatchModuleCallConfig;
-export type SubmitDockedSignalCallConfig = DockingModuleCallConfig;
 export type SubmitDerivedSignalForCallConfig = DerivedSignalModuleCallConfig;
 export type TriggerOrderFromOutsideForCallConfig = SubmitSignalForCallConfig;
 export type TriggerOrderFromSignalForCallConfig = OrderLinkModuleCallConfig;
@@ -1602,99 +1596,6 @@ export function buildApplyStageResourcePatchForCall(
       ? { chainId: normalizeChainId(config.chainId) }
       : {}),
   };
-}
-
-export interface SubmitDockedSignalCallArgs {
-  readonly dockInstanceId: Hex | string;
-  readonly outputBindingHash: Hex | string;
-}
-
-export interface SubmitDockedInputCallArgs {
-  readonly dockInstanceId: Hex | string;
-  readonly localHookId: Hex | string;
-  readonly inputBindingHash: Hex | string;
-}
-
-export interface SubmitDockedSignalCall {
-  readonly address: Address;
-  readonly abi: typeof DOCKING_MODULE_ABI;
-  readonly functionName: "submitDockedSignal";
-  readonly args: readonly [Hex, Hex];
-  readonly data: Hex;
-  readonly chainId?: number;
-}
-
-export interface SubmitDockedInputCall {
-  readonly address: Address;
-  readonly abi: typeof DOCKING_MODULE_ABI;
-  readonly functionName: "submitDockedInput";
-  readonly args: readonly [Hex, Hex, Hex];
-  readonly data: Hex;
-  readonly chainId?: number;
-}
-
-// openDockedOrder 的嵌套 tuple 会让 viem 对完整 DOCKING_MODULE_ABI 的类型推断
-// 超过 TS 递归上限；编码层用等价的最小 ABI（selector 相同，calldata 逐字节一致）。
-const DOCK_SUBMIT_SIGNAL_ABI = parseAbi([
-  "function submitDockedSignal(bytes32 dockInstanceId,bytes32 outputBindingHash) returns (bool)",
-]);
-const DOCK_SUBMIT_INPUT_ABI = parseAbi([
-  "function submitDockedInput(bytes32 dockInstanceId,bytes32 localHookId,bytes32 inputBindingHash) returns (bool)",
-]);
-
-export function buildSubmitDockedSignalCall(
-  config: SubmitDockedSignalCallConfig,
-  args: SubmitDockedSignalCallArgs,
-): SubmitDockedSignalCall {
-  const normalizedArgs = [
-    normalizeBytes32(args.dockInstanceId, "dockInstanceId"),
-    normalizeBytes32(args.outputBindingHash, "outputBindingHash"),
-  ] as const;
-
-  const data = encodeFunctionData({
-    abi: DOCK_SUBMIT_SIGNAL_ABI,
-    functionName: "submitDockedSignal",
-    args: normalizedArgs,
-  });
-  const call: SubmitDockedSignalCall = {
-    address: normalizeAddress(config.dockingModuleAddress, "dockingModuleAddress"),
-    abi: DOCKING_MODULE_ABI,
-    functionName: "submitDockedSignal",
-    args: normalizedArgs,
-    data,
-    ...(config.chainId !== undefined
-      ? { chainId: normalizeChainId(config.chainId) }
-      : {}),
-  };
-  return call;
-}
-
-export function buildSubmitDockedInputCall(
-  config: SubmitDockedSignalCallConfig,
-  args: SubmitDockedInputCallArgs,
-): SubmitDockedInputCall {
-  const normalizedArgs = [
-    normalizeBytes32(args.dockInstanceId, "dockInstanceId"),
-    normalizeBytes32(args.localHookId, "localHookId"),
-    normalizeBytes32(args.inputBindingHash, "inputBindingHash"),
-  ] as const;
-
-  const data = encodeFunctionData({
-    abi: DOCK_SUBMIT_INPUT_ABI,
-    functionName: "submitDockedInput",
-    args: normalizedArgs,
-  });
-  const call: SubmitDockedInputCall = {
-    address: normalizeAddress(config.dockingModuleAddress, "dockingModuleAddress"),
-    abi: DOCKING_MODULE_ABI,
-    functionName: "submitDockedInput",
-    args: normalizedArgs,
-    data,
-    ...(config.chainId !== undefined
-      ? { chainId: normalizeChainId(config.chainId) }
-      : {}),
-  };
-  return call;
 }
 
 export function canonicalJson(value: unknown): string {

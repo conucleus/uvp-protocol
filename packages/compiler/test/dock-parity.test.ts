@@ -57,7 +57,7 @@ import {
  * uvp-deploy verify-stack 消费同一份 TS 权威生成器产出的
  * `packages/compiler/fixtures/dock/v1/manifest.json`；任何一侧的
  * 哈/ID/编码分叉都会在这里失败。word 布局权威 =
- * packages/compiler/docs/dock-word-layout.md（冻结于 abiVersion 3.0）。
+ * packages/compiler/docs/dock-word-layout.md（冻结于 abiVersion 4.2）。
  */
 const manifestPath = resolve(
   dirname(fileURLToPath(import.meta.url)),

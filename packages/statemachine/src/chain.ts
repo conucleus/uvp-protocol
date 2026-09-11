@@ -256,8 +256,13 @@ export interface ChainOracleHookRuntime {
   readonly readyEmitted: boolean;
 }
 
+/**
+ * 原生回放（uvp-core replay）的 mismatch 载荷键为
+ * hook/occurrence/reason（+ 按需 expected/observed），不含 index；
+ * index 仅由需要位置编号的调用方自行附加。
+ */
 export interface ChainReplayMismatch {
-  readonly index: number;
+  readonly index?: number;
   readonly reason: "missing-observed" | "unexpected-observed" | "semantic-mismatch";
   readonly expected?: ChainHookObservation;
   readonly observed?: ChainHookObservation;
@@ -328,7 +333,7 @@ type OracleFeedEvent = ChainModeEvent | ProjectedHookStatusChangedEvent;
  * are FILTERED OUT — the oracle's observed face only ever produces wait/cxl
  * status observations (ready transitions are observed through HookReady), so
  * feeding the →Ready/→Init status changes the contract emits alongside
- * HookReady would surface as guaranteed missing-observed mismatches (G-04).
+ * HookReady would surface as guaranteed missing-observed mismatches.
  * A HookStatusChanged event without a valid newStatus — or with a status
  * value outside the frozen v0.10 set {init, wait, ready, cxl} — violates the
  * frozen contract and fails loudly instead of being silently dropped.
@@ -359,11 +364,11 @@ export function compareChainEvents(a: ChainEventBase, b: ChainEventBase): number
     return a.blockNumber - b.blockNumber;
   }
   // transactionIndex 的确定性缺席规则：缺失视为排在末位（+∞），且同维度
-  // 一致应用。旧口径只在"双方都有且不等"时才比该维度——混合有无时直接
-  // 落到 logIndex/txHash，同一事件集按不同两两比较会得出矛盾序（如
-  // A(无 txIdx, log 5) == B(txIdx 0, log 5)、B < C(txIdx 1)、A > C），排序
-  // 结果依赖比较顺序、不再传递。enrichment 缺 txIdx 的事件因此全部排在
-  // 同块已 enrichment 事件之后，顺序仍然确定。
+  // 一致应用。若只在"双方都有且不等"时才比该维度、混合有无时直接落到
+  // logIndex/txHash，比较不再传递——同一事件集按不同两两比较会得出矛盾
+  // 序（如 A(无 txIdx, log 5) == B(txIdx 0, log 5)、B < C(txIdx 1)、
+  // A > C），排序结果依赖比较顺序。缺席映射到 +∞ 后，enrichment 缺
+  // txIdx 的事件全部排在同块已 enrichment 事件之后，顺序仍然确定。
   const aTxIndex = a.transactionIndex ?? Number.POSITIVE_INFINITY;
   const bTxIndex = b.transactionIndex ?? Number.POSITIVE_INFINITY;
   if (aTxIndex !== bTxIndex) {
