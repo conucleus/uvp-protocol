@@ -10,7 +10,7 @@ library DockMerkle {
     bytes32 public constant EMPTY_ROOT = keccak256("");
 
     /// @notice 排序（去重）后逐层建树，排序去重在函数内拷贝上执行，不
-    ///         修改调用方数组（ETH-7：就地缩长度会让调用方持有的
+    ///         修改调用方数组（就地缩长度会让调用方持有的
     ///         calldata/memory 数组在 root 调用后被静默截断）。仅用于测试
     ///         与 calldata 一致性校验（叶子数 ≤ MAX_DOCK_OUTPUTS，无界
     ///         输入禁止调用）。

@@ -360,7 +360,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
               {
                 "name": "op",
                 "type": "uint8",
-                "internalType": "enum UVPStateMachine.InstructionOp"
+                "internalType": "uint8"
               },
               {
                 "name": "sourceId",
@@ -1272,6 +1272,40 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "planHookDependsOn",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "hookId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "sourceId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "signalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -2250,6 +2284,12 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "bytes32"
       },
       {
+        "name": "triggerHookId",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
         "name": "sourceId",
         "type": "bytes32",
         "indexed": false,
@@ -2981,6 +3021,11 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   {
     "type": "error",
     "name": "OrderAlreadyRegistered",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PlanAlreadyFinalized",
     "inputs": []
   },
   {

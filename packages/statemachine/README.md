@@ -9,7 +9,7 @@ streams. It is a test oracle, not a backend runtime or Solidity source.
 
 - plan and order facts reconstructed from chain events;
 - order signal set with first-writer-wins semantics;
-- hook lifecycle: `init | wait | reg | cxl`;
+- hook lifecycle: `init | wait | ready | cxl`;
 - delay/timer evaluation from `SignalSubmitted` and `TimerPoked`;
 - deterministic replay from `UVPStateMachine` event logs.
 

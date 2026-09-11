@@ -43,7 +43,7 @@ import {
 import { validateDockCommitments } from "./dock-validation.js";
 import type {
   DockResolutionManifest,
-  DockRouteV1,
+  DockRouteV2,
   OrderTriggerKind,
 } from "./types/index.js";
 
@@ -57,14 +57,30 @@ const MAX_ONCHAIN_HOOK_DELAY_SECONDS = 2_592_000;
 // preflight must reject plans with more than 1024 distinct dependency keys.
 const MAX_PLAN_DEPENDENCIES = 1024;
 // Documented cap on compiled signal capabilities (= the plan-wide total of
-// sendSignals declarations). UVPStateMachine._signalStageId linearly scans
-// the capability list on EVERY materialized-source signal submission, and
-// _requireStageExecutorAssigned / hasTriggerOriginConsent repeat that scan —
-// without a cap the per-submission gas is plan-controlled and unbounded
-// (G-18). 256 keeps the scan under ~5k gas per call while staying far above
-// any realistic sendSignals vocabulary. Rust uvp-core must mirror this cap;
-// the grammar-level documentation is tracked by the HYGIENE wave.
+// sendSignals declarations). UVPPlanMetadataModule._registerSignalCapabilities
+// writes one storage slot per capability at plan registration, so an
+// oversized hand-signed table makes registration gas plan-controlled and
+// unbounded; the contract reverts TooManySignalCapabilities at the same 256.
+// Stage-ownership lookups are single-key owner-index reads
+// (_signalStageId -> currentOrderFactStage), so the cap bounds registration
+// cost, not per-submission queries. Rust uvp-core mirrors this cap.
 const MAX_SIGNAL_CAPABILITIES = 256;
+
+/**
+ * supplierType 闭集（与 uvp_model::SUPPLIER_TYPES / Go supplierTypes 同源，
+ * 注册表 rule executor-supplier-type-closed-enum）：executorRoutes 把
+ * supplierType 烧进链上承诺（executorHash），合约侧无闭集守卫——闭集外的
+ * 字符串（含 "Zhixu" 等大小写变体）必须在链轨编译期拒绝，不是烧进承诺后
+ * 才在消费侧炸开。比对按 trim 后进行（与 Go/Rust 同口径）。
+ */
+const SUPPLIER_TYPES: readonly string[] = ["individual", "organization", "zhixu"];
+
+/**
+ * fileResources 的 fileType 闭集（与 Go fileTypes 同源：
+ * local|http|txcloud|plain_text）：fileResources 经 resourcesHash 进链上
+ * 承诺，拼错的 fileType 不得静默成承诺内容。
+ */
+const FILE_TYPES: readonly string[] = ["local", "http", "txcloud", "plain_text"];
 
 const ONCHAIN_PLAN_HASH_DOMAIN = "uvp:onchain-hook-plan-artifact:v1";
 const ONCHAIN_ROUTE_HASH_DOMAIN = "uvp:onchain-hook-route:v1";
@@ -131,13 +147,14 @@ export function compileOnchainHookPlan(
   const crossStageIssues = crossStageDependencyIssues(compiledHooks);
   // 不可物化阶段（无 order-trigger / EMIT_READY hook 的阶段）不得挂任何
   // receive hook，且阶段声明不得编译为零 hook——纯 flags=0 watcher 不物化
-  // 阶段，零 hook 阶段同样不物化（P0-4），链上对该阶段的任何求值都是不可
+  // 阶段，零 hook 阶段同样不物化，链上对该阶段的任何求值都是不可
   // 恢复死锁（Rust 编译器是第一道，这里是 artifact 边界的第二道）。
   const materializationIssues = unmaterializableStageIssues(
     compiledHooks,
     declaredStageIdentifiers(
       hookPlanArtifact.signalCapabilities.map((capability) => capability.stageIdentifier),
       Object.keys(hookPlanArtifact.executorRoutes),
+      hookPlanArtifact.dockRoutes.map((route) => route.local.stageIdentifier),
       hookPlanArtifact.selectedStageBindings.flatMap((binding) => [
         binding.selectorStageIdentifier,
         binding.targetStageIdentifier,
@@ -149,12 +166,32 @@ export function compileOnchainHookPlan(
   const capabilityCountIssues = signalCapabilityCountIssues(
     hookPlanArtifact.signalCapabilities,
   );
+  const currentOrderFactKeyIssues = duplicateCurrentOrderFactKeyIssues(
+    hookPlanArtifact.signalCapabilities.map((capability) => ({
+      stage: capability.stageIdentifier,
+      sourceId: onchainSourceId(capability.targetSource),
+      signalId: onchainSignalId(capability.targetSignalName),
+      isCurrentOrder: capability.targetOrderRelation === "current",
+    })),
+  );
+  // 链轨拒绝：Rust 两个 profile 都放行 existing 与
+  // 动态 target（hook plan 产物携带 unresolvedDockRoutes 声明面，§8.8），
+  // 是否上链由宿主轨道决定——on-chain 编译在这里显式拒绝，不静默降级。
+  // Rust hook_plan 不再对 target:null 兜底拒绝，这里是 on-chain 边界对
+  // 未解析 route 的第一道门。
+  const dockTrackIssues = onchainDockTrackIssues(hookPlanArtifact.dockRoutes);
+  const unresolvedTrackIssues = onchainUnresolvedRouteIssues(
+    hookPlanArtifact.unresolvedDockRoutes,
+  );
   const preflightIssues = [
     ...crossStageIssues,
     ...materializationIssues,
     ...silentTriggerIssues,
     ...dependencyCountIssues,
     ...capabilityCountIssues,
+    ...currentOrderFactKeyIssues,
+    ...dockTrackIssues,
+    ...unresolvedTrackIssues,
   ];
   if (preflightIssues.length > 0) {
     throw new HookPlanCompilationError(preflightIssues);
@@ -190,7 +227,6 @@ export function compileOnchainHookPlan(
     schemaVersion: ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
     planId: hookPlanArtifact.planId,
     zhixuId: hookPlanArtifact.zhixuId,
-    version: hookPlanArtifact.version,
     zhixuName: hookPlanArtifact.zhixuName,
     platform: hookPlanArtifact.platform,
     sourcePlanHash: hookPlanArtifact.planHash,
@@ -232,12 +268,44 @@ export function compileZhixuRegisterPlanArgs(
   );
 }
 
+/**
+ * OnchainHookPlanArtifact 的封闭字段集（与 types/index.ts 声明同步）：
+ * planHash 只覆盖这些字段——未声明额外字段不进哈希，放行会让"同一 plan
+ * 唯一字节数组形态"承诺失效（两个仅多余字段不同的制品共享 planHash）。
+ */
+const ONCHAIN_ARTIFACT_FIELDS: readonly string[] = [
+  "schemaVersion",
+  "planId",
+  "zhixuId",
+  "zhixuName",
+  "platform",
+  "sourcePlanHash",
+  "compiledHooks",
+  "dependencyIndex",
+  "executorRoutes",
+  "dockInterface",
+  "dockRoutes",
+  "dockRoutesRoot",
+  "dockInterfaceRoot",
+  "selectorBindings",
+  "signalCapabilities",
+  "planHash",
+];
+
 export function validateOnchainHookPlanArtifact(
   value: unknown,
 ): readonly string[] {
   const issues: string[] = [];
   if (!isRecord(value)) {
     return ["artifact must be an object"];
+  }
+
+  for (const key of Object.keys(value)) {
+    if (!ONCHAIN_ARTIFACT_FIELDS.includes(key)) {
+      issues.push(
+        `unknown field \`${key}\` on the artifact — planHash does not cover undeclared fields, so the artifact would not be the plan's unique byte form; remove it or recompile`,
+      );
+    }
   }
 
   expectLiteral(
@@ -248,14 +316,24 @@ export function validateOnchainHookPlanArtifact(
   );
   expectHexHash(value.planId, "planId", issues);
   expectNonEmptyString(value.zhixuId, "zhixuId", issues);
-  expectNonEmptyString(value.version, "version", issues);
   expectNonEmptyString(value.zhixuName, "zhixuName", issues);
   if (!isPlatform(value.platform)) {
     issues.push("platform must be an object with a non-empty type");
   }
   expectHexHash(value.sourcePlanHash, "sourcePlanHash", issues);
   expectHexHash(value.planHash, "planHash", issues);
+  // 姊妹边界 hook-plan.ts 同口径：dock 字段缺失/畸形必须在形状层报 issue，
+  // 而不是落进 planHash 重算的 ?? 兜底或 canonicalize 的未类型化
+  // TypeError（fail-open：缺失被钉成 []/null 后哈希仍可通过）。
+  if (!Array.isArray(value.dockRoutes)) {
+    issues.push("dockRoutes must be an array");
+  }
+  expectHexHash(value.dockRoutesRoot, "dockRoutesRoot", issues);
+  expectHexHash(value.dockInterfaceRoot, "dockInterfaceRoot", issues);
   issues.push(...validateDockCommitments(value));
+  if (Array.isArray(value.dockRoutes)) {
+    issues.push(...onchainDockTrackIssues(value.dockRoutes));
+  }
 
   const compiledHooks = Array.isArray(value.compiledHooks)
     ? value.compiledHooks
@@ -296,6 +374,9 @@ export function validateOnchainHookPlanArtifact(
     issues.push(
       ...validateOnchainCompiledHooks(compiledHooks, executorRoutes ?? []),
     );
+    issues.push(
+      ...canonicalOrderIssues(compiledHooks, hookOrderKey, "compiledHooks"),
+    );
     if (dependencyIndex) {
       issues.push(
         ...validateOnchainDependencyIndex(compiledHooks, dependencyIndex),
@@ -317,6 +398,14 @@ export function validateOnchainHookPlanArtifact(
                 ? route.stageIdentifier
                 : undefined,
             ),
+          (Array.isArray(value.dockRoutes) ? value.dockRoutes : []).map(
+            (route) =>
+              isRecord(route) &&
+              isRecord(route.local) &&
+              typeof route.local.stageIdentifier === "string"
+                ? route.local.stageIdentifier
+                : undefined,
+          ),
           (selectorBindings ?? []).flatMap((binding) =>
             isRecord(binding)
               ? [
@@ -346,36 +435,82 @@ export function validateOnchainHookPlanArtifact(
 
   if (executorRoutes) {
     issues.push(...validateOnchainExecutorRoutes(executorRoutes));
+    // 规范序（编译产物的确定性口径）：planHash 覆盖数组顺序，但重排后重签
+    // 的制品能通过承诺对拍——规范序让同一 plan 只有唯一字节数组形态。
+    issues.push(
+      ...canonicalOrderIssues(executorRoutes, routeOrderKey, "executorRoutes"),
+    );
   }
   if (selectorBindings) {
     issues.push(...validateOnchainSelectorBindings(selectorBindings));
+    issues.push(
+      ...canonicalOrderIssues(
+        selectorBindings,
+        selectorBindingOrderKey,
+        "selectorBindings",
+      ),
+    );
   }
   if (signalCapabilities) {
+    issues.push(
+      ...canonicalOrderIssues(
+        signalCapabilities,
+        signalCapabilityOrderKey,
+        "signalCapabilities",
+      ),
+    );
     issues.push(...validateOnchainSignalCapabilities(signalCapabilities));
+    issues.push(
+      ...duplicateCurrentOrderFactKeyIssues(
+        (signalCapabilities as readonly unknown[]).flatMap((capability) =>
+          isRecord(capability) &&
+          typeof capability.stageIdentifier === "string" &&
+          typeof capability.targetSourceId === "string" &&
+          typeof capability.signalId === "string"
+            ? [
+                {
+                  stage: capability.stageIdentifier,
+                  sourceId: capability.targetSourceId,
+                  signalId: capability.signalId,
+                  isCurrentOrder:
+                    capability.targetOrderRelation === "current",
+                },
+              ]
+            : [],
+        ),
+      ),
+    );
   }
 
   if (isPlanHashRecomputable(value)) {
-    const expectedPlanHash = hashOnchainPlanPayload({
-      schemaVersion: value.schemaVersion,
-      planId: value.planId,
-      zhixuId: value.zhixuId,
-      version: value.version,
-      zhixuName: value.zhixuName,
-      platform: value.platform,
-      sourcePlanHash: value.sourcePlanHash,
-      compiledHooks: value.compiledHooks,
-      dependencyIndex: value.dependencyIndex,
-      executorRoutes: value.executorRoutes,
-      dockInterface: value.dockInterface ?? null,
-      dockRoutes: value.dockRoutes ?? [],
-      dockRoutesRoot: value.dockRoutesRoot,
-      dockInterfaceRoot: value.dockInterfaceRoot,
-      selectorBindings: value.selectorBindings,
-      signalCapabilities: value.signalCapabilities,
-    });
-    if (value.planHash !== expectedPlanHash) {
+    // 姊妹实现 hook-plan.ts 同口径：重算抛错（负载深层携带 undefined/非
+    // JSON 值）按 issue 报告，校验器的契约是返回 issues 而非抛裸 TypeError。
+    try {
+      const expectedPlanHash = hashOnchainPlanPayload({
+        schemaVersion: value.schemaVersion,
+        planId: value.planId,
+        zhixuId: value.zhixuId,
+        zhixuName: value.zhixuName,
+        platform: value.platform,
+        sourcePlanHash: value.sourcePlanHash,
+        compiledHooks: value.compiledHooks,
+        dependencyIndex: value.dependencyIndex,
+        executorRoutes: value.executorRoutes,
+        dockInterface: value.dockInterface,
+        dockRoutes: value.dockRoutes,
+        dockRoutesRoot: value.dockRoutesRoot,
+        dockInterfaceRoot: value.dockInterfaceRoot,
+        selectorBindings: value.selectorBindings,
+        signalCapabilities: value.signalCapabilities,
+      });
+      if (value.planHash !== expectedPlanHash) {
+        issues.push(
+          "planHash must match the canonical on-chain HookPlan payload",
+        );
+      }
+    } catch {
       issues.push(
-        "planHash must match the canonical on-chain HookPlan payload",
+        "planHash preimage is not canonicalizable (payload carries undefined or non-JSON values)",
       );
     }
   }
@@ -460,7 +595,6 @@ export function toSolidityRegisterPlanArgs(
     schemaVersion: artifact.schemaVersion,
     sourcePlanId: artifact.planId,
     zhixuId: artifact.zhixuId,
-    version: artifact.version,
     planHash,
     artifactHash: artifact.planHash,
     hooksHash,
@@ -664,6 +798,16 @@ function compileConditionInstructions(
         { op: "OR", arity: condition.terms.length },
       ];
     case "delay":
+      // order-trigger hook 内禁止 DELAY（_validateHook 镜像，产出侧第一
+      // 道）：出生事实与订单创建同笔交易，Delay(SIGNAL) 必得 Wait，出生
+      // 路径永久 InvalidTriggerHook。
+      if (options.orderTriggerKind !== "none") {
+        throw new HookPlanCompilationError([
+          `on-chain order-trigger hook (${options.orderTriggerKind}) must not contain DELAY `
+          + `(@${source}::…+${condition.durationSeconds}s); birth facts settle at order creation `
+          + "(contract _validateHook reverts InvalidInstruction)",
+        ]);
+      }
       return [
         ...compileConditionInstructions(condition.expr, source, stageIdentifier, options),
         { op: "DELAY", delaySeconds: condition.durationSeconds },
@@ -705,14 +849,26 @@ function compileDependency(dependency: HookDependency): OnchainHookDependency {
   };
 }
 
+/**
+ * Per-key hookIds MUST follow the compiledHooks (= commitPlan calldata) order:
+ * UVPStateMachine._registerPlanHook pushes `input.hookId` while scanning the
+ * submitted hooks array, and the replay oracle replays the per-key array
+ * positionally. Sorting by hookId (keccak order) forks the contract's
+ * dependencyIndex and flips the oracle's event pairing whenever the two
+ * orders disagree on a key with ≥2 same-partition (trigger/watcher) hooks.
+ */
 function buildOnchainDependencyIndex(
   compiledHooks: readonly OnchainCompiledHook[],
 ): Record<HexString, readonly HexString[]> {
-  const index = new Map<HexString, Set<HexString>>();
+  const index = new Map<HexString, HexString[]>();
   for (const hook of compiledHooks) {
     for (const dependency of hook.dependencies) {
-      const hookIds = index.get(dependency.signalKey) ?? new Set<HexString>();
-      hookIds.add(hook.hookId);
+      const hookIds = index.get(dependency.signalKey) ?? [];
+      // Mirror the contract's per-hook dependencyKey dedup: one hook can only
+      // register once per key.
+      if (!hookIds.includes(hook.hookId)) {
+        hookIds.push(hook.hookId);
+      }
       index.set(dependency.signalKey, hookIds);
     }
   }
@@ -721,7 +877,7 @@ function buildOnchainDependencyIndex(
   for (const [signalKey, hookIds] of [...index.entries()].sort(
     ([left], [right]) => compareByCodeUnit(left, right),
   )) {
-    output[signalKey] = [...hookIds].sort();
+    output[signalKey] = hookIds;
   }
   return output;
 }
@@ -733,6 +889,25 @@ function compileExecutorRoute(
     throw new HookPlanCompilationError([
       `executor route "${route.stageIdentifier}" (supplierType=${String(route.executor.supplierType)}) is missing a non-empty executor.supplierID`,
     ]);
+  }
+  // supplierType 闭集（rule executor-supplier-type-closed-enum 的链轨编译
+  // 入口镜像）：闭集外字符串经 executorHash 进链上承诺后无合约守卫可拦。
+  const supplierType = String(route.executor.supplierType);
+  if (!SUPPLIER_TYPES.includes(supplierType.trim())) {
+    throw new HookPlanCompilationError([
+      `executor route "${route.stageIdentifier}" supplierType must be one of ${SUPPLIER_TYPES.join("|")} (case-sensitive), received ${JSON.stringify(supplierType)}`,
+    ]);
+  }
+  // fileType 闭集（与云侧编译入口同集）：fileResources 进 resourcesHash
+  // 承诺，拼错的 fileType 是确定性输入缺陷，不静默成承诺内容。
+  if (route.fileResources !== undefined) {
+    for (const [key, resource] of Object.entries(route.fileResources)) {
+      if (!FILE_TYPES.includes(String(resource.fileType))) {
+        throw new HookPlanCompilationError([
+          `executor route "${route.stageIdentifier}" fileResources[${JSON.stringify(key)}].fileType must be one of ${FILE_TYPES.join("|")}, received ${JSON.stringify(resource.fileType)}`,
+        ]);
+      }
+    }
   }
   const executorHash = opaqueContentHash(route.executor);
   const resourcesHash =
@@ -977,6 +1152,48 @@ function solidityTargetOrderRelation(
   }
 }
 
+/**
+ * E16 镜像（uvp-constraints.v1.json rejectionSurfaces
+ * e16-current-order-factkey-unique-owner）：relation=0（current）的事实键
+ * (targetSourceId, signalId) 在 plan 内有唯一属主阶段——跨阶段重复声明在
+ * UVPPlanMetadataModule finalizePlan 的注册守卫 revert
+ * DuplicateCurrentOrderSignalCapability。此类 plan 能通过 commitPlan、
+ * finalize 永久 revert（planId 烧毁，2318中2），这里是 artifact 边界的
+ * 编译期预检；Rust/Go 镜像仍欠（镜像债）。
+ */
+function duplicateCurrentOrderFactKeyIssues(
+  capabilities: readonly {
+    readonly stage: string;
+    readonly sourceId: string;
+    readonly signalId: string;
+    readonly isCurrentOrder: boolean;
+  }[],
+): readonly string[] {
+  const issues: string[] = [];
+  const owners = new Map<string, string>();
+  for (const capability of capabilities) {
+    if (!capability.isCurrentOrder) {
+      continue;
+    }
+    const factKey = `${capability.sourceId}:${capability.signalId}`;
+    const owner = owners.get(factKey);
+    if (owner === undefined) {
+      owners.set(factKey, capability.stage);
+      continue;
+    }
+    if (owner !== capability.stage) {
+      issues.push(
+        `stage ${capability.stage} declares the current-order fact key `
+          + `(${capability.sourceId}, ${capability.signalId}) already owned by stage ${owner}; `
+          + "UVPPlanMetadataModule reverts DuplicateCurrentOrderSignalCapability at "
+          + "finalizePlan, so the plan would commit but finalize permanently — "
+          + "declare the fact key on a single stage",
+      );
+    }
+  }
+  return issues;
+}
+
 function validateOnchainCompiledHooks(
   hooks: readonly unknown[],
   executorRoutes: readonly unknown[],
@@ -1048,7 +1265,11 @@ function validateOnchainCompiledHooks(
       issues.push(`${prefix}.instructions must be an array`);
     } else {
       issues.push(
-        ...validateInstructions(hook.instructions, `${prefix}.instructions`),
+        ...validateInstructions(hook.instructions, `${prefix}.instructions`, {
+          orderTrigger:
+            typeof hook.orderTriggerKind === "string" &&
+            hook.orderTriggerKind !== "none",
+        }),
       );
     }
 
@@ -1118,12 +1339,20 @@ function validateOnchainCompiledHooks(
   return issues;
 }
 
+/**
+ * 镜像 UVPStateMachine._validateHook 的栈机语义（bareSignal/hasPosAnchor
+ * 双轨），形状校验与语义镜像同址：形状坏项计入 issues 后仍按合同口径推进
+ * 栈机，让单次校验暴露全部缺口。
+ */
 function validateInstructions(
   instructions: readonly unknown[],
   path: string,
+  options: { readonly orderTrigger: boolean },
 ): readonly string[] {
   const issues: string[] = [];
   let stackDepth = 0;
+  const bareSignal: boolean[] = [];
+  const hasPosAnchor: boolean[] = [];
 
   for (const [index, instruction] of instructions.entries()) {
     if (!isRecord(instruction)) {
@@ -1171,12 +1400,25 @@ function validateInstructions(
             `${prefix}.signalKey must be keccak256(abi.encodePacked(sourceId, signalId))`,
           );
         }
+        bareSignal[stackDepth] = true;
+        hasPosAnchor[stackDepth] = true;
         stackDepth += 1;
         break;
       case "NOT":
         if (stackDepth < 1) {
           issues.push(`${prefix}.op requires one stack item`);
+          break;
         }
+        // NOT 操作数必须裸 SIGNAL（_validateHook 镜像）：~(A&B)/~Delay(A) 的
+        // 组合否定语义与编译器产物形态分叉，注册边界拒绝。
+        if (!bareSignal[stackDepth - 1]) {
+          issues.push(
+            `${prefix}.op requires a bare SIGNAL operand `
+            + "(contract _validateHook reverts InvalidInstruction for NOT over composite/delayed operands)",
+          );
+        }
+        bareSignal[stackDepth - 1] = false;
+        hasPosAnchor[stackDepth - 1] = false;
         break;
       case "AND":
       case "OR": {
@@ -1190,9 +1432,21 @@ function validateInstructions(
         const arity = Number(instruction.arity);
         if (stackDepth < arity) {
           issues.push(`${prefix}.op requires ${arity} stack items`);
-        } else {
-          stackDepth = stackDepth - arity + 1;
+          break;
         }
+        // And 取任一正锚，Or 需每一分支都有（Or 的缺席分支可单独就绪且
+        // 锚点为 0）——只被 DELAY 的操作数正锚检查消费。
+        const anchored =
+          instruction.op === "AND"
+            ? hasPosAnchor
+                .slice(stackDepth - arity, stackDepth)
+                .some(Boolean)
+            : hasPosAnchor
+                .slice(stackDepth - arity, stackDepth)
+                .every(Boolean);
+        stackDepth = stackDepth - arity + 1;
+        bareSignal[stackDepth - 1] = false;
+        hasPosAnchor[stackDepth - 1] = anchored;
         break;
       }
       case "DELAY":
@@ -1211,7 +1465,25 @@ function validateInstructions(
         }
         if (stackDepth < 1) {
           issues.push(`${prefix}.op requires one stack item`);
+          break;
         }
+        // order-trigger hook 内禁止 DELAY（_validateHook 镜像）：出生事实
+        // 与订单创建同笔交易，DELAY 只会让出生路径永久 InvalidTriggerHook。
+        if (options.orderTrigger) {
+          issues.push(
+            `${prefix}.op DELAY is not allowed on order-trigger hooks `
+            + "(contract _validateHook reverts InvalidInstruction; birth facts settle at order creation)",
+          );
+        }
+        // 延时操作数须含正向信号锚点（validate_anchors 镜像）：全否定/
+        // 缺席的操作数在 value=true 时 anchorAt=0，到期时刻恒在过去。
+        if (!hasPosAnchor[stackDepth - 1]) {
+          issues.push(
+            `${prefix}.op DELAY requires an operand with a positive signal anchor `
+            + "(contract _validateHook reverts InvalidInstruction for delay over purely-negative operands)",
+          );
+        }
+        bareSignal[stackDepth - 1] = false;
         break;
       default:
         issues.push(`${prefix}.op must be one of SIGNAL, NOT, AND, OR, DELAY`);
@@ -1223,6 +1495,13 @@ function validateInstructions(
   // preflight too (stack depth 0 !== 1 below).
   if (stackDepth !== 1) {
     issues.push(`${path} must leave exactly one stack item`);
+  } else if (!hasPosAnchor[0]) {
+    // 整体至少一正锚（validate_anchors 镜像）：纯否定条件在 value=true 时
+    // anchorAt=0，注册边界拒绝。
+    issues.push(
+      `${path} must contain at least one positive signal anchor `
+      + "(contract _validateHook reverts InvalidInstruction for purely-negative hook conditions)",
+    );
   }
 
   return issues;
@@ -1367,11 +1646,95 @@ function unmaterializableStageIssues(
 }
 
 /**
+ * 链轨 dock route 门（"明确不做"项）：
+ * - `orderMode: "existing"`：Rust 两个编译 profile 都放行（existing 是云轨
+ *   运行时语义），on-chain 编译必须显式拒绝，不得静默降级为 new 或吞掉；
+ * - 未解析目标（target 缺失/非对象/无 zhixuUid，含 `target: null` 的动态
+ *   选择 route）：on-chain 没有运行时选择面，按 UNRESOLVED_DOCK_TARGET
+ *   口径拒绝（与 Rust 无 manifest 时的编译期错误同锚点）；
+ * - new 模式恰一条 input 绑定（Rust D010 / 合约 DockBindingCountInvalid
+ *   镜像）：出生锚必须唯一确定，inputBindings 数 ≠1 在两个边界同口径拒绝。
+ * 编译入口（compileOnchainHookPlan preflight）与反序列化边界
+ * （validateOnchainHookPlanArtifact）共用本门。
+ */
+function onchainDockTrackIssues(routes: readonly unknown[]): readonly string[] {
+  const issues: string[] = [];
+  for (const [index, route] of routes.entries()) {
+    if (!isRecord(route)) {
+      continue;
+    }
+    const stageIdentifier =
+      (isRecord(route.local) &&
+        typeof route.local.stageIdentifier === "string" &&
+        route.local.stageIdentifier) ||
+      `dockRoutes[${index}]`;
+    if (route.orderMode === "existing") {
+      issues.push(
+        `dock route ${stageIdentifier} uses order mode "existing", which on-chain targets do not support; ` +
+          "the on-chain track requires an explicit rejection instead of a silent fallback — " +
+          'serve this route from a cloud runtime or bind an interface with order mode "new"',
+      );
+    }
+    if (
+      route.orderMode === "new" &&
+      (Array.isArray(route.inputBindings) ? route.inputBindings.length : 0) !== 1
+    ) {
+      issues.push(
+        `DOCK_BINDING_COUNT_INVALID: dock route ${stageIdentifier} uses order mode "new" and must declare exactly one input binding (the birth anchor), found ` +
+          (Array.isArray(route.inputBindings) ? route.inputBindings.length : 0),
+      );
+    }
+    const target = route.target;
+    if (
+      !isRecord(target) ||
+      typeof target.zhixuUid !== "string" ||
+      target.zhixuUid.trim().length === 0
+    ) {
+      issues.push(
+        `UNRESOLVED_DOCK_TARGET: dock route ${stageIdentifier} has no statically linked target; ` +
+          "on-chain compilation cannot fill a dynamic (null) target at runtime",
+      );
+    }
+  }
+  return issues;
+}
+
+/**
+ * 未解析 route（target:null 动态选择，§8.8）的链轨门：Rust hook_plan 产物
+ * 携带 unresolvedDockRoutes 声明面（云轨运行时由选择记录补齐），on-chain
+ * 没有运行时选择面——按 UNRESOLVED_DOCK_TARGET 口径逐条响亮拒绝，不静默
+ * 丢弃。onchain 产物自身不携带该字段，此门只作用于编译入口。
+ */
+function onchainUnresolvedRouteIssues(
+  routes: readonly unknown[] | undefined,
+): readonly string[] {
+  if (!Array.isArray(routes) || routes.length === 0) {
+    return [];
+  }
+  const issues: string[] = [];
+  for (const [index, route] of routes.entries()) {
+    const stageIdentifier =
+      (isRecord(route) &&
+        typeof route.stageIdentifier === "string" &&
+        route.stageIdentifier) ||
+      `unresolvedDockRoutes[${index}]`;
+    issues.push(
+      `UNRESOLVED_DOCK_TARGET: dock route ${stageIdentifier} declares a dynamic (null) target carried as an unresolved route; ` +
+        "on-chain compilation cannot fill it from selection records at runtime — " +
+        "serve this route from a cloud runtime or bind a static target",
+    );
+  }
+  return issues;
+}
+
+/**
  * artifact 边界可见的“阶段声明”全集：sendSignals（signalCapabilities）、
- * executor（executorRoutes）、selectedStages（selectorBindings 两侧）三类
- * 声明各留一处投影；receiveSignals 的投影是 compiledHooks 本体。零 hook
- * 阶段没有 compiledHooks 记录，只能从这三处发现——非字符串项交由形状
- * 校验报错，这里静默跳过。
+ * executor（executorRoutes）、dock 委托（dockRoutes）、selectedStages
+ * （selectorBindings 两侧）四类声明各留一处投影；receiveSignals 的投影是
+ * compiledHooks 本体。零 hook 阶段没有 compiledHooks 记录，只能从这四处
+ * 发现——zhixu 委托阶段只出现在 dockRoutes 一侧、不进 executorRoutes，漏
+ * 投影会让手工制品绕过零 hook 门。非字符串项交由形状校验报错，这里静默
+ * 跳过。
  */
 function declaredStageIdentifiers(
   ...identifierGroups: readonly (readonly (string | undefined)[])[]
@@ -1431,9 +1794,10 @@ function planDependencyCountIssues(
 }
 
 /**
- * G-18 镜像：sendSignals 声明总量（编译为 signalCapabilities）超过
- * MAX_SIGNAL_CAPABILITIES 时 _signalStageId 的线性扫描会让每次信号提交的
- * gas 随 plan 规模无界增长——预检在编译/反序列化两个边界同口径拒绝。
+ * 能力表规模预检：sendSignals 声明总量（编译为 signalCapabilities）超过
+ * MAX_SIGNAL_CAPABILITIES 时，UVPPlanMetadataModule 逐条写存储的注册循环
+ * gas 随表规模无界增长（合约注册边界 revert TooManySignalCapabilities）
+ * ——预检在编译/反序列化两个边界同口径拒绝。
  */
 function signalCapabilityCountIssues(
   capabilities: readonly unknown[],
@@ -1441,7 +1805,7 @@ function signalCapabilityCountIssues(
   if (capabilities.length > MAX_SIGNAL_CAPABILITIES) {
     return [
       `signal capabilities ${capabilities.length} exceed the documented limit ${MAX_SIGNAL_CAPABILITIES} `
-      + "(UVPStateMachine._signalStageId linearly scans capabilities per signal submission; unbounded plan-controlled gas)",
+      + "(UVPPlanMetadataModule registers each capability with a storage write; unbounded plan-controlled registration gas)",
     ];
   }
   return [];
@@ -1457,7 +1821,7 @@ function signalCapabilityCountIssues(
  * plans the contract accepts (e.g. trigger(A) → trigger(B) → watcher(A)),
  * so the sequential scan is load-bearing, not an optimization.
  *
- * Field mapping note (0300 M-7): artifacts carry `orderTriggerKind`
+ * Field mapping note: artifacts carry `orderTriggerKind`
  * ("none" | "mint" | "dock") — there is no `isOrderTrigger` boolean, neither
  * at compile time nor in deserialized artifacts. The trigger flag is always
  * derived as `orderTriggerKind !== "none"`; reading a boolean field here
@@ -1511,7 +1875,9 @@ function validateOnchainDependencyIndex(
   dependencyIndex: Record<string, readonly string[]>,
 ): readonly string[] {
   const issues: string[] = [];
-  const recomputed = new Map<string, Set<string>>();
+  // Recompute in compiledHooks (= calldata) order, exactly like
+  // buildOnchainDependencyIndex and UVPStateMachine._registerPlanHook.
+  const recomputed = new Map<string, string[]>();
   for (const hook of hooks) {
     if (
       !isRecord(hook) ||
@@ -1524,8 +1890,10 @@ function validateOnchainDependencyIndex(
       if (!isOnchainHookDependency(dependency)) {
         continue;
       }
-      const hookIds = recomputed.get(dependency.signalKey) ?? new Set<string>();
-      hookIds.add(hook.hookId);
+      const hookIds = recomputed.get(dependency.signalKey) ?? [];
+      if (!hookIds.includes(hook.hookId)) {
+        hookIds.push(hook.hookId);
+      }
       recomputed.set(dependency.signalKey, hookIds);
     }
   }
@@ -1535,7 +1903,7 @@ function validateOnchainDependencyIndex(
   const expected = Object.fromEntries(
     [...recomputed.entries()]
       .sort(([left], [right]) => compareByCodeUnit(left, right))
-      .map(([signalKey, hookIds]) => [signalKey, [...hookIds].sort()]),
+      .map(([signalKey, hookIds]) => [signalKey, hookIds]),
   );
   if (JSON.stringify(expected) !== JSON.stringify(dependencyIndex)) {
     issues.push("dependencyIndex must match on-chain hook dependencies");
@@ -1810,11 +2178,14 @@ function isPlanHashRecomputable(
 ): value is Omit<OnchainHookPlanArtifact, "planHash"> & {
   readonly planHash: HexString;
 } {
+  // dock 字段必须全部在场且形状合法才允许重算 planHash：缺失的
+  // dockRoutesRoot 会让 canonicalize 抛未类型化 TypeError（破坏"返回
+  // issues"契约），缺失的 dockRoutes/dockInterface 落进 ?? 兜底则把
+  // 缺失钉成 []/null 后照常通过（fail-open）。两者都改为收集为 issue。
   return (
     value.schemaVersion === ONCHAIN_HOOK_PLAN_SCHEMA_VERSION &&
     isHexHash(value.planId) &&
     typeof value.zhixuId === "string" &&
-    typeof value.version === "string" &&
     typeof value.zhixuName === "string" &&
     isPlatform(value.platform) &&
     isHexHash(value.sourcePlanHash) &&
@@ -1823,6 +2194,10 @@ function isPlanHashRecomputable(
     Array.isArray(value.executorRoutes) &&
     Array.isArray(value.selectorBindings) &&
     Array.isArray(value.signalCapabilities) &&
+    Array.isArray(value.dockRoutes) &&
+    (value.dockInterface === null || isRecord(value.dockInterface)) &&
+    isHexHash(value.dockRoutesRoot) &&
+    isHexHash(value.dockInterfaceRoot) &&
     isHexHash(value.planHash)
   );
 }
@@ -1836,6 +2211,75 @@ function compareOnchainHooks(
     compareByCodeUnit(left.hookName, right.hookName) ||
     compareByCodeUnit(left.hookId, right.hookId)
   );
+}
+
+/**
+ * 制品边界的规范序检查：键列与编译侧排序比较子同源（compareOnchainHooks
+ * 等），相邻逆序即报 issue——重排数组后重签 planHash 的制品不再被放行，
+ * 同一 plan 保持唯一数组形态（内容寻址前提）。
+ */
+function canonicalOrderIssues(
+  items: readonly unknown[],
+  keyOf: (item: Record<string, unknown>) => readonly string[],
+  label: string,
+): readonly string[] {
+  const issues: string[] = [];
+  let previous: readonly string[] | undefined;
+  for (const [index, item] of items.entries()) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    const key = keyOf(item);
+    if (previous !== undefined) {
+      let diverged = false;
+      for (let position = 0; position < previous.length; position += 1) {
+        const order = compareByCodeUnit(
+          previous[position] as string,
+          key[position] as string,
+        );
+        if (order > 0) {
+          diverged = true;
+          break;
+        }
+        if (order < 0) {
+          break;
+        }
+      }
+      if (diverged) {
+        issues.push(
+          `${label}[${index}] breaks the canonical order (${key.join(" < ")} must not precede ${(previous as readonly string[]).join(" < ")}); re-sort with the compiler's ordering before serializing`,
+        );
+      }
+    }
+    previous = key;
+  }
+  return issues;
+}
+
+function hookOrderKey(hook: Record<string, unknown>): readonly string[] {
+  return [String(hook.stageIdentifier), String(hook.hookName), String(hook.hookId)];
+}
+
+function routeOrderKey(route: Record<string, unknown>): readonly string[] {
+  return [String(route.stageIdentifier), String(route.routeId)];
+}
+
+function selectorBindingOrderKey(
+  binding: Record<string, unknown>,
+): readonly string[] {
+  return [String(binding.selectorStageId), String(binding.targetStageId), String(binding.bindingHash)];
+}
+
+function signalCapabilityOrderKey(
+  capability: Record<string, unknown>,
+): readonly string[] {
+  return [
+    String(capability.stageId),
+    String(capability.targetSourceId),
+    String(capability.signalId),
+    String(capability.targetOrderRelation),
+    String(capability.capabilityHash),
+  ];
 }
 
 function compareExecutorRoutes(

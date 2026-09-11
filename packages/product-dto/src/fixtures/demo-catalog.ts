@@ -20,7 +20,8 @@ import {
 } from "../domain/index.js";
 
 // Demo-only catalog for explicit fixture and local fallback modes.
-export const CROSS_BORDER_ZHIXU_ID = "cross-border-high-value-staged-payment";
+/** 派生身份演示值（zx-+32hex，与编译产物 zhixuId 同形态）。 */
+export const CROSS_BORDER_ZHIXU_ID = "zx-3fa636e0229362fa4f6db3db37737a17";
 export const DEMO_ORDER_ID = "order-cross-border-car-001";
 export const DEMO_TASK_ID = "task-customs-complete-001";
 
@@ -538,7 +539,9 @@ function submitSignalAddOnManifest(input: {
         actionKind: "submit_signal",
         label: input.actionLabel,
         primary: true,
-        intent: "confirm_stage",
+        // 不硬编码 intent：共享 helper 会同时喂给 confirm 型与 dispute 型
+        // 插件槽位，硬编码 confirm_stage 会让 dispute_material 槽位的
+        // manifest 声明覆盖插件类型推导，争议任务以确认口径提交。
         inputBindings: {
           walletAddress: `${input.roleSlotId}.wallet`,
           evidenceIds: `${input.roleSlotId}.evidence`,
@@ -839,31 +842,56 @@ export const demoZhixuDetail: ZhixuDetailDTO = {
   ],
   dockableModules: [
     {
-      moduleId: "funds-protection",
+      interfaceName: "funds_protection",
+      orderModes: ["new"],
       title: "资金保障秩序",
       desc: "对接外部付款凭证、担保证明或资金适配器证明；不处理资金。",
-      ports: ["资金条件确认", "担保证明", "适配器证明"],
+      inputs: [
+        { portName: "payment_evidence", label: "资金条件确认", hook: "funding.intake#EXECUTE" }
+      ],
+      outputs: [
+        { portName: "guarantee_proof", label: "担保证明", signal: "guarantor::funding.escrow.guarantee" },
+        { portName: "adapter_proof", label: "适配器证明", signal: "adapter::funding.escrow.backing" }
+      ],
       status: "connected"
     },
     {
-      moduleId: "logistics-delivery",
+      interfaceName: "logistics_delivery",
+      orderModes: ["new"],
       title: "物流交付秩序",
       desc: "对接报关、装船、到港和入仓节点。",
-      ports: ["报关完成", "提单", "入仓凭证"],
+      inputs: [
+        { portName: "dispatch", label: "报关完成", hook: "logistics.intake#EXECUTE" }
+      ],
+      outputs: [
+        { portName: "bill_of_lading", label: "提单", signal: "carrier::logistics.transit.bl" },
+        { portName: "warehouse_receipt", label: "入仓凭证", signal: "warehouse::logistics.arrival.receipt" }
+      ],
       status: "available"
     },
     {
-      moduleId: "inspection-acceptance",
+      interfaceName: "inspection_acceptance",
+      orderModes: ["new", "existing"],
       title: "检验验收秩序",
       desc: "对接第三方检验、买方验收和补证请求。",
-      ports: ["检验报告", "验收单", "补证"],
+      inputs: [
+        { portName: "amend", label: "补证", hook: "inspection.review#AMEND" }
+      ],
+      outputs: [
+        { portName: "inspection_report", label: "检验报告", signal: "inspector::inspection.review.report" },
+        { portName: "acceptance", label: "验收单", signal: "buyer::inspection.review.acceptance" }
+      ],
       status: "available"
     },
     {
-      moduleId: "dispute-resolution",
+      interfaceName: "dispute_resolution",
+      orderModes: ["existing"],
       title: "争议裁定秩序",
       desc: "对接争议暂停、双方补证和裁定结果。",
-      ports: ["提出争议", "补充凭证", "裁定"],
+      inputs: [],
+      outputs: [
+        { portName: "ruling", label: "裁定", signal: "arbiter::dispute.hearing.ruling" }
+      ],
       status: "planned"
     }
   ],

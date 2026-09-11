@@ -90,7 +90,71 @@ describe("generated artifact ABI bindings", () => {
     ).map((item) => abiSignature(item));
     assert.deepEqual(missing, []);
   });
+
+  it("keeps handwritten ABI function outputs (names+types) pinned to the forge artifact", async (t) => {
+    // 2609100124 L-3 / 2609100406 L-3：getHookStatus 第三个输出名曾手写为
+    // exists（合约与 forge 生成物是 readyEmitted）。签名子集钉只比输入形
+    // 状，输出名漂移必须单独钉——解码方按名取值会拿到 undefined。
+    if (!artifactAvailable) {
+      return t.skip("forge artifacts not built");
+    }
+    const artifact = JSON.parse(
+      await readFile(artifactPath, "utf8"),
+    ) as FoundryArtifact;
+    const artifactOutputs = new Map(
+      artifact.abi
+        .filter((item) => item.type === "function")
+        .map((item) => [
+          `${(item as { name: string }).name}(${(item as { inputs?: readonly unknown[] }).inputs ?? []})`,
+          item,
+        ]),
+    );
+    const mismatches: string[] = [];
+    for (const item of STATE_MACHINE_ABI) {
+      if (typeof item === "string" || item.type !== "function") {
+        continue;
+      }
+      const inputs = (item.inputs ?? []).map(abiInputType).join(",");
+      const artifactItem = artifactOutputs.get(`${item.name}(${inputs})`) as
+        | { outputs?: readonly { name?: string; type: string }[] }
+        | undefined;
+      if (artifactItem === undefined) {
+        continue; // 已由 subset 钉覆盖
+      }
+      const handwritten = (item.outputs ?? []) as readonly {
+        name?: string;
+        type: string;
+      }[];
+      const generated = artifactItem.outputs ?? [];
+      // forge 对无名输出给 ""，human-readable ABI 无法表达名——缺名按 ""
+      // 归一后比对（命名漂移才是要钉的缺陷，如 exists→readyEmitted）。
+      const same =
+        handwritten.length === generated.length &&
+        handwritten.every(
+          (output, index) =>
+            (output.name ?? "") === (generated[index]?.name ?? "") &&
+            abiInputType(output) === generated[index]?.type,
+        );
+      if (!same) {
+        mismatches.push(
+          `${item.name}: handwritten outputs ${JSON.stringify(handwritten)} != forge ${JSON.stringify(generated)}`,
+        );
+      }
+    }
+    assert.deepEqual(mismatches, []);
+    // 直接钉 getHookStatus 的第三输出名（回归锚点）。
+    const getHookStatus = STATE_MACHINE_ABI.find(
+      (item) => typeof item !== "string" && item.name === "getHookStatus",
+    ) as { outputs: readonly { name: string }[] } | undefined;
+    assert.ok(getHookStatus, "handwritten ABI must keep getHookStatus");
+    assert.deepEqual(getHookStatus.outputs.map((output) => output.name), [
+      "status",
+      "dueAt",
+      "readyEmitted",
+    ]);
+  });
 });
+
 
 function abiSignature(
   item:

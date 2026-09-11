@@ -41,22 +41,15 @@ interface IUVPDockingModuleLens {
             bytes32 routeHash,
             bytes32 targetPlanId,
             bytes32 linkedOrderId,
+            bytes32 interfaceNameId,
             uint8 depth,
-            uint8 status,
             bool exists
         );
 
     function getDockInputBinding(bytes32 dockInstanceId, bytes32 inputBindingHash)
         external
         view
-        returns (
-            bytes32 localHookId,
-            bytes32 portKey,
-            bytes32 targetSourceId,
-            bytes32 targetSignalId,
-            uint8 kind,
-            bool exists
-        );
+        returns (bytes32 localHookId, bytes32 portKey, bytes32 targetSourceId, bytes32 targetSignalId, bool exists);
 
     function getDockOutputBinding(bytes32 dockInstanceId, bytes32 outputBindingHash)
         external
@@ -67,7 +60,6 @@ interface IUVPDockingModuleLens {
             bytes32 portKey,
             bytes32 targetSourceId,
             bytes32 targetSignalId,
-            uint8 terminal,
             bool exists
         );
 
@@ -176,8 +168,8 @@ contract UVPStateMachineLens {
             bytes32 routeHash,
             bytes32 targetPlanId,
             bytes32 linkedOrderId,
+            bytes32 interfaceNameId,
             uint8 depth,
-            uint8 status,
             bool exists
         )
     {
@@ -187,14 +179,7 @@ contract UVPStateMachineLens {
     function getDockInputBinding(bytes32 dockInstanceId, bytes32 inputBindingHash)
         external
         view
-        returns (
-            bytes32 localHookId,
-            bytes32 portKey,
-            bytes32 targetSourceId,
-            bytes32 targetSignalId,
-            uint8 kind,
-            bool exists
-        )
+        returns (bytes32 localHookId, bytes32 portKey, bytes32 targetSourceId, bytes32 targetSignalId, bool exists)
     {
         return IUVPDockingModuleLens(_moduleDirectory.dockingModule())
             .getDockInputBinding(dockInstanceId, inputBindingHash);
@@ -209,7 +194,6 @@ contract UVPStateMachineLens {
             bytes32 portKey,
             bytes32 targetSourceId,
             bytes32 targetSignalId,
-            uint8 terminal,
             bool exists
         )
     {

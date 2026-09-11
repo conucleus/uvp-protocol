@@ -28,19 +28,26 @@ interface IUVPPlanMetadataModule {
 
     function verifyDockRoute(bytes32 planId, bytes32 leaf, bytes32[] calldata proof) external view returns (bool);
 
-    function verifyDockInterfacePort(bytes32 planId, bytes32 leaf, bytes32[] calldata proof)
-        external
-        view
-        returns (bool);
+    function verifyDockInterfacePort(
+        bytes32 planId,
+        bytes32 definitionUidId,
+        bytes32 interfaceNameId,
+        uint8 orderModesWord,
+        bytes32 inputsRoot,
+        bytes32 outputsRoot,
+        bytes32[] calldata proof
+    ) external view returns (bool);
 
     function isSelectorTargetStage(bytes32 planId, bytes32 targetStageId) external view returns (bool);
 
     function planSignalCapabilityCount(bytes32 planId) external view returns (uint256);
 
-    function planSignalCapabilityAt(bytes32 planId, uint256 index)
+    /// E16 属主索引读取：relation=0 capability 注册时落库的
+    /// (sourceId, signalId) → 唯一属主阶段。未知计划 revert，零键归零。
+    function currentOrderFactStage(bytes32 planId, bytes32 sourceId, bytes32 signalId)
         external
         view
-        returns (bytes32 stageId, bytes32 targetSourceId, bytes32 signalId, uint8 targetOrderRelation);
+        returns (bytes32 stageId);
 
     function stageSignalCapabilityCount(bytes32 planId, bytes32 stageId) external view returns (uint256);
 

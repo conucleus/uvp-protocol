@@ -73,13 +73,15 @@ the TypeScript `statemachine` oracle.
 - core function selectors for signed `commitPlan`, one-shot `finalizePlan`,
   derived-order-id `triggerOrderFromOutsideFor` (one fact, one order — the id
   is `triggerOrderIdFor(planId, sourceId, signalId, payloadHash)`, callers no
-  longer self-report it), signed `triggerOrderFromSignalFor`, `submitSignal`,
-  `submitSignalFor`, module configuration, module-only writebacks,
-  `DOMAIN_SEPARATOR`, `pokeTimer`, `getHookStatus`,
-  `isSignalSubmitterAuthorized`, `getSignalAuthorization`, dock order
-  namespace mask, signal target relation constants,
+  longer self-report it), `submitSignal`, `submitSignalFor`, module
+  configuration, module-only writebacks (including the order-link writeback
+  `triggerOrderFromSignalFromModule`), `DOMAIN_SEPARATOR`, `pokeTimer`,
+  `getHookStatus`, `isSignalSubmitterAuthorized`, `getSignalAuthorization`,
+  dock order namespace mask, signal target relation constants,
   `sourceSignalCount`, `lastSignalSubmitter`, stage-overlay view helpers,
-  trigger-link view helpers, and signal capability helpers;
+  trigger-link view helpers, and signal capability helpers. The signed
+  from-signal trigger entrypoint is `triggerOrderFromSignalFor` on
+  `UVPOrderLinkModule` (order-link module fixture), not a core selector;
 - module function selectors for stage patch, derived signal, docking, and lens
   entrypoints/digest helpers/views;
 - event topics for ownership, module configuration/freeze,
@@ -87,14 +89,15 @@ the TypeScript `statemachine` oracle.
   `PlanPublisherRecorded`, `OrderRegistered`, `OrderMaterialized`,
   `OrderRelayerRecorded`, `OrderTriggered`, `SignalSubmitterAuthorized`, `SignalSubmitted`,
   `StageMaterialized`, `HookStatusChanged`, `HookReady`, `TimerPoked`,
-  `StageExecutorPatchApplied`,
-  `StageResourcePatchApplied`, `StageExecutorActivated`, and
+  `StageExecutorActivated`, and
   `StageExecutorSignalDelegated`;
-- docking module event topics for `DockOpened`, `DockInputSubmitted`,
-  `DockOutputSubmitted`, and `DockTerminal`; order-link module event topics for
+- docking module event topics for `DockOpened`, `DockInputSubmitted`, and
+  `DockOutputSubmitted`; order-link module event topics for
   `OrderLinked`; plan-metadata module event topics for
   `StageSelectorBindingRegistered` and `SignalCapabilityRegistered`; derived
-  signal module event topics for `DerivedSignalSubmitted`; and deployment
+  signal module event topics for `DerivedSignalSubmitted`; stage-patch module
+  (`UVPStagePatchModule`) event topics for `StageExecutorPatchApplied` and
+  `StageResourcePatchApplied`; and deployment
   registry event topics for `DeploymentRegistered`, `DeploymentCanaryMarked`,
   `DeploymentActivated`, `DeploymentDeprecated`, and `DeploymentRetired`;
 - ABI hash, bytecode hash, deployed bytecode hash, canonical artifact hash, and
@@ -119,36 +122,45 @@ code do not silently drift away from the contract ABI.
    contract recovers the business submitter, creates the order, writes explicit
    `SignalAuthorization[]` records, records the trigger fact, and materializes
    the ready trigger stage atomically.
-8. Only authorized submitter wallets can call `submitSignal` for their bound
+6. Only authorized submitter wallets can call `submitSignal` for their bound
    `sourceId + signalId`. A gas relayer can use `submitSignalFor` with the
    authorized submitter's EIP-712 signature; the recorded submitter remains the
    business signer, not the relayer.
-9. A wallet authorized for `EXECUTOR_PATCH_SIGNAL_ID` on a stage may apply an
+7. A wallet authorized for `EXECUTOR_PATCH_SIGNAL_ID` on a stage may apply an
    order-level executor patch through `UVPStagePatchModule` for a registered
    stage-to-target binding.
    Executor patches use `assign` before the target stage has signals, `handoff`
    after start with the previous executor's signature over the same EIP-712
    digest, or `replacement` after start with a chain-visible approval signal.
-10. Executor patches constrain executor-only patch actions. Normal business
+8. Executor patches constrain executor-only patch actions. Normal business
    signals still require explicit order-level authorization or a compiled
    derived signal capability. An active executor patch supersedes the
    previous executor for subsequent signal submissions (the prior executor
    loses its implicit submitter rights immediately, and the patch cannot be
    undone to restore them); explicit order-level authorizations remain
    intact, and prior `SignalSubmitted` events keep their original submitter.
-11. A wallet authorized for `RESOURCE_PATCH_SIGNAL_ID` on a stage may apply an
+9. A wallet authorized for `RESOURCE_PATCH_SIGNAL_ID` on a stage may apply an
     independent resource-manifest patch through `UVPStagePatchModule` for a
     target stage and resource key. The chain stores hashes, nonces, and manifest
-    URIs, not plaintext business documents.
-12. Docking is committed-route only: a local entrance hook that
+    URIs, not plaintext business documents. Contract time window: a resource
+    patch is only accepted until the target stage has received its first
+    compiled (relation-0) signal — `applyStageResourcePatch` reverts
+    `StageAlreadyHasSignal` from that moment on, permanently (deliberate
+    immutability gate). Docs that describe file resources as replaceable or
+    deletable must disclose this window.
+10. Docking is committed-route only: a local entrance hook that
     is Ready (`EMIT_READY`) plus a Merkle-proved `dockRoutesRoot` route lets a
     keeper call `openDockedOrder`, which atomically derives the dock instance
     id and high-bit-namespaced child order id, creates the child, records the
-    link, and writes the entrance fact. `submitDockedInput` /
-    `submitDockedSignal` then relay non-entrance inputs and outputs along the
-    committed bindings; the two orders keep independent plans, authorization,
-    events, and lifecycles.
-13. `triggerOrderFromOutsideFor` and `triggerOrderFromSignalFor` create orders
+    link, and writes the entrance fact. `openDockedOrder` accepts exactly one
+    input binding and consumes it as the entrance (reverts
+    `DockBindingCountInvalid` otherwise), so on the frozen chain surface there
+    is no non-entrance input to relay — `submitDockedInput` is structurally
+    unreachable and must not be listed as a live relay path;
+    `submitDockedSignal` relays outputs along the committed output bindings.
+    The two orders keep independent plans, authorization, events, and
+    lifecycles.
+11. `triggerOrderFromOutsideFor` and `triggerOrderFromSignalFor` create orders
     through signed trigger paths. Signal-triggered orders record a trigger-origin
     link so `UVPDerivedSignalModule` can write declared signals back to the
     trigger-origin order. Establishing a trigger link requires origin-side
@@ -158,7 +170,7 @@ code do not silently drift away from the contract ABI.
     fact (`hasTriggerOriginConsent`). A foreign plan mirroring the origin
     plan's public capability declarations without that standing cannot
     register the link nor mint the derived order.
-14. The state machine evaluates compact hook instructions, emits
+12. The state machine evaluates compact hook instructions, emits
     `HookStatusChanged`, `HookReady`, and `TimerPoked`, and can be replayed from
     events by `statemachine` and `chain-services`.
 
@@ -197,7 +209,6 @@ Indexer and replay tooling should treat these event names as public interfaces:
 - `SignalSubmitterAuthorized`
 - `OrderRegistered`
 - `OrderMaterialized`
-- `OrderRelayerRecorded`
 - `OrderTriggered`
 - `SignalSubmitted`
 - `StageMaterialized`
@@ -219,7 +230,7 @@ The module fixtures add these public events:
   `targetPlanId`);
 - `StageResourcePatchApplied` (stage-patch module; carries `planId`, aligned
   with `StageExecutorPatchApplied`);
-- `DockOpened`, `DockInputSubmitted`, `DockOutputSubmitted`, and `DockTerminal`
+- `DockOpened`, `DockInputSubmitted`, and `DockOutputSubmitted`
   (docking module).
 
 All of these module events carry the composite `(planId, orderId)` identity:

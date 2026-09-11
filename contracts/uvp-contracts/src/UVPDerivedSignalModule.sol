@@ -214,18 +214,16 @@ contract UVPDerivedSignalModule {
                 }
             }
         }
-        // 提交者授权：from 侧 active executor，或 from/target 任一侧对
-        // (sourceId, signalId, submitter) 的显式授权（全部按
-        // (planId, orderId) 寻址）。from 侧显式授权按业务事实键
-        // (targetSourceId, signalId) 查询——显式授权一律以 source id 为键
-        // 存储（source id ≠ stage id），fromStageId 不能塞进 sourceId 槽。
+        // 提交者授权：from 侧提交者一律按 from 订单该阶段（fromStageId）的
+        // 在任执行者门校验；对显式授权者的在任执行者检查豁免仅限 target 侧
+        // ——只有目标订单侧对 (sourceId, signalId, submitter) 的显式授权可
+        // 豁免（按 (planId, orderId) 寻址，显式授权以 source id 为键存储，
+        // source id ≠ stage id）。from 侧显式授权不构成豁免：提交来源端的
+        // 资格只能来自在任执行关系，fail-closed。
         if (
             stateMachine.activeStageExecutor(request.fromPlanId, request.fromOrderId, request.fromStageId) != submitter
                 && !stateMachine.hasExplicitSignalAuthorization(
                     request.targetPlanId, request.targetOrderId, request.targetSourceId, request.signalId, submitter
-                )
-                && !stateMachine.hasExplicitSignalAuthorization(
-                    request.fromPlanId, request.fromOrderId, request.targetSourceId, request.signalId, submitter
                 )
         ) {
             revert UnauthorizedSignalSubmitter(

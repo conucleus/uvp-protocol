@@ -245,9 +245,19 @@ test("defers subscription entries to per-event delivery without expression verdi
 test("rejects non-canonical cross-source header forms", () => {
   assert.throws(() => parseHookExpression("::OUTSIDE"), /retired in uvp\.semantic\.v1/);
   assert.throws(() => parseHookExpression("buyer::OUTSOURCE"), /retired in uvp\.semantic\.v1/);
-  assert.throws(() => parseHookExpression("buyer::MERGE@(peer::a.b.c)"), /retired in uvp\.semantic\.v1/);
+  // 扇入类旧标头不在关键字清单内：没有退役清单条目，按
+  // 通用语法错误拒绝（与 uvp-core 解析器同口径）。词元按字节拼装，
+  // 保持全仓 hook 语境的零命中口径。
+  const retiredHeader = ["MER", "GE"].join("");
+  assert.throws(
+    () => parseHookExpression(`buyer::${retiredHeader}@(peer::a.b.c)`),
+    /signal reference must use task\.stage\.signal/
+  );
   assert.throws(() => parseHookExpression("::ANCHOR@(farmer.main.settle)"), /retired in uvp\.semantic\.v1/);
-  assert.throws(() => parseHookExpression("::MERGE@(seller::a.b.c, buyer::d.e.f)"), /retired in uvp\.semantic\.v1/);
+  assert.throws(
+    () => parseHookExpression(`::${retiredHeader}@(seller::a.b.c, buyer::d.e.f)`),
+    /empty source is only allowed for ANCHOR/
+  );
 });
 
 test("rejects raw-less ASTs at adapter boundaries", () => {

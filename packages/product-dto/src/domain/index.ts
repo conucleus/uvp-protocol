@@ -16,6 +16,8 @@ export type ParticipantStatus =
   | "not_started";
 export type RoleSlotStatus = "required" | "connected" | "optional";
 export type DockableModuleStatus = "connected" | "available" | "planned";
+/** dock 接口开放的下单模式（{new, existing} 子集）。 */
+export type ProductDockOrderMode = "new" | "existing";
 export type OrderStatus = "registered";
 export type TaskStatus = "open" | "submitted" | "blocked" | "done";
 export type PermissionPayloadPolicy = "required" | "optional";
@@ -443,11 +445,27 @@ export interface RoleSlotDTO {
   readonly addOnManifest?: ParticipantAddOnManifestDTO;
 }
 
+export interface DockableZhixuModulePortDTO {
+  readonly portName: string;
+  readonly label: string;
+  /** input 端口的目标侧 hook 引用（`<task>.<stage>#<channel>`）。 */
+  readonly hook?: string;
+  /** output 端口的目标侧 canonical signal（`<source>::<task>.<stage>.<signal>`）。 */
+  readonly signal?: string;
+}
+
+/**
+ * 目标定义发布的具名 dock 接口（uvp.dockInterfaceArtifact.v2 的展示面）。
+ * 接口名/端口名遵循协议命名规则（`^[a-z][a-z0-9_]{0,31}$`）。
+ */
 export interface DockableZhixuModuleDTO {
-  readonly moduleId: string;
+  readonly interfaceName: string;
+  /** 接口开放的下单模式（{new, existing} 非空子集）。 */
+  readonly orderModes: readonly ProductDockOrderMode[];
   readonly title: string;
   readonly desc: string;
-  readonly ports: readonly string[];
+  readonly inputs: readonly DockableZhixuModulePortDTO[];
+  readonly outputs: readonly DockableZhixuModulePortDTO[];
   readonly status: DockableModuleStatus;
 }
 
@@ -1208,11 +1226,15 @@ export function toStoreZhixuConsoleDTO(
   const planHash = zhixu.planPublication.planHash;
   // Metrics are either fully observed or explicitly unknown: a partial
   // supply must not silently substitute zeros / "当前版本" for the missing
-  // fields while claiming the rest are real observations.
+  // fields while claiming the rest are real observations — versionLabel is
+  // part of that observed surface (the DTO documents metricsStatus as the
+  // availability marker for the metric fields AND versionLabel), so a supply
+  // without it stays "unknown" instead of pinning a synthesized label.
   const metricsStatus: StoreConsoleMetricsStatus =
     metrics.orderCount !== undefined &&
     metrics.openTaskCount !== undefined &&
-    metrics.supplierCount !== undefined
+    metrics.supplierCount !== undefined &&
+    metrics.versionLabel !== undefined
       ? "observed"
       : "unknown";
   return {
@@ -1266,9 +1288,11 @@ export function storeConsoleSummary(
     ).length,
     runningOrders: zhixus.reduce((sum, zhixu) => sum + zhixu.orderCount, 0),
     openTasks: zhixus.reduce((sum, zhixu) => sum + zhixu.openTaskCount, 0),
-    registeredSuppliers: Math.max(
+    // 各行 supplierCount 的合计：Math.max 只是"最大单行"，不是任何总量
+    // 口径——与订单/待办同按行求和。
+    registeredSuppliers: zhixus.reduce(
+      (sum, zhixu) => sum + zhixu.supplierCount,
       0,
-      ...zhixus.map((zhixu) => zhixu.supplierCount),
     ),
   };
 }
@@ -1716,6 +1740,9 @@ export function summarizeZhixu(zhixu: ZhixuDetailDTO): ZhixuSummaryDTO {
     orderPermissionTable: _orderPermissionTable,
     proofRows: _proofRows,
     createOrderHint: _createOrderHint,
+    // createOrderTrigger 是 Detail/Schema 面字段（triggerHookId 等 执行内部
+    // 键）：列表/控制台摘要按 ZhixuSummaryDTO 声明面投影，不得夹带。
+    createOrderTrigger: _createOrderTrigger,
     ...summary
   } = zhixu;
   return summary;
