@@ -22,6 +22,7 @@ interface DockVm {
     }
 
     function addr(uint256 privateKey) external returns (address keyAddr);
+    function expectEmit(bool checkTopic1, bool checkTopic2, bool checkTopic3, bool checkData, address emitter) external;
     function expectRevert(bytes4 revertData) external;
     function expectRevert(bytes calldata revertData) external;
     function prank(address msgSender) external;
@@ -376,11 +377,31 @@ contract UVPDockingModuleTest {
 
         vm.prank(KEEPER);
         assertTrue(docking.submitDockedSignal(route.dockInstanceId, doneBinding));
-        // 兄弟绑定镜像同一本地事实键、同一 payload：幂等吸收，不 revert。
+        // 兄弟绑定镜像同一本地事实键、同一 payload：幂等吸收，不 revert——
+        // 吸收即收敛为已交付（账本置位 + DockOutputSatisfied 事件），否则
+        // 投影侧永远视其为未交付，keeper 每个重发窗口都会再提交一次。
+        (, bytes32 targetPayload,,, address targetFactSubmitter) =
+            machine.getSignal(targetPlanId, route.linkedOrderId, TARGET_SOURCE, TARGET_SIGNAL);
+        vm.prank(KEEPER);
+        vm.expectEmit(true, true, true, true, address(docking));
+        emit UVPDockingModule.DockOutputSatisfied(
+            route.dockInstanceId,
+            route.linkedOrderId,
+            progressBinding,
+            route.planId,
+            route.orderId,
+            targetPlanId,
+            TARGET_SIGNAL,
+            LOCAL_MAPPED_SIGNAL,
+            targetPayload,
+            targetFactSubmitter
+        );
+        assertFalse(docking.submitDockedSignal(route.dockInstanceId, progressBinding));
+        assertTrue(docking.dockOutputDelivered(route.dockInstanceId, progressBinding));
+        assertTrue(docking.dockOutputDelivered(route.dockInstanceId, doneBinding));
+        // 账本置位后的重复提交走交付账本短路：不再发任何事件。
         vm.prank(KEEPER);
         assertFalse(docking.submitDockedSignal(route.dockInstanceId, progressBinding));
-        assertFalse(docking.dockOutputDelivered(route.dockInstanceId, progressBinding));
-        assertTrue(docking.dockOutputDelivered(route.dockInstanceId, doneBinding));
         (bool mapped,,,,) = machine.getSignal(route.planId, route.orderId, LOCAL_MAPPED_SOURCE, LOCAL_MAPPED_SIGNAL);
         assertTrue(mapped);
     }

@@ -507,7 +507,35 @@ test("chain replay filters contract-impossible TimerPoked events (pokeTimer gate
       hookId: "0x0000000000000000000000000000000000000000000000000000000000003999",
       dueAt: "2026-04-27T00:01:05.000Z",
       pokedAt: "2026-04-27T00:01:06.000Z"
-    }
+    },
+    // 事件自报的 dueAt 与守门状态不一致（守门值 00:01:05，事件自报
+    // 00:01:00 伪造"已到期"）：到期判据只能取守门推导值，事件声称值
+    // 仅作一致性核验——链上 pokeTimer 读的是合约存储，事件无权覆盖。
+    {
+      eventName: "TimerPoked",
+      blockNumber: 9,
+      logIndex: 3,
+      transactionHash: "0x0b",
+      planId,
+      zhixuId: "chain-oracle",
+      orderId: "order-timer",
+      hookId: timerHook,
+      dueAt: "2026-04-27T00:01:00.000Z",
+      pokedAt: "2026-04-27T00:01:01.000Z"
+    },
+    // 冻结前形状（不带 dueAt 声称）：判定完全由守门值承担——pokedAt 仍
+    // 小于守门 dueAt（00:01:05）即 TimerNotDue，不得因"事件未声称"放行。
+    {
+      eventName: "TimerPoked",
+      blockNumber: 10,
+      logIndex: 4,
+      transactionHash: "0x0c",
+      planId,
+      zhixuId: "chain-oracle",
+      orderId: "order-timer",
+      hookId: timerHook,
+      pokedAt: "2026-04-27T00:01:01.000Z"
+    } as unknown as ChainModeEvent
   ];
 
   const clean = replayChainEvents(events);

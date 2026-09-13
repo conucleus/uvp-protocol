@@ -222,6 +222,21 @@ contract UVPDockingModule {
         bytes32 payloadHash,
         address submitter
     );
+    /// 兄弟 output 绑定的等价交付满足：本绑定没有发生新的镜像写入，父单
+    /// 本地事实已由同键同 payload 的另一条绑定送达；账本置位随本事件落地，
+    /// 消费方据此把该绑定收敛为已交付。
+    event DockOutputSatisfied(
+        bytes32 indexed dockInstanceId,
+        bytes32 indexed linkedOrderId,
+        bytes32 indexed outputBindingHash,
+        bytes32 localPlanId,
+        bytes32 localOrderId,
+        bytes32 targetPlanId,
+        bytes32 targetSignalId,
+        bytes32 localSignalId,
+        bytes32 payloadHash,
+        address submitter
+    );
 
     // ------------------------------------------------------------------
     // 常量（compatibility manifest 冻结）
@@ -710,14 +725,31 @@ contract UVPDockingModule {
         // 同一本地事实键的多条 output 绑定（不同端口/目标事实）在链上无去
         // 重：首条交付后，兄弟绑定镜像同一本地键必然撞 SignalAlreadyExists
         // ——先写已交付位再外调的回滚路径会让该绑定永久不可交付。按本地事
-        // 实键幂等吸收：镜像槽位已存在且 payload 一致即 return false（事实
-        // 已由兄弟绑定送达父单）；payload 不一致则落入底层
-        // SignalAlreadyExists，fail-closed——同一本地键不得表达两种内容。
+        // 实键幂等吸收：镜像槽位已存在且 payload 一致即视为本绑定已由等价
+        // 交付满足——必须落交付账本并显式发事件，否则投影侧永远认为该绑定
+        // 未交付，keeper 每个重发窗口都会再提交一次（永不收敛的 gas 循环）。
+        // 不复用 DockOutputSubmitted：本分支没有发生新的镜像写入，按既有
+        // 事件形状广播会让父侧投影再落一条并不存在的映射事实时间线。
+        // payload 不一致则落入底层 SignalAlreadyExists，fail-closed——同一
+        // 本地键不得表达两种内容。
         {
             (bool mirrorExists, bytes32 mirrorPayload,,,) = stateMachine.getSignal(
                 dock.localPlanId, dock.localOrderId, binding.localSourceId, binding.localSignalId
             );
             if (mirrorExists && mirrorPayload == payloadHash) {
+                _outputDelivered[dockInstanceId][outputBindingHash] = true;
+                emit DockOutputSatisfied(
+                    dockInstanceId,
+                    dock.linkedOrderId,
+                    outputBindingHash,
+                    dock.localPlanId,
+                    dock.localOrderId,
+                    dock.targetPlanId,
+                    binding.targetSignalId,
+                    binding.localSignalId,
+                    payloadHash,
+                    originalSubmitter
+                );
                 return false;
             }
         }

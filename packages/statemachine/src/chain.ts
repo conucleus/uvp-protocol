@@ -350,10 +350,14 @@ interface TrackedHookRuntime {
 /**
  * pokeTimer 守门的逐 (planId, orderId, hookId) 状态镜像：从 HookStatusChanged
  * （含被观察面过滤的 →ready/→init 转移，此处仍须消费）与 HookReady 推导
- * hook 当前状态与 dueAt。TimerPoked 只有在"当前态 = wait 且 pokedAt ≥
- * dueAt"时才可能存在于链上（事件自带 dueAt——frozen v0.10 ABI 的非索引
- * uint64 字段——状态侧记录缺失时以事件值为准）。无法证明合法（状态未
- * 知、dueAt 缺失、时间戳不可解析）一律按不可能过滤，不放行待验。
+ * hook 当前状态与 dueAt。到期判据只取守门推导值（合约 pokeTimer 读的是
+ * 存储里的 dueAt）：TimerPoked 只有在"当前态 = wait 且 pokedAt ≥ 守门
+ * dueAt"时才可能存在于链上。事件自带的 dueAt（frozen v0.10 ABI 的非索引
+ * uint64 字段；冻结前形状的喂给流可能缺省）是待核验的声称值——在场时
+ * 必须与守门值逐点一致，毒事件自报更小的 dueAt 无法伪造"已到期"；缺省
+ * 时不影响判定，守门值已完整覆盖 TimerNotWaiting/TimerNotDue 两道闸。
+ * 无法证明合法（状态未知、守门 dueAt 缺失、声称值不一致、时间戳不可
+ * 解析）一律按不可能过滤。
  */
 class TimerPokeGate {
   private readonly runtimes = new Map<string, TrackedHookRuntime>();
@@ -364,19 +368,21 @@ class TimerPokeGate {
       return true;
     }
     const runtime = this.runtimes.get(runtimeKey(event));
-    if (runtime === undefined || runtime.status !== "wait") {
+    if (runtime === undefined || runtime.status !== "wait" || runtime.dueAt === undefined) {
       return false;
     }
-    // pokeTimer 要求 dueAt != 0 且 block.timestamp >= dueAt；pokedAt 即
-    // poke 交易的块时间戳（enrichment）。二者缺一或不可解析都无法证明
-    // 该事件合约可产生。
-    const dueAt = event.dueAt ?? runtime.dueAt;
+    const trackedDueAt = parseTimestamp(runtime.dueAt);
     const pokedAt = parseTimestamp(event.pokedAt);
-    const dueAtMillis = parseTimestamp(dueAt);
-    if (pokedAt === undefined || dueAtMillis === undefined) {
+    if (trackedDueAt === undefined || pokedAt === undefined) {
       return false;
     }
-    return pokedAt >= dueAtMillis;
+    if (event.dueAt !== undefined) {
+      const eventDueAt = parseTimestamp(event.dueAt);
+      if (eventDueAt === undefined || eventDueAt !== trackedDueAt) {
+        return false;
+      }
+    }
+    return pokedAt >= trackedDueAt;
   }
 
   /** 消费事件推进守门状态（对所有放行事件调用）。 */
