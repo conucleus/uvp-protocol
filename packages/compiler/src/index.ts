@@ -13,21 +13,27 @@ export {
 } from "./zhixu-loader.js";
 export {
   assertOnchainHookPlanArtifact,
+  OnchainHookPlanArtifactValidationError,
+  validateOnchainHookPlanArtifact,
+} from "./onchain/validate/artifact.js";
+export {
   compileZhixuOnchainHookPlan,
   compileZhixuRegisterPlanArgs,
+} from "./onchain/compile.js";
+export {
   hashSolidityRegisterHooks,
+  planIdForPublisher,
+  toSolidityRegisterPlanArgs,
+} from "./onchain/solidity/registration.js";
+export {
   onchainHookId,
   onchainHookName,
-  planIdForPublisher,
   onchainSelectorBindingHash,
   onchainSignalId,
   onchainSignalKey,
   onchainSourceId,
   onchainStageId,
-  OnchainHookPlanArtifactValidationError,
-  toSolidityRegisterPlanArgs,
-  validateOnchainHookPlanArtifact,
-} from "./onchain-hook-plan.js";
+} from "./onchain/hash/route.js";
 export { hashCanonical, keccak256Hex } from "./hash.js";
 export {
   canonicalSignalHash,
@@ -97,7 +103,7 @@ export {
   HOOK_FLAG_ORDER_TRIGGER_DOCK,
   HOOK_FLAG_ORDER_TRIGGER_MINT,
   solidityHookFlags,
-} from "./onchain-hook-plan.js";
+} from "./onchain/solidity/registration.js";
 export {
   COMPILER_NAME,
   COMPILER_VERSION,

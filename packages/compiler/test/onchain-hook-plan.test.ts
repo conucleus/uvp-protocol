@@ -32,13 +32,13 @@ import {
   HookPlanCompilationError,
 } from "../src/hook-plan.js";
 import { hookPlanHashOf } from "../src/dock-commitments.js";
+import { compileOnchainHookPlan } from "../src/onchain/compile.js";
+import { hashOnchainPlanPayload } from "../src/onchain/hash/plan.js";
 import {
-  compileOnchainHookPlan,
-  hashOnchainPlanPayload,
   onchainSignalId,
   onchainSignalKey,
   onchainSourceId,
-} from "../src/onchain-hook-plan.js";
+} from "../src/onchain/hash/route.js";
 import type { HookPlanArtifact } from "../src/types/index.js";
 
 const demoManifest = dockDemoResolutionManifest();
