@@ -92,9 +92,18 @@ export interface ChainOrderMaterializedEvent extends ChainEventBase {
 
 export interface ChainOrderTriggeredEvent extends ChainEventBase {
   readonly eventName: "OrderTriggered";
+  /**
+   * Frozen payload (v0.10 ABI): OrderTriggered(bytes32 indexed orderId,
+   * bytes32 indexed planId, bytes32 indexed triggerStageId, bytes32
+   * triggerHookId, bytes32 sourceId, bytes32 signalId, address submitter).
+   * triggerHookId mirrors StageMaterialized: indexers/replayers must locate
+   * the birth hook's evaluation semantics without re-deriving them from the
+   * plan (stageId alone is ambiguous for multi-hook stages).
+   */
   readonly orderId: string;
   readonly planId: HexString;
   readonly triggerStageId: string;
+  readonly triggerHookId: string;
   readonly sourceId: string;
   readonly signalId: string;
   readonly submitter: string;
@@ -289,13 +298,32 @@ export class ChainReplayMismatchError extends Error {
  * for an order-trigger hook the oracle could not derive by evaluation is
  * accepted as the authoritative on-chain birth statement), so this wrapper
  * only projects the frozen v0.10 event shape and delegates.
+ *
+ * pokeTimer 合约守门镜像（UVPStateMachine.pokeTimer）：非 Wait 态 revert
+ * TimerNotWaiting、未到期（dueAt 缺失或 pokedAt < dueAt）revert
+ * TimerNotDue——两类交易在链上根本无法产出 TimerPoked 事件。回放喂给
+ * native 层的流必须先按这两个条件过滤，否则含不可产生事件的流（历史上
+ * 的 golden fixture 就携带过"已 cxl 的 hook 又被 poke"的序列）会把合约
+ * 不可能的状态变迁喂进求值器。
  */
 export function replayChainEvents(
   events: readonly ChainModeEvent[],
   options: ChainReplayOptions = {}
 ): ChainReplayResult {
-  const normalized: readonly OracleFeedEvent[] = events
-    .map(normalizeChainEventForOracle)
+  // 守门状态按事件序（options.sort 时的确定性序）跟踪；状态转移事件的
+  // 缺席意味着"无法证明该 poke 合法"，按 fail-closed 过滤。
+  const ordered =
+    options.sort === true ? [...events].sort(compareChainEvents) : events;
+  const pokeGate = new TimerPokeGate();
+  const normalized: readonly OracleFeedEvent[] = ordered
+    .map((event) => {
+      const pokeAllowed = pokeGate.admit(event);
+      if (!pokeAllowed) {
+        return undefined;
+      }
+      pokeGate.track(event);
+      return normalizeChainEventForOracle(event);
+    })
     .filter((event): event is OracleFeedEvent => event !== undefined);
   const result = replayWithUvpCore({
     events: normalized,
@@ -312,6 +340,87 @@ export function replayChainEvents(
   }
 
   return result;
+}
+
+interface TrackedHookRuntime {
+  status: ChainOracleHookStatus;
+  dueAt?: string;
+}
+
+/**
+ * pokeTimer 守门的逐 (planId, orderId, hookId) 状态镜像：从 HookStatusChanged
+ * （含被观察面过滤的 →ready/→init 转移，此处仍须消费）与 HookReady 推导
+ * hook 当前状态与 dueAt。TimerPoked 只有在"当前态 = wait 且 pokedAt ≥
+ * dueAt"时才可能存在于链上（事件自带 dueAt——frozen v0.10 ABI 的非索引
+ * uint64 字段——状态侧记录缺失时以事件值为准）。无法证明合法（状态未
+ * 知、dueAt 缺失、时间戳不可解析）一律按不可能过滤，不放行待验。
+ */
+class TimerPokeGate {
+  private readonly runtimes = new Map<string, TrackedHookRuntime>();
+
+  /** 事件是否可进入 native 喂给层（仅 TimerPoked 会被拒）。 */
+  admit(event: ChainModeEvent): boolean {
+    if (event.eventName !== "TimerPoked") {
+      return true;
+    }
+    const runtime = this.runtimes.get(runtimeKey(event));
+    if (runtime === undefined || runtime.status !== "wait") {
+      return false;
+    }
+    // pokeTimer 要求 dueAt != 0 且 block.timestamp >= dueAt；pokedAt 即
+    // poke 交易的块时间戳（enrichment）。二者缺一或不可解析都无法证明
+    // 该事件合约可产生。
+    const dueAt = event.dueAt ?? runtime.dueAt;
+    const pokedAt = parseTimestamp(event.pokedAt);
+    const dueAtMillis = parseTimestamp(dueAt);
+    if (pokedAt === undefined || dueAtMillis === undefined) {
+      return false;
+    }
+    return pokedAt >= dueAtMillis;
+  }
+
+  /** 消费事件推进守门状态（对所有放行事件调用）。 */
+  track(event: ChainModeEvent): void {
+    switch (event.eventName) {
+      case "HookStatusChanged": {
+        // newStatus 已由 normalize 边界校验为 frozen v0.10 状态集；此处
+        // 直接消费（→ready/→init 转移虽被观察面过滤，守门仍须感知）。
+        const newStatus = event.newStatus;
+        if (newStatus === undefined) {
+          return;
+        }
+        this.runtimes.set(runtimeKey(event), {
+          status: newStatus,
+          ...(event.dueAt === undefined || newStatus !== "wait"
+            ? {}
+            : { dueAt: event.dueAt }),
+        });
+        return;
+      }
+      case "HookReady": {
+        this.runtimes.set(runtimeKey(event), { status: "ready" });
+        return;
+      }
+      default:
+        return;
+    }
+  }
+}
+
+function runtimeKey(event: {
+  readonly planId: HexString;
+  readonly orderId: string;
+  readonly hookId: string;
+}): string {
+  return `${event.planId}::${event.orderId}::${event.hookId}`;
+}
+
+function parseTimestamp(value: string | undefined): number | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const millis = Date.parse(value);
+  return Number.isNaN(millis) ? undefined : millis;
 }
 
 export function chainEventId(event: ChainEventBase): string {

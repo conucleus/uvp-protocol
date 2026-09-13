@@ -10,7 +10,7 @@ import {
   parseAbiParameters,
   stringToHex,
 } from "viem";
-import { assertHookPlanArtifact, compareByCodeUnit, HookPlanCompilationError } from "./hook-plan.js";
+import { assertHookPlanArtifact, compareCanonicalKey, HookPlanCompilationError } from "./hook-plan.js";
 import { canonicalStringify } from "./canonical.js";
 import {
   ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
@@ -183,6 +183,22 @@ export function compileOnchainHookPlan(
   const unresolvedTrackIssues = onchainUnresolvedRouteIssues(
     hookPlanArtifact.unresolvedDockRoutes,
   );
+  // executorRoutes 先于 preflight 组装：validateOnchainCompiledHooks 的
+  // routeRef 引用检查需要它们在场（闭集/空 id 由 compileExecutorRoute 自行
+  // 响亮拒绝）。
+  const executorRoutes = Object.values(hookPlanArtifact.executorRoutes)
+    .map(compileExecutorRoute)
+    .sort(compareExecutorRoutes);
+  // _validateHook 镜像预检（MAX_ONCHAIN_HOOK_DELAY_SECONDS 等常量自述
+  // "fail-closed 预检必须拒绝同样输入"）：EmptyPlan/空指令栈/空依赖/
+  // 30 天延时上限等此前只在反序列化边界生效——手工/漂移的 IR 制品过
+  // IR 校验后会在编译入口静默产出毒制品，交由 commitPlan revert。
+  const hookShapeIssues: readonly string[] = compiledHooks.length === 0
+    ? ["compiledHooks must not be empty (contract reverts EmptyPlan)"]
+    : [
+        ...validateOnchainCompiledHooks(compiledHooks, executorRoutes),
+        ...canonicalOrderIssues(compiledHooks, hookOrderKey, "compiledHooks"),
+      ];
   const preflightIssues = [
     ...crossStageIssues,
     ...materializationIssues,
@@ -192,14 +208,12 @@ export function compileOnchainHookPlan(
     ...currentOrderFactKeyIssues,
     ...dockTrackIssues,
     ...unresolvedTrackIssues,
+    ...hookShapeIssues,
   ];
   if (preflightIssues.length > 0) {
     throw new HookPlanCompilationError(preflightIssues);
   }
   const dependencyIndex = buildOnchainDependencyIndex(compiledHooks);
-  const executorRoutes = Object.values(hookPlanArtifact.executorRoutes)
-    .map(compileExecutorRoute)
-    .sort(compareExecutorRoutes);
   const selectorBindings = compileSelectorBindings(
     hookPlanArtifact.selectedStageBindings,
   );
@@ -603,7 +617,7 @@ export function toSolidityRegisterPlanArgs(
     dockInterfaceRoot: artifact.dockInterfaceRoot,
     hooks,
     dependencyIndex: Object.entries(artifact.dependencyIndex)
-      .sort(([left], [right]) => compareByCodeUnit(left, right))
+      .sort(([left], [right]) => compareCanonicalKey(left, right))
       .map(([signalKey, hookIds]) => ({
         signalKey: signalKey as HexString,
         hookIds,
@@ -875,7 +889,7 @@ function buildOnchainDependencyIndex(
 
   const output: Record<HexString, readonly HexString[]> = {};
   for (const [signalKey, hookIds] of [...index.entries()].sort(
-    ([left], [right]) => compareByCodeUnit(left, right),
+    ([left], [right]) => compareCanonicalKey(left, right),
   )) {
     output[signalKey] = hookIds;
   }
@@ -885,7 +899,12 @@ function buildOnchainDependencyIndex(
 function compileExecutorRoute(
   route: HookPlanExecutorRoute,
 ): OnchainExecutorRoute {
-  if (route.executor.supplierID === undefined || route.executor.supplierID === "") {
+  // 与 Rust 编译入口同口径：supplierID 拒空白（不只是空串）——空白 id 是
+  // "有值"的假形态，烧进 executorHash 后消费侧无法寻址执行者。
+  if (
+    route.executor.supplierID === undefined ||
+    route.executor.supplierID.trim().length === 0
+  ) {
     throw new HookPlanCompilationError([
       `executor route "${route.stageIdentifier}" (supplierType=${String(route.executor.supplierType)}) is missing a non-empty executor.supplierID`,
     ]);
@@ -1629,7 +1648,7 @@ function unmaterializableStageIssues(
       `stage ${hook.stageIdentifier} has no order-trigger or EMIT_READY hook; its hooks compile to flags=0 watchers which can never materialize the stage on-chain (deadlock, no recovery path) — the Rust compiler must reject this shape`,
     );
   }
-  for (const stageIdentifier of [...declaredStages].sort(compareByCodeUnit)) {
+  for (const stageIdentifier of [...declaredStages].sort(compareCanonicalKey)) {
     if (stageMaterializer.has(onchainStageId(stageIdentifier))) {
       continue;
     }
@@ -1858,7 +1877,7 @@ function crossStageDependencyIssues(hooks: readonly unknown[]): readonly string[
       if (seen.stageId !== hook.stageId && !triggerOnly) {
         issues.push(
           `dependency ${dependency.signalKey} is shared across stages ${[seen.stageId, hook.stageId]
-            .sort((left, right) => compareByCodeUnit(left, right))
+            .sort((left, right) => compareCanonicalKey(left, right))
             .join(", ")} with a non-trigger watcher after a foreign stage; `
           + "an unmaterialized stage's non-trigger hook would make the "
           + "submitting transaction revert forever",
@@ -1902,7 +1921,7 @@ function validateOnchainDependencyIndex(
 
   const expected = Object.fromEntries(
     [...recomputed.entries()]
-      .sort(([left], [right]) => compareByCodeUnit(left, right))
+      .sort(([left], [right]) => compareCanonicalKey(left, right))
       .map(([signalKey, hookIds]) => [signalKey, hookIds]),
   );
   if (JSON.stringify(expected) !== JSON.stringify(dependencyIndex)) {
@@ -1931,7 +1950,24 @@ function validateOnchainExecutorRoutes(
       issues,
     );
     expectNonEmptyString(route.executorType, `${prefix}.executorType`, issues);
-    expectString(route.executorId, `${prefix}.executorId`, issues);
+    // executorType 闭集（编译入口 SUPPLIER_TYPES 同集同 trim 比对口径）：
+    // 闭集外字符串经 executorHash 进链上承诺后无合约守卫可拦——手工/第三
+    // 方制品不得绕过 Rust 编译门把词表外值烧进承诺。
+    if (
+      typeof route.executorType === "string" &&
+      !SUPPLIER_TYPES.includes(route.executorType.trim())
+    ) {
+      issues.push(
+        `${prefix}.executorType must be one of ${SUPPLIER_TYPES.join("|")} (case-sensitive), received ${JSON.stringify(route.executorType)}`,
+      );
+    }
+    // executorId 与编译入口 executor.supplierID 同口径拒空串/空白：空 id
+    // 寻址不了执行者，只会在 keeper 投递面变成确定性失败。
+    if (typeof route.executorId === "string" && route.executorId.trim().length === 0) {
+      issues.push(
+        `${prefix}.executorId must be a non-empty executor id (whitespace-only ids are rejected at the compile entry already)`,
+      );
+    }
     expectHexHash(route.executorHash, `${prefix}.executorHash`, issues);
     expectHexHash(route.resourcesHash, `${prefix}.resourcesHash`, issues);
     expectHexHash(route.routeHash, `${prefix}.routeHash`, issues);
@@ -2207,9 +2243,9 @@ function compareOnchainHooks(
   right: OnchainCompiledHook,
 ): number {
   return (
-    compareByCodeUnit(left.stageIdentifier, right.stageIdentifier) ||
-    compareByCodeUnit(left.hookName, right.hookName) ||
-    compareByCodeUnit(left.hookId, right.hookId)
+    compareCanonicalKey(left.stageIdentifier, right.stageIdentifier) ||
+    compareCanonicalKey(left.hookName, right.hookName) ||
+    compareCanonicalKey(left.hookId, right.hookId)
   );
 }
 
@@ -2233,7 +2269,7 @@ function canonicalOrderIssues(
     if (previous !== undefined) {
       let diverged = false;
       for (let position = 0; position < previous.length; position += 1) {
-        const order = compareByCodeUnit(
+        const order = compareCanonicalKey(
           previous[position] as string,
           key[position] as string,
         );
@@ -2287,8 +2323,8 @@ function compareExecutorRoutes(
   right: OnchainExecutorRoute,
 ): number {
   return (
-    compareByCodeUnit(left.stageIdentifier, right.stageIdentifier) ||
-    compareByCodeUnit(left.routeId, right.routeId)
+    compareCanonicalKey(left.stageIdentifier, right.stageIdentifier) ||
+    compareCanonicalKey(left.routeId, right.routeId)
   );
 }
 
@@ -2297,9 +2333,9 @@ function compareSelectorBindings(
   right: OnchainStageSelectorBinding,
 ): number {
   return (
-    compareByCodeUnit(left.selectorStageId, right.selectorStageId) ||
-    compareByCodeUnit(left.targetStageId, right.targetStageId) ||
-    compareByCodeUnit(left.bindingHash, right.bindingHash)
+    compareCanonicalKey(left.selectorStageId, right.selectorStageId) ||
+    compareCanonicalKey(left.targetStageId, right.targetStageId) ||
+    compareCanonicalKey(left.bindingHash, right.bindingHash)
   );
 }
 
@@ -2308,11 +2344,11 @@ function compareSignalCapabilities(
   right: OnchainSignalCapability,
 ): number {
   return (
-    compareByCodeUnit(left.stageId, right.stageId) ||
-    compareByCodeUnit(left.targetSourceId, right.targetSourceId) ||
-    compareByCodeUnit(left.signalId, right.signalId) ||
-    compareByCodeUnit(left.targetOrderRelation, right.targetOrderRelation) ||
-    compareByCodeUnit(left.capabilityHash, right.capabilityHash)
+    compareCanonicalKey(left.stageId, right.stageId) ||
+    compareCanonicalKey(left.targetSourceId, right.targetSourceId) ||
+    compareCanonicalKey(left.signalId, right.signalId) ||
+    compareCanonicalKey(left.targetOrderRelation, right.targetOrderRelation) ||
+    compareCanonicalKey(left.capabilityHash, right.capabilityHash)
   );
 }
 

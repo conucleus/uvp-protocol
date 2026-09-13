@@ -58,6 +58,13 @@ contract UVPDeploymentRegistry {
     event DeploymentActivated(
         bytes32 indexed previousDeploymentId, bytes32 indexed newDeploymentId, bytes32 evidenceHash, string evidenceURI
     );
+    /// 双义解码规则（ABI 冻结，参数名不改动）：显式 deprecateDeployment
+    /// 路径的 reasonHash/reasonURI 即调用方给定的废弃理由；激活切换路径
+    /// （activateDeployment 把旧 Active 自动降级）填充的是【被废弃部署
+    /// 自身】的 evidenceHash/metadataURI——其 canary/激活时存证，不是新
+    /// 部署的激活证据（后者由同笔交易的 DeploymentActivated 携带）。
+    /// 索引器须按触发上下文区分两套字段语义，不得把激活降级的
+    /// reasonHash 当作独立废弃理由解读。
     event DeploymentDeprecated(bytes32 indexed deploymentId, bytes32 reasonHash, string reasonURI);
     event DeploymentRetired(bytes32 indexed deploymentId, bytes32 reasonHash, string reasonURI);
 

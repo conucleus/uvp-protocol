@@ -87,7 +87,6 @@ contract UVPStagePatchModule {
     /// 不同时，"上一执行者"没有确定序——拒绝而不是按 capability 数组枚举
     /// 序静默取值。
     error StagePreviousExecutorAmbiguous(bytes32 orderId, bytes32 targetStageId, uint64 submittedAt);
-    error StageSignalCapabilityMissing(bytes32 planId, bytes32 targetStageId);
     error StageResourcePatchNonceNotIncreasing(
         bytes32 orderId, bytes32 targetStageId, bytes32 resourceKey, uint256 previousNonce, uint256 patchNonce
     );
@@ -407,8 +406,12 @@ contract UVPStagePatchModule {
     function _delegateStageExecutorSignals(bytes32 planId, bytes32 orderId, StageExecutorPatch calldata patch) private {
         IUVPPlanMetadataModuleForStagePatch metadata = _planMetadata();
         uint256 capabilityCount = metadata.stageSignalCapabilityCount(planId, patch.targetStageId);
-        uint256 delegatedCount;
 
+        // 零 relation=0 capability 不再整体拒绝：零 capability 计划（手工/
+        // 触发型 plan）与仅声明 relation=1 或纯 source==stage 回退事实的阶段
+        // 在主合约处处有 fallback（mint 词表闸放行、_signalStageId 回退），
+        // executor overlay 正是这些阶段唯一的执行者门——跳过委托（无键可
+        // 委托）而照常写 overlay，与其余零 capability 口径一致。
         for (uint256 i = 0; i < capabilityCount; i++) {
             (bytes32 targetSourceId, bytes32 signalId, uint8 relation) =
                 metadata.stageSignalCapabilityAt(planId, patch.targetStageId, i);
@@ -416,11 +419,6 @@ contract UVPStagePatchModule {
                 continue;
             }
             _delegateStageExecutorSignal(planId, orderId, targetSourceId, signalId, patch);
-            delegatedCount += 1;
-        }
-
-        if (delegatedCount == 0) {
-            revert StageSignalCapabilityMissing(planId, patch.targetStageId);
         }
     }
 
@@ -500,6 +498,13 @@ contract UVPStagePatchModule {
         ActiveStageExecutorPatch storage activePatch,
         address previousExecutorSigner
     ) private view {
+        // previousExecutorSignature 只在 HANDOFF 是授权材料（上一执行者对
+        // 同一 digest 的会签）。ASSIGN/REPLACEMENT 携带非空签名时静默丢弃
+        // 会让调用方误以为签名参与了授权——API 语义一致化：附带即拒绝
+        // （expected=0：该模式下没有任何被期待的上一执行者签名）。
+        if (patch.mode != EXECUTOR_PATCH_MODE_HANDOFF && previousExecutorSigner != address(0)) {
+            revert InvalidStageExecutorPatchSignature(address(0), previousExecutorSigner);
+        }
         (uint256 signalCount, address latestSignalSubmitter, uint64 latestSubmittedAt, bool latestAmbiguous) =
             _stageSignalState(planId, orderId, patch.targetStageId);
         if (patch.mode == EXECUTOR_PATCH_MODE_ASSIGN) {

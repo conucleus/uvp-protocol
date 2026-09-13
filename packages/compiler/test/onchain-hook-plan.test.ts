@@ -26,7 +26,11 @@ import {
   type SolidityRegisterPlanArgs,
   type ZhixuDefinition,
 } from "../src/index.js";
-import { compileZhixuHookPlan, HookPlanCompilationError } from "../src/hook-plan.js";
+import {
+  compileZhixuHookPlan,
+  compareCanonicalKey,
+  HookPlanCompilationError,
+} from "../src/hook-plan.js";
 import { hookPlanHashOf } from "../src/dock-commitments.js";
 import {
   compileOnchainHookPlan,
@@ -45,6 +49,46 @@ function resign<A extends { planHash: string }>(artifact: A): A {
     ...artifact,
     planHash: hookPlanHashOf(artifact as unknown as HookPlanArtifact),
   };
+}
+
+/** 深克隆 AST 并把所有 delay 节点的 durationSeconds 改写为给定秒数。 */
+function replaceDelay(node: unknown, seconds: number): unknown {
+  if (Array.isArray(node)) {
+    return node.map((item) => replaceDelay(item, seconds));
+  }
+  if (node === null || typeof node !== "object") {
+    return node;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node)) {
+    out[key] = key === "durationSeconds" ? seconds : replaceDelay(value, seconds);
+  }
+  return out;
+}
+
+/** 从 hook 列表按 IR 口径（source::signalName 键）重建 dependencyIndex。 */
+function rebuildDependencyIndex(
+  hooks: readonly { hookId: string; dependencies: readonly { source: string; signalName: string }[] }[],
+): Record<string, string[]> {
+  const index = new Map<string, string[]>();
+  for (const hook of hooks) {
+    for (const dependency of hook.dependencies) {
+      const key = `${dependency.source}::${dependency.signalName}`;
+      const hookIds = index.get(key) ?? [];
+      if (!hookIds.includes(hook.hookId)) {
+        hookIds.push(hook.hookId);
+      }
+      index.set(key, hookIds);
+    }
+  }
+  return Object.fromEntries(
+    [...index.entries()]
+      .sort(([left], [right]) => compareCanonicalKey(left, right))
+      .map(([key, hookIds]) => [
+        key,
+        [...hookIds].sort(compareCanonicalKey),
+      ]),
+  );
 }
 
 function compileZhixuHookPlanWithManifest(
@@ -1778,33 +1822,173 @@ test("rejects fileResources fileType outside the closed enum at the on-chain com
   );
 });
 
-test("artifact boundary stays vocabulary-neutral on executorType", () => {
-  // 词表闸在编译入口（compileExecutorRoute，与 rust/go 同口径）；制品边界
-  // 与 rust 权威面同构——只校验结构一致性与承诺摘要重算，不自造词表层。
-  // 词表外 executorType 的自洽制品（重签 planHash）在边界放行，责任在
-  // 产出侧的编译入口。
+test("artifact boundary enforces the executorType closed enum and non-empty executorId", () => {
+  // 词表闸的第一道在编译入口（compileExecutorRoute，与 rust/go 同口径），
+  // 但制品边界不得放行词表外/空白 id 的自洽制品（重签 planHash）：手工/
+  // 第三方制品绕过 Rust 编译门后，闭集外 executorType/空 executorId 会经
+  // executorHash 烧进链上承诺且再无合约守卫可拦。
   const onchain = compileOnchainHookPlan(
     compileZhixuHookPlanWithManifest(baseZhixu),
   );
   const route = onchain.executorRoutes[0]!;
-  const mutated = {
-    ...onchain,
-    executorRoutes: onchain.executorRoutes.map((candidate) =>
-      candidate === route
-        ? { ...candidate, executorType: "Vendor" }
-        : candidate,
-    ),
+  const rehashed = (mutated: OnchainHookPlanArtifact): OnchainHookPlanArtifact => {
+    const { planHash: _drop, ...payload } = mutated;
+    void _drop;
+    return {
+      ...mutated,
+      planHash: hashOnchainPlanPayload(payload as never),
+    } as OnchainHookPlanArtifact;
   };
-  const { planHash: _drop, ...payload } = mutated;
-  void _drop;
-  const issues = validateOnchainHookPlanArtifact({
-    ...mutated,
-    planHash: hashOnchainPlanPayload(payload),
-  });
+  const mutateRoute = (
+    patch: Partial<(typeof onchain.executorRoutes)[number]>,
+  ): OnchainHookPlanArtifact =>
+    rehashed({
+      ...onchain,
+      executorRoutes: onchain.executorRoutes.map((candidate) =>
+        candidate === route ? { ...candidate, ...patch } : candidate,
+      ),
+    } as OnchainHookPlanArtifact);
+
+  // 词表外 executorType（含大小写变体）→ 与编译入口同集同文案拒绝。
+  const issues = validateOnchainHookPlanArtifact(
+    mutateRoute({ executorType: "Vendor" }),
+  );
+  assert.ok(
+    issues.some((issue) =>
+      /executorType must be one of individual\|organization\|zhixu \(case-sensitive\), received "Vendor"/.test(
+        issue,
+      ),
+    ),
+    issues.join("; "),
+  );
+  // 空 executorId / 空白 executorId → 拒绝（镜像编译入口 supplierID 门）。
+  for (const executorId of ["", "   "]) {
+    const idIssues = validateOnchainHookPlanArtifact(
+      mutateRoute({ executorId }),
+    );
+    assert.ok(
+      idIssues.some((issue) =>
+        /executorId must be a non-empty executor id/.test(issue),
+      ),
+      `executorId=${JSON.stringify(executorId)}: ${idIssues.join("; ")}`,
+    );
+  }
+  // 编译产物的原样制品（未变异）仍零 issue：闭集与编译入口同集，不收紧
+  // 合法产物。
   assert.deepEqual(
-    issues.filter((issue) => issue.includes("executorType must be one of")),
+    validateOnchainHookPlanArtifact(
+      rehashed(structuredClone(onchain) as OnchainHookPlanArtifact),
+    ),
     [],
-    `制品边界不应校验 executorType 词表，实际 issues：${JSON.stringify(issues)}`,
+  );
+});
+
+test("compile boundary rejects whitespace-only executor.supplierID", () => {
+  // 编译入口此前只拒空串：空白 supplierID 是"有值"的假形态，过门即烧进
+  // executorHash，消费侧永远无法寻址执行者。与 Rust 编译入口同口径拒绝。
+  const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
+  const mutated = resign({
+    ...hookPlan,
+    executorRoutes: {
+      ...hookPlan.executorRoutes,
+      "selector.assign": {
+        ...hookPlan.executorRoutes["selector.assign"]!,
+        executor: {
+          ...hookPlan.executorRoutes["selector.assign"]!.executor,
+          supplierID: "   ",
+        },
+      },
+    },
+  } as typeof hookPlan);
+  assert.throws(
+    () => compileOnchainHookPlan(mutated),
+    (error: unknown) => {
+      assert.ok(error instanceof HookPlanCompilationError);
+      assert.match(
+        error.issues.join("; "),
+        /is missing a non-empty executor\.supplierID/,
+      );
+      return true;
+    },
+  );
+});
+
+test("compile boundary mirrors _validateHook shape gates before producing artifacts", () => {
+  // MAX_ONCHAIN_HOOK_DELAY_SECONDS 等常量自述"fail-closed 预检必须拒绝同样
+  // 输入"：30 天延时上限/空指令栈形状/空依赖/EmptyPlan 此前只在反序列化
+  // 边界生效，手工/漂移的 IR 制品（过 IR 校验）会在编译入口静默产出毒
+  // 制品，交由 commitPlan revert。编译 preflight 必须同口径拒绝。
+  const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
+  const timeoutHook = hookPlan.compiledHooks.find(
+    (hook) => hook.hookName === "TIMEOUT",
+  );
+  assert.ok(timeoutHook, "base fixture exposes the TIMEOUT watcher hook");
+
+  // 30 天延时上限（contract reverts HookDelayTooLong）。
+  const overDelay = resign({
+    ...hookPlan,
+    compiledHooks: hookPlan.compiledHooks.map((hook) =>
+      hook === timeoutHook
+        ? { ...hook, ast: replaceDelay(hook.ast, 2_592_001) as typeof hook.ast }
+        : hook,
+    ),
+  } as typeof hookPlan);
+  assert.throws(
+    () => compileOnchainHookPlan(overDelay),
+    (error: unknown) => {
+      assert.ok(error instanceof HookPlanCompilationError);
+      assert.match(
+        error.issues.join("; "),
+        /delaySeconds must not exceed 2592000/,
+      );
+      return true;
+    },
+  );
+
+  // 空依赖（contract reverts InvalidHook for empty dependencyKeys）：IR 校验
+  // 不拒绝空依赖数组，毒制品此前只在 toSolidityRegisterPlanArgs 才炸。
+  const emptyDepsHooks = hookPlan.compiledHooks.map((hook) =>
+    hook === timeoutHook ? { ...hook, dependencies: [] } : hook,
+  );
+  const emptyDeps = resign({
+    ...hookPlan,
+    compiledHooks: emptyDepsHooks,
+    dependencyIndex: rebuildDependencyIndex(emptyDepsHooks),
+  } as typeof hookPlan);
+  assert.throws(
+    () => compileOnchainHookPlan(emptyDeps),
+    (error: unknown) => {
+      assert.ok(error instanceof HookPlanCompilationError);
+      assert.match(
+        error.issues.join("; "),
+        /dependencies must not be empty/,
+      );
+      return true;
+    },
+  );
+
+  // EmptyPlan（contract reverts EmptyPlan）：零 hook 且无阶段声明投影的
+  // IR 制品过 IR 校验，编译入口必须拒绝。
+  const emptyPlan = resign({
+    ...hookPlan,
+    compiledHooks: [],
+    dependencyIndex: {},
+    executorRoutes: {},
+    dockRoutes: [],
+    dockRoutesRoot: EMPTY_MERKLE_ROOT,
+    selectedStageBindings: [],
+    signalCapabilities: [],
+  } as typeof hookPlan);
+  assert.throws(
+    () => compileOnchainHookPlan(emptyPlan),
+    (error: unknown) => {
+      assert.ok(error instanceof HookPlanCompilationError);
+      assert.match(
+        error.issues.join("; "),
+        /compiledHooks must not be empty \(contract reverts EmptyPlan\)/,
+      );
+      return true;
+    },
   );
 });
 

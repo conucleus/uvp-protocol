@@ -142,15 +142,28 @@ export function prepareDockResolution(
  * planId preimage 的 platform 归一（Rust 权威 normalize_platform_value
  * 同口径）：空 params 不入 preimage，其余键按原文。内嵌定义允许携带
  * params:{}，跳过归一会把空对象当成 preimage 分叉误拒 manifest。
+ * 归一收敛在 planIdOf 单点执行：本地编译、manifest evmPlanId 重算与制品
+ * 校验三个 planId 计算面共用同一入口——任何一面绕开都会复活"携带空
+ * params 的定义双向不可修复"的双口径。
  */
-function normalizePlatformPreimage(platform: ZhixuPlatform): ZhixuPlatform {
+export function normalizePlatformPreimage(platform: unknown): unknown {
   if (
-    platform.params === undefined ||
-    Object.keys(platform.params).length > 0
+    typeof platform !== "object" ||
+    platform === null ||
+    Array.isArray(platform)
   ) {
     return platform;
   }
-  const normalized = { ...platform };
+  const record = platform as { params?: unknown };
+  if (
+    record.params === undefined ||
+    typeof record.params !== "object" ||
+    record.params === null ||
+    Object.keys(record.params).length > 0
+  ) {
+    return platform;
+  }
+  const normalized = { ...(platform as Record<string, unknown>) };
   delete normalized.params;
   return normalized;
 }
@@ -185,14 +198,13 @@ function prepareTargetEntry(
   // zhixuId/zhixuName），可从内嵌定义独立重算——manifest 自身可重算的
   // 承诺面到此为止（artifactHash = 目标 plan 的 planHash，目标 plan 不在
   // manifest 内，无法在此重算，信任边界在发布流程）。preimage 的 platform
-  // 与 Rust 权威 normalize_platform_value 同口径归一（空 params 不入
-  // preimage）：内嵌定义允许携带 params:{}，以原文重算会把空对象当成
-  // preimage 分叉误拒 manifest。
+  // 归一（空 params 不入 preimage）由 planIdOf 单点执行：内嵌定义允许携带
+  // params:{}，以原文重算会把空对象当成 preimage 分叉误拒 manifest。
   if (entry.evmPlanId !== undefined) {
     const recomputedPlanId = planIdOf(
       uid,
       entry.definition.metadata.name,
-      normalizePlatformPreimage(entry.definition.spec.platform),
+      entry.definition.spec.platform,
     );
     if (entry.evmPlanId !== recomputedPlanId) {
       throw new RangeError(
@@ -499,6 +511,26 @@ export function buildDockRoute(
     },
   );
 
+  // 同一 route 内多条 output 绑定映射同一本地事实键（localSourceId +
+  // localSignalId = 同一 stage 的同一本地信号）：每条绑定把同一本地事实
+  // 投递到不同端口/目标事实，第二条交付必撞 SignalAlreadyExists——合约侧
+  // 已按本地键幂等吸收兄弟绑定（UVPDockingModule.submitDockedSignal 的
+  // 镜像槽位检查），但那是 keeper 烧过 gas 之后的事后止血；DSL 的
+  // signalMap 键唯一表达不了该形态，可达面是手工/第三方中性壳与未来 DSL
+  // 扩展——link 期直接拒绝，route 本不该表达"一事实多投"。
+  const localFactKeys = new Set<string>();
+  for (const binding of outputBindings) {
+    const factKey = `${binding.localSourceId}:${binding.localSignalId}`;
+    if (localFactKeys.has(factKey)) {
+      throw new RangeError(
+        `dock route ${stageIdentifier} maps local signal ${JSON.stringify(binding.localSignalName)} onto multiple output ports; `
+          + "one local fact key (localSourceId, localSignalId) may drive at most one output binding per route "
+          + "(a second delivery of the same local fact reverts SignalAlreadyExists and burns keeper gas)",
+      );
+    }
+    localFactKeys.add(factKey);
+  }
+
   // 绑定按 bindingHash 排序（word 字节序）；merkle root 与产物数组同口径。
   inputBindings.sort((left, right) => compareBytes(left.bindingHash, right.bindingHash));
   outputBindings.sort((left, right) => compareBytes(left.bindingHash, right.bindingHash));
@@ -509,15 +541,22 @@ export function buildDockRoute(
     outputBindings.map((binding) => binding.bindingHash),
   );
 
-  // D012 双侧镜像（core link_dock_routes）：被绑定接口的
-  // 全部 input 端口 source（它们是同一接缝的投递邮箱）+ route-bound 输出
-  // 端口的 canonical signal 前缀，并集不得多于一个 seam——input 侧跨源
-  // 寻址在编译期拒绝。与 core 权威同谓词（>1 才拒）：并集为空需要接口
-  // 无 input 端口且 route 无输出绑定，与 D019（至少一项绑定）矛盾，
-  // 不可达。
-  const seams = new Set<string>(
-    interfaceEntry.inputs.map((port) => port.source),
-  );
+  // D012 双侧镜像（core link_dock_routes）：seam 只收本 route 实际绑定的
+  // 端口——input 侧从 route 绑定的 input 端口 source 观测，output 侧从
+  // route 绑定的输出端口 canonical signal 前缀观测；接口声明但未被本
+  // route 绑定的端口不属于这条执行通道（可由其他 route 另行绑定），不得
+  // 参与 seam。两侧并集必须恰好一个 seam（>1 才拒）——绑定端口跨源寻址
+  // 在编译期拒绝；并集为空需要 route 无任何绑定，与 D019（至少一项绑定）
+  // 矛盾，不可达。
+  const seams = new Set<string>();
+  for (const binding of neutral.inputBindings) {
+    const port = interfaceEntry.inputs.find(
+      (candidate) => candidate.port === binding.port,
+    );
+    if (port !== undefined) {
+      seams.add(port.source);
+    }
+  }
   for (const binding of neutral.outputBindings) {
     const output = interfaceEntry.outputs.find(
       (candidate) => candidate.port === binding.port,
@@ -528,7 +567,7 @@ export function buildDockRoute(
   }
   if (seams.size > 1) {
     throw new RangeError(
-      `dock route ${stageIdentifier} must bind a single target source seam across the interface's input and bound output ports, found ${JSON.stringify([...seams])}`,
+      `dock route ${stageIdentifier} must bind a single target source seam across route-bound input port sources and route-bound output signal prefixes, found ${JSON.stringify([...seams])}`,
     );
   }
 
@@ -592,6 +631,8 @@ export function assembleChainTrackHookPlan(
   const dockInterfaceRoot =
     dockInterface === null ? EMPTY_MERKLE_ROOT : dockInterface.interfaceRoot;
   const platform = shell.platform as HookPlanArtifact["platform"];
+  // planId 的 platform preimage 归一（空 params 不入 preimage）由 planIdOf
+  // 单点执行；制品 carried platform 保持 core 原样（planHash 覆盖它）。
   const planId = planIdOf(zhixuId, shell.zhixuName, platform);
   const localStageSources = flattenStageSources(definition);
   const dockRoutes = (shell.dockRoutes ?? []).map((route) =>
@@ -669,9 +710,13 @@ export function planIdOf(
   zhixuName: string,
   platform: unknown,
 ): HexString {
+  // planId 口径单点：platform preimage 经 normalizePlatformPreimage 归一
+  // （Rust 权威 normalize_platform_value，空 params 不入 preimage）。三个
+  // 计算面（本地编译/manifest evmPlanId 重算/制品校验）都经本函数，归一
+  // 不得下放到调用方各自实现。
   return hashCanonical(HOOK_PLAN_ID_DOMAIN, {
     compiler: { name: COMPILER_NAME, version: COMPILER_VERSION },
-    platform,
+    platform: normalizePlatformPreimage(platform),
     zhixuId,
     zhixuName,
   });

@@ -144,15 +144,17 @@ linkedOrderId = H(UVP_DOCK_ORDER_V1; dockInstanceId, targetDefinitionRefHash)
 必须与对接目标 plan 绑定。
 
 `localOrderKey` 的双轨口径（三条实现两形态，规格显式钉死）：
-- **字符串 order id 轨**（TS 承诺层 `localOrderKey()`、云轨 Go）：order id
-  是任意 slug 字符串，先 `keccak` 成 word 再进 preimage——本节公式即该轨。
-  TS golden 向量（`fixtures/dock/v1`）与云轨 `order-fixture-001` 类 id 按此。
-- **word 原值轨**（EVM 合约 `UVPDockingModule`）：EVM 轨的 order id 本身就是
-  bytes32 word，`openDockedOrder` 身份推导直接取 word 原值、**不再 keccak**。
-- 因此同一逻辑订单在两轨只能各自成立：字符串 id 不产生合法的 EVM word
-  身份，word id 过 TS `keccakWord()` 会得到不同实例。跨轨对接的订单 id 形
-  态约束（EVM 轨要求 id 即 word、云轨要求 slug）由部署面保证，本规格不为
-  其定义换算。
+- **字符串 order id 轨**：order id 是任意 slug 字符串（云轨 Go；TS 承诺层
+  `localOrderKey()` 对非 word 形态 id 同落此轨），先 `keccak` 成 word 再进
+  preimage——本节公式即该轨。TS golden 向量（`fixtures/dock/v1`）与云轨
+  `order-fixture-001` 类 id 按此。
+- **word 原值轨**：EVM 轨的 order id 本身就是 bytes32 word。字符串 keccak、
+  word 直通：TS `localOrderKey()` 与合约 `UVPDockingModule.openDockedOrder`
+  对 word 形态 id 一致直通原值、**都不再 keccak**——同一 word id 在 TS
+  预测与合约推导得到同一 dockInstanceId。
+- 因此同一逻辑订单按 id 形态各自落轨：字符串 id 不产生合法的 EVM word
+  身份。跨轨对接的订单 id 形态约束（EVM 轨要求 id 即 word、云轨要求
+  slug）由部署面保证，本规格不为其定义换算。
 
 ### 4.5 envelope / 幂等键
 

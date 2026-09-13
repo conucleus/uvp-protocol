@@ -117,7 +117,11 @@ code do not silently drift away from the contract ABI.
    orders remain on their original deployment and module set.
 4. A publisher signs hooks and metadata hashes; any relayer commits the hooks,
    then any caller finalizes the exact metadata. A pending Plan cannot create an
-   Order and finalized Plan metadata is immutable.
+   Order and finalized Plan metadata is immutable. Note on naming: the
+   `planExists(planId)` view returns "exists AND finalized" — a committed but
+   not yet finalized plan returns `false` (the ABI is frozen; consumers use it
+   as the "can mint/derive here" gate, for which the two-step middle state must
+   read false).
 5. Any relayer submits a signed trigger-order request. The
    contract recovers the business submitter, creates the order, writes explicit
    `SignalAuthorization[]` records, records the trigger fact, and materializes
@@ -144,10 +148,14 @@ code do not silently drift away from the contract ABI.
     target stage and resource key. The chain stores hashes, nonces, and manifest
     URIs, not plaintext business documents. Contract time window: a resource
     patch is only accepted until the target stage has received its first
-    compiled (relation-0) signal — `applyStageResourcePatch` reverts
-    `StageAlreadyHasSignal` from that moment on, permanently (deliberate
-    immutability gate). Docs that describe file resources as replaceable or
-    deletable must disclose this window.
+    signal, and the closure counts both attribution paths the state machine
+    treats identically — compiled (relation-0) capabilities AND
+    source==stage fallback facts (keys outside the declared vocabulary with
+    `sourceId == stageId`, counted via `sourceSignalCount`):
+    `applyStageResourcePatch` reverts `StageAlreadyHasSignal` from that moment
+    on, permanently (deliberate fail-closed immutability gate; a fallback fact
+    closes the window exactly like a compiled one). Docs that describe file
+    resources as replaceable or deletable must disclose this window.
 10. Docking is committed-route only: a local entrance hook that
     is Ready (`EMIT_READY`) plus a Merkle-proved `dockRoutesRoot` route lets a
     keeper call `openDockedOrder`, which atomically derives the dock instance
@@ -231,7 +239,16 @@ The module fixtures add these public events:
 - `StageResourcePatchApplied` (stage-patch module; carries `planId`, aligned
   with `StageExecutorPatchApplied`);
 - `DockOpened`, `DockInputSubmitted`, and `DockOutputSubmitted`
-  (docking module).
+  (docking module);
+- decoding note for `DeploymentDeprecated` (deployment registry): the
+  `reasonHash`/`reasonURI` parameters are dual-meaning by frozen ABI. On the
+  explicit `deprecateDeployment` path they carry the caller-supplied
+  deprecation reason; on the activation-cutover path
+  (`activateDeployment` auto-deprecating the previous active deployment) they
+  carry the deprecated deployment's own `evidenceHash`/`metadataURI`
+  (its canary/activation evidence), not the new deployment's activation
+  evidence — indexers must disambiguate by trigger context (presence of the
+  sibling `DeploymentActivated` in the same transaction).
 
 All of these module events carry the composite `(planId, orderId)` identity:
 same-id orders in different plans do not collide byte-for-byte, and indexers
@@ -245,6 +262,25 @@ first-writer-wins signals, explicit signal submitter authorization, hook statuse
 `HookReady` once per hook when positive and timer conditions become satisfied;
 negative signals can cancel hooks before the off-chain execution layer acts on
 readiness.
+
+Order-trigger (`mint`/`dock`) hooks are birth-line anchors and are evaluated
+only inside the order's own birth transaction (the outside-trigger birth write
+of the birth fact, or the dock entrance write plus
+`_markDockTriggerHookReady`). Normal signal submissions — including dock
+output writebacks and derived-signal writes — never evaluate order-trigger
+hooks: submitting another birth line's fact inside an order born from a
+different fact cannot push that line's mint hook to `Ready`, materialize its
+birth stage, or emit `HookReady` on that order (grammar §7.2: a birth fact
+arrival serves only the minting of its own unique order). Non-trigger hooks
+(`EMIT_READY` watchers and plain watchers) are evaluated as before.
+
+Registration-bounds note: `MAX_PLAN_DEPENDENCIES` (1024) is a sanity ceiling,
+not a physically reachable target. Each distinct dependency key costs two
+storage-array pushes (~50k gas); within a 30M-gas block the storage cost alone
+bounds committable distinct keys to roughly 600. Dedup/cross-stage checks at
+registration read the persisted `dependencyIndex` (O(1) per key) instead of a
+quadratic in-memory scan, so large legitimate plans register at storage cost,
+and `TooManyDependencies` remains an OOG-shielded guard for absurd inputs.
 
 ## Funding Boundary
 

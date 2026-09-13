@@ -9,9 +9,13 @@ import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 
 /// @title UVPDockingModule — 统一 Zhixu DockRoute（abiVersion 4.2）
 /// @notice 所有 Zhixu dock 来自 committed route：openDockedOrder 在一笔
-///          交易内原子完成 child 创建、link 登记、entrance fact 写入；
-///          submitDockedInput / submitDockedSignal permissionless：keeper
-///          只提交可从链上 committed 状态推导的数据，无法自选内容。
+///          交易内原子完成 child 创建、link 登记、entrance fact 写入，
+///          并同步置位 entrance 交付账本。链轨 new 模式恰一条 input 绑定
+///          且开仓即被消费为出生锚——submitDockedInput 因此是纯幂等
+///          重放面（恒 return false），不是活的交付/中继路径，不得列为
+///          keeper 通道；submitDockedSignal 才是 permissionless 的 output
+///          回写通道：keeper 只提交可从链上 committed 状态推导的数据，
+///          无法自选内容。
 ///          链轨只支持 order mode new（建单型委托）：routeHash 与
 ///          dockInstanceId 的 modeWord 槽位被钉为 new(0)，existing 模式
 ///          route 的哈希在重算处直接失配（显式拒绝，不静默降级）。
@@ -702,6 +706,20 @@ contract UVPDockingModule {
         );
         if (!exists) {
             revert DockOutputNotReady(dockInstanceId, outputBindingHash);
+        }
+        // 同一本地事实键的多条 output 绑定（不同端口/目标事实）在链上无去
+        // 重：首条交付后，兄弟绑定镜像同一本地键必然撞 SignalAlreadyExists
+        // ——先写已交付位再外调的回滚路径会让该绑定永久不可交付。按本地事
+        // 实键幂等吸收：镜像槽位已存在且 payload 一致即 return false（事实
+        // 已由兄弟绑定送达父单）；payload 不一致则落入底层
+        // SignalAlreadyExists，fail-closed——同一本地键不得表达两种内容。
+        {
+            (bool mirrorExists, bytes32 mirrorPayload,,,) = stateMachine.getSignal(
+                dock.localPlanId, dock.localOrderId, binding.localSourceId, binding.localSignalId
+            );
+            if (mirrorExists && mirrorPayload == payloadHash) {
+                return false;
+            }
         }
         bytes32 targetFactId = keccak256(abi.encode(binding.targetSourceId, binding.targetSignalId));
         bytes32 idempotencyKey =

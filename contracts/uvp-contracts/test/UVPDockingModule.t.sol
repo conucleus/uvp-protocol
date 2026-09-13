@@ -313,6 +313,78 @@ contract UVPDockingModuleTest {
         docking.submitDockedSignal(dockInstanceId, settleBinding);
     }
 
+    /// 同一本地事实键的多条 output 绑定（不同端口 → 不同 bindingHash，链上
+    /// 无去重）：首条交付后，兄弟绑定镜像同一本地事实键按 payload 幂等吸收
+    /// （return false），不再永久撞 SignalAlreadyExists；交付账本只记实际
+    /// 交付过的绑定。
+    function testSiblingOutputBindingOnSameLocalKeyIsAbsorbed() public {
+        UVPDockingModule.DockOutputBindingArg[] memory outputs = new UVPDockingModule.DockOutputBindingArg[](2);
+        bytes32 doneBinding = keccak256(
+            abi.encode(
+                DOMAIN_OUTPUT_BINDING,
+                routeId,
+                INTERFACE_NAME_ID,
+                LOCAL_MAPPED_SOURCE,
+                LOCAL_MAPPED_SIGNAL,
+                DONE_PORT,
+                TARGET_SOURCE,
+                TARGET_SIGNAL
+            )
+        );
+        bytes32 progressBinding = keccak256(
+            abi.encode(
+                DOMAIN_OUTPUT_BINDING,
+                routeId,
+                INTERFACE_NAME_ID,
+                LOCAL_MAPPED_SOURCE,
+                LOCAL_MAPPED_SIGNAL,
+                PROGRESS_OUT_PORT,
+                TARGET_SOURCE,
+                TARGET_SIGNAL
+            )
+        );
+        outputs[0] = UVPDockingModule.DockOutputBindingArg({
+            localSourceId: LOCAL_MAPPED_SOURCE,
+            localSignalId: LOCAL_MAPPED_SIGNAL,
+            portKey: DONE_PORT,
+            targetSourceId: TARGET_SOURCE,
+            targetSignalId: TARGET_SIGNAL,
+            bindingHash: doneBinding,
+            portProof: donePortProof
+        });
+        outputs[1] = UVPDockingModule.DockOutputBindingArg({
+            localSourceId: LOCAL_MAPPED_SOURCE,
+            localSignalId: LOCAL_MAPPED_SIGNAL,
+            portKey: PROGRESS_OUT_PORT,
+            targetSourceId: TARGET_SOURCE,
+            targetSignalId: TARGET_SIGNAL,
+            bindingHash: progressBinding,
+            portProof: progressPortProof
+        });
+        RogueRoute memory route = _registerRogueRouteParent(PARENT_EXEC_HOOK, TARGET_SOURCE, TARGET_SIGNAL, outputs);
+
+        assertTrue(
+            docking.openDockedOrder(
+                _rogueOpenRequest(route),
+                route.routeProof,
+                _interfaceProof(),
+                _rogueInputs(route),
+                outputs,
+                _permitEmpty()
+            )
+        );
+
+        vm.prank(KEEPER);
+        assertTrue(docking.submitDockedSignal(route.dockInstanceId, doneBinding));
+        // 兄弟绑定镜像同一本地事实键、同一 payload：幂等吸收，不 revert。
+        vm.prank(KEEPER);
+        assertFalse(docking.submitDockedSignal(route.dockInstanceId, progressBinding));
+        assertFalse(docking.dockOutputDelivered(route.dockInstanceId, progressBinding));
+        assertTrue(docking.dockOutputDelivered(route.dockInstanceId, doneBinding));
+        (bool mapped,,,,) = machine.getSignal(route.planId, route.orderId, LOCAL_MAPPED_SOURCE, LOCAL_MAPPED_SIGNAL);
+        assertTrue(mapped);
+    }
+
     // ------------------------------------------------------------------
     // 拒绝路径
     // ------------------------------------------------------------------

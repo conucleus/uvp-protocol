@@ -126,8 +126,13 @@ function writeCanonical(node: CanonicalJsonValue): string {
   if (Array.isArray(node)) {
     return `[${node.map((item) => writeCanonical(item)).join(",")}]`;
   }
-  const entries = Object.entries(node).map(
-    ([key, child]) => `${JSON.stringify(key)}:${writeCanonical(child)}`,
-  );
+  // 输出键序必须重排为码点序（= Rust BTreeMap 字节序）：JS 对象把整数形键
+  // （"0"/"9"/"10"）强制排到字符串键之前且按数值序——canonicalize 阶段的
+  // 码点序插入在 Object.entries/Object.keys 读取时已被打乱（{"9","10"} 会
+  // 输出成 9 在前，Rust 输出 10 在前），hash preimage 静默分叉。此处对键
+  // 显式按 canonicalize 同一比较器排序，不信任属性枚举序。
+  const entries = Object.entries(node)
+    .sort(([left], [right]) => compareByCodePoint(left, right))
+    .map(([key, child]) => `${JSON.stringify(key)}:${writeCanonical(child)}`);
   return `{${entries.join(",")}}`;
 }

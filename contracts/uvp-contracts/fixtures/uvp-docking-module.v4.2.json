@@ -10,9 +10,9 @@
   },
   "hashes": {
     "abiHash": "0x2c04760d0c51ece07e061d95615519be80cfbd86fb5ddd54b9122052529569bc",
-    "bytecodeHash": "0xcb9d5b579d59415e0ab294c80e9e2966c0115730af438301f4b37aba3b6002f8",
-    "deployedBytecodeHash": "0x41a5731e8c5c1b71d88f24eb2f53253612a3534e6ea39fbb645a14e2df74e461",
-    "artifactHash": "0xb38c26f2bce09b182449414f2b82f85d0554431abb49ceb063c09bc637fa34e5"
+    "bytecodeHash": "0x6e595cc3406f635f96e03a22d9ed390123653deffa7a1b9d8625516def3f4572",
+    "deployedBytecodeHash": "0x88143b80e09395b98d957f19b8476ee568712231d0dbdaf8cbb05a41b708a6e7",
+    "artifactHash": "0x680c91b4c309e94b60df50934613d285128b263aa809f8791e6f650796610554"
   },
   "events": {
     "DockInputSubmitted": {
