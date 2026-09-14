@@ -799,7 +799,7 @@
       ],
       "sources": {
         "rust": "crates/uvp-compiler/src/dock.rs valid_port_name / MAX_PORT_NAME_BYTES（D005/D006 引用）",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateDockPortName"
+        "go": "pkg/compiler/validator/docking.go validateDockPortName（经 validateDockInterfaceShape 的接口/端口名形态闸触达）"
       },
       "ruling": "外部配置使用公开端口名，端口名 ^[a-z][a-z0-9_]{0,31}$（≤32 字节），与接口名同规则。"
     },
@@ -825,7 +825,7 @@
       ],
       "sources": {
         "rust": "crates/uvp-compiler/src/dock.rs MAX_SIGNAL_MAP_KEY_LENGTH（错误码 D006）",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateExecutor"
+        "go": "pkg/compiler/validator/executor.go validateZhixuExecutorDimensions（DDL 字节上限本地门；语义判定权威在 uvp-core dock.rs）"
       },
       "ruling": "signalMap 键（本地 sendSignals 信号名）≤26 字节（\"signalMap.\" + key 共 36 字节列宽，10 字节前缀）。"
     },
@@ -844,16 +844,14 @@
       },
       "error": {
         "rust": "D006",
-        "go": "must not contain '.'",
+        "go": null,
         "ts": null
       },
       "applies": [
-        "rust",
-        "go"
+        "rust"
       ],
       "sources": {
-        "rust": "crates/uvp-compiler/src/dock.rs parse_zhixu_executor_config（D006）",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateExecutor"
+        "rust": "crates/uvp-compiler/src/dock.rs parse_zhixu_executor_config（D006）"
       },
       "ruling": "signalMap 键禁止携带 '.'——它是 canonical 信号名 task.stage.signal 的分隔符。"
     },
@@ -880,7 +878,7 @@
       ],
       "sources": {
         "rust": "crates/uvp-compiler/src/dock.rs MAX_SIGNAL_NAME_BYTES（D006）",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateExecutor"
+        "go": "pkg/compiler/validator/executor.go validateZhixuExecutorDimensions（DDL 字节上限本地门）"
       },
       "ruling": "stage 标识符 + \".\" + signalMap 键组合落 individual_record.signal_name VARCHAR(100)，组合 ≤100。"
     },
