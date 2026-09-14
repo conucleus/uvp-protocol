@@ -71,7 +71,7 @@ const baseZhixu: ZhixuDefinition = {
             name: "assign",
             source: "buyer",
             selectedStages: ["execution.main"],
-            // PLACE 为自发种子入口钩子（uvp-core 659a388 物化门：零 hook
+            // PLACE 为自发种子入口钩子（uvp-core 阶段物化门：零 hook
             // 阶段在链上永不可物化、sendSignals 无钩子可挂）。
             receiveSignals: {
               PLACE: "buyer::selector.assign.seed"
@@ -187,7 +187,7 @@ test("compiles internal HookPlan IR", () => {
   assert.deepEqual(plan.dependencyIndex["buyer::execution.main.cmp"], [
     "execution.main#TIMEOUT"
   ]);
-  // 种子入口钩子的自引用依赖（uvp-core 659a388 物化门语料对齐）。
+  // 种子入口钩子的自引用依赖（uvp-core 阶段物化门语料对齐）。
   assert.deepEqual(plan.dependencyIndex["buyer::selector.assign.seed"], [
     "selector.assign#PLACE"
   ]);

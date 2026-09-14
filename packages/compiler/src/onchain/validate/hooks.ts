@@ -425,7 +425,7 @@ function validateOnchainDependencies(
 }
 
 /**
- * 阶段物化门（onchain target，镜像 uvp-core 659a388
+ * 阶段物化门（onchain target，镜像 uvp-core 的
  * validate_onchain_stage_materialization）：
  *
  * - 每个出现在 compiledHooks 的阶段必须至少有一个 order-trigger 或

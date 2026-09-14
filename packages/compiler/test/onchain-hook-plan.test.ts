@@ -124,7 +124,7 @@ const baseZhixu: ZhixuDefinition = {
             name: "assign",
             source: "buyer",
             selectedStages: ["execution.main"],
-            // PLACE 为自发种子入口钩子（uvp-core 659a388 物化门：零 hook
+            // PLACE 为自发种子入口钩子（uvp-core 阶段物化门：零 hook
             // 阶段在链上永不可物化、sendSignals 无钩子可挂）。
             receiveSignals: {
               PLACE: "buyer::selector.assign.seed",
@@ -1031,7 +1031,7 @@ test("compiles mint birth subscriptions into order-trigger SIGNAL hooks", () => 
             {
               name: "post",
               source: "buyer",
-              // PUBLISH 为自发种子入口钩子（uvp-core 659a388 物化门：零
+              // PUBLISH 为自发种子入口钩子（uvp-core 阶段物化门：零
               // hook 阶段在链上永不可物化、sendSignals 无钩子可挂）。
               receiveSignals: {
                 PUBLISH: "buyer::intake.post.seed",
@@ -1217,7 +1217,7 @@ test("flags stages whose hooks can never materialize on-chain", () => {
             {
               name: "post",
               source: "buyer",
-              // PUBLISH 为自发种子入口钩子（uvp-core 659a388 物化门：零
+              // PUBLISH 为自发种子入口钩子（uvp-core 阶段物化门：零
               // hook 阶段在链上永不可物化、sendSignals 无钩子可挂）。
               receiveSignals: {
                 PUBLISH: "buyer::intake.post.seed",
