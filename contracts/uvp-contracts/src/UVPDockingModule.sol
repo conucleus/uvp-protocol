@@ -11,39 +11,16 @@ import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 /// @notice 所有 Zhixu dock 来自 committed route：openDockedOrder 在一笔
 ///          交易内原子完成 child 创建、link 登记、entrance fact 写入，
 ///          并同步置位 entrance 交付账本。链轨 new 模式恰一条 input 绑定
-///          且开仓即被消费为出生锚——submitDockedInput 因此是纯幂等
-///          重放面（恒 return false），不是活的交付/中继路径，不得列为
-///          keeper 通道；submitDockedSignal 才是 permissionless 的 output
-///          回写通道：keeper 只提交可从链上 committed 状态推导的数据，
-///          无法自选内容。
-///          链轨只支持 order mode new（建单型委托）：routeHash 与
-///          dockInstanceId 的 modeWord 槽位被钉为 new(0)，existing 模式
-///          route 的哈希在重算处直接失配（显式拒绝，不静默降级）。
-///
-/// 哈希域（与 Rust uvp-compiler::dock / TS compiler/src/dock.ts 逐字节一致，
-/// word 布局见 packages/compiler/docs/dock-word-layout.md；字符串 word 一律 keccak256(utf8(s))，
-/// 整数 word 大端右对齐）：
-///   defRef      = H("UVP_DEFINITION_REF_V1",         uidId)
-///   portLeaf    = H("UVP_DOCK_INTERFACE_INPUT_V2",  uidId, interfaceNameId, portKey, hookKey)
-///   interfaceLeaf = H("UVP_DOCK_INTERFACE_V2",      uidId, interfaceNameId, orderModesWord, inputsRoot, outputsRoot)
-///   routeId     = H("UVP_DOCK_ROUTE_ID_V1",         localDefRef, stageKey)
-///   inputBind   = H("UVP_DOCK_INPUT_BINDING_V2",    routeId, interfaceNameId, localHookId, portKey,
-///                    targetSourceId, targetSignalId)
-///   outputBind  = H("UVP_DOCK_OUTPUT_BINDING_V2",   routeId, interfaceNameId, localSourceId, localSignalId,
-///                    portKey, targetSourceId, targetSignalId)
-///   routeHash   = H("UVP_DOCK_ROUTE_V2",            localDefRef, targetDefRef, interfaceNameId,
-///                    modeWord(new=0), inputBindingsRoot, outputBindingsRoot)
-///   dockInst    = H("UVP_DOCK_INSTANCE_V2",         runtimeDomain, localPlanId, localDefRef, localOrderKey,
-///                    routeId, routeHash, modeWord(new=0), interfaceNameId, targetPlanId)
-///   linkedOrder = H("UVP_DOCK_ORDER_V1",            dockInstanceId, targetDefRef)
-///   inputIdem   = H("UVP_DOCK_INPUT_IDEMPOTENCY_V1",dockInstanceId, inputBindingHash, occurrence(0))
-///   outputIdem  = H("UVP_DOCK_OUTPUT_IDEMPOTENCY_V1",dockInstanceId, outputBindingHash, targetFactId)
-/// uidId = keccak(zx-<32hex>)；interfaceNameId/portKey = keccak(接口名/端口名)；
-/// localHookId/hookKey = keccak("<task>.<stage>#<channel>")；
-/// orderModesWord：u8 位掩码 bit0=new、bit1=existing；route modeWord：new=0、existing=1。
-/// 目标接口承诺是两级树：端口叶 → 接口 inputsRoot/outputsRoot →
-/// interfaceLeaf → plan 的 dockInterfaceRoot（后一级由 planMetadataModule
-/// 重算 interfaceLeaf 后验证 membership）。
+///          且开仓即被消费为出生锚——submitDockedInput 是纯幂等重放面
+///          （恒 return false），不是活的交付/中继路径，不得列为 keeper
+///          通道；submitDockedSignal 才是 permissionless 的 output 回写
+///          通道（keeper 无法自选内容）。链轨只支持 order mode new
+///          （建单型委托）：routeHash 与 dockInstanceId 的 modeWord 槽位
+///          被钉为 new(0)，existing 模式在重算处直接失配拒绝。
+///          哈希域公式的唯一权威规格见
+///          packages/compiler/docs/dock-word-layout.md（三线对拍钉死）；
+///          出生原子性/new-only 裁决/keeper 信任模型的设计叙事见
+///          docs/design-notes.md §2。
 contract UVPDockingModule {
     // ------------------------------------------------------------------
     // 类型

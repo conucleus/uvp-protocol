@@ -219,7 +219,7 @@ contract UVPStateMachine {
     error IncompleteModuleConfiguration();
     error InvalidTriggerHook(bytes32 hookId);
     /// order-link 派生单号不可自报：声明值必须等于按 link 事实重算的
-    /// 派生值（0300 H-1，防高位清零命名空间内抢注受害者的未来单号）。
+    /// 派生值（0300 H-1，攻击推演见 docs/design-notes.md §1）。
     error InvalidOrderLinkOrderId(bytes32 declared, bytes32 derived);
     error InvalidTriggerOrderSignature(address expectedSigner, address recoveredSigner);
     error ModulesAlreadyFrozen();
@@ -300,8 +300,8 @@ contract UVPStateMachine {
         "UVPStateMachineSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
     );
     bytes32 private constant _TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
-        // 一事一单：订单 id 由合约从事实纯函数派生，签名不背书调用方选择
-        // 的订单号（防 mempool 抢注受害单号）。
+        // 一事一单：订单 id 由合约从事实纯函数派生，签名不背书调用方
+        // 选择的订单号（mempool 抢注推演见 docs/design-notes.md §1）。
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
     );
     mapping(bytes32 planId => Plan plan) private _plans;
@@ -581,10 +581,9 @@ contract UVPStateMachine {
         _createOutsideTriggerOrder(trigger, authorizations);
     }
 
-    /// 一事一单执行体：订单 id 由合约从事实纯函数派生，调用方不自报。
-    /// 同一 (planId, sourceId, signalId, payloadHash) 恒定派生同一 id——换
-    /// orderId 无限重铸与 mempool 抢注受害单号在入口处关闭；重放同一事实
-    /// 得到同 id，按 OrderAlreadyRegistered 幂等拒绝。
+    /// 一事一单执行体：订单 id 由合约从事实纯函数派生（triggerOrderIdFor），
+    /// 调用方不自报；重放同一事实恒定派生同一 id，按
+    /// OrderAlreadyRegistered 幂等拒绝。
     function _createOutsideTriggerOrder(
         TriggerOrderFromOutsideRequest calldata trigger,
         SignalAuthorization[] calldata authorizations
@@ -644,9 +643,8 @@ contract UVPStateMachine {
     /// @notice order-link 派生订单 id 的权威派生公式（一事一单）：以 link
     ///         事实（origin 复合身份 + origin 事实 + payload）为 preimage 的
     ///         独立哈希域，且恒清 dock 命名空间位。自报 orderId 与派生值不
-    ///         一致即 revert——调用方无法选择订单号，也就无法抢注
-    ///         outside-trigger 派生域（高位清零命名空间）里受害者的未来
-    ///         订单号（0300 H-1）。重放同一 link 事实恒定派生同一 id，按
+    ///         一致即 revert（0300 H-1，攻击推演见 docs/design-notes.md §1）。
+    ///         重放同一 link 事实恒定派生同一 id，按
     ///         OrderAlreadyRegistered 幂等拒绝。
     function orderLinkOrderIdFor(
         bytes32 planId,
@@ -722,9 +720,7 @@ contract UVPStateMachine {
         }
         // orderId 不可自报（0300 H-1）：合约按 link 事实派生，请求携带的
         // orderId 只作镜像校验——与 routeId/dockInstanceId 的"重算即拒绝"
-        // 口径一致。自报单号若可与派生域碰撞，攻击者可先注受害者未来派生
-        // 单号（_orders 先到先得），派生函数因此把 link 单号隔离到独立命
-        // 名空间。
+        // 口径一致（攻击推演见 docs/design-notes.md §1）。
         {
             bytes32 derivedOrderId = orderLinkOrderIdFor(
                 trigger.planId,
