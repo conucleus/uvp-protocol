@@ -1747,3 +1747,8 @@ export function summarizeZhixu(zhixu: ZhixuDetailDTO): ZhixuSummaryDTO {
   } = zhixu;
   return summary;
 }
+
+// 写侧契约（治理审计 §1.1 P1-1）：提交意图/输入/回执/证据证明的权威
+// 形状与任务提交意图推导，形状对齐 uvp-chain-services 服务端真身。
+export * from "./write-side.js";
+export * from "./submit-intent.js";
