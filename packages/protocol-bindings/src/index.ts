@@ -1850,6 +1850,12 @@ export function hashResourceManifest(manifest: ResourceManifestV1): Hex {
   return hashCanonicalJson(RESOURCE_MANIFEST_HASH_DOMAIN, normalized);
 }
 
+// 地址/字节规范化双形态（下游比较键与展示/签名场景的单源）：
+// - normalizeAddress：宽松 40-hex 校验 + 统一小写输出——比较键/存储键的
+//   权威形态（viem getAddress 先小写再重算 EIP-55、不验证输入大小写，
+//   混合大小写坏 checksum 的输入也按 20 字节身份接受并归一为小写）；
+// - normalizeAddressChecksummed：严格 EIP-55 checksum 校验 + checksummed
+//   输出——展示/签名等拼写敏感场景（错拼地址在入口即拒）。
 export function normalizeAddress(
   value: Address | string,
   fieldName = "address",
@@ -1859,6 +1865,19 @@ export function normalizeAddress(
   }
 
   return getAddress(value).toLowerCase() as Address;
+}
+
+export function normalizeAddressChecksummed(
+  value: Address | string,
+  fieldName = "address",
+): Address {
+  if (!isAddress(value)) {
+    throw new Error(
+      `${fieldName} must be a valid EIP-55 checksummed EVM address`,
+    );
+  }
+
+  return getAddress(value);
 }
 
 export function normalizeBytes32(
@@ -2347,3 +2366,13 @@ function normalizeUintBigInt(
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+// 签名闸门单源（三端签名前校验与用户拒绝判定的最强集），见 signing-gate.ts。
+export {
+  isUserRejectedRequestError,
+  validateTypedDataForSigning,
+  type TypedDataSigningCheck,
+  type TypedDataSigningExpectation,
+  type TypedDataSigningMismatchReason,
+  type TypedDataSignerField,
+} from "./signing-gate.js";
