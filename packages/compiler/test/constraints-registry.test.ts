@@ -19,7 +19,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { compileOnchainHookPlan } from "../src/onchain-hook-plan.js";
+import { compileOnchainHookPlan } from "../src/onchain/compile.js";
 import { hookPlanHashOf } from "../src/dock-commitments.js";
 import type { HookPlanArtifact } from "../src/types/index.js";
 import {

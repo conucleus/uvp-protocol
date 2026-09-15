@@ -9,37 +9,18 @@ import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 
 /// @title UVPDockingModule — 统一 Zhixu DockRoute（abiVersion 4.2）
 /// @notice 所有 Zhixu dock 来自 committed route：openDockedOrder 在一笔
-///          交易内原子完成 child 创建、link 登记、entrance fact 写入；
-///          submitDockedInput / submitDockedSignal permissionless：keeper
-///          只提交可从链上 committed 状态推导的数据，无法自选内容。
-///          链轨只支持 order mode new（建单型委托）：routeHash 与
-///          dockInstanceId 的 modeWord 槽位被钉为 new(0)，existing 模式
-///          route 的哈希在重算处直接失配（显式拒绝，不静默降级）。
-///
-/// 哈希域（与 Rust uvp-compiler::dock / TS compiler/src/dock.ts 逐字节一致，
-/// word 布局见 packages/compiler/docs/dock-word-layout.md；字符串 word 一律 keccak256(utf8(s))，
-/// 整数 word 大端右对齐）：
-///   defRef      = H("UVP_DEFINITION_REF_V1",         uidId)
-///   portLeaf    = H("UVP_DOCK_INTERFACE_INPUT_V2",  uidId, interfaceNameId, portKey, hookKey)
-///   interfaceLeaf = H("UVP_DOCK_INTERFACE_V2",      uidId, interfaceNameId, orderModesWord, inputsRoot, outputsRoot)
-///   routeId     = H("UVP_DOCK_ROUTE_ID_V1",         localDefRef, stageKey)
-///   inputBind   = H("UVP_DOCK_INPUT_BINDING_V2",    routeId, interfaceNameId, localHookId, portKey,
-///                    targetSourceId, targetSignalId)
-///   outputBind  = H("UVP_DOCK_OUTPUT_BINDING_V2",   routeId, interfaceNameId, localSourceId, localSignalId,
-///                    portKey, targetSourceId, targetSignalId)
-///   routeHash   = H("UVP_DOCK_ROUTE_V2",            localDefRef, targetDefRef, interfaceNameId,
-///                    modeWord(new=0), inputBindingsRoot, outputBindingsRoot)
-///   dockInst    = H("UVP_DOCK_INSTANCE_V2",         runtimeDomain, localPlanId, localDefRef, localOrderKey,
-///                    routeId, routeHash, modeWord(new=0), interfaceNameId, targetPlanId)
-///   linkedOrder = H("UVP_DOCK_ORDER_V1",            dockInstanceId, targetDefRef)
-///   inputIdem   = H("UVP_DOCK_INPUT_IDEMPOTENCY_V1",dockInstanceId, inputBindingHash, occurrence(0))
-///   outputIdem  = H("UVP_DOCK_OUTPUT_IDEMPOTENCY_V1",dockInstanceId, outputBindingHash, targetFactId)
-/// uidId = keccak(zx-<32hex>)；interfaceNameId/portKey = keccak(接口名/端口名)；
-/// localHookId/hookKey = keccak("<task>.<stage>#<channel>")；
-/// orderModesWord：u8 位掩码 bit0=new、bit1=existing；route modeWord：new=0、existing=1。
-/// 目标接口承诺是两级树：端口叶 → 接口 inputsRoot/outputsRoot →
-/// interfaceLeaf → plan 的 dockInterfaceRoot（后一级由 planMetadataModule
-/// 重算 interfaceLeaf 后验证 membership）。
+///          交易内原子完成 child 创建、link 登记、entrance fact 写入，
+///          并同步置位 entrance 交付账本。链轨 new 模式恰一条 input 绑定
+///          且开仓即被消费为出生锚——submitDockedInput 是纯幂等重放面
+///          （恒 return false），不是活的交付/中继路径，不得列为 keeper
+///          通道；submitDockedSignal 才是 permissionless 的 output 回写
+///          通道（keeper 无法自选内容）。链轨只支持 order mode new
+///          （建单型委托）：routeHash 与 dockInstanceId 的 modeWord 槽位
+///          被钉为 new(0)，existing 模式在重算处直接失配拒绝。
+///          哈希域公式的唯一权威规格见
+///          packages/compiler/docs/dock-word-layout.md（三线对拍钉死）；
+///          出生原子性/new-only 裁决/keeper 信任模型的设计叙事见
+///          docs/design-notes.md §2。
 contract UVPDockingModule {
     // ------------------------------------------------------------------
     // 类型
@@ -207,6 +188,21 @@ contract UVPDockingModule {
         address submitter
     );
     event DockOutputSubmitted(
+        bytes32 indexed dockInstanceId,
+        bytes32 indexed linkedOrderId,
+        bytes32 indexed outputBindingHash,
+        bytes32 localPlanId,
+        bytes32 localOrderId,
+        bytes32 targetPlanId,
+        bytes32 targetSignalId,
+        bytes32 localSignalId,
+        bytes32 payloadHash,
+        address submitter
+    );
+    /// 兄弟 output 绑定的等价交付满足：本绑定没有发生新的镜像写入，父单
+    /// 本地事实已由同键同 payload 的另一条绑定送达；账本置位随本事件落地，
+    /// 消费方据此把该绑定收敛为已交付。
+    event DockOutputSatisfied(
         bytes32 indexed dockInstanceId,
         bytes32 indexed linkedOrderId,
         bytes32 indexed outputBindingHash,
@@ -702,6 +698,37 @@ contract UVPDockingModule {
         );
         if (!exists) {
             revert DockOutputNotReady(dockInstanceId, outputBindingHash);
+        }
+        // 同一本地事实键的多条 output 绑定（不同端口/目标事实）在链上无去
+        // 重：首条交付后，兄弟绑定镜像同一本地键必然撞 SignalAlreadyExists
+        // ——先写已交付位再外调的回滚路径会让该绑定永久不可交付。按本地事
+        // 实键幂等吸收：镜像槽位已存在且 payload 一致即视为本绑定已由等价
+        // 交付满足——必须落交付账本并显式发事件，否则投影侧永远认为该绑定
+        // 未交付，keeper 每个重发窗口都会再提交一次（永不收敛的 gas 循环）。
+        // 不复用 DockOutputSubmitted：本分支没有发生新的镜像写入，按既有
+        // 事件形状广播会让父侧投影再落一条并不存在的映射事实时间线。
+        // payload 不一致则落入底层 SignalAlreadyExists，fail-closed——同一
+        // 本地键不得表达两种内容。
+        {
+            (bool mirrorExists, bytes32 mirrorPayload,,,) = stateMachine.getSignal(
+                dock.localPlanId, dock.localOrderId, binding.localSourceId, binding.localSignalId
+            );
+            if (mirrorExists && mirrorPayload == payloadHash) {
+                _outputDelivered[dockInstanceId][outputBindingHash] = true;
+                emit DockOutputSatisfied(
+                    dockInstanceId,
+                    dock.linkedOrderId,
+                    outputBindingHash,
+                    dock.localPlanId,
+                    dock.localOrderId,
+                    dock.targetPlanId,
+                    binding.targetSignalId,
+                    binding.localSignalId,
+                    payloadHash,
+                    originalSubmitter
+                );
+                return false;
+            }
         }
         bytes32 targetFactId = keccak256(abi.encode(binding.targetSourceId, binding.targetSignalId));
         bytes32 idempotencyKey =

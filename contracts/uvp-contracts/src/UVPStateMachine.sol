@@ -219,7 +219,7 @@ contract UVPStateMachine {
     error IncompleteModuleConfiguration();
     error InvalidTriggerHook(bytes32 hookId);
     /// order-link 派生单号不可自报：声明值必须等于按 link 事实重算的
-    /// 派生值（0300 H-1，防高位清零命名空间内抢注受害者的未来单号）。
+    /// 派生值（0300 H-1，攻击推演见 docs/design-notes.md §1）。
     error InvalidOrderLinkOrderId(bytes32 declared, bytes32 derived);
     error InvalidTriggerOrderSignature(address expectedSigner, address recoveredSigner);
     error ModulesAlreadyFrozen();
@@ -300,8 +300,8 @@ contract UVPStateMachine {
         "UVPStateMachineSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
     );
     bytes32 private constant _TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
-        // 一事一单：订单 id 由合约从事实纯函数派生，签名不背书调用方选择
-        // 的订单号（防 mempool 抢注受害单号）。
+        // 一事一单：订单 id 由合约从事实纯函数派生，签名不背书调用方
+        // 选择的订单号（mempool 抢注推演见 docs/design-notes.md §1）。
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
     );
     mapping(bytes32 planId => Plan plan) private _plans;
@@ -581,10 +581,9 @@ contract UVPStateMachine {
         _createOutsideTriggerOrder(trigger, authorizations);
     }
 
-    /// 一事一单执行体：订单 id 由合约从事实纯函数派生，调用方不自报。
-    /// 同一 (planId, sourceId, signalId, payloadHash) 恒定派生同一 id——换
-    /// orderId 无限重铸与 mempool 抢注受害单号在入口处关闭；重放同一事实
-    /// 得到同 id，按 OrderAlreadyRegistered 幂等拒绝。
+    /// 一事一单执行体：订单 id 由合约从事实纯函数派生（triggerOrderIdFor），
+    /// 调用方不自报；重放同一事实恒定派生同一 id，按
+    /// OrderAlreadyRegistered 幂等拒绝。
     function _createOutsideTriggerOrder(
         TriggerOrderFromOutsideRequest calldata trigger,
         SignalAuthorization[] calldata authorizations
@@ -616,7 +615,10 @@ contract UVPStateMachine {
             trigger.payloadHash,
             trigger.idempotencyKey,
             trigger.submitter,
-            false
+            false,
+            // 出生事务内的出生事实写入：这是 outside 出生路径对 order-trigger
+            // hook 求值的唯一合法时点（就绪结果随后被出生闸断言）。
+            true
         );
         _requireTriggerHookReady(trigger.planId, orderId, trigger.triggerHookId, trigger.triggerStageId);
     }
@@ -641,9 +643,8 @@ contract UVPStateMachine {
     /// @notice order-link 派生订单 id 的权威派生公式（一事一单）：以 link
     ///         事实（origin 复合身份 + origin 事实 + payload）为 preimage 的
     ///         独立哈希域，且恒清 dock 命名空间位。自报 orderId 与派生值不
-    ///         一致即 revert——调用方无法选择订单号，也就无法抢注
-    ///         outside-trigger 派生域（高位清零命名空间）里受害者的未来
-    ///         订单号（0300 H-1）。重放同一 link 事实恒定派生同一 id，按
+    ///         一致即 revert（0300 H-1，攻击推演见 docs/design-notes.md §1）。
+    ///         重放同一 link 事实恒定派生同一 id，按
     ///         OrderAlreadyRegistered 幂等拒绝。
     function orderLinkOrderIdFor(
         bytes32 planId,
@@ -719,9 +720,7 @@ contract UVPStateMachine {
         }
         // orderId 不可自报（0300 H-1）：合约按 link 事实派生，请求携带的
         // orderId 只作镜像校验——与 routeId/dockInstanceId 的"重算即拒绝"
-        // 口径一致。自报单号若可与派生域碰撞，攻击者可先注受害者未来派生
-        // 单号（_orders 先到先得），派生函数因此把 link 单号隔离到独立命
-        // 名空间。
+        // 口径一致（攻击推演见 docs/design-notes.md §1）。
         {
             bytes32 derivedOrderId = orderLinkOrderIdFor(
                 trigger.planId,
@@ -1032,12 +1031,28 @@ contract UVPStateMachine {
         if (submitter == address(0)) {
             revert ZeroSubmitter();
         }
+        // 出生事实零字键与其余写入口同口径拒绝（triggerOrderFromOutsideFor /
+        // _authorizeSignalSubmitter）：sourceId==0 绕过 _signalStageId（对该
+        // 值恒返回 0），是 stage 物化与 executor 门的永久豁免键。
+        // dependencyKeys 是不透明哈希，注册边界无法从键反查零字——入口
+        // 必须自拒。
+        if (sourceId == bytes32(0)) {
+            revert ZeroSourceId();
+        }
+        if (signalId == bytes32(0)) {
+            revert ZeroSignalId();
+        }
         if (!_isDockOrderId(linkedOrderId)) {
             revert InvalidDockOrderNamespace(linkedOrderId);
         }
         _createOrder(targetPlanId, linkedOrderId, creator, relayer);
         _authorizeSignalSubmitters(targetPlanId, linkedOrderId, authorizations);
-        _recordSignal(targetPlanId, linkedOrderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false);
+        // dock entrance 出生事务写入：entrance hook（ORDER_TRIGGER_DOCK）的
+        // Ready/物化由出生通道驱动（求值 + _markDockTriggerHookReady 双保
+        // 险，事件口径与既有回放一致）。
+        _recordSignal(
+            targetPlanId, linkedOrderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false, true
+        );
         _markDockTriggerHookReady(targetPlanId, linkedOrderId, entranceHookId, entranceStageId, sourceId, signalId);
     }
 
@@ -1060,7 +1075,15 @@ contract UVPStateMachine {
         if (submitter == address(0)) {
             revert ZeroSubmitter();
         }
-        _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false);
+        // 同 createDockedOrderFromModule：零字事实键是 stage 物化与
+        // executor 门的永久豁免键，入口自拒。
+        if (sourceId == bytes32(0)) {
+            revert ZeroSourceId();
+        }
+        if (signalId == bytes32(0)) {
+            revert ZeroSignalId();
+        }
+        _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false, false);
     }
 
     function planHookFlags(bytes32 planId, bytes32 hookId) external view returns (uint8) {
@@ -1125,6 +1148,15 @@ contract UVPStateMachine {
         if (submitter == address(0)) {
             revert ZeroSubmitter();
         }
+        // 零字事实键与其余写入口同口径拒绝（derived 模块入口已自检零键，
+        // dock 通道入口在此兜底——dependencyKeys 不透明，词表闸对零字键
+        // 恒放行，必须在写入口封死永久豁免键）。
+        if (sourceId == bytes32(0)) {
+            revert ZeroSourceId();
+        }
+        if (signalId == bytes32(0)) {
+            revert ZeroSignalId();
+        }
         if (msg.sender == dockingModule) {
             // dock output 通道镜像 mint 词表闸：本地映射事实键必须在本 plan
             // 的 capability 词表内（编译器 D006：signalMap 键 ∈ sendSignals）；
@@ -1135,7 +1167,7 @@ contract UVPStateMachine {
                 revert InvalidSignalCapability(planId, sourceId, signalId);
             }
         }
-        _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, true);
+        _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, true, false);
     }
 
     /// Derived signals write a fact to a target/origin order while the
@@ -1170,7 +1202,9 @@ contract UVPStateMachine {
         // 授权者可在 assign 前写入生产事实，StageAlreadyHasSignal 把 assign
         // 永久顶死；relation=1 回写不经两门（origin 订单无需物化 from 侧阶段）。
         bool currentOrderFact = _signalStageId(planId, sourceId, signalId) != bytes32(0);
-        _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, currentOrderFact);
+        _recordSignal(
+            planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, currentOrderFact, false
+        );
     }
 
     function _submitSignal(
@@ -1182,6 +1216,13 @@ contract UVPStateMachine {
         bytes32 idempotencyKey,
         address submitter
     ) private {
+        // 零字事实键与出生/授权入口同口径拒绝（triggerOrderFromOutsideFor /
+        // _authorizeSignalSubmitter）：显式授权虽在注册期已拒零字键，普通
+        // 提交路径仍须自拒——sourceId==0 绕过 _signalStageId，是 stage
+        // 物化与 executor 门的永久豁免键。
+        if (sourceId == bytes32(0)) {
+            revert ZeroSourceId();
+        }
         if (signalId == bytes32(0)) {
             revert ZeroSignalId();
         }
@@ -1195,7 +1236,7 @@ contract UVPStateMachine {
         }
         _requireActiveStageExecutor(planId, orderId, sourceId, signalId, submitter);
 
-        _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, true);
+        _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, true, false);
     }
 
     function _recordSignal(
@@ -1206,7 +1247,10 @@ contract UVPStateMachine {
         bytes32 payloadHash,
         bytes32 idempotencyKey,
         address submitter,
-        bool requireSourceStageMaterialized
+        bool requireSourceStageMaterialized,
+        // 出生通道写入（outside 触发的出生事实 / dock entrance 出生事实）是
+        // order-trigger hook 唯一允许的普通求值入口；见 _evaluateAffectedHooks。
+        bool evaluateOrderTriggerHooks
     ) private {
         Order storage order = _orders[planId][orderId];
         if (!order.exists) {
@@ -1243,7 +1287,7 @@ contract UVPStateMachine {
         lastSignalSubmitter[planId][orderId][sourceId] = submitter;
 
         emit SignalSubmitted(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter);
-        _evaluateAffectedHooks(planId, orderId, key, sourceId, signalId);
+        _evaluateAffectedHooks(planId, orderId, key, sourceId, signalId, evaluateOrderTriggerHooks);
     }
 
     function pokeTimer(bytes32 planId, bytes32 orderId, bytes32 hookId) external {
@@ -1269,6 +1313,10 @@ contract UVPStateMachine {
     }
 
     function planExists(bytes32 planId) external view returns (bool) {
+        // 语义口径：名称是 exists，返回值是"存在且已定稿"（两步注册
+        // commit→finalize 的中间态返回 false）。ABI 冻结不改名——消费方
+        // （docking/order-link/metadata 模块）以"可开单/可派生"为判定，
+        // 未定稿 plan 恰应返回 false。
         return _plans[planId].finalized;
     }
 
@@ -1544,15 +1592,27 @@ contract UVPStateMachine {
         bytes32 orderId,
         bytes32 dependencyKey,
         bytes32 triggerSourceId,
-        bytes32 triggerSignalId
+        bytes32 triggerSignalId,
+        bool evaluateOrderTriggerHooks
     ) private {
         Plan storage plan = _plans[planId];
         Order storage order = _orders[planId][orderId];
         bytes32[] storage hookIds = plan.dependencyIndex[dependencyKey];
-        for (uint256 i = 0; i < hookIds.length; i++) {
-            StoredHook storage hook = plan.hooks[hookIds[i]];
-            if (_isOrderTrigger(hook.flags)) {
-                _evaluateHook(planId, orderId, hookIds[i], triggerSourceId, triggerSignalId);
+        // 出生锚订单归属（文法 §7.2：出生事实到达只应服务于铸造唯一订单）：
+        // order-trigger（mint/dock）hook 的 Ready 与阶段物化只允许由出生
+        // 通道驱动——outside 触发在出生事务内对出生事实求值（求值即出生
+        // 闸 _requireTriggerHookReady 的就绪来源），dock entrance 由
+        // _markDockTriggerHookReady 显式置位。普通信号提交（含 dock output
+        // 回写、派生写回）不再求值 order-trigger hook：否则订单 Y（由事实
+        // K2 铸出）内提交另一出生线事实 K1 会把 Y 的 K1-mint 钩子推 Ready
+        // 并物化 Y 并未由此出生的阶段——每条出生线的阶段只在其自己铸出的
+        // 订单上物化。
+        if (evaluateOrderTriggerHooks) {
+            for (uint256 i = 0; i < hookIds.length; i++) {
+                StoredHook storage hook = plan.hooks[hookIds[i]];
+                if (_isOrderTrigger(hook.flags)) {
+                    _evaluateHook(planId, orderId, hookIds[i], triggerSourceId, triggerSignalId);
+                }
             }
         }
         for (uint256 i = 0; i < hookIds.length; i++) {

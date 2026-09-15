@@ -22,6 +22,7 @@ interface DockVm {
     }
 
     function addr(uint256 privateKey) external returns (address keyAddr);
+    function expectEmit(bool checkTopic1, bool checkTopic2, bool checkTopic3, bool checkData, address emitter) external;
     function expectRevert(bytes4 revertData) external;
     function expectRevert(bytes calldata revertData) external;
     function prank(address msgSender) external;
@@ -311,6 +312,98 @@ contract UVPDockingModuleTest {
         vm.prank(KEEPER);
         _expect(abi.encodeWithSelector(UVPDockingModule.DockOutputNotReady.selector, dockInstanceId, settleBinding));
         docking.submitDockedSignal(dockInstanceId, settleBinding);
+    }
+
+    /// 同一本地事实键的多条 output 绑定（不同端口 → 不同 bindingHash，链上
+    /// 无去重）：首条交付后，兄弟绑定镜像同一本地事实键按 payload 幂等吸收
+    /// （return false），不再永久撞 SignalAlreadyExists；交付账本只记实际
+    /// 交付过的绑定。
+    function testSiblingOutputBindingOnSameLocalKeyIsAbsorbed() public {
+        UVPDockingModule.DockOutputBindingArg[] memory outputs = new UVPDockingModule.DockOutputBindingArg[](2);
+        bytes32 doneBinding = keccak256(
+            abi.encode(
+                DOMAIN_OUTPUT_BINDING,
+                routeId,
+                INTERFACE_NAME_ID,
+                LOCAL_MAPPED_SOURCE,
+                LOCAL_MAPPED_SIGNAL,
+                DONE_PORT,
+                TARGET_SOURCE,
+                TARGET_SIGNAL
+            )
+        );
+        bytes32 progressBinding = keccak256(
+            abi.encode(
+                DOMAIN_OUTPUT_BINDING,
+                routeId,
+                INTERFACE_NAME_ID,
+                LOCAL_MAPPED_SOURCE,
+                LOCAL_MAPPED_SIGNAL,
+                PROGRESS_OUT_PORT,
+                TARGET_SOURCE,
+                TARGET_SIGNAL
+            )
+        );
+        outputs[0] = UVPDockingModule.DockOutputBindingArg({
+            localSourceId: LOCAL_MAPPED_SOURCE,
+            localSignalId: LOCAL_MAPPED_SIGNAL,
+            portKey: DONE_PORT,
+            targetSourceId: TARGET_SOURCE,
+            targetSignalId: TARGET_SIGNAL,
+            bindingHash: doneBinding,
+            portProof: donePortProof
+        });
+        outputs[1] = UVPDockingModule.DockOutputBindingArg({
+            localSourceId: LOCAL_MAPPED_SOURCE,
+            localSignalId: LOCAL_MAPPED_SIGNAL,
+            portKey: PROGRESS_OUT_PORT,
+            targetSourceId: TARGET_SOURCE,
+            targetSignalId: TARGET_SIGNAL,
+            bindingHash: progressBinding,
+            portProof: progressPortProof
+        });
+        RogueRoute memory route = _registerRogueRouteParent(PARENT_EXEC_HOOK, TARGET_SOURCE, TARGET_SIGNAL, outputs);
+
+        assertTrue(
+            docking.openDockedOrder(
+                _rogueOpenRequest(route),
+                route.routeProof,
+                _interfaceProof(),
+                _rogueInputs(route),
+                outputs,
+                _permitEmpty()
+            )
+        );
+
+        vm.prank(KEEPER);
+        assertTrue(docking.submitDockedSignal(route.dockInstanceId, doneBinding));
+        // 兄弟绑定镜像同一本地事实键、同一 payload：幂等吸收，不 revert——
+        // 吸收即收敛为已交付（账本置位 + DockOutputSatisfied 事件），否则
+        // 投影侧永远视其为未交付，keeper 每个重发窗口都会再提交一次。
+        (, bytes32 targetPayload,,, address targetFactSubmitter) =
+            machine.getSignal(targetPlanId, route.linkedOrderId, TARGET_SOURCE, TARGET_SIGNAL);
+        vm.prank(KEEPER);
+        vm.expectEmit(true, true, true, true, address(docking));
+        emit UVPDockingModule.DockOutputSatisfied(
+            route.dockInstanceId,
+            route.linkedOrderId,
+            progressBinding,
+            route.planId,
+            route.orderId,
+            targetPlanId,
+            TARGET_SIGNAL,
+            LOCAL_MAPPED_SIGNAL,
+            targetPayload,
+            targetFactSubmitter
+        );
+        assertFalse(docking.submitDockedSignal(route.dockInstanceId, progressBinding));
+        assertTrue(docking.dockOutputDelivered(route.dockInstanceId, progressBinding));
+        assertTrue(docking.dockOutputDelivered(route.dockInstanceId, doneBinding));
+        // 账本置位后的重复提交走交付账本短路：不再发任何事件。
+        vm.prank(KEEPER);
+        assertFalse(docking.submitDockedSignal(route.dockInstanceId, progressBinding));
+        (bool mapped,,,,) = machine.getSignal(route.planId, route.orderId, LOCAL_MAPPED_SOURCE, LOCAL_MAPPED_SIGNAL);
+        assertTrue(mapped);
     }
 
     // ------------------------------------------------------------------

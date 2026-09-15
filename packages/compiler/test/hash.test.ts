@@ -133,6 +133,32 @@ test("canonical JSON sorts keys by code point, not UTF-16 code units", () => {
   );
 });
 
+test("canonical JSON orders integer-like keys by code point, not numeric order", () => {
+  // JS 对象把整数形键（"0"/"9"/"10"）强制排到字符串键之前且按数值序
+  // （Object.entries 枚举序）；Rust BTreeMap 按字节序输出 {"0","10","9","zzz"}
+  // （"1" < "9"）。真实事故面：metadata.labels 整数形键参与
+  // definitionUid/planHash 的 source 快照——TS 输出 {"9":…,"10":…} 与
+  // Rust 输出 {"10":…,"9":…} 是同一 JSON 值的两条不同字节流，哈希分叉。
+  assert.equal(
+    canonicalStringify({ labels: { zzz: "c", "9": "a", "10": "b", "0": "d" } }),
+    '{"labels":{"0":"d","10":"b","9":"a","zzz":"c"}}',
+  );
+  // 数值序（0,9,10）≠ 码点序（0,10,9）：单独钉住 9/10 的相对序。
+  assert.equal(
+    canonicalStringify({ "9": 1, "10": 2 }),
+    '{"10":2,"9":1}',
+  );
+  // 嵌套与数组元素内的整数形键同口径。
+  assert.equal(
+    canonicalStringify({ spec: { params: { "2": "x", "10": "y" } } }),
+    '{"spec":{"params":{"10":"y","2":"x"}}}',
+  );
+  assert.equal(
+    canonicalStringify([{ "9": 1, "10": 2 }, { a: { "10": 1, "9": 2 } }]),
+    '[{"10":2,"9":1},{"a":{"10":1,"9":2}}]',
+  );
+});
+
 test("u64Word rejects values outside the unsigned 64-bit range", () => {
   // 负数落成含 '-' 的假 word、≥ 2^64 溢出 32 字节槽位破坏 word 布局——
   // 与 chainId 入口（requireChainId）同口径在词构造处显式拒绝。

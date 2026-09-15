@@ -46,7 +46,7 @@ export class HookPlanArtifactValidationError extends Error {
  * (surrogate pairs) before high-BMP keys like U+E000..U+FFFF, diverging from
  * the Rust authority on identifiers outside the ASCII grammar.
  */
-export function compareByCodeUnit(left: string, right: string): number {
+export function compareCanonicalKey(left: string, right: string): number {
   const order = compareByCodePoint(left, right);
   return order < 0 ? -1 : order > 0 ? 1 : 0;
 }
@@ -166,9 +166,16 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
   // 与 planHash 都从携带字段独立重推导——篡改 compiledHooks/source 后保留
   // 旧 planHash 的毒制品在此拒绝，不等到链上。重算抛错（负载携带非 JSON
   // 值）同样按 issue 报告，校验器的契约是返回 issues 而非抛出。
+  // planId 重算经 planIdOf 单点做空 params 归一（Rust 权威口径）：制品
+  // platform 携带 params:{} 而 planId 是归一口径推导时，按原文重算会把
+  // 合法制品误判为 planId 分叉。
   if (isPlatform(value.platform) && typeof value.zhixuId === "string" && typeof value.zhixuName === "string") {
     try {
-      const recomputedPlanId = planIdOf(value.zhixuId, value.zhixuName, value.platform);
+      const recomputedPlanId = planIdOf(
+        value.zhixuId,
+        value.zhixuName,
+        value.platform,
+      );
       if (typeof value.planId === "string" && value.planId !== recomputedPlanId) {
         issues.push(
           "planId must match the recomputed H(uvp:hook-plan-id:v1; compiler/platform/zhixuId/zhixuName)",

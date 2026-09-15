@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x2c04760d0c51ece07e061d95615519be80cfbd86fb5ddd54b9122052529569bc",
-    "bytecodeHash": "0xcb9d5b579d59415e0ab294c80e9e2966c0115730af438301f4b37aba3b6002f8",
-    "deployedBytecodeHash": "0x41a5731e8c5c1b71d88f24eb2f53253612a3534e6ea39fbb645a14e2df74e461",
-    "artifactHash": "0xb38c26f2bce09b182449414f2b82f85d0554431abb49ceb063c09bc637fa34e5"
+    "abiHash": "0xeec637c43edc9561b69362453e2d4f94ebaff4b026d33951b83a03d4c1dab555",
+    "bytecodeHash": "0x4df52a128b85428be05ffa4cca92d8a09e501e505db11aceb1dbc5c4ef7f2687",
+    "deployedBytecodeHash": "0x91888cd5d2611711aea7e39ca6bda6b2af58bd4254b084acbb1e17c37d5cb095",
+    "artifactHash": "0xf00f6f9b19b31f79c14376122ca27841ed6b8ad76aedb82a7848c78c8c7436c1"
   },
   "events": {
     "DockInputSubmitted": {
@@ -22,6 +22,10 @@
     "DockOpened": {
       "signature": "DockOpened(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint8,address)",
       "topic": "0x4b27ba44044fdef1dc850cd0701c52eb8da60938277e7612046af358f7f366b6"
+    },
+    "DockOutputSatisfied": {
+      "signature": "DockOutputSatisfied(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
+      "topic": "0x0a1e39026afe6447fbf4b82de7d3ec299ebcc262da37202b3364e98ff8015b27"
     },
     "DockOutputSubmitted": {
       "signature": "DockOutputSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",

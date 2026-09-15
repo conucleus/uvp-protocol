@@ -58,8 +58,8 @@ export const customsWallets = {
 export const customsPlanIds = {
   planId: "0x336d9b556f7ffa00c83f49600554819055a4a3b300f82abca70b401f6b161ddc",
   // 派生身份(zx-)+当前编译器 canonical payload 重算钉住。
-  planHash: "0xf6eaeabe4e155834fa0ba5d6bd1f077d63ca99bc6e32987aadcd54badf1e9f94",
-  artifactHash: "0x371f2561e189cd80ff95121a5dbb4daa785e22d70afd72b87a64bedcd28dc10d"
+  planHash: "0x0317c456b081e9d1e79132fbce93029c7e5ab3c128eff1516e9c0b6ef9783d75",
+  artifactHash: "0x9a1e8a3f7aaa943e98794a74c70d0b89e57e9d00717b7c68ccc92baba5c21119"
 } as const;
 
 export const customsResourceManifest: ProductResourceManifestDTO = {
@@ -757,8 +757,8 @@ export const customsOnchainHookPlanArtifact = {
     ]
   },
   executorRoutes: [
-    { routeId: "0x9963f771afc5aaa6fabb6af0a7625a6c51011bc02fb39d5d5146ee79440bac3f", stageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca", stageIdentifier: customsStageIds.buyerPublishCustomsResources, executorType: "wallet", executorId: "buyer", executorHash: "0xceba0f926893649fbdd5053bfd8e95f239a18892e2ee25e3f76562a3413e1e3b", resourcesHash: "0x069184494e0d2f806cee049270bee7ff504cb08daad1a83acc37ea2ca46b930a", routeHash: "0x08507123bdafbc8946aba27ab465e524ec48f016fc271024fc305fa133d74324" },
-    { routeId: "0x169a72a4d6908a7fd8eda5bbabaa54ee05d4de02e40ec40f9cb97f33e60f441a", stageId: "0x301c76d30a738a103f1a948d5edd57e97fa2e17d80ddffff275c32daa56e6047", stageIdentifier: customsStageIds.buyerSelectCustomsExecutor, executorType: "wallet", executorId: "buyer", executorHash: "0xecab016c59a79e17b59b3ff9a3c5e1caffecbbd4faa7220e245995b712499bbd", resourcesHash: "0x7dbcba468a4a1d997d8401f76d6d5ac8baca6007bffdba640e069955998e94f1", routeHash: "0xc07d535cc26a67052cc5f3b89878a45e18816bdc43d3a0d52c7b83bb77a064de" }
+    { routeId: "0x9963f771afc5aaa6fabb6af0a7625a6c51011bc02fb39d5d5146ee79440bac3f", stageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca", stageIdentifier: customsStageIds.buyerPublishCustomsResources, executorType: "individual", executorId: "buyer", executorHash: "0xceba0f926893649fbdd5053bfd8e95f239a18892e2ee25e3f76562a3413e1e3b", resourcesHash: "0x069184494e0d2f806cee049270bee7ff504cb08daad1a83acc37ea2ca46b930a", routeHash: "0x08507123bdafbc8946aba27ab465e524ec48f016fc271024fc305fa133d74324" },
+    { routeId: "0x169a72a4d6908a7fd8eda5bbabaa54ee05d4de02e40ec40f9cb97f33e60f441a", stageId: "0x301c76d30a738a103f1a948d5edd57e97fa2e17d80ddffff275c32daa56e6047", stageIdentifier: customsStageIds.buyerSelectCustomsExecutor, executorType: "individual", executorId: "buyer", executorHash: "0xecab016c59a79e17b59b3ff9a3c5e1caffecbbd4faa7220e245995b712499bbd", resourcesHash: "0x7dbcba468a4a1d997d8401f76d6d5ac8baca6007bffdba640e069955998e94f1", routeHash: "0xc07d535cc26a67052cc5f3b89878a45e18816bdc43d3a0d52c7b83bb77a064de" }
   ],
   selectorBindings: [
     {
@@ -816,7 +816,7 @@ export const customsStoreProductSchema: StoreProductSchemaDTO = {
   businessPersonaLabels: ["买家", "报关行", "关务服务商"],
   stages: customsStages,
   selectorBindings: customsOnchainHookPlanArtifact.selectorBindings,
-  schemaHash: "0x8d3d6cda824a197ddea166e33c955cfa27a67bb693aad840daf14a24512be7af",
+  schemaHash: "0x28ee2fc1edc60711f8ab1660267edc2df2f182c5585b224d8fa058095da01f49",
   validation: {
     ok: true,
     status: "explicit",

@@ -3,14 +3,16 @@ import test from "node:test";
 import {
   assertHookPlanArtifact,
   compileZhixuHookPlan,
-  compareByCodeUnit,
+  compareCanonicalKey,
   HookPlanCompilationError,
   HookPlanArtifactValidationError,
   validateHookPlanArtifact
 } from "../src/hook-plan.js";
 import {
   buildDockInterfaceArtifact,
+  buildDockRoute,
   hookPlanHashOf,
+  planIdOf,
   prepareDockResolution,
 } from "../src/dock-commitments.js";
 import { validateDockCommitments } from "../src/dock-validation.js";
@@ -69,7 +71,7 @@ const baseZhixu: ZhixuDefinition = {
             name: "assign",
             source: "buyer",
             selectedStages: ["execution.main"],
-            // PLACE 为自发种子入口钩子（uvp-core 659a388 物化门：零 hook
+            // PLACE 为自发种子入口钩子（uvp-core 阶段物化门：零 hook
             // 阶段在链上永不可物化、sendSignals 无钩子可挂）。
             receiveSignals: {
               PLACE: "buyer::selector.assign.seed"
@@ -185,7 +187,7 @@ test("compiles internal HookPlan IR", () => {
   assert.deepEqual(plan.dependencyIndex["buyer::execution.main.cmp"], [
     "execution.main#TIMEOUT"
   ]);
-  // 种子入口钩子的自引用依赖（uvp-core 659a388 物化门语料对齐）。
+  // 种子入口钩子的自引用依赖（uvp-core 阶段物化门语料对齐）。
   assert.deepEqual(plan.dependencyIndex["buyer::selector.assign.seed"], [
     "selector.assign#PLACE"
   ]);
@@ -291,6 +293,98 @@ test("preserves opaque platform metadata for future target schemas at the intern
 
   assert.deepEqual(plan.platform, platform);
   assert.deepEqual(validateHookPlanArtifact(plan), []);
+});
+
+test("planId preimage drops empty platform params across compile/validate calibers", () => {
+  // Rust 权威 normalize_platform_value：空 params 不入 planId preimage。
+  // 双口径事故形态：制品 platform 携带 params:{} 而 planId 是归一口径推导
+  // 时，校验面按原文重算会误报 planId 分叉（本地口径过不了校验）；反之
+  // manifest 侧归一后，未归一的本地口径又互相对不上。本地编译、制品校验
+  // 与 manifest evmPlanId 重算三面必须同走 normalizePlatformPreimage。
+  const withoutParams = compileZhixuHookPlanWithManifest(baseZhixu);
+  const withEmptyParams = compileZhixuHookPlanWithManifest({
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      platform: { ...baseZhixu.spec.platform, params: {} },
+    },
+  });
+  // 定义身份（zhixuId）把 params:{} 视为内容（Rust 权威口径），两条定义
+  // 不同 uid/planId；但 core 壳的 platform 对空 params 已归一（制品不携带
+  // 该键），且 planId preimage 对携带 params:{} 的原文 platform 重算必须
+  // 等于编译产出的 planId（归一口径，非原文口径）。
+  assert.deepEqual(withEmptyParams.platform, withoutParams.platform);
+  assert.notEqual(withEmptyParams.zhixuId, withoutParams.zhixuId);
+  assert.equal(
+    planIdOf(withEmptyParams.zhixuId, withEmptyParams.zhixuName, {
+      ...withEmptyParams.platform,
+      params: {},
+    }),
+    withEmptyParams.planId,
+  );
+
+  // 第三方/手工制品字节形态：platform 携带 params:{} + 归一口径 planId +
+  // 按载荷重签 planHash —— 校验面必须放行（按原文重算的旧口径在此
+  // 误报 "planId must match"）。
+  const carryingEmptyParams: HookPlanArtifact = {
+    ...withoutParams,
+    platform: { ...withoutParams.platform, params: {} },
+  };
+  assert.deepEqual(validateHookPlanArtifact(resign(carryingEmptyParams)), []);
+
+  // manifest 口径对拍：内嵌定义携带 params:{} 时，本地编译产出的 planId
+  // 直接可作 evmPlanId 通过 prepareTargetEntry 的交叉重算（归一双口径：
+  // 重算面与本地编译面共用 planIdOf 的归一）。
+  const embeddedDefinition: ZhixuDefinition = {
+    apiVersion: "uvp/v0",
+    kind: "Zhixu",
+    metadata: { name: "empty_params_target" },
+    spec: {
+      platform: { type: "cloud", params: {} },
+      nucleation: { id: "core" },
+      taskPatterns: [
+        {
+          name: "relay",
+          stages: [
+            {
+              name: "forward",
+              source: "operator",
+              receiveSignals: { GO: "operator::relay.forward.go" },
+              sendSignals: ["cmp", "go"],
+              executor: {
+                supplierType: "zhixu",
+                zhixuExecutorConfig: {
+                  target: { zhixu: dockDemoTargetName },
+                  interface: "production_evidence",
+                  order: { mode: "existing" },
+                  signalMap: { cmp: "scrap_declared" },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const embeddedUid = definitionUid(embeddedDefinition);
+  const embeddedPlan = compileZhixuHookPlan(embeddedDefinition, demoManifest);
+  assert.doesNotThrow(() =>
+    prepareDockResolution({
+      schemaVersion: "uvp.dock.resolution.v2",
+      definitions: [
+        {
+          zhixu: embeddedUid,
+          definition: embeddedDefinition,
+          definitionRefHash: definitionRefHash(embeddedUid),
+          artifactHash: `0x${"ab".repeat(32)}` as `0x${string}`,
+          published: true,
+          interfaces: [],
+          dockEdges: [{ target: dockDemoTargetName }],
+          evmPlanId: embeddedPlan.planId,
+        },
+      ],
+    }),
+  );
 });
 
 test("validates HookPlan IR artifacts at the internal boundary", () => {
@@ -685,7 +779,7 @@ test("dock route commitment recomputation fails closed on missing identity field
 test("dependencyIndex ordering follows code-point (Rust byte) order for astral-plane hooks", () => {
   // Rust 权威 build_dependency_index 用 BTreeMap<String, BTreeSet<String>>
   // （字节序 = 码点序）。U+FFFD（高 BMP）按码点小于 U+1F600（星面），但
-  // UTF-16 码元序会把代理对排到前面——按默认 .sort()/compareByCodeUnit
+  // UTF-16 码元序会把代理对排到前面——按默认 .sort()/compareCanonicalKey
   // 重算会把合法 Rust 产物误判为 dependencyIndex 不匹配。
   const astralStage = "\u{1F600}.stage";
   const bmpStage = "\u{FFFD}.stage";
@@ -1581,11 +1675,43 @@ test("compiles existing-mode routes on the cloud-facing hook plan profile", () =
 // 比较器字节序、承诺校验 fail-closed
 // ---------------------------------------------------------------------------
 
-test("cross-seam interfaces are rejected as HookPlanCompilationError, never a bare RangeError", () => {
-  // 接口的未绑定 input 端口跨源：core linker（D012 双侧）与 TS 组装层
-  // （buildDockRoute seam 检查）同口径拒绝——无论哪一层先命中，编译入口
-  // 的对外契约都是 HookPlanCompilationError，组装阶段的裸 RangeError
-  // 不得逃逸。
+test("rejects output bindings mapping one local fact key onto multiple ports", () => {
+  // 同一本地事实键的多条 output 绑定：第二条交付必撞 SignalAlreadyExists
+  // （合约 submitDockedSignal 已按本地键幂等吸收兄弟绑定，但那是 keeper
+  // 烧过 gas 后的事后止血）——link 期直接拒绝。DSL 的 signalMap 键唯一
+  // 表达不了该形态，可达面是手工/第三方中性壳，直接打 buildDockRoute。
+  const resolution = prepareDockResolution(demoManifest);
+  const neutral = {
+    schemaVersion: "uvp.dockRoute.v2" as const,
+    local: { stageIdentifier: "sourcing.manufacture" },
+    target: { name: dockDemoTargetName, interfaceName: "production_service" },
+    orderMode: "new" as const,
+    inputBindings: [
+      { hookId: "sourcing.manufacture#EXECUTE", port: "execute" },
+    ],
+    outputBindings: [
+      { signal: "str", port: "started" },
+      { signal: "str", port: "completed" },
+    ],
+  };
+  const context = {
+    localDefinitionRefHash: `0x${"11".repeat(32)}` as `0x${string}`,
+    localPlanId: `0x${"22".repeat(32)}` as `0x${string}`,
+    localStageSources: new Map([["sourcing.manufacture", "purchaser"]]),
+    resolution,
+  };
+  assert.throws(
+    () => buildDockRoute(neutral, context),
+    /maps local signal "str" onto multiple output ports.*SignalAlreadyExists/s,
+  );
+});
+
+test("unbound cross-source interface ports do not join the D012 seam", () => {
+  // D012 只覆盖本 route 绑定的端口（core link_dock_routes 权威，镜像
+  // dock.rs link_rejects_cross_source_seams_from_both_sides 的 unbound 用
+  // 例）：接口声明但未被本 route 绑定的跨源 input 端口不属于这条执行通
+  // 道（可由其他 route 另行绑定）——Rust 放行的定义 TS 组装层照常产
+  // route，不得以旧口径（被绑定接口的全部 input 端口参与 seam）误拒。
   const crossSeamTarget = dockProductionTargetDefinition();
   crossSeamTarget.spec.dockInterface!.production_service!.inputs!.audit_check = {
     hook: "manufacturing.audit#CHECK",
@@ -1597,13 +1723,74 @@ test("cross-seam interfaces are rejected as HookPlanCompilationError, never a ba
     sendSignals: ["report"],
     executor: { supplierType: "organization", supplierID: "audit-org" },
   });
-  const crossSeamManifest = resolutionManifestFor(crossSeamTarget);
-  assert.throws(
-    () =>
-      compileZhixuHookPlan(
-        dockSourcingParentDefinition(dockDemoTargetName),
-        crossSeamManifest,
+  const plan = compileZhixuHookPlan(
+    dockSourcingParentDefinition(dockDemoTargetName),
+    resolutionManifestFor(crossSeamTarget),
+  );
+  const manufactureRoute = plan.dockRoutes.find(
+    (route) => route.local.stageIdentifier === "sourcing.manufacture",
+  );
+  assert.ok(manufactureRoute !== undefined);
+  // 本 route 只绑定 factory 源端口（execute/started/completed）——
+  // auditor 源的 audit_check 未被绑定，不参与 seam。
+  assert.equal(manufactureRoute.sourceSeam, "factory");
+  assert.deepEqual(validateHookPlanArtifact(plan), []);
+});
+
+test("route-bound cross-source ports are rejected as HookPlanCompilationError, never a bare RangeError", () => {
+  // seam 里的每个端口都必须是本 route 真正绑定的：本用例让 route 绑定
+  // auditor 源的 audit_check（input 侧）+ factory 源的 started（output
+  // 侧）——core linker（D012 双侧）与 TS 组装层（buildDockRoute seam 检
+  // 查）同口径拒绝，无论哪一层先命中，编译入口的对外契约都是
+  // HookPlanCompilationError，组装阶段的裸 RangeError 不得逃逸。
+  const crossSeamTarget = dockProductionTargetDefinition();
+  crossSeamTarget.spec.dockInterface!.production_service!.inputs!.audit_check = {
+    hook: "manufacturing.audit#CHECK",
+  };
+  (crossSeamTarget.spec.taskPatterns[0]!.stages as ZhixuStage[]).push({
+    name: "audit",
+    source: "auditor",
+    receiveSignals: { CHECK: "auditor::manufacturing.audit.check" },
+    sendSignals: ["report"],
+    executor: { supplierType: "organization", supplierID: "audit-org" },
+  });
+  const parent: ZhixuDefinition = {
+    ...dockSourcingParentDefinition(dockDemoTargetName),
+    spec: {
+      ...dockSourcingParentDefinition(dockDemoTargetName).spec,
+      taskPatterns: dockSourcingParentDefinition(dockDemoTargetName).spec.taskPatterns.map(
+        (task) =>
+          task.name !== "sourcing"
+            ? task
+            : {
+                ...task,
+                stages: task.stages.map((stage) =>
+                  stage.name !== "manufacture"
+                    ? stage
+                    : {
+                        ...stage,
+                        receiveSignals: {
+                          ...stage.receiveSignals,
+                          CHECK: "purchaser::procurement.confirm.seed",
+                        },
+                        executor: {
+                          supplierType: "zhixu" as const,
+                          zhixuExecutorConfig: {
+                            target: { zhixu: dockDemoTargetName },
+                            interface: "production_service",
+                            order: { mode: "new" as const },
+                            inputMap: { CHECK: "audit_check" },
+                            signalMap: { str: "started" },
+                          },
+                        },
+                      },
+                ),
+              },
       ),
+    },
+  };
+  assert.throws(
+    () => compileZhixuHookPlan(parent, resolutionManifestFor(crossSeamTarget)),
     (error: unknown) => {
       assert.ok(
         error instanceof HookPlanCompilationError,
@@ -1664,13 +1851,13 @@ test("dockInterface input ports require the hook to be exactly one positive atom
   assert.equal(artifact.interfaces[0]!.inputs[0]!.canonicalInputSignal, "factory::manufacturing.intake.execute");
 });
 
-test("compareByCodeUnit orders by Rust byte order, not UTF-16 code units", () => {
+test("compareCanonicalKey orders by Rust byte order, not UTF-16 code units", () => {
   // 星面字符（代理对）在 UTF-16 码元序里排在高位 BMP（U+E000..U+FFFF）
   // 之前，与 Rust str Ord（UTF-8 字节序）分叉——规范产物排序必须按字节序。
-  assert.ok(compareByCodeUnit("\uFFFD", "\u{1F600}") < 0);
-  assert.ok(compareByCodeUnit("\u{1F600}", "\uFFFD") > 0);
-  assert.equal(compareByCodeUnit("abc", "abd"), -1);
-  assert.equal(compareByCodeUnit("prefix", "prefixlonger"), -1);
+  assert.ok(compareCanonicalKey("\uFFFD", "\u{1F600}") < 0);
+  assert.ok(compareCanonicalKey("\u{1F600}", "\uFFFD") > 0);
+  assert.equal(compareCanonicalKey("abc", "abd"), -1);
+  assert.equal(compareCanonicalKey("prefix", "prefixlonger"), -1);
 });
 
 test("dock commitment validation fails closed on incomplete shapes", () => {

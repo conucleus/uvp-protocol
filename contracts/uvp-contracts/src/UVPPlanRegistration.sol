@@ -75,9 +75,6 @@ library UVPPlanRegistration {
         // Cross-stage dependency scan scratch: scoped so the large memory
         // arrays release their stack slots before the commit events fire.
         {
-            bytes32[] memory seenKeys = new bytes32[](MAX_PLAN_DEPENDENCIES);
-            bytes32[] memory seenStages = new bytes32[](MAX_PLAN_DEPENDENCIES);
-            bool[] memory seenTriggerOnly = new bool[](MAX_PLAN_DEPENDENCIES);
             // 阶段物化防御纵深：每个被注册 hook 的阶段必须至少有
             // 一个 order-trigger 或 EMIT_READY hook——纯 flags=0 watcher 阶段
             // 在链上永远无法物化（物化只由本阶段 hook Ready 触发，executor
@@ -87,7 +84,7 @@ library UVPPlanRegistration {
             bool[] memory stageMaterializer = new bool[](hooks.length);
             uint256 seenCount;
             for (uint256 i = 0; i < hooks.length; i++) {
-                seenCount = _registerPlanHook(plan, hooks[i], seenKeys, seenStages, seenTriggerOnly, seenCount);
+                seenCount = _registerPlanHook(plan, hooks[i], seenCount);
                 uint256 stageIndex = _seenDependencyIndex(stageScratch, i, hooks[i].stageId);
                 if (stageIndex == type(uint256).max) {
                     stageScratch[i] = hooks[i].stageId;
@@ -154,9 +151,6 @@ library UVPPlanRegistration {
     function _registerPlanHook(
         UVPStateMachine.Plan storage plan,
         UVPStateMachine.CompactHook calldata input,
-        bytes32[] memory seenKeys,
-        bytes32[] memory seenStages,
-        bool[] memory seenTriggerOnly,
         uint256 seenCount
     ) private returns (uint256) {
         _validateHook(input);
@@ -209,30 +203,41 @@ library UVPPlanRegistration {
             inputKeys[inputKeyCount] = dependencyKey;
             inputKeyCount += 1;
 
+            // 跨 hook 去重与跨阶段闸改读已落库的 dependencyIndex（O(1) 判
+            // 重）替代 memory 全表线性扫描：旧实现对每个新键做
+            // _seenDependencyIndex 全表扫描，满配 1024 键 ≈ 52 万次迭代
+            // （O(n²)），叠加每键双 push 的存储成本后 TooManyDependencies
+            // 在 30M block gas 内恒先被 OOG 挡住。首键注册前 hook 定义
+            // （stageId/flags）已写全，重复键回读已注册 hook 即可重建旧
+            // scratch 语义：首见阶段取 dependents[0]，trigger-only 折叠取
+            // 已注册 hook 集合的 AND（旧 seenTriggerOnly 的逐次 AND 折叠
+            // 与之逐点等价）。
             // Trigger watchers crossing stages are the normal selectedStages
             // flow: the evaluation guard skips triggers of unmaterialized
             // stages. The brick is a NON-trigger watcher in a stage that has
             // not materialized yet -- submitting the shared key would revert
             // that transaction forever.
-            uint256 watcherIndex = _seenDependencyIndex(seenKeys, updatedCount, dependencyKey);
-            if (watcherIndex == type(uint256).max) {
-                if (updatedCount == seenKeys.length) {
+            bytes32[] storage dependents = plan.dependencyIndex[dependencyKey];
+            if (dependents.length == 0) {
+                if (updatedCount == MAX_PLAN_DEPENDENCIES) {
                     revert UVPStateMachine.TooManyDependencies();
                 }
-                seenKeys[updatedCount] = dependencyKey;
-                seenStages[updatedCount] = input.stageId;
-                seenTriggerOnly[updatedCount] = _isOrderTrigger(input.flags);
                 updatedCount += 1;
             } else {
-                bool triggerOnly = seenTriggerOnly[watcherIndex] && _isOrderTrigger(input.flags);
-                if (seenStages[watcherIndex] != input.stageId && !triggerOnly) {
+                bool triggerOnly = _isOrderTrigger(input.flags);
+                for (uint256 k = 0; k < dependents.length; k++) {
+                    if (!_isOrderTrigger(plan.hooks[dependents[k]].flags)) {
+                        triggerOnly = false;
+                        break;
+                    }
+                }
+                if (plan.hooks[dependents[0]].stageId != input.stageId && !triggerOnly) {
                     revert UVPStateMachine.CrossStageDependency(dependencyKey);
                 }
-                seenTriggerOnly[watcherIndex] = triggerOnly;
             }
 
             hook.dependencyKeys.push(dependencyKey);
-            plan.dependencyIndex[dependencyKey].push(input.hookId);
+            dependents.push(input.hookId);
         }
 
         plan.hookIds.push(input.hookId);
@@ -268,6 +273,14 @@ library UVPPlanRegistration {
         for (uint256 i = 0; i < hook.instructions.length; i++) {
             UVPStateMachine.Instruction calldata instruction = hook.instructions[i];
             if (instruction.op == uint8(UVPStateMachine.InstructionOp.Signal)) {
+                // 零字 sourceId 事实键与其余写入口同口径拒绝
+                // （triggerOrderFromOutsideFor/_authorizeSignalSubmitter 均显式
+                // 拒零键）：sourceId==0 绕过 _signalStageId（恒返回 0），是
+                // stage 物化与 executor 门的永久豁免键，且该键一经注册即随
+                // dependencyIndex 常驻求值路径——注册边界封死。
+                if (instruction.sourceId == bytes32(0)) {
+                    revert UVPStateMachine.ZeroSourceId();
+                }
                 if (instruction.signalId == bytes32(0)) {
                     revert UVPStateMachine.InvalidInstruction();
                 }

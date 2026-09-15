@@ -49,6 +49,14 @@ export const DOMAIN_INPUT_IDEMPOTENCY = "UVP_DOCK_INPUT_IDEMPOTENCY_V1";
 export const DOMAIN_OUTPUT_IDEMPOTENCY = "UVP_DOCK_OUTPUT_IDEMPOTENCY_V1";
 export const DOMAIN_SOURCE_FACT_SET = "UVP_DOCK_SOURCE_FACT_SET_V1";
 
+/**
+ * MAX_DOCK_INPUTS 是**接口声明面**的 input 端口数上限（单个 dockInterface
+ * 具名接口可声明的 input 端口数）；链上 route 绑定面是另一个观测面——
+ * mode=new 的 input 绑定恒 1 条（D010 出生锚唯一，UVPStateMachine
+ * DockBindingCountInvalid），mode=existing 的 input 绑定为 0。两个面各自
+ * 计数，不得互推。MAX_DOCK_OUTPUTS 则两面同用（合约 open 时对 outputs
+ * 数组执行同一上限）。
+ */
 export const MAX_DOCK_INPUTS = 8;
 export const MAX_DOCK_OUTPUTS = 16;
 export const MAX_DOCK_DEPTH = 8;

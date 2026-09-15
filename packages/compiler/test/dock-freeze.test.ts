@@ -10,13 +10,13 @@ import {
   compileZhixuHookPlan,
   validateHookPlanArtifact,
 } from "../src/hook-plan.js";
+import { compileZhixuOnchainHookPlan } from "../src/onchain/compile.js";
+import { hashOnchainPlanPayload } from "../src/onchain/hash/plan.js";
 import {
   assertOnchainHookPlanArtifact,
-  compileZhixuOnchainHookPlan,
-  hashOnchainPlanPayload,
   OnchainHookPlanArtifactValidationError,
   validateOnchainHookPlanArtifact,
-} from "../src/onchain-hook-plan.js";
+} from "../src/onchain/validate/artifact.js";
 import {
   dockRoutesRootOf,
   EMPTY_MERKLE_ROOT,

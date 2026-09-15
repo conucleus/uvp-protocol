@@ -327,6 +327,7 @@ test("chain replay derives order-link birth facts from HookReady", () => {
       orderId: "link-child",
       planId,
       triggerStageId: stageId,
+      triggerHookId: hookId,
       sourceId: srcId,
       signalId: sigId,
       submitter: "alice"
@@ -453,6 +454,97 @@ test("chain replay exposes duplicated birth HookReady as a mismatch", () => {
   assert.ok(mismatchError !== undefined, "duplicated birth HookReady must fail loudly");
   assert.equal(mismatchError.mismatches.length, 1);
   assert.equal(mismatchError.mismatches[0]?.reason, "missing-observed");
+});
+
+test("chain replay filters contract-impossible TimerPoked events (pokeTimer gate)", async () => {
+  // UVPStateMachine.pokeTimer 对非 Wait 态 revert TimerNotWaiting、未到期
+  // revert TimerNotDue——两类交易在链上不可能产出 TimerPoked 事件。golden
+  // fixture 历史上携带过"已 cxl 的 hook 又被 poke"的序列（order-cancel 段），
+  // 该事故暴露 oracle 不建模合约守门：不可产生的事件被无条件喂给 native
+  // 回放。守门必须把这些事件挡在 native 层之外，且注入后回放终态与
+  // 干净流逐字节一致（不可能事件是惰性的）。
+  const events = await loadChainEvents();
+  const planId = "0x312bed89090d5be24d38a236e312f8734d64dff50f8da3376542bee659dbb35d";
+  const cancelHook = "0x0000000000000000000000000000000000000000000000000000000000003002";
+  const timerHook = "0x0000000000000000000000000000000000000000000000000000000000003002";
+
+  const impossible: ChainModeEvent[] = [
+    // 已 cxl 的 hook 被 poke（TimerNotWaiting——golden 事故序列原样注入）。
+    {
+      eventName: "TimerPoked",
+      blockNumber: 5,
+      logIndex: 0,
+      transactionHash: "0x06",
+      planId,
+      zhixuId: "chain-oracle",
+      orderId: "order-cancel",
+      hookId: cancelHook,
+      dueAt: "2026-04-27T00:00:05.000Z",
+      pokedAt: "2026-04-27T00:00:06.000Z"
+    },
+    // Wait 态但未到期（TimerNotDue：pokedAt < dueAt）。
+    {
+      eventName: "TimerPoked",
+      blockNumber: 7,
+      logIndex: 5,
+      transactionHash: "0x08",
+      planId,
+      zhixuId: "chain-oracle",
+      orderId: "order-timer",
+      hookId: timerHook,
+      dueAt: "2026-04-27T00:01:05.000Z",
+      pokedAt: "2026-04-27T00:01:01.000Z"
+    },
+    // 从未见过状态转移的 hook（状态未知 = 无法证明 Wait，fail-closed）。
+    {
+      eventName: "TimerPoked",
+      blockNumber: 8,
+      logIndex: 2,
+      transactionHash: "0x0a",
+      planId,
+      zhixuId: "chain-oracle",
+      orderId: "order-timer",
+      hookId: "0x0000000000000000000000000000000000000000000000000000000000003999",
+      dueAt: "2026-04-27T00:01:05.000Z",
+      pokedAt: "2026-04-27T00:01:06.000Z"
+    },
+    // 事件自报的 dueAt 与守门状态不一致（守门值 00:01:05，事件自报
+    // 00:01:00 伪造"已到期"）：到期判据只能取守门推导值，事件声称值
+    // 仅作一致性核验——链上 pokeTimer 读的是合约存储，事件无权覆盖。
+    {
+      eventName: "TimerPoked",
+      blockNumber: 9,
+      logIndex: 3,
+      transactionHash: "0x0b",
+      planId,
+      zhixuId: "chain-oracle",
+      orderId: "order-timer",
+      hookId: timerHook,
+      dueAt: "2026-04-27T00:01:00.000Z",
+      pokedAt: "2026-04-27T00:01:01.000Z"
+    },
+    // 冻结前形状（不带 dueAt 声称）：判定完全由守门值承担——pokedAt 仍
+    // 小于守门 dueAt（00:01:05）即 TimerNotDue，不得因"事件未声称"放行。
+    {
+      eventName: "TimerPoked",
+      blockNumber: 10,
+      logIndex: 4,
+      transactionHash: "0x0c",
+      planId,
+      zhixuId: "chain-oracle",
+      orderId: "order-timer",
+      hookId: timerHook,
+      pokedAt: "2026-04-27T00:01:01.000Z"
+    } as unknown as ChainModeEvent
+  ];
+
+  const clean = replayChainEvents(events);
+  const polluted = replayChainEvents([...events, ...impossible]);
+  assert.deepEqual(polluted.mismatches, []);
+  assert.deepEqual(polluted.observed, polluted.expected);
+  // 不可能事件不得改动回放终态（守门是过滤，不是吸收进求值）。
+  assert.deepEqual(polluted.state, clean.state);
+  assert.deepEqual(polluted.observed, clean.observed);
 });
 
 test("compareChainEvents stays a total order with mixed transactionIndex presence", () => {

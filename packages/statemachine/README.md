@@ -29,9 +29,10 @@ pnpm --filter @uvp-eth/statemachine typecheck
 
 ## Source
 
-- `src/chain.ts`: stable chain-event adapter for `PlanRegistered`,
-  `OrderRegistered`, `SignalSubmitted`, `HookStatusChanged`, `HookReady`, and
-  `TimerPoked` oracle replay.
+- `src/chain.ts`: stable chain-event adapter over the closed ten-event replay
+  set — `PlanRegistered`, `OrderRegistered`, `OrderMaterialized`,
+  `OrderTriggered`, `OrderLinked`, `SignalSubmitted`, `StageMaterialized`,
+  `HookStatusChanged`, `HookReady`, and `TimerPoked` (`ChainModeEvent`).
 - `fixtures/chain-hook-oracle.events.json`: chain-mode golden fixture for
   duplicate signals, timer due, negative cancellation, and ready-once behavior.
 - `test/chain.test.ts`: chain adapter, golden replay tests, and parity checks
