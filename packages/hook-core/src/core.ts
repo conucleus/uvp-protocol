@@ -16,12 +16,18 @@ export const EXPECTED_UVP_CORE_VERSION = "0.1.0" as const;
 export const EXPECTED_UVP_SEMANTIC_VERSION = "uvp.semantic.v1" as const;
 
 /**
- * Native build fingerprint (uvp-node build.rs burns `git-<rev>` or
+ * Native build fingerprint (uvp-node build.rs burns `git-<tree rev>` or
  * `no-git-<version>` at compile time). Version + semantic probes can both pass
  * against a stale dylib whose behavior already changed; the fingerprint is the
  * last line of defense comparing the loaded binary against the checked-out
- * uvp-core HEAD. The uvp-node JS wrapper re-exports the Rust
- * `build_fingerprint`, so the gate below is live (not dormant).
+ * uvp-core content. The rev is the content tree (`HEAD^{tree}`), not the
+ * commit SHA: this repo's dev→main convention is squash convergence, which
+ * rewrites every SHA onto content-identical commits — a commit-SHA fingerprint
+ * would misflag such checkouts as stale and force pointless rebuilds. The tree
+ * hash is the squash-invariant content identity: content changes move the tree
+ * (rebuild required), a squash that only rewrites the commit graph does not.
+ * The uvp-node JS wrapper re-exports the Rust `build_fingerprint`, so the gate
+ * below is live (not dormant).
  */
 export function uvpCoreBuildFingerprint(): string | undefined {
   const candidate = (uvpCoreNode as Record<string, unknown>).buildFingerprint;
@@ -41,36 +47,38 @@ export function uvpCoreHookPlanSchemaVersion(): string {
 }
 
 /**
- * HEAD of the uvp-core checkout that hosts the loaded native module, or
- * undefined when the module is not a workspace checkout or git is unavailable.
+ * Content tree of the uvp-core checkout that hosts the loaded native module,
+ * or undefined when the module is not a workspace checkout or git is
+ * unavailable.
  */
-function checkedOutUvpCoreHead(): string | undefined {
+function checkedOutUvpCoreContentTree(): string | undefined {
   try {
     const require = createRequire(import.meta.url);
     const entry = require.resolve("@conucleus/uvp-core-node");
     // <uvp-core>/crates/uvp-node/index.cjs -> <uvp-core> (same two-level walk
     // as uvp-node build.rs when it resolves the workspace root).
     const workspaceRoot = resolve(dirname(entry), "../..");
-    const result = spawnSync("git", ["-C", workspaceRoot, "rev-parse", "HEAD"], {
+    const result = spawnSync("git", ["-C", workspaceRoot, "rev-parse", "HEAD^{tree}"], {
       encoding: "utf8",
     });
     if (result.status !== 0 || result.error) {
       return undefined;
     }
-    const head = result.stdout.trim();
-    return head.length > 0 ? head : undefined;
+    const tree = result.stdout.trim();
+    return tree.length > 0 ? tree : undefined;
   } catch {
     return undefined;
   }
 }
 
-function sameRev(fingerprintRev: string, head: string): boolean {
-  // hermetic builds may burn a short rev via UVP_FFI_GIT_REV; accept prefix
-  // equivalence either way instead of demanding full 40-hex equality.
+function sameRev(fingerprintRev: string, tree: string): boolean {
+  // hermetic builds may burn a short content-tree rev via UVP_FFI_GIT_REV;
+  // accept prefix equivalence either way instead of demanding full 40-hex
+  // equality.
   return (
-    fingerprintRev === head ||
-    head.startsWith(fingerprintRev) ||
-    fingerprintRev.startsWith(head)
+    fingerprintRev === tree ||
+    tree.startsWith(fingerprintRev) ||
+    fingerprintRev.startsWith(tree)
   );
 }
 
@@ -110,11 +118,11 @@ export function uvpCoreCompatibility(): UvpCoreCompatibility {
     );
   }
   const fingerprintRev = buildFingerprint.replace(/^git-/, "");
-  const head = checkedOutUvpCoreHead();
-  if (head !== undefined && !sameRev(fingerprintRev, head)) {
+  const tree = checkedOutUvpCoreContentTree();
+  if (tree !== undefined && !sameRev(fingerprintRev, tree)) {
     throw new Error(
       `stale uvp-core native module: build fingerprint ${buildFingerprint} ` +
-      `does not match the checked-out uvp-core HEAD ${head}; ` +
+      `does not match the checked-out uvp-core content tree ${tree}; ` +
       "rebuild with `pnpm --filter @conucleus/uvp-core-node build`"
     );
   }
