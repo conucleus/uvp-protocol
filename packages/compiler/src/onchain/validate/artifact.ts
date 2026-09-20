@@ -22,6 +22,7 @@ import {
 } from "./capabilities.js";
 import {
   declaredStageIdentifiers,
+  duplicateBirthChannelKeyIssues,
   silentOrderTriggerIssues,
   unmaterializableStageIssues,
   validateOnchainCompiledHooks,
@@ -29,6 +30,7 @@ import {
 } from "./hooks.js";
 import {
   planDependencyCountIssues,
+  selectorBindingCountIssues,
   signalCapabilityCountIssues,
 } from "./limits.js";
 import {
@@ -211,6 +213,8 @@ export function validateOnchainHookPlanArtifact(
     issues.push(
       ...silentOrderTriggerIssues(compiledHooks as readonly OnchainCompiledHook[]),
     );
+    // U2 同一守卫同样作用于反序列化 artifact 边界。
+    issues.push(...duplicateBirthChannelKeyIssues(compiledHooks));
     issues.push(...planDependencyCountIssues(compiledHooks as readonly OnchainCompiledHook[]));
   }
 
@@ -230,6 +234,8 @@ export function validateOnchainHookPlanArtifact(
   }
   if (selectorBindings) {
     issues.push(...validateOnchainSelectorBindings(selectorBindings));
+    // M24 规模预检：与合约 finalize 边界（TooManySelectorBindings）同口径。
+    issues.push(...selectorBindingCountIssues(selectorBindings));
     issues.push(
       ...canonicalOrderIssues(
         selectorBindings,

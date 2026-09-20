@@ -27,6 +27,7 @@ interface DockVm {
     function expectRevert(bytes calldata revertData) external;
     function prank(address msgSender) external;
     function sign(uint256 privateKey, bytes32 digest) external returns (uint8 v, bytes32 r, bytes32 s);
+    function store(address account, bytes32 slot, bytes32 value) external;
     function warp(uint256 newTimestamp) external;
 }
 
@@ -216,6 +217,50 @@ contract UVPDockingModuleTest {
         (status,, readyEmitted) = machine.getHookStatus(targetPlanId, linkedOrderId, TARGET_ENTRANCE_HOOK);
         assertEq(uint256(status), uint256(UVPStateMachine.HookStatus.Ready));
         assertTrue(readyEmitted);
+    }
+
+    /// DockOpened/DockInputSubmitted 事件口径（M23）：open 原子发出开仓
+    /// 事件与 entrance 交付事件——DockInputSubmitted 的 payloadHash 由
+    /// committed 状态重算，只钉身份 topic。
+    function testOpenEmitsDockOpenedAndEntranceInputSubmitted() public {
+        vm.expectEmit(true, true, true, true, address(docking));
+        emit UVPDockingModule.DockOpened(
+            dockInstanceId,
+            PARENT_ORDER_ID,
+            linkedOrderId,
+            INTERFACE_NAME_ID,
+            parentPlanId,
+            targetPlanId,
+            routeId,
+            openRouteHash,
+            1,
+            address(this)
+        );
+        vm.expectEmit(true, true, true, false, address(docking));
+        emit UVPDockingModule.DockInputSubmitted(
+            dockInstanceId,
+            linkedOrderId,
+            entranceBinding,
+            parentPlanId,
+            PARENT_ORDER_ID,
+            targetPlanId,
+            TARGET_SIGNAL,
+            bytes32(0),
+            address(0)
+        );
+        assertTrue(_open());
+    }
+
+    /// 深度上限（M23）：父订单真实 dock 深度达 MAX_DOCK_DEPTH 后开仓拒绝。
+    /// 深度账本按存储布局推 slot（dockDepthOfOrder 是模块第 8 个存储变量，
+    /// slot 7）；若布局漂移写入落空，本测试会响亮地变成 DockDepthMismatch。
+    function testRejectsOpenAtMaxDockDepth() public {
+        uint8 maxDepth = docking.MAX_DOCK_DEPTH();
+        bytes32 innerSlot = keccak256(abi.encode(parentPlanId, uint256(7)));
+        bytes32 depthSlot = keccak256(abi.encode(PARENT_ORDER_ID, innerSlot));
+        vm.store(address(docking), depthSlot, bytes32(uint256(uint256(maxDepth))));
+        _expect(abi.encodeWithSelector(UVPDockingModule.DockDepthExceeded.selector, maxDepth, maxDepth));
+        _openRaw(_openRequest(maxDepth));
     }
 
     /// A linkedOrderId is disclosed in the open calldata.  Outside trigger

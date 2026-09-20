@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
 import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 import {DockMerkle} from "./libraries/DockMerkle.sol";
+import {_MAX_SIGNAL_CAPABILITIES, _MAX_SELECTOR_BINDINGS} from "./UVPStateMachineConstants.sol";
 
 contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     struct PlanMetadata {
@@ -22,7 +23,6 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     error InvalidTargetOrderRelation(uint8 targetOrderRelation);
     error StageSelectorBindingAlreadyRegistered(bytes32 planId, bytes32 selectorStageId, bytes32 targetStageId);
     error PlanMetadataAlreadyFinalized(bytes32 planId);
-    error TooManySignalCapabilities(uint256 count, uint256 max);
     error UnauthorizedStateMachine(address caller);
     error UnknownPlan();
     error ZeroSelectorStageId();
@@ -35,10 +35,13 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     uint8 public constant SIGNAL_TARGET_CURRENT_ORDER = 0;
     uint8 public constant SIGNAL_TARGET_TRIGGER_ORIGIN = 1;
 
-    // 链上强制：能力表超过该上限时逐条写存储的注册循环 gas 随表规模
-    // 无界增长（手签超大能力表 plan 毒化注册边界）。TS/Rust 编译器以
-    // 同一数值预检；这里是注册边界兜底。
-    uint256 public constant MAX_SIGNAL_CAPABILITIES = 256;
+    // 链上强制：能力表/绑定表超过上限时逐条写存储的注册循环 gas 随表
+    // 规模无界增长（手签超大表 plan 毒化注册边界，≈324 条 binding 在 30M
+    // block gas 内恒 OOG）。TS/Rust 编译器以同一数值预检；finalize 边界
+    // （UVPPlanRegistration）在本上限上先于 metadataHash 重算 fail-fast，
+    // 这里是注册循环兜底。单一数值声明点在 UVPStateMachineConstants。
+    uint256 public constant MAX_SIGNAL_CAPABILITIES = _MAX_SIGNAL_CAPABILITIES;
+    uint256 public constant MAX_SELECTOR_BINDINGS = _MAX_SELECTOR_BINDINGS;
 
     bytes32 private constant _DOMAIN_DOCK_INTERFACE = keccak256("UVP_DOCK_INTERFACE_V2");
 
@@ -221,6 +224,9 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     }
 
     function _registerStageSelectorBindings(bytes32 planId, StageSelectorBinding[] calldata selectorBindings) private {
+        if (selectorBindings.length > MAX_SELECTOR_BINDINGS) {
+            revert TooManySelectorBindings(selectorBindings.length, MAX_SELECTOR_BINDINGS);
+        }
         PlanMetadata storage metadata = _metadata[planId];
         for (uint256 i = 0; i < selectorBindings.length; i++) {
             StageSelectorBinding calldata binding = selectorBindings[i];

@@ -2070,3 +2070,202 @@ test("rejects undeclared extra fields on on-chain HookPlan artifacts (L9)", () =
     "unknown field `note` on the artifact — planHash does not cover undeclared fields, so the artifact would not be the plan's unique byte form; remove it or recompile",
   ]);
 });
+test("duplicate birth-channel key is rejected at compile and deserialization boundaries (U2 mirror)", () => {
+  const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  // (1) 编译入口：两个 order-trigger hook（mint∪dock）共享出生键——IR 层
+  // 把 PLACE 的种子事实改写为 START 的订阅事实，START 升为 mint、PLACE
+  // 升为 dock entrance。
+  const startHook = sourcePlan.compiledHooks.find(
+    (hook) => hook.hookName === "START",
+  );
+  const placeHook = sourcePlan.compiledHooks.find(
+    (hook) => hook.hookName === "PLACE",
+  );
+  assert.ok(startHook && placeHook, "demo IR must expose START and PLACE hooks");
+  const sharedSignalName = startHook.dependencies[0]!.signalName;
+  const sharedSource = startHook.dependencies[0]!.source;
+  const mutatedHooks = sourcePlan.compiledHooks.map((hook) => {
+    if (hook !== startHook && hook !== placeHook) {
+      return hook;
+    }
+    if (hook === placeHook) {
+      return {
+        ...hook,
+        orderTriggerKind: "dock" as const,
+        emitReady: true,
+        ast: {
+          ...hook.ast,
+          condition: {
+            kind: "signal" as const,
+            source: sharedSource,
+            signalName: sharedSignalName,
+          },
+        },
+        dependencies: [
+          { ...hook.dependencies[0]!, source: sharedSource, signalName: sharedSignalName },
+        ],
+      };
+    }
+    return { ...hook, orderTriggerKind: "mint" as const, emitReady: true };
+  });
+  const resignd = resign({
+    ...sourcePlan,
+    compiledHooks: mutatedHooks,
+    dependencyIndex: rebuildDependencyIndex(mutatedHooks),
+  });
+  assert.throws(
+    () => compileOnchainHookPlan(resignd),
+    (error: unknown) =>
+      error instanceof HookPlanCompilationError &&
+      error.issues.some((issue) => /duplicate birth-channel key/.test(issue)),
+    "compile preflight must reject two order-trigger hooks sharing a birth key",
+  );
+
+  // (2) 反序列化边界：mint 出生键 == dock entrance 键同样拒绝；同键
+  // watcher（非出生通道）不受限。
+  const onchain = compileOnchainHookPlan(sourcePlan);
+  const stageA = "0x" + "01".repeat(32);
+  const stageB = "0x" + "02".repeat(32);
+  const sharedKey = onchainSignalKey(
+    onchainSourceId("buyer"),
+    onchainSignalId("buyer::shared.birth"),
+  );
+  const dep = {
+    kind: "positive",
+    source: "buyer",
+    signalName: "buyer::shared.birth",
+    sourceId: onchainSourceId("buyer"),
+    signalId: onchainSignalId("buyer::shared.birth"),
+    signalKey: sharedKey,
+  };
+  const instructionOf = () => [
+    {
+      op: "SIGNAL",
+      source: "buyer",
+      signalName: "buyer::shared.birth",
+      sourceId: dep.sourceId,
+      signalId: dep.signalId,
+      signalKey: sharedKey,
+    },
+  ];
+  const hookOf = (
+    name: string,
+    stageIdentifier: string,
+    stageId: string,
+    orderTriggerKind: "mint" | "dock" | "none",
+  ) => ({
+    hookId: keccak256Hex(`${stageIdentifier}#${name}`),
+    stageId,
+    stageIdentifier,
+    hookName: name,
+    kind: "receive",
+    orderTriggerKind,
+    emitReady: orderTriggerKind !== "none",
+    instructions: instructionOf(),
+    dependencies: [dep],
+  });
+  const birthHooks = [
+    hookOf("mint_line", "stage.a", stageA, "mint"),
+    hookOf("dock_line", "stage.b", stageB, "dock"),
+    hookOf("watcher", "stage.a", stageA, "none"),
+  ];
+  const issues = validateOnchainHookPlanArtifact({
+    ...onchain,
+    compiledHooks: birthHooks,
+    dependencyIndex: { [sharedKey]: birthHooks.map((hook) => hook.hookId) },
+  });
+  assert.equal(
+    issues.filter((issue) => /duplicate birth-channel key/.test(issue)).length,
+    1,
+    `expected exactly one birth-channel issue, got: ${issues.join("; ")}`,
+  );
+  // watcher 与出生键同阶段共享：不触发出生通道守卫（上一步唯一 issue 已证）。
+
+  // (3) mint∪mint 扇出（customs 基准 plan 形态）放行。
+  const fanOutHooks = [
+    hookOf("mint_line", "stage.a", stageA, "mint"),
+    hookOf("mint_line_2", "stage.b", stageB, "mint"),
+  ];
+  const fanOutIssues = validateOnchainHookPlanArtifact({
+    ...onchain,
+    compiledHooks: fanOutHooks,
+    dependencyIndex: { [sharedKey]: fanOutHooks.map((hook) => hook.hookId) },
+  });
+  assert.deepEqual(
+    fanOutIssues.filter((issue) => /duplicate birth-channel key/.test(issue)),
+    [],
+  );
+});
+
+test("hook dependencies must mirror the SIGNAL atom key set (M21 mirror)", () => {
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  const watcher = onchain.compiledHooks.find(
+    (hook) => hook.orderTriggerKind === "none" && hook.dependencies.length === 1,
+  );
+  assert.ok(watcher, "demo artifact must expose a single-dependency watcher");
+
+  // 依赖键换成 ghost 信号（sourceId/signalId/signalKey 三元组自洽）：
+  // 声明的键不是任何 SIGNAL 原子，且原 SIGNAL 原子未声明——两个方向同报。
+  const ghostSignalName = "buyer::ghost.signal";
+  const ghost = {
+    kind: "positive",
+    source: watcher.dependencies[0]!.source,
+    signalName: ghostSignalName,
+    sourceId: watcher.dependencies[0]!.sourceId,
+    signalId: onchainSignalId(ghostSignalName),
+    signalKey: onchainSignalKey(
+      watcher.dependencies[0]!.sourceId,
+      onchainSignalId(ghostSignalName),
+    ),
+  };
+  const issues = validateOnchainHookPlanArtifact({
+    ...onchain,
+    compiledHooks: onchain.compiledHooks.map((hook) =>
+      hook === watcher ? { ...hook, dependencies: [ghost] } : hook,
+    ),
+    dependencyIndex: {
+      ...onchain.dependencyIndex,
+      [ghost.signalKey]: [watcher.hookId],
+      [watcher.dependencies[0]!.signalKey]: onchain.dependencyIndex[
+        watcher.dependencies[0]!.signalKey
+      ]!.filter((hookId) => hookId !== watcher.hookId),
+    },
+  });
+  assert.equal(
+    issues.some((issue) =>
+      /dependencies key .* is not a SIGNAL atom of this hook/.test(issue),
+    ),
+    true,
+    `expected dangling dependency issue, got: ${issues.join("; ")}`,
+  );
+  assert.equal(
+    issues.some((issue) =>
+      /SIGNAL key .* is not declared in dependencies/.test(issue),
+    ),
+    true,
+    `expected undeclared SIGNAL atom issue, got: ${issues.join("; ")}`,
+  );
+});
+
+test("rejects selector binding tables beyond the gas-bounded cap (M24 mirror)", () => {
+  // selectorBindings 超上限：finalizePlan 逐条写存储的注册循环 gas 随表
+  // 规模无界增长（合约 TooManySelectorBindings）——反序列化边界同口径拒绝。
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  const template = onchain.selectorBindings[0];
+  assert.ok(template);
+  const oversized = Array.from({ length: 129 }, (_, index) => {
+    const targetStageIdentifier = `execution.target-${index}`;
+    return {
+      ...template,
+      targetStageIdentifier,
+      targetStageId: keccak256Hex(targetStageIdentifier),
+    };
+  });
+  assert.equal(
+    validateOnchainHookPlanArtifact({
+      ...onchain,
+      selectorBindings: oversized,
+    }).some((issue) => /selector bindings 129 exceed the documented limit 128/.test(issue)),
+    true,
+  );
+});

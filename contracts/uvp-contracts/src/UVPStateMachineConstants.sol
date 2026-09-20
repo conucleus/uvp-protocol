@@ -12,6 +12,13 @@ uint8 constant _HOOK_FLAG_ORDER_TRIGGER_DOCK = 2;
 uint8 constant _HOOK_FLAG_EMIT_READY = 4;
 uint64 constant _MAX_HOOK_DELAY_SECONDS = 30 days;
 uint256 constant _MAX_PLAN_DEPENDENCIES = 1024;
+// finalizePlan 的元数据规模上限：selectorBindings 与 signalCapabilities
+// 逐条写存储的注册循环 gas 随表规模无界增长（M24：≈324 条 binding 在
+// 30M block gas 内恒 OOG，planId 烧死在 committed 态）。注册库在本上限
+// 上先于 metadataHash 重算 fail-fast；UVPPlanMetadataModule 以 public
+// constant 重导出并兜底。
+uint256 constant _MAX_SIGNAL_CAPABILITIES = 256;
+uint256 constant _MAX_SELECTOR_BINDINGS = 128;
 
 bytes32 constant _EIP712_DOMAIN_TYPEHASH =
     keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");

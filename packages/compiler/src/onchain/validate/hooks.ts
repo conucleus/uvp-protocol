@@ -115,6 +115,45 @@ function validateOnchainCompiledHooks(
           `${prefix}.dependencies`,
         ),
       );
+      // M21 镜像：dependencyKeys 与指令集 SIGNAL 原子键逐点一致
+      // （UVPStateMachine._validateHook reverts HookDependencyKeyMismatch）。
+      // 未声明的 SIGNAL 键不进 dependencyIndex——该事实到达永不触发求值，
+      // hook 永久 Init 且零告警；多声明的键只是死索引。
+      const signalKeys = new Set<string>();
+      if (Array.isArray(hook.instructions)) {
+        for (const instruction of hook.instructions) {
+          if (
+            isRecord(instruction) &&
+            instruction.op === "SIGNAL" &&
+            typeof instruction.signalKey === "string"
+          ) {
+            signalKeys.add(instruction.signalKey);
+          }
+        }
+      }
+      const dependencyKeys = new Set<string>();
+      for (const dependency of hook.dependencies) {
+        if (isRecord(dependency) && typeof dependency.signalKey === "string") {
+          dependencyKeys.add(dependency.signalKey);
+        }
+      }
+      for (const key of dependencyKeys) {
+        if (!signalKeys.has(key)) {
+          issues.push(
+            `${prefix}.dependencies key ${key} is not a SIGNAL atom of this hook `
+              + "(contract _validateHook reverts HookDependencyKeyMismatch for dependency keys that never participate in evaluation)",
+          );
+        }
+      }
+      for (const key of signalKeys) {
+        if (!dependencyKeys.has(key)) {
+          issues.push(
+            `${prefix}.instructions SIGNAL key ${key} is not declared in dependencies `
+              + "(contract _validateHook reverts HookDependencyKeyMismatch; an undeclared key never triggers "
+              + "evaluation, so the hook would stay Init forever with no alarm)",
+          );
+        }
+      }
     }
 
     if (hook.routeRef !== undefined) {
@@ -582,6 +621,57 @@ function crossStageDependencyIssues(hooks: readonly unknown[]): readonly string[
   return issues;
 }
 
+/**
+ * U2 出生通道键查重镜像 UVPStateMachine._registerPlanHook，按通道语义
+ * 分界：
+ * - 跨通道（mint∪dock）：outside 出生与 dock 出生是两个不同的出生上
+ *   下文，共享出生键会让任一侧的出生事务把另一侧的出生线一并推 Ready
+ *   并物化幻影阶段——commitPlan reverts DuplicateBirthChannelKey；
+ * - dock∪dock：entrance 键按 route 钉死（planHookDependsOn），一键挂
+ *   两条 entrance 意味着任一 route 的子单会物化另一 route 的阶段——拒绝；
+ * - mint∪mint：一事实扇出多条 mint 出生线是产品现行形态（customs 基准
+ *   plan：order::registered 同时出生执行者选择与资源发布两阶段），同一
+ *   mint 出生上下文内物化，不是幻影——放行。
+ * watcher 共享出生键不受限（watcher 不由出生通道置 Ready）。
+ */
+function duplicateBirthChannelKeyIssues(hooks: readonly unknown[]): readonly string[] {
+  const issues: string[] = [];
+  const birthKeyOwner = new Map<string, { label: string; dock: boolean }>();
+  for (const hook of hooks) {
+    if (
+      !isRecord(hook) ||
+      typeof hook.orderTriggerKind !== "string" ||
+      hook.orderTriggerKind === "none" ||
+      !Array.isArray(hook.dependencies)
+    ) {
+      continue;
+    }
+    const label = `${String(hook.stageIdentifier)}#${String(hook.hookName)}`;
+    const isDock = hook.orderTriggerKind === "dock";
+    for (const dependency of hook.dependencies) {
+      if (!isOnchainHookDependency(dependency)) {
+        continue;
+      }
+      const owner = birthKeyOwner.get(dependency.signalKey);
+      if (owner !== undefined && (isDock || owner.dock)) {
+        issues.push(
+          `duplicate birth-channel key ${dependency.signalKey}: order-trigger hooks ${owner.label} and ${label} share it `
+            + (isDock !== owner.dock
+              ? "across the mint and dock birth channels"
+              : "across two dock entrances whose keys are pinned per route")
+            + "; one birth fact must drive exactly one birth line per channel context "
+            + "(contract commitPlan reverts DuplicateBirthChannelKey)",
+        );
+        continue;
+      }
+      if (owner === undefined) {
+        birthKeyOwner.set(dependency.signalKey, { label, dock: isDock });
+      }
+    }
+  }
+  return issues;
+}
+
 function validateOnchainDependencyIndex(
   hooks: readonly unknown[],
   dependencyIndex: Record<string, readonly string[]>,
@@ -645,5 +735,6 @@ export {
   declaredStageIdentifiers,
   silentOrderTriggerIssues,
   crossStageDependencyIssues,
+  duplicateBirthChannelKeyIssues,
   validateOnchainDependencyIndex,
 };

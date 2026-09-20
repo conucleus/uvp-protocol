@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x703684a0b6eb93702a2c0caae51be093acbcef1e8e3f13972d5971817dc7ccb1",
-    "bytecodeHash": "0x3ff09df6bdcb0c790840b51c6e057a60f2436cfaf08ede144634dd2198792adb",
-    "deployedBytecodeHash": "0xb51cefc8530ccbce59b00f9d27ae603123787d0309faaa69c48fc7ba8ce61f30",
-    "artifactHash": "0xbcfd2d8ae26f75102ece843d85a672af0c3910c84cd4adc2176ab2c8c2550af4"
+    "abiHash": "0xf372284f9f0aa7ae6e7a199287476129161d11308a9780f1d04bf2b1dcbc3443",
+    "bytecodeHash": "0xc3f20ba010bef69ed624d813701555572caddd579e2e1716db46bd0ed5e67dbb",
+    "deployedBytecodeHash": "0x58253fa707ada87af402fa63000df74a38edcec2ff64512bfdde2d0c617aa7af",
+    "artifactHash": "0x2584b50bb43841c309a26727e6c32f01b32050b447b1d078aae4f282043d2129"
   },
   "events": {
     "SignalCapabilityRegistered": {
@@ -25,6 +25,10 @@
     }
   },
   "functions": {
+    "MAX_SELECTOR_BINDINGS": {
+      "signature": "MAX_SELECTOR_BINDINGS()",
+      "selector": "0x0d32df20"
+    },
     "MAX_SIGNAL_CAPABILITIES": {
       "signature": "MAX_SIGNAL_CAPABILITIES()",
       "selector": "0xda7ceef3"

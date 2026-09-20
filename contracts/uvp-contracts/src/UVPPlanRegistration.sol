@@ -12,6 +12,8 @@ import {
     _HOOK_FLAG_EMIT_READY as HOOK_FLAG_EMIT_READY,
     _MAX_HOOK_DELAY_SECONDS as MAX_HOOK_DELAY_SECONDS,
     _MAX_PLAN_DEPENDENCIES as MAX_PLAN_DEPENDENCIES,
+    _MAX_SIGNAL_CAPABILITIES as MAX_SIGNAL_CAPABILITIES,
+    _MAX_SELECTOR_BINDINGS as MAX_SELECTOR_BINDINGS,
     _EIP712_DOMAIN_TYPEHASH,
     _EIP712_NAME_HASH,
     _EIP712_VERSION_HASH,
@@ -130,6 +132,33 @@ library UVPPlanRegistration {
         if (plan.finalized) {
             revert UVPStateMachine.PlanAlreadyFinalized();
         }
+        // M24 fail-fast：规模闸先于 metadataHash 重算——哈希与逐条写存储的
+        // 注册循环 gas 随表规模无界增长，超限 plan 的 finalize 恒 OOG（比
+        // PlanMetadataHashMismatch 更早、可诊断地拒绝，planId 不烧死在
+        // committed 态的无限重试上）。
+        if (selectorBindings.length > MAX_SELECTOR_BINDINGS) {
+            revert IUVPPlanMetadataModule.TooManySelectorBindings(selectorBindings.length, MAX_SELECTOR_BINDINGS);
+        }
+        if (signalCapabilities.length > MAX_SIGNAL_CAPABILITIES) {
+            revert IUVPPlanMetadataModule.TooManySignalCapabilities(signalCapabilities.length, MAX_SIGNAL_CAPABILITIES);
+        }
+        // M22 两步注册交叉校验：元数据引用的阶段必须存在于本 plan 的
+        // hooks 阶段集。capability 指向不存在阶段时，该键的普通提交走
+        // _signalStageId 解析到永不可物化的阶段、恒 UnknownHook；selector
+        // binding 悬空同理——finalize 边界直接拒绝。
+        for (uint256 i = 0; i < selectorBindings.length; i++) {
+            if (!plan.stageExists[selectorBindings[i].selectorStageId]) {
+                revert UVPStateMachine.UnknownPlanStage(selectorBindings[i].selectorStageId);
+            }
+            if (!plan.stageExists[selectorBindings[i].targetStageId]) {
+                revert UVPStateMachine.UnknownPlanStage(selectorBindings[i].targetStageId);
+            }
+        }
+        for (uint256 i = 0; i < signalCapabilities.length; i++) {
+            if (!plan.stageExists[signalCapabilities[i].stageId]) {
+                revert UVPStateMachine.UnknownPlanStage(signalCapabilities[i].stageId);
+            }
+        }
         bytes32 actualMetadataHash = keccak256(abi.encode(selectorBindings, signalCapabilities));
         if (actualMetadataHash != plan.metadataHash) {
             revert UVPStateMachine.PlanMetadataHashMismatch(plan.metadataHash, actualMetadataHash);
@@ -218,14 +247,33 @@ library UVPPlanRegistration {
             // not materialized yet -- submitting the shared key would revert
             // that transaction forever.
             bytes32[] storage dependents = plan.dependencyIndex[dependencyKey];
+            bool inputIsTrigger = _isOrderTrigger(input.flags);
             if (dependents.length == 0) {
                 if (updatedCount == MAX_PLAN_DEPENDENCIES) {
                     revert UVPStateMachine.TooManyDependencies();
                 }
                 updatedCount += 1;
             } else {
-                bool triggerOnly = _isOrderTrigger(input.flags);
+                bool inputIsDock = input.flags & HOOK_FLAG_ORDER_TRIGGER_DOCK != 0;
+                bool triggerOnly = inputIsTrigger;
                 for (uint256 k = 0; k < dependents.length; k++) {
+                    if (inputIsTrigger && _isOrderTrigger(plan.hooks[dependents[k]].flags)) {
+                        // U2 出生通道键查重——按通道语义分界：
+                        // - 跨通道（mint∪dock）：outside 出生与 dock 出生是
+                        //   两个不同的出生上下文，共享出生键会让任一侧的
+                        //   出生事务把另一侧的出生线一并推 Ready、物化幻影
+                        //   阶段——拒绝。
+                        // - dock∪dock：entrance 键按 route 钉死
+                        //   （planHookDependsOn），一键挂两条 entrance 意味着
+                        //   任一 route 的子单会物化另一 route 的阶段——拒绝。
+                        // - mint∪mint：一事实扇出多条 mint 出生线是产品现行
+                        //   形态（customs 基准 plan：order::registered 同时
+                        //   出生执行者选择与资源发布两阶段），同一 mint 出生
+                        //   上下文内物化，不是幻影——放行。
+                        if (inputIsDock || plan.hooks[dependents[k]].flags & HOOK_FLAG_ORDER_TRIGGER_DOCK != 0) {
+                            revert UVPStateMachine.DuplicateBirthChannelKey(dependencyKey);
+                        }
+                    }
                     if (!_isOrderTrigger(plan.hooks[dependents[k]].flags)) {
                         triggerOnly = false;
                         break;
@@ -348,6 +396,47 @@ library UVPPlanRegistration {
         if (!hasPosAnchor[0]) {
             revert UVPStateMachine.InvalidInstruction();
         }
+        // M21：dependencyKeys 与 SIGNAL 原子键集合逐点一致。未声明的
+        // SIGNAL 键不进 dependencyIndex——该事实到达永不触发本 hook 求值，
+        // hook 永久 Init 且零告警（幻影 watcher）；多余声明的键只是死索引。
+        // 编译器产物恒一致；手签 plan 在注册边界对拍拒绝。
+        uint256 signalKeyCount = 0;
+        bytes32[] memory signalKeys = new bytes32[](hook.instructions.length);
+        for (uint256 i = 0; i < hook.instructions.length; i++) {
+            if (hook.instructions[i].op != uint8(UVPStateMachine.InstructionOp.Signal)) {
+                continue;
+            }
+            bytes32 signalKey = keccak256(abi.encode(hook.instructions[i].sourceId, hook.instructions[i].signalId));
+            if (!_containsKey(signalKeys, signalKeyCount, signalKey)) {
+                signalKeys[signalKeyCount] = signalKey;
+                signalKeyCount += 1;
+            }
+        }
+        uint256 declaredKeyCount = 0;
+        bytes32[] memory declaredKeys = new bytes32[](hook.dependencyKeys.length);
+        for (uint256 j = 0; j < hook.dependencyKeys.length; j++) {
+            bytes32 dependencyKey = hook.dependencyKeys[j];
+            if (_containsKey(declaredKeys, declaredKeyCount, dependencyKey)) {
+                continue;
+            }
+            declaredKeys[declaredKeyCount] = dependencyKey;
+            declaredKeyCount += 1;
+            if (!_containsKey(signalKeys, signalKeyCount, dependencyKey)) {
+                revert UVPStateMachine.HookDependencyKeyMismatch(hook.hookId);
+            }
+        }
+        if (declaredKeyCount != signalKeyCount) {
+            revert UVPStateMachine.HookDependencyKeyMismatch(hook.hookId);
+        }
+    }
+
+    function _containsKey(bytes32[] memory keys, uint256 keyCount, bytes32 key) private pure returns (bool) {
+        for (uint256 i = 0; i < keyCount; i++) {
+            if (keys[i] == key) {
+                return true;
+            }
+        }
+        return false;
     }
 
     function _anyPosAnchor(bool[] memory hasPosAnchor, uint256 base, uint256 arity)

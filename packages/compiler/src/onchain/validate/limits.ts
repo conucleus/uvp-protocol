@@ -22,11 +22,19 @@ const MAX_PLAN_DEPENDENCIES = 1024;
 // (_signalStageId -> currentOrderFactStage), so the cap bounds registration
 // cost, not per-submission queries. Rust uvp-core mirrors this cap.
 const MAX_SIGNAL_CAPABILITIES = 256;
+// Mirrors UVPPlanMetadataModule.MAX_SELECTOR_BINDINGS (M24): each binding
+// costs ~90k gas in storage writes at finalize (binding struct + target-stage
+// flag + key-list push), so an unbounded hand-signed table makes finalize
+// plan-controlled gas (~324 bindings already exceed a 30M-gas block); the
+// contract reverts TooManySelectorBindings at the same 128, keeping the
+// full registration comfortably inside one block with >2x headroom.
+const MAX_SELECTOR_BINDINGS = 128;
 
 export {
   MAX_ONCHAIN_HOOK_DELAY_SECONDS,
   MAX_PLAN_DEPENDENCIES,
   MAX_SIGNAL_CAPABILITIES,
+  MAX_SELECTOR_BINDINGS,
 };
 
 /**
@@ -68,4 +76,22 @@ function signalCapabilityCountIssues(
   return [];
 }
 
-export { planDependencyCountIssues, signalCapabilityCountIssues };
+/**
+ * 绑定表规模预检（M24）：selectorBindings（编译自 selectedStages）超过
+ * MAX_SELECTOR_BINDINGS 时，finalizePlan 的逐条写存储注册循环 gas 随表
+ * 规模无界增长（≈324 条在 30M block gas 内恒 OOG，planId 烧死在
+ * committed 态）——预检与合约 finalize 边界（TooManySelectorBindings）
+ * 同口径拒绝。
+ */
+function selectorBindingCountIssues(bindings: readonly unknown[]): readonly string[] {
+  if (bindings.length > MAX_SELECTOR_BINDINGS) {
+    return [
+      `selector bindings ${bindings.length} exceed the documented limit ${MAX_SELECTOR_BINDINGS} `
+        + "(UVPPlanMetadataModule registers each binding with storage writes; finalizePlan reverts "
+        + "TooManySelectorBindings — unbounded plan-controlled registration gas)",
+    ];
+  }
+  return [];
+}
+
+export { planDependencyCountIssues, signalCapabilityCountIssues, selectorBindingCountIssues };

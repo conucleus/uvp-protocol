@@ -204,6 +204,17 @@ contract UVPStateMachine {
     error HookAlreadyRegistered();
     error HookDelayTooLong(uint256 delaySeconds);
     error CrossStageDependency(bytes32 signalKey);
+    /// 出生通道键查重（U2）：同一出生键不得跨通道（mint∪dock）共用，也
+    /// 不得被两条 dock entrance（按 route 钉死的键）共用——任一侧出生事务
+    /// 会把另一侧的出生线一并推 Ready 并物化幻影阶段。mint∪mint 扇出
+    /// （一事实多条 mint 出生线，customs 基准 plan 的现行形态）在同一出生
+    /// 上下文内物化，不在禁止之列。注册边界拒绝（编译器与 Rust 校验同
+    /// 口径，报错键即重复的 signalKey）。
+    error DuplicateBirthChannelKey(bytes32 signalKey);
+    /// dependencyKeys 必须与 hook 指令集的 SIGNAL 原子键逐点一致（M21）：
+    /// 未声明的 SIGNAL 键不进 dependencyIndex，该事实到达永不触发求值，
+    /// hook 永久 Init 且零告警；多声明的键只是死索引。注册边界拒绝。
+    error HookDependencyKeyMismatch(bytes32 hookId);
     error TooManyDependencies();
     error InvalidSignalSignature(address expectedSigner, address recoveredSigner);
     error InvalidSignalSignatureLength(uint256 length);
@@ -245,6 +256,10 @@ contract UVPStateMachine {
     error SilentOrderTriggerHook(bytes32 hookId);
     error StageExecutorNotAssigned(bytes32 orderId, bytes32 targetStageId);
     error StageNotMaterializable(bytes32 stageId);
+    /// 两步注册交叉校验（M22）：finalizePlan 元数据引用的阶段必须存在于
+    /// 本 plan 的 hooks 阶段集。capability 指向不存在阶段时该键的普通提交
+    /// 恒 UnknownHook 且该阶段永不可物化——悬空引用在 finalize 边界拒绝。
+    error UnknownPlanStage(bytes32 stageId);
     error StageExecutorPatchNonceNotIncreasing(
         bytes32 orderId, bytes32 targetStageId, uint256 previousNonce, uint256 patchNonce
     );
@@ -1739,6 +1754,16 @@ contract UVPStateMachine {
         HookRuntime storage runtime = order.hookRuntimes[triggerHookId];
         if (!runtime.exists) {
             _initializeHookRuntime(order, triggerHookId);
+        }
+        // 终态守卫（M20）：出生事务内 _recordSignal 已先对 entrance hook
+        // 求值（evaluateOrderTriggerHooks=true），矛盾条件（如 K & ~K）会把
+        // runtime 推到 Cancelled——此处不得覆写。镜像 outside 出生路径的
+        // 断言（_requireTriggerHookReady：非 Ready 即 InvalidTriggerHook，
+        // 整笔出生回滚），而不是把 Cancelled 静默改成 Ready 物化幻影阶段。
+        // Ready 是幂等终态：求值路径已发 HookReady 并物化，下方守卫天然
+        // 无副作用。
+        if (runtime.status == HookStatus.Cancelled) {
+            revert InvalidTriggerHook(triggerHookId);
         }
 
         HookStatus previousStatus = runtime.status;

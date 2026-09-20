@@ -12,12 +12,14 @@ import {
 import {
   crossStageDependencyIssues,
   declaredStageIdentifiers,
+  duplicateBirthChannelKeyIssues,
   silentOrderTriggerIssues,
   unmaterializableStageIssues,
   validateOnchainCompiledHooks,
 } from "./validate/hooks.js";
 import {
   planDependencyCountIssues,
+  selectorBindingCountIssues,
   signalCapabilityCountIssues,
 } from "./validate/limits.js";
 import { duplicateCurrentOrderFactKeyIssues } from "./validate/capabilities.js";
@@ -101,6 +103,9 @@ export function compileOnchainHookPlan(
     ),
   );
   const silentTriggerIssues = silentOrderTriggerIssues(compiledHooks);
+  // U2：出生通道键并集（mint 出生键 ∪ dock entrance 键）去重——编译入口
+  // 与反序列化边界、合约注册门（DuplicateBirthChannelKey）三线同口径。
+  const duplicateBirthKeyIssues = duplicateBirthChannelKeyIssues(compiledHooks);
   const dependencyCountIssues = planDependencyCountIssues(compiledHooks);
   const capabilityCountIssues = signalCapabilityCountIssues(
     hookPlanArtifact.signalCapabilities,
@@ -142,6 +147,7 @@ export function compileOnchainHookPlan(
     ...crossStageIssues,
     ...materializationIssues,
     ...silentTriggerIssues,
+    ...duplicateBirthKeyIssues,
     ...dependencyCountIssues,
     ...capabilityCountIssues,
     ...currentOrderFactKeyIssues,
@@ -156,6 +162,12 @@ export function compileOnchainHookPlan(
   const selectorBindings = compileSelectorBindings(
     hookPlanArtifact.selectedStageBindings,
   );
+  // M24：绑定表规模预检与合约 finalize 边界同口径（编译产物已去重，与
+  // 合约逐条注册的等效规模一致）。
+  const bindingCountIssues = selectorBindingCountIssues(selectorBindings);
+  if (bindingCountIssues.length > 0) {
+    throw new HookPlanCompilationError(bindingCountIssues);
+  }
   const signalCapabilities = compileSignalCapabilities(
     hookPlanArtifact.signalCapabilities,
   );

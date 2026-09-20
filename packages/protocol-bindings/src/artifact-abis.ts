@@ -2792,6 +2792,17 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
+    "name": "DuplicateBirthChannelKey",
+    "inputs": [
+      {
+        "name": "signalKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "EmptyPlan",
     "inputs": []
   },
@@ -2830,6 +2841,17 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "delaySeconds",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "HookDependencyKeyMismatch",
+    "inputs": [
+      {
+        "name": "hookId",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ]
   },
@@ -3267,6 +3289,17 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     "type": "error",
     "name": "UnknownPlan",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UnknownPlanStage",
+    "inputs": [
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
   },
   {
     "type": "error",

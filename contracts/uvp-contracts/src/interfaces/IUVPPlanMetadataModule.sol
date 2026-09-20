@@ -14,6 +14,12 @@ interface IUVPPlanMetadataModule {
         uint8 targetOrderRelation;
     }
 
+    /// finalizePlan 元数据规模闸（M24）：注册库在 metadataHash 重算前
+    /// fail-fast，模块注册循环同值兜底。单一声明点供 finalize 边界与
+    /// 模块注册边界共用。
+    error TooManySignalCapabilities(uint256 count, uint256 max);
+    error TooManySelectorBindings(uint256 count, uint256 max);
+
     function finalizePlanMetadata(
         bytes32 planId,
         StageSelectorBinding[] calldata selectorBindings,
