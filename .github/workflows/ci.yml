@@ -1,0 +1,129 @@
+name: ci
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  push:
+    branches:
+      - dev
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: uvp-protocol
+
+      # packages/hook-core 依赖 @conucleus/uvp-core-node workspace:*，本仓
+      # pnpm-workspace.yaml 已声明 ../uvp-core/crates/uvp-node——姊妹路径
+      # 检出即解析（反向同 uvp-core 仓既有 ci.yml 检出 uvp-protocol）。
+      # ref 用默认分支，沿用该既有形态。跨仓私有 checkout 用伞仓
+      # CI_SUBMODULE_TOKEN 模式。
+      - name: Checkout uvp-core (uvp-node native module)
+        uses: actions/checkout@v4
+        with:
+          repository: conucleus/uvp-core
+          path: uvp-core
+          fetch-depth: 1
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          # 子仓无 pnpm-lock.yaml（锁定在伞仓根），不能开 pnpm 缓存。
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        # 伞仓用 --frozen-lockfile；子仓无 lockfile，显式 --no-frozen-lockfile。
+        run: pnpm install --no-frozen-lockfile
+        working-directory: uvp-protocol
+        timeout-minutes: 5
+
+      # 同伞仓 core:build：hook-core/compiler/statemachine 的 tsx 测试加载
+      # native 模块，Test 前必须构建完成。
+      - name: Build packaged uvp-node native module
+        run: pnpm --filter @conucleus/uvp-core-node run build
+        working-directory: uvp-protocol
+        timeout-minutes: 8
+
+      # 等价伞仓 "pnpm check"（-r typecheck）对本仓 packages 的覆盖。
+      - name: Typecheck
+        run: pnpm typecheck
+        working-directory: uvp-protocol
+        timeout-minutes: 8
+
+      - name: Test
+        run: pnpm test
+        working-directory: uvp-protocol
+        timeout-minutes: 10
+
+      - name: Build
+        run: pnpm build
+        working-directory: uvp-protocol
+        timeout-minutes: 12
+
+  foundry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Foundry test
+        run: forge test
+        working-directory: contracts/uvp-contracts
+        timeout-minutes: 8
+
+      # EIP-170 阻断门禁：任一合约 runtime 超过 24,576B 即失败。步骤照搬
+      # 伞仓 ci.yml（原步骤内 cd 路径改为 working-directory）。
+      - name: Contract runtime size gate (EIP-170)
+        run: |
+          # pipefail: forge 非零退出不得被管道末端 awk 的 0 退出吞掉；
+          # matched==0: 尺寸表没进来（构建失败或输出漂移）时门禁没有证据，
+          # 必须红，不允许对零数据打印绿色结论。
+          set -o pipefail
+          forge build --sizes | awk -F'|' '
+            function trim(s) { gsub(/^ +| +$/, "", s); return s }
+            {
+              name = trim($2); size = trim($3); gsub(/,/, "", size)
+              if (name !~ /^[A-Za-z][A-Za-z0-9_]*$/) next
+              if (size !~ /^[0-9]+$/) next
+              matched++
+              if (size+0 > 24576) { print "RUNTIME OVER EIP-170 LIMIT: " name " = " size "B"; fail = 1 }
+            }
+            END {
+              if (matched + 0 == 0) { print "no contract rows matched the forge size table; gate has no evidence"; fail = 1 }
+              if (fail) exit 1
+              print "checked " matched " contract runtime(s) against the 24,576B limit"
+            }'
+        working-directory: contracts/uvp-contracts
+        timeout-minutes: 3
+
+      - name: Foundry format
+        run: forge fmt --check
+        working-directory: contracts/uvp-contracts
+        timeout-minutes: 3
