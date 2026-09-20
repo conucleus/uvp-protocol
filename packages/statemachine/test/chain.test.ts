@@ -81,23 +81,42 @@ test("chain-mode replay matches hook expectations from stable chain events", asy
   );
 });
 
-test("chain-mode ordering uses the EVM transaction index within a block", () => {
-  const first = {
-    eventName: "OrderRegistered" as const,
-    blockNumber: 10,
-    transactionIndex: 1,
-    logIndex: 0,
-    transactionHash: "0xa1" as const
-  };
-  const second = {
-    eventName: "OrderRegistered" as const,
-    blockNumber: 10,
-    transactionIndex: 2,
-    logIndex: 0,
-    transactionHash: "0xb1" as const
-  };
+test("chain-mode ordering is the canonical (blockNumber, logIndex) pair", () => {
+  // EVM 索引面的规范全序是 (blockNumber, logIndex)：logIndex 在块内跨
+  // 交易唯一递增，transactionIndex 是可缺省的冗余 enrichment，不参与
+  // 排序（native replay 的排序键只有这两个维度，镜像层多出的维度会把
+  // 守门预排序与 native 求值序拆成两个口径）。
+  const hash = `0x${"ab".repeat(32)}` as `0x${string}`;
+  const event = (
+    blockNumber: number,
+    transactionIndex: number | undefined,
+    logIndex: number,
+  ): Parameters<typeof compareChainEvents>[0] => ({
+    eventName: "OrderRegistered",
+    blockNumber,
+    ...(transactionIndex === undefined ? {} : { transactionIndex }),
+    logIndex,
+    transactionHash: hash,
+  });
 
-  assert.equal(compareChainEvents(first, second) < 0, true);
+  // 块内只看 logIndex：txIdx 的大小/有无不参与比较。
+  const late = event(10, 1, 7);
+  const early = event(10, 3, 5);
+  assert.equal(compareChainEvents(early, late) < 0, true);
+  assert.equal(compareChainEvents(late, early) > 0, true);
+  // 同 (blockNumber, logIndex) ⇒ 0：混合 txIdx 有无、txIdx 不同都相等，
+  // 稳定排序保持到达序（与 native 稳定 sort 同口径）。
+  const sameKeyVariants = [
+    event(10, 9, 5),
+    event(10, 0, 5),
+    event(10, undefined, 5),
+  ];
+  for (const variant of sameKeyVariants) {
+    assert.equal(compareChainEvents(early, variant), 0);
+    assert.equal(compareChainEvents(variant, early), 0);
+  }
+  // 跨块由 blockNumber 决定，logIndex 反向不影响。
+  assert.equal(compareChainEvents(event(9, 9, 9), event(10, 0, 0)) < 0, true);
 });
 
 test("chain-mode reports mismatched golden hook events", async () => {
@@ -547,59 +566,32 @@ test("chain replay filters contract-impossible TimerPoked events (pokeTimer gate
   assert.deepEqual(polluted.observed, clean.observed);
 });
 
-test("compareChainEvents stays a total order with mixed transactionIndex presence", () => {
-  // 缺失 txIdx 必须恒排末位且同维度一致应用：只在"双方都有且不等"时才比
-  // transactionIndex、混合有无时落到 logIndex/txHash 的比较不传递——反例
-  // 三元组 A(无 txIdx, log 5) / B(txIdx 0, log 5) / C(txIdx 1, log 3) 按
-  // 两两比较得出 A==B、B<C、A>C 的矛盾序，排序结果依赖输入顺序。
+test("compareChainEvents stays a total order on the canonical key pair", () => {
+  // 排序键只有 (blockNumber, logIndex)：txIdx 有无/大小不参与，键相同
+  // 即比较结果为 0——反对称/传递性在含混合 txIdx 的构造集上成立，排序
+  // 结果与输入顺序无关，同键事件保持到达序（稳定排序）。
   const hash = `0x${"ab".repeat(32)}` as `0x${string}`;
   const event = (
     blockNumber: number,
     transactionIndex: number | undefined,
     logIndex: number,
-    transactionHash: `0x${string}`,
   ): Parameters<typeof compareChainEvents>[0] => ({
     eventName: "OrderRegistered",
     blockNumber,
     ...(transactionIndex === undefined ? {} : { transactionIndex }),
     logIndex,
-    transactionHash,
+    transactionHash: hash,
   });
-  const A = event(1, undefined, 5, hash);
-  const B = event(1, 0, 5, hash);
-  const C = event(1, 1, 3, hash);
-
-  // 旧口径的环：A==B（logIndex 相等后落 txHash 相等）但 B<C 而 A>C。
-  // 新口径：缺失 txIdx 排末位 → B < C < A，三对两两一致。
-  assert.equal(compareChainEvents(B, C) < 0, true);
-  assert.equal(compareChainEvents(C, A) < 0, true);
-  assert.equal(compareChainEvents(B, A) < 0, true);
-  assert.equal(compareChainEvents(A, B) > 0, true);
-  assert.equal(compareChainEvents(A, A), 0);
-  assert.equal(compareChainEvents(B, B), 0);
-
-  // 排序结果与输入顺序无关（确定性/传递性的可观察面）。
-  const permutations = [
-    [A, B, C],
-    [A, C, B],
-    [B, A, C],
-    [B, C, A],
-    [C, A, B],
-    [C, B, A],
-  ];
-  const ordered = permutations.map((items) => [...items].sort(compareChainEvents));
-  for (const candidate of ordered) {
-    assert.deepEqual(candidate, [B, C, A]);
-  }
-
-  // 性质检查：构造集上比较器满足反对称 + 传递（无环）。
+  const A = event(1, undefined, 5);
+  const B = event(1, 0, 5);
+  const C = event(1, 1, 3);
   const pool = [
-    event(1, undefined, 0, hash),
-    event(1, 0, 0, hash),
-    event(1, 0, 3, hash),
-    event(1, 2, 1, hash),
-    event(2, undefined, 0, hash),
-    event(2, 7, 9, hash),
+    event(1, undefined, 0),
+    event(1, 0, 0),
+    event(1, 0, 3),
+    event(1, 2, 1),
+    event(2, undefined, 0),
+    event(2, 7, 9),
     A,
     B,
     C,
@@ -612,19 +604,278 @@ test("compareChainEvents stays a total order with mixed transactionIndex presenc
       // strictEqual 按 Object.is 区分——先归一到普通 0。
       assert.equal(Math.sign(xy) || 0, -(Math.sign(yx) || 0) || 0);
       const sameKey =
-        x.blockNumber === y.blockNumber &&
-        x.transactionIndex === y.transactionIndex &&
-        x.logIndex === y.logIndex &&
-        x.transactionHash === y.transactionHash;
+        x.blockNumber === y.blockNumber && x.logIndex === y.logIndex;
       assert.equal(xy === 0, sameKey);
       for (const z of pool) {
         const yz = compareChainEvents(y, z);
         const xz = compareChainEvents(x, z);
-        // 传递性：x<y && y<z ⇒ x<z（用 sign 归一 NaN 防假阴）。
         if (xy < 0 && yz < 0) {
           assert.equal(xz < 0, true);
         }
       }
     }
+  }
+  // 同键三元组 {A, B}（block 1, log 5）稳定保序：无论输入顺序，A/B 的
+  // 相对位置不变，C（log 3）恒在前。
+  for (const items of [
+    [A, B, C],
+    [B, A, C],
+    [C, A, B],
+  ]) {
+    const sorted = [...items].sort(compareChainEvents);
+    assert.equal(sorted[0], C);
+    assert.deepEqual(
+      sorted.slice(1),
+      items.filter((item) => item !== C),
+    );
+  }
+});
+
+test("chain replay sorts the stream into canonical order before gating", () => {
+  // 到达序与规范序分叉的流：TimerPoked 在数组里先于 wait 转移出现，但
+  // 块号在后。默认（sort 未显式给 false）必须先按 (blockNumber,
+  // logIndex) 归位再守门/求值——按到达序守门会把合法 poke 按状态未知
+  // 误删，链上 HookReady 变成 missing-observed 假 mismatch。native 侧
+  // 对同一流默认即排序（共享语料 "timer poke replays after canonical
+  // reordering" 是两侧同一钉子），镜像层默认口径必须与其一致。
+  const planId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000c001";
+  const hookId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000c101";
+  const stageId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000c201";
+  const sourceId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000c301";
+  const signalId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000c401";
+  const keyId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000c501";
+  const base = {
+    planId,
+    zhixuId: "canonical-reorder",
+    orderId: "reorder-1",
+  };
+  const planRegistered: ChainModeEvent = {
+    eventName: "PlanRegistered",
+    blockNumber: 1,
+    logIndex: 0,
+    transactionHash: "0x01",
+    plan: {
+      planId,
+      zhixuId: "canonical-reorder",
+      compiledHooks: [
+        {
+          hookId,
+          stageId,
+          stageIdentifier: "task.main",
+          hookName: "TIMEOUT",
+          orderTriggerKind: "none",
+          emitReady: true,
+          instructions: [
+            { op: "SIGNAL", sourceId, signalId, signalKey: keyId },
+            { op: "DELAY", delaySeconds: 5 },
+          ],
+        },
+      ],
+      dependencyIndex: { [keyId]: [hookId] },
+    },
+  };
+  const orderRegistered: ChainModeEvent = {
+    eventName: "OrderRegistered",
+    blockNumber: 2,
+    logIndex: 0,
+    transactionHash: "0x02",
+    ...base,
+    registeredAt: "2026-04-27T00:00:00.000Z",
+  };
+  const signalSubmitted: ChainModeEvent = {
+    eventName: "SignalSubmitted",
+    blockNumber: 3,
+    logIndex: 0,
+    transactionHash: "0x03",
+    ...base,
+    sourceId,
+    signalId,
+    signalKey: keyId,
+    senderId: "pay-executor",
+    submittedAt: "2026-04-27T00:00:00.000Z",
+  };
+  const statusWait: ChainModeEvent = {
+    eventName: "HookStatusChanged",
+    blockNumber: 4,
+    logIndex: 0,
+    transactionHash: "0x04",
+    ...base,
+    hookId,
+    previousStatus: "init",
+    newStatus: "wait",
+    dueAt: "2026-04-27T00:00:05.000Z",
+  };
+  const timerPoked: ChainModeEvent = {
+    eventName: "TimerPoked",
+    blockNumber: 6,
+    logIndex: 0,
+    transactionHash: "0x05",
+    ...base,
+    hookId,
+    dueAt: "2026-04-27T00:00:05.000Z",
+    pokedAt: "2026-04-27T00:00:06.000Z",
+  };
+  const hookReady: ChainHookReadyEvent = {
+    eventName: "HookReady",
+    blockNumber: 7,
+    logIndex: 0,
+    transactionHash: "0x06",
+    ...base,
+    hookId,
+    stageIdentifier: "task.main",
+    hookName: "TIMEOUT",
+  };
+  const scrambled: ChainModeEvent[] = [
+    timerPoked,
+    hookReady,
+    planRegistered,
+    orderRegistered,
+    signalSubmitted,
+    statusWait,
+  ];
+
+  // 默认排序：合法 poke 被守门放行，native 重算出 HookReady，与链上
+  // 观察配对成功。
+  const result = replayChainEvents(scrambled);
+  assert.deepEqual(result.mismatches, []);
+  assert.deepEqual(result.observed, result.expected);
+  const runtime = result.state.orders[`${planId}::reorder-1`]?.hookStatuses[hookId];
+  assert.equal(runtime?.status, "ready");
+
+  // 到达序模式（显式 sort:false，与 native 同口径关闭排序）：守门按
+  // 到达序跟踪，poke 先于 wait 转移到达即状态未知，被 fail-closed 滤
+  // 除——HookReady 无法自推导，期望/观察分叉成 mismatch。这是"为什么
+  // 默认要排序"的可观察面。
+  let mismatchError: ChainReplayMismatchError | undefined;
+  try {
+    replayChainEvents(scrambled, { sort: false });
+  } catch (error) {
+    assert.ok(error instanceof ChainReplayMismatchError);
+    mismatchError = error;
+  }
+  assert.ok(mismatchError !== undefined, "arrival-order gating must surface the dropped poke");
+  assert.ok(mismatchError.mismatches.length >= 1);
+});
+
+test("chain replay fails loudly when TimerPoked carries no pokedAt", () => {
+  // pokedAt 是本 tick 的求值时钟：native 对 TimerPoked 一进门就要求
+  // 字符串 pokedAt（缺失/非串整场回放响亮失败，uvp-replay 的
+  // timer_poked_without_poked_at_fails_loudly 是权威侧钉子），镜像层同
+  // 口径抛错——不得把毒事件静默滤成"不存在"。
+  const planId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000d001";
+  const hookId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000d101";
+  const stageId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000d201";
+  const sourceId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000d301";
+  const signalId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000d401";
+  const keyId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000d501";
+  const base = {
+    planId,
+    zhixuId: "poked-at-required",
+    orderId: "order-1",
+  };
+  const events: ChainModeEvent[] = [
+    {
+      eventName: "PlanRegistered",
+      blockNumber: 1,
+      logIndex: 0,
+      transactionHash: "0x01",
+      plan: {
+        planId,
+        zhixuId: "poked-at-required",
+        compiledHooks: [
+          {
+            hookId,
+            stageId,
+            stageIdentifier: "task.main",
+            hookName: "TIMEOUT",
+            orderTriggerKind: "none",
+            emitReady: true,
+            instructions: [
+              { op: "SIGNAL", sourceId, signalId, signalKey: keyId },
+              { op: "DELAY", delaySeconds: 5 },
+            ],
+          },
+        ],
+        dependencyIndex: { [keyId]: [hookId] },
+      },
+    },
+    {
+      eventName: "OrderRegistered",
+      blockNumber: 2,
+      logIndex: 0,
+      transactionHash: "0x02",
+      ...base,
+      registeredAt: "2026-04-27T00:00:00.000Z",
+    },
+    {
+      eventName: "SignalSubmitted",
+      blockNumber: 3,
+      logIndex: 0,
+      transactionHash: "0x03",
+      ...base,
+      sourceId,
+      signalId,
+      signalKey: keyId,
+      senderId: "pay-executor",
+      submittedAt: "2026-04-27T00:00:00.000Z",
+    },
+    {
+      eventName: "HookStatusChanged",
+      blockNumber: 4,
+      logIndex: 0,
+      transactionHash: "0x04",
+      ...base,
+      hookId,
+      previousStatus: "init",
+      newStatus: "wait",
+      dueAt: "2026-04-27T00:00:05.000Z",
+    },
+  ];
+  const pokeWithoutClock = {
+    eventName: "TimerPoked",
+    blockNumber: 5,
+    logIndex: 0,
+    transactionHash: "0x05",
+    ...base,
+    hookId,
+    dueAt: "2026-04-27T00:00:05.000Z",
+  } as unknown as ChainModeEvent;
+
+  assert.throws(
+    () => replayChainEvents([...events, pokeWithoutClock]),
+    /TimerPoked .* is missing a valid pokedAt/,
+  );
+  // 非字符串形态同罪（数字时钟不是可解析的 RFC3339 时刻）。
+  assert.throws(
+    () =>
+      replayChainEvents([
+        ...events,
+        { ...pokeWithoutClock, pokedAt: 1777248006000 } as unknown as ChainModeEvent,
+      ]),
+    /is missing a valid pokedAt/,
+  );
+});
+
+test("chain replay rejects non-integer sorting keys loudly", () => {
+  // 排序键 (blockNumber, logIndex) 非整数（或缺失）时折 0 会把事件流
+  // 静默重排成错误因果序——与 native 排序门同口径响亮失败。
+  const event = {
+    eventName: "OrderRegistered" as const,
+    logIndex: 0,
+    transactionHash: "0x01" as const,
+    planId: "0x01" as `0x${string}`,
+    zhixuId: "demo",
+    orderId: "order-1",
+    registeredAt: "2026-04-27T00:00:00.000Z",
+  };
+  for (const bad of [
+    { ...event, blockNumber: 1.5 },
+    { ...event, blockNumber: Number.NaN },
+    { ...event },
+  ]) {
+    assert.throws(
+      () => replayChainEvents([bad as unknown as ChainModeEvent]),
+      /sorting refuses to fold a non-integer to 0/,
+    );
   }
 });

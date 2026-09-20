@@ -225,6 +225,13 @@ export interface ChainHookStatusChangedObservation {
 }
 
 export interface ChainReplayOptions {
+  /**
+   * 是否先把事件流排成 (blockNumber, logIndex) 规范序再守门/回放。默认
+   * true，与 native replay 的 sort.unwrap_or(true) 同默认——守门
+   * （TimerPokeGate）必须在 native 求值序上跟踪状态，按到达序守门会把
+   * 合法 poke 误删成假 mismatch。显式 false 才按到达序（镜像层与 native
+   * 同口径关闭，两侧仍看同一序）。
+   */
   readonly sort?: boolean;
 }
 
@@ -256,7 +263,6 @@ export interface ChainOracleSignalRecord {
   readonly signalKey: HexString;
   readonly senderId: string;
   readonly submittedAt: string;
-  readonly transactionIndex?: number;
 }
 
 export interface ChainOracleHookRuntime {
@@ -310,10 +316,24 @@ export function replayChainEvents(
   events: readonly ChainModeEvent[],
   options: ChainReplayOptions = {}
 ): ChainReplayResult {
-  // 守门状态按事件序（options.sort 时的确定性序）跟踪；状态转移事件的
-  // 缺席意味着"无法证明该 poke 合法"，按 fail-closed 过滤。
-  const ordered =
-    options.sort === true ? [...events].sort(compareChainEvents) : events;
+  const sort = options.sort !== false;
+  if (sort) {
+    // blockNumber/logIndex 是排序键：非整数（或缺失）折 0 会把事件流
+    // 静默重排成错误因果序——排序前响亮校验，不做默认值兜底（与
+    // native 排序门口径一致）。
+    for (const event of events) {
+      for (const key of ["blockNumber", "logIndex"] as const) {
+        if (!Number.isInteger(event[key])) {
+          throw new Error(
+            `chain oracle event ${event.eventName} (sorting refuses to fold a non-integer to 0): ${key} must be an integer`
+          );
+        }
+      }
+    }
+  }
+  // 守门状态按事件序（默认规范序）跟踪；状态转移事件的缺席意味着
+  // "无法证明该 poke 合法"，按 fail-closed 过滤。
+  const ordered = sort ? [...events].sort(compareChainEvents) : events;
   const pokeGate = new TimerPokeGate();
   const normalized: readonly OracleFeedEvent[] = ordered
     .map((event) => {
@@ -356,8 +376,10 @@ interface TrackedHookRuntime {
  * uint64 字段；冻结前形状的喂给流可能缺省）是待核验的声称值——在场时
  * 必须与守门值逐点一致，毒事件自报更小的 dueAt 无法伪造"已到期"；缺省
  * 时不影响判定，守门值已完整覆盖 TimerNotWaiting/TimerNotDue 两道闸。
- * 无法证明合法（状态未知、守门 dueAt 缺失、声称值不一致、时间戳不可
- * 解析）一律按不可能过滤。
+ * 无法证明合法（状态未知、守门 dueAt 缺失、声称值不一致、守门/声称
+ * 时间戳不可解析）一律按不可能过滤；pokedAt 缺失/非串（以及 wait+due
+ * 分支下不可解析）例外——那是求值时钟的结构性缺失，与 native 同口径
+ * 响亮失败，不滤成"事件不存在"。
  */
 class TimerPokeGate {
   private readonly runtimes = new Map<string, TrackedHookRuntime>();
@@ -367,14 +389,29 @@ class TimerPokeGate {
     if (event.eventName !== "TimerPoked") {
       return true;
     }
+    // pokedAt 是本 tick 的求值时钟：native 对 TimerPoked 一进门就要求
+    // 字符串 pokedAt（缺失/非串整场回放响亮失败），镜像层同口径——缺失
+    // 的时钟不得被静默滤成"事件不存在"。
+    if (typeof event.pokedAt !== "string") {
+      throw new Error(
+        `TimerPoked ${event.hookId} is missing a valid pokedAt; the replay evaluation clock is required`
+      );
+    }
     const runtime = this.runtimes.get(runtimeKey(event));
     if (runtime === undefined || runtime.status !== "wait" || runtime.dueAt === undefined) {
       return false;
     }
     const trackedDueAt = parseTimestamp(runtime.dueAt);
-    const pokedAt = parseTimestamp(event.pokedAt);
-    if (trackedDueAt === undefined || pokedAt === undefined) {
+    if (trackedDueAt === undefined) {
       return false;
+    }
+    const pokedAt = parseTimestamp(event.pokedAt);
+    if (pokedAt === undefined) {
+      // 与 native 同分支位置：只有 hook 确处 wait+due、需要比时钟时，
+      // 不可解析的 pokedAt 才是响亮失败；状态未知的 poke native 直接跳过。
+      throw new Error(
+        `TimerPoked ${event.hookId} carries an unparseable pokedAt ${JSON.stringify(event.pokedAt)}`
+      );
     }
     if (event.dueAt !== undefined) {
       const eventDueAt = parseTimestamp(event.dueAt);
@@ -474,32 +511,17 @@ function normalizeChainEventForOracle(event: ChainModeEvent): OracleFeedEvent | 
   return { ...event };
 }
 
+/**
+ * 回放规范序 = (blockNumber, logIndex)，与 native replay 的排序键逐维
+ * 一致：logIndex 在块内跨交易唯一递增，是 EVM 索引面的规范全序；
+ * transactionIndex 是可缺省的冗余 enrichment，不参与排序——参与排序会把
+ * 守门预排序与 native 求值序拆成两个口径，同一条流两侧分叉。同键事件
+ * 由稳定排序保持到达序（两侧 sort 均稳定），不再以 txHash 做字节序
+ * 平局裁决（native 无此维度）。
+ */
 export function compareChainEvents(a: ChainEventBase, b: ChainEventBase): number {
   if (a.blockNumber !== b.blockNumber) {
     return a.blockNumber - b.blockNumber;
   }
-  // transactionIndex 的确定性缺席规则：缺失视为排在末位（+∞），且同维度
-  // 一致应用。若只在"双方都有且不等"时才比该维度、混合有无时直接落到
-  // logIndex/txHash，比较不再传递——同一事件集按不同两两比较会得出矛盾
-  // 序（如 A(无 txIdx, log 5) == B(txIdx 0, log 5)、B < C(txIdx 1)、
-  // A > C），排序结果依赖比较顺序。缺席映射到 +∞ 后，enrichment 缺
-  // txIdx 的事件全部排在同块已 enrichment 事件之后，顺序仍然确定。
-  const aTxIndex = a.transactionIndex ?? Number.POSITIVE_INFINITY;
-  const bTxIndex = b.transactionIndex ?? Number.POSITIVE_INFINITY;
-  if (aTxIndex !== bTxIndex) {
-    return aTxIndex < bTxIndex ? -1 : 1;
-  }
-  if (a.logIndex !== b.logIndex) {
-    return a.logIndex - b.logIndex;
-  }
-  // 确定性字节序平局裁决：localeCompare 依赖 ICU/locale，不得参与任何
-  // 会进 canonical 产物的排序（同仓 hook-plan.ts 明文禁止）。
-  return compareTxHashByCodeUnit(a.transactionHash, b.transactionHash);
-}
-
-function compareTxHashByCodeUnit(
-  left: `0x${string}`,
-  right: `0x${string}`,
-): number {
-  return left < right ? -1 : left > right ? 1 : 0;
+  return a.logIndex - b.logIndex;
 }
