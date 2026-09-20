@@ -28,7 +28,9 @@ import type { HexString } from "../../types/index.js";
  * 注册表 rule executor-supplier-type-closed-enum）：executorRoutes 把
  * supplierType 烧进链上承诺（executorHash），合约侧无闭集守卫——闭集外的
  * 字符串（含 "Zhixu" 等大小写变体）必须在链轨编译期拒绝，不是烧进承诺后
- * 才在消费侧炸开。比对按 trim 后进行（与 Go/Rust 同口径） */
+ * 才在消费侧炸开。比对精确匹配、不 trim：executorHash 哈希的是原文，
+ * trim 后匹配会放行带空白的原文进承诺（与 Rust/Go 严格枚举闸同口径）。
+ */
 const SUPPLIER_TYPES: readonly string[] = ["individual", "organization", "zhixu"];
 
 /**
@@ -102,12 +104,12 @@ function validateOnchainExecutorRoutes(
       issues,
     );
     expectNonEmptyString(route.executorType, `${prefix}.executorType`, issues);
-    // executorType 闭集（编译入口 SUPPLIER_TYPES 同集同 trim 比对口径）：
+    // executorType 闭集（编译入口 SUPPLIER_TYPES 同集同精确匹配口径）：
     // 闭集外字符串经 executorHash 进链上承诺后无合约守卫可拦——手工/第三
     // 方制品不得绕过 Rust 编译门把词表外值烧进承诺。
     if (
       typeof route.executorType === "string" &&
-      !SUPPLIER_TYPES.includes(route.executorType.trim())
+      !SUPPLIER_TYPES.includes(route.executorType)
     ) {
       issues.push(
         `${prefix}.executorType must be one of ${SUPPLIER_TYPES.join("|")} (case-sensitive), received ${JSON.stringify(route.executorType)}`,

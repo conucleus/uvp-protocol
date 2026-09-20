@@ -1794,6 +1794,107 @@ test("rejects supplierType outside the closed enum at the on-chain compile bound
   );
 });
 
+test("rejects whitespace-padded supplierType at the on-chain compile boundary", () => {
+  // 精确匹配、不 trim（与 Rust 编译入口同口径）：executorHash 哈希的是
+  // executor 原文，trim 后匹配会放行 " organization " 这类原文——匹配面
+  // 放行、承诺面按原文分叉，同一值既被宽容又被严格。
+  const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
+  for (const supplierType of [" organization ", "zhixu ", "\tindividual"]) {
+    const mutated = resign({
+      ...hookPlan,
+      executorRoutes: {
+        ...hookPlan.executorRoutes,
+        "selector.assign": {
+          ...hookPlan.executorRoutes["selector.assign"]!,
+          executor: {
+            ...hookPlan.executorRoutes["selector.assign"]!.executor,
+            supplierType,
+          },
+        },
+      },
+    } as typeof hookPlan);
+    assert.throws(
+      () => compileOnchainHookPlan(mutated),
+      (error: unknown) => {
+        assert.ok(error instanceof HookPlanCompilationError);
+        assert.match(
+          error.issues.join("; "),
+          new RegExp(
+            `supplierType must be one of individual\\|organization\\|zhixu \\(case-sensitive\\), received ${JSON.stringify(supplierType).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+          ),
+        );
+        return true;
+      },
+      `supplierType=${JSON.stringify(supplierType)} must be rejected by exact match`,
+    );
+  }
+});
+
+test("rejects selectableResource fileType outside the closed enum at the on-chain compile boundary", () => {
+  // executor.selectableResource 整体经 executorHash 进链上承诺：词表外
+  // fileType（含带空白变体）与 fileResources 同口径拒绝——同为
+  // FileResource 面，不因挂在 executor 下而逃过闭集。
+  // 合法形态走定义级全量编译（native 权威面同样校验该闭集，两侧同集）。
+  const selectorStage = baseZhixu.spec.taskPatterns[0]!.stages[0]!;
+  const withSelectableZhixu: ZhixuDefinition = {
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      taskPatterns: [
+        {
+          ...baseZhixu.spec.taskPatterns[0]!,
+          stages: [
+            {
+              ...selectorStage,
+              executor: {
+                ...selectorStage.executor!,
+                selectableResource: {
+                  dataset: { fileType: "plain_text", plainText: { content: "x" } },
+                },
+              },
+            },
+          ],
+        },
+        ...baseZhixu.spec.taskPatterns.slice(1),
+      ],
+    },
+  };
+  compileOnchainHookPlan(compileZhixuHookPlanWithManifest(withSelectableZhixu));
+
+  // 词表外形态在链轨编译入口拒绝（手工/漂移 HookPlanArtifact 的第二道门，
+  // 先于 routeRef 承诺一致性检查）。
+  const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
+  for (const fileType of ["tx_cloud", " local", "http "]) {
+    const mutated = resign({
+      ...hookPlan,
+      executorRoutes: {
+        ...hookPlan.executorRoutes,
+        "selector.assign": {
+          ...hookPlan.executorRoutes["selector.assign"]!,
+          executor: {
+            ...hookPlan.executorRoutes["selector.assign"]!.executor,
+            selectableResource: {
+              dataset: { fileType, plainText: { content: "x" } },
+            },
+          },
+        },
+      },
+    } as typeof hookPlan);
+    assert.throws(
+      () => compileOnchainHookPlan(mutated),
+      (error: unknown) => {
+        assert.ok(error instanceof HookPlanCompilationError);
+        assert.match(
+          error.issues.join("; "),
+          /executor\.selectableResource\["dataset"\]\.fileType must be one of local\|http\|txcloud\|plain_text/,
+        );
+        return true;
+      },
+      `fileType=${JSON.stringify(fileType)} must be rejected by exact match`,
+    );
+  }
+});
+
 test("rejects fileResources fileType outside the closed enum at the on-chain compile boundary", () => {
   const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
   const route = hookPlan.executorRoutes["selector.assign"]!;
@@ -1861,6 +1962,21 @@ test("artifact boundary enforces the executorType closed enum and non-empty exec
     ),
     issues.join("; "),
   );
+  // 带空白变体同拒：制品边界的 executorType 就是 executorHash 承诺的分类型
+  // 投影，精确匹配（不 trim）与编译入口/Rust 权威面同口径。
+  for (const executorType of [" organization ", "zhixu ", "\tindividual"]) {
+    const paddedIssues = validateOnchainHookPlanArtifact(
+      mutateRoute({ executorType }),
+    );
+    assert.ok(
+      paddedIssues.some((issue) =>
+        new RegExp(
+          `executorType must be one of individual\\|organization\\|zhixu \\(case-sensitive\\), received ${JSON.stringify(executorType).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+        ).test(issue),
+      ),
+      `executorType=${JSON.stringify(executorType)}: ${paddedIssues.join("; ")}`,
+    );
+  }
   // 空 executorId / 空白 executorId → 拒绝（镜像编译入口 supplierID 门）。
   for (const executorId of ["", "   "]) {
     const idIssues = validateOnchainHookPlanArtifact(

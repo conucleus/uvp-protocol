@@ -155,23 +155,46 @@ function compileExecutorRoute(
   }
   // supplierType 闭集（rule executor-supplier-type-closed-enum 的链轨编译
   // 入口镜像）：闭集外字符串经 executorHash 进链上承诺后无合约守卫可拦。
+  // 精确匹配、不 trim：executorHash 哈希的是 executor 原文，trim 后匹配
+  // 会放行 " organization " 这类原文——匹配面放行、承诺面按原文分叉，
+  // 同一值既被宽容又被严格。
   const supplierType = String(route.executor.supplierType);
-  if (!SUPPLIER_TYPES.includes(supplierType.trim())) {
+  if (!SUPPLIER_TYPES.includes(supplierType)) {
     throw new HookPlanCompilationError([
       `executor route "${route.stageIdentifier}" supplierType must be one of ${SUPPLIER_TYPES.join("|")} (case-sensitive), received ${JSON.stringify(supplierType)}`,
     ]);
   }
   // fileType 闭集（与云侧编译入口同集）：fileResources 进 resourcesHash
-  // 承诺，拼错的 fileType 是确定性输入缺陷，不静默成承诺内容。
-  if (route.fileResources !== undefined) {
-    for (const [key, resource] of Object.entries(route.fileResources)) {
-      if (!FILE_TYPES.includes(String(resource.fileType))) {
+  // 承诺，executor.selectableResource 进 executorHash 承诺——拼错的
+  // fileType 是确定性输入缺陷，不静默成承诺内容；同样精确匹配不 trim
+  // （哈希输入与匹配输入必须是同一字符串）。
+  const assertFileResources = (
+    resources: Record<string, unknown> | undefined,
+    label: string,
+  ): void => {
+    if (resources === undefined) {
+      return;
+    }
+    for (const [key, resource] of Object.entries(resources)) {
+      const fileType =
+        typeof resource === "object" && resource !== null
+          ? (resource as { readonly fileType?: unknown }).fileType
+          : undefined;
+      if (typeof fileType !== "string" || !FILE_TYPES.includes(fileType)) {
         throw new HookPlanCompilationError([
-          `executor route "${route.stageIdentifier}" fileResources[${JSON.stringify(key)}].fileType must be one of ${FILE_TYPES.join("|")}, received ${JSON.stringify(resource.fileType)}`,
+          `executor route "${route.stageIdentifier}" ${label}[${JSON.stringify(key)}].fileType must be one of ${FILE_TYPES.join("|")}, received ${JSON.stringify(fileType)}`,
         ]);
       }
     }
-  }
+  };
+  assertFileResources(route.fileResources, "fileResources");
+  const selectable = route.executor.selectableResource;
+  assertFileResources(
+    typeof selectable === "object" && selectable !== null
+      ? (selectable as Record<string, unknown>)
+      : undefined,
+    "executor.selectableResource",
+  );
   const executorHash = opaqueContentHash(route.executor);
   const resourcesHash =
     route.fileResources === undefined ? ZERO_HASH : opaqueContentHash(route.fileResources);
