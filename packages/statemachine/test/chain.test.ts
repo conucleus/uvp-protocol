@@ -514,19 +514,6 @@ test("chain replay filters contract-impossible TimerPoked events (pokeTimer gate
       dueAt: "2026-04-27T00:01:05.000Z",
       pokedAt: "2026-04-27T00:01:01.000Z"
     },
-    // 从未见过状态转移的 hook（状态未知 = 无法证明 Wait，fail-closed）。
-    {
-      eventName: "TimerPoked",
-      blockNumber: 8,
-      logIndex: 2,
-      transactionHash: "0x0a",
-      planId,
-      zhixuId: "chain-oracle",
-      orderId: "order-timer",
-      hookId: "0x0000000000000000000000000000000000000000000000000000000000003999",
-      dueAt: "2026-04-27T00:01:05.000Z",
-      pokedAt: "2026-04-27T00:01:06.000Z"
-    },
     // 事件自报的 dueAt 与守门状态不一致（守门值 00:01:05，事件自报
     // 00:01:00 伪造"已到期"）：到期判据只能取守门推导值，事件声称值
     // 仅作一致性核验——链上 pokeTimer 读的是合约存储，事件无权覆盖。
@@ -564,6 +551,306 @@ test("chain replay filters contract-impossible TimerPoked events (pokeTimer gate
   // 不可能事件不得改动回放终态（守门是过滤，不是吸收进求值）。
   assert.deepEqual(polluted.state, clean.state);
   assert.deepEqual(polluted.observed, clean.observed);
+});
+
+test("chain replay fails loudly when TimerPoked targets an unknown order/plan/hook", () => {
+  // native evaluate_timer_hook 的目标解析序（order → plan → hook，uvp-replay
+  // transition 与 facts 的查表）：缺任一目标整场响亮失败——查无此目标的
+  // poke 只能出自损坏的事件流，静默滤除会把结构性毒流伪装成干净回放。
+  // 镜像层按同一序抛错、用同款错误文案；已知 hook 但从未见过状态转移
+  // （native eligibility 的 `_ => false` 分支）仍是静默跳过，不是响亮失败。
+  const planId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000e001";
+  const hookId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000e101";
+  const quietHookId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000e102";
+  const stageId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000e201";
+  const sourceId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000e301";
+  const signalId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000e401";
+  const keyId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000e501";
+  const quietKeyId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000e502";
+  const zhixuId = "unknown-target";
+  const planRegistered: ChainModeEvent = {
+    eventName: "PlanRegistered",
+    blockNumber: 1,
+    logIndex: 0,
+    transactionHash: "0x01",
+    plan: {
+      planId,
+      zhixuId,
+      compiledHooks: [
+        {
+          hookId,
+          stageId,
+          stageIdentifier: "task.main",
+          hookName: "TIMEOUT",
+          orderTriggerKind: "none",
+          emitReady: true,
+          instructions: [
+            { op: "SIGNAL", sourceId, signalId, signalKey: keyId },
+            { op: "DELAY", delaySeconds: 5 },
+          ],
+        },
+        {
+          hookId: quietHookId,
+          stageId,
+          stageIdentifier: "task.main",
+          hookName: "QUIET",
+          orderTriggerKind: "none",
+          emitReady: true,
+          instructions: [
+            { op: "SIGNAL", sourceId, signalId, signalKey: quietKeyId },
+            { op: "DELAY", delaySeconds: 5 },
+          ],
+        },
+      ],
+      dependencyIndex: {
+        [keyId]: [hookId],
+        [quietKeyId]: [quietHookId],
+      },
+    },
+  };
+  const orderRegistered: ChainModeEvent = {
+    eventName: "OrderRegistered",
+    blockNumber: 2,
+    logIndex: 0,
+    transactionHash: "0x02",
+    planId,
+    zhixuId,
+    orderId: "order-1",
+    registeredAt: "2026-04-27T00:00:00.000Z",
+  };
+  const signalSubmitted: ChainModeEvent = {
+    eventName: "SignalSubmitted",
+    blockNumber: 3,
+    logIndex: 0,
+    transactionHash: "0x03",
+    planId,
+    zhixuId,
+    orderId: "order-1",
+    sourceId,
+    signalId,
+    signalKey: keyId,
+    senderId: "pay-executor",
+    submittedAt: "2026-04-27T00:00:00.000Z",
+  };
+  const statusWait: ChainModeEvent = {
+    eventName: "HookStatusChanged",
+    blockNumber: 4,
+    logIndex: 0,
+    transactionHash: "0x04",
+    planId,
+    zhixuId,
+    orderId: "order-1",
+    hookId,
+    previousStatus: "init",
+    newStatus: "wait",
+    dueAt: "2026-04-27T00:00:05.000Z",
+  };
+  const base = [planRegistered, orderRegistered, signalSubmitted, statusWait];
+  const poke = (overrides: {
+    readonly planId?: `0x${string}`;
+    readonly orderId?: string;
+    readonly hookId?: string;
+  }): ChainModeEvent => ({
+    eventName: "TimerPoked",
+    blockNumber: 6,
+    logIndex: 0,
+    transactionHash: "0x06",
+    planId: overrides.planId ?? planId,
+    zhixuId,
+    orderId: overrides.orderId ?? "order-1",
+    hookId: overrides.hookId ?? hookId,
+    dueAt: "2026-04-27T00:00:05.000Z",
+    pokedAt: "2026-04-27T00:00:06.000Z",
+  });
+
+  // 查无此 order（事件三元组在订单登记簿外）。
+  assert.throws(
+    () => replayChainEvents([...base, poke({ orderId: "order-ghost" })]),
+    /chain oracle missing order .*:unknown-target:order-ghost/,
+  );
+  // 查无此 plan：订单在册但流缺 PlanRegistered（native 按订单的 planId
+  // 查 plan，同键缺注册同样整场失败）。
+  assert.throws(
+    () =>
+      replayChainEvents([orderRegistered, signalSubmitted, statusWait, poke({})]),
+    /chain oracle missing plan /,
+  );
+  // 查无此 hook（plan 的 compiledHooks 之外）。
+  assert.throws(
+    () =>
+      replayChainEvents([
+        ...base,
+        poke({ hookId: "0x000000000000000000000000000000000000000000000000000000000000e999" }),
+      ]),
+    /chain oracle missing hook 0x000000000000000000000000000000000000000000000000000000000000e999/,
+  );
+  // 已知 hook 但从未见过状态转移（QUIET 未收到信号、无 wait 观察）：
+  // native 的 eligibility 对无 runtime 的 hook 静默跳过，镜像层过滤而非
+  // 抛错——回放保持干净，且终态不含 QUIET 的任何推导。
+  const quietResult = replayChainEvents([
+    ...base,
+    poke({ hookId: quietHookId }),
+  ]);
+  assert.deepEqual(quietResult.mismatches, []);
+  assert.deepEqual(quietResult.observed, quietResult.expected);
+  assert.equal(
+    quietResult.state.orders[`${planId}::order-1`]?.hookStatuses[quietHookId],
+    undefined,
+  );
+});
+
+test("TimerPokeGate parses strictly-RFC3339 timestamps and compares in the seconds domain", () => {
+  // native seconds_from_iso = chrono parse_from_rfc3339 + .timestamp()：
+  // 严格 RFC3339 且秒域比较（链上 dueAt 是 uint64 秒）。date-only、无
+  // 偏移、越界分量回卷等 Date.parse 的宽容面在 wait+due 分支下整场响亮
+  // 失败；同秒内的亚秒差不构成"未到期"，声称值的一致性也在秒域核验。
+  const planId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000f011";
+  const hookId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000f111";
+  const stageId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000f211";
+  const sourceId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000f311";
+  const signalId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000f411";
+  const keyId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000f511";
+  const zhixuId = "strict-rfc3339";
+  const base: ChainModeEvent[] = [
+    {
+      eventName: "PlanRegistered",
+      blockNumber: 1,
+      logIndex: 0,
+      transactionHash: "0x01",
+      plan: {
+        planId,
+        zhixuId,
+        compiledHooks: [
+          {
+            hookId,
+            stageId,
+            stageIdentifier: "task.main",
+            hookName: "TIMEOUT",
+            orderTriggerKind: "none",
+            emitReady: true,
+            instructions: [
+              { op: "SIGNAL", sourceId, signalId, signalKey: keyId },
+              { op: "DELAY", delaySeconds: 5 },
+            ],
+          },
+        ],
+        dependencyIndex: { [keyId]: [hookId] },
+      },
+    },
+    {
+      eventName: "OrderRegistered",
+      blockNumber: 2,
+      logIndex: 0,
+      transactionHash: "0x02",
+      planId,
+      zhixuId,
+      orderId: "order-1",
+      registeredAt: "2026-04-27T00:00:00.000Z",
+    },
+    {
+      eventName: "SignalSubmitted",
+      blockNumber: 3,
+      logIndex: 0,
+      transactionHash: "0x03",
+      planId,
+      zhixuId,
+      orderId: "order-1",
+      sourceId,
+      signalId,
+      signalKey: keyId,
+      senderId: "pay-executor",
+      submittedAt: "2026-04-27T00:00:00.000Z",
+    },
+    {
+      eventName: "HookStatusChanged",
+      blockNumber: 4,
+      logIndex: 0,
+      transactionHash: "0x04",
+      planId,
+      zhixuId,
+      orderId: "order-1",
+      hookId,
+      previousStatus: "init",
+      newStatus: "wait",
+      dueAt: "2026-04-27T00:00:05.000Z",
+    },
+  ];
+  const poke = (pokedAt: string, dueAt?: string): ChainModeEvent =>
+    ({
+      eventName: "TimerPoked",
+      blockNumber: 6,
+      logIndex: 0,
+      transactionHash: "0x06",
+      planId,
+      zhixuId,
+      orderId: "order-1",
+      hookId,
+      ...(dueAt === undefined ? {} : { dueAt }),
+      pokedAt,
+      // 缺省 dueAt 声称是冻结前形状，与该文件其他用例同款抬升手法。
+    }) as unknown as ChainModeEvent;
+
+  // 守门 dueAt / pokedAt 非法（chrono 拒绝的形态）整场响亮失败。
+  for (const bad of [
+    "2026-04-27",
+    "2026-04-27T00:00:06",
+    "2026-02-30T00:00:06.000Z",
+    "2026-04-27T24:00:06.000Z",
+    " 2026-04-27T00:00:06.000Z",
+    "2026-04-27T00:00:06.000Z ",
+  ]) {
+    assert.throws(
+      () => replayChainEvents([...base, poke(bad)]),
+      /invalid chain oracle timestamp/,
+      `pokedAt=${bad} must fail loudly as non-RFC3339`,
+    );
+  }
+  const withBadTrackedDueAt = base.map((event) =>
+    event.eventName === "HookStatusChanged"
+      ? { ...event, dueAt: "2026-04-27" }
+      : event,
+  );
+  assert.throws(
+    () => replayChainEvents([...withBadTrackedDueAt, poke("2026-04-27T00:00:06.000Z")]),
+    /invalid chain oracle timestamp 2026-04-27/,
+  );
+
+  // 秒域核验：声称值与守门值差在亚秒（同秒）时不再判"不一致"——
+  // 链上 dueAt 本就是 uint64 秒，亚秒差异不是语义分歧；poke 放行后
+  // native 重算出 HookReady。
+  const admitted = replayChainEvents([
+    ...base,
+    poke("2026-04-27T00:00:06.000Z", "2026-04-27T00:00:05.900Z"),
+    {
+      eventName: "HookReady",
+      blockNumber: 7,
+      logIndex: 0,
+      transactionHash: "0x07",
+      planId,
+      zhixuId,
+      orderId: "order-1",
+      hookId,
+      stageIdentifier: "task.main",
+      hookName: "TIMEOUT",
+    },
+  ]);
+  assert.deepEqual(admitted.mismatches, []);
+  assert.deepEqual(admitted.observed, admitted.expected);
+  assert.equal(
+    admitted.state.orders[`${planId}::order-1`]?.hookStatuses[hookId]?.status,
+    "ready",
+  );
+
+  // 声称值是待核验的断言（native 无此通道）：date-only 的声称无法证明
+  // 一致性，按不可能过滤——回放干净，hook 停留 wait，不得因"声称值
+  // 在 Date.parse 下恰好折成同一天"而放行。
+  const unverifiableClaim = replayChainEvents([...base, poke("2026-04-27T00:00:06.000Z", "2026-04-27")]);
+  assert.deepEqual(unverifiableClaim.mismatches, []);
+  assert.deepEqual(unverifiableClaim.observed, unverifiableClaim.expected);
+  assert.equal(
+    unverifiableClaim.state.orders[`${planId}::order-1`]?.hookStatuses[hookId]?.status,
+    "wait",
+  );
 });
 
 test("compareChainEvents stays a total order on the canonical key pair", () => {
@@ -742,19 +1029,14 @@ test("chain replay sorts the stream into canonical order before gating", () => {
   const runtime = result.state.orders[`${planId}::reorder-1`]?.hookStatuses[hookId];
   assert.equal(runtime?.status, "ready");
 
-  // 到达序模式（显式 sort:false，与 native 同口径关闭排序）：守门按
-  // 到达序跟踪，poke 先于 wait 转移到达即状态未知，被 fail-closed 滤
-  // 除——HookReady 无法自推导，期望/观察分叉成 mismatch。这是"为什么
-  // 默认要排序"的可观察面。
-  let mismatchError: ChainReplayMismatchError | undefined;
-  try {
-    replayChainEvents(scrambled, { sort: false });
-  } catch (error) {
-    assert.ok(error instanceof ChainReplayMismatchError);
-    mismatchError = error;
-  }
-  assert.ok(mismatchError !== undefined, "arrival-order gating must surface the dropped poke");
-  assert.ok(mismatchError.mismatches.length >= 1);
+  // 到达序模式（显式 sort:false，与 native 同口径关闭排序）：poke 先于
+  // 订单登记到达，目标解析查无此 order——native 对同一流同样整场响亮
+  // 失败（evaluate_timer_hook 的查表序），镜像层不得把它滤成"状态未知"
+  // 后的 missing-observed 假 mismatch。这是"为什么要默认排序"的可观察面。
+  assert.throws(
+    () => replayChainEvents(scrambled, { sort: false }),
+    /chain oracle missing order /,
+  );
 });
 
 test("chain replay fails loudly when TimerPoked carries no pokedAt", () => {

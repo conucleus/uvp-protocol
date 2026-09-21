@@ -370,28 +370,49 @@ interface TrackedHookRuntime {
 /**
  * pokeTimer 守门的逐 (planId, orderId, hookId) 状态镜像：从 HookStatusChanged
  * （含被观察面过滤的 →ready/→init 转移，此处仍须消费）与 HookReady 推导
- * hook 当前状态与 dueAt。到期判据只取守门推导值（合约 pokeTimer 读的是
- * 存储里的 dueAt）：TimerPoked 只有在"当前态 = wait 且 pokedAt ≥ 守门
- * dueAt"时才可能存在于链上。事件自带的 dueAt（frozen v0.10 ABI 的非索引
- * uint64 字段；冻结前形状的喂给流可能缺省）是待核验的声称值——在场时
- * 必须与守门值逐点一致，毒事件自报更小的 dueAt 无法伪造"已到期"；缺省
- * 时不影响判定，守门值已完整覆盖 TimerNotWaiting/TimerNotDue 两道闸。
- * 无法证明合法（状态未知、守门 dueAt 缺失、声称值不一致、守门/声称
- * 时间戳不可解析）一律按不可能过滤；pokedAt 缺失/非串（以及 wait+due
- * 分支下不可解析）例外——那是求值时钟的结构性缺失，与 native 同口径
- * 响亮失败，不滤成"事件不存在"。
+ * hook 当前状态与 dueAt，并登记流内出现过的 order 与 plan 的 hook 目录——
+ * TimerPoked 的目标解析按 native evaluate_timer_hook 的查表序镜像。
+ * 到期判据只取守门推导值（合约 pokeTimer 读的是存储里的 dueAt）：
+ * TimerPoked 只有在"当前态 = wait 且 pokedAt ≥ 守门 dueAt"时才可能存在于
+ * 链上，比较在秒域（链上 dueAt 是 uint64 秒，native seconds_from_iso 同域）。
+ * 事件自带的 dueAt（frozen v0.10 ABI 的非索引 uint64 字段；冻结前形状的
+ * 喂给流可能缺省）是待核验的声称值——在场时必须与守门值秒域一致，毒事件
+ * 自报更小的 dueAt 无法伪造"已到期"；缺省时不影响判定，守门值已完整覆盖
+ * TimerNotWaiting/TimerNotDue 两道闸。
+ * 三类输入整场响亮失败（与 native 同口径）：查无此 order/plan/hook 的
+ * poke、缺失/非串的 pokedAt、wait+due 分支下非 RFC3339 的守门 dueAt 或
+ * pokedAt；其余无法证明合法（状态未知、守门 dueAt 缺失、声称值不一致或
+ * 不可解析——声称是待核验的断言而非判据，native 无此通道）一律按不可能
+ * 过滤，不滤成"事件不存在"的响亮面留给结构性毒流。
  */
 class TimerPokeGate {
   private readonly runtimes = new Map<string, TrackedHookRuntime>();
+  private readonly orders = new Set<string>();
+  private readonly planHooks = new Map<string, ReadonlySet<string>>();
 
   /** 事件是否可进入 native 喂给层（仅 TimerPoked 会被拒）。 */
   admit(event: ChainModeEvent): boolean {
     if (event.eventName !== "TimerPoked") {
       return true;
     }
-    // pokedAt 是本 tick 的求值时钟：native 对 TimerPoked 一进门就要求
-    // 字符串 pokedAt（缺失/非串整场回放响亮失败），镜像层同口径——缺失
-    // 的时钟不得被静默滤成"事件不存在"。
+    // 目标解析序镜像 native evaluate_timer_hook：缺 order/plan/hook 是
+    // 整场响亮失败，不是可过滤的"不可能事件"——查无此目标的 poke 只能
+    // 出自损坏的事件流，静默滤除会把结构性毒流伪装成干净回放。
+    if (!this.orders.has(orderRegistryKey(event))) {
+      throw new Error(
+        `chain oracle missing order ${event.planId}:${event.zhixuId}:${event.orderId}`,
+      );
+    }
+    const hookIds = this.planHooks.get(event.planId);
+    if (hookIds === undefined) {
+      throw new Error(`chain oracle missing plan ${event.planId}`);
+    }
+    if (!hookIds.has(event.hookId)) {
+      throw new Error(`chain oracle missing hook ${event.hookId}`);
+    }
+    // pokedAt 是本 tick 的求值时钟：native 在目标解析后立即要求字符串
+    // pokedAt（缺失/非串整场回放响亮失败），镜像层同口径——缺失的时钟
+    // 不得被静默滤成"事件不存在"。
     if (typeof event.pokedAt !== "string") {
       throw new Error(
         `TimerPoked ${event.hookId} is missing a valid pokedAt; the replay evaluation clock is required`
@@ -401,20 +422,19 @@ class TimerPokeGate {
     if (runtime === undefined || runtime.status !== "wait" || runtime.dueAt === undefined) {
       return false;
     }
-    const trackedDueAt = parseTimestamp(runtime.dueAt);
+    // wait+due 分支的时钟读取与 native 同位（seconds_from_iso 的 `?`）：
+    // 守门 dueAt / pokedAt 非法（chrono 严格 RFC3339 拒绝的形态）按
+    // native 口径整场响亮失败，不滤成"事件不存在"。
+    const trackedDueAt = chainOracleTimestampSeconds(runtime.dueAt);
     if (trackedDueAt === undefined) {
-      return false;
+      throw new Error(`invalid chain oracle timestamp ${runtime.dueAt}`);
     }
-    const pokedAt = parseTimestamp(event.pokedAt);
+    const pokedAt = chainOracleTimestampSeconds(event.pokedAt);
     if (pokedAt === undefined) {
-      // 与 native 同分支位置：只有 hook 确处 wait+due、需要比时钟时，
-      // 不可解析的 pokedAt 才是响亮失败；状态未知的 poke native 直接跳过。
-      throw new Error(
-        `TimerPoked ${event.hookId} carries an unparseable pokedAt ${JSON.stringify(event.pokedAt)}`
-      );
+      throw new Error(`invalid chain oracle timestamp ${event.pokedAt}`);
     }
     if (event.dueAt !== undefined) {
-      const eventDueAt = parseTimestamp(event.dueAt);
+      const eventDueAt = chainOracleTimestampSeconds(event.dueAt);
       if (eventDueAt === undefined || eventDueAt !== trackedDueAt) {
         return false;
       }
@@ -425,6 +445,39 @@ class TimerPokeGate {
   /** 消费事件推进守门状态（对所有放行事件调用）。 */
   track(event: ChainModeEvent): void {
     switch (event.eventName) {
+      case "PlanRegistered": {
+        // 目标解析镜像需要 plan 的 hook 目录；重复注册按后到覆盖（native
+        // state.plans.insert 同口径）。畸形 plan 不登记——native 对
+        // PlanRegistered 自有注册门，会在同一事件位置响亮失败。
+        const plan: unknown = event.plan;
+        if (
+          typeof plan !== "object" ||
+          plan === null ||
+          Array.isArray(plan) ||
+          typeof (plan as { readonly planId?: unknown }).planId !== "string" ||
+          !Array.isArray((plan as { readonly compiledHooks?: unknown }).compiledHooks)
+        ) {
+          return;
+        }
+        const hookIds = new Set<string>();
+        for (const hook of (plan as { readonly compiledHooks: readonly unknown[] }).compiledHooks) {
+          if (typeof hook === "object" && hook !== null) {
+            const hookId = (hook as { readonly hookId?: unknown }).hookId;
+            if (typeof hookId === "string") {
+              hookIds.add(hookId);
+            }
+          }
+        }
+        this.planHooks.set(
+          (plan as { readonly planId: string }).planId,
+          hookIds,
+        );
+        return;
+      }
+      case "OrderRegistered": {
+        this.orders.add(orderRegistryKey(event));
+        return;
+      }
       case "HookStatusChanged": {
         // newStatus 已由 normalize 边界校验为 frozen v0.10 状态集；此处
         // 直接消费（→ready/→init 转移虽被观察面过滤，守门仍须感知）。
@@ -458,12 +511,88 @@ function runtimeKey(event: {
   return `${event.planId}::${event.orderId}::${event.hookId}`;
 }
 
-function parseTimestamp(value: string | undefined): number | undefined {
-  if (typeof value !== "string") {
+function orderRegistryKey(event: {
+  readonly planId: HexString;
+  readonly orderId: string;
+}): string {
+  return `${event.planId}::${event.orderId}`;
+}
+
+/**
+ * native seconds_from_iso（chrono DateTime::parse_from_rfc3339 + .timestamp()）
+ * 的镜像：严格 RFC3339，返回秒域时刻。接受面逐条对齐 chrono 的严格解析
+ * 器：恰好 4 位年、真实日历日（月长/闰年，越界分量不回卷）、T/t/空格
+ * 分隔（RFC3339 的可读性宽限，chrono 同样接受）、HH:MM:SS、可选任意位
+ * 数亚秒、必带 Z/z 或 ±HH:MM（≤23:59，冒号强制；chrono 亦接受 U+2212
+ * 作偏移负号）、无前后/尾随杂字符；闰秒 :60 计入其前一秒（chrono 的
+ * leap 表示与 :59 共享同一 epoch 秒），亚秒丢弃（timestamp() 只取整秒）。
+ * 比较域是秒：链上 dueAt 是 uint64 秒，native 的到期比较在秒域——
+ * Date.parse 的毫秒域会把同秒内的到期边界判到亚秒上，且它接受 date-only、
+ * 无偏移、越界分量回卷等 chrono 一律拒绝的形态，宽容面与 native 分叉。
+ */
+const RFC3339_STRICT_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})[Tt ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(?:[Zz]|([+-\u2212])(\d{2}):(\d{2}))$/;
+
+function chainOracleTimestampSeconds(value: string): number | undefined {
+  const match = RFC3339_STRICT_PATTERN.exec(value);
+  if (match === null) {
     return undefined;
   }
-  const millis = Date.parse(value);
-  return Number.isNaN(millis) ? undefined : millis;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetSign = match[8];
+  const offsetHour = Number(match[9] ?? "0");
+  const offsetMinute = Number(match[10] ?? "0");
+  if (
+    month < 1 || month > 12 ||
+    day < 1 || day > daysInMonth(year, month) ||
+    hour > 23 || minute > 59 || second > 60 ||
+    offsetHour > 23 || offsetMinute > 59
+  ) {
+    return undefined;
+  }
+  const localSeconds =
+    daysFromCivil(year, month, day) * 86400 +
+    hour * 3600 +
+    minute * 60 +
+    (second === 60 ? 59 : second);
+  const negativeOffset = offsetSign === "-" || offsetSign === "\u2212";
+  const offsetSeconds =
+    (negativeOffset ? -1 : 1) * (offsetHour * 3600 + offsetMinute * 60);
+  return localSeconds - offsetSeconds;
+}
+
+const MONTH_LENGTHS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+function isGregorianLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
+function daysInMonth(year: number, month: number): number {
+  return month === 2 && isGregorianLeapYear(year) ? 29 : MONTH_LENGTHS[month - 1]!;
+}
+
+/**
+ * proleptic Gregorian 历的 civil 日期 → epoch 天数（chrono NaiveDate 同
+ * 历法）：整数实现避开 Date.UTC——它把 0-99 年映射到 1900+，且对越界
+ * 分量静默回卷，两坑都会与 chrono 的严格拒绝面分叉。
+ */
+function daysFromCivil(year: number, month: number, day: number): number {
+  const shiftedYear = year - (month <= 2 ? 1 : 0);
+  const era = Math.floor(shiftedYear / 400);
+  const yearOfEra = shiftedYear - era * 400;
+  const dayOfYear =
+    Math.floor((153 * (month + (month > 2 ? -3 : 9)) + 2) / 5) + day - 1;
+  const dayOfEra =
+    yearOfEra * 365 +
+    Math.floor(yearOfEra / 4) -
+    Math.floor(yearOfEra / 100) +
+    dayOfYear;
+  return era * 146097 + dayOfEra - 719468;
 }
 
 export function chainEventId(event: ChainEventBase): string {

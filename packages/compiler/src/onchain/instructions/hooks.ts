@@ -26,7 +26,7 @@ import {
   onchainStageId,
   routeHashFromDigests,
 } from "../hash/route.js";
-import { assertNever } from "../shape.js";
+import { assertNever, isRecord } from "../shape.js";
 import type {
   HookPlanExecutorRoute,
   OnchainExecutorRoute,
@@ -169,11 +169,20 @@ function compileExecutorRoute(
   // fileType 是确定性输入缺陷，不静默成承诺内容；同样精确匹配不 trim
   // （哈希输入与匹配输入必须是同一字符串）。
   const assertFileResources = (
-    resources: Record<string, unknown> | undefined,
+    resources: unknown,
     label: string,
   ): void => {
     if (resources === undefined) {
       return;
+    }
+    // 形状门（与 Rust validate 的 "must be a map of file resources" 同口径）：
+    // 非 map 形态（字符串/数字/数组/null）会让下面的闭集检查整体短路、
+    // 原文照烧进承诺，且 Object.entries(null) 会把裸 TypeError 逃出编译
+    // 入口——承诺面拒绝一律 HookPlanCompilationError，形状同样不例外。
+    if (!isRecord(resources)) {
+      throw new HookPlanCompilationError([
+        `executor route "${route.stageIdentifier}" ${label} must be a map of file resources`,
+      ]);
     }
     for (const [key, resource] of Object.entries(resources)) {
       const fileType =
@@ -187,14 +196,13 @@ function compileExecutorRoute(
       }
     }
   };
-  assertFileResources(route.fileResources, "fileResources");
+  // selectableResource 的 null 与缺失同为缺席（Rust Option<Value> 的 serde
+  // 口径：JSON null 解成 None，不进承诺也不报错）；其余非 map 形态拒绝。
   const selectable = route.executor.selectableResource;
-  assertFileResources(
-    typeof selectable === "object" && selectable !== null
-      ? (selectable as Record<string, unknown>)
-      : undefined,
-    "executor.selectableResource",
-  );
+  if (selectable !== undefined && selectable !== null) {
+    assertFileResources(selectable, "executor.selectableResource");
+  }
+  assertFileResources(route.fileResources, "fileResources");
   const executorHash = opaqueContentHash(route.executor);
   const resourcesHash =
     route.fileResources === undefined ? ZERO_HASH : opaqueContentHash(route.fileResources);

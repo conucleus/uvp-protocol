@@ -29,6 +29,7 @@ interface ReplayCase {
     readonly observedEvents?: readonly string[];
     readonly waitDueAt?: string;
     readonly finalHookStatuses?: Readonly<Record<string, Readonly<Record<string, string>>>>;
+    readonly stateOrderKeys?: readonly string[];
     readonly mismatchDetails?: readonly MismatchDetail[];
     readonly errorContains?: string;
   };
@@ -160,6 +161,18 @@ test("chain replay follows shared hook semantic corpus", async () => {
             item.name
           );
         }
+      }
+    }
+    // 多订单血统（order-link 出生等）把事实拆落在多个 order 状态上：
+    // native 对同一语料钉了 stateOrderKeys 的在场性，TS 线同样断言该
+    // 维度，不再只靠 native 兜底。按自有键精确匹配（Object.prototype
+    // 上的继承键不算在册订单）。
+    if (item.expect.stateOrderKeys !== undefined) {
+      for (const orderKey of item.expect.stateOrderKeys) {
+        assert.ok(
+          Object.hasOwn(result.state.orders, orderKey),
+          `${item.name} missing order ${orderKey}`
+        );
       }
     }
   }

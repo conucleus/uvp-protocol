@@ -1931,6 +1931,85 @@ test("rejects fileResources fileType outside the closed enum at the on-chain com
   );
 });
 
+test("rejects non-map file-resource shapes at the on-chain compile boundary", () => {
+  // 与 Rust validate 的 "must be a map of file resources" 同口径：非 map 的
+  // selectableResource（字符串/数字/数组）不得静默跳过 fileType 闭集检查
+  // 后把原文烧进 executorHash；null 的 fileResources 不得让 Object.entries
+  // 抛裸 TypeError 逃出编译入口——承诺面拒绝一律 HookPlanCompilationError。
+  // selectableResource 为 null 例外：Rust Option<Value> 把 JSON null 解成
+  // 缺席（serde 口径），两侧同放行。
+  const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
+  const mutateExecutor = (
+    selectableResource: unknown,
+  ): Parameters<typeof compileOnchainHookPlan>[0] =>
+    resign({
+      ...hookPlan,
+      executorRoutes: {
+        ...hookPlan.executorRoutes,
+        "selector.assign": {
+          ...hookPlan.executorRoutes["selector.assign"]!,
+          executor: {
+            ...hookPlan.executorRoutes["selector.assign"]!.executor,
+            ...(selectableResource === undefined
+              ? {}
+              : { selectableResource }),
+          },
+        },
+      },
+    } as unknown as typeof hookPlan);
+  for (const shape of ["http", 7, ["dataset"], true]) {
+    assert.throws(
+      () => compileOnchainHookPlan(mutateExecutor(shape)),
+      (error: unknown) => {
+        assert.ok(error instanceof HookPlanCompilationError);
+        assert.match(
+          error.issues.join("; "),
+          /executor\.selectableResource must be a map of file resources/,
+        );
+        return true;
+      },
+      `selectableResource=${JSON.stringify(shape)} must be rejected as a non-map shape`,
+    );
+  }
+  // null 与缺失同为缺席（Rust Option<Value> 的 serde 口径）：形状门放行。
+  // 变异后制品的 routeRef 承诺一致性另报——恰好证明 null 没撞上形状门。
+  assert.throws(
+    () => compileOnchainHookPlan(mutateExecutor(null)),
+    (error: unknown) => {
+      assert.ok(error instanceof HookPlanCompilationError);
+      assert.doesNotMatch(
+        error.issues.join("; "),
+        /must be a map of file resources/,
+      );
+      return true;
+    },
+  );
+  for (const shape of [null, "local", 7]) {
+    const mutated = resign({
+      ...hookPlan,
+      executorRoutes: {
+        ...hookPlan.executorRoutes,
+        "selector.assign": {
+          ...hookPlan.executorRoutes["selector.assign"]!,
+          fileResources: shape,
+        },
+      },
+    } as unknown as typeof hookPlan);
+    assert.throws(
+      () => compileOnchainHookPlan(mutated),
+      (error: unknown) => {
+        assert.ok(error instanceof HookPlanCompilationError);
+        assert.match(
+          error.issues.join("; "),
+          /fileResources must be a map of file resources/,
+        );
+        return true;
+      },
+      `fileResources=${JSON.stringify(shape)} must be rejected as a non-map shape`,
+    );
+  }
+});
+
 test("artifact boundary enforces the executorType closed enum and non-empty executorId", () => {
   // 词表闸的第一道在编译入口（compileExecutorRoute，与 rust/go 同口径），
   // 但制品边界不得放行词表外/空白 id 的自洽制品（重签 planHash）：手工/
