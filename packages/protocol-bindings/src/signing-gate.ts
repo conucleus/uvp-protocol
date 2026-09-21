@@ -194,10 +194,9 @@ export function validateTypedDataForSigning(
 }
 
 /**
- * 钱包"用户拒绝"判定（超集统一）：EIP-1193 code 4001，或错误消息含
- * reject/denied/cancel（大小写不敏感）。三端取消文案与判定正则曾各自
- * 漂移（order-app 认 denied/cancel、zhixu-store 只认 reject），此处收敛
- * 为超集；面向用户的文案仍由宿主自定义。
+ * 钱包"用户拒绝"判定：EIP-1193 code 4001，或错误消息含
+ * reject/denied/cancel（大小写不敏感）——三端取消文案的并集，宿主侧
+ * 的自定义判定与文案不受此约束。
  */
 export function isUserRejectedRequestError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) {

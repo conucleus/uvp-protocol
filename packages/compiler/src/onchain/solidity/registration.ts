@@ -20,8 +20,6 @@ import type {
   SignalTargetOrderRelation,
   SolidityRegisterInstructionArg,
   SolidityRegisterPlanArgs,
-  SolidityRegisterSignalCapabilityArg,
-  SolidityRegisterStageSelectorBindingArg,
 } from "../../types/index.js";
 
 /**
@@ -198,20 +196,6 @@ function hashSolidityHooks(
         "(bytes32 hookId,bytes32 stageId,bytes32 hookName,uint8 flags,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks",
       ),
       [encodedHooks] as never,
-    ),
-  ) as HexString;
-}
-
-function hashSolidityPlanMetadata(
-  selectorBindings: readonly SolidityRegisterStageSelectorBindingArg[],
-  signalCapabilities: readonly SolidityRegisterSignalCapabilityArg[],
-): HexString {
-  return keccak256(
-    encodeAbiParameters(
-      parseAbiParameters(
-        "(bytes32 selectorStageId,bytes32 targetStageId)[] selectorBindings,(bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation)[] signalCapabilities",
-      ),
-      [selectorBindings, signalCapabilities],
     ),
   ) as HexString;
 }

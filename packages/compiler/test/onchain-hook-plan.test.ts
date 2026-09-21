@@ -1048,8 +1048,8 @@ test("compiles capability tables beyond gas caps into a verifiable capabilitiesR
 test("rejects cross-stage current-order fact key duplication (E16 mirror)", () => {
   const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
   // 同一事实键 (targetSourceId, signalId) 挂到两个阶段、relation=current：
-  // commitPlan 可过、finalizePlan 恒 revert DuplicateCurrentOrderSignalCapability
-  // （planId 烧毁）——编译期预检必须拒绝，不等链上。
+  // 属主不再唯一，携证解析（事实键 → 属主阶段）出现二义性——编译期预检
+  // 必须拒绝，不让歧义属主进承诺。
   const fact = sourcePlan.signalCapabilities[0]!;
   const otherStage =
     sourcePlan.signalCapabilities.find(
@@ -1069,7 +1069,7 @@ test("rejects cross-stage current-order fact key duplication (E16 mirror)", () =
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
       error.issues.some((issue) =>
-        /current-order fact key .* already owned by stage .*DuplicateCurrentOrderSignalCapability/.test(issue),
+        /current-order fact key .* already owned by stage .*must resolve to exactly one owner stage/.test(issue),
       ),
   );
   // 反例：同一阶段重复声明同一事实键合法（属主未变），且 relation≠0 的
@@ -1581,7 +1581,7 @@ test("rejects stages that compile to zero hooks (materialization gate)", () => {
   // 钩子可挂，compileOnchainHookPlan 预检即抛，不产出制品。
   // （dependencyIndex 同步剔除被剥钩子，让形状校验先行通过，确保
   // 拦截者就是物化门本身；能力表/绑定表对 selector.assign 的引用同步
-  // 剥离——剥离后即悬空引用，会被 IR 校验的 UnknownPlanStage 镜像先拒，
+  // 剥离——剥离后即悬空引用，会被 IR 校验的阶段存在性镜像先拒，
   // 抢在本测试要钉的物化门之前。）
   const strippedHookIds = new Set(
     sourcePlan.compiledHooks

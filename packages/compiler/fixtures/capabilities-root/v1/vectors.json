@@ -1,0 +1,209 @@
+{
+  "schemaVersion": "uvp.capabilities-root.golden.v1",
+  "samples": [
+    {
+      "name": "mixed-tables-odd-leaves",
+      "note": "2 selector bindings + 3 signal capabilities（含 relation=1）= 5 叶奇数集，钉奇数尾叶提升",
+      "counts": {
+        "selectorBindings": 2,
+        "signalCapabilities": 3,
+        "sortedUniqueLeaves": 5
+      },
+      "inputs": {
+        "selectorBindings": [
+          {
+            "selectorStageId": "0x85580b18c593a19aafabbe9f5485236c923a2040e11d3092130f6a12de447841",
+            "targetStageId": "0xd64214b18c205f8789ceff544f0bf659f221e264adc26d86a40bb22faadb094e"
+          },
+          {
+            "selectorStageId": "0x85580b18c593a19aafabbe9f5485236c923a2040e11d3092130f6a12de447841",
+            "targetStageId": "0x97ff0a3dd77fde8391fc81daefdd0e4369a69a570f2a471459bc96adaebf2da8"
+          }
+        ],
+        "signalCapabilities": [
+          {
+            "stageId": "0xd64214b18c205f8789ceff544f0bf659f221e264adc26d86a40bb22faadb094e",
+            "targetSourceId": "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
+            "signalId": "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
+            "targetOrderRelation": 0
+          },
+          {
+            "stageId": "0x85580b18c593a19aafabbe9f5485236c923a2040e11d3092130f6a12de447841",
+            "targetSourceId": "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
+            "signalId": "0x546f03671b458a53591e47c76a4c517e9f6e80adc28666292334584e07306d97",
+            "targetOrderRelation": 0
+          },
+          {
+            "stageId": "0x97ff0a3dd77fde8391fc81daefdd0e4369a69a570f2a471459bc96adaebf2da8",
+            "targetSourceId": "0x97794b46b3afe9245d61058666381907ac8a35b0e3bce564cde9dd0eea648cb6",
+            "signalId": "0x8f31cd3fb473853b6fbccf79f80e09a1d8c54ca123feb7b46e884458af4621d7",
+            "targetOrderRelation": 1
+          }
+        ]
+      },
+      "expected": {
+        "root": "0x9f6d34700365e02c7205c563a37413f9a6808176c767052d00108588091d29c6",
+        "sortedUniqueLeaves": [
+          "0x92dcacb5a89c3c53d99843c091de6c07449251f67a8cb07a7b69627961f475f5",
+          "0xc3c1d77c7681aa55bb2728c11509d476939a588ab2de7f768c9b86ea878501d3",
+          "0xd34d9a7ea7cbd566c3f50199503abf6207b992c8eab633ad6f7154ab13171157",
+          "0xd73af36da548a81f35abd3041ee0b58365910e4f4261414d1740c992fe0df5fb",
+          "0xe9c446e1442840a542db94216393f34dc4e2a4d6177139196496d5f98ae0509a"
+        ],
+        "selectorBindingLeaves": [
+          {
+            "leaf": "0xd73af36da548a81f35abd3041ee0b58365910e4f4261414d1740c992fe0df5fb",
+            "proofLength": 3,
+            "proof": [
+              "0xd34d9a7ea7cbd566c3f50199503abf6207b992c8eab633ad6f7154ab13171157",
+              "0x42733eed7ce18c5a2c9e9ddeb6e35f227061452a6369d4284d30c312af9c3584",
+              "0xe9c446e1442840a542db94216393f34dc4e2a4d6177139196496d5f98ae0509a"
+            ]
+          },
+          {
+            "leaf": "0x92dcacb5a89c3c53d99843c091de6c07449251f67a8cb07a7b69627961f475f5",
+            "proofLength": 3,
+            "proof": [
+              "0xc3c1d77c7681aa55bb2728c11509d476939a588ab2de7f768c9b86ea878501d3",
+              "0x4caeeab76edcde7df32b477e431b22da08ea2ea517283c029a45e349b6dcdd48",
+              "0xe9c446e1442840a542db94216393f34dc4e2a4d6177139196496d5f98ae0509a"
+            ]
+          }
+        ],
+        "signalCapabilityLeaves": [
+          {
+            "leaf": "0xc3c1d77c7681aa55bb2728c11509d476939a588ab2de7f768c9b86ea878501d3",
+            "proofLength": 3,
+            "proof": [
+              "0x92dcacb5a89c3c53d99843c091de6c07449251f67a8cb07a7b69627961f475f5",
+              "0x4caeeab76edcde7df32b477e431b22da08ea2ea517283c029a45e349b6dcdd48",
+              "0xe9c446e1442840a542db94216393f34dc4e2a4d6177139196496d5f98ae0509a"
+            ]
+          },
+          {
+            "leaf": "0xe9c446e1442840a542db94216393f34dc4e2a4d6177139196496d5f98ae0509a",
+            "proofLength": 1,
+            "proof": [
+              "0x19db75ccbf26e77d05c9132231c5dcc434e38a6605c1617154f797815df9c6df"
+            ]
+          },
+          {
+            "leaf": "0xd34d9a7ea7cbd566c3f50199503abf6207b992c8eab633ad6f7154ab13171157",
+            "proofLength": 3,
+            "proof": [
+              "0xd73af36da548a81f35abd3041ee0b58365910e4f4261414d1740c992fe0df5fb",
+              "0x42733eed7ce18c5a2c9e9ddeb6e35f227061452a6369d4284d30c312af9c3584",
+              "0xe9c446e1442840a542db94216393f34dc4e2a4d6177139196496d5f98ae0509a"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "duplicate-leaves-dedup",
+      "note": "重复叶排序去重：3 绑定（1 重复）+ 3 能力（1 重复）→ 6 原始叶 → 4 唯一叶",
+      "counts": {
+        "selectorBindings": 3,
+        "signalCapabilities": 3,
+        "sortedUniqueLeaves": 4
+      },
+      "inputs": {
+        "selectorBindings": [
+          {
+            "selectorStageId": "0x85580b18c593a19aafabbe9f5485236c923a2040e11d3092130f6a12de447841",
+            "targetStageId": "0xd64214b18c205f8789ceff544f0bf659f221e264adc26d86a40bb22faadb094e"
+          },
+          {
+            "selectorStageId": "0xd64214b18c205f8789ceff544f0bf659f221e264adc26d86a40bb22faadb094e",
+            "targetStageId": "0x97ff0a3dd77fde8391fc81daefdd0e4369a69a570f2a471459bc96adaebf2da8"
+          },
+          {
+            "selectorStageId": "0x85580b18c593a19aafabbe9f5485236c923a2040e11d3092130f6a12de447841",
+            "targetStageId": "0xd64214b18c205f8789ceff544f0bf659f221e264adc26d86a40bb22faadb094e"
+          }
+        ],
+        "signalCapabilities": [
+          {
+            "stageId": "0xd64214b18c205f8789ceff544f0bf659f221e264adc26d86a40bb22faadb094e",
+            "targetSourceId": "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
+            "signalId": "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
+            "targetOrderRelation": 0
+          },
+          {
+            "stageId": "0x97ff0a3dd77fde8391fc81daefdd0e4369a69a570f2a471459bc96adaebf2da8",
+            "targetSourceId": "0x97794b46b3afe9245d61058666381907ac8a35b0e3bce564cde9dd0eea648cb6",
+            "signalId": "0x8f31cd3fb473853b6fbccf79f80e09a1d8c54ca123feb7b46e884458af4621d7",
+            "targetOrderRelation": 1
+          },
+          {
+            "stageId": "0xd64214b18c205f8789ceff544f0bf659f221e264adc26d86a40bb22faadb094e",
+            "targetSourceId": "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
+            "signalId": "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
+            "targetOrderRelation": 0
+          }
+        ]
+      },
+      "expected": {
+        "root": "0x98b6c354de35e4ec88d2840d584d48f2fdf31a0800ba2dd289845e3ba354af5f",
+        "sortedUniqueLeaves": [
+          "0xc3c1d77c7681aa55bb2728c11509d476939a588ab2de7f768c9b86ea878501d3",
+          "0xd34d9a7ea7cbd566c3f50199503abf6207b992c8eab633ad6f7154ab13171157",
+          "0xd73af36da548a81f35abd3041ee0b58365910e4f4261414d1740c992fe0df5fb",
+          "0xff59585f9cfd6830089a0ff61277736b1a1043e34564ba087428a81cee6c6b0d"
+        ],
+        "selectorBindingLeaves": [
+          {
+            "leaf": "0xd73af36da548a81f35abd3041ee0b58365910e4f4261414d1740c992fe0df5fb",
+            "proofLength": 2,
+            "proof": [
+              "0xff59585f9cfd6830089a0ff61277736b1a1043e34564ba087428a81cee6c6b0d",
+              "0xb1298d077ad5b7728b32348fcf3bcb26745fb2f128e8f69bf3aee1dcba9ba870"
+            ]
+          },
+          {
+            "leaf": "0xff59585f9cfd6830089a0ff61277736b1a1043e34564ba087428a81cee6c6b0d",
+            "proofLength": 2,
+            "proof": [
+              "0xd73af36da548a81f35abd3041ee0b58365910e4f4261414d1740c992fe0df5fb",
+              "0xb1298d077ad5b7728b32348fcf3bcb26745fb2f128e8f69bf3aee1dcba9ba870"
+            ]
+          },
+          {
+            "leaf": "0xd73af36da548a81f35abd3041ee0b58365910e4f4261414d1740c992fe0df5fb",
+            "proofLength": 2,
+            "proof": [
+              "0xff59585f9cfd6830089a0ff61277736b1a1043e34564ba087428a81cee6c6b0d",
+              "0xb1298d077ad5b7728b32348fcf3bcb26745fb2f128e8f69bf3aee1dcba9ba870"
+            ]
+          }
+        ],
+        "signalCapabilityLeaves": [
+          {
+            "leaf": "0xc3c1d77c7681aa55bb2728c11509d476939a588ab2de7f768c9b86ea878501d3",
+            "proofLength": 2,
+            "proof": [
+              "0xd34d9a7ea7cbd566c3f50199503abf6207b992c8eab633ad6f7154ab13171157",
+              "0x9bb162f55957124a00f27df38e4e28f664a6cafd9bf9a8cfb6798491837dff6f"
+            ]
+          },
+          {
+            "leaf": "0xd34d9a7ea7cbd566c3f50199503abf6207b992c8eab633ad6f7154ab13171157",
+            "proofLength": 2,
+            "proof": [
+              "0xc3c1d77c7681aa55bb2728c11509d476939a588ab2de7f768c9b86ea878501d3",
+              "0x9bb162f55957124a00f27df38e4e28f664a6cafd9bf9a8cfb6798491837dff6f"
+            ]
+          },
+          {
+            "leaf": "0xc3c1d77c7681aa55bb2728c11509d476939a588ab2de7f768c9b86ea878501d3",
+            "proofLength": 2,
+            "proof": [
+              "0xd34d9a7ea7cbd566c3f50199503abf6207b992c8eab633ad6f7154ab13171157",
+              "0x9bb162f55957124a00f27df38e4e28f664a6cafd9bf9a8cfb6798491837dff6f"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

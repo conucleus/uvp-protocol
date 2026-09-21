@@ -45,11 +45,10 @@ export { SUPPLIER_TYPES, FILE_TYPES };
 /**
  * E16 镜像（uvp-constraints.v1.json rejectionSurfaces
  * e16-current-order-factkey-unique-owner）：relation=0（current）的事实键
- * (targetSourceId, signalId) 在 plan 内有唯一属主阶段——跨阶段重复声明在
- * UVPPlanMetadataModule finalizePlan 的注册守卫 revert
- * DuplicateCurrentOrderSignalCapability。此类 plan 能通过 commitPlan、
- * finalize 永久 revert（planId 烧毁，2318中2），这里是 artifact 边界的
- * 编译期预检；Rust/Go 镜像仍欠（镜像债）。
+ * (targetSourceId, signalId) 在 plan 内有唯一属主阶段。属主唯一性是携证
+ * 解析的前提——链上按 relation=0 能力叶声明事实属主，同一事实键存在两个
+ * 声明属主时，任一方都能携证把事实落到自己的阶段（阶段物化/executor 门
+ * 与 origin 同意链的执行者腿随之被模糊）。Rust/Go 镜像仍欠（镜像债）。
  */
 function duplicateCurrentOrderFactKeyIssues(
   capabilities: readonly {
@@ -75,9 +74,8 @@ function duplicateCurrentOrderFactKeyIssues(
       issues.push(
         `stage ${capability.stage} declares the current-order fact key `
           + `(${capability.sourceId}, ${capability.signalId}) already owned by stage ${owner}; `
-          + "UVPPlanMetadataModule reverts DuplicateCurrentOrderSignalCapability at "
-          + "finalizePlan, so the plan would commit but finalize permanently — "
-          + "declare the fact key on a single stage",
+          + "current-order fact keys must resolve to exactly one owner stage "
+          + "for proof-carrying attribution to be unambiguous",
       );
     }
   }

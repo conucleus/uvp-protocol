@@ -308,8 +308,7 @@ export class ChainReplayMismatchError extends Error {
  * pokeTimer 合约守门镜像（UVPStateMachine.pokeTimer）：非 Wait 态 revert
  * TimerNotWaiting、未到期（dueAt 缺失或 pokedAt < dueAt）revert
  * TimerNotDue——两类交易在链上根本无法产出 TimerPoked 事件。回放喂给
- * native 层的流必须先按这两个条件过滤，否则含不可产生事件的流（历史上
- * 的 golden fixture 就携带过"已 cxl 的 hook 又被 poke"的序列）会把合约
+ * native 层的流必须先按这两个条件过滤，否则含不可产生事件的流会把合约
  * 不可能的状态变迁喂进求值器。
  */
 export function replayChainEvents(

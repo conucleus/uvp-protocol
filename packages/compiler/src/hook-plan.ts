@@ -270,10 +270,10 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
     issues.push(...validateSignalCapabilities(value.signalCapabilities));
   }
 
-  // 元数据表的阶段引用必须落在 hooks 阶段集内：悬空引用的 plan 能正常
-  // commitPlan（hooks 侧对元数据表不可见），finalizePlan 对
-  // UnknownPlanStage 永久 revert——planId 烧死在 committed 态，两步注册
-  // 无法完成。非数组/非字符串项由上方形状校验报错，这里静默跳过。
+  // 元数据表的阶段引用必须落在 hooks 阶段集内：hooks 侧对元数据表不可见，
+  // 悬空引用不会在注册路径暴露——链上 stageExists 只由 hook 注册置位，
+  // 指向不存在阶段的能力叶/绑定叶永远无法物化或携证。非数组/非字符串项
+  // 由上方形状校验报错，这里静默跳过。
   if (compiledHooks) {
     issues.push(
       ...danglingMetadataStageIssues(
@@ -505,11 +505,11 @@ function validateSignalCapabilities(capabilities: readonly unknown[]): readonly 
 }
 
 /**
- * 镜像 UVPStateMachine.finalizePlan 的 UnknownPlanStage 闸：
- * selectedStageBindings 与 signalCapabilities 引用的阶段必须 ∈
- * compiledHooks 的阶段集（合约侧 stageExists 只由 hook 注册置位）。
- * 手编/漂移制品的悬空引用不在此拒绝就会把毒制品送到链上 finalize 边界
- * ——commitPlan 成功、finalize 永久 revert，planId 烧死在 committed 态。
+ * 阶段存在性镜像：selectedStageBindings 与 signalCapabilities 引用的
+ * 阶段必须 ∈ compiledHooks 的阶段集——链上 stageExists 只由 hook 注册
+ * 置位，阶段的存在即其物化载体的存在。悬空引用的能力叶/绑定叶指向
+ * 永不存在的阶段：携证解析与阶段物化/executor 门都无从谈起，制品在
+ * 校验边界即拒绝，不送到链上变成不可消费的承诺。
  */
 function danglingMetadataStageIssues(
   hooks: readonly unknown[],
@@ -557,8 +557,9 @@ function danglingMetadataStageIssues(
     }
     issues.push(
       `${reference.path} references stage ${reference.stage} which has no compiled hooks; `
-        + "the contract finalizePlan reverts UnknownPlanStage for metadata stages outside the hooks stage set, "
-        + "so the plan would commit but finalize permanently — reference a stage declared by at least one hook",
+        + "on-chain stage existence is established solely by hook registration, so capability and "
+        + "binding leaves anchored to this stage can never be materialized or proven — "
+        + "reference a stage declared by at least one hook",
     );
   }
   return issues;

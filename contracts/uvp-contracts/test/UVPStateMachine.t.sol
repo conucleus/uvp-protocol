@@ -4222,7 +4222,26 @@ contract UVPStateMachineTest {
         IUVPStateMachineCore.SignalAuthorization[] memory moduleAuthorizations = _moduleAuthorizations(authorizations);
         bytes memory signature =
             _triggerOrderFromSignalSignature(machine, trigger, moduleAuthorizations, SUBMITTER_PRIVATE_KEY);
-        _orderLink(machine).triggerOrderFromSignalFor(trigger, moduleAuthorizations, signature, new IUVPStateMachineCore.FactAttribution[](0));
+        _orderLink(machine).triggerOrderFromSignalFor(
+            trigger, moduleAuthorizations, signature, _originFactAttributions(machine, trigger)
+        );
+    }
+
+    /// 诚实 order-link 调用方对 origin 事实携证：有词表的 origin plan 省略
+    /// attribution 即 InvalidSignalCapability（同意链回退仅限零词表 plan）。
+    function _originFactAttributions(
+        UVPStateMachine machine,
+        IUVPStateMachineCore.TriggerOrderFromSignalRequest memory trigger
+    ) private view returns (IUVPStateMachineCore.FactAttribution[] memory attributions) {
+        UVPStateMachine.FactAttribution memory owner =
+            _factAttribution(machine, trigger.originPlanId, trigger.originSourceId, trigger.originSignalId);
+        attributions = new IUVPStateMachineCore.FactAttribution[](1);
+        attributions[0] = IUVPStateMachineCore.FactAttribution({
+            sourceId: owner.sourceId,
+            signalId: owner.signalId,
+            stageId: owner.stageId,
+            capabilityProof: owner.capabilityProof
+        });
     }
 
     function _triggerOrderFromSignalForKey(
@@ -5181,16 +5200,21 @@ contract UVPStateMachineTest {
             });
         IUVPStateMachineCore.SignalAuthorization[] memory noAuthorizations =
             new IUVPStateMachineCore.SignalAuthorization[](0);
-        // 先离线算好签名，expectRevert 只包住真正应回滚的外部调用。
+        // 先离线算好签名，expectRevert 只包住真正应回滚的外部调用。攻击者
+        // 携镜像树对 victim 事实的有效属主证（两树同型同根，证明互认）——
+        // 过词表闸之后，同意门仍是唯一裁决：capability 证明不构成 origin
+        // 订单上任何一方的同意。
         bytes memory mirroredSignature =
             _triggerOrderFromSignalSignature(machine, mirrored, noAuthorizations, ATTACKER_SUBMITTER_PRIVATE_KEY);
+        IUVPStateMachineCore.FactAttribution[] memory mirroredAttributions =
+            _originFactAttributions(machine, mirrored);
         vm.prank(attacker);
         vm.expectRevert(
             abi.encodeWithSelector(
                 UVPStateMachine.UnauthorizedTriggerOrigin.selector, victimPlanId, victimOrderId, attacker
             )
         );
-        _orderLink(machine).triggerOrderFromSignalFor(mirrored, noAuthorizations, mirroredSignature, new IUVPStateMachineCore.FactAttribution[](0));
+        _orderLink(machine).triggerOrderFromSignalFor(mirrored, noAuthorizations, mirroredSignature, mirroredAttributions);
 
         // 链接未建立、派生单未铸造。
         (bool linked,,,,,) = _orderLink(machine).getTriggerOriginLink(attackerPlanId, mirroredOrderId);
@@ -5298,6 +5322,79 @@ contract UVPStateMachineTest {
         _triggerOrderFromSignalForKey(machine, creatorTrigger, emptyChildAuths, SUBMITTER_PRIVATE_KEY);
         (bool creatorLinked,,,,,) = _orderLink(machine).getTriggerOriginLink(planId, creatorChildOrderId);
         require(creatorLinked, "creator consent link missing");
+    }
+
+    /// 同意链回退零词表收口：有词表的 origin plan，order-link 与
+    /// hasTriggerOriginConsent 对 origin 事实强制携证解析——省略 attribution
+    /// 即 InvalidSignalCapability（词表内撞名源/阶段不能借 source==stage
+    /// 回退免证自证属主、加宽 UVP-08 同意门的执行者腿）。零词表手工 plan
+    /// 的回退口径保持可用。
+    function testOrderLinkConsentRequiresAttributionOnVocabularyPlan() public {
+        UVPStateMachine machine = _newMachine();
+        _registerPlan(machine, _withOrderStart(_sequentialPlan()), _selectorBindings(), _signalCapabilities());
+        _submitTriggerOrderFromOutside(machine, PLAN_ID, ORDER_CREATOR, _defaultAuthorizations(address(this)));
+        machine.submitSignal(
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY
+        , _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER), _noBinding());
+
+        // 公开视图同口径：省略 attribution 响亮回滚，不退化为收窄布尔。
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPStateMachine.InvalidSignalCapability.selector, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER
+            )
+        );
+        machine.hasTriggerOriginConsent(
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, address(this), _noAttribution()
+        );
+
+        // order-link 省略 origin attribution：词表 plan 必 revert，链接不建立。
+        IUVPStateMachineCore.TriggerOrderFromSignalRequest memory request =
+            _signalTriggerRequest(machine, ORDER_ID, bytes32(uint256(2)));
+        IUVPStateMachineCore.SignalAuthorization[] memory childAuths =
+            _moduleAuthorizations(_auths1(SIGNAL_TRIGGER, SUBMITTER_A));
+        bytes memory signature =
+            _triggerOrderFromSignalSignature(machine, request, childAuths, SUBMITTER_PRIVATE_KEY);
+        vm.prank(UNAUTHORIZED_SUBMITTER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPStateMachine.InvalidSignalCapability.selector, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER
+            )
+        );
+        _orderLink(machine).triggerOrderFromSignalFor(
+            request, childAuths, signature, new IUVPStateMachineCore.FactAttribution[](0)
+        );
+        require(!machine.orderExists(PLAN_ID, LINKED_ORDER_ID), "unproven order link minted");
+
+        // 携证重放同一请求（签名不覆盖 attribution 集；relayer=本测试合约
+        // 持有 origin 事实授权，同意门放行）：链接建立。
+        _orderLink(machine).triggerOrderFromSignalFor(
+            request, childAuths, signature, _originFactAttributions(machine, request)
+        );
+        (bool linked,,,,,) = _orderLink(machine).getTriggerOriginLink(PLAN_ID, LINKED_ORDER_ID);
+        require(linked, "attributed order link missing");
+
+        // 零词表手工 plan：省略 attribution 的 source==stage 回退仍可用。
+        UVPStateMachine manual = _newMachine();
+        bytes32 manualPlanId = _registerPlan(manual, _withOrderStart(_sequentialPlan()));
+        _submitTriggerOrderFromOutside(
+            manual, manualPlanId, ORDER_CREATOR, _auths1(SIGNAL_TRIGGER, vm.addr(SUBMITTER_PRIVATE_KEY))
+        );
+        vm.prank(vm.addr(SUBMITTER_PRIVATE_KEY));
+        manual.submitSignal(
+            manualPlanId, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY
+        , _noAttribution(), _noBinding());
+        IUVPStateMachineCore.TriggerOrderFromSignalRequest memory manualRequest =
+            _signalTriggerRequest(manual, ORDER_ID, bytes32(uint256(2)));
+        IUVPStateMachineCore.SignalAuthorization[] memory manualChildAuths =
+            _moduleAuthorizations(_auths1(SIGNAL_TRIGGER, SUBMITTER_A));
+        bytes memory manualSignature =
+            _triggerOrderFromSignalSignature(manual, manualRequest, manualChildAuths, SUBMITTER_PRIVATE_KEY);
+        vm.prank(UNAUTHORIZED_SUBMITTER);
+        _orderLink(manual).triggerOrderFromSignalFor(
+            manualRequest, manualChildAuths, manualSignature, new IUVPStateMachineCore.FactAttribution[](0)
+        );
+        (bool manualLinked,,,,,) = _orderLink(manual).getTriggerOriginLink(manualPlanId, LINKED_ORDER_ID);
+        require(manualLinked, "zero-vocabulary fallback link missing");
     }
 
     // ------------------------------------------------------------------

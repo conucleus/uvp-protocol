@@ -735,7 +735,9 @@ contract UVPStateMachine {
             )) {
             revert UnknownOrder();
         }
-        // origin 事实的属主阶段由调用方携 proof 自证（能力树 membership）。
+        // origin 事实的属主阶段由调用方携 proof 自证（能力树 membership）；
+        // 有词表的 origin plan 不携证即回滚（InvalidSignalCapability，与
+        // 提交/出生路径同口径），零词表 plan 才保留 source==stage 回退。
         bytes32 declaredOriginStage = _resolveSourceStageFrom(
             trigger.originPlanId, trigger.originSourceId, trigger.originSignalId, originFactAttributions
         );
@@ -1617,8 +1619,10 @@ contract UVPStateMachine {
     /// 方，才允许把它作为 trigger-origin 消费、在任意 plan 上派生新订单。
     /// 外部 plan 镜像公开 capability 声明不构成同意，capability 镜像攻击链
     /// （镜像 plan → 镜像 link → 派生单回写注入）在 link 建立刻被拒绝。
-    /// 属主阶段由查询方携 proof 声明（originAttribution）：不携证时执行者
-    /// 一腿不可判定、按不存在处理——同意集合只可能收紧（fail-closed）。
+    /// 属主阶段由查询方携 proof 声明（originAttribution）：有词表的 plan
+    /// 不携证即回滚（InvalidSignalCapability，与提交/出生路径同口径）；
+    /// 零词表 plan 不携证时执行者一腿不可判定、按不存在处理——同意集合
+    /// 只可能收紧（fail-closed）。
     function hasTriggerOriginConsent(
         bytes32 originPlanId,
         bytes32 originOrderId,
@@ -1677,8 +1681,12 @@ contract UVPStateMachine {
 
     /// selector 绑定目标的 assign 前置闸。"阶段是否绑定目标"在能力树形态
     /// 下是存在性查询，只能由携证方证明（SelectorBindingProof）：不携证时
-    /// 该门不可判定、放行——诚实调用方（编译产物持有者）总能携证，缺证
-    /// 放行的面只覆盖本就无授权路径的提交（见 _submitSignal 的授权前置）。
+    /// 该门不可判定、放行。放行面覆盖所有携证可选的写入口——_submitSignal
+    /// 的显式授权者与 submitSignalFromModule 的 dock 镜像提交同样可以省
+    /// selector 证写入属主事实（跳过 assign 前置），随后该阶段的 ASSIGN
+    /// patch 可能被 StageAlreadyHasSignal 顶死。要 fail-closed 必须把
+    /// selector 绑定目标集承诺进 PlanCommit（ABI 级裁决），仅凭调用方
+    /// 携证无法封死该面。
     function _requireStageExecutorAssigned(
         bytes32 planId,
         bytes32 orderId,
@@ -1776,8 +1784,9 @@ contract UVPStateMachine {
     /// 独立通过同意门（submitter 或 relayer 任一持有同意即可）。声明之外
     /// 被实际消费的未同意事实是"镜像声明、消费他事"的攻击面。不存在的事
     /// 实对求值无贡献（value=false），跳过。每条事实的属主阶段从
-    /// originFactAttributions 携证解析；缺证事实的执行者腿按不存在处理
-    /// （同意集合收紧方向）。
+    /// originFactAttributions 携证解析：有词表的 origin plan 缺证事实
+    /// 响亮回滚（同意链消费的每条事实都强制携证），零词表 plan 的缺证
+    /// 事实执行者腿按不存在处理（同意集合收紧方向）。
     function _requireTriggerHookSignalConsent(
         bytes32 originPlanId,
         bytes32 originOrderId,
@@ -2270,23 +2279,34 @@ contract UVPStateMachine {
         return attribution.stageId;
     }
 
-    /// 属主阶段解析：携证属主优先，否则 source==stage 回退（sourceId 本身
-    /// 是 plan 阶段时以阶段自居——手工 plan 与词表外事实的口径）。两者皆
-    /// 无则 0（不绑定物化/executor 门）。
+    /// 属主阶段解析：携证属主优先；无证时仅零词表 plan 允许 source==stage
+    /// 回退（sourceId 本身是 plan 阶段时以阶段自居——手工 plan 的口径）。
+    /// 有词表的 plan 事实未携证即响亮回滚（InvalidSignalCapability，与提交/
+    /// 出生路径同口径）：词表内撞名的源/阶段不能借回退免证自证属主，否则
+    /// 同意链的 origin 阶段执行者腿可被加宽（UVP-08 同意门绕过）。
+    /// 零词表回退后仍无阶段则 0（不绑定物化/executor 门）。
     function _resolveSourceStage(bytes32 planId, bytes32 sourceId, bytes32 signalId, FactAttribution calldata attribution)
         private
         view
         returns (bytes32 stageId)
     {
         stageId = _verifiedFactOwner(planId, sourceId, signalId, attribution);
-        if (stageId == bytes32(0) && _isPlanStage(planId, sourceId)) {
+        if (stageId != bytes32(0)) {
+            return stageId;
+        }
+        if (_hasCapabilityVocabulary(planId)) {
+            revert InvalidSignalCapability(planId, sourceId, signalId);
+        }
+        if (_isPlanStage(planId, sourceId)) {
             stageId = sourceId;
         }
     }
 
     /// 多事实场景（trigger-origin 同意链）按事实键从携带证明集中取对应
-    /// 属主并解析阶段；未携带的事实按词表外口径处理（source==stage 回退）。
-    /// 同键重复声明取首条；错键/错证声明在 _verifiedFactOwner 内响亮回滚。
+    /// 属主并解析阶段；同键重复声明取首条；错键/错证声明在
+    /// _verifiedFactOwner 内响亮回滚。未携带的事实与 _resolveSourceStage
+    /// 同口径：有词表 plan 响亮回滚（同意链消费的每条事实都强制携证），
+    /// 仅零词表 plan 走 source==stage 回退。
     function _resolveSourceStageFrom(
         bytes32 planId,
         bytes32 sourceId,
@@ -2297,6 +2317,9 @@ contract UVPStateMachine {
             if (attributions[i].stageId != bytes32(0) && attributions[i].sourceId == sourceId && attributions[i].signalId == signalId) {
                 return _verifiedFactOwner(planId, sourceId, signalId, attributions[i]);
             }
+        }
+        if (_hasCapabilityVocabulary(planId)) {
+            revert InvalidSignalCapability(planId, sourceId, signalId);
         }
         if (_isPlanStage(planId, sourceId)) {
             stageId = sourceId;

@@ -7,7 +7,7 @@ import {DockMerkle} from "./libraries/DockMerkle.sol";
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
 import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 
-/// @title UVPDockingModule — 统一 Zhixu DockRoute（abiVersion 4.2）
+/// @title UVPDockingModule — 统一 Zhixu DockRoute（abiVersion 4.3）
 /// @notice 所有 Zhixu dock 来自 committed route：openDockedOrder 在一笔
 ///          交易内原子完成 child 创建、link 登记、entrance fact 写入，
 ///          并同步置位 entrance 交付账本。链轨 new 模式恰一条 input 绑定
