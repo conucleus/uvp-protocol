@@ -19,7 +19,11 @@ export type DockableModuleStatus = "connected" | "available" | "planned";
 /** dock 接口开放的下单模式（{new, existing} 子集）。 */
 export type ProductDockOrderMode = "new" | "existing";
 export type OrderStatus = "registered";
-export type TaskStatus = "open" | "submitted" | "blocked" | "done";
+/**
+ * 服务端任务词表只有这三种态：链上确认不回流为新的任务态（由提交回执
+ * 与链投影承载），"done" 是服务端永不产出的死词，不进词表。
+ */
+export type TaskStatus = "open" | "submitted" | "blocked";
 export type PermissionPayloadPolicy = "required" | "optional";
 export type FulfillmentPluginKind =
   | "payment_placeholder"

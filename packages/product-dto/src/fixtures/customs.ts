@@ -524,7 +524,8 @@ export const customsSelectorTask: ProductTaskDTO = {
   stageName: "选择报关履约者",
   deadline: "2026-05-01 23:59",
   fundingImpact: "无资金动作",
-  status: "done",
+  // 任务词表没有完成态：工作已提交、等待链上索引按 submitted 如实呈现。
+  status: "submitted",
   addOnKind: "stage_executor_patch",
   addOnManifest: customsBuyerSelectorManifest,
   primaryActionLabel: "选择报关履约者",
@@ -552,7 +553,8 @@ export const customsResourceControllerTask: ProductTaskDTO = {
   stageName: "发布报关资源清单",
   deadline: "2026-05-01 23:59",
   fundingImpact: "无资金动作",
-  status: "done",
+  // 任务词表没有完成态：工作已提交、等待链上索引按 submitted 如实呈现。
+  status: "submitted",
   addOnKind: "stage_resource_patch",
   addOnManifest: customsBuyerResourceControllerManifest,
   resourceRequirements: customsResourceRequirements,
@@ -581,7 +583,8 @@ export const customsExecutorTask: ProductTaskDTO = {
   stageName: "报关完成",
   deadline: "2026-05-01 23:59",
   fundingImpact: "无资金动作",
-  status: "done",
+  // 任务词表没有完成态：工作已提交、等待链上索引按 submitted 如实呈现。
+  status: "submitted",
   addOnKind: "submit_signal",
   addOnManifest: customsExecutorManifest,
   resourceRequirements: customsResourceRequirements,

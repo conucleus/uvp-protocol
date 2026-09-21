@@ -1015,7 +1015,8 @@ export const demoPaymentTask: ProductTaskDTO = {
   stageName: "资金保障",
   deadline: "2026-04-30 18:00",
   fundingImpact: "资金适配器占位：仅记录付款条件和证明，不托管、不划转、不释放、不退款任何资金",
-  status: "done",
+  // 任务词表没有完成态：占位确认已提交、等待链上索引按 submitted 呈现。
+  status: "submitted",
   performanceSlotId: "funds",
   performanceSlotLabel: "资金保障履约者",
   businessPersonaLabels: ["买家", "资金提供者"],
