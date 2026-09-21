@@ -26,8 +26,9 @@ args for the two-step `UVPStateMachine.commitPlan` + `finalizePlan` flow.
 - Solidity registration args for the two-step `UVPStateMachine.commitPlan` +
   `finalizePlan` flow;
 - deterministic `planId`, `planHash`, source `zhixuId` and `sourcePlanHash`,
-  plus the `hooksHash` / `metadataHash` / `artifactHash` tuple of the Solidity
-  registration args and the committed `dockRoutesRoot` / `dockInterfaceRoot`;
+  plus the `hooksHash` / `capabilitiesRoot` / `artifactHash` tuple of the
+  Solidity registration args and the committed `dockRoutesRoot` /
+  `dockInterfaceRoot`;
 - stable hook, stage, source, signal, dependency, and route ids;
 - on-chain selector bindings for order-level executor overlay authority;
 - golden fixtures for compiler, contract, executor-kit, and replay tests.
@@ -85,8 +86,12 @@ pnpm --filter @uvp-eth/compiler typecheck
 - `src/types/`: public TypeScript interfaces for Zhixu inputs, compact
   on-chain hook plans, and Solidity registration args.
 - `src/hook-plan.ts`: deterministic Zhixu-to-HookPlan internal IR compiler.
-- `src/onchain-hook-plan.ts`: public Zhixu-to-on-chain artifact compiler and
-  Solidity registration input builder.
+- `src/onchain/`: public Zhixu-to-on-chain artifact compiler and Solidity
+  registration input builder (`compile.ts` pipeline, `validate/` boundary
+  checks, `canonical/` ordering, `hash/` commitments,
+  `solidity/registration.ts` calldata assembly, and
+  `onchain/capabilities-root.ts` — the authoritative capability-tree
+  implementation).
 - `src/zhixu-loader.ts`: YAML/JSON loader for `apiVersion: uvp/v0`,
   `kind: Zhixu` definitions.
 - `src/canonical.ts`: canonical JSON normalization used before hashing.
@@ -108,7 +113,7 @@ Use these root-package entrypoints:
 - `toSolidityRegisterPlanArgs(onchainHookPlanArtifact)`.
 
 `compileZhixuOnchainHookPlan(zhixu)` emits schema
-`uvp.onchainHookPlan.v2`. It:
+`uvp.onchainHookPlan.v3`. It:
 
 - emits stable `planId` and `planHash`;
 - carries target `platform` from Zhixu YAML as a protocol field
@@ -120,7 +125,10 @@ Use these root-package entrypoints:
 - carries `dockInterface`, resolved `dockRoutes`, and their committed roots;
 - compiles `selectedStageBindings` into sorted `selectorBindings` for
   `StageSelectorBinding` registration;
-- includes selector bindings in the canonical on-chain `planHash`.
+- commits both tables — `selectorBindings` and `signalCapabilities` — into a
+  single `capabilitiesRoot` (domain-separated leaves mixed into one sorted
+  paired Merkle tree; empty tables pin `keccak256("")`), and includes the
+  tables in the canonical on-chain `planHash`.
 
 Stable ids use raw Keccak-256:
 
@@ -143,6 +151,15 @@ The current state-machine alignment is `toSolidityRegisterPlanArgs()`:
 - `planId` and `planHash` are the state-machine plan identity;
 - `hooks` map to `UVPStateMachine.CompactHook`;
 - `selectorBindings` map to `UVPStateMachine.StageSelectorBinding`;
+- `capabilitiesRoot` is the domain-separated leaf-mixed Merkle root over
+  `selectorBindings` + `signalCapabilities` (`src/onchain/capabilities-root.ts`
+  is the authoritative implementation, byte-identical to the
+  `UVPPlanMetadataModule` leaf formulas). The chain stores only the root:
+  `finalizePlan` takes just the `planId`, so registration cost is decoupled
+  from table size, and membership is verified off-chain by recomputing the
+  leaf from its fields and carrying `signalCapabilityProof` /
+  `selectorBindingProof` through `verifyMerkleProof`. Empty tables pin
+  `keccak256("")`;
 - `instructions` map to compact `Signal`, `Not`, `And`, `Or`, and `Delay`
   operations;
 - `dependencyKeys` must match `UVPStateMachine.signalKey(sourceId, signalId)`;

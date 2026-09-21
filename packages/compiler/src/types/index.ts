@@ -2,7 +2,7 @@ export const COMPILER_NAME = "uvp-eth-compiler" as const;
 export const COMPILER_VERSION = "0.1.0" as const;
 export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v2" as const;
 export const ONCHAIN_HOOK_PLAN_SCHEMA_VERSION =
-  "uvp.onchainHookPlan.v2" as const;
+  "uvp.onchainHookPlan.v3" as const;
 export const DOCK_INTERFACE_ARTIFACT_SCHEMA_VERSION =
   "uvp.dockInterfaceArtifact.v2" as const;
 export const DOCK_ROUTE_SCHEMA_VERSION = "uvp.dockRoute.v2" as const;
@@ -511,6 +511,8 @@ export interface OnchainHookPlanArtifact {
   readonly dockRoutes: readonly DockRouteV2[];
   readonly dockRoutesRoot: HexString;
   readonly dockInterfaceRoot: HexString;
+  /** 能力表/绑定表的域分隔叶混编树根（链上唯一承诺形态）。 */
+  readonly capabilitiesRoot: HexString;
   readonly selectorBindings: readonly OnchainStageSelectorBinding[];
   readonly signalCapabilities: readonly OnchainSignalCapability[];
   readonly planHash: HexString;
@@ -582,7 +584,7 @@ export interface SolidityRegisterPlanArgs {
   readonly planHash: HexString;
   readonly artifactHash: HexString;
   readonly hooksHash: HexString;
-  readonly metadataHash: HexString;
+  readonly capabilitiesRoot: HexString;
   readonly dockRoutesRoot: HexString;
   readonly dockInterfaceRoot: HexString;
   readonly hooks: readonly SolidityRegisterHookArg[];

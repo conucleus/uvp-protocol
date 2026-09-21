@@ -62,7 +62,8 @@ contract UVPOrderLinkModule {
     function triggerOrderFromSignalFor(
         IUVPStateMachineCore.TriggerOrderFromSignalRequest calldata trigger,
         IUVPStateMachineCore.SignalAuthorization[] calldata authorizations,
-        bytes calldata signature
+        bytes calldata signature,
+        IUVPStateMachineCore.FactAttribution[] calldata originFactAttributions
     ) external {
         if (block.timestamp > trigger.deadline) {
             revert ExpiredSignalSignature(trigger.deadline);
@@ -91,14 +92,17 @@ contract UVPOrderLinkModule {
                 revert InvalidTriggerOrderSignature(trigger.submitter, recoveredSigner);
             }
         }
-        _registerLinkAndTrigger(trigger, authorizations);
+        _registerLinkAndTrigger(trigger, authorizations, originFactAttributions);
     }
 
     /// 链接登记 + 状态机派生 + 链接事件。独立函数体：OrderLinked 事件携带
     /// 复合身份数据字段后编码压力上升，外部入口帧保持精简（栈深约束）。
+    /// origin 事实的属主证明集不进 EIP-712 摘要（辅助材料），随调用透传给
+    /// 状态机的同意链。
     function _registerLinkAndTrigger(
         IUVPStateMachineCore.TriggerOrderFromSignalRequest calldata trigger,
-        IUVPStateMachineCore.SignalAuthorization[] calldata authorizations
+        IUVPStateMachineCore.SignalAuthorization[] calldata authorizations,
+        IUVPStateMachineCore.FactAttribution[] calldata originFactAttributions
     ) private {
         // origin 侧同意的权威校验在状态机的
         // triggerOrderFromSignalFromModule 内执行（提交者或执行 relayer 持有
@@ -112,7 +116,7 @@ contract UVPOrderLinkModule {
             exists: true
         });
 
-        stateMachine.triggerOrderFromSignalFromModule(trigger, authorizations, msg.sender);
+        stateMachine.triggerOrderFromSignalFromModule(trigger, authorizations, msg.sender, originFactAttributions);
         emit OrderLinked(
             trigger.orderId,
             trigger.triggerOriginOrderId,

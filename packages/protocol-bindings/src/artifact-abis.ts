@@ -306,7 +306,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             "internalType": "bytes32"
           },
           {
-            "name": "metadataHash",
+            "name": "capabilitiesRoot",
             "type": "bytes32",
             "internalType": "bytes32"
           },
@@ -588,50 +588,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "planId",
         "type": "bytes32",
         "internalType": "bytes32"
-      },
-      {
-        "name": "selectorBindings",
-        "type": "tuple[]",
-        "internalType": "struct IUVPPlanMetadataModule.StageSelectorBinding[]",
-        "components": [
-          {
-            "name": "selectorStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "targetStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          }
-        ]
-      },
-      {
-        "name": "signalCapabilities",
-        "type": "tuple[]",
-        "internalType": "struct IUVPPlanMetadataModule.SignalCapability[]",
-        "components": [
-          {
-            "name": "stageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "targetSourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "targetOrderRelation",
-            "type": "uint8",
-            "internalType": "uint8"
-          }
-        ]
       }
     ],
     "outputs": [],
@@ -916,6 +872,33 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "party",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "originAttribution",
+        "type": "tuple",
+        "internalType": "struct UVPStateMachine.FactAttribution",
+        "components": [
+          {
+            "name": "sourceId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "signalId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "stageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "capabilityProof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
       }
     ],
     "outputs": [
@@ -1424,7 +1407,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "bytes32"
       },
       {
-        "name": "metadataHash",
+        "name": "capabilitiesRoot",
         "type": "bytes32",
         "internalType": "bytes32"
       },
@@ -1701,6 +1684,28 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "submitter",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "currentOrderFact",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "selectorBinding",
+        "type": "tuple",
+        "internalType": "struct UVPStateMachine.SelectorBindingProof",
+        "components": [
+          {
+            "name": "selectorStageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "proof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
       }
     ],
     "outputs": [],
@@ -1739,6 +1744,50 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "idempotencyKey",
         "type": "bytes32",
         "internalType": "bytes32"
+      },
+      {
+        "name": "attribution",
+        "type": "tuple",
+        "internalType": "struct UVPStateMachine.FactAttribution",
+        "components": [
+          {
+            "name": "sourceId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "signalId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "stageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "capabilityProof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
+      },
+      {
+        "name": "selectorBinding",
+        "type": "tuple",
+        "internalType": "struct UVPStateMachine.SelectorBindingProof",
+        "components": [
+          {
+            "name": "selectorStageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "proof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
       }
     ],
     "outputs": [],
@@ -1792,6 +1841,50 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "signature",
         "type": "bytes",
         "internalType": "bytes"
+      },
+      {
+        "name": "attribution",
+        "type": "tuple",
+        "internalType": "struct UVPStateMachine.FactAttribution",
+        "components": [
+          {
+            "name": "sourceId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "signalId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "stageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "capabilityProof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
+      },
+      {
+        "name": "selectorBinding",
+        "type": "tuple",
+        "internalType": "struct UVPStateMachine.SelectorBindingProof",
+        "components": [
+          {
+            "name": "selectorStageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "proof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
       }
     ],
     "outputs": [],
@@ -1835,6 +1928,50 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "submitter",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "attribution",
+        "type": "tuple",
+        "internalType": "struct UVPStateMachine.FactAttribution",
+        "components": [
+          {
+            "name": "sourceId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "signalId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "stageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "capabilityProof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
+      },
+      {
+        "name": "selectorBinding",
+        "type": "tuple",
+        "internalType": "struct UVPStateMachine.SelectorBindingProof",
+        "components": [
+          {
+            "name": "selectorStageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "proof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
       }
     ],
     "outputs": [],
@@ -1950,6 +2087,33 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "signature",
         "type": "bytes",
         "internalType": "bytes"
+      },
+      {
+        "name": "birthFactAttribution",
+        "type": "tuple",
+        "internalType": "struct UVPStateMachine.FactAttribution",
+        "components": [
+          {
+            "name": "sourceId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "signalId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "stageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "capabilityProof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
       }
     ],
     "outputs": [],
@@ -2067,6 +2231,33 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "relayer",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "originFactAttributions",
+        "type": "tuple[]",
+        "internalType": "struct UVPStateMachine.FactAttribution[]",
+        "components": [
+          {
+            "name": "sourceId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "signalId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "stageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "capabilityProof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
       }
     ],
     "outputs": [],
@@ -2358,7 +2549,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "bytes32"
       },
       {
-        "name": "metadataHash",
+        "name": "capabilitiesRoot",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
@@ -2401,7 +2592,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "bytes32"
       },
       {
-        "name": "metadataHash",
+        "name": "capabilitiesRoot",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
@@ -2857,6 +3048,22 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
+    "name": "HooksHashMismatch",
+    "inputs": [
+      {
+        "name": "expectedHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "actualHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "IncompleteModuleConfiguration",
     "inputs": []
   },
@@ -2866,6 +3073,32 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     "inputs": [
       {
         "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidFactAttribution",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "sourceId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "signalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "claimedStageId",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -3054,22 +3287,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     "type": "error",
     "name": "PlanAlreadyRegistered",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "PlanMetadataHashMismatch",
-    "inputs": [
-      {
-        "name": "expectedHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "actualHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
   },
   {
     "type": "error",
@@ -3292,17 +3509,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "UnknownPlanStage",
-    "inputs": [
-      {
-        "name": "stageId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "ZeroOrderCreator",
     "inputs": []
   },
@@ -3407,46 +3613,6 @@ export const SIGNAL_SUBMITTED_ABI = [
   }
 ] as const;
 export const SIGNAL_SUBMITTED_TOPIC = "0x41c82bf034d8a61d15b79fcac36c465b2655b5bb3f33fb4c16f01c174103acf3" as Hex;
-
-// finalizePlan revert 解码面：TooManySelectorBindings /
-// TooManySignalCapabilities 声明在 IUVPPlanMetadataModule 上，由
-// UVPStateMachine 经链接注册库在 finalizePlan 边界 revert——它们不在
-// UVPStateMachine 自身的 artifact ABI 里，解码 finalizePlan revert 时必须
-// 把本切片并入 UVP_STATE_MACHINE_ARTIFACT_ABI，否则错误名匹配不到。
-export const FINALIZE_PLAN_ERRORS_ABI = [
-  {
-    "type": "error",
-    "name": "TooManySelectorBindings",
-    "inputs": [
-      {
-        "name": "count",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "max",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "TooManySignalCapabilities",
-    "inputs": [
-      {
-        "name": "count",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "max",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  }
-] as const;
 
 export const HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
 export const HOOK_FLAG_ORDER_TRIGGER_DOCK = 2;

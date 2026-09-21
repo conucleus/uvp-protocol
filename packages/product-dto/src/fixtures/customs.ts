@@ -57,9 +57,9 @@ export const customsWallets = {
 
 export const customsPlanIds = {
   planId: "0x336d9b556f7ffa00c83f49600554819055a4a3b300f82abca70b401f6b161ddc",
-  // 派生身份(zx-)+当前编译器 canonical payload 重算钉住。
-  planHash: "0x0317c456b081e9d1e79132fbce93029c7e5ab3c128eff1516e9c0b6ef9783d75",
-  artifactHash: "0x9a1e8a3f7aaa943e98794a74c70d0b89e57e9d00717b7c68ccc92baba5c21119"
+  // 派生身份(zx-)+当前编译器 canonical payload / 链 runtime hash 重算钉住。
+  planHash: "0xcedc1e877f2679fb156eace1bcf8100a991cef433b1cb12c65cbebc6817b8595",
+  artifactHash: "0xfe94124e14b1e2260ae2e165023ff712689ca947ee671fa58ec21f7caa7ca785"
 } as const;
 
 export const customsResourceManifest: ProductResourceManifestDTO = {
@@ -615,11 +615,12 @@ export const customsProductCatalog: ProductCatalogDTO = {
 };
 
 export const customsOnchainHookPlanArtifact = {
-  schemaVersion: "uvp.onchainHookPlan.v2",
+  schemaVersion: "uvp.onchainHookPlan.v3",
   dockInterface: null,
   dockRoutes: [],
   dockRoutesRoot: "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
   dockInterfaceRoot: "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+  capabilitiesRoot: "0x2f16cf0c261badeeda287da77effbf45706b26d5f2a0bda19f9285489da9b05e",
   planId: customsPlanIds.planId,
   zhixuId: CUSTOMS_ZHIXU_ID,
   zhixuName: "customs_completion",

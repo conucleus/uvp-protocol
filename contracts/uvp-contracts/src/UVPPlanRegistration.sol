@@ -12,8 +12,6 @@ import {
     _HOOK_FLAG_EMIT_READY as HOOK_FLAG_EMIT_READY,
     _MAX_HOOK_DELAY_SECONDS as MAX_HOOK_DELAY_SECONDS,
     _MAX_PLAN_DEPENDENCIES as MAX_PLAN_DEPENDENCIES,
-    _MAX_SIGNAL_CAPABILITIES as MAX_SIGNAL_CAPABILITIES,
-    _MAX_SELECTOR_BINDINGS as MAX_SELECTOR_BINDINGS,
     _EIP712_DOMAIN_TYPEHASH,
     _EIP712_NAME_HASH,
     _EIP712_VERSION_HASH,
@@ -49,7 +47,7 @@ library UVPPlanRegistration {
         }
         bytes32 actualHooksHash = keccak256(abi.encode(hooks));
         if (actualHooksHash != commit.hooksHash) {
-            revert UVPStateMachine.PlanMetadataHashMismatch(commit.hooksHash, actualHooksHash);
+            revert UVPStateMachine.HooksHashMismatch(commit.hooksHash, actualHooksHash);
         }
         address recoveredSigner = _recoverSignalSubmitter(_planCommitDigest(commit), signature);
         if (recoveredSigner != commit.publisher) {
@@ -59,8 +57,10 @@ library UVPPlanRegistration {
         bytes32 dockRoutesRoot = commit.dockRoutesRoot == bytes32(0) ? DockMerkle.EMPTY_ROOT : commit.dockRoutesRoot;
         bytes32 dockInterfaceRoot =
             commit.dockInterfaceRoot == bytes32(0) ? DockMerkle.EMPTY_ROOT : commit.dockInterfaceRoot;
+        bytes32 capabilitiesRoot =
+            commit.capabilitiesRoot == bytes32(0) ? DockMerkle.EMPTY_ROOT : commit.capabilitiesRoot;
         bytes32 runtimePlanHash =
-            planRuntimeHash(commit.hooksHash, commit.metadataHash, dockRoutesRoot, dockInterfaceRoot);
+            planRuntimeHash(commit.hooksHash, capabilitiesRoot, dockRoutesRoot, dockInterfaceRoot);
         planId = planIdFor(commit.publisher, runtimePlanHash);
         UVPStateMachine.Plan storage plan = _plans[planId];
         if (plan.committed) {
@@ -68,7 +68,7 @@ library UVPPlanRegistration {
         }
         plan.planHash = runtimePlanHash;
         plan.hooksHash = commit.hooksHash;
-        plan.metadataHash = commit.metadataHash;
+        plan.capabilitiesRoot = capabilitiesRoot;
         plan.dockRoutesRoot = dockRoutesRoot;
         plan.dockInterfaceRoot = dockInterfaceRoot;
         plan.publisher = commit.publisher;
@@ -110,7 +110,7 @@ library UVPPlanRegistration {
             runtimePlanHash,
             commit.publisher,
             commit.hooksHash,
-            commit.metadataHash,
+            capabilitiesRoot,
             hooks.length,
             dockRoutesRoot,
             dockInterfaceRoot
@@ -118,13 +118,12 @@ library UVPPlanRegistration {
         emit UVPStateMachine.PlanPublisherRecorded(planId, commit.publisher);
     }
 
-    function finalizePlan(
-        mapping(bytes32 => UVPStateMachine.Plan) storage _plans,
-        address planMetadataModule,
-        bytes32 planId,
-        IUVPPlanMetadataModule.StageSelectorBinding[] calldata selectorBindings,
-        IUVPPlanMetadataModule.SignalCapability[] calldata signalCapabilities
-    ) public {
+    /// finalize 与表规模解耦：能力表/绑定表已在 commit 时以 capabilitiesRoot
+    /// 形态被 publisher 签名承诺，叶子成员资格由使用方逐叶携 proof 验证
+    /// （悬空阶段引用、属主唯一性等表内不变量由编译器在产物层强制）。
+    function finalizePlan(mapping(bytes32 => UVPStateMachine.Plan) storage _plans, address planMetadataModule, bytes32 planId)
+        public
+    {
         UVPStateMachine.Plan storage plan = _plans[planId];
         if (!plan.committed) {
             revert UVPStateMachine.PlanNotCommitted();
@@ -132,48 +131,15 @@ library UVPPlanRegistration {
         if (plan.finalized) {
             revert UVPStateMachine.PlanAlreadyFinalized();
         }
-        // M24 fail-fast：规模闸先于 metadataHash 重算——哈希与逐条写存储的
-        // 注册循环 gas 随表规模无界增长，超限 plan 的 finalize 恒 OOG（比
-        // PlanMetadataHashMismatch 更早、可诊断地拒绝，planId 不烧死在
-        // committed 态的无限重试上）。
-        if (selectorBindings.length > MAX_SELECTOR_BINDINGS) {
-            revert IUVPPlanMetadataModule.TooManySelectorBindings(selectorBindings.length, MAX_SELECTOR_BINDINGS);
-        }
-        if (signalCapabilities.length > MAX_SIGNAL_CAPABILITIES) {
-            revert IUVPPlanMetadataModule.TooManySignalCapabilities(signalCapabilities.length, MAX_SIGNAL_CAPABILITIES);
-        }
-        // M22 两步注册交叉校验：元数据引用的阶段必须存在于本 plan 的
-        // hooks 阶段集。capability 指向不存在阶段时，该键的普通提交走
-        // _signalStageId 解析到永不可物化的阶段、恒 UnknownHook；selector
-        // binding 悬空同理——finalize 边界直接拒绝。
-        for (uint256 i = 0; i < selectorBindings.length; i++) {
-            if (!plan.stageExists[selectorBindings[i].selectorStageId]) {
-                revert UVPStateMachine.UnknownPlanStage(selectorBindings[i].selectorStageId);
-            }
-            if (!plan.stageExists[selectorBindings[i].targetStageId]) {
-                revert UVPStateMachine.UnknownPlanStage(selectorBindings[i].targetStageId);
-            }
-        }
-        for (uint256 i = 0; i < signalCapabilities.length; i++) {
-            if (!plan.stageExists[signalCapabilities[i].stageId]) {
-                revert UVPStateMachine.UnknownPlanStage(signalCapabilities[i].stageId);
-            }
-        }
-        bytes32 actualMetadataHash = keccak256(abi.encode(selectorBindings, signalCapabilities));
-        if (actualMetadataHash != plan.metadataHash) {
-            revert UVPStateMachine.PlanMetadataHashMismatch(plan.metadataHash, actualMetadataHash);
-        }
 
         // CEI：finalized 先于模块外调落定。模块回调（如重入 finalizePlan）
         // 必须看到已终态并按 PlanAlreadyFinalized 拒绝，而不是在 finalized
         // 落定前的窗口里二次过门。
         plan.finalized = true;
         IUVPPlanMetadataModule(planMetadataModule)
-            .finalizePlanMetadata(
-                planId, selectorBindings, signalCapabilities, plan.dockRoutesRoot, plan.dockInterfaceRoot
-            );
+            .finalizePlanMetadata(planId, plan.capabilitiesRoot, plan.dockRoutesRoot, plan.dockInterfaceRoot);
 
-        emit UVPStateMachine.PlanFinalized(planId, plan.planHash, plan.metadataHash);
+        emit UVPStateMachine.PlanFinalized(planId, plan.planHash, plan.capabilitiesRoot);
         emit UVPStateMachine.PlanRegistered(planId, plan.planHash, plan.hookIds.length);
     }
 
@@ -503,7 +469,7 @@ library UVPPlanRegistration {
                 _PLAN_COMMIT_TYPEHASH,
                 commit.publisher,
                 commit.hooksHash,
-                commit.metadataHash,
+                commit.capabilitiesRoot,
                 commit.dockRoutesRoot,
                 commit.dockInterfaceRoot,
                 commit.deadline
@@ -528,13 +494,13 @@ library UVPPlanRegistration {
         return ECDSA.recover(digest, UVPSignatures.Signature({v: v, r: r, s: s}));
     }
 
-    function planRuntimeHash(bytes32 hooksHash, bytes32 metadataHash, bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot)
+    function planRuntimeHash(bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot)
         private
         pure
         returns (bytes32)
     {
         return
-            keccak256(abi.encode(_PLAN_RUNTIME_HASH_DOMAIN, hooksHash, metadataHash, dockRoutesRoot, dockInterfaceRoot));
+            keccak256(abi.encode(_PLAN_RUNTIME_HASH_DOMAIN, hooksHash, capabilitiesRoot, dockRoutesRoot, dockInterfaceRoot));
     }
 
     function planIdFor(address publisher, bytes32 runtimePlanHash) private pure returns (bytes32) {

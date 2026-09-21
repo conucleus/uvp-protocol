@@ -17,12 +17,9 @@ import {
   unmaterializableStageIssues,
   validateOnchainCompiledHooks,
 } from "./validate/hooks.js";
-import {
-  planDependencyCountIssues,
-  selectorBindingCountIssues,
-  signalCapabilityCountIssues,
-} from "./validate/limits.js";
+import { planDependencyCountIssues } from "./validate/limits.js";
 import { duplicateCurrentOrderFactKeyIssues } from "./validate/capabilities.js";
+import { capabilitiesRootOf } from "./capabilities-root.js";
 import {
   canonicalOrderIssues,
   compareExecutorRoutes,
@@ -107,9 +104,6 @@ export function compileOnchainHookPlan(
   // 与反序列化边界、合约注册门（DuplicateBirthChannelKey）三线同口径。
   const duplicateBirthKeyIssues = duplicateBirthChannelKeyIssues(compiledHooks);
   const dependencyCountIssues = planDependencyCountIssues(compiledHooks);
-  const capabilityCountIssues = signalCapabilityCountIssues(
-    hookPlanArtifact.signalCapabilities,
-  );
   const currentOrderFactKeyIssues = duplicateCurrentOrderFactKeyIssues(
     hookPlanArtifact.signalCapabilities.map((capability) => ({
       stage: capability.stageIdentifier,
@@ -149,7 +143,6 @@ export function compileOnchainHookPlan(
     ...silentTriggerIssues,
     ...duplicateBirthKeyIssues,
     ...dependencyCountIssues,
-    ...capabilityCountIssues,
     ...currentOrderFactKeyIssues,
     ...dockTrackIssues,
     ...unresolvedTrackIssues,
@@ -162,12 +155,6 @@ export function compileOnchainHookPlan(
   const selectorBindings = compileSelectorBindings(
     hookPlanArtifact.selectedStageBindings,
   );
-  // M24：绑定表规模预检与合约 finalize 边界同口径（编译产物已去重，与
-  // 合约逐条注册的等效规模一致）。
-  const bindingCountIssues = selectorBindingCountIssues(selectorBindings);
-  if (bindingCountIssues.length > 0) {
-    throw new HookPlanCompilationError(bindingCountIssues);
-  }
   const signalCapabilities = compileSignalCapabilities(
     hookPlanArtifact.signalCapabilities,
   );
@@ -188,6 +175,22 @@ export function compileOnchainHookPlan(
       ]);
     }
   }
+  // fail-closed：capabilitiesRoot 由 TS 侧从两表叶子重算并断言与 IR 侧
+  // 一致（能力表/绑定表去重排序后的唯一树形态）。
+  const soliditySelectorBindings = selectorBindings.map((binding) => ({
+    selectorStageId: binding.selectorStageId,
+    targetStageId: binding.targetStageId,
+  }));
+  const soliditySignalCapabilities = signalCapabilities.map((capability) => ({
+    stageId: capability.stageId,
+    targetSourceId: capability.targetSourceId,
+    signalId: capability.signalId,
+    targetOrderRelation: capability.targetOrderRelation === "current" ? (0 as const) : (1 as const),
+  }));
+  const capabilitiesRoot = capabilitiesRootOf(
+    soliditySelectorBindings,
+    soliditySignalCapabilities,
+  );
   const payload = {
     schemaVersion: ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
     planId: hookPlanArtifact.planId,
@@ -202,6 +205,7 @@ export function compileOnchainHookPlan(
     dockRoutes,
     dockRoutesRoot: hookPlanArtifact.dockRoutesRoot,
     dockInterfaceRoot: hookPlanArtifact.dockInterfaceRoot,
+    capabilitiesRoot,
     selectorBindings,
     signalCapabilities,
   };

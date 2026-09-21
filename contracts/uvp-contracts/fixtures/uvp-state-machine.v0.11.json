@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStateMachine",
-  "abiVersion": "0.10",
+  "abiVersion": "0.11",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStateMachine.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStateMachine.sol/UVPStateMachine.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x4676912b05a3e926f646ca51d72b80a361a58809ec9697f0498b7b27f9f345f4",
-    "bytecodeHash": "0xfb590b519be820bdcf577420506cc03fd3e5baaf8d58a0f7af7439a520decf15",
-    "deployedBytecodeHash": "0x7f995d8c0605b207092782753edf9f080cd2b7f05e9041d54ad7205be7db6441",
-    "artifactHash": "0xb1970741a493687c45341f1d917824098d3a598a7dcc3e6c99160f71cac95e19"
+    "abiHash": "0x487d31a4e2ed95c04a268fb1fb033ad777f21ac4479056ed2584f1d90f224460",
+    "bytecodeHash": "0x39c60f5c7b7b7bfa2ce32113b599beea6472c459d9f2bccbf0977152dfc468af",
+    "deployedBytecodeHash": "0xb3c7e3de84afd6c663e660e694c964a0b0ad2e2c5d8c20537dad483a382b249d",
+    "artifactHash": "0x6ad70eb64649403eeca5c9de37f65b95f575e450222ed8ec1645ec07d4f0ce3f"
   },
   "events": {
     "HookReady": {
@@ -182,8 +182,8 @@
       "selector": "0x4b11ebd2"
     },
     "finalizePlan": {
-      "signature": "finalizePlan(bytes32,(bytes32,bytes32)[],(bytes32,bytes32,bytes32,uint8)[])",
-      "selector": "0xaf33f741"
+      "signature": "finalizePlan(bytes32)",
+      "selector": "0xa08f0ff2"
     },
     "freezeModules": {
       "signature": "freezeModules()",
@@ -214,8 +214,8 @@
       "selector": "0xca69a3e9"
     },
     "hasTriggerOriginConsent": {
-      "signature": "hasTriggerOriginConsent(bytes32,bytes32,bytes32,bytes32,address)",
-      "selector": "0x387f0d5c"
+      "signature": "hasTriggerOriginConsent(bytes32,bytes32,bytes32,bytes32,address,(bytes32,bytes32,bytes32,bytes32[]))",
+      "selector": "0xa1968e4f"
     },
     "isSignalSubmitterAuthorized": {
       "signature": "isSignalSubmitterAuthorized(bytes32,bytes32,bytes32,bytes32,address)",
@@ -354,32 +354,32 @@
       "selector": "0xfa894dec"
     },
     "submitDerivedSignalFromModule": {
-      "signature": "submitDerivedSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
-      "selector": "0x0c5681c2"
+      "signature": "submitDerivedSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,bool,(bytes32,bytes32[]))",
+      "selector": "0x5d3a32c5"
     },
     "submitSignal": {
-      "signature": "submitSignal(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0x53f0218d"
+      "signature": "submitSignal(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[]),(bytes32,bytes32[]))",
+      "selector": "0xa452be0c"
     },
     "submitSignalFor": {
-      "signature": "submitSignalFor(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256,bytes)",
-      "selector": "0xc7ddf965"
+      "signature": "submitSignalFor(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256,bytes,(bytes32,bytes32,bytes32,bytes32[]),(bytes32,bytes32[]))",
+      "selector": "0xdfa32ae8"
     },
     "submitSignalFromModule": {
-      "signature": "submitSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
-      "selector": "0xf00cfbca"
+      "signature": "submitSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,(bytes32,bytes32,bytes32,bytes32[]),(bytes32,bytes32[]))",
+      "selector": "0x89ac07fa"
     },
     "transferOwnership": {
       "signature": "transferOwnership(address)",
       "selector": "0xf2fde38b"
     },
     "triggerOrderFromOutsideFor": {
-      "signature": "triggerOrderFromOutsideFor((bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),(bytes32,bytes32,address,bytes32,bytes32)[],bytes)",
-      "selector": "0x9ddbef44"
+      "signature": "triggerOrderFromOutsideFor((bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),(bytes32,bytes32,address,bytes32,bytes32)[],bytes,(bytes32,bytes32,bytes32,bytes32[]))",
+      "selector": "0x051d3826"
     },
     "triggerOrderFromSignalFromModule": {
-      "signature": "triggerOrderFromSignalFromModule((bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),(bytes32,bytes32,address,bytes32,bytes32)[],address)",
-      "selector": "0xddfd54e9"
+      "signature": "triggerOrderFromSignalFromModule((bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),(bytes32,bytes32,address,bytes32,bytes32)[],address,(bytes32,bytes32,bytes32,bytes32[])[])",
+      "selector": "0xaacbfc17"
     },
     "triggerOrderIdFor": {
       "signature": "triggerOrderIdFor(bytes32,bytes32,bytes32,bytes32)",

@@ -992,7 +992,7 @@
       "sources": {
         "rust": "crates/uvp-compiler/src/validate/mod.rs MAX_TASK_PATTERNS"
       },
-      "ruling": "单线登记（编译计数闸）：列宽族只约束单个标识符长度，计数维度无闸时 plan 输入可让编译期校验/产物规模无界增长；64 对真实计划留有余量且不与合约侧同族上限（能力表 256、依赖键 1024、selector 绑定 128）打架。go/ts 编译线无此闸。"
+      "ruling": "单线登记（编译计数闸）：列宽族只约束单个标识符长度，计数维度无闸时 plan 输入可让编译期校验/产物规模无界增长；64 对真实计划留有余量且不与合约侧同族上限（依赖键 1024）打架。go/ts 编译线无此闸。"
     },
     {
       "id": "stage-entries-max-count",
@@ -1003,7 +1003,7 @@
         "params": {
           "min": 0,
           "max": 256,
-          "scope": "每阶段至少编译一个 hook、最多声明一份能力表——256 与合约 MAX_SIGNAL_CAPABILITIES 同量级"
+          "scope": "每阶段至少编译一个 hook、最多声明一份能力表；能力表/绑定表已 Merkle 化（链上只存 capabilitiesRoot，表规模无合约上限），256 仅为本线编译计数闸的量级锚"
         }
       },
       "error": {
@@ -1141,15 +1141,6 @@
         "rust": "none",
         "go": "none",
         "ts": "mirrored:rule plan-dependencies-max-count"
-      }
-    },
-    {
-      "id": "signal-capability-count",
-      "surface": "signalCapabilities 条目 > 256 revert TooManySignalCapabilities（UVPPlanMetadataModule.MAX_SIGNAL_CAPABILITIES）",
-      "mirrors": {
-        "rust": "none",
-        "go": "none",
-        "ts": "mirrored（onchain-hook-plan signalCapabilityCountIssues：编译入口 compileOnchainHookPlan preflight 与制品边界 validateOnchainHookPlanArtifact 双边界同口径拒绝，MAX_SIGNAL_CAPABILITIES=256）"
       }
     },
     {

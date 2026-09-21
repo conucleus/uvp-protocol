@@ -4,7 +4,7 @@ import {
   dockDemoTargetName,
   dockProductionTargetDefinition,
 } from "./dock-demo.js";
-import { EMPTY_MERKLE_ROOT } from "../src/dock.js";
+import { EMPTY_MERKLE_ROOT, verifyMerkleProof } from "../src/dock.js";
 import test from "node:test";
 import {
   encodeAbiParameters,
@@ -35,9 +35,20 @@ import { hookPlanHashOf } from "../src/dock-commitments.js";
 import { compileOnchainHookPlan } from "../src/onchain/compile.js";
 import { hashOnchainPlanPayload } from "../src/onchain/hash/plan.js";
 import {
+  artifactCapabilitiesRoot,
+  capabilitiesRootOf,
+  capabilityTablesOf,
+  selectorBindingLeaf,
+  selectorBindingProof,
+  signalCapabilityLeaf,
+  signalCapabilityProof,
+} from "../src/onchain/capabilities-root.js";
+import {
   onchainSignalId,
   onchainSignalKey,
   onchainSourceId,
+  onchainStageId,
+  onchainSignalCapabilityHash,
 } from "../src/onchain/hash/route.js";
 import type { HookPlanArtifact } from "../src/types/index.js";
 
@@ -174,7 +185,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   const again = compileZhixuOnchainHookPlan(baseZhixu, demoManifest);
 
   assert.deepEqual(onchain, again);
-  assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v2");
+  assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v3");
   assert.equal(onchain.planId, sourcePlan.planId);
   assert.deepEqual(onchain.platform, sourcePlan.platform);
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
@@ -182,7 +193,28 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   // sourcePlanHash/planHash preimage 随定义内容变化；承诺公式本身冻结不变。
   assert.equal(
     onchain.planHash,
-    "0xb3549abeb41818702baf836a61faaee3bc16f86e35ce3d0481b9edac0f83837c",
+    "0x36369c30724fafbd88a1796ba9b3a7b6355eaf5379789753b619064185cc120f",
+  );
+  // capabilitiesRoot 是两表叶子的唯一承诺形态（v3 新增字段，随 planHash
+  // 一同钉死防漂移）：与生产公式 capabilitiesRootOf 逐字节一致。
+  assert.equal(
+    onchain.capabilitiesRoot,
+    "0x4b7926cdf597ce56cca5dc87d9c39270ef9fb95ebb59a81c3b6afb078c4357dd",
+  );
+  assert.equal(
+    onchain.capabilitiesRoot,
+    capabilitiesRootOf(
+      onchain.selectorBindings.map((binding) => ({
+        selectorStageId: binding.selectorStageId,
+        targetStageId: binding.targetStageId,
+      })),
+      onchain.signalCapabilities.map((capability) => ({
+        stageId: capability.stageId,
+        targetSourceId: capability.targetSourceId,
+        signalId: capability.signalId,
+        targetOrderRelation: capability.targetOrderRelation === "current" ? 0 : 1,
+      })),
+    ),
   );
   assert.deepEqual(onchain.selectorBindings, [
     {
@@ -484,7 +516,7 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   const args = toSolidityRegisterPlanArgs(onchain);
 
-  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v2");
+  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v3");
   assert.equal(args.sourcePlanId, onchain.planId);
   // 真比较：artifactHash 用 artifact 载荷公式独立重算，planHash 用 PlanCommit
   // runtime 公式独立重算——两边各自从原始字段推导，不再是同源引用恒等。
@@ -495,12 +527,12 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
     keccak256(
       encodeAbiParameters(
         parseAbiParameters(
-          "bytes32 domain, bytes32 hooksHash, bytes32 metadataHash, bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot",
+          "bytes32 domain, bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot",
         ),
         [
-          keccak256(stringToHex("uvp.plan.runtime.v2")),
+          keccak256(stringToHex("uvp.plan.runtime.v3")),
           args.hooksHash,
-          args.metadataHash,
+          args.capabilitiesRoot,
           args.dockRoutesRoot,
           args.dockInterfaceRoot,
         ],
@@ -510,7 +542,7 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
   assert.notEqual(args.planHash, args.artifactHash);
   assert.equal(args.hooksHash, hashSolidityRegisterHooks(args.hooks));
   assert.match(args.hooksHash, /^0x[0-9a-f]{64}$/);
-  assert.match(args.metadataHash, /^0x[0-9a-f]{64}$/);
+  assert.match(args.capabilitiesRoot, /^0x[0-9a-f]{64}$/);
   assert.equal(args.hooks[1]?.hookName, keccak256Hex("TIMEOUT"));
   assert.deepEqual(
     args.hooks[1]?.instructions.map((instruction) => instruction.op),
@@ -568,10 +600,10 @@ test("includes selector bindings in on-chain plan hash", () => {
   assert.notEqual(withBinding.planHash, withoutBinding.planHash);
 });
 
-test("selector bindings feed the Solidity metadata hash and runtime plan hash", () => {
-  // finalizePlan 以 keccak256(abi.encode(selectorBindings, signalCapabilities))
-  // 重算 metadataHash——selectorBindings 变化必须穿透 args.metadataHash 与
-  // PlanCommit runtime planHash，否则两步注册在 finalize 边 revert。
+test("capability tables feed the capabilitiesRoot and the runtime plan hash", () => {
+  // PlanCommit runtime hash 以 capabilitiesRoot 承诺两表（域分隔叶混编
+  // Merkle 树）——selectorBindings 变化必须穿透 args.capabilitiesRoot 与
+  // runtime planHash，否则 finalize 边的承诺对拍必然失配。
   const withBinding = toSolidityRegisterPlanArgs(
     compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest)),
   );
@@ -602,17 +634,60 @@ test("selector bindings feed the Solidity metadata hash and runtime plan hash", 
 
   assert.deepEqual(withoutBinding.selectorBindings, []);
   assert.deepEqual(withBinding.signalCapabilities, withoutBinding.signalCapabilities);
-  assert.notEqual(withBinding.metadataHash, withoutBinding.metadataHash);
+  assert.notEqual(withBinding.capabilitiesRoot, withoutBinding.capabilitiesRoot);
   assert.notEqual(withBinding.planHash, withoutBinding.planHash);
+  // 生产公式独立重算：根 = 两表全部域分隔叶的排序配对 Merkle 根（叶子
+  // 公式逐字节对齐 UVPPlanMetadataModule），成员资格由 proof 验证。
   assert.equal(
-    withBinding.metadataHash,
-    keccak256(
-      encodeAbiParameters(
-        parseAbiParameters(
-          "(bytes32 selectorStageId,bytes32 targetStageId)[] selectorBindings,(bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 targetOrderRelation)[] signalCapabilities",
-        ),
-        [withBinding.selectorBindings, withBinding.signalCapabilities],
+    withBinding.capabilitiesRoot,
+    capabilitiesRootOf(withBinding.selectorBindings, withBinding.signalCapabilities),
+  );
+  const bindingProof = selectorBindingProof(
+    withBinding.selectorBindings,
+    withBinding.signalCapabilities,
+    withBinding.selectorBindings[0]!.selectorStageId,
+    withBinding.selectorBindings[0]!.targetStageId,
+  );
+  assert.ok(bindingProof);
+  assert.ok(
+    verifyMerkleProof(
+      withBinding.capabilitiesRoot,
+      selectorBindingLeaf(
+        withBinding.selectorBindings[0]!.selectorStageId,
+        withBinding.selectorBindings[0]!.targetStageId,
       ),
+      bindingProof,
+    ),
+  );
+  // 能力侧叶子同样混编进同一棵树（relation=0 深叶抽验）。
+  const leafCapability = withBinding.signalCapabilities[0]!;
+  const capabilityProof = signalCapabilityProof(
+    withBinding.selectorBindings,
+    withBinding.signalCapabilities,
+    leafCapability.stageId,
+    leafCapability.targetSourceId,
+    leafCapability.signalId,
+    leafCapability.targetOrderRelation,
+  );
+  assert.ok(capabilityProof);
+  assert.ok(
+    verifyMerkleProof(
+      withBinding.capabilitiesRoot,
+      signalCapabilityLeaf(
+        leafCapability.stageId,
+        leafCapability.targetSourceId,
+        leafCapability.signalId,
+        leafCapability.targetOrderRelation,
+      ),
+      capabilityProof,
+    ),
+  );
+  // 根随表内容变化：同一张能力表换一个绑定叶子，根必须不同。
+  assert.notEqual(
+    withBinding.capabilitiesRoot,
+    capabilitiesRootOf(
+      withoutBinding.selectorBindings,
+      withBinding.signalCapabilities,
     ),
   );
 });
@@ -793,22 +868,140 @@ test("cross-stage dependency guard fires on deserialized artifacts and follows c
   assert.equal(rejectedIssues.length, 1);
 });
 
-test("rejects plans whose sendSignals vocabulary exceeds the gas-bounded capability cap", () => {
-  // sendSignals 总量编译为 signalCapabilities；超上限在编译与反序列化两
-  // 个边界同口径拒绝（合约逐条写存储的注册循环 gas 随表规模无界增长）。
+test("compiles capability tables beyond the retired gas caps into a verifiable capabilitiesRoot", () => {
+  // 256/128 上限随 Merkle 化退役（链上只承诺 root，finalize 与表规模脱钩）：
+  // 400 绑定 + 400 能力必须可编译出根，且深叶成员资格可由 proof 验证。
+  // stageId/sourceId 直接按 32 字节词构造（假身份）：本测试的对象是承诺
+  // 公式本身，不经过 DSL 编译（IR 层仍有 Rust 侧规模闸）。
+  const tableBindings = Array.from({ length: 400 }, (_, index) => ({
+    selectorStageId: keccak256Hex(`capability.selector-${index}`),
+    targetStageId: keccak256Hex(`capability.target-${index}`),
+  }));
+  const tableCapabilities = Array.from({ length: 400 }, (_, index) => ({
+    stageId: keccak256Hex(`capability.stage-${index}`),
+    targetSourceId: keccak256Hex(`capability.source-${index}`),
+    signalId: keccak256Hex(`task.stage.signal-${index}`),
+    targetOrderRelation: (index % 2 === 0 ? 0 : 1) as 0 | 1,
+  }));
+  const root = capabilitiesRootOf(tableBindings, tableCapabilities);
+  assert.notEqual(root, EMPTY_MERKLE_ROOT);
+  assert.match(root, /^0x[0-9a-f]{64}$/);
+
+  // 深叶抽验：800 叶的树深度为 10，取中部能力叶与首尾绑定叶验证
+  // signalCapabilityProof / selectorBindingProof + verifyMerkleProof。
+  const deepCapability = tableCapabilities[200]!;
+  const deepCapabilityProof = signalCapabilityProof(
+    tableBindings,
+    tableCapabilities,
+    deepCapability.stageId,
+    deepCapability.targetSourceId,
+    deepCapability.signalId,
+    deepCapability.targetOrderRelation,
+  );
+  assert.ok(deepCapabilityProof, "mid-table capability leaf must have a proof");
+  assert.ok(deepCapabilityProof.length >= 9, "800-leaf tree proofs must be deep");
+  assert.ok(
+    verifyMerkleProof(
+      root,
+      signalCapabilityLeaf(
+        deepCapability.stageId,
+        deepCapability.targetSourceId,
+        deepCapability.signalId,
+        deepCapability.targetOrderRelation,
+      ),
+      deepCapabilityProof,
+    ),
+  );
+  for (const binding of [tableBindings[0]!, tableBindings[399]!]) {
+    const proof = selectorBindingProof(
+      tableBindings,
+      tableCapabilities,
+      binding.selectorStageId,
+      binding.targetStageId,
+    );
+    assert.ok(proof);
+    assert.ok(
+      verifyMerkleProof(
+        root,
+        selectorBindingLeaf(binding.selectorStageId, binding.targetStageId),
+        proof,
+      ),
+    );
+  }
+  // 反例：同一词序换个 relation 词（0→1）即另一片叶子，原 proof 不得通过。
+  assert.ok(
+    !verifyMerkleProof(
+      root,
+      signalCapabilityLeaf(
+        deepCapability.stageId,
+        deepCapability.targetSourceId,
+        deepCapability.signalId,
+        (deepCapability.targetOrderRelation === 0 ? 1 : 0) as 0 | 1,
+      ),
+      deepCapabilityProof,
+    ),
+  );
+
+  // 编译边界同口径：制品的能力表扩到 400 条（假 sourceId/信号名）后按载荷
+  // 重签 planHash，artifact 边界不再有规模拒绝（旧 256 上限的镜像已删），
+  // toSolidityRegisterPlanArgs 对 400 条能力照常编译出同一根。
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   const template = onchain.signalCapabilities[0];
   assert.ok(template);
+  const expanded = Array.from({ length: 400 }, (_, index) => {
+    const targetSource = `bulk-source-${index}`;
+    const targetSignalName = `execution.main.bulk-${index}`;
+    const targetSourceId = onchainSourceId(targetSource);
+    const signalId = onchainSignalId(targetSignalName);
+    return {
+      ...template,
+      targetSource,
+      targetSourceId,
+      targetSignalName,
+      signalId,
+      capabilityHash: onchainSignalCapabilityHash(
+        template.stageId,
+        targetSourceId,
+        signalId,
+        template.targetOrderRelation,
+      ),
+    };
+  }).sort((left, right) => {
+      const bySource = left.targetSourceId < right.targetSourceId ? -1
+        : left.targetSourceId > right.targetSourceId ? 1 : 0;
+      if (bySource !== 0) {
+        return bySource;
+      }
+      return left.signalId < right.signalId ? -1
+        : left.signalId > right.signalId ? 1 : 0;
+    });
+  const { planHash: _staleHash, capabilitiesRoot: _staleRoot, ...payload } = onchain;
+  const solidityBindings = onchain.selectorBindings.map((binding) => ({
+    selectorStageId: binding.selectorStageId,
+    targetStageId: binding.targetStageId,
+  }));
+  const solidityCapabilities = expanded.map((capability) => ({
+    stageId: capability.stageId,
+    targetSourceId: capability.targetSourceId,
+    signalId: capability.signalId,
+    targetOrderRelation: capability.targetOrderRelation === "current" ? (0 as const) : (1 as const),
+  }));
+  const expandedRoot = capabilitiesRootOf(solidityBindings, solidityCapabilities);
+  const expandedPayload = {
+    ...payload,
+    signalCapabilities: expanded,
+    capabilitiesRoot: expandedRoot,
+  };
+  const expandedArtifact = {
+    ...expandedPayload,
+    planHash: hashOnchainPlanPayload(expandedPayload),
+  };
+  assert.deepEqual(validateOnchainHookPlanArtifact(expandedArtifact), []);
+  const expandedArgs = toSolidityRegisterPlanArgs(expandedArtifact);
+  assert.equal(expandedArgs.signalCapabilities.length, 400);
   assert.equal(
-    validateOnchainHookPlanArtifact({
-      ...onchain,
-      signalCapabilities: Array.from({ length: 257 }, (_, index) => ({
-        ...template,
-        targetSource: `buyer-${index}`,
-        targetSourceId: onchainSourceId(`buyer-${index}`),
-      })),
-    }).some((issue) => /signal capabilities 257 exceed the documented limit 256/.test(issue)),
-    true,
+    expandedArgs.capabilitiesRoot,
+    capabilitiesRootOf(expandedArgs.selectorBindings, expandedArgs.signalCapabilities),
   );
 });
 
@@ -882,7 +1075,7 @@ test("rejects invalid on-chain HookPlan artifact shapes", () => {
 
   assert.deepEqual(
     validateOnchainHookPlanArtifact({ ...onchain, schemaVersion: "wrong" }),
-    ["schemaVersion must be uvp.onchainHookPlan.v2"],
+    ["schemaVersion must be uvp.onchainHookPlan.v3"],
   );
   assert.match(
     validateOnchainHookPlanArtifact({
@@ -2450,25 +2643,55 @@ test("hook dependencies must mirror the SIGNAL atom key set (M21 mirror)", () =>
   );
 });
 
-test("rejects selector binding tables beyond the gas-bounded cap (M24 mirror)", () => {
-  // selectorBindings 超上限：finalizePlan 逐条写存储的注册循环 gas 随表
-  // 规模无界增长（合约 TooManySelectorBindings）——反序列化边界同口径拒绝。
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
-  const template = onchain.selectorBindings[0];
-  assert.ok(template);
-  const oversized = Array.from({ length: 129 }, (_, index) => {
-    const targetStageIdentifier = `execution.target-${index}`;
-    return {
-      ...template,
-      targetStageIdentifier,
-      targetStageId: keccak256Hex(targetStageIdentifier),
-    };
-  });
+test("capabilitiesRoot varies with table contents and pins empty tables to EMPTY_MERKLE_ROOT", () => {
+  // 旧的 selector-binding 128 上限（M24 镜像）随 Merkle 化退役：表内容改由
+  // capabilitiesRoot 承诺——空表钉 EMPTY_MERKLE_ROOT，任何叶子变化都改根。
+  assert.equal(capabilitiesRootOf([], []), EMPTY_MERKLE_ROOT);
+
+  // 绑定侧：同一能力表增删一个绑定叶，根随之变化（真实编译产物）。
+  const withBinding = compileOnchainHookPlan(
+    compileZhixuHookPlan(baseZhixu, demoManifest),
+  );
+  const withoutBinding = compileOnchainHookPlan(
+    compileZhixuHookPlan(
+      {
+        ...baseZhixu,
+        spec: {
+          ...baseZhixu.spec,
+          taskPatterns: baseZhixu.spec.taskPatterns.map((task) =>
+            task.name !== "selector"
+              ? task
+              : {
+                  ...task,
+                  stages: task.stages.map((stage) => ({
+                    ...stage,
+                    selectedStages: [],
+                  })),
+                },
+          ),
+        },
+      },
+      demoManifest,
+    ),
+  );
+  assert.deepEqual(withoutBinding.selectorBindings, []);
+  assert.deepEqual(withBinding.signalCapabilities, withoutBinding.signalCapabilities);
+  assert.notEqual(withBinding.capabilitiesRoot, withoutBinding.capabilitiesRoot);
+  assert.notEqual(withoutBinding.capabilitiesRoot, EMPTY_MERKLE_ROOT);
+
+  // 能力侧：同一绑定表换一片能力叶（relation 翻转），根随之变化。
+  const tables = capabilityTablesOf(withoutBinding);
+  const flipped = tables.signalCapabilities.map((capability, index) =>
+    index === 0
+      ? { ...capability, targetOrderRelation: (capability.targetOrderRelation === 0 ? 1 : 0) as 0 | 1 }
+      : capability,
+  );
+  assert.notEqual(
+    capabilitiesRootOf(tables.selectorBindings, flipped),
+    withoutBinding.capabilitiesRoot,
+  );
   assert.equal(
-    validateOnchainHookPlanArtifact({
-      ...onchain,
-      selectorBindings: oversized,
-    }).some((issue) => /selector bindings 129 exceed the documented limit 128/.test(issue)),
-    true,
+    withBinding.capabilitiesRoot,
+    artifactCapabilitiesRoot(withBinding),
   );
 });

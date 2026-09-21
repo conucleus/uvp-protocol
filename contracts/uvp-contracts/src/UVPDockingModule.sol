@@ -295,7 +295,8 @@ contract UVPDockingModule {
         DockInterfaceProofV2 calldata interfaceProof,
         DockInputBindingArg[] calldata inputs,
         DockOutputBindingArg[] calldata outputs,
-        EntrancePermitV2 calldata permit
+        EntrancePermitV2 calldata permit,
+        IUVPStateMachineCore.FactAttribution[] calldata outputAttributions
     ) external returns (bool opened) {
         // 1. 父订单存在。
         if (!stateMachine.orderExists(request.localPlanId, request.localOrderId)) {
@@ -424,14 +425,28 @@ contract UVPDockingModule {
         //     (targetSourceId, targetSignalId)（各自 keccak）分属不同派生域，
         //     链上无法从 word 复原两者相等——不钉词表时，已提交 route 的
         //     发布者可错配绑定，把目标接口从未通过端口暴露的事实镜像进
-        //     父单。无任何 capability 声明的手工目标 plan 与 mint/output
-        //     词表闸同口径放行。
-        if (planMetadataModule.planSignalCapabilityCount(request.targetPlanId) != 0) {
+        //     父单。成员资格由 outputAttributions 逐项携 proof 自证（叶子
+        //     由承诺输入重算，调用方不得自报叶值）；无任何 capability 声明
+        //     的手工目标 plan 与 mint/output 词表闸同口径放行。
+        if (planMetadataModule.hasCapabilityVocabulary(request.targetPlanId)) {
+            if (outputAttributions.length != outputs.length) {
+                revert DockOutputFactNotDeclared(
+                    request.targetPlanId, bytes32(0), bytes32(0)
+                );
+            }
             for (uint256 i = 0; i < outputs.length; i++) {
+                IUVPStateMachineCore.FactAttribution calldata attribution = outputAttributions[i];
                 if (
-                    planMetadataModule.currentOrderFactStage(
-                            request.targetPlanId, outputs[i].targetSourceId, outputs[i].targetSignalId
-                        ) == bytes32(0)
+                    attribution.sourceId != outputs[i].targetSourceId || attribution.signalId != outputs[i].targetSignalId
+                        || attribution.stageId == bytes32(0)
+                        || !planMetadataModule.verifySignalCapability(
+                            request.targetPlanId,
+                            attribution.stageId,
+                            outputs[i].targetSourceId,
+                            outputs[i].targetSignalId,
+                            0,
+                            attribution.capabilityProof
+                        )
                 ) {
                     revert DockOutputFactNotDeclared(
                         request.targetPlanId, outputs[i].targetSourceId, outputs[i].targetSignalId
@@ -677,7 +692,14 @@ contract UVPDockingModule {
     // submitDockedSignal
     // ------------------------------------------------------------------
 
-    function submitDockedSignal(bytes32 dockInstanceId, bytes32 outputBindingHash) external returns (bool submitted) {
+    /// output 镜像回写父单。本地事实键的词表成员资格与属主阶段由调用方
+    /// 携 proof 自证（证明材料是公开编译产物，keeper 无特权）。
+    function submitDockedSignal(
+        bytes32 dockInstanceId,
+        bytes32 outputBindingHash,
+        IUVPStateMachineCore.FactAttribution calldata attribution,
+        IUVPStateMachineCore.SelectorBindingProof calldata selectorBinding
+    ) external returns (bool submitted) {
         ActiveDockV2 storage dock = _docks[dockInstanceId];
         if (!dock.exists) {
             revert DockNotOpened(dockInstanceId);
@@ -750,7 +772,9 @@ contract UVPDockingModule {
             binding.localSignalId,
             payloadHash,
             idempotencyKey,
-            parentCreator
+            parentCreator,
+            attribution,
+            selectorBinding
         );
 
         emit DockOutputSubmitted(

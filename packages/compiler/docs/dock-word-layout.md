@@ -50,6 +50,8 @@ golden 向量由 `pnpm --filter @uvp-eth/compiler generate:dock-fixtures` 生成
 | DOMAIN_INPUT_IDEMPOTENCY | `UVP_DOCK_INPUT_IDEMPOTENCY_V1` |
 | DOMAIN_OUTPUT_IDEMPOTENCY | `UVP_DOCK_OUTPUT_IDEMPOTENCY_V1` |
 | DOMAIN_SOURCE_FACT_SET | `UVP_DOCK_SOURCE_FACT_SET_V1` |
+| SIGNAL_CAPABILITY_LEAF_DOMAIN | `UVP_SIGNAL_CAPABILITY_V1` |
+| SELECTOR_BINDING_LEAF_DOMAIN | `UVP_SELECTOR_BINDING_V1` |
 | HOOK_PLAN_ID_DOMAIN | `uvp:hook-plan-id:v1`（canonical JSON 域） |
 | HOOK_PLAN_HASH_DOMAIN | `uvp:hook-plan-artifact:v1`（canonical JSON 域） |
 
@@ -187,10 +189,34 @@ planHash 载荷 = 最终制品全部字段 + `source`（canonical 化的定义�
 制品边界对其缺失/非 canonical 形态响亮拒绝并按携带字段重算 planHash——
 "同一 plan 唯一字节数组形态"的承诺以它随制品下发为前提。
 `uvp:onchain-hook-plan-artifact:v1`
-（onchain 制品 planHash）与 `uvp.plan.runtime.v2`（PlanCommit 五域运行时
-哈希，`keccak256(abi.encode(...))` 形态）见 `onchain-hook-plan.ts`。
+（onchain 制品 planHash）与 `uvp.plan.runtime.v3`（PlanCommit 五域运行时
+哈希，`keccak256(abi.encode(...))` 形态，第 3 word 为 §4.7 的
+capabilitiesRoot）见 `src/onchain/hash/plan.ts` 与
+`src/onchain/solidity/registration.ts`。
 
-### 4.7 EIP-712 entrance permit（V2 typehash）
+### 4.7 能力树（capabilitiesRoot）
+
+```
+signalCapabilityLeaf_v1 = H(UVP_SIGNAL_CAPABILITY_V1; stageId, targetSourceId,
+                            signalId, u256(relation))
+selectorBindingLeaf_v1  = H(UVP_SELECTOR_BINDING_V1; selectorStageId, targetStageId)
+capabilitiesRoot        = merkle(selectorBindings[].leaf ++ signalCapabilities[].leaf)
+```
+
+能力表与绑定表以域分隔叶混编进同一棵 §1 排序配对 Merkle 树（域串防
+跨表叶混淆）；`relation`：current=0、triggerOrigin=1（u256 word）。各
+分量 word 与制品身份同派生：`stageId = keccak(stageIdentifier)`、
+`targetSourceId = keccak(source)`、`signalId = keccak(task.stage.signal)`、
+`selectorStageId`/`targetStageId = keccak(stageIdentifier)`。两表皆空时
+root = `EMPTY_MERKLE_ROOT`。
+
+链上只存 root：`finalizePlan` 只收 planId，注册成本与表规模脱钩（能力
+表/绑定表无合约上限），成员资格由使用方按"字段重算叶 + 携 proof"验
+证。实现 = 本包 `src/onchain/capabilities-root.ts`
+（`capabilitiesRootOf` / `signalCapabilityProof` / `selectorBindingProof`），
+叶子公式与 `UVPPlanMetadataModule` 逐字节一致。
+
+### 4.8 EIP-712 entrance permit（V2 typehash）
 
 ```
 typehash = UVPDockEntrancePermitV2(bytes32 targetPlanId,bytes32 targetEntrancePortId,

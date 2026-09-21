@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPDerivedSignalModule",
-  "abiVersion": "0.2",
+  "abiVersion": "0.3",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPDerivedSignalModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPDerivedSignalModule.sol/UVPDerivedSignalModule.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x86864b41e69e0c0e6688fc95f92867ec04136564de4ff054a6bcfee05c44dc6c",
-    "bytecodeHash": "0x8bb852f07a11f1bc3d505157ba4614e05397ab67fd871ea5bedf2f23cd109874",
-    "deployedBytecodeHash": "0x3099d6fe401e4ecbcba5b940b7e0e7a1a91f9204b2bc6b783554e2d1ed3e1b4b",
-    "artifactHash": "0xa9854c888f82ab26f3dee9836ddd797f1b46c1516828ecd1fd58134868949e3c"
+    "abiHash": "0xcbe8caa1b0317ea330d699602117759babb4d317166fe3aa67508ab7d9a5ffb7",
+    "bytecodeHash": "0x68066fe60dc81f7e9b11247b7b7fe2b645afab36a423c5a697288702a0a79bc7",
+    "deployedBytecodeHash": "0x2d8f39be686b1439b31973a988a006c291dd1d1d876ba3764716ff74f02275b8",
+    "artifactHash": "0x683060c0e1ddbae45fd4d55dcf917dad1038267793d033c7bee4644e251c86b9"
   },
   "events": {
     "DerivedSignalSubmitted": {
@@ -25,6 +25,10 @@
       "signature": "DOMAIN_SEPARATOR()",
       "selector": "0x3644e515"
     },
+    "SIGNAL_TARGET_CURRENT_ORDER": {
+      "signature": "SIGNAL_TARGET_CURRENT_ORDER()",
+      "selector": "0x06b6c489"
+    },
     "derivedSignalDigest": {
       "signature": "derivedSignalDigest((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32),address,uint256)",
       "selector": "0x33ffaf86"
@@ -34,12 +38,12 @@
       "selector": "0x37b416d8"
     },
     "submitDerivedSignal": {
-      "signature": "submitDerivedSignal((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32),address)",
-      "selector": "0xd294cfff"
+      "signature": "submitDerivedSignal((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32),address,(bytes32[],bytes32[],(bytes32,bytes32[])))",
+      "selector": "0x4298b4ac"
     },
     "submitDerivedSignalFor": {
-      "signature": "submitDerivedSignalFor((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32),address,uint256,bytes)",
-      "selector": "0xb07108cd"
+      "signature": "submitDerivedSignalFor((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32),address,uint256,bytes,(bytes32[],bytes32[],(bytes32,bytes32[])))",
+      "selector": "0x3b43fe54"
     }
   }
 }

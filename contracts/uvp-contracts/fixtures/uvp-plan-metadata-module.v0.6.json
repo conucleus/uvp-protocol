@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "uvp-eth.contractAbiFixture.v2",
+  "contractName": "UVPPlanMetadataModule",
+  "abiVersion": "0.6",
+  "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPPlanMetadataModule.sol",
+  "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPPlanMetadataModule.sol/UVPPlanMetadataModule.json",
+  "compiler": {
+    "name": "solc",
+    "version": "0.8.24+commit.e11b9ed9"
+  },
+  "hashes": {
+    "abiHash": "0x735e70b1961407c66b4018be723c96ff144d864bfa5e9d6f1666754b970298ed",
+    "bytecodeHash": "0xfc934a14ca77c3486e62e517bc9ff23166940a7112f1c4fb2e44ef4698512039",
+    "deployedBytecodeHash": "0xab239eda12c94d73cdcad76505f22d2898328ce9c733ec496acd40d671c70130",
+    "artifactHash": "0x6392c313216e1f44563ddc265ce3a0abba8e59c8c20224ad114645af1e51eaa5"
+  },
+  "events": {},
+  "functions": {
+    "SIGNAL_TARGET_CURRENT_ORDER": {
+      "signature": "SIGNAL_TARGET_CURRENT_ORDER()",
+      "selector": "0x06b6c489"
+    },
+    "SIGNAL_TARGET_TRIGGER_ORIGIN": {
+      "signature": "SIGNAL_TARGET_TRIGGER_ORIGIN()",
+      "selector": "0x909f38ec"
+    },
+    "capabilitiesRoot": {
+      "signature": "capabilitiesRoot(bytes32)",
+      "selector": "0x773e7fcb"
+    },
+    "dockInterfaceRoot": {
+      "signature": "dockInterfaceRoot(bytes32)",
+      "selector": "0x1a31626a"
+    },
+    "dockRoutesRoot": {
+      "signature": "dockRoutesRoot(bytes32)",
+      "selector": "0x21d280aa"
+    },
+    "finalizePlanMetadata": {
+      "signature": "finalizePlanMetadata(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0xed4aa3d8"
+    },
+    "hasCapabilityVocabulary": {
+      "signature": "hasCapabilityVocabulary(bytes32)",
+      "selector": "0x4f2d9405"
+    },
+    "planMetadataFinalized": {
+      "signature": "planMetadataFinalized(bytes32)",
+      "selector": "0x855a4928"
+    },
+    "selectorBindingLeaf": {
+      "signature": "selectorBindingLeaf(bytes32,bytes32)",
+      "selector": "0x23ae212d"
+    },
+    "signalCapabilityLeaf": {
+      "signature": "signalCapabilityLeaf(bytes32,bytes32,bytes32,uint8)",
+      "selector": "0xf05337df"
+    },
+    "stateMachine": {
+      "signature": "stateMachine()",
+      "selector": "0x37b416d8"
+    },
+    "verifyDockInterfacePort": {
+      "signature": "verifyDockInterfacePort(bytes32,bytes32,bytes32,uint8,bytes32,bytes32,bytes32[])",
+      "selector": "0xe12c5912"
+    },
+    "verifyDockRoute": {
+      "signature": "verifyDockRoute(bytes32,bytes32,bytes32[])",
+      "selector": "0xdc0394b3"
+    },
+    "verifySignalCapability": {
+      "signature": "verifySignalCapability(bytes32,bytes32,bytes32,bytes32,uint8,bytes32[])",
+      "selector": "0xda8dc64a"
+    },
+    "verifyStageSelectorBinding": {
+      "signature": "verifyStageSelectorBinding(bytes32,bytes32,bytes32,bytes32[])",
+      "selector": "0xcf0de047"
+    }
+  }
+}

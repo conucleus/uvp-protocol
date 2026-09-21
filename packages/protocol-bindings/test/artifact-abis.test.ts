@@ -7,7 +7,6 @@ import { describe, it } from "node:test";
 import { toEventHash, type Abi, type AbiEvent } from "viem";
 import {
   buildCompactHookFlags,
-  FINALIZE_PLAN_ERRORS_ABI,
   HOOK_FLAG_EMIT_READY,
   HOOK_FLAG_ORDER_TRIGGER_DOCK,
   HOOK_FLAG_ORDER_TRIGGER_MINT,
@@ -21,10 +20,6 @@ const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const artifactPath = resolve(
   packageDir,
   "../../contracts/uvp-contracts/out/UVPStateMachine.sol/UVPStateMachine.json",
-);
-const planMetadataInterfaceArtifactPath = resolve(
-  packageDir,
-  "../../contracts/uvp-contracts/out/IUVPPlanMetadataModule.sol/IUVPPlanMetadataModule.json",
 );
 
 interface FoundryArtifact {
@@ -80,37 +75,44 @@ describe("generated artifact ABI bindings", () => {
     assert.deepEqual(UVP_STATE_MACHINE_ARTIFACT_ABI, artifact.abi);
   });
 
-  it("exposes the interface-declared finalizePlan size-gate errors for revert decoding", async (t) => {
+  it("keeps finalizePlan free of capability-table size-gate errors", async (t) => {
     if (!artifactAvailable) {
       return t.skip("forge artifacts not built");
     }
+    // 前提钉住：两表 Merkle 化后能力表/绑定表不再有链上规模闸——
+    // TooManySelectorBindings / TooManySignalCapabilities 若重新出现在
+    // 主 ABI（或手写镜像）里，说明合约侧回退到了枚举式注册，本包的
+    // capabilitiesRoot 工具面随之失效，必须红。
     const stateMachineArtifact = JSON.parse(
       await readFile(artifactPath, "utf8"),
     ) as FoundryArtifact;
-    // 前提钉住：这组错误经接口限定名 revert，永不在 UVPStateMachine 产物
-    // ABI 里——切片存在的原因失效时（错误迁回主合约）本测试红，提示删除
-    // 切片而不是让两处重复声明漂移。
-    const stateMachineErrorNames = new Set(
-      stateMachineArtifact.abi
-        .filter((item) => item.type === "error")
-        .map((item) => item.name),
-    );
-    for (const entry of FINALIZE_PLAN_ERRORS_ABI) {
-      assert.equal(entry.type, "error");
+    const artifactErrorNames = stateMachineArtifact.abi
+      .filter((item) => item.type === "error")
+      .map((item) => item.name);
+    for (const name of [
+      "TooManySelectorBindings",
+      "TooManySignalCapabilities",
+    ]) {
       assert.equal(
-        stateMachineErrorNames.has(entry.name),
+        artifactErrorNames.includes(name),
         false,
-        `${entry.name} moved into the UVPStateMachine artifact ABI; drop it from FINALIZE_PLAN_ERRORS_ABI`,
+        `${name} reappeared in the UVPStateMachine artifact ABI; the capability tables regressed to on-chain size gates`,
+      );
+      assert.equal(
+        STATE_MACHINE_ABI.some(
+          (item) =>
+            typeof item !== "string" && item.name.startsWith("TooMany"),
+        ),
+        false,
+        "handwritten ABI must not mirror capability-table size-gate errors",
       );
     }
-
-    const interfaceArtifact = JSON.parse(
-      await readFile(planMetadataInterfaceArtifactPath, "utf8"),
-    ) as FoundryArtifact;
-    const interfaceErrors = interfaceArtifact.abi.filter(
-      (item) => item.type === "error",
-    );
-    assert.deepEqual(FINALIZE_PLAN_ERRORS_ABI, interfaceErrors);
+    // finalizePlan 是单参数边界：表内容不再随 finalize 提交。
+    const finalizePlan = stateMachineArtifact.abi.find(
+      (item) => item.type === "function" && item.name === "finalizePlan",
+    ) as { inputs: readonly unknown[] } | undefined;
+    assert.ok(finalizePlan, "artifact ABI must contain finalizePlan");
+    assert.equal(finalizePlan.inputs.length, 1);
   });
 
   it("keeps the handwritten frozen STATE_MACHINE_ABI a subset of the artifact ABI", async (t) => {
@@ -159,7 +161,7 @@ describe("generated artifact ABI bindings", () => {
       if (artifactItem === undefined) {
         continue; // 已由 subset 钉覆盖
       }
-      const handwritten = (item.outputs ?? []) as readonly {
+      const handwritten = ((item as { outputs?: unknown }).outputs ?? []) as {
         name?: string;
         type: string;
       }[];

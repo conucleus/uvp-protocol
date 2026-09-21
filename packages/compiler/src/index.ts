@@ -104,6 +104,21 @@ export {
   HOOK_FLAG_ORDER_TRIGGER_MINT,
   solidityHookFlags,
 } from "./onchain/solidity/registration.js";
+// 能力树（capabilitiesRoot）权威实现：域分隔叶、树根、成员资格证明与
+// 事实属主自证材料。链上叶子公式与 UVPPlanMetadataModule 逐字节一致。
+export {
+  artifactCapabilitiesRoot,
+  capabilityLeaves,
+  capabilityTablesOf,
+  capabilitiesRootOf,
+  factAttribution,
+  SELECTOR_BINDING_LEAF_DOMAIN,
+  selectorBindingLeaf,
+  selectorBindingProof,
+  SIGNAL_CAPABILITY_LEAF_DOMAIN,
+  signalCapabilityLeaf,
+  signalCapabilityProof,
+} from "./onchain/capabilities-root.js";
 export {
   COMPILER_NAME,
   COMPILER_VERSION,

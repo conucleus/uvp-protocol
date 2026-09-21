@@ -10,6 +10,7 @@ import {
   OnchainHookPlanArtifactValidationError,
 } from "../validate/artifact.js";
 import { ZERO_HASH, onchainHookName } from "../hash/route.js";
+import { capabilitiesRootOf } from "../capabilities-root.js";
 import { assertNever } from "../shape.js";
 import type {
   HexString,
@@ -24,12 +25,12 @@ import type {
 } from "../../types/index.js";
 
 /**
- * Solidity 注册边界（自 onchain-hook-plan.ts 原样迁入）：commitPlan +
- * finalizePlan 两步注册流的 calldata 组装、CompactHook flags、hooksHash /
- * metadataHash / PlanCommit runtime hash 的 ABI 编码冻结口径。
+ * Solidity 注册边界：commitPlan + finalizePlan 两步注册流的 calldata 组装、
+ * CompactHook flags、hooksHash / capabilitiesRoot / PlanCommit runtime hash
+ * 的 ABI 编码冻结口径。
  */
 
-const PLAN_RUNTIME_HASH_DOMAIN_V2 = "uvp.plan.runtime.v2";
+const PLAN_RUNTIME_HASH_DOMAIN = "uvp.plan.runtime.v3";
 
 /** CompactHook flags 位定义。 */
 export const HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
@@ -97,20 +98,17 @@ export function toSolidityRegisterPlanArgs(
     ),
   }));
   const hooksHash = hashSolidityHooks(hooks);
-  const metadataHash = hashSolidityPlanMetadata(
-    selectorBindings,
-    signalCapabilities,
-  );
-  // PlanCommit runtime hash 覆盖 dock roots。
+  const capabilitiesRoot = capabilitiesRootOf(selectorBindings, signalCapabilities);
+  // PlanCommit runtime hash 覆盖能力树与 dock roots。
   const planHash = keccak256(
     encodeAbiParameters(
       parseAbiParameters(
-        "bytes32 domain, bytes32 hooksHash, bytes32 metadataHash, bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot",
+        "bytes32 domain, bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot",
       ),
       [
-        keccak256(stringToHex(PLAN_RUNTIME_HASH_DOMAIN_V2)),
+        keccak256(stringToHex(PLAN_RUNTIME_HASH_DOMAIN)),
         hooksHash,
-        metadataHash,
+        capabilitiesRoot,
         artifact.dockRoutesRoot,
         artifact.dockInterfaceRoot,
       ],
@@ -124,7 +122,7 @@ export function toSolidityRegisterPlanArgs(
     planHash,
     artifactHash: artifact.planHash,
     hooksHash,
-    metadataHash,
+    capabilitiesRoot,
     dockRoutesRoot: artifact.dockRoutesRoot,
     dockInterfaceRoot: artifact.dockInterfaceRoot,
     hooks,

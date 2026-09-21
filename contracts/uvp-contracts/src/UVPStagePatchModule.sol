@@ -6,15 +6,20 @@ import {ECDSA} from "./libraries/ECDSA.sol";
 import {UVPSignatures} from "./libraries/UVPSignatures.sol";
 
 interface IUVPPlanMetadataModuleForStagePatch {
-    function isStageSelectorBound(bytes32 planId, bytes32 selectorStageId, bytes32 targetStageId)
-        external
-        view
-        returns (bool);
-    function stageSignalCapabilityCount(bytes32 planId, bytes32 stageId) external view returns (uint256);
-    function stageSignalCapabilityAt(bytes32 planId, bytes32 stageId, uint256 index)
-        external
-        view
-        returns (bytes32 targetSourceId, bytes32 signalId, uint8 targetOrderRelation);
+    function verifyStageSelectorBinding(
+        bytes32 planId,
+        bytes32 selectorStageId,
+        bytes32 targetStageId,
+        bytes32[] calldata proof
+    ) external view returns (bool);
+    function verifySignalCapability(
+        bytes32 planId,
+        bytes32 stageId,
+        bytes32 targetSourceId,
+        bytes32 signalId,
+        uint8 relation,
+        bytes32[] calldata proof
+    ) external view returns (bool);
 }
 
 contract UVPStagePatchModule {
@@ -42,6 +47,16 @@ contract UVPStagePatchModule {
         bytes32 patchHash;
         uint256 patchNonce;
         string manifestURI;
+    }
+
+    /// 目标阶段 relation=0 能力事实的携证声明：patch 的委任与治理时序
+    /// （StageAlreadyHasSignal / 上一执行者回退）需要枚举该阶段的全部
+    /// 能力键——能力树形态下枚举只能由调用方（编译产物持有者）携证供表，
+    /// 每条经 verifySignalCapability 验证后参与治理判定。
+    struct StageCapabilityFact {
+        bytes32 sourceId;
+        bytes32 signalId;
+        bytes32[] capabilityProof;
     }
 
     struct ActiveStageExecutorPatch {
@@ -90,6 +105,8 @@ contract UVPStagePatchModule {
     error StageResourcePatchNonceNotIncreasing(
         bytes32 orderId, bytes32 targetStageId, bytes32 resourceKey, uint256 previousNonce, uint256 patchNonce
     );
+    /// 携证能力事实验不过（键不在目标阶段的能力表内）或同键重复声明。
+    error StageCapabilityFactInvalid(bytes32 planId, bytes32 stageId, bytes32 sourceId, bytes32 signalId);
     error StageSelectorBindingNotFound(bytes32 planId, bytes32 selectorStageId, bytes32 targetStageId);
     error UnauthorizedStageExecutorPatchSelector(bytes32 orderId, bytes32 selectorStageId, address selector);
     error UnauthorizedStageResourcePatchSelector(bytes32 orderId, bytes32 selectorStageId, address selector);
@@ -178,8 +195,14 @@ contract UVPStagePatchModule {
         stateMachine = IUVPStateMachineCore(stateMachineAddress);
     }
 
-    function applyStageExecutorPatch(bytes32 planId, bytes32 orderId, StageExecutorPatch calldata patch) external {
-        _applyStageExecutorPatch(planId, orderId, patch, msg.sender, address(0));
+    function applyStageExecutorPatch(
+        bytes32 planId,
+        bytes32 orderId,
+        StageExecutorPatch calldata patch,
+        IUVPStateMachineCore.SelectorBindingProof calldata bindingProof,
+        StageCapabilityFact[] calldata stageFacts
+    ) external {
+        _applyStageExecutorPatch(planId, orderId, patch, msg.sender, address(0), bindingProof, stageFacts);
     }
 
     function applyStageExecutorPatchFor(
@@ -189,7 +212,9 @@ contract UVPStagePatchModule {
         address selector,
         uint256 deadline,
         bytes calldata selectorSignature,
-        bytes calldata previousExecutorSignature
+        bytes calldata previousExecutorSignature,
+        IUVPStateMachineCore.SelectorBindingProof calldata bindingProof,
+        StageCapabilityFact[] calldata stageFacts
     ) external {
         if (block.timestamp > deadline) {
             revert ExpiredStageExecutorPatchSignature(deadline);
@@ -209,11 +234,17 @@ contract UVPStagePatchModule {
             recoveredPreviousExecutor = _recoverStageExecutorPatchSigner(digest, previousExecutorSignature);
         }
 
-        _applyStageExecutorPatch(planId, orderId, patch, selector, recoveredPreviousExecutor);
+        _applyStageExecutorPatch(planId, orderId, patch, selector, recoveredPreviousExecutor, bindingProof, stageFacts);
     }
 
-    function applyStageResourcePatch(bytes32 planId, bytes32 orderId, StageResourcePatch calldata patch) external {
-        _applyStageResourcePatch(planId, orderId, patch, msg.sender);
+    function applyStageResourcePatch(
+        bytes32 planId,
+        bytes32 orderId,
+        StageResourcePatch calldata patch,
+        IUVPStateMachineCore.SelectorBindingProof calldata bindingProof,
+        StageCapabilityFact[] calldata stageFacts
+    ) external {
+        _applyStageResourcePatch(planId, orderId, patch, msg.sender, bindingProof, stageFacts);
     }
 
     function applyStageResourcePatchFor(
@@ -222,7 +253,9 @@ contract UVPStagePatchModule {
         StageResourcePatch calldata patch,
         address selector,
         uint256 deadline,
-        bytes calldata signature
+        bytes calldata signature,
+        IUVPStateMachineCore.SelectorBindingProof calldata bindingProof,
+        StageCapabilityFact[] calldata stageFacts
     ) external {
         if (block.timestamp > deadline) {
             revert ExpiredStageResourcePatchSignature(deadline);
@@ -238,7 +271,7 @@ contract UVPStagePatchModule {
             revert InvalidStageResourcePatchSignature(selector, recoveredSigner);
         }
 
-        _applyStageResourcePatch(planId, orderId, patch, selector);
+        _applyStageResourcePatch(planId, orderId, patch, selector, bindingProof, stageFacts);
     }
 
     function activeStageExecutor(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
@@ -368,9 +401,12 @@ contract UVPStagePatchModule {
         bytes32 orderId,
         StageExecutorPatch calldata patch,
         address selector,
-        address previousExecutorSigner
+        address previousExecutorSigner,
+        IUVPStateMachineCore.SelectorBindingProof calldata bindingProof,
+        StageCapabilityFact[] calldata stageFacts
     ) private {
-        _validateStageExecutorPatch(planId, orderId, patch, selector);
+        _validateStageExecutorPatch(planId, orderId, patch, selector, bindingProof);
+        _requireValidStageFacts(planId, patch.targetStageId, stageFacts);
 
         ActiveStageExecutorPatch storage activePatch = _activeStageExecutorPatches[planId][orderId][patch.targetStageId];
         if (patch.patchNonce <= activePatch.patchNonce) {
@@ -378,7 +414,7 @@ contract UVPStagePatchModule {
                 orderId, patch.targetStageId, activePatch.patchNonce, patch.patchNonce
             );
         }
-        _validateStageExecutorPatchMode(planId, orderId, patch, activePatch, previousExecutorSigner);
+        _validateStageExecutorPatchMode(planId, orderId, patch, activePatch, previousExecutorSigner, stageFacts);
 
         activePatch.executor = patch.executor;
         activePatch.role = patch.role;
@@ -400,25 +436,47 @@ contract UVPStagePatchModule {
             patch.patchNonce,
             patch.metadataURI
         );
-        _delegateStageExecutorSignals(planId, orderId, patch);
+        _delegateStageExecutorSignals(planId, orderId, patch, stageFacts);
     }
 
-    function _delegateStageExecutorSignals(bytes32 planId, bytes32 orderId, StageExecutorPatch calldata patch) private {
-        IUVPPlanMetadataModuleForStagePatch metadata = _planMetadata();
-        uint256 capabilityCount = metadata.stageSignalCapabilityCount(planId, patch.targetStageId);
+    /// 携证能力事实表整表验证：每条都必须是目标阶段能力表内的 relation=0
+    /// 成员（叶子重算 + proof），同键重复声明拒绝（重复项会让第二次
+    /// 委任撞 patch nonce）。诚实调用方按编译产物供全表；漏项只影响
+    /// 该阶段的委任覆盖与治理枚举（fail-closed 方向，见 _stageSignalState）。
+    function _requireValidStageFacts(bytes32 planId, bytes32 stageId, StageCapabilityFact[] calldata stageFacts)
+        private
+        view
+    {
+        for (uint256 i = 0; i < stageFacts.length; i++) {
+            StageCapabilityFact calldata fact = stageFacts[i];
+            if (
+                fact.sourceId == bytes32(0) || fact.signalId == bytes32(0) || !_planMetadata().verifySignalCapability(
+                    planId, stageId, fact.sourceId, fact.signalId, 0, fact.capabilityProof
+                )
+            ) {
+                revert StageCapabilityFactInvalid(planId, stageId, fact.sourceId, fact.signalId);
+            }
+            for (uint256 j = 0; j < i; j++) {
+                if (stageFacts[j].sourceId == fact.sourceId && stageFacts[j].signalId == fact.signalId) {
+                    revert StageCapabilityFactInvalid(planId, stageId, fact.sourceId, fact.signalId);
+                }
+            }
+        }
+    }
 
+    function _delegateStageExecutorSignals(
+        bytes32 planId,
+        bytes32 orderId,
+        StageExecutorPatch calldata patch,
+        StageCapabilityFact[] calldata stageFacts
+    ) private {
         // 零 relation=0 capability 不再整体拒绝：零 capability 计划（手工/
         // 触发型 plan）与仅声明 relation=1 或纯 source==stage 回退事实的阶段
-        // 在主合约处处有 fallback（mint 词表闸放行、_signalStageId 回退），
+        // 在主合约处处有 fallback（mint 词表闸放行、source==stage 回退），
         // executor overlay 正是这些阶段唯一的执行者门——跳过委托（无键可
         // 委托）而照常写 overlay，与其余零 capability 口径一致。
-        for (uint256 i = 0; i < capabilityCount; i++) {
-            (bytes32 targetSourceId, bytes32 signalId, uint8 relation) =
-                metadata.stageSignalCapabilityAt(planId, patch.targetStageId, i);
-            if (relation != 0) {
-                continue;
-            }
-            _delegateStageExecutorSignal(planId, orderId, targetSourceId, signalId, patch);
+        for (uint256 i = 0; i < stageFacts.length; i++) {
+            _delegateStageExecutorSignal(planId, orderId, stageFacts[i].sourceId, stageFacts[i].signalId, patch);
         }
     }
 
@@ -446,7 +504,8 @@ contract UVPStagePatchModule {
         bytes32 planId,
         bytes32 orderId,
         StageExecutorPatch calldata patch,
-        address selector
+        address selector,
+        IUVPStateMachineCore.SelectorBindingProof calldata bindingProof
     ) private view {
         if (selector == address(0)) {
             revert ZeroSelector();
@@ -476,7 +535,13 @@ contract UVPStagePatchModule {
         if (stateMachine.stageHasOrderTriggerHook(planId, patch.targetStageId)) {
             revert StageExecutorPatchForbiddenOnBirthStage(orderId, patch.targetStageId);
         }
-        if (!_planMetadata().isStageSelectorBound(planId, patch.selectorStageId, patch.targetStageId)) {
+        // 绑定成员资格按"字段重算叶 + 携 proof"验证（叶子不自报）；证明
+        // 携带的 selector 必须与 patch 声明一致。
+        if (
+            bindingProof.selectorStageId != patch.selectorStageId || !_planMetadata().verifyStageSelectorBinding(
+                planId, patch.selectorStageId, patch.targetStageId, bindingProof.proof
+            )
+        ) {
             revert StageSelectorBindingNotFound(planId, patch.selectorStageId, patch.targetStageId);
         }
         // selector 权：显式 EXECUTOR_PATCH_SIGNAL 授权，或订单 creator 自身。
@@ -496,7 +561,8 @@ contract UVPStagePatchModule {
         bytes32 orderId,
         StageExecutorPatch calldata patch,
         ActiveStageExecutorPatch storage activePatch,
-        address previousExecutorSigner
+        address previousExecutorSigner,
+        StageCapabilityFact[] calldata stageFacts
     ) private view {
         // previousExecutorSignature 只在 HANDOFF 是授权材料（上一执行者对
         // 同一 digest 的会签）。ASSIGN/REPLACEMENT 携带非空签名时静默丢弃
@@ -506,7 +572,7 @@ contract UVPStagePatchModule {
             revert InvalidStageExecutorPatchSignature(address(0), previousExecutorSigner);
         }
         (uint256 signalCount, address latestSignalSubmitter, uint64 latestSubmittedAt, bool latestAmbiguous) =
-            _stageSignalState(planId, orderId, patch.targetStageId);
+            _stageSignalState(planId, orderId, patch.targetStageId, stageFacts);
         if (patch.mode == EXECUTOR_PATCH_MODE_ASSIGN) {
             if (patch.previousExecutor != address(0)) {
                 revert StageExecutorPatchPreviousExecutorMismatch(
@@ -558,7 +624,9 @@ contract UVPStagePatchModule {
         bytes32 planId,
         bytes32 orderId,
         StageResourcePatch calldata patch,
-        address selector
+        address selector,
+        IUVPStateMachineCore.SelectorBindingProof calldata bindingProof,
+        StageCapabilityFact[] calldata stageFacts
     ) private {
         if (selector == address(0)) {
             revert ZeroSelector();
@@ -585,15 +653,20 @@ contract UVPStagePatchModule {
             revert UnknownOrder();
         }
 
-        if (!_planMetadata().isStageSelectorBound(planId, patch.selectorStageId, patch.targetStageId)) {
+        if (
+            bindingProof.selectorStageId != patch.selectorStageId || !_planMetadata().verifyStageSelectorBinding(
+                planId, patch.selectorStageId, patch.targetStageId, bindingProof.proof
+            )
+        ) {
             revert StageSelectorBindingNotFound(planId, patch.selectorStageId, patch.targetStageId);
         }
+        _requireValidStageFacts(planId, patch.targetStageId, stageFacts);
         if (!stateMachine.hasExplicitSignalAuthorization(
                 planId, orderId, patch.selectorStageId, RESOURCE_PATCH_SIGNAL_ID, selector
             )) {
             revert UnauthorizedStageResourcePatchSelector(orderId, patch.selectorStageId, selector);
         }
-        (uint256 signalCount,,,) = _stageSignalState(planId, orderId, patch.targetStageId);
+        (uint256 signalCount,,,) = _stageSignalState(planId, orderId, patch.targetStageId, stageFacts);
         if (signalCount != 0) {
             revert StageAlreadyHasSignal(orderId, patch.targetStageId);
         }
@@ -642,18 +715,22 @@ contract UVPStagePatchModule {
     /// submittedAt is not enumerable here, so ordering cannot be rebuilt
     /// across flows: when both flows hold facts with differing last
     /// submitters, the previous-executor fallback must fail closed.
-    function _stageSignalState(bytes32 planId, bytes32 orderId, bytes32 stageId)
+    /// 能力流的枚举面来自调用方携证的 stageFacts（_requireValidStageFacts
+    /// 已验全表）；漏报只会把"有信号"误判为"无信号"或漏委任——前者把
+    /// assign 放宽（调用方是 selector 授权方，信任面与 patch 本身同阶），
+    /// 后者 fail-closed。
+    function _stageSignalState(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 stageId,
+        StageCapabilityFact[] calldata stageFacts
+    )
         private
         view
         returns (uint256 count, address latestSubmitter, uint64 latestSubmittedAt, bool latestAmbiguous)
     {
-        IUVPPlanMetadataModuleForStagePatch metadata = _planMetadata();
-        uint256 capabilityCount = metadata.stageSignalCapabilityCount(planId, stageId);
-        for (uint256 i = 0; i < capabilityCount; i++) {
-            (bytes32 sourceId, bytes32 signalId, uint8 relation) = metadata.stageSignalCapabilityAt(planId, stageId, i);
-            if (relation != 0) {
-                continue;
-            }
+        for (uint256 i = 0; i < stageFacts.length; i++) {
+            (bytes32 sourceId, bytes32 signalId) = (stageFacts[i].sourceId, stageFacts[i].signalId);
             (bool exists,,, uint64 submittedAt, address submitter) =
                 stateMachine.getSignal(planId, orderId, sourceId, signalId);
             if (!exists) {
@@ -662,7 +739,7 @@ contract UVPStagePatchModule {
             count += 1;
             // 最高 submittedAt 的并列提交者检测：更大的时间戳重置判定，
             // 同秒不同提交者标记歧义——消费者必须 fail-closed，不得按
-            // capability 数组枚举序静默取"最后一个"。
+            // 携证表枚举序静默取"最后一个"。
             if (submittedAt > latestSubmittedAt) {
                 latestSubmittedAt = submittedAt;
                 latestSubmitter = submitter;

@@ -30,8 +30,6 @@ import {
 } from "./hooks.js";
 import {
   planDependencyCountIssues,
-  selectorBindingCountIssues,
-  signalCapabilityCountIssues,
 } from "./limits.js";
 import {
   ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
@@ -76,6 +74,7 @@ const ONCHAIN_ARTIFACT_FIELDS: readonly string[] = [
   "dockRoutes",
   "dockRoutesRoot",
   "dockInterfaceRoot",
+  "capabilitiesRoot",
   "selectorBindings",
   "signalCapabilities",
   "planHash",
@@ -119,6 +118,7 @@ export function validateOnchainHookPlanArtifact(
   }
   expectHexHash(value.dockRoutesRoot, "dockRoutesRoot", issues);
   expectHexHash(value.dockInterfaceRoot, "dockInterfaceRoot", issues);
+  expectHexHash(value.capabilitiesRoot, "capabilitiesRoot", issues);
   issues.push(...validateDockCommitments(value));
   if (Array.isArray(value.dockRoutes)) {
     issues.push(...onchainDockTrackIssues(value.dockRoutes));
@@ -218,12 +218,6 @@ export function validateOnchainHookPlanArtifact(
     issues.push(...planDependencyCountIssues(compiledHooks as readonly OnchainCompiledHook[]));
   }
 
-  if (signalCapabilities) {
-    issues.push(
-      ...signalCapabilityCountIssues(signalCapabilities as readonly unknown[]),
-    );
-  }
-
   if (executorRoutes) {
     issues.push(...validateOnchainExecutorRoutes(executorRoutes));
     // 规范序（编译产物的确定性口径）：planHash 覆盖数组顺序，但重排后重签
@@ -234,8 +228,6 @@ export function validateOnchainHookPlanArtifact(
   }
   if (selectorBindings) {
     issues.push(...validateOnchainSelectorBindings(selectorBindings));
-    // M24 规模预检：与合约 finalize 边界（TooManySelectorBindings）同口径。
-    issues.push(...selectorBindingCountIssues(selectorBindings));
     issues.push(
       ...canonicalOrderIssues(
         selectorBindings,
@@ -293,6 +285,7 @@ export function validateOnchainHookPlanArtifact(
         dockRoutes: value.dockRoutes,
         dockRoutesRoot: value.dockRoutesRoot,
         dockInterfaceRoot: value.dockInterfaceRoot,
+        capabilitiesRoot: value.capabilitiesRoot,
         selectorBindings: value.selectorBindings,
         signalCapabilities: value.signalCapabilities,
       });
@@ -427,6 +420,7 @@ function isPlanHashRecomputable(
     (value.dockInterface === null || isRecord(value.dockInterface)) &&
     isHexHash(value.dockRoutesRoot) &&
     isHexHash(value.dockInterfaceRoot) &&
+    isHexHash(value.capabilitiesRoot) &&
     isHexHash(value.planHash)
   );
 }

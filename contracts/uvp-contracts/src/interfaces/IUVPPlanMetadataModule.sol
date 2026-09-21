@@ -2,35 +2,31 @@
 pragma solidity ^0.8.24;
 
 interface IUVPPlanMetadataModule {
-    struct StageSelectorBinding {
-        bytes32 selectorStageId;
-        bytes32 targetStageId;
-    }
-
-    struct SignalCapability {
-        bytes32 stageId;
-        bytes32 targetSourceId;
-        bytes32 signalId;
-        uint8 targetOrderRelation;
-    }
-
-    /// finalizePlan 元数据规模闸（M24）：注册库在 metadataHash 重算前
-    /// fail-fast，模块注册循环同值兜底。单一声明点供 finalize 边界与
-    /// 模块注册边界共用。
-    error TooManySignalCapabilities(uint256 count, uint256 max);
-    error TooManySelectorBindings(uint256 count, uint256 max);
+    /// 能力树的域分隔叶编码。叶子由承诺输入在合约内重算（调用方不得
+    /// 自报叶值），membership 由调用方携带的 proof 证明——与
+    /// verifyDockInterfacePort 同一纪律。
+    function signalCapabilityLeaf(bytes32 stageId, bytes32 targetSourceId, bytes32 signalId, uint8 relation)
+        external
+        pure
+        returns (bytes32);
+    function selectorBindingLeaf(bytes32 selectorStageId, bytes32 targetStageId) external pure returns (bytes32);
 
     function finalizePlanMetadata(
         bytes32 planId,
-        StageSelectorBinding[] calldata selectorBindings,
-        SignalCapability[] calldata signalCapabilities,
+        bytes32 capabilitiesRoot,
         bytes32 dockRoutesRoot,
         bytes32 dockInterfaceRoot
     ) external;
 
+    function capabilitiesRoot(bytes32 planId) external view returns (bytes32);
+
     function dockRoutesRoot(bytes32 planId) external view returns (bytes32);
 
     function dockInterfaceRoot(bytes32 planId) external view returns (bytes32);
+
+    /// @return vocabulary 非空能力树（root != EMPTY_ROOT）即 true。零
+    ///         capability 的手工 plan 词表闸全线放行的判定依据。
+    function hasCapabilityVocabulary(bytes32 planId) external view returns (bool);
 
     function verifyDockRoute(bytes32 planId, bytes32 leaf, bytes32[] calldata proof) external view returns (bool);
 
@@ -44,21 +40,19 @@ interface IUVPPlanMetadataModule {
         bytes32[] calldata proof
     ) external view returns (bool);
 
-    function isSelectorTargetStage(bytes32 planId, bytes32 targetStageId) external view returns (bool);
+    function verifySignalCapability(
+        bytes32 planId,
+        bytes32 stageId,
+        bytes32 targetSourceId,
+        bytes32 signalId,
+        uint8 relation,
+        bytes32[] calldata proof
+    ) external view returns (bool);
 
-    function planSignalCapabilityCount(bytes32 planId) external view returns (uint256);
-
-    /// E16 属主索引读取：relation=0 capability 注册时落库的
-    /// (sourceId, signalId) → 唯一属主阶段。未知计划 revert，零键归零。
-    function currentOrderFactStage(bytes32 planId, bytes32 sourceId, bytes32 signalId)
-        external
-        view
-        returns (bytes32 stageId);
-
-    function stageSignalCapabilityCount(bytes32 planId, bytes32 stageId) external view returns (uint256);
-
-    function stageSignalCapabilityAt(bytes32 planId, bytes32 stageId, uint256 index)
-        external
-        view
-        returns (bytes32 targetSourceId, bytes32 signalId, uint8 targetOrderRelation);
+    function verifyStageSelectorBinding(
+        bytes32 planId,
+        bytes32 selectorStageId,
+        bytes32 targetStageId,
+        bytes32[] calldata proof
+    ) external view returns (bool);
 }

@@ -16,9 +16,27 @@ pnpm --filter @uvp-eth/protocol-bindings build
 - Exposes core and module ABI constants, EIP-712 Product submit typed-data
   helpers, split stage executor/resource patch typed-data helpers,
   `submitSignalFor`, `applyStageExecutorPatchFor`, and `applyStageResourcePatchFor` call
-  construction, address/bytes32 validation, and canonical hash helpers.
+  construction, capability-tree root/proof helpers, address/bytes32
+  validation, and canonical hash helpers.
 - Does not import Node-only modules, read env vars, hold private keys, run
   watchers, request wallet signatures, or submit transactions.
+
+## Capability Tree Helpers
+
+- The plan capability tables (stage selector bindings + signal capabilities)
+  live on-chain only as a Merkle root: `commitPlan` has the publisher sign
+  `capabilitiesRoot`, and submitters re-derive leaves and carry proofs.
+- `signalCapabilityLeaf` / `selectorBindingLeaf` mirror the on-chain leaf
+  formulas: `keccak256(abi.encode(keccak256(domain), …words))` with the
+  `UVP_SIGNAL_CAPABILITY_V1` / `UVP_SELECTOR_BINDING_V1` domain separators.
+- `capabilitiesRootOf` builds the sorted-pairing tree root over both tables
+  (dedup + sort, `keccak256(min ‖ max)` per level, odd tail leaf promoted,
+  empty tables normalize to `EMPTY_CAPABILITIES_ROOT = keccak256("")`).
+- `factAttribution` returns the owning stage plus its capability proof for a
+  `(sourceId, signalId)` fact (relation `0` capability); wire it straight into
+  `buildSubmitSignalForCall`'s `attribution` argument.
+- `selectorBindingProofFor` returns the selector stage plus its binding proof
+  for a bound target stage; wire it into the `selectorBinding` argument.
 
 ## Stage Executor Patch Helpers
 

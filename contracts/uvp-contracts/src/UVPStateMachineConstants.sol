@@ -10,22 +10,24 @@ pragma solidity ^0.8.24;
 uint8 constant _HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
 uint8 constant _HOOK_FLAG_ORDER_TRIGGER_DOCK = 2;
 uint8 constant _HOOK_FLAG_EMIT_READY = 4;
+
 uint64 constant _MAX_HOOK_DELAY_SECONDS = 30 days;
+
+// 依赖键（signalKey）在 commitPlan 注册循环里逐键落 dependencyIndex
+// storage，gas 随键数线性增长——上限钉住单笔 commit 的注册成本。能力表/
+// 绑定表不设上限：finalizePlan 只写一个 capabilitiesRoot（链下建树、
+// 使用方携 Merkle proof 逐叶验证），注册成本与表规模脱钩。
 uint256 constant _MAX_PLAN_DEPENDENCIES = 1024;
-// finalizePlan 的元数据规模上限：selectorBindings 与 signalCapabilities
-// 逐条写存储的注册循环 gas 随表规模无界增长（M24：≈324 条 binding 在
-// 30M block gas 内恒 OOG，planId 烧死在 committed 态）。注册库在本上限
-// 上先于 metadataHash 重算 fail-fast；UVPPlanMetadataModule 以 public
-// constant 重导出并兜底。
-uint256 constant _MAX_SIGNAL_CAPABILITIES = 256;
-uint256 constant _MAX_SELECTOR_BINDINGS = 128;
 
 bytes32 constant _EIP712_DOMAIN_TYPEHASH =
     keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 bytes32 constant _EIP712_NAME_HASH = keccak256("UVPStateMachine");
-bytes32 constant _EIP712_VERSION_HASH = keccak256("0.10");
-bytes32 constant _PLAN_RUNTIME_HASH_DOMAIN = keccak256("uvp.plan.runtime.v2");
+bytes32 constant _EIP712_VERSION_HASH = keccak256("0.11");
+
+// runtime hash 覆盖全部五个承诺域：hooks、能力树、两条 dock 树——
+// 不留"产物有、commitment 无"的悬空状态。
+bytes32 constant _PLAN_RUNTIME_HASH_DOMAIN = keccak256("uvp.plan.runtime.v3");
 bytes32 constant _PLAN_ID_HASH_DOMAIN = keccak256("uvp.plan.id.v1");
 bytes32 constant _PLAN_COMMIT_TYPEHASH = keccak256(
-    "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 metadataHash,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,uint256 deadline)"
+    "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,uint256 deadline)"
 );

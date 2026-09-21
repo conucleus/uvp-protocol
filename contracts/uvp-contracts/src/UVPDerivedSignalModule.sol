@@ -6,12 +6,13 @@ import {ECDSA} from "./libraries/ECDSA.sol";
 import {UVPSignatures} from "./libraries/UVPSignatures.sol";
 
 interface IUVPPlanMetadataModuleForDerivedSignal {
-    function isSignalCapabilityRegistered(
+    function verifySignalCapability(
         bytes32 planId,
         bytes32 stageId,
         bytes32 targetSourceId,
         bytes32 signalId,
-        uint8 relation
+        uint8 relation,
+        bytes32[] calldata proof
     ) external view returns (bool);
 }
 
@@ -36,6 +37,8 @@ contract UVPDerivedSignalModule {
     error ZeroTargetStageId();
 
     IUVPStateMachineCore public immutable stateMachine;
+
+    uint8 public constant SIGNAL_TARGET_CURRENT_ORDER = 0;
 
     bytes32 private constant _EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
@@ -76,26 +79,40 @@ contract UVPDerivedSignalModule {
         bytes32 idempotencyKey;
     }
 
+    /// 能力成员资格证明（不进 EIP-712 摘要——证明是辅助材料，签名只背书
+    /// 事实本身，与 dock 路由证明同口径）：from 侧计划的能力叶证明恒需；
+    /// relation!=0 时 target（origin）侧计划的同款证明另需一份。
+    struct DerivedSignalProofs {
+        bytes32[] fromCapabilityProof;
+        bytes32[] targetCapabilityProof;
+        IUVPStateMachineCore.SelectorBindingProof selectorBinding;
+    }
+
     constructor(address stateMachineAddress) {
         stateMachine = IUVPStateMachineCore(stateMachineAddress);
     }
 
-    function submitDerivedSignal(DerivedSignalRequest calldata request, address submitter) external {
+    function submitDerivedSignal(
+        DerivedSignalRequest calldata request,
+        address submitter,
+        DerivedSignalProofs calldata proofs
+    ) external {
         if (submitter == address(0)) {
             revert ZeroSubmitter();
         }
         if (msg.sender != submitter) {
             revert UnauthorizedSignalCaller(submitter, msg.sender);
         }
-        _validateDerivedSignal(request, submitter);
-        _executeDerivedSignal(request, submitter);
+        uint8 relation = _validateDerivedSignal(request, submitter, proofs);
+        _executeDerivedSignal(request, submitter, relation, proofs);
     }
 
     function submitDerivedSignalFor(
         DerivedSignalRequest calldata request,
         address submitter,
         uint256 deadline,
-        bytes calldata signature
+        bytes calldata signature,
+        DerivedSignalProofs calldata proofs
     ) external {
         if (block.timestamp > deadline) {
             revert ExpiredSignalSignature(deadline);
@@ -109,8 +126,8 @@ contract UVPDerivedSignalModule {
             revert InvalidSignalSignature(submitter, recoveredSigner);
         }
 
-        _validateDerivedSignal(request, submitter);
-        _executeDerivedSignal(request, submitter);
+        uint8 relation = _validateDerivedSignal(request, submitter, proofs);
+        _executeDerivedSignal(request, submitter, relation, proofs);
     }
 
     function DOMAIN_SEPARATOR() public view returns (bytes32) {
@@ -143,7 +160,12 @@ contract UVPDerivedSignalModule {
         return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
     }
 
-    function _executeDerivedSignal(DerivedSignalRequest calldata request, address submitter) private {
+    function _executeDerivedSignal(
+        DerivedSignalRequest calldata request,
+        address submitter,
+        uint8 relation,
+        DerivedSignalProofs calldata proofs
+    ) private {
         stateMachine.submitDerivedSignalFromModule(
             request.targetPlanId,
             request.targetOrderId,
@@ -152,7 +174,9 @@ contract UVPDerivedSignalModule {
             request.signalId,
             request.payloadHash,
             request.idempotencyKey,
-            submitter
+            submitter,
+            relation == SIGNAL_TARGET_CURRENT_ORDER,
+            proofs.selectorBinding
         );
         emit DerivedSignalSubmitted(
             request.fromOrderId,
@@ -168,7 +192,11 @@ contract UVPDerivedSignalModule {
         );
     }
 
-    function _validateDerivedSignal(DerivedSignalRequest calldata request, address submitter) private view {
+    function _validateDerivedSignal(
+        DerivedSignalRequest calldata request,
+        address submitter,
+        DerivedSignalProofs calldata proofs
+    ) private view returns (uint8 relation) {
         if (request.fromStageId == bytes32(0)) {
             revert ZeroTargetStageId();
         }
@@ -188,13 +216,18 @@ contract UVPDerivedSignalModule {
         }
 
         {
-            uint8 relation = _targetOrderRelation(
+            relation = _targetOrderRelation(
                 request.fromPlanId, request.fromOrderId, request.targetPlanId, request.targetOrderId
             );
-            if (!_planMetadata()
-                    .isSignalCapabilityRegistered(
-                        request.fromPlanId, request.fromStageId, request.targetSourceId, request.signalId, relation
-                    )) {
+            // 能力成员资格按"字段重算叶 + 调用方携 proof"验证（叶子不自报）。
+            if (!_planMetadata().verifySignalCapability(
+                    request.fromPlanId,
+                    request.fromStageId,
+                    request.targetSourceId,
+                    request.signalId,
+                    relation,
+                    proofs.fromCapabilityProof
+                )) {
                 revert InvalidSignalCapability();
             }
             // capability 只查 from 订单的 plan 时，自版 plan 的攻击者
@@ -202,14 +235,14 @@ contract UVPDerivedSignalModule {
             // （origin）订单的 plan 声明同一 capability——目标侧的 plan/授权
             // 必须参与同意。
             if (relation != 0) {
-                if (!_planMetadata()
-                        .isSignalCapabilityRegistered(
-                            request.targetPlanId,
-                            request.fromStageId,
-                            request.targetSourceId,
-                            request.signalId,
-                            relation
-                        )) {
+                if (!_planMetadata().verifySignalCapability(
+                        request.targetPlanId,
+                        request.fromStageId,
+                        request.targetSourceId,
+                        request.signalId,
+                        relation,
+                        proofs.targetCapabilityProof
+                    )) {
                     revert InvalidSignalCapability();
                 }
             }

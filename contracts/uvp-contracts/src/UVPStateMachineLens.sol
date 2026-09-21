@@ -70,23 +70,21 @@ interface IUVPDockingModuleLens {
 }
 
 interface IUVPPlanMetadataModuleLens {
-    function planSelectorBindingCount(bytes32 planId) external view returns (uint256);
-    function planSelectorBindingAt(bytes32 planId, uint256 index)
-        external
-        view
-        returns (bytes32 selectorStageId, bytes32 targetStageId);
-    function planSignalCapabilityCount(bytes32 planId) external view returns (uint256);
-    function isStageSelectorBound(bytes32 planId, bytes32 selectorStageId, bytes32 targetStageId)
-        external
-        view
-        returns (bool);
-    function isSelectorTargetStage(bytes32 planId, bytes32 targetStageId) external view returns (bool);
-    function isSignalCapabilityRegistered(
+    function capabilitiesRoot(bytes32 planId) external view returns (bytes32);
+    function hasCapabilityVocabulary(bytes32 planId) external view returns (bool);
+    function verifySignalCapability(
         bytes32 planId,
         bytes32 stageId,
         bytes32 targetSourceId,
         bytes32 signalId,
-        uint8 relation
+        uint8 relation,
+        bytes32[] calldata proof
+    ) external view returns (bool);
+    function verifyStageSelectorBinding(
+        bytes32 planId,
+        bytes32 selectorStageId,
+        bytes32 targetStageId,
+        bytes32[] calldata proof
     ) external view returns (bool);
 }
 
@@ -212,46 +210,34 @@ contract UVPStateMachineLens {
                 .dockOutputDelivered(dockInstanceId, outputBindingHash);
     }
 
-    function planSelectorBindingCount(bytes32 planId) external view returns (uint256) {
-        return IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule()).planSelectorBindingCount(planId);
+    function planCapabilitiesRoot(bytes32 planId) external view returns (bytes32) {
+        return IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule()).capabilitiesRoot(planId);
     }
 
-    function planSelectorBindingAt(bytes32 planId, uint256 index)
-        external
-        view
-        returns (bytes32 selectorStageId, bytes32 targetStageId)
-    {
-        return IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule()).planSelectorBindingAt(planId, index);
+    function planHasCapabilityVocabulary(bytes32 planId) external view returns (bool) {
+        return IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule()).hasCapabilityVocabulary(planId);
     }
 
-    function planSignalCapabilityCount(bytes32 planId) external view returns (uint256) {
-        return IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule()).planSignalCapabilityCount(planId);
-    }
-
-    function isStageSelectorBound(bytes32 planId, bytes32 selectorStageId, bytes32 targetStageId)
-        external
-        view
-        returns (bool)
-    {
-        return IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule())
-            .isStageSelectorBound(planId, selectorStageId, targetStageId);
-    }
-
-    function isSelectorTargetStage(bytes32 planId, bytes32 targetStageId) external view returns (bool) {
-        return
-            IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule())
-                .isSelectorTargetStage(planId, targetStageId);
-    }
-
-    function isSignalCapabilityRegistered(
+    function verifySignalCapability(
         bytes32 planId,
         bytes32 stageId,
         bytes32 targetSourceId,
         bytes32 signalId,
-        uint8 relation
+        uint8 relation,
+        bytes32[] calldata proof
     ) external view returns (bool) {
         return IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule())
-            .isSignalCapabilityRegistered(planId, stageId, targetSourceId, signalId, relation);
+            .verifySignalCapability(planId, stageId, targetSourceId, signalId, relation, proof);
+    }
+
+    function verifyStageSelectorBinding(
+        bytes32 planId,
+        bytes32 selectorStageId,
+        bytes32 targetStageId,
+        bytes32[] calldata proof
+    ) external view returns (bool) {
+        return IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule())
+            .verifyStageSelectorBinding(planId, selectorStageId, targetStageId, proof);
     }
 
     function targetOrderRelation(bytes32 fromPlanId, bytes32 fromOrderId, bytes32 targetPlanId, bytes32 targetOrderId)

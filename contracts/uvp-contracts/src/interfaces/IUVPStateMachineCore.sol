@@ -29,13 +29,33 @@ interface IUVPStateMachineCore {
         uint256 deadline;
     }
 
-    // trigger link 建立需要 origin 侧同意。
+    /// 事实属主自证：声明非零 stageId 即声明"该 (sourceId, signalId) 事实
+    /// 键的属主是 stageId"，必须携有效 membership proof（能力叶
+    /// (stageId, sourceId, signalId, relation=0)）。stageId==0 表示不声明
+    /// （词表外事实口径）。
+    struct FactAttribution {
+        bytes32 sourceId;
+        bytes32 signalId;
+        bytes32 stageId;
+        bytes32[] capabilityProof;
+    }
+
+    /// selector 绑定目标的成员资格证明（(selectorStageId, targetStageId)
+    /// 绑定叶）。selectorStageId==0 表示不携证。
+    struct SelectorBindingProof {
+        bytes32 selectorStageId;
+        bytes32[] proof;
+    }
+
+    // trigger link 建立需要 origin 侧同意；origin 事实的属主阶段由
+    // originAttribution 携 proof 自证。
     function hasTriggerOriginConsent(
         bytes32 originPlanId,
         bytes32 originOrderId,
         bytes32 originSourceId,
         bytes32 originSignalId,
-        address party
+        address party,
+        FactAttribution calldata originAttribution
     ) external view returns (bool);
     function activeStageExecutor(bytes32 planId, bytes32 orderId, bytes32 targetStageId) external view returns (address);
     function activateStageExecutorFromModule(
@@ -123,6 +143,8 @@ interface IUVPStateMachineCore {
     /// 链上该视图无法判定。
     function stageHasOrderTriggerHook(bytes32 planId, bytes32 stageId) external view returns (bool);
 
+    /// dock output 镜像回写：本地事实键的词表成员资格与属主阶段由
+    /// attribution 携 proof 自证。
     function submitSignalFromModule(
         bytes32 planId,
         bytes32 orderId,
@@ -130,11 +152,15 @@ interface IUVPStateMachineCore {
         bytes32 signalId,
         bytes32 payloadHash,
         bytes32 idempotencyKey,
-        address submitter
+        address submitter,
+        FactAttribution calldata attribution,
+        SelectorBindingProof calldata selectorBinding
     ) external;
     /// Derived signals carry the stage that authorizes the originating path
     /// separately from the target signal source. The target order receives the
     /// fact, while its active executor (if any) still gates the write.
+    /// relation 由派生模块判定：currentOrderFact = relation==0（生产事实
+    /// 过属主就绪门），false = trigger-origin 回写（不经门）。
     function submitDerivedSignalFromModule(
         bytes32 planId,
         bytes32 orderId,
@@ -143,12 +169,15 @@ interface IUVPStateMachineCore {
         bytes32 signalId,
         bytes32 payloadHash,
         bytes32 idempotencyKey,
-        address submitter
+        address submitter,
+        bool currentOrderFact,
+        SelectorBindingProof calldata selectorBinding
     ) external;
     function triggerOrderFromSignalFromModule(
         TriggerOrderFromSignalRequest calldata trigger,
         SignalAuthorization[] calldata authorizations,
-        address relayer
+        address relayer,
+        FactAttribution[] calldata originFactAttributions
     ) external;
     function getSignal(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId)
         external

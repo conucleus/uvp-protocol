@@ -36,11 +36,17 @@ import {
   buildTriggerOrderFromSignalForCall,
   buildTriggerOrderFromSignalTypedData,
   canonicalJson,
+  capabilitiesRootOf,
   deriveTriggerOrderId,
+  EMPTY_CAPABILITIES_ROOT,
+  factAttribution,
   hashEvidenceJson,
   hashResourceManifest,
   hashStageExecutorPatchPayload,
   hashStageResourcePatchPayload,
+  selectorBindingLeaf,
+  selectorBindingProofFor,
+  signalCapabilityLeaf,
   STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN,
   STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN,
   recoverDerivedSignalSigner,
@@ -182,8 +188,9 @@ const signalAuthorizations = [
 ] as const;
 
 describe("protocol bindings", () => {
-  it("exposes frozen v0.10 plan-scoped hook observation events", () => {
-    // 全部订单级事件补 planId（v0.10 冻结口径，UVPStateMachine EIP-712 版本 0.10）。
+  it("exposes plan-scoped hook observation events", () => {
+    // 订单级事件自 v0.10 起携带 planId（事件口径冻结面，事件签名不随
+    // EIP-712 版本走；当前签名域版本 0.11）。
     assert.equal(
       toEventHash("HookStatusChanged(bytes32,bytes32,bytes32,uint8,uint8,uint64)"),
       "0xa0c688f78d307bee6d38b69ad4c19b02d9e1be8c6772327015b60fd21ec38fd2"
@@ -246,7 +253,7 @@ describe("protocol bindings", () => {
     assert.deepEqual(typedData, {
       domain: {
         name: "UVPStateMachine",
-        version: "0.10",
+        version: "0.11",
         chainId: 31337,
         verifyingContract,
       },
@@ -308,7 +315,7 @@ describe("protocol bindings", () => {
       verifyingContract,
       publisher: submitter,
       hooksHash: payloadHash,
-      metadataHash: idempotencyKey,
+      capabilitiesRoot: idempotencyKey,
       dockRoutesRoot: planId,
       dockInterfaceRoot: originPlanId,
       deadline,
@@ -318,6 +325,17 @@ describe("protocol bindings", () => {
     );
 
     assert.equal(typedData.primaryType, "UVPStateMachinePlanCommit");
+    assert.deepEqual(
+      typedData.types.UVPStateMachinePlanCommit.map((field) => field.name),
+      [
+        "publisher",
+        "hooksHash",
+        "capabilitiesRoot",
+        "dockRoutesRoot",
+        "dockInterfaceRoot",
+        "deadline",
+      ],
+    );
     assert.equal(
       await recoverPlanCommitSigner(typedData, signature),
       submitter,
@@ -545,6 +563,7 @@ describe("protocol bindings", () => {
 
   it("builds submitSignalFor calls from the shared ABI", () => {
     const signature = `0x${"aa".repeat(65)}` as const;
+    const capabilityProof = [payloadHash, idempotencyKey] as const;
     const call = buildSubmitSignalForCall(
       {
         stateMachineAddress: verifyingContract,
@@ -560,6 +579,16 @@ describe("protocol bindings", () => {
         submitter,
         deadline,
         signature,
+        attribution: {
+          sourceId: `0x${sourceId.slice(2).toUpperCase()}`,
+          signalId,
+          stageId: targetStageId,
+          capabilityProof,
+        },
+        selectorBinding: {
+          selectorStageId,
+          proof: [],
+        },
       },
     );
 
@@ -576,12 +605,236 @@ describe("protocol bindings", () => {
       submitter,
       BigInt(deadline),
       signature,
+      // attribution 归一化：大小写折叠 + proof 数组逐词 bytes32 校验。
+      { sourceId, signalId, stageId: targetStageId, capabilityProof: [...capabilityProof] },
+      { selectorStageId, proof: [] },
     ]);
     assert.match(call.data, /^0x[0-9a-f]+$/);
+    const decoded = decodeFunctionData({
+      abi: STATE_MACHINE_ABI,
+      data: call.data,
+    });
+    assert.equal(decoded.functionName, "submitSignalFor");
+    const decodedArgs = decoded.args as unknown as [
+      unknown,
+      unknown,
+      unknown,
+      unknown,
+      unknown,
+      unknown,
+      unknown,
+      unknown,
+      unknown,
+      { sourceId: `0x${string}`; capabilityProof: readonly `0x${string}`[] },
+      { selectorStageId: `0x${string}`; proof: readonly `0x${string}`[] },
+    ];
+    assert.equal(decodedArgs[9].sourceId, sourceId);
+    assert.deepEqual(decodedArgs[9].capabilityProof, [...capabilityProof]);
+    assert.equal(decodedArgs[10].selectorStageId, selectorStageId);
+  });
+
+  it("builds capability-tree leaves, roots, and proofs matching the on-chain formula", () => {
+    const stageA = bytes32("a1");
+    const stageB = bytes32("a2");
+    const stageC = bytes32("a3");
+    const src1 = bytes32("b1");
+    const src2 = bytes32("b2");
+    const sig1 = bytes32("c1");
+    const sig2 = bytes32("c2");
+    const bindings = [
+      { selectorStageId: stageA, targetStageId: stageB },
+      { selectorStageId: stageB, targetStageId: stageC },
+    ] as const;
+    const capabilities = [
+      { stageId: stageA, targetSourceId: src1, signalId: sig1, relation: 0 },
+      { stageId: stageB, targetSourceId: src2, signalId: sig2, relation: 1 },
+    ] as const;
+
+    // 叶公式独立对拍（Solidity abi.encode 口径，硬编码期望值钉死公式）：
+    // keccak256(abi.encode(keccak256(domain), …words))。
+    assert.equal(
+      signalCapabilityLeaf(stageA, src1, sig1, 0),
+      "0x33970da1fc44c461d8b7efa8f337a6b37fc7ef5f49c274ac5ffbff1ef4fffb95",
+    );
+    assert.equal(
+      signalCapabilityLeaf(stageB, src2, sig2, 1),
+      "0x54056a9b17cd73c8390df8e25c48e825080647574130b5f64618e7b15f7068a6",
+    );
+    assert.equal(
+      selectorBindingLeaf(stageA, stageB),
+      "0x78bc768537795e1736320461b50388acf2ee0c60645230c1b060aa70d2392077",
+    );
+    assert.equal(
+      selectorBindingLeaf(stageB, stageC),
+      "0xd58a4b9b87fc0cde4a3eeb8233f901f090531296731407632a93543d4e0089a0",
+    );
+    assert.equal(
+      signalCapabilityLeaf(stageA, src1, sig1, 0),
+      keccak256(
+        encodeAbiParameters(
+          [
+            { name: "domain", type: "bytes32" },
+            { name: "stageId", type: "bytes32" },
+            { name: "targetSourceId", type: "bytes32" },
+            { name: "signalId", type: "bytes32" },
+            { name: "relation", type: "uint256" },
+          ],
+          [
+            keccak256(stringToHex("UVP_SIGNAL_CAPABILITY_V1")),
+            stageA,
+            src1,
+            sig1,
+            0n,
+          ],
+        ),
+      ),
+    );
+
+    // 空表根 = keccak256("")（合约 DockMerkle.EMPTY_ROOT）。
+    assert.equal(
+      EMPTY_CAPABILITIES_ROOT,
+      "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+    );
+    assert.equal(capabilitiesRootOf([], []), EMPTY_CAPABILITIES_ROOT);
+
+    // 混编树根（排序叶序：capA < capB < selAB < selBC）与单叶/三叶奇数
+    // 提升边界，全部钉死硬编码期望值。
+    assert.equal(
+      capabilitiesRootOf(bindings, capabilities),
+      "0x599065f4ebc0981274720be063250e6ad6d38bdd2fa6f7bf2dc53f6bbc54f855",
+    );
+    assert.equal(
+      capabilitiesRootOf([], [capabilities[0]]),
+      "0x33970da1fc44c461d8b7efa8f337a6b37fc7ef5f49c274ac5ffbff1ef4fffb95",
+    );
+    assert.equal(
+      capabilitiesRootOf([bindings[0]], capabilities),
+      "0xfef7af5cb07dd06d43af7003fdb02319795a054adc1e05f8632b2f73a21e975b",
+    );
+    // 重复表项去重：树根不随重复条目变化。
+    assert.equal(
+      capabilitiesRootOf([...bindings, bindings[0]], [...capabilities, capabilities[1]]),
+      capabilitiesRootOf(bindings, capabilities),
+    );
+    // 大小写归一：等价 word 不因拼写漂移换根。
+    assert.equal(
+      capabilitiesRootOf(
+        [
+          {
+            selectorStageId: `0x${stageA.slice(2).toUpperCase()}`,
+            targetStageId: `0x${stageB.slice(2).toUpperCase()}`,
+          },
+        ],
+        [],
+      ),
+      capabilitiesRootOf([bindings[0]], []),
+    );
+
+    // 事实属主自证：relation=0 能力命中，proof 可独立折叠回树根。
+    const attribution = factAttribution(bindings, capabilities, src1, sig1);
+    assert.ok(attribution);
+    assert.equal(attribution.stageId, stageA);
+    assert.deepEqual(attribution.capabilityProof, [
+      "0x54056a9b17cd73c8390df8e25c48e825080647574130b5f64618e7b15f7068a6",
+      "0x6c9196238a9be76e1ea2b92a1e2bb2555987da84e8c95701ffec76e1712fcef2",
+    ]);
+    assert.equal(
+      foldProof(
+        signalCapabilityLeaf(stageA, src1, sig1, 0),
+        attribution.capabilityProof,
+      ),
+      capabilitiesRootOf(bindings, capabilities),
+    );
+    // 词表外 / 仅 relation=1 的目标事实不构成属主自证。
+    assert.equal(factAttribution(bindings, capabilities, src2, sig2), undefined);
+    assert.equal(factAttribution(bindings, capabilities, src1, sig2), undefined);
+
+    // selector 绑定证明：按目标阶段取绑定，proof 同样折叠回根。
+    const selectorBinding = selectorBindingProofFor(
+      bindings,
+      capabilities,
+      stageC,
+    );
+    assert.ok(selectorBinding);
+    assert.equal(selectorBinding.selectorStageId, stageB);
+    assert.deepEqual(selectorBinding.proof, [
+      "0x78bc768537795e1736320461b50388acf2ee0c60645230c1b060aa70d2392077",
+      "0x4c3cc058083d814485db3d108299afdfa64ae1c41ea4b8935e6924505013c349",
+    ]);
+    assert.equal(
+      foldProof(
+        selectorBindingLeaf(selectorBinding.selectorStageId, stageC),
+        selectorBinding.proof,
+      ),
+      capabilitiesRootOf(bindings, capabilities),
+    );
+    // 未被绑定的目标阶段返回 undefined（调用方提交零 selectorStageId）。
+    assert.equal(
+      selectorBindingProofFor(bindings, capabilities, stageA),
+      undefined,
+    );
+  });
+
+  it("wires capability-tree proofs straight into submitSignalFor attribution args", () => {
+    const stageA = bytes32("a1");
+    const stageB = bytes32("a2");
+    const bindings = [
+      { selectorStageId: stageA, targetStageId: stageB },
+    ] as const;
+    const capabilities = [
+      { stageId: stageA, targetSourceId: sourceId, signalId, relation: 0 },
+    ] as const;
+    const attribution = factAttribution(bindings, capabilities, sourceId, signalId);
+    const selectorBinding = selectorBindingProofFor(
+      bindings,
+      capabilities,
+      stageB,
+    );
+    assert.ok(attribution && selectorBinding);
+
+    const call = buildSubmitSignalForCall(
+      { stateMachineAddress: verifyingContract, chainId: 31337 },
+      {
+        planId,
+        orderId,
+        sourceId,
+        signalId,
+        payloadHash,
+        idempotencyKey,
+        submitter,
+        deadline,
+        signature: `0x${"aa".repeat(65)}` as const,
+        attribution: {
+          sourceId,
+          signalId,
+          stageId: attribution.stageId,
+          capabilityProof: attribution.capabilityProof,
+        },
+        selectorBinding: selectorBinding,
+      },
+    );
+    assert.deepEqual(call.args[9], {
+      sourceId,
+      signalId,
+      stageId: stageA,
+      capabilityProof: attribution.capabilityProof,
+    });
+    assert.deepEqual(call.args[10], {
+      selectorStageId: stageA,
+      proof: selectorBinding.proof,
+    });
+    const decoded = decodeFunctionData({
+      abi: STATE_MACHINE_ABI,
+      data: call.data,
+    });
+    assert.equal(decoded.functionName, "submitSignalFor");
   });
 
   it("builds triggerOrderFromSignalFor calls from the order-link module ABI", () => {
     const signature = `0x${"ac".repeat(65)}` as const;
+    const originFactAttributions = [
+      { sourceId: originSourceId, signalId: originSignalId, stageId: targetStageId, capabilityProof: [payloadHash] },
+    ] as const;
     const call = buildTriggerOrderFromSignalForCall(
       {
         orderLinkModuleAddress: verifyingContract,
@@ -603,6 +856,7 @@ describe("protocol bindings", () => {
         deadline,
         authorizations: signalAuthorizations,
         signature,
+        originFactAttributions,
       },
     );
     const decoded = decodeFunctionData({
@@ -614,13 +868,46 @@ describe("protocol bindings", () => {
     assert.equal(call.abi, ORDER_LINK_MODULE_ABI);
     assert.equal(call.functionName, "triggerOrderFromSignalFor");
     assert.equal(call.args[0].triggerOriginOrderId, triggerOriginOrderId);
+    assert.deepEqual(call.args[3], [
+      {
+        sourceId: originSourceId,
+        signalId: originSignalId,
+        stageId: targetStageId,
+        capabilityProof: [payloadHash],
+      },
+    ]);
     assert.equal(decoded.functionName, "triggerOrderFromSignalFor");
-    assert.equal(decoded.args[0].triggerOriginOrderId, triggerOriginOrderId);
-    assert.equal(decoded.args[2], signature);
+    const decodedArgs = decoded.args as unknown as readonly [
+      { triggerOriginOrderId: `0x${string}` },
+      unknown,
+      `0x${string}`,
+      readonly {
+        sourceId: `0x${string}`;
+        signalId: `0x${string}`;
+        stageId: `0x${string}`;
+        capabilityProof: readonly `0x${string}`[];
+      }[],
+    ];
+    assert.ok(decodedArgs);
+    assert.equal(decodedArgs[0].triggerOriginOrderId, triggerOriginOrderId);
+    assert.equal(decodedArgs[2], signature);
+    assert.deepEqual(decodedArgs[3], [
+      {
+        sourceId: originSourceId,
+        signalId: originSignalId,
+        stageId: targetStageId,
+        capabilityProof: [payloadHash],
+      },
+    ]);
   });
 
   it("builds submitDerivedSignalFor calls from the derived signal module ABI", () => {
     const signature = `0x${"ab".repeat(65)}` as const;
+    const proofs = {
+      fromCapabilityProof: [payloadHash],
+      targetCapabilityProof: [idempotencyKey],
+      selectorBinding: { selectorStageId, proof: [] },
+    } as const;
     const call = buildSubmitDerivedSignalForCall(
       {
         derivedSignalModuleAddress: verifyingContract,
@@ -639,6 +926,7 @@ describe("protocol bindings", () => {
         submitter,
         deadline,
         signature,
+        proofs,
       },
     );
 
@@ -660,6 +948,11 @@ describe("protocol bindings", () => {
       submitter,
       BigInt(deadline),
       signature,
+      {
+        fromCapabilityProof: [payloadHash],
+        targetCapabilityProof: [idempotencyKey],
+        selectorBinding: { selectorStageId, proof: [] },
+      },
     ]);
     assert.match(call.data, /^0x[0-9a-f]+$/);
   });
@@ -772,6 +1065,10 @@ describe("protocol bindings", () => {
   it("builds applyStageExecutorPatchFor calls from the stage patch module ABI", () => {
     const selectorSignature = `0x${"bb".repeat(65)}` as const;
     const previousExecutorSignature = `0x${"dd".repeat(65)}` as const;
+    const bindingProof = { selectorStageId, proof: [payloadHash] } as const;
+    const stageFacts = [
+      { sourceId, signalId, capabilityProof: [idempotencyKey] },
+    ] as const;
     const call = buildApplyStageExecutorPatchForCall(
       {
         stagePatchModuleAddress: verifyingContract,
@@ -788,6 +1085,8 @@ describe("protocol bindings", () => {
         deadline,
         selectorSignature,
         previousExecutorSignature,
+        bindingProof,
+        stageFacts,
       },
     );
     const decoded = decodeFunctionData({
@@ -819,6 +1118,8 @@ describe("protocol bindings", () => {
       BigInt(deadline),
       selectorSignature,
       previousExecutorSignature,
+      { selectorStageId, proof: [payloadHash] },
+      [{ sourceId, signalId, capabilityProof: [idempotencyKey] }],
     ]);
     assert.equal(decoded.functionName, "applyStageExecutorPatchFor");
     assert.ok(decoded.args);
@@ -843,10 +1144,16 @@ describe("protocol bindings", () => {
     assert.equal(decodedArgs[4], BigInt(deadline));
     assert.equal(decodedArgs[5], selectorSignature);
     assert.equal(decodedArgs[6], previousExecutorSignature);
+    assert.deepEqual(decodedArgs[7], { selectorStageId, proof: [payloadHash] });
+    assert.deepEqual(decodedArgs[8], [
+      { sourceId, signalId, capabilityProof: [idempotencyKey] },
+    ]);
   });
 
   it("builds applyStageResourcePatchFor calls from the stage patch module ABI", () => {
     const signature = `0x${"cc".repeat(65)}` as const;
+    const bindingProof = { selectorStageId, proof: [] } as const;
+    const stageFacts = [] as const;
     const call = buildApplyStageResourcePatchForCall(
       {
         stagePatchModuleAddress: verifyingContract,
@@ -868,6 +1175,8 @@ describe("protocol bindings", () => {
         selector: submitter,
         deadline,
         signature,
+        bindingProof,
+        stageFacts,
       },
     );
     const decoded = decodeFunctionData({
@@ -894,6 +1203,8 @@ describe("protocol bindings", () => {
       submitter,
       BigInt(deadline),
       signature,
+      { selectorStageId, proof: [] },
+      [],
     ]);
     assert.equal(decoded.functionName, "applyStageResourcePatchFor");
     assert.ok(decoded.args);
@@ -913,6 +1224,8 @@ describe("protocol bindings", () => {
     assert.equal(String(decodedArgs[3]).toLowerCase(), submitter);
     assert.equal(decodedArgs[4], BigInt(deadline));
     assert.equal(decodedArgs[5], signature);
+    assert.deepEqual(decodedArgs[6], { selectorStageId, proof: [] });
+    assert.deepEqual(decodedArgs[7], []);
   });
 
   it("hashes canonical JSON in a browser-safe helper", () => {
@@ -1249,6 +1562,13 @@ describe("protocol bindings", () => {
     const config = {
       stateMachineAddress: "0x8888888888888888888888888888888888888888",
     };
+    // 出生事实不主张属主：零 stageId + 空 proof 的空 attribution。
+    const noBirthFactAttribution = {
+      sourceId: zeroBytes32,
+      signalId: zeroBytes32,
+      stageId: zeroBytes32,
+      capabilityProof: [],
+    } as const;
     assert.throws(
       () =>
         buildTriggerOrderFromOutsideForCall(config, {
@@ -1264,6 +1584,7 @@ describe("protocol bindings", () => {
           deadline,
           authorizations: [],
           signature,
+          birthFactAttribution: noBirthFactAttribution,
         }),
       /sourceId must be non-zero/,
     );
@@ -1290,6 +1611,7 @@ describe("protocol bindings", () => {
             },
           ],
           signature,
+          birthFactAttribution: noBirthFactAttribution,
         }),
       /authorization\.sourceId must be non-zero/,
     );
@@ -1316,6 +1638,7 @@ describe("protocol bindings", () => {
           },
         ],
         signature,
+        birthFactAttribution: noBirthFactAttribution,
       }),
     );
   });
@@ -1324,4 +1647,16 @@ describe("protocol bindings", () => {
 
 function bytes32(suffix: string): `0x${string}` {
   return `0x${suffix.padStart(64, "0")}`;
+}
+
+// 排序配对 Merkle 的独立折叠（keccak256(min ‖ max)），与包内造证工具
+// 分开实现，用于 proof → root 的对拍。
+function foldProof(leaf: `0x${string}`, proof: readonly `0x${string}`[]) {
+  let current = leaf;
+  for (const sibling of proof) {
+    const [min, max] =
+      current <= sibling ? [current, sibling] : [sibling, current];
+    current = keccak256(concatHex([min, max]));
+  }
+  return current;
 }
