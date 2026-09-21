@@ -512,6 +512,46 @@ test("dependencyIndex hookIds follow calldata order, not keccak order (oracle pa
   );
 });
 
+test("rejects a repinned capabilitiesRoot that drifts from the capability tables", () => {
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+
+  // 篡改 root 后重签 planHash：planHash 承诺对拍照常通过，而登记边界
+  // （toSolidityRegisterPlanArgs）按两表重算并覆盖 root——带着错误 root
+  // 的制品必须在 artifact 边界被拒绝，不得静默改写成重算值。
+  const { planHash: _storedHash, ...payload } = onchain;
+  const tampered = {
+    ...payload,
+    capabilitiesRoot: keccak256Hex("tampered capabilities root"),
+  };
+  const repinned: OnchainHookPlanArtifact = {
+    ...tampered,
+    planHash: hashOnchainPlanPayload(tampered),
+  };
+  assert.ok(
+    validateOnchainHookPlanArtifact(repinned).some(
+      (issue) =>
+        issue ===
+        "capabilitiesRoot must match the recomputed root over selector bindings and signal capabilities",
+    ),
+  );
+  assert.throws(
+    () => toSolidityRegisterPlanArgs(repinned),
+    /capabilitiesRoot must match the recomputed root/,
+  );
+
+  // 对照组：原样制品两表与 root 一致，登记照常取制品 root（与重算值
+  // 逐字节一致，无覆盖分歧）。
+  assert.equal(
+    onchain.capabilitiesRoot,
+    artifactCapabilitiesRoot(onchain),
+  );
+  assert.equal(
+    toSolidityRegisterPlanArgs(onchain).capabilitiesRoot,
+    onchain.capabilitiesRoot,
+  );
+  assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
+});
+
 test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   const args = toSolidityRegisterPlanArgs(onchain);

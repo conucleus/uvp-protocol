@@ -1,5 +1,6 @@
 import { validateDockCommitments } from "../../dock-validation.js";
 import { hashOnchainPlanPayload } from "../hash/plan.js";
+import { capabilitiesRootOf } from "../capabilities-root.js";
 import {
   canonicalOrderIssues,
   hookOrderKey,
@@ -120,6 +121,7 @@ export function validateOnchainHookPlanArtifact(
   expectHexHash(value.dockInterfaceRoot, "dockInterfaceRoot", issues);
   expectHexHash(value.capabilitiesRoot, "capabilitiesRoot", issues);
   issues.push(...validateDockCommitments(value));
+  issues.push(...capabilitiesRootCommitmentIssues(value));
   if (Array.isArray(value.dockRoutes)) {
     issues.push(...onchainDockTrackIssues(value.dockRoutes));
   }
@@ -365,6 +367,85 @@ function onchainDockTrackIssues(routes: readonly unknown[]): readonly string[] {
     }
   }
   return issues;
+}
+
+/**
+ * 能力树承诺重算（与 validateDockCommitments 同纪律）：登记边界
+ * （toSolidityRegisterPlanArgs）按两表重算 capabilitiesRoot——artifact
+ * 自带的 root 若与两表不一致，调用方重签 planHash 后仍能过本地校验，
+ * 登记时被静默覆盖成重算值，制品承诺与链上注册根就此分叉。必须在
+ * artifact 边界响亮拒绝。表项形状非法时跳过重算——形状 issue 由
+ * validateOnchainSelectorBindings / validateOnchainSignalCapabilities 报告。
+ */
+function capabilitiesRootCommitmentIssues(
+  value: Record<string, unknown>,
+): readonly string[] {
+  const selectorBindings = Array.isArray(value.selectorBindings)
+    ? value.selectorBindings
+    : undefined;
+  const signalCapabilities = Array.isArray(value.signalCapabilities)
+    ? value.signalCapabilities
+    : undefined;
+  if (
+    !selectorBindings ||
+    !signalCapabilities ||
+    !isHexHash(value.capabilitiesRoot)
+  ) {
+    return [];
+  }
+
+  const bindings: {
+    selectorStageId: HexString;
+    targetStageId: HexString;
+  }[] = [];
+  for (const binding of selectorBindings) {
+    if (
+      isRecord(binding) &&
+      isHexHash(binding.selectorStageId) &&
+      isHexHash(binding.targetStageId)
+    ) {
+      bindings.push({
+        selectorStageId: binding.selectorStageId,
+        targetStageId: binding.targetStageId,
+      });
+    } else {
+      return [];
+    }
+  }
+
+  const capabilities: {
+    stageId: HexString;
+    targetSourceId: HexString;
+    signalId: HexString;
+    targetOrderRelation: 0 | 1;
+  }[] = [];
+  for (const capability of signalCapabilities) {
+    if (
+      isRecord(capability) &&
+      isHexHash(capability.stageId) &&
+      isHexHash(capability.targetSourceId) &&
+      isHexHash(capability.signalId) &&
+      (capability.targetOrderRelation === "current" ||
+        capability.targetOrderRelation === "triggerOrigin")
+    ) {
+      capabilities.push({
+        stageId: capability.stageId,
+        targetSourceId: capability.targetSourceId,
+        signalId: capability.signalId,
+        targetOrderRelation:
+          capability.targetOrderRelation === "current" ? 0 : 1,
+      });
+    } else {
+      return [];
+    }
+  }
+
+  if (value.capabilitiesRoot !== capabilitiesRootOf(bindings, capabilities)) {
+    return [
+      "capabilitiesRoot must match the recomputed root over selector bindings and signal capabilities",
+    ];
+  }
+  return [];
 }
 
 /**

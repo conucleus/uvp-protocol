@@ -909,10 +909,10 @@ contract UVPStateMachine {
 
     /// 事实属主归属由提交方携 proof 声明（FactAttribution）：声明非零阶段
     /// 即必须验过该阶段对 (sourceId, signalId, relation=0) 的成员资格；
-    /// 不声明则视为"词表外事实"，物化门/属主相关门不绑定（与
-    /// source==stage 回退的旧口径一致，仅词表内成员资格的判定从链上
-    /// 存储读取变为携证验证）。SelectorBindingProof 在阶段尚无 active
-    /// patch 时参与 assign 闸（证明该阶段是 selector 绑定目标）。
+    /// 有词表的 plan 不声明即拒绝（词表闸与出生/dock output 通道同口径，
+    /// 免证事实无法证明词表成员资格），零词表的手工 plan 按 source==stage
+    /// 回退解析属主。SelectorBindingProof 在阶段尚无 active patch 时参与
+    /// assign 闸（证明该阶段是 selector 绑定目标）。
     function submitSignal(
         bytes32 planId,
         bytes32 orderId,
