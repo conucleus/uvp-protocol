@@ -10,9 +10,9 @@
   },
   "hashes": {
     "abiHash": "0x50bc3bccee3604f3b03b29a7e82a7acbb6d0024d22d803df5bfddc208cea4c5d",
-    "bytecodeHash": "0xc790299a678cd1a615289fd34c15ff678dec31ad5fb130b649ae891b8195183e",
-    "deployedBytecodeHash": "0xf0e064022dafbbd61b4fad247256cea73d9c2c7962c814a15e460727744f1d1c",
-    "artifactHash": "0x5d4246b2ad37f88d6c6d7fc8367e38cb0fc8b7351d7bbf89f2079fcfe802998b"
+    "bytecodeHash": "0x4489bf53940775b97374eb1bab867909343175515df0b25c1f7ce8ecfa23b23b",
+    "deployedBytecodeHash": "0x2cf80eee0677653ee3629ac07542130a4530a2ac8a90b3e0ae808a24b091d813",
+    "artifactHash": "0xe34f271633a4daf48af2c0f2a6a9cf07fda5df304d154b3f25b2e69b4fe81ce5"
   },
   "events": {
     "PlanCommitted": {

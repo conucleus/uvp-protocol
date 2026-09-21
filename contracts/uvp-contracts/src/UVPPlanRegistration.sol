@@ -255,25 +255,34 @@ library UVPPlanRegistration {
                 updatedCount += 1;
             } else {
                 bool inputIsDock = input.flags & HOOK_FLAG_ORDER_TRIGGER_DOCK != 0;
-                bool triggerOnly = inputIsTrigger;
+                // U2 出生通道键查重——独立全量循环，绝不与 triggerOnly 折叠
+                // 的早退 break 共线：折叠在首个非 trigger 依赖处 break 是刻意
+                // 行为，查重若共用该循环，排在同阶段 watcher 之后的 trigger
+                // 依赖会被 break 永远跳过，出生键冲突静默放行。按通道语义
+                // 分界：
+                // - 跨通道（mint∪dock）：outside 出生与 dock 出生是
+                //   两个不同的出生上下文，共享出生键会让任一侧的
+                //   出生事务把另一侧的出生线一并推 Ready、物化幻影
+                //   阶段——拒绝。
+                // - dock∪dock：entrance 键按 route 钉死
+                //   （planHookDependsOn），一键挂两条 entrance 意味着
+                //   任一 route 的子单会物化另一 route 的阶段——拒绝。
+                // - mint∪mint：一事实扇出多条 mint 出生线是产品现行
+                //   形态（customs 基准 plan：order::registered 同时
+                //   出生执行者选择与资源发布两阶段），同一 mint 出生
+                //   上下文内物化，不是幻影——放行。
                 for (uint256 k = 0; k < dependents.length; k++) {
                     if (inputIsTrigger && _isOrderTrigger(plan.hooks[dependents[k]].flags)) {
-                        // U2 出生通道键查重——按通道语义分界：
-                        // - 跨通道（mint∪dock）：outside 出生与 dock 出生是
-                        //   两个不同的出生上下文，共享出生键会让任一侧的
-                        //   出生事务把另一侧的出生线一并推 Ready、物化幻影
-                        //   阶段——拒绝。
-                        // - dock∪dock：entrance 键按 route 钉死
-                        //   （planHookDependsOn），一键挂两条 entrance 意味着
-                        //   任一 route 的子单会物化另一 route 的阶段——拒绝。
-                        // - mint∪mint：一事实扇出多条 mint 出生线是产品现行
-                        //   形态（customs 基准 plan：order::registered 同时
-                        //   出生执行者选择与资源发布两阶段），同一 mint 出生
-                        //   上下文内物化，不是幻影——放行。
                         if (inputIsDock || plan.hooks[dependents[k]].flags & HOOK_FLAG_ORDER_TRIGGER_DOCK != 0) {
                             revert UVPStateMachine.DuplicateBirthChannelKey(dependencyKey);
                         }
                     }
+                }
+                // 跨阶段闸的 trigger-only 折叠：dependents 全为 trigger 时
+                // 跨阶段共享合法（selectedStages 流：求值守卫跳过未物化
+                // 阶段的 trigger），首个非 trigger 依赖即定音——早退安全。
+                bool triggerOnly = inputIsTrigger;
+                for (uint256 k = 0; k < dependents.length; k++) {
                     if (!_isOrderTrigger(plan.hooks[dependents[k]].flags)) {
                         triggerOnly = false;
                         break;

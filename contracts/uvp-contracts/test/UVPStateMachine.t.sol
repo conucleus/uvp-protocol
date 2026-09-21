@@ -2438,6 +2438,46 @@ contract UVPStateMachineTest {
         );
     }
 
+    /// 前导同阶段 watcher 遮蔽形态：dependents[0] 是非 trigger watcher 时，
+    /// 排在其后的 trigger 依赖仍必须逐个过出生通道查重——跨阶段闸的
+    /// trigger-only 折叠在首位 break，查重若与之共线即被跳过，一次出生
+    /// 事务会同时推 mint 与 dock 两条出生线、物化幻影阶段。
+    function testCommitPlanRejectsBirthChannelKeyHiddenByLeadingWatcher() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](3);
+        // 同阶段 watcher 先注册：占据 dependents[0]，制造折叠早退的位置。
+        hooks[0] = _hookWithFlags(
+            HOOK_NON_TRIGGER,
+            STAGE_INIT,
+            HOOK_NAME_TRIGGER,
+            uint8(0),
+            _signalInstructions(SIGNAL_TRIGGER),
+            _deps(SIGNAL_TRIGGER)
+        );
+        hooks[1] = _signalHook(HOOK_INIT, STAGE_INIT, HOOK_NAME_ORDER_START, true, SIGNAL_TRIGGER);
+        hooks[2] = _hookWithFlags(
+            HOOK_ALT_MINT,
+            STAGE_INIT,
+            HOOK_NAME_INIT_DONE,
+            uint8(FLAG_ORDER_TRIGGER_DOCK | FLAG_EMIT_READY),
+            _signalInstructions(SIGNAL_TRIGGER),
+            _deps(SIGNAL_TRIGGER)
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPStateMachine.DuplicateBirthChannelKey.selector,
+                keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_TRIGGER))
+            )
+        );
+        _commitPlan(
+            machine,
+            hooks,
+            new IUVPPlanMetadataModule.StageSelectorBinding[](0),
+            new IUVPPlanMetadataModule.SignalCapability[](0)
+        );
+    }
+
     /// watcher 不是出生通道：mint 出生键与普通 watcher 共享合法（出生事实
     /// 到达只求值 watcher 的普通语义，不推第二条出生线）。
     function testWatcherMayShareBirthChannelKey() public {
