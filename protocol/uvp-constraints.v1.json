@@ -957,7 +957,7 @@
         }
       },
       "error": {
-        "rust": "一事一单：同一事实至多铸一单；多阶段消费请改用 hook 依赖（mint∪mint 臂）；跨通道臂文案 出生通道键并集查重：mint 出生键 ∪ dock entrance 键内不得重复",
+        "rust": "一事一单：同一事实至多铸一单；多阶段消费请改用 hook 依赖；出生通道键并集查重：mint 出生键 ∪ dock entrance 键内不得重复",
         "go": null,
         "ts": null
       },
@@ -967,7 +967,7 @@
       "sources": {
         "rust": "crates/uvp-compiler/src/validate/mod.rs validate_birth_channel_key_uniqueness（三臂全拒——mint∪mint 臂本仓严于链上）"
       },
-      "ruling": "登记为分叉现状，不宣称三线一致：mint∪dock、dock∪dock 两臂三方（rust 编译期、合约注册门 DuplicateBirthChannelKey、TS 编译器镜像 duplicateBirthChannelKeyIssues）一致拒绝；mint∪mint 臂仅 rust 拒绝，合约（UVPPlanRegistration._registerPlanHook 按 dock 标志分界）与 TS（按 orderTriggerKind=dock 分界）放行。镜像状态另见 rejectionSurfaces 矩阵 duplicate-birth-channel-key 行。"
+      "ruling": "登记为分叉现状，不宣称三线一致：mint∪dock、dock∪dock 两臂三方（rust 编译期、合约注册门 DuplicateBirthChannelKey、TS 编译器镜像 duplicateBirthChannelKeyIssues）一致拒绝；mint∪mint 臂仅 rust 拒绝，合约（UVPPlanRegistration._registerPlanHook 按 dock 标志分界）与 TS（按 orderTriggerKind=dock 分界）放行。error.rust 两段锚点分属两臂：前段（一事一单…改用 hook 依赖）钉 mint∪mint 臂文案，后段（出生通道键并集查重…不得重复）钉 mint∪dock / dock∪dock 跨通道臂文案。镜像状态另见 rejectionSurfaces 矩阵 duplicate-birth-channel-key 行。"
     },
     {
       "id": "task-patterns-max-count",

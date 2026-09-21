@@ -83,3 +83,13 @@ envelope word 重算。
 `packages/compiler/docs/dock-word-layout.md`（TS/Rust/Solidity 三线由
 `DockManifestParity.t.sol` 逐字节对拍钉死），源码注释里的复制本属于
 派生层，不再保留。
+
+### 2.5 出生通道词表闸的不对称（有意裁决，勿当 bug 修）
+
+mint 出生（`triggerOrderFromOutsideFor`）要求出生事实在目标 plan 的
+能力词表内（成员资格由调用方携 proof 自证）；dock 出生
+（`createDockedOrderFromModule`）无词表闸。不对称的理由：词表闸防的是
+"调用方自选词表外事实免证落库"，而 dock 出生没有自选面——entrance
+事实键取自 committed route 的 input 绑定叶（端口叶/接口承诺钉死），
+payload 由模块按 committed 值重算（`_inputPayloadHash`），调用方无从
+引入词表外事实，闸无对象可闸。

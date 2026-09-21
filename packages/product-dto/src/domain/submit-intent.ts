@@ -5,10 +5,11 @@ import type {
 } from "./index.js";
 
 /**
- * 任务提交意图（写侧契约）：与 uvp-order-app taskPresentation /
- * zhixu-store workbenchSupport 的镜像同字面量集合，此处为唯一出处。
- * 与 {@link ProductSubmitIntent}（服务端 PrepareProductTaskSubmitInput.intent
- * 的权威词表）是同一联合的两个历史名字，值域恒等。
+ * 任务提交意图（任务推导面）：uvp-order-app taskPresentation /
+ * zhixu-store workbenchSupport 消费的镜像同字面量集合，此处为唯一出处。
+ * 与 {@link ProductSubmitIntent} 值域恒等、各表其义：本名供任务模型/
+ * 工作台按 manifest 与插件类型推导意图，ProductSubmitIntent 锚定服务端
+ * 提交契约（PrepareProductTaskSubmitInput.intent）的受理词表。
  */
 export type TaskSubmitIntent =
   | "confirm_stage"
@@ -18,7 +19,7 @@ export type TaskSubmitIntent =
 
 /**
  * 无 manifest 声明时的兜底映射：争议任务（dispute_material）不得以
- * confirm_stage 提交。纯映射，两端原为逐字镜像。
+ * confirm_stage 提交。映射单源于此，任务侧消费方不自持副本。
  */
 export const submitIntentByPluginKind: Readonly<
   Record<FulfillmentPluginKind, TaskSubmitIntent>

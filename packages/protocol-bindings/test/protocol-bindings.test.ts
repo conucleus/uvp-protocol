@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import {
   concatHex,
@@ -57,6 +60,79 @@ import {
   recoverTriggerOrderFromSignalSigner,
   type ResourceManifestV1,
 } from "../src/index.js";
+
+// 能力树 golden 语料同源消费（模式对齐 compiler 侧
+// capabilities-root-golden.test.ts）：vectors.json 由 @uvp-eth/compiler
+// 权威实现生成，Foundry 侧 CapabilitiesRootParity.t.sol 消费同一份——
+// 叶公式/建树/证明规则漂移时三份实现共享同一报警面。
+interface GoldenBindingInput {
+  readonly selectorStageId: `0x${string}`;
+  readonly targetStageId: `0x${string}`;
+}
+
+interface GoldenCapabilityInput {
+  readonly stageId: `0x${string}`;
+  readonly targetSourceId: `0x${string}`;
+  readonly signalId: `0x${string}`;
+  readonly targetOrderRelation: 0 | 1;
+}
+
+interface GoldenSample {
+  readonly name: string;
+  readonly counts: {
+    readonly selectorBindings: number;
+    readonly signalCapabilities: number;
+    readonly sortedUniqueLeaves: number;
+  };
+  readonly inputs: {
+    readonly selectorBindings: readonly GoldenBindingInput[];
+    readonly signalCapabilities: readonly GoldenCapabilityInput[];
+  };
+  readonly expected: {
+    readonly root: `0x${string}`;
+    readonly sortedUniqueLeaves: readonly `0x${string}`[];
+    readonly selectorBindingLeaves: readonly {
+      readonly leaf: `0x${string}`;
+      readonly proofLength: number;
+      readonly proof: readonly `0x${string}`[];
+    }[];
+    readonly signalCapabilityLeaves: readonly {
+      readonly leaf: `0x${string}`;
+      readonly proofLength: number;
+      readonly proof: readonly `0x${string}`[];
+    }[];
+  };
+}
+
+const golden = JSON.parse(
+  readFileSync(
+    resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../compiler/fixtures/capabilities-root/v1/vectors.json",
+    ),
+    "utf8",
+  ),
+) as {
+  readonly schemaVersion: string;
+  readonly samples: readonly GoldenSample[];
+};
+
+// fixture 键名（targetOrderRelation）映射到本包表项键名（relation）。
+function goldenBindings(sample: GoldenSample) {
+  return sample.inputs.selectorBindings.map((binding) => ({
+    selectorStageId: binding.selectorStageId,
+    targetStageId: binding.targetStageId,
+  }));
+}
+
+function goldenCapabilities(sample: GoldenSample) {
+  return sample.inputs.signalCapabilities.map((capability) => ({
+    stageId: capability.stageId,
+    targetSourceId: capability.targetSourceId,
+    signalId: capability.signalId,
+    relation: capability.targetOrderRelation,
+  }));
+}
 
 const privateKey =
   "0x1111111111111111111111111111111111111111111111111111111111111111" as const;
@@ -633,144 +709,148 @@ describe("protocol bindings", () => {
     assert.equal(decodedArgs[10].selectorStageId, selectorStageId);
   });
 
-  it("builds capability-tree leaves, roots, and proofs matching the on-chain formula", () => {
-    const stageA = bytes32("a1");
-    const stageB = bytes32("a2");
-    const stageC = bytes32("a3");
-    const src1 = bytes32("b1");
-    const src2 = bytes32("b2");
-    const sig1 = bytes32("c1");
-    const sig2 = bytes32("c2");
-    const bindings = [
-      { selectorStageId: stageA, targetStageId: stageB },
-      { selectorStageId: stageB, targetStageId: stageC },
-    ] as const;
-    const capabilities = [
-      { stageId: stageA, targetSourceId: src1, signalId: sig1, relation: 0 },
-      { stageId: stageB, targetSourceId: src2, signalId: sig2, relation: 1 },
-    ] as const;
+  it("matches the shared capabilities-root golden vectors consumed by compiler and Foundry", () => {
+    // 同源消费 packages/compiler/fixtures/capabilities-root/v1/vectors.json
+    // （compiler 权威实现生成，Foundry 侧 CapabilitiesRootParity.t.sol 消费
+    // 同一份）：叶公式/建树/证明规则漂移时三份实现共享同一报警面，本包
+    // 不自产硬编码根值。
+    assert.equal(golden.schemaVersion, "uvp.capabilities-root.golden.v1");
+    assert.equal(golden.samples.length, 2);
+    for (const sample of golden.samples) {
+      const selectorBindings = goldenBindings(sample);
+      const signalCapabilities = goldenCapabilities(sample);
+      const { expected } = sample;
+      // 计数镜像（forge 侧 vm.parseJson 不支持 .length 路径）与实际数组
+      // 长一致，防止 fixture 内部漂移。
+      assert.equal(selectorBindings.length, sample.counts.selectorBindings);
+      assert.equal(signalCapabilities.length, sample.counts.signalCapabilities);
+      assert.equal(
+        expected.sortedUniqueLeaves.length,
+        sample.counts.sortedUniqueLeaves,
+      );
 
-    // 叶公式独立对拍（Solidity abi.encode 口径，硬编码期望值钉死公式）：
-    // keccak256(abi.encode(keccak256(domain), …words))。
-    assert.equal(
-      signalCapabilityLeaf(stageA, src1, sig1, 0),
-      "0x33970da1fc44c461d8b7efa8f337a6b37fc7ef5f49c274ac5ffbff1ef4fffb95",
-    );
-    assert.equal(
-      signalCapabilityLeaf(stageB, src2, sig2, 1),
-      "0x54056a9b17cd73c8390df8e25c48e825080647574130b5f64618e7b15f7068a6",
-    );
-    assert.equal(
-      selectorBindingLeaf(stageA, stageB),
-      "0x78bc768537795e1736320461b50388acf2ee0c60645230c1b060aa70d2392077",
-    );
-    assert.equal(
-      selectorBindingLeaf(stageB, stageC),
-      "0xd58a4b9b87fc0cde4a3eeb8233f901f090531296731407632a93543d4e0089a0",
-    );
-    assert.equal(
-      signalCapabilityLeaf(stageA, src1, sig1, 0),
-      keccak256(
-        encodeAbiParameters(
-          [
-            { name: "domain", type: "bytes32" },
-            { name: "stageId", type: "bytes32" },
-            { name: "targetSourceId", type: "bytes32" },
-            { name: "signalId", type: "bytes32" },
-            { name: "relation", type: "uint256" },
-          ],
-          [
-            keccak256(stringToHex("UVP_SIGNAL_CAPABILITY_V1")),
-            stageA,
-            src1,
-            sig1,
-            0n,
-          ],
-        ),
-      ),
-    );
+      // 树根与排序去重叶集：能力叶/绑定叶域分隔混编进同一棵排序配对树。
+      assert.equal(
+        capabilitiesRootOf(selectorBindings, signalCapabilities),
+        expected.root,
+      );
+      assert.deepEqual(
+        [
+          ...new Set([
+            ...selectorBindings.map((binding) =>
+              selectorBindingLeaf(
+                binding.selectorStageId,
+                binding.targetStageId,
+              ),
+            ),
+            ...signalCapabilities.map((capability) =>
+              signalCapabilityLeaf(
+                capability.stageId,
+                capability.targetSourceId,
+                capability.signalId,
+                capability.relation,
+              ),
+            ),
+          ]),
+        ].sort(),
+        expected.sortedUniqueLeaves,
+      );
 
-    // 空表根 = keccak256("")（合约 DockMerkle.EMPTY_ROOT）。
+      // 每条绑定输入：叶公式重算 + 按目标阶段取证的 proof 逐字相等。
+      for (const [index, binding] of selectorBindings.entries()) {
+        assert.equal(
+          selectorBindingLeaf(binding.selectorStageId, binding.targetStageId),
+          expected.selectorBindingLeaves[index]!.leaf,
+        );
+        const proof = selectorBindingProofFor(
+          selectorBindings,
+          signalCapabilities,
+          binding.targetStageId,
+        );
+        assert.ok(proof, "bound target stage must yield a selector proof");
+        assert.equal(proof.selectorStageId, binding.selectorStageId);
+        assert.deepEqual(proof.proof, expected.selectorBindingLeaves[index]!.proof);
+        assert.equal(
+          foldProof(
+            selectorBindingLeaf(binding.selectorStageId, binding.targetStageId),
+            proof.proof,
+          ),
+          expected.root,
+        );
+      }
+
+      // 每条能力输入：叶公式重算；relation=0 是事实属主自证材料（stageId +
+      // proof 与 pinned 叶证明一致），relation=1 不构成属主自证。
+      for (const [index, capability] of signalCapabilities.entries()) {
+        const leaf = signalCapabilityLeaf(
+          capability.stageId,
+          capability.targetSourceId,
+          capability.signalId,
+          capability.relation,
+        );
+        assert.equal(leaf, expected.signalCapabilityLeaves[index]!.leaf);
+        const attribution = factAttribution(
+          selectorBindings,
+          signalCapabilities,
+          capability.targetSourceId,
+          capability.signalId,
+        );
+        if (capability.relation === 0) {
+          assert.ok(attribution, "relation=0 fact key must resolve to an owner");
+          assert.equal(attribution.stageId, capability.stageId);
+          assert.deepEqual(
+            attribution.capabilityProof,
+            expected.signalCapabilityLeaves[index]!.proof,
+          );
+        } else {
+          assert.equal(attribution, undefined);
+        }
+      }
+    }
+
+    // 空表根 = keccak256("")（合约 DockMerkle.EMPTY_ROOT 的规范空根常量）。
     assert.equal(
       EMPTY_CAPABILITIES_ROOT,
       "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
     );
     assert.equal(capabilitiesRootOf([], []), EMPTY_CAPABILITIES_ROOT);
 
-    // 混编树根（排序叶序：capA < capB < selAB < selBC）与单叶/三叶奇数
-    // 提升边界，全部钉死硬编码期望值。
-    assert.equal(
-      capabilitiesRootOf(bindings, capabilities),
-      "0x599065f4ebc0981274720be063250e6ad6d38bdd2fa6f7bf2dc53f6bbc54f855",
-    );
-    assert.equal(
-      capabilitiesRootOf([], [capabilities[0]]),
-      "0x33970da1fc44c461d8b7efa8f337a6b37fc7ef5f49c274ac5ffbff1ef4fffb95",
-    );
-    assert.equal(
-      capabilitiesRootOf([bindings[0]], capabilities),
-      "0xfef7af5cb07dd06d43af7003fdb02319795a054adc1e05f8632b2f73a21e975b",
-    );
-    // 重复表项去重：树根不随重复条目变化。
-    assert.equal(
-      capabilitiesRootOf([...bindings, bindings[0]], [...capabilities, capabilities[1]]),
-      capabilitiesRootOf(bindings, capabilities),
-    );
     // 大小写归一：等价 word 不因拼写漂移换根。
+    const sample = golden.samples[0]!;
     assert.equal(
       capabilitiesRootOf(
-        [
-          {
-            selectorStageId: `0x${stageA.slice(2).toUpperCase()}`,
-            targetStageId: `0x${stageB.slice(2).toUpperCase()}`,
-          },
-        ],
-        [],
+        goldenBindings(sample).map((binding) => ({
+          selectorStageId: `0x${binding.selectorStageId.slice(2).toUpperCase()}`,
+          targetStageId: `0x${binding.targetStageId.slice(2).toUpperCase()}`,
+        })),
+        goldenCapabilities(sample).map((capability) => ({
+          stageId: `0x${capability.stageId.slice(2).toUpperCase()}`,
+          targetSourceId: `0x${capability.targetSourceId
+            .slice(2)
+            .toUpperCase()}`,
+          signalId: `0x${capability.signalId.slice(2).toUpperCase()}`,
+          relation: capability.relation,
+        })),
       ),
-      capabilitiesRootOf([bindings[0]], []),
+      sample.expected.root,
     );
-
-    // 事实属主自证：relation=0 能力命中，proof 可独立折叠回树根。
-    const attribution = factAttribution(bindings, capabilities, src1, sig1);
-    assert.ok(attribution);
-    assert.equal(attribution.stageId, stageA);
-    assert.deepEqual(attribution.capabilityProof, [
-      "0x54056a9b17cd73c8390df8e25c48e825080647574130b5f64618e7b15f7068a6",
-      "0x6c9196238a9be76e1ea2b92a1e2bb2555987da84e8c95701ffec76e1712fcef2",
-    ]);
+    // 词表外事实键不构成属主自证；未被绑定的目标阶段返回 undefined
+    // （调用方提交零 selectorStageId 的空证明）。
     assert.equal(
-      foldProof(
-        signalCapabilityLeaf(stageA, src1, sig1, 0),
-        attribution.capabilityProof,
+      factAttribution(
+        goldenBindings(sample),
+        goldenCapabilities(sample),
+        "0x0000000000000000000000000000000000000000000000000000000000000bad",
+        "0x0000000000000000000000000000000000000000000000000000000000000bad",
       ),
-      capabilitiesRootOf(bindings, capabilities),
+      undefined,
     );
-    // 词表外 / 仅 relation=1 的目标事实不构成属主自证。
-    assert.equal(factAttribution(bindings, capabilities, src2, sig2), undefined);
-    assert.equal(factAttribution(bindings, capabilities, src1, sig2), undefined);
-
-    // selector 绑定证明：按目标阶段取绑定，proof 同样折叠回根。
-    const selectorBinding = selectorBindingProofFor(
-      bindings,
-      capabilities,
-      stageC,
-    );
-    assert.ok(selectorBinding);
-    assert.equal(selectorBinding.selectorStageId, stageB);
-    assert.deepEqual(selectorBinding.proof, [
-      "0x78bc768537795e1736320461b50388acf2ee0c60645230c1b060aa70d2392077",
-      "0x4c3cc058083d814485db3d108299afdfa64ae1c41ea4b8935e6924505013c349",
-    ]);
     assert.equal(
-      foldProof(
-        selectorBindingLeaf(selectorBinding.selectorStageId, stageC),
-        selectorBinding.proof,
+      selectorBindingProofFor(
+        goldenBindings(sample),
+        goldenCapabilities(sample),
+        "0x0000000000000000000000000000000000000000000000000000000000000bad",
       ),
-      capabilitiesRootOf(bindings, capabilities),
-    );
-    // 未被绑定的目标阶段返回 undefined（调用方提交零 selectorStageId）。
-    assert.equal(
-      selectorBindingProofFor(bindings, capabilities, stageA),
       undefined,
     );
   });

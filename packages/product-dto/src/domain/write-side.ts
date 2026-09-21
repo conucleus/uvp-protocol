@@ -6,9 +6,8 @@
 //
 // 权威裁决落点：ProductSubmissionDTO.statusLabel 定为必填 string——服务端
 // 类型标注可选，但 withSubmissionReconcileDefaults（submissions/service.ts）
-// 对每次读取恒兜底产出；三端手写版曾是"可选/必填/无"三样分叉。
-// EvidenceProofDTO 的 evidenceId/payloadRef 同理：getProof 恒产出，定为必填
-//（order-app 手写版曾为可选、zhixu-store 手写版曾整体缺失）。
+// 对每次读取恒兜底产出；必填口径让各端免于自选判空分支。
+// EvidenceProofDTO 的 evidenceId/payloadRef 同理：getProof 恒产出，定为必填。
 
 /** EVM 十六进制标量（自持别名）。 */
 export type ProductWriteHex = `0x${string}`;
@@ -16,9 +15,10 @@ export type ProductWriteHex = `0x${string}`;
 export type ProductWriteAddress = `0x${string}`;
 
 /**
- * 产品任务提交意图（服务端 PrepareProductTaskSubmitInput.intent 的权威
- * 词表）。与 TaskSubmitIntent（任务侧推导镜像）是同一联合的历史名字，
- * 值域恒等。
+ * 产品任务提交意图（提交契约面）：服务端 PrepareProductTaskSubmitInput.intent
+ * 的权威词表，服务端受理集与产品 API 层按此名消费。与 TaskSubmitIntent
+ * 值域恒等、各表其义：本名锚定提交契约负载，TaskSubmitIntent 供任务
+ * 模型/工作台按 manifest 与插件类型推导意图。
  */
 export type ProductSubmitIntent =
   | "confirm_stage"

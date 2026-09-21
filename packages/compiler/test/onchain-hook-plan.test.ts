@@ -737,7 +737,7 @@ test("hooksHash frozen vector pins the zero-word instruction fill cross-language
   // sourceId/signalId 填 Solidity 零字，arity/delaySeconds 未用位填 0。
   // 任何一方（TS compiler / uvp-deploy 驱动 / Rust）在填充位引入别的字
   // 节（例如 keccak256("")）都会让含 NOT/AND/OR/DELAY 的计划在 commitPlan
-  // 处 PlanMetadataHashMismatch 必然 revert。
+  // 处 HooksHashMismatch 必然 revert。
   const hooks = [
     {
       hookId: "0x0000000000000000000000000000000000000000000000000000000000001001",

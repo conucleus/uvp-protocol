@@ -168,7 +168,7 @@ export function planIdForPublisher(
  * TS compiler、uvp-deploy 驱动与任何链下预计算方必须用同一填充字节。
  * keccak256("")（0xc5d2…470）只作为 DockMerkle.EMPTY_ROOT 出现，与指令
  * 填充无关——任何一方在填充位改用它都会让含 NOT/AND/OR/DELAY 的计划在
- * commitPlan 处 PlanMetadataHashMismatch 必然 revert。导出以便跨语言冻结
+ * commitPlan 处 HooksHashMismatch 必然 revert。导出以便跨语言冻结
  * 向量与 deploy 侧复用同一实现。
  */
 export function hashSolidityRegisterHooks(

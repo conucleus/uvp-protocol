@@ -1300,18 +1300,9 @@ contract UVPStateMachine {
         }
         _requireActiveStageExecutor(planId, orderId, sourceId, signalId, submitter);
 
-        bytes32 sourceStageId = _verifiedFactOwner(planId, sourceId, signalId, attribution);
-        if (sourceStageId == bytes32(0)) {
-            // 词表闸（与出生/dock output 通道同口径）：有词表的 plan，事实
-            // 未被有效声明归属即拒绝——免证落库会按词表外口径绕过属主阶段
-            // 物化门，随后诚实 ASSIGN patch 永久 StageAlreadyHasSignal。
-            if (_hasCapabilityVocabulary(planId)) {
-                revert InvalidSignalCapability(planId, sourceId, signalId);
-            }
-            if (_isPlanStage(planId, sourceId)) {
-                sourceStageId = sourceId;
-            }
-        }
+        // 属主阶段解析统一走 _resolveSourceStage：免证落库会按词表外口径
+        // 绕过属主阶段物化门，随后诚实 ASSIGN patch 永久 StageAlreadyHasSignal。
+        bytes32 sourceStageId = _resolveSourceStage(planId, sourceId, signalId, attribution);
         _requireSourceStageReady(planId, orderId, sourceStageId, selectorBinding);
         _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false);
     }

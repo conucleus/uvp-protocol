@@ -35,7 +35,7 @@ const ALL_SUBMIT_INTENTS: readonly ProductSubmitIntent[] = [
 ];
 
 describe("写侧词表对齐服务端", () => {
-  it("ProductSubmitIntent 与 TaskSubmitIntent 值域恒等（同一联合的历史名字）", () => {
+  it("ProductSubmitIntent 与 TaskSubmitIntent 值域恒等（提交契约面与任务推导面同一联合）", () => {
     const asTask: readonly TaskSubmitIntent[] = ALL_SUBMIT_INTENTS;
     const asProduct: readonly ProductSubmitIntent[] = asTask;
     assert.equal(asProduct.length, 4);
