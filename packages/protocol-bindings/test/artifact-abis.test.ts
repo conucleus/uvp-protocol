@@ -7,6 +7,7 @@ import { describe, it } from "node:test";
 import { toEventHash, type Abi, type AbiEvent } from "viem";
 import {
   buildCompactHookFlags,
+  FINALIZE_PLAN_ERRORS_ABI,
   HOOK_FLAG_EMIT_READY,
   HOOK_FLAG_ORDER_TRIGGER_DOCK,
   HOOK_FLAG_ORDER_TRIGGER_MINT,
@@ -20,6 +21,10 @@ const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const artifactPath = resolve(
   packageDir,
   "../../contracts/uvp-contracts/out/UVPStateMachine.sol/UVPStateMachine.json",
+);
+const planMetadataInterfaceArtifactPath = resolve(
+  packageDir,
+  "../../contracts/uvp-contracts/out/IUVPPlanMetadataModule.sol/IUVPPlanMetadataModule.json",
 );
 
 interface FoundryArtifact {
@@ -73,6 +78,39 @@ describe("generated artifact ABI bindings", () => {
       await readFile(artifactPath, "utf8"),
     ) as FoundryArtifact;
     assert.deepEqual(UVP_STATE_MACHINE_ARTIFACT_ABI, artifact.abi);
+  });
+
+  it("exposes the interface-declared finalizePlan size-gate errors for revert decoding", async (t) => {
+    if (!artifactAvailable) {
+      return t.skip("forge artifacts not built");
+    }
+    const stateMachineArtifact = JSON.parse(
+      await readFile(artifactPath, "utf8"),
+    ) as FoundryArtifact;
+    // 前提钉住：这组错误经接口限定名 revert，永不在 UVPStateMachine 产物
+    // ABI 里——切片存在的原因失效时（错误迁回主合约）本测试红，提示删除
+    // 切片而不是让两处重复声明漂移。
+    const stateMachineErrorNames = new Set(
+      stateMachineArtifact.abi
+        .filter((item) => item.type === "error")
+        .map((item) => item.name),
+    );
+    for (const entry of FINALIZE_PLAN_ERRORS_ABI) {
+      assert.equal(entry.type, "error");
+      assert.equal(
+        stateMachineErrorNames.has(entry.name),
+        false,
+        `${entry.name} moved into the UVPStateMachine artifact ABI; drop it from FINALIZE_PLAN_ERRORS_ABI`,
+      );
+    }
+
+    const interfaceArtifact = JSON.parse(
+      await readFile(planMetadataInterfaceArtifactPath, "utf8"),
+    ) as FoundryArtifact;
+    const interfaceErrors = interfaceArtifact.abi.filter(
+      (item) => item.type === "error",
+    );
+    assert.deepEqual(FINALIZE_PLAN_ERRORS_ABI, interfaceErrors);
   });
 
   it("keeps the handwritten frozen STATE_MACHINE_ABI a subset of the artifact ABI", async (t) => {

@@ -3408,6 +3408,46 @@ export const SIGNAL_SUBMITTED_ABI = [
 ] as const;
 export const SIGNAL_SUBMITTED_TOPIC = "0x41c82bf034d8a61d15b79fcac36c465b2655b5bb3f33fb4c16f01c174103acf3" as Hex;
 
+// finalizePlan revert 解码面：TooManySelectorBindings /
+// TooManySignalCapabilities 声明在 IUVPPlanMetadataModule 上，由
+// UVPStateMachine 经链接注册库在 finalizePlan 边界 revert——它们不在
+// UVPStateMachine 自身的 artifact ABI 里，解码 finalizePlan revert 时必须
+// 把本切片并入 UVP_STATE_MACHINE_ARTIFACT_ABI，否则错误名匹配不到。
+export const FINALIZE_PLAN_ERRORS_ABI = [
+  {
+    "type": "error",
+    "name": "TooManySelectorBindings",
+    "inputs": [
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "max",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "TooManySignalCapabilities",
+    "inputs": [
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "max",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  }
+] as const;
+
 export const HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
 export const HOOK_FLAG_ORDER_TRIGGER_DOCK = 2;
 export const HOOK_FLAG_EMIT_READY = 4;

@@ -20,6 +20,13 @@ const stateMachineArtifactPath = resolve(
   contractsDir,
   "out/UVPStateMachine.sol/UVPStateMachine.json",
 );
+// finalizePlan 的规模闸错误声明在 IUVPPlanMetadataModule（注册库经接口
+// 限定名 revert），因此永远不会出现在 UVPStateMachine 的 artifact ABI 里；
+// 镜像只能从接口产物提取。
+const planMetadataInterfaceArtifactPath = resolve(
+  contractsDir,
+  "out/IUVPPlanMetadataModule.sol/IUVPPlanMetadataModule.json",
+);
 // Single declaration point shared by UVPStateMachine and the linked
 // UVPPlanRegistration library; the flags bit values are not recoverable
 // from the artifact ABI alone.
@@ -40,11 +47,21 @@ const flagConstants: readonly FlagConstantSpec[] = [
 
 const signalSubmittedEventName = "SignalSubmitted";
 
+// finalizePlan revert 解码面：消费方用 UVP_STATE_MACHINE_ARTIFACT_ABI +
+// 本切片才能把规模闸 revert 解出错误名（见生成文件内的注释）。
+const finalizePlanErrorNames: readonly string[] = [
+  "TooManySelectorBindings",
+  "TooManySignalCapabilities",
+];
+
 async function main(): Promise<void> {
   const artifact = JSON.parse(
     await readFile(stateMachineArtifactPath, "utf8"),
   ) as FoundryArtifact;
   const constantsSource = await readFile(constantsSourcePath, "utf8");
+  const planMetadataInterfaceArtifact = JSON.parse(
+    await readFile(planMetadataInterfaceArtifactPath, "utf8"),
+  ) as FoundryArtifact;
 
   const abiJson = JSON.stringify(artifact.abi, null, 2);
   const signalSubmitted = artifact.abi.find(
@@ -61,6 +78,21 @@ async function main(): Promise<void> {
   }
   const signalSubmittedSignature = eventSignature(signalSubmitted);
   const signalSubmittedTopic: Hex = toEventHash(signalSubmittedSignature);
+  const finalizePlanErrors = finalizePlanErrorNames.map((name) => {
+    const entry = planMetadataInterfaceArtifact.abi.find(
+      (item) =>
+        typeof item === "object" &&
+        item !== null &&
+        (item as { type?: unknown }).type === "error" &&
+        (item as { name?: unknown }).name === name,
+    );
+    if (!entry) {
+      throw new Error(
+        `error ${name} missing from ${planMetadataInterfaceArtifactPath}`,
+      );
+    }
+    return entry;
+  });
 
   const flagLines = flagConstants.map((spec) => {
     const value = extractUintConstant(constantsSource, spec.name);
@@ -79,6 +111,13 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = ${abiJson} as const;
 export const SIGNAL_SUBMITTED_ABI = ${JSON.stringify([signalSubmitted], null, 2)} as const;
 export const SIGNAL_SUBMITTED_TOPIC = "${signalSubmittedTopic}" as Hex;
 
+// finalizePlan revert 解码面：TooManySelectorBindings /
+// TooManySignalCapabilities 声明在 IUVPPlanMetadataModule 上，由
+// UVPStateMachine 经链接注册库在 finalizePlan 边界 revert——它们不在
+// UVPStateMachine 自身的 artifact ABI 里，解码 finalizePlan revert 时必须
+// 把本切片并入 UVP_STATE_MACHINE_ARTIFACT_ABI，否则错误名匹配不到。
+export const FINALIZE_PLAN_ERRORS_ABI = ${JSON.stringify(finalizePlanErrors, null, 2)} as const;
+
 ${flagLines.join("\n")}
 `;
 
@@ -87,7 +126,7 @@ ${flagLines.join("\n")}
     output,
   );
   console.log(
-    `wrote src/artifact-abis.ts (${artifact.abi.length} ABI entries, ${signalSubmittedTopic})`,
+    `wrote src/artifact-abis.ts (${artifact.abi.length} ABI entries, ${signalSubmittedTopic}, ${finalizePlanErrors.length} finalizePlan errors)`,
   );
 }
 
