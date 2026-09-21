@@ -20,6 +20,12 @@ pnpm --filter @uvp-eth/protocol-bindings build
   validation, and canonical hash helpers.
 - Does not import Node-only modules, read env vars, hold private keys, run
   watchers, request wallet signatures, or submit transactions.
+- The test suite consumes the shared capabilities-root golden vectors from
+  `../compiler/fixtures/capabilities-root/v1/vectors.json` by relative path
+  (the same fixture feeds the compiler TS tests and the Foundry parity
+  suite). The coupling is a deliberate directory-layout contract, not a
+  package dependency; moving that fixture requires updating all three
+  consumers together.
 
 ## Capability Tree Helpers
 
