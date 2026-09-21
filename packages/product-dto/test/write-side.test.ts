@@ -14,10 +14,10 @@ import {
   taskSubmitIntentForAction,
 } from "@uvp-eth/product-dto";
 
-// 治理审计 §1.1 P1-1：写侧契约入包后的形状与推导钉子——形状对齐
-// uvp-chain-services 服务端真身（submissions/types.ts、evidence/types.ts、
-// evidence/service.ts getProof、reconcile/status.ts），推导对齐
-// order-app taskPresentation 与 zhixu-store workbenchSupport 的镜像。
+// 写侧契约的形状与推导钉子——形状对齐 uvp-chain-services 服务端真身
+// （submissions/types.ts、evidence/types.ts、evidence/service.ts getProof、
+// reconcile/status.ts），推导对齐 order-app taskPresentation 与
+// zhixu-store workbenchSupport 的镜像。
 
 const ALL_PLUGIN_KINDS: readonly FulfillmentPluginKind[] = [
   "payment_placeholder",

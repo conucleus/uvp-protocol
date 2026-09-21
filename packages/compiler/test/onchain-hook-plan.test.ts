@@ -868,8 +868,8 @@ test("cross-stage dependency guard fires on deserialized artifacts and follows c
   assert.equal(rejectedIssues.length, 1);
 });
 
-test("compiles capability tables beyond the retired gas caps into a verifiable capabilitiesRoot", () => {
-  // 256/128 上限随 Merkle 化退役（链上只承诺 root，finalize 与表规模脱钩）：
+test("compiles capability tables beyond gas caps into a verifiable capabilitiesRoot", () => {
+  // 两表无 256/128 规模上限（链上只承诺 root，finalize 与表规模脱钩）：
   // 400 绑定 + 400 能力必须可编译出根，且深叶成员资格可由 proof 验证。
   // stageId/sourceId 直接按 32 字节词构造（假身份）：本测试的对象是承诺
   // 公式本身，不经过 DSL 编译（IR 层仍有 Rust 侧规模闸）。
@@ -2280,7 +2280,7 @@ test("artifact boundary enforces the executorType closed enum and non-empty exec
 });
 
 test("compile boundary rejects whitespace-only executor.supplierID", () => {
-  // 编译入口此前只拒空串：空白 supplierID 是"有值"的假形态，过门即烧进
+  // 只拒空串不够：空白 supplierID 是"有值"的假形态，过门即烧进
   // executorHash，消费侧永远无法寻址执行者。与 Rust 编译入口同口径拒绝。
   const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
   const mutated = resign({
@@ -2311,9 +2311,9 @@ test("compile boundary rejects whitespace-only executor.supplierID", () => {
 
 test("compile boundary mirrors _validateHook shape gates before producing artifacts", () => {
   // MAX_ONCHAIN_HOOK_DELAY_SECONDS 等常量自述"fail-closed 预检必须拒绝同样
-  // 输入"：30 天延时上限/空指令栈形状/空依赖/EmptyPlan 此前只在反序列化
-  // 边界生效，手工/漂移的 IR 制品（过 IR 校验）会在编译入口静默产出毒
-  // 制品，交由 commitPlan revert。编译 preflight 必须同口径拒绝。
+  // 输入"：30 天延时上限/空指令栈形状/空依赖/EmptyPlan 不能只在反序列化
+  // 边界生效——否则手工/漂移的 IR 制品（过 IR 校验）会在编译入口静默
+  // 产出毒制品，交由 commitPlan revert。编译 preflight 必须同口径拒绝。
   const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
   const timeoutHook = hookPlan.compiledHooks.find(
     (hook) => hook.hookName === "TIMEOUT",
@@ -2342,7 +2342,8 @@ test("compile boundary mirrors _validateHook shape gates before producing artifa
   );
 
   // 空依赖（contract reverts InvalidHook for empty dependencyKeys）：IR 校验
-  // 不拒绝空依赖数组，毒制品此前只在 toSolidityRegisterPlanArgs 才炸。
+  // 不拒绝空依赖数组，毒制品须在编译 preflight 拦下，不得留到
+  // toSolidityRegisterPlanArgs 才炸。
   const emptyDepsHooks = hookPlan.compiledHooks.map((hook) =>
     hook === timeoutHook ? { ...hook, dependencies: [] } : hook,
   );
@@ -2593,7 +2594,7 @@ test("duplicate birth-channel key is rejected at compile and deserialization bou
   );
 });
 
-test("hook dependencies must mirror the SIGNAL atom key set (M21 mirror)", () => {
+test("hook dependencies must mirror the SIGNAL atom key set (contract mirror)", () => {
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   const watcher = onchain.compiledHooks.find(
     (hook) => hook.orderTriggerKind === "none" && hook.dependencies.length === 1,
@@ -2644,8 +2645,8 @@ test("hook dependencies must mirror the SIGNAL atom key set (M21 mirror)", () =>
 });
 
 test("capabilitiesRoot varies with table contents and pins empty tables to EMPTY_MERKLE_ROOT", () => {
-  // 旧的 selector-binding 128 上限（M24 镜像）随 Merkle 化退役：表内容改由
-  // capabilitiesRoot 承诺——空表钉 EMPTY_MERKLE_ROOT，任何叶子变化都改根。
+  // selector-binding 无 128 上限：表内容由 capabilitiesRoot 承诺——
+  // 空表钉 EMPTY_MERKLE_ROOT，任何叶子变化都改根。
   assert.equal(capabilitiesRootOf([], []), EMPTY_MERKLE_ROOT);
 
   // 绑定侧：同一能力表增删一个绑定叶，根随之变化（真实编译产物）。

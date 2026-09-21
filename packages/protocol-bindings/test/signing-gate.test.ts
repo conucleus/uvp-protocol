@@ -6,10 +6,10 @@ import {
   validateTypedDataForSigning,
 } from "../src/index.js";
 
-// 治理审计 §1.1 P1-1：签名闸门单源的最强集行为。三端（order-app
-// injectedWallet / zhixu-store wallet / executor-kit product）曾各自漂移
-// （取消判定正则不同、preparedSubmitters 交叉核对仅 zhixu-store 有），
-// 此处钉住合并后的判定语义：只做判定返回 reason，文案由宿主映射。
+// 签名闸门单源的最强集行为钉子。三端（order-app injectedWallet /
+// zhixu-store wallet / executor-kit product）不共享单源即会各自漂移
+// （取消判定正则不同、preparedSubmitters 交叉核对缺位），此处钉住
+// 单源判定语义：只做判定返回 reason，文案由宿主映射。
 
 const submitter = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const otherAddress = "0xcccccccccccccccccccccccccccccccccccccccc";

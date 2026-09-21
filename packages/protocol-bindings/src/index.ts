@@ -14,7 +14,7 @@ import {
   type Hex,
 } from "viem";
 
-// 重构后部分签名的嵌套深度超出 viem parseAbi 的类型级解析预算
+// 部分签名的嵌套深度超出 viem parseAbi 的类型级解析预算
 // （运行时解析正常，tsc 下落入 Error 分支），这几条以等价的 JSON const
 // 条目手写；条目形状与 forge 产物一致，由 artifact-abis 测试钉为产物子集。
 const TRIGGER_ORDER_FROM_OUTSIDE_FOR_ABI_ENTRY = [
@@ -612,7 +612,7 @@ export interface ProductSubmitTypedData {
 }
 
 // PlanCommit 的能力承诺面是 capabilitiesRoot（空表归一化为
-// EMPTY_CAPABILITIES_ROOT，见 capabilities-root.ts）：两表 Merkle 化后只有
+// EMPTY_CAPABILITIES_ROOT，见 capabilities-root.ts）：两表 Merkle 化形态下只有
 // 树根进入发布者签名，表内容按使用方"重算叶 + 携 proof"验证。
 export interface PlanCommitPayload {
   readonly publisher: Address | string;

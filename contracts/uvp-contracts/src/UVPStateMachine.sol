@@ -39,7 +39,7 @@ contract UVPStateMachine {
 
     struct Instruction {
         // 按数值承载 InstructionOp 词表（ABI/EIP-712/hooksHash 编码与枚举
-        // 形态逐字节一致）：词表外操作码（如已退役的旧扇入 op=5）在
+        // 形态逐字节一致）：词表外操作码（如扇入类 op=5）在
         // commitPlan 注册边界被 _validateHook 显式 revert
         // InvalidInstruction，而不是只依赖解码层的无名回滚。
         uint8 op;
@@ -235,7 +235,7 @@ contract UVPStateMachine {
     /// 上下文内物化，不在禁止之列。注册边界拒绝（编译器与 Rust 校验同
     /// 口径，报错键即重复的 signalKey）。
     error DuplicateBirthChannelKey(bytes32 signalKey);
-    /// dependencyKeys 必须与 hook 指令集的 SIGNAL 原子键逐点一致（M21）：
+    /// dependencyKeys 必须与 hook 指令集的 SIGNAL 原子键逐点一致：
     /// 未声明的 SIGNAL 键不进 dependencyIndex，该事实到达永不触发求值，
     /// hook 永久 Init 且零告警；多声明的键只是死索引。注册边界拒绝。
     error HookDependencyKeyMismatch(bytes32 hookId);
@@ -1850,7 +1850,7 @@ contract UVPStateMachine {
         if (!runtime.exists) {
             _initializeHookRuntime(order, triggerHookId);
         }
-        // 终态守卫（M20）：出生事务内 _recordSignal 已先对 entrance hook
+        // 终态守卫：出生事务内 _recordSignal 已先对 entrance hook
         // 求值（evaluateOrderTriggerHooks=true），矛盾条件（如 K & ~K）会把
         // runtime 推到 Cancelled——此处不得覆写。镜像 outside 出生路径的
         // 断言（_requireTriggerHookReady：非 Ready 即 InvalidTriggerHook，

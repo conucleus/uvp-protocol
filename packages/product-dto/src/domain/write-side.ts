@@ -1,8 +1,8 @@
-// 写侧契约（治理审计 §1.1 P1-1：Product API 写侧契约 ×7 手写已冲突）。
+// 写侧契约单源（手写多份写侧契约会漂移冲突）。
 // 形状以 uvp-chain-services 服务端真身为权威（submissions/types.ts、
 // evidence/types.ts、evidence/service.ts 的 getProof 产出、reconcile/
 // status.ts），本包不引入 protocol-bindings 依赖，hex/address 用自持别名。
-// 前端与客户端切换 import 由后续治理批执行。
+// 前端与客户端一律从本包 import，不自持副本。
 //
 // 权威裁决落点：ProductSubmissionDTO.statusLabel 定为必填 string——服务端
 // 类型标注可选，但 withSubmissionReconcileDefaults（submissions/service.ts）

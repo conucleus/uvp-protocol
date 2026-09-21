@@ -232,10 +232,10 @@ contract UVPDockingModule {
     bytes32 private constant _DOMAIN_DEFINITION_REF = keccak256("UVP_DEFINITION_REF_V1");
     bytes32 private constant _DOMAIN_INTERFACE_INPUT = keccak256("UVP_DOCK_INTERFACE_INPUT_V2");
     // output 端口叶 V3：叶直接钉绑定侧的事实键分量 (targetSourceId,
-    // targetSignalId)。此前叶承诺 canonical 信号 word（keccak("src::name")），
-    // 与绑定侧分量哈希分属不同派生域——链上无法互证两者指同一事实，调用
-    // 方可把 DONE 端口绑到词表内另一个事实，目标方承诺被架空。分量入叶后
-    // 错配绑定在 membership 处直接失配。
+    // targetSignalId)。若叶承诺 canonical 信号 word（keccak("src::name")），
+    // 则与绑定侧分量哈希分属不同派生域——链上无法互证两者指同一事实，
+    // 调用方可把 DONE 端口绑到词表内另一个事实，目标方承诺被架空；分量
+    // 入叶让错配绑定在 membership 处直接失配。
     bytes32 private constant _DOMAIN_INTERFACE_OUTPUT = keccak256("UVP_DOCK_INTERFACE_OUTPUT_V3");
     bytes32 private constant _DOMAIN_ROUTE_ID = keccak256("UVP_DOCK_ROUTE_ID_V1");
     bytes32 private constant _DOMAIN_SOURCE_FACT_SET_ZERO = bytes32(0);

@@ -32,8 +32,8 @@ interface Vm {
 }
 
 contract UVPStateMachineTest {
-    // 能力树测试登记表用的叶子描述类型（原 IUVPPlanMetadataModule 上的
-    // 结构体已随 Merkle 化删除，测试本地镜像字段布局）。
+    // 能力树测试登记表用的叶子描述类型（IUVPPlanMetadataModule 上无此
+    // 结构体——测试本地镜像字段布局）。
     struct StageSelectorBinding {
         bytes32 selectorStageId;
         bytes32 targetStageId;
@@ -345,8 +345,8 @@ contract UVPStateMachineTest {
 
         _registerPlan(machine, _sequentialPlan(), _selectorBindings(), _signalCapabilities());
 
-        // 能力表 Merkle 化：commit 即承诺全部叶子（绑定叶 + 能力叶），逐叶
-        // verify 断言替代旧的计数/枚举查询。
+        // 能力表 Merkle 化：commit 即承诺全部叶子（绑定叶 + 能力叶），
+        // 逐叶 verify 断言，无计数/枚举查询面。
         bytes32[] memory sortedLeaves = _capabilityTables[address(machine)][PLAN_ID].sortedLeaves;
         bytes32[] memory leaves = new bytes32[](3);
         leaves[0] = keccak256(abi.encode(SELECTOR_BINDING_LEAF_DOMAIN, STAGE_INIT, STAGE_AUDIT));
@@ -2483,7 +2483,7 @@ contract UVPStateMachineTest {
     }
 
     // ------------------------------------------------------------------
-    // dependencyKeys 与 SIGNAL 原子键一致性（M21）
+    // dependencyKeys 与 SIGNAL 原子键一致性
     // ------------------------------------------------------------------
 
     /// 声明了永不参与求值的键（SIGNAL 原子缺席）：该键提交不触发本 hook，
@@ -2530,19 +2530,19 @@ contract UVPStateMachineTest {
     }
 
     // ------------------------------------------------------------------
-    // 两步注册元数据交叉校验（M22）
+    // 两步注册元数据交叉校验
     // ------------------------------------------------------------------
 
-    // testFinalizePlanRejectsMetadataReferencingUnknownStage 随 Merkle 化作废：
-    // UnknownPlanStage 交叉校验已删除，capability 叶的悬空阶段引用由编译器
-    // 在产物层强制（链上 finalize 只翻转 finalized 并落 roots）。
+    // 链上 finalize 不做 UnknownPlanStage 交叉校验：capability 叶的悬空
+    // 阶段引用由编译器在产物层强制（链上 finalize 只翻转 finalized 并落
+    // roots）。
 
     // ------------------------------------------------------------------
-    // 元数据规模闸（M24）
+    // 元数据规模面
     // ------------------------------------------------------------------
 
-    // 绑定表规模闸测试（AboveLimit / AtLimitWithinGasBudget）随 Merkle 化
-    // 作废：绑定表不再在 finalize 边界逐条写存储，_twelveStagePlan 一并移除。
+    // 绑定表无规模闸（AboveLimit / AtLimitWithinGasBudget 无对象）：
+    // 绑定表不在 finalize 边界逐条写存储，_twelveStagePlan 无用途不设。
 
     function _signalInstructions(bytes32 signalId)
         private
@@ -2554,7 +2554,7 @@ contract UVPStateMachineTest {
     }
 
     // ------------------------------------------------------------------
-    // dock 出生终态守卫（M20）
+    // dock 出生终态守卫
     // ------------------------------------------------------------------
 
     /// 矛盾 entrance 条件（K & ~K）：出生事务内求值把 entrance hook 推到
@@ -2606,7 +2606,7 @@ contract UVPStateMachineTest {
     }
 
     // ------------------------------------------------------------------
-    // 生命周期负例补齐（M23）
+    // 生命周期负例
     // ------------------------------------------------------------------
 
     /// 待定计划（committed 未 finalized）不能创建订单。外部入口最先触达
@@ -2861,8 +2861,8 @@ contract UVPStateMachineTest {
 
         // 模块写事实路径（submitSignalFromModule）：SIGNAL_TRIGGER 的
         // watcher 位于未物化的 STAGE_AUDIT——未物化阶段的 flags=0 watcher
-        // 不进求值（直接跳过，不整笔回滚 UnknownHook）。新 ABI 下该入口
-        // 仅 docking 模块可调（旧实现同时放行 derived 模块）。
+        // 不进求值（直接跳过，不整笔回滚 UnknownHook）。该入口仅
+        // docking 模块可调，不放行 derived 模块。
         vm.prank(address(_docking(machine)));
         machine.submitSignalFromModule(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, address(this)

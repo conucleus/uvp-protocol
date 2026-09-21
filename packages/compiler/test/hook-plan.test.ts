@@ -445,7 +445,7 @@ test("rejects artifacts tampering compiledHooks/planId/source against the carrie
     ),
   );
 
-  // 缺 source（旧版制品形状）→ 显式拒绝，且不做 planHash 重算。
+  // 缺 source → 显式拒绝，且不做 planHash 重算。
   assert.deepEqual(validateHookPlanArtifact({ ...plan, source: undefined }), [
     "source is required (the canonical annotation-stripped definition snapshot in the planHash preimage)",
   ]);

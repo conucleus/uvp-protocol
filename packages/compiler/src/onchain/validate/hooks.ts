@@ -115,7 +115,7 @@ function validateOnchainCompiledHooks(
           `${prefix}.dependencies`,
         ),
       );
-      // M21 镜像：dependencyKeys 与指令集 SIGNAL 原子键逐点一致
+      // 合约镜像：dependencyKeys 与指令集 SIGNAL 原子键逐点一致
       // （UVPStateMachine._validateHook reverts HookDependencyKeyMismatch）。
       // 未声明的 SIGNAL 键不进 dependencyIndex——该事实到达永不触发求值，
       // hook 永久 Init 且零告警；多声明的键只是死索引。

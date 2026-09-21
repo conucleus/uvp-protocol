@@ -198,15 +198,14 @@ library UVPPlanRegistration {
             inputKeys[inputKeyCount] = dependencyKey;
             inputKeyCount += 1;
 
-            // 跨 hook 去重与跨阶段闸改读已落库的 dependencyIndex（O(1) 判
-            // 重）替代 memory 全表线性扫描：旧实现对每个新键做
+            // 跨 hook 去重与跨阶段闸读已落库的 dependencyIndex（O(1) 判
+            // 重），不做 memory 全表线性扫描：对每个新键做
             // _seenDependencyIndex 全表扫描，满配 1024 键 ≈ 52 万次迭代
             // （O(n²)），叠加每键双 push 的存储成本后 TooManyDependencies
             // 在 30M block gas 内恒先被 OOG 挡住。首键注册前 hook 定义
-            // （stageId/flags）已写全，重复键回读已注册 hook 即可重建旧
+            // （stageId/flags）已写全，重复键回读已注册 hook 即可重建
             // scratch 语义：首见阶段取 dependents[0]，trigger-only 折叠取
-            // 已注册 hook 集合的 AND（旧 seenTriggerOnly 的逐次 AND 折叠
-            // 与之逐点等价）。
+            // 已注册 hook 集合的 AND（与逐次 AND 折叠逐点等价）。
             // Trigger watchers crossing stages are the normal selectedStages
             // flow: the evaluation guard skips triggers of unmaterialized
             // stages. The brick is a NON-trigger watcher in a stage that has
@@ -371,7 +370,7 @@ library UVPPlanRegistration {
         if (!hasPosAnchor[0]) {
             revert UVPStateMachine.InvalidInstruction();
         }
-        // M21：dependencyKeys 与 SIGNAL 原子键集合逐点一致。未声明的
+        // dependencyKeys 与 SIGNAL 原子键集合逐点一致。未声明的
         // SIGNAL 键不进 dependencyIndex——该事实到达永不触发本 hook 求值，
         // hook 永久 Init 且零告警（幻影 watcher）；多余声明的键只是死索引。
         // 编译器产物恒一致；手签 plan 在注册边界对拍拒绝。

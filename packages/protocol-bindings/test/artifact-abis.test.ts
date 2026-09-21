@@ -79,9 +79,9 @@ describe("generated artifact ABI bindings", () => {
     if (!artifactAvailable) {
       return t.skip("forge artifacts not built");
     }
-    // 前提钉住：两表 Merkle 化后能力表/绑定表不再有链上规模闸——
-    // TooManySelectorBindings / TooManySignalCapabilities 若重新出现在
-    // 主 ABI（或手写镜像）里，说明合约侧回退到了枚举式注册，本包的
+    // 前提钉住：两表 Merkle 化形态下能力表/绑定表无链上规模闸——
+    // TooManySelectorBindings / TooManySignalCapabilities 若出现在
+    // 主 ABI（或手写镜像）里，说明合约侧回到了枚举式注册，本包的
     // capabilitiesRoot 工具面随之失效，必须红。
     const stateMachineArtifact = JSON.parse(
       await readFile(artifactPath, "utf8"),

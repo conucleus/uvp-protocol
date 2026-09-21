@@ -129,8 +129,8 @@ export function compileOnchainHookPlan(
     .sort(compareExecutorRoutes);
   // _validateHook 镜像预检（MAX_ONCHAIN_HOOK_DELAY_SECONDS 等常量自述
   // "fail-closed 预检必须拒绝同样输入"）：EmptyPlan/空指令栈/空依赖/
-  // 30 天延时上限等此前只在反序列化边界生效——手工/漂移的 IR 制品过
-  // IR 校验后会在编译入口静默产出毒制品，交由 commitPlan revert。
+  // 30 天延时上限等不能只在反序列化边界生效——否则手工/漂移的 IR 制品
+  // 过 IR 校验后会在编译入口静默产出毒制品，交由 commitPlan revert。
   const hookShapeIssues: readonly string[] = compiledHooks.length === 0
     ? ["compiledHooks must not be empty (contract reverts EmptyPlan)"]
     : [

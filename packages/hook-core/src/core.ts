@@ -99,7 +99,7 @@ export function uvpCoreCompatibility(): UvpCoreCompatibility {
   }
   const buildFingerprint = uvpCoreBuildFingerprint();
   if (buildFingerprint === undefined) {
-    // 与 Go 桥同场景硬失败：旧版 @conucleus/uvp-core-node 未导出
+    // 与 Go 桥同场景硬失败：加载的 @conucleus/uvp-core-node 未导出
     // buildFingerprint 时，版本/语义探针可能双双通过而 dylib 行为已变
     // ——静默跳过等于拆除陈旧产物防线（napi 打包产物的 JS 包装必须
     // re-export buildFingerprint，见 uvp-node index.cjs）。

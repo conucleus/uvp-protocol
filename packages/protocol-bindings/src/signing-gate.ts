@@ -1,7 +1,7 @@
-// 签名闸门单源（治理审计 §1.1 P1-1）：合并三处已漂移的签名前校验——
-// order-app injectedWallet（assertTypedDataEnvelopeMatchesProtocol）、
-// zhixu-store product/wallet（validateTypedDataForSigning）、
-// executor-kit product（signPreparedSignalContainer 的信封校验段）。
+// 签名闸门单源（签名前校验分散在 order-app injectedWallet
+// （assertTypedDataEnvelopeMatchesProtocol）、zhixu-store product/wallet
+// （validateTypedDataForSigning）、executor-kit product
+// （signPreparedSignalContainer 的信封校验段）三处，分散即漂移）。
 //
 // 本模块只做判定（返回 reason），不包装错误文案：浏览器端
 // TypedDataMismatchError/InjectedWalletError 与私钥端 ValidationError 等

@@ -222,7 +222,7 @@ contract UVPDockingModuleTest {
         assertTrue(readyEmitted);
     }
 
-    /// DockOpened/DockInputSubmitted 事件口径（M23）：open 原子发出开仓
+    /// DockOpened/DockInputSubmitted 事件口径：open 原子发出开仓
     /// 事件与 entrance 交付事件——DockInputSubmitted 的 payloadHash 由
     /// committed 状态重算，只钉身份 topic。
     function testOpenEmitsDockOpenedAndEntranceInputSubmitted() public {
@@ -254,7 +254,7 @@ contract UVPDockingModuleTest {
         assertTrue(_open());
     }
 
-    /// 深度上限（M23）：父订单真实 dock 深度达 MAX_DOCK_DEPTH 后开仓拒绝。
+    /// 深度上限：父订单真实 dock 深度达 MAX_DOCK_DEPTH 后开仓拒绝。
     /// 深度账本按存储布局推 slot（dockDepthOfOrder 是模块第 8 个存储变量，
     /// slot 7）；若布局漂移写入落空，本测试会响亮地变成 DockDepthMismatch。
     function testRejectsOpenAtMaxDockDepth() public {
@@ -1586,7 +1586,7 @@ contract UVPDockingModuleTest {
     }
 
     // ------------------------------------------------------------------
-    // 能力表测试基建：Merkle 化后链上只存 capabilitiesRoot，测试镜像
+    // 能力表测试基建：链上只存 capabilitiesRoot，测试镜像
     // DockMerkle / UVPPlanMetadataModule 的叶子公式建树并留档排序去重
     // 叶子表，供 open 的 outputAttributions / 出生事实属主自证造 proof。
     // ------------------------------------------------------------------

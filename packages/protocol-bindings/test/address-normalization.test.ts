@@ -7,9 +7,9 @@ import {
   normalizeBytes32,
 } from "../src/index.js";
 
-// 治理审计 §1.1 P1-1：normalizeAddress/Bytes32 单源的三处分叉
-// （protocol-bindings 宽松+小写 / executor-kit 严格+checksum /
-// chain-services 正则+小写）以本包两个权威形态收敛，此处钉住行为语义。
+// normalizeAddress/Bytes32 单源的行为语义钉子（各仓分散实现会分叉：
+// protocol-bindings 宽松+小写 / executor-kit 严格+checksum /
+// chain-services 正则+小写——权威形态收敛在本包，此处钉住行为语义）。
 
 const lowercaseAddress = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const checksummedAddress = getAddress(lowercaseAddress);

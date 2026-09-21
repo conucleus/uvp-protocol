@@ -28,7 +28,7 @@ under this folder; repository-level deployment scripts live under
 - `src/libraries/ECDSA.sol`: minimal signature recovery helper.
 - `src/libraries/UVPSignatures.sol`: shared signature struct used by relayed
   state-machine signal submission.
-- `fixtures/uvp-state-machine.v0.10.json` and module fixture JSON files:
+- `fixtures/uvp-state-machine.v0.11.json` and module fixture JSON files:
   pinned ABI/hash fixtures for the current core and module public interfaces.
 - `fixtures/uvp-identity-registry.v0.1.json`: pinned ABI/hash fixture for the
   identity registry public interface.
@@ -66,24 +66,32 @@ the TypeScript `statemachine` oracle.
 
 ## ABI Fixture
 
-`UVPStateMachine v0.10` treats these as public interfaces:
+`UVPStateMachine v0.11` treats these as public interfaces:
 
 - its no-argument constructor;
 - one-time module configuration followed by irreversible `freezeModules`;
-- core function selectors for signed `commitPlan`, one-shot `finalizePlan`,
-  derived-order-id `triggerOrderFromOutsideFor` (one fact, one order — the id
+- core function selectors for signed `commitPlan`, permissionless
+  single-argument `finalizePlan(bytes32)`, derived-order-id
+  `triggerOrderFromOutsideFor` (one fact, one order — the id
   is `triggerOrderIdFor(planId, sourceId, signalId, payloadHash)`, callers no
-  longer self-report it), `submitSignal`, `submitSignalFor`, module
+  longer self-report it; the request carries a trailing `birthFactAttribution`
+  proof), `submitSignal` and `submitSignalFor` (both take trailing
+  `attribution`/`selectorBinding` proof arguments; an all-zero declaration
+  means "no claim", which keeps off-vocabulary facts legal), module
   configuration, module-only writebacks (including the order-link writeback
   `triggerOrderFromSignalFromModule`), `DOMAIN_SEPARATOR`, `pokeTimer`,
   `getHookStatus`, `isSignalSubmitterAuthorized`, `getSignalAuthorization`,
   dock order namespace mask, signal target relation constants,
-  `sourceSignalCount`, `lastSignalSubmitter`, stage-overlay view helpers,
-  trigger-link view helpers, and signal capability helpers. The signed
+  `sourceSignalCount`, `lastSignalSubmitter`, plan-runtime-hash helpers,
+  stage-overlay view helpers, and trigger-link view helpers. The signed
   from-signal trigger entrypoint is `triggerOrderFromSignalFor` on
   `UVPOrderLinkModule` (order-link module fixture), not a core selector;
-- module function selectors for stage patch, derived signal, docking, and lens
-  entrypoints/digest helpers/views;
+- module function selectors for stage patch (the `applyStage*PatchFor` entries
+  carry `bindingProof` + `stageFacts` proof arguments), derived signal,
+  docking, and lens entrypoints/digest helpers/views, plus plan-metadata
+  module views `capabilitiesRoot`, `hasCapabilityVocabulary`,
+  `verifySignalCapability`, and `verifyStageSelectorBinding` (membership is
+  checked as field-recomputed leaves against caller-supplied Merkle proofs);
 - event topics for ownership, module configuration/freeze,
   `PlanCommitted`, `PlanFinalized`, `PlanRegistered`,
   `PlanPublisherRecorded`, `OrderRegistered`, `OrderMaterialized`,
@@ -93,8 +101,7 @@ the TypeScript `statemachine` oracle.
   `StageExecutorSignalDelegated`;
 - docking module event topics for `DockOpened`, `DockInputSubmitted`, and
   `DockOutputSubmitted`; order-link module event topics for
-  `OrderLinked`; plan-metadata module event topics for
-  `StageSelectorBindingRegistered` and `SignalCapabilityRegistered`; derived
+  `OrderLinked`; derived
   signal module event topics for `DerivedSignalSubmitted`; stage-patch module
   (`UVPStagePatchModule`) event topics for `StageExecutorPatchApplied` and
   `StageResourcePatchApplied`; and deployment
@@ -115,8 +122,13 @@ code do not silently drift away from the contract ABI.
 3. The owner configures the complete module set and irreversibly freezes it.
    Runtime or module upgrades require a new state-machine deployment; existing
    orders remain on their original deployment and module set.
-4. A publisher signs hooks and metadata hashes; any relayer commits the hooks,
-   then any caller finalizes the exact metadata. A pending Plan cannot create an
+4. A publisher signs the six-field `PlanCommit` (publisher, hooksHash,
+   capabilitiesRoot, dockRoutesRoot, dockInterfaceRoot, deadline) together
+   with the hooks; any relayer commits it, and the capability/binding tables
+   enter the commitment as `capabilitiesRoot` inside that signature. Any
+   caller then finalizes with `finalizePlan(bytes32)` — a permissionless step
+   that only flips the plan to finalized and stores the roots, so its gas is
+   independent of table size. A pending Plan cannot create an
    Order and finalized Plan metadata is immutable. Note on naming: the
    `planExists(planId)` view returns "exists AND finalized" — a committed but
    not yet finalized plan returns `false` (the ABI is frozen; consumers use it
@@ -198,7 +210,7 @@ second registration of the same `orderId` reverts with
 `planId` into their domain so derived order ids are plan-scoped by
 construction. Function signatures take a leading `planId` parameter, and the
 from-signal trigger request carries `originPlanId`. Event signatures are
-pinned in the v0.10 and module fixtures; indexers must consume the composite
+pinned in the v0.11 and module fixtures; indexers must consume the composite
 identity in every event and projection rather than treating `orderId` as
 globally unique.
 
@@ -213,7 +225,6 @@ Indexer and replay tooling should treat these event names as public interfaces:
 - `PlanFinalized`
 - `PlanPublisherRecorded`
 - `OrderRelayerRecorded`
-- `SignalCapabilityRegistered`
 - `SignalSubmitterAuthorized`
 - `OrderRegistered`
 - `OrderMaterialized`
@@ -232,8 +243,6 @@ The module fixtures add these public events:
 
 - `OrderLinked` (order-link module; carries `planId` + `originPlanId` alongside
   the order ids);
-- `StageSelectorBindingRegistered` and `SignalCapabilityRegistered`
-  (plan-metadata module);
 - `DerivedSignalSubmitted` (derived-signal module; carries `fromPlanId` +
   `targetPlanId`);
 - `StageResourcePatchApplied` (stage-patch module; carries `planId`, aligned

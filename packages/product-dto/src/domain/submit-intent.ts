@@ -50,8 +50,8 @@ export function taskSubmitIntentForAction(
 
 /**
  * 任务的提交意图：manifest 显式声明的 submit_signal intent 优先，无声明时
- * 按能力插件类型推导。两端此前各自单源推导，manifest 与插件类型不一致时
- * 会得出不同 intent——推导收敛于此。
+ * 按能力插件类型推导。推导不得分散在两端——manifest 与插件类型不一致时
+ * 会得出不同 intent，推导收敛于此单源。
  */
 export function taskSubmitIntent(
   task: Pick<ProductTaskDTO, "addOnManifest" | "capabilityPlugin">,
