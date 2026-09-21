@@ -10,6 +10,7 @@ import {
 const corpusUrl = new URL("../../../../uvp-core/fixtures/hook/semantics.v1.json", import.meta.url);
 
 interface Corpus {
+  readonly schemaVersion: string;
   readonly parseCases: readonly ParseCase[];
   readonly evalCases: readonly EvalCase[];
   readonly invalidCases: readonly InvalidCase[];
@@ -80,7 +81,15 @@ interface CoreEvalHookOutput {
 }
 
 async function loadCorpus(): Promise<Corpus> {
-  return JSON.parse(await readFile(corpusUrl, "utf8")) as Corpus;
+  const corpus = JSON.parse(await readFile(corpusUrl, "utf8")) as Corpus;
+  // 语料格式版本钉住：v2 迁移时这里必须先响亮失败，消费面不得静默按旧
+  // 口径解读新文件（Rust replay/Go 消费测试同款断言）。
+  assert.equal(
+    corpus.schemaVersion,
+    "uvp.hookSemanticsCorpus.v1",
+    "corpus schemaVersion drifted; migrate every consumer before shipping the new file"
+  );
+  return corpus;
 }
 
 test("uvp-core N-API parses hook semantic corpus", async () => {
