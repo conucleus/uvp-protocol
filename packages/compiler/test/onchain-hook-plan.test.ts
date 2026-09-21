@@ -1347,7 +1347,9 @@ test("rejects stages that compile to zero hooks (materialization gate)", () => {
   // sendSignals/executor 声明投影——零 hook 阶段永不可物化、信号没有
   // 钩子可挂，compileOnchainHookPlan 预检即抛，不产出制品。
   // （dependencyIndex 同步剔除被剥钩子，让形状校验先行通过，确保
-  // 拦截者就是物化门本身。）
+  // 拦截者就是物化门本身；能力表/绑定表对 selector.assign 的引用同步
+  // 剥离——剥离后即悬空引用，会被 IR 校验的 UnknownPlanStage 镜像先拒，
+  // 抢在本测试要钉的物化门之前。）
   const strippedHookIds = new Set(
     sourcePlan.compiledHooks
       .filter((hook) => hook.stageIdentifier === "selector.assign")
@@ -1365,6 +1367,12 @@ test("rejects stages that compile to zero hooks (materialization gate)", () => {
           hookIds.filter((hookId) => !strippedHookIds.has(hookId)),
         ])
         .filter(([, hookIds]) => hookIds.length > 0),
+    ),
+    selectedStageBindings: sourcePlan.selectedStageBindings.filter(
+      (binding) => binding.selectorStageIdentifier !== "selector.assign",
+    ),
+    signalCapabilities: sourcePlan.signalCapabilities.filter(
+      (capability) => capability.stageIdentifier !== "selector.assign",
     ),
   };
   // 重签 planHash：让拦截者聚焦在物化门本身（承诺重算由 hook-plan 边界

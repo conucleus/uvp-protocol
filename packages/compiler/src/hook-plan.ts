@@ -270,6 +270,20 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
     issues.push(...validateSignalCapabilities(value.signalCapabilities));
   }
 
+  // 元数据表的阶段引用必须落在 hooks 阶段集内：悬空引用的 plan 能正常
+  // commitPlan（hooks 侧对元数据表不可见），finalizePlan 对
+  // UnknownPlanStage 永久 revert——planId 烧死在 committed 态，两步注册
+  // 无法完成。非数组/非字符串项由上方形状校验报错，这里静默跳过。
+  if (compiledHooks) {
+    issues.push(
+      ...danglingMetadataStageIssues(
+        compiledHooks,
+        Array.isArray(value.selectedStageBindings) ? value.selectedStageBindings : [],
+        Array.isArray(value.signalCapabilities) ? value.signalCapabilities : [],
+      ),
+    );
+  }
+
   return issues;
 }
 
@@ -486,6 +500,66 @@ function validateSignalCapabilities(capabilities: readonly unknown[]): readonly 
       }
       seen.add(key);
     }
+  }
+  return issues;
+}
+
+/**
+ * 镜像 UVPStateMachine.finalizePlan 的 UnknownPlanStage 闸：
+ * selectedStageBindings 与 signalCapabilities 引用的阶段必须 ∈
+ * compiledHooks 的阶段集（合约侧 stageExists 只由 hook 注册置位）。
+ * 手编/漂移制品的悬空引用不在此拒绝就会把毒制品送到链上 finalize 边界
+ * ——commitPlan 成功、finalize 永久 revert，planId 烧死在 committed 态。
+ */
+function danglingMetadataStageIssues(
+  hooks: readonly unknown[],
+  selectedStageBindings: readonly unknown[],
+  signalCapabilities: readonly unknown[],
+): readonly string[] {
+  const issues: string[] = [];
+  const hookStages = new Set<string>();
+  for (const hook of hooks) {
+    if (isRecord(hook) && typeof hook.stageIdentifier === "string") {
+      hookStages.add(hook.stageIdentifier);
+    }
+  }
+  const references: readonly { readonly path: string; readonly stage: string }[] = [
+    ...selectedStageBindings.flatMap((binding, index) =>
+      isRecord(binding)
+        ? [
+            ...(typeof binding.selectorStageIdentifier === "string"
+              ? [{
+                  path: `selectedStageBindings[${index}].selectorStageIdentifier`,
+                  stage: binding.selectorStageIdentifier,
+                }]
+              : []),
+            ...(typeof binding.targetStageIdentifier === "string"
+              ? [{
+                  path: `selectedStageBindings[${index}].targetStageIdentifier`,
+                  stage: binding.targetStageIdentifier,
+                }]
+              : []),
+          ]
+        : [],
+    ),
+    ...signalCapabilities.flatMap((capability, index) =>
+      isRecord(capability) && typeof capability.stageIdentifier === "string"
+        ? [{
+            path: `signalCapabilities[${index}].stageIdentifier`,
+            stage: capability.stageIdentifier,
+          }]
+        : [],
+    ),
+  ];
+  for (const reference of references) {
+    if (hookStages.has(reference.stage)) {
+      continue;
+    }
+    issues.push(
+      `${reference.path} references stage ${reference.stage} which has no compiled hooks; `
+        + "the contract finalizePlan reverts UnknownPlanStage for metadata stages outside the hooks stage set, "
+        + "so the plan would commit but finalize permanently — reference a stage declared by at least one hook",
+    );
   }
   return issues;
 }

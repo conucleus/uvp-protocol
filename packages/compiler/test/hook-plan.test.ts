@@ -396,8 +396,12 @@ test("validates HookPlan IR artifacts at the internal boundary", () => {
     validateHookPlanArtifact(resign({ ...plan, schemaVersion: "wrong" })),
     ["schemaVersion must be uvp.hookPlan.v2"]
   );
+  // 元数据表同步清空：零 hook 制品的能力表/绑定表引用全部悬空，会另报
+  // UnknownPlanStage 镜像 issue——本断言只钉 dependencyIndex 重算门。
   assert.deepEqual(
-    validateHookPlanArtifact(resign({ ...plan, compiledHooks: [] })),
+    validateHookPlanArtifact(
+      resign({ ...plan, compiledHooks: [], signalCapabilities: [], selectedStageBindings: [] }),
+    ),
     ["dependencyIndex must match compiled hook dependencies"]
   );
   assert.throws(
@@ -444,6 +448,57 @@ test("rejects artifacts tampering compiledHooks/planId/source against the carrie
   // 缺 source（旧版制品形状）→ 显式拒绝，且不做 planHash 重算。
   assert.deepEqual(validateHookPlanArtifact({ ...plan, source: undefined }), [
     "source is required (the canonical annotation-stripped definition snapshot in the planHash preimage)",
+  ]);
+});
+
+test("rejects metadata stage references outside the hooks stage set (UnknownPlanStage mirror)", () => {
+  const plan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  const danglingStageIssues = (issues: readonly string[]): readonly string[] =>
+    issues.filter((issue) => /references stage .* which has no compiled hooks/.test(issue));
+
+  // 正例对照：编译产物的能力表/绑定表都落在 hooks 阶段集内，零悬空 issue。
+  assert.deepEqual(danglingStageIssues(validateHookPlanArtifact(plan)), []);
+
+  // 悬空 capability 阶段：plan 能正常 commitPlan（hooks 侧对元数据表不可
+  // 见），finalizePlan 对 UnknownPlanStage 永久 revert——planId 烧死在
+  // committed 态，必须在 artifact 边界预检，不等到链上。
+  const danglingCapability = resign({
+    ...plan,
+    signalCapabilities: [
+      ...plan.signalCapabilities,
+      {
+        stageIdentifier: "ghost.stage",
+        source: "ghost",
+        declaredSignal: "g",
+        targetSource: "buyer",
+        targetSignalName: "execution.main.cmp",
+        targetOrderRelation: "triggerOrigin",
+      },
+    ],
+  });
+  assert.deepEqual(danglingStageIssues(validateHookPlanArtifact(danglingCapability)), [
+    "signalCapabilities[" + plan.signalCapabilities.length + "].stageIdentifier references stage ghost.stage "
+      + "which has no compiled hooks; the contract finalizePlan reverts UnknownPlanStage for metadata stages "
+      + "outside the hooks stage set, so the plan would commit but finalize permanently — reference a stage "
+      + "declared by at least one hook",
+  ]);
+
+  // 悬空 selectedStageBinding 目标侧同理（selector/target 两侧都在闸内）。
+  const danglingBinding = resign({
+    ...plan,
+    selectedStageBindings: [
+      ...plan.selectedStageBindings,
+      {
+        selectorStageIdentifier: "selector.assign",
+        targetStageIdentifier: "ghost.target",
+      },
+    ],
+  });
+  assert.deepEqual(danglingStageIssues(validateHookPlanArtifact(danglingBinding)), [
+    "selectedStageBindings[" + plan.selectedStageBindings.length + "].targetStageIdentifier references stage ghost.target "
+      + "which has no compiled hooks; the contract finalizePlan reverts UnknownPlanStage for metadata stages "
+      + "outside the hooks stage set, so the plan would commit but finalize permanently — reference a stage "
+      + "declared by at least one hook",
   ]);
 });
 
@@ -805,6 +860,10 @@ test("dependencyIndex ordering follows code-point (Rust byte) order for astral-p
   };
   const artifact = {
     ...plan,
+    // 改写后的钩子阶段与原能力表/绑定表引用的阶段不再重合（悬空引用会
+    // 另报 UnknownPlanStage 镜像 issue），本测试只钉 dependencyIndex 排序。
+    signalCapabilities: [],
+    selectedStageBindings: [],
     compiledHooks: [
       hookWith(bmpHook, bmpStage, [
         { kind: "positive", source: "buyer", signalName: "shared.sig" },
