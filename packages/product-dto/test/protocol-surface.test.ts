@@ -196,19 +196,23 @@ describe("Product DTO protocol surface", () => {
   it("keeps the committed-route docking surface", async () => {
     const protocol = await loadProtocolBindings();
 
-    // 全部 dock 走 committed route：openDockedOrder 原子 open；终态不由
-    // 链上事件驱动，事件面闭集不含 terminal 类事件。
+    // 全部 dock 走 committed route：openDockedOrder 原子 open（new 模式），
+    // attachDockedOrder 对等挂接既有单（existing 模式，不铸子单）；终态不
+    // 由链上事件驱动，事件面闭集不含 terminal 类事件。
     assertAbiNames(protocol.DOCKING_MODULE_ABI, "function", [
       "openDockedOrder",
+      "attachDockedOrder",
       "submitDockedInput",
       "submitDockedSignal",
       "getActiveDock",
       "getDockInputBinding",
       "getDockOutputBinding",
-      "entrancePermitDigest"
+      "entrancePermitDigest",
+      "attachPermitDigest"
     ]);
     assertAbiEventNames(protocol.DOCKING_MODULE_ABI, [
       "DockOpened",
+      "DockAttached",
       "DockInputSubmitted",
       "DockOutputSatisfied",
       "DockOutputSubmitted"

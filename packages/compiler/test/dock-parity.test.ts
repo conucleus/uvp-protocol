@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
+import { keccak256, toBytes } from "viem";
 import { compileZhixuHookPlan } from "../src/hook-plan.js";
 import { validateDockCommitments } from "../src/dock-validation.js";
 import {
@@ -92,6 +93,7 @@ interface DockCompatFixture {
     readonly cloudSecurityDomain: string;
     readonly localOrderId: string;
     readonly existingTargetOrderRef: string;
+    readonly existingEvmTargetOrderRef: `0x${string}`;
     readonly parentPlanIdWord: `0x${string}`;
   };
   readonly identities: {
@@ -117,6 +119,16 @@ interface DockCompatFixture {
     readonly dockInstanceId: `0x${string}`;
     readonly linkedOrderId: `0x${string}`;
     readonly existingDockInstanceId: `0x${string}`;
+    readonly existingEvmDockInstanceId: `0x${string}`;
+    readonly dynamicSelection: {
+      readonly routeId: `0x${string}`;
+      readonly candidateLeaf: `0x${string}`;
+      readonly otherCandidateLeaf: `0x${string}`;
+      readonly candidatesRoot: `0x${string}`;
+      readonly candidateProof: readonly `0x${string}`[];
+      readonly candidateProofLength: number;
+      readonly dynamicRouteHash: `0x${string}`;
+    };
     readonly sourceFactSetHash: `0x${string}`;
     readonly inputPayloadHash: `0x${string}`;
     readonly inputIdempotencyKey: `0x${string}`;
@@ -447,6 +459,64 @@ test("runtime domains and derived identities match the golden vectors", () => {
   assert.equal(
     targetOrderRefKey(inputs.existingTargetOrderRef).length,
     66,
+  );
+});
+
+test("existing evm instance and dynamic-selection vectors match the golden", () => {
+  const inputs = fixture.inputs;
+  const dynamic = expected.dynamicSelection;
+  const evidenceRoute = findRoute("production_evidence");
+
+  // 链轨 existing 形态：EVM 轨订单键是 word，原字进第 10 word
+  // （UVPDockingModule.attachDockedOrder 的实例重算口径）。
+  assert.equal(inputs.existingEvmTargetOrderRef.length, 66);
+  assert.equal(
+    dockInstanceId({
+      runtimeDomain: expected.evmRuntimeDomain,
+      localPlanId: inputs.parentPlanIdWord,
+      localDefinitionRefHash: expected.parentDefinitionRefHash,
+      localOrderKey: expected.localOrderKey,
+      routeId: evidenceRoute.routeId,
+      routeHash: evidenceRoute.routeHash,
+      orderMode: "existing",
+      interfaceName: "production_evidence",
+      targetPlanId: expected.targetPlanId,
+      targetOrderRef: inputs.existingEvmTargetOrderRef,
+    }),
+    expected.existingEvmDockInstanceId,
+  );
+
+  // 候选叶公式镜像（合约 _DOMAIN_DOCK_CANDIDATE 权威）：
+  // H("UVP_DOCK_CANDIDATE_V1", routeId, targetDefinitionRefHash,
+  //   keccak(interfaceName))——keccakWords 无公共导出，逐字节数组拼装。
+  const DOMAIN_DOCK_CANDIDATE = "UVP_DOCK_CANDIDATE_V1";
+  const candidateLeaf = keccak256(
+    new Uint8Array([
+      ...toBytes(keccak256(toBytes(DOMAIN_DOCK_CANDIDATE))),
+      ...toBytes(dynamic.routeId),
+      ...toBytes(expected.targetDefinitionRefHash),
+      ...toBytes(interfaceNameKey("production_evidence")),
+    ]),
+  ) as HexString;
+  assert.equal(candidateLeaf, dynamic.candidateLeaf);
+  assert.equal(
+    verifyMerkleProof(dynamic.candidatesRoot, dynamic.candidateLeaf, dynamic.candidateProof),
+    true,
+  );
+  // 动态路由叶：目标槽被候选集 root 占据（随 dockRoutesRoot 在 finalize
+  // 冻结）；静态叶的目标槽则是具体 targetDefinitionRefHash。
+  assert.equal(
+    routeHash({
+      localDefinitionRefHash: expected.parentDefinitionRefHash,
+      targetDefinitionRefHash: dynamic.candidatesRoot,
+      interfaceName: "production_evidence",
+      orderMode: "existing",
+      inputBindingsRoot: EMPTY_MERKLE_ROOT,
+      outputBindingsRoot: merkleRoot(
+        evidenceRoute.outputBindings.map((binding) => binding.bindingHash),
+      ),
+    }),
+    dynamic.dynamicRouteHash,
   );
 });
 

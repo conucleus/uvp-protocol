@@ -99,8 +99,9 @@ the TypeScript `statemachine` oracle.
   `StageMaterialized`, `HookStatusChanged`, `HookReady`, `TimerPoked`,
   `StageExecutorActivated`, and
   `StageExecutorSignalDelegated`;
-- docking module event topics for `DockOpened`, `DockInputSubmitted`, and
-  `DockOutputSubmitted`; order-link module event topics for
+- docking module event topics for `DockOpened`, `DockAttached`,
+  `DockInputSubmitted`, `DockOutputSubmitted`, and `DockOutputSatisfied`;
+  order-link module event topics for
   `OrderLinked`; derived
   signal module event topics for `DerivedSignalSubmitted`; stage-patch module
   (`UVPStagePatchModule`) event topics for `StageExecutorPatchApplied` and
@@ -168,18 +169,39 @@ code do not silently drift away from the contract ABI.
     on, permanently (deliberate fail-closed immutability gate; a fallback fact
     closes the window exactly like a compiled one). Docs that describe file
     resources as replaceable or deletable must disclose this window.
-10. Docking is committed-route only: a local entrance hook that
-    is Ready (`EMIT_READY`) plus a Merkle-proved `dockRoutesRoot` route lets a
-    keeper call `openDockedOrder`, which atomically derives the dock instance
-    id and high-bit-namespaced child order id, creates the child, records the
-    link, and writes the entrance fact. `openDockedOrder` accepts exactly one
-    input binding and consumes it as the entrance (reverts
-    `DockBindingCountInvalid` otherwise), so on the frozen chain surface there
-    is no non-entrance input to relay — `submitDockedInput` is structurally
-    unreachable and must not be listed as a live relay path;
-    `submitDockedSignal` relays outputs along the committed output bindings.
-    The two orders keep independent plans, authorization, events, and
-    lifecycles.
+10. Docking is committed-route only, in two order modes. `new`
+    (`openDockedOrder`): a local entrance hook that is Ready (`EMIT_READY`)
+    plus a Merkle-proved `dockRoutesRoot` route lets a keeper open a child
+    order — the call atomically derives the dock instance id and
+    high-bit-namespaced child order id, creates the child, records the link,
+    and writes the entrance fact. It accepts exactly one input binding and
+    consumes it as the entrance (reverts `DockBindingCountInvalid`
+    otherwise), so for a `new` dock there is no non-entrance input to relay —
+    `submitDockedInput` is a pure idempotent replay surface for them.
+    `existing` (`attachDockedOrder`, abiVersion 4.4): peer-attaches a
+    committed route to an already-existing target order without minting a
+    child (O(1) effects). Establishment requires target-order consent — the
+    target order creator, its incumbent stage executor (anchored at the
+    request's `targetStageId`), or a target-plan-publisher EIP-712 attach
+    permit, one of three; an empty permit signature only means "no explicit
+    grant carried". After establishment, `submitDockedInput` /
+    `submitDockedSignal` treat both modes isomorphically: per-port input
+    delivery (exactly once, then idempotent replay — a live path for
+    `existing` docks) and permissionless output mirroring that reads target
+    facts from StateMachine storage (outputs established before the attach
+    are backfilled by the same replay). N:1 fan-in: multiple parent route
+    instances may attach to the same target order (idempotency key is the
+    parent-side `dockByLocalRoute`; `dockByTargetOrder` stays new-only and
+    the "who attached to me" projection rides `DockAttached` events).
+    `target: null` dynamic selection: an unresolved route commits a candidate
+    set root in the route-hash target slot (frozen with `dockRoutesRoot` at
+    finalize); attach selects one target by presenting the candidate leaf and
+    membership proof, and the selection is pinned forever through the
+    dock-instance preimage (10th word = target order key) plus the parent
+    route-instance uniqueness key. Off-chain retry/backoff/budget/dead-letter
+    handling belongs to keepers; the chain only performs deterministic
+    verification and idempotency. In both modes the two orders keep
+    independent plans, authorization, events, and lifecycles.
 11. `triggerOrderFromOutsideFor` and `triggerOrderFromSignalFor` create orders
     through signed trigger paths. Signal-triggered orders record a trigger-origin
     link so `UVPDerivedSignalModule` can write declared signals back to the
@@ -247,8 +269,8 @@ The module fixtures add these public events:
   `targetPlanId`);
 - `StageResourcePatchApplied` (stage-patch module; carries `planId`, aligned
   with `StageExecutorPatchApplied`);
-- `DockOpened`, `DockInputSubmitted`, and `DockOutputSubmitted`
-  (docking module);
+- `DockOpened`, `DockAttached`, `DockInputSubmitted`,
+  `DockOutputSubmitted`, and `DockOutputSatisfied` (docking module);
 - decoding note for `DeploymentDeprecated` (deployment registry): the
   `reasonHash`/`reasonURI` parameters are dual-meaning by frozen ABI. On the
   explicit `deprecateDeployment` path they carry the caller-supplied

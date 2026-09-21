@@ -413,6 +413,105 @@ contract DockManifestParityTest {
         _assertDistinct(existing, swapped);
     }
 
+    /// 链轨 existing 形态：EVM 轨订单键是 bytes32 word，原字进
+    /// dockInstanceId 的第 10 word（TS targetOrderRefKey 的 word-literal
+    /// 分支）——UVPDockingModule.attachDockedOrder 的实例重算与该向量对拍。
+    function testExistingModeEvmInstanceUsesWordLiteralOrderRef() public {
+        string memory manifest = _manifest();
+        bytes32 wordOrderRef = _word(manifest, ".inputs.existingEvmTargetOrderRef");
+        assertEq(
+            keccak256(
+                abi.encode(
+                    DOMAIN_DOCK_INSTANCE,
+                    _word(manifest, ".expected.evmRuntimeDomain"),
+                    _word(manifest, ".inputs.parentPlanIdWord"),
+                    _word(manifest, ".expected.parentDefinitionRefHash"),
+                    _word(manifest, ".expected.localOrderKey"),
+                    _word(manifest, ".expected.dockRoutes[1].routeId"),
+                    _word(manifest, ".expected.dockRoutes[1].routeHash"),
+                    uint256(1), // modeWord existing
+                    _word(manifest, ".expected.interfaceNameIds.production_evidence"),
+                    _word(manifest, ".expected.targetPlanId"),
+                    wordOrderRef
+                )
+            ),
+            _word(manifest, ".expected.existingEvmDockInstanceId")
+        );
+        // 换单即换实例：word 尾槽实际参与派生（选定钉住的哈希面）。
+        _assertDistinct(
+            keccak256(
+                abi.encode(
+                    DOMAIN_DOCK_INSTANCE,
+                    _word(manifest, ".expected.evmRuntimeDomain"),
+                    _word(manifest, ".inputs.parentPlanIdWord"),
+                    _word(manifest, ".expected.parentDefinitionRefHash"),
+                    _word(manifest, ".expected.localOrderKey"),
+                    _word(manifest, ".expected.dockRoutes[1].routeId"),
+                    _word(manifest, ".expected.dockRoutes[1].routeHash"),
+                    uint256(1),
+                    _word(manifest, ".expected.interfaceNameIds.production_evidence"),
+                    _word(manifest, ".expected.targetPlanId"),
+                    keccak256("different-order")
+                )
+            ),
+            _word(manifest, ".expected.existingEvmDockInstanceId")
+        );
+    }
+
+    /// target:null 动态选择：候选叶公式（UVPDockingModule
+    /// _DOMAIN_DOCK_CANDIDATE 权威）、候选集 root/proof、以及目标槽被
+    /// candidatesRoot 占据的动态路由叶——与 TS golden 逐字节对拍。
+    function testDynamicSelectionCandidateVectorsMatch() public {
+        string memory manifest = _manifest();
+        bytes32 domainCandidate = keccak256("UVP_DOCK_CANDIDATE_V1");
+        bytes32 routeIdWord = _word(manifest, ".expected.dynamicSelection.routeId");
+        bytes32 evidenceNameId = _word(manifest, ".expected.interfaceNameIds.production_evidence");
+        bytes32 targetDefRef = _word(manifest, ".expected.targetDefinitionRefHash");
+
+        bytes32 candidateLeaf = keccak256(abi.encode(domainCandidate, routeIdWord, targetDefRef, evidenceNameId));
+        assertEq(candidateLeaf, _word(manifest, ".expected.dynamicSelection.candidateLeaf"));
+        bytes32 otherLeaf = keccak256(
+            abi.encode(
+                domainCandidate,
+                routeIdWord,
+                keccak256(abi.encode(DOMAIN_DEFINITION_REF, keccak256("zx-ffffffffffffffffffffffffffffff"))),
+                evidenceNameId
+            )
+        );
+        assertEq(otherLeaf, _word(manifest, ".expected.dynamicSelection.otherCandidateLeaf"));
+
+        // 候选叶换定义即换叶（membership 无法互替）。
+        _assertDistinct(candidateLeaf, otherLeaf);
+
+        bytes32 candidatesRoot = _word(manifest, ".expected.dynamicSelection.candidatesRoot");
+        uint256 proofLength = vm.parseJsonUint(manifest, ".expected.dynamicSelection.candidateProofLength");
+        bytes32[] memory proof = new bytes32[](proofLength);
+        for (uint256 i = 0; i < proofLength; i++) {
+            proof[i] = _word(manifest, string.concat(".expected.dynamicSelection.candidateProof[", vmIndex(i), "]"));
+        }
+        require(DockMerkle.verify(candidatesRoot, candidateLeaf, proof), "candidate proof does not verify");
+
+        // 动态路由叶：目标槽 = candidatesRoot（随 dockRoutesRoot 在 finalize
+        // 冻结），modeWord=existing、空 input 根。
+        bytes32[] memory evidenceOutputs = new bytes32[](1);
+        evidenceOutputs[0] =
+            _outputBindingHash(manifest, routeIdWord, evidenceNameId, ".expected.dockRoutes[1].outputBindings[0]");
+        assertEq(
+            keccak256(
+                abi.encode(
+                    DOMAIN_ROUTE,
+                    _word(manifest, ".expected.parentDefinitionRefHash"),
+                    candidatesRoot,
+                    evidenceNameId,
+                    uint256(1), // modeWord existing
+                    DockMerkle.EMPTY_ROOT,
+                    DockMerkle.root(evidenceOutputs)
+                )
+            ),
+            _word(manifest, ".expected.dynamicSelection.dynamicRouteHash")
+        );
+    }
+
     function _outputBindingHash(
         string memory manifest,
         bytes32 routeIdWord,

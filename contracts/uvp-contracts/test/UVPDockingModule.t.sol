@@ -11,11 +11,12 @@ import {DockMerkle} from "../src/libraries/DockMerkle.sol";
 import {ECDSA} from "../src/libraries/ECDSA.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 
-/// @title Zhixu Dock committed-route 测试（preimage v2，链轨仅 new 模式）
+/// @title Zhixu Dock committed-route 测试（preimage v2，open/new 模式）
 /// @dev 覆盖：happy path（open→callback）、身份确定性、错误 proof 拒绝、
 ///      原子性/幂等、碰撞隔离、permissionless liveness、深度上限、
 ///      permit V2 签名/错签者拒绝、existing 模式哈希拒绝、接口 new 位拒绝、
-///      terminal 移除后的输出交付账本（A14）。
+///      terminal 移除后的输出交付账本（A14）。existing 模式（attach）的
+///      语义覆盖见 UVPDockingModuleAttach.t.sol。
 interface DockVm {
     struct NoArgs {
         uint256 placeholder;
@@ -169,7 +170,7 @@ contract UVPDockingModuleTest {
     bytes32 private outputsRoot;
     bytes32 private openRouteHash;
     // existing 模式哈希（同绑定、modeWord=1）：作为第二片 route 叶提交，
-    // 供"链轨拒绝 existing 路由"用例锚定。
+    // 供"open 拒绝 existing 路由"用例锚定。
     bytes32 private existingRouteHash;
     bytes32 private dockInstanceId;
     bytes32 private linkedOrderId;
@@ -552,8 +553,9 @@ contract UVPDockingModuleTest {
         );
     }
 
-    /// 链轨只支持 new：existing 模式（modeWord=1）的 routeHash 无法通过
-    /// 重算（重算钉 modeWord=0），显式失配拒绝（A05）。
+    /// open 路由钉 new：existing 模式（modeWord=1）的 routeHash 无法通过
+    /// open 的重算（重算钉 modeWord=0），显式失配拒绝（A05）——existing
+    /// 走 attachDockedOrder（见 UVPDockingModuleAttachTest）。
     function testRejectsExistingModeRoute() public {
         UVPDockingModule.OpenDockRequestV2 memory request = _openRequest(0);
         request.routeHash = existingRouteHash;

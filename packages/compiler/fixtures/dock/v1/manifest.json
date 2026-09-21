@@ -57,6 +57,7 @@
     "cloudSecurityDomain": "uvp-cloud-security-fixture",
     "localOrderId": "order-fixture-001",
     "existingTargetOrderRef": "factory-a/P001",
+    "existingEvmTargetOrderRef": "0xabababababababababababababababababababababababababababababababab",
     "parentPlanIdWord": "0x665b00a29619bc315b02ef076574580847c9709cab3be3e54727d5f71291906a"
   },
   "identities": {
@@ -629,6 +630,18 @@
     "dockInstanceId": "0x64d4069763600ba88e9b739d24d7fc5668604274e8ee594f4f9b68e702acc0b0",
     "linkedOrderId": "0xadb2e9359c4d76894d1e043ffb693e0aff7928b3009462aa80760d94c1b5b512",
     "existingDockInstanceId": "0xb63308034901f4c5fad156b0e27b92a3085f7cffdd9fe59d45461eb95470ea8c",
+    "existingEvmDockInstanceId": "0x58ed2b3acc34f00d0a7ee2d5eec238f23f5d1dc01eefb8dacd74d626060415b0",
+    "dynamicSelection": {
+      "routeId": "0xf564290197676d96bb0507b39f4c52a2cf0cbfefcfa5388464ae8ef2c0333c8d",
+      "candidateLeaf": "0xd22fb10c0c6af3d26416fc706f0de24f5fe90bb1ce29093f13c6e18cd2115877",
+      "otherCandidateLeaf": "0xdfca29d3aa580d82f0e50f81bb8e7beac3acf45b31e475f6bc9e0874e26509b5",
+      "candidatesRoot": "0x34ca01ee140208dd758ebf6853ea801c948bf0014cc3d3682841d83b252bbb89",
+      "candidateProof": [
+        "0xdfca29d3aa580d82f0e50f81bb8e7beac3acf45b31e475f6bc9e0874e26509b5"
+      ],
+      "candidateProofLength": 1,
+      "dynamicRouteHash": "0xfc30d4156d88bca938ada16f8b8310eaffd6fb6b16721fe56ee08fb0afc26e9d"
+    },
     "sourceFactSetHash": "0x8fb2a65a025f1fd6ea7c3e3dea761ede80cd33ef8e06b0358c6d81067e7701f6",
     "inputPayloadHash": "0x657bf2d75d836d5bb00fc83f7fd9dad4f181a8a720e7568d41d374a8645f758b",
     "inputIdempotencyKey": "0x0ee5d60990ce3512985074ac3e82ea078e0cd7cc44bf006b45b9d6dfce36eb1b",

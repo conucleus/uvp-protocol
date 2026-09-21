@@ -19,6 +19,7 @@ import { compileZhixuHookPlan } from "../src/hook-plan.js";
 import {
   canonicalSignalHash,
   cloudRuntimeDomain,
+  definitionRefHash,
   dockInputIdempotencyKey,
   dockInputPayloadHash,
   dockInstanceId,
@@ -27,9 +28,12 @@ import {
   evmRuntimeDomain,
   hookKey,
   interfaceNameKey,
+  keccakWords,
   linkedOrderId,
   localOrderKey,
   merkleProof,
+  merkleRoot,
+  routeHash,
   signalKey,
   sourceFactSetHash,
   DEFINITION_UID_DOMAIN,
@@ -243,6 +247,23 @@ function findRoute(
   return route;
 }
 
+/** target:null 候选叶（合约 UVPDockingModule._DOMAIN_DOCK_CANDIDATE 的 TS
+ * 镜像）：H("UVP_DOCK_CANDIDATE_V1", routeId, targetDefinitionRefHash,
+ * keccak(interfaceName))。routeId 绑定（父定义, 父阶段），跨路由/跨父复用
+ * 候选叶在 membership 处失配。 */
+function dockCandidateLeaf(input: {
+  readonly routeId: HexString;
+  readonly targetDefinitionRefHash: HexString;
+  readonly interfaceName: string;
+}): HexString {
+  const DOMAIN_DOCK_CANDIDATE = "UVP_DOCK_CANDIDATE_V1";
+  return keccakWords(DOMAIN_DOCK_CANDIDATE, [
+    input.routeId,
+    input.targetDefinitionRefHash,
+    interfaceNameKey(input.interfaceName),
+  ]);
+}
+
 async function main(): Promise<void> {
   const target = targetProductionDefinition();
   const parent = parentSourcingDefinition(target.metadata.name);
@@ -303,6 +324,55 @@ async function main(): Promise<void> {
     interfaceName: "production_evidence",
     targetPlanId: targetPlan.planId,
     targetOrderRef: "factory-a/P001",
+  });
+  // existing 模式（链轨 EVM 形态）：目标单键是 bytes32 word，原字入槽
+  // （targetOrderRefKey 的 word-literal 分支）——UVPDockingModule 4.4
+  // attachDockedOrder 的实例重算与该形态对拍。
+  const existingEvmTargetOrderRef = `0x${"ab".repeat(32)}` as const;
+  const existingEvmDockInstance = dockInstanceId({
+    runtimeDomain: evmDomain,
+    localPlanId: parentPlan.planId,
+    localDefinitionRefHash: evidenceRoute.local.definitionRefHash,
+    localOrderKey: parentOrderKey,
+    routeId: evidenceRoute.routeId,
+    routeHash: evidenceRoute.routeHash,
+    orderMode: "existing",
+    interfaceName: "production_evidence",
+    targetPlanId: targetPlan.planId,
+    targetOrderRef: existingEvmTargetOrderRef,
+  });
+
+  // ---- target:null 动态选择（UVPDockingModule 4.4 attach 的候选集承诺）----
+  // 候选叶公式镜像：链上权威是合约 _DOMAIN_DOCK_CANDIDATE（keccak 的
+  // preimage 与本函数逐字节一致）；src/dock.ts 的正式收录随 onchain
+  // existing/UNRESOLVED 接受域扩展任务一并落地，避免两任务改同一文件。
+  const evidenceOutputsRoot = merkleRoot(
+    evidenceRoute.outputBindings.map((binding) => binding.bindingHash),
+  );
+  const candidateLeaf = dockCandidateLeaf({
+    routeId: evidenceRoute.routeId,
+    targetDefinitionRefHash:
+      targetPlan.dockInterface!.definition.definitionRefHash,
+    interfaceName: "production_evidence",
+  });
+  const otherCandidateUid = "zx-ffffffffffffffffffffffffffffff";
+  const otherCandidateLeaf = dockCandidateLeaf({
+    routeId: evidenceRoute.routeId,
+    targetDefinitionRefHash: definitionRefHash(otherCandidateUid),
+    interfaceName: "production_evidence",
+  });
+  const candidateLeaves = [candidateLeaf, otherCandidateLeaf];
+  const candidatesRoot = merkleRoot(candidateLeaves);
+  const candidateProof = merkleProof(candidateLeaves, candidateLeaf)!;
+  // 动态路由叶：目标槽被候选集 root 占据（随 dockRoutesRoot 在 finalize
+  // 冻结）；静态叶的目标槽则是具体 targetDefinitionRefHash。
+  const dynamicRouteHash = routeHash({
+    localDefinitionRefHash: evidenceRoute.local.definitionRefHash,
+    targetDefinitionRefHash: candidatesRoot,
+    interfaceName: "production_evidence",
+    orderMode: "existing",
+    inputBindingsRoot: EMPTY_MERKLE_ROOT,
+    outputBindingsRoot: evidenceOutputsRoot,
   });
 
   // ---- input envelope（new 模式：唯一 input 绑定即出生锚）----
@@ -431,6 +501,7 @@ async function main(): Promise<void> {
       cloudSecurityDomain: "uvp-cloud-security-fixture",
       localOrderId: "order-fixture-001",
       existingTargetOrderRef: "factory-a/P001",
+      existingEvmTargetOrderRef,
       parentPlanIdWord: parentPlan.planId,
     },
     identities: {
@@ -459,6 +530,18 @@ async function main(): Promise<void> {
       dockInstanceId: dockInstance,
       linkedOrderId: linkedOrder,
       existingDockInstanceId: existingDockInstance,
+      // 链轨 existing 形态（word 目标单键）与动态选择候选集 golden：
+      // DockManifestParity.t.sol 与 dock-parity.test.ts 同源消费。
+      existingEvmDockInstanceId: existingEvmDockInstance,
+      dynamicSelection: {
+        routeId: evidenceRoute.routeId,
+        candidateLeaf,
+        otherCandidateLeaf,
+        candidatesRoot,
+        candidateProof,
+        candidateProofLength: candidateProof.length,
+        dynamicRouteHash,
+      },
       sourceFactSetHash: sourceFactSet,
       inputPayloadHash: inputPayload,
       inputIdempotencyKey: inputIdempotency,

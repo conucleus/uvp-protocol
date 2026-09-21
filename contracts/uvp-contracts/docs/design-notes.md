@@ -62,20 +62,54 @@
 fact 写入，并同步置位 entrance 交付账本。任何一步失败整笔回滚，不存在
 "建了单但 link 未登记"或"事实写入但账本未置位"的中间态窗口。
 
-### 2.2 new-only 裁决
+### 2.2 双模式裁决：new 建单 / existing 挂接
 
-链轨只支持 order mode new（建单型委托）：routeHash 与 dockInstanceId 的
-modeWord 槽位被钉为 new(0)。existing 模式 route 的哈希在重算处直接失配
-（显式拒绝，不静默降级）。
+链轨两种 order mode 各有专属入口：new（建单型委托，`openDockedOrder`）
+与 existing（对等挂接既有单，`attachDockedOrder`，abiVersion 4.4 起）。
+modeWord 进 routeHash 与 dockInstanceId 双 preimage，两侧各自钉死本模式
+的 word——new 路由的哈希在 attach 重算处失配，existing 路由的哈希在
+open 重算处失配，两模式身份不可互冒（显式拒绝，不静默降级）。
+
+existing 的已裁决语义（唯一权威规格 = uvp-core subscription-mint-spec
+§2.4 对等挂接五点；链轨侧落点如下）：
+
+- **同意面**：目标单 creator / 目标单在任执行者（请求自报 targetStageId
+  锚定）/ 目标 plan publisher 的 EIP-712 attach 预授权，三者之一。空
+  签名只表示不携显式授权，不是放行——三腿全空即拒。成功挂接的重放是
+  permissionless 幂等面（return false，先于同意门）。
+- **不铸子单**：attach 不触碰 `createDockedOrderFromModule` 与 dock 子单
+  namespace，效果集是 O(1) 存储写（与链上存量 dock 数无关）。
+- **N:1 拼批**：多父 route instance 可挂同一目标单。幂等键是父侧
+  `dockByLocalRoute`（unique(本地订单, 本地阶段)，spec 的 dock_instance
+  唯一键同口径）；`dockByTargetOrder` 保持 new 专属（子单出生键），
+  目标侧"谁挂了我"的投影由 `DockAttached` 事件（indexed linkedOrderId）
+  承载。
+- **target:null 动态选择**：未解析路由以候选集 root 占据 routeHash 的
+  目标槽（`H(UVP_DOCK_CANDIDATE_V1, routeId, targetDefinitionRefHash,
+  interfaceNameId)` 叶），随 dockRoutesRoot 在 finalize 冻结——不扩
+  PlanCommit/PlanMetadata ABI。attach 先按静态目标槽重算，失配则按
+  候选集根重算并要求选定目标的候选叶 membership proof。选定目标进
+  dockInstanceId preimage（existing 第 10 word = 目标单键原字），叠加
+  父 route 唯一键即"选定后终身钉住"：同 route instance 换目标即换
+  实例 id，`DockEndpointOccupied` 拒绝。链下的退避重试/预算/死信归
+  keeper，链上只做确定性验证与幂等。
+- **深度账本**：attach 计入 dock 链长——目标单深度取 max(现值,
+  父深+1)，长链/环路防护不被挂接绕过。
 
 ### 2.3 keeper 信任模型
 
-链轨 new 模式恰一条 input 绑定且开仓即被消费为出生锚——`submitDockedInput`
-因此是纯幂等重放面（恒 return false），不是活的交付/中继路径，**不得列
-为 keeper 通道**。`submitDockedSignal` 才是 permissionless 的 output 回写
-通道：keeper 只提交可从链上 committed 状态推导的数据，无法自选内容——
-payload/idempotency 不接受调用方自报，全部由 committed route/binding +
-envelope word 重算。
+链轨 new 模式恰一条 input 绑定且开仓即被消费为出生锚——对 new dock，
+`submitDockedInput` 是纯幂等重放面（恒 return false）。existing 模式没
+有出生锚：input 绑定在 attach 时登记为未交付，逐端口由
+`submitDockedInput` 活交付（恰一次 + 幂等重放），就绪门在交付期（父
+hook 的 EMIT_READY）。`submitDockedSignal` 两模式同构，是
+permissionless 的 output 回写通道：keeper 只提交可从链上 committed
+状态推导的数据，无法自选内容——payload/idempotency 不接受调用方自报，
+全部由 committed route/binding + envelope word 重算，事实只读
+StateMachine 存储。attach 前已成立的目标输出由此自然回填（回填=重放，
+逐 output 绑定提交即可）；`DockAttached` 事件不内联已成立输出清单——
+目标侧事实的唯一权威是 StateMachine 存储 + 交付账本事件，复制清单进
+建立事件会造出第二事实源。
 
 ### 2.4 哈希域公式表
 

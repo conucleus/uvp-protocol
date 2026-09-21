@@ -721,7 +721,7 @@ export function dockRoutesRootOf(routes: readonly DockRouteV2[]): HexString {
 export const PERMIT_TYPEHASH =
   "UVPDockEntrancePermitV2(bytes32 targetPlanId,bytes32 targetEntrancePortId,bytes32 interfaceNameId,bytes32 localPlanId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,uint256 feeLimit,uint256 nonce,uint256 deadline)";
 
-/** 链侧 docking module EIP-712 域 version（abiVersion 4.3 线）。 */
+/** 链侧 docking module EIP-712 域 version（abiVersion 4.x 线恒 "4"）。 */
 export const PERMIT_DOMAIN_VERSION = "4";
 export const PERMIT_DOMAIN_NAME = "UVPDockingModule";
 export const PERMIT_DOMAIN_TYPE =

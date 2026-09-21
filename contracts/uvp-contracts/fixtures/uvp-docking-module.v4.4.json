@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPDockingModule",
-  "abiVersion": "4.3",
+  "abiVersion": "4.4",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPDockingModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPDockingModule.sol/UVPDockingModule.json",
   "compiler": {
@@ -9,12 +9,16 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x837ef43ded912a876278e000ce50e0533c60d6d317f212697a792a7330f13294",
-    "bytecodeHash": "0x280b314488503eaeb6e6563a2682cb0504b73f9aebadba1586e65e0a444e86b5",
-    "deployedBytecodeHash": "0x4d660cbf134664ed935bd2e47c5e8ce86b40a338cd69f97cf51ce022a3c5555d",
-    "artifactHash": "0xad2534efe9c8635850acb6f4dccc759304b14582f4a90b6bc9d97734d82c3c04"
+    "abiHash": "0x3b3a3f5196006a614b100b4a401c538e0674fd4d5a755827414c8e2df5396d12",
+    "bytecodeHash": "0x81758a01cd3e19e54d70036dfca35cdc76caa872200698c78e58eb3ce9b04afa",
+    "deployedBytecodeHash": "0xde5fc29ac23cf87629884c48f2bb4faee19e98fe3d6194a54ba7b3ab96e51632",
+    "artifactHash": "0x20ee85deda6d7c877cc6cf0d33e94e3fc9f82cbb95c641cbf671fe516926a676"
   },
   "events": {
+    "DockAttached": {
+      "signature": "DockAttached(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint8,address)",
+      "topic": "0x1a10aa353842566a7cae54066fcaeef84a9d1036d34309f5129437cf41ec01a9"
+    },
     "DockInputSubmitted": {
       "signature": "DockInputSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
       "topic": "0xd8ca3dbb37d811f49bc0352c5d5538c8b34f92a1721684a8b9fb4353fcb0e07e"
@@ -33,9 +37,17 @@
     }
   },
   "functions": {
+    "DOCK_INTERFACE_ORDER_MODE_EXISTING": {
+      "signature": "DOCK_INTERFACE_ORDER_MODE_EXISTING()",
+      "selector": "0x2d3bbeea"
+    },
     "DOCK_INTERFACE_ORDER_MODE_NEW": {
       "signature": "DOCK_INTERFACE_ORDER_MODE_NEW()",
       "selector": "0x5422c9e9"
+    },
+    "DOCK_MODE_EXISTING": {
+      "signature": "DOCK_MODE_EXISTING()",
+      "selector": "0x9e770e33"
     },
     "DOCK_MODE_NEW": {
       "signature": "DOCK_MODE_NEW()",
@@ -56,6 +68,14 @@
     "SM_FLAG_EMIT_READY": {
       "signature": "SM_FLAG_EMIT_READY()",
       "selector": "0x5f495cf3"
+    },
+    "attachDockedOrder": {
+      "signature": "attachDockedOrder((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint8,bytes32),bytes32[],((uint8,bytes32,bytes32),bytes32[],bytes32[]),(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32[])[],(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32[])[],(uint256,uint256,bytes),(bytes32,bytes32,bytes32,bytes32[])[])",
+      "selector": "0x83ed8c30"
+    },
+    "attachPermitDigest": {
+      "signature": "attachPermitDigest(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,uint256)",
+      "selector": "0x20af885a"
     },
     "dockByLocalRoute": {
       "signature": "dockByLocalRoute(bytes32)",
