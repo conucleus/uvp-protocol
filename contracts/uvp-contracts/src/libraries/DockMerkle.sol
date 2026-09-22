@@ -11,9 +11,12 @@ library DockMerkle {
 
     /// @notice 排序（去重）后逐层建树，排序去重在函数内拷贝上执行，不
     ///         修改调用方数组（就地缩长度会让调用方持有的
-    ///         calldata/memory 数组在 root 调用后被静默截断）。仅用于测试
-    ///         与 calldata 一致性校验（叶子数 ≤ MAX_DOCK_OUTPUTS，无界
-    ///         输入禁止调用）。
+    ///         calldata/memory 数组在 root 调用后被静默截断）。不设叶数
+    ///         数值上限：生产调用方的有效叶集由承诺面自 bound（root 结果
+    ///         必须复现 committed route 叶内的绑定根——去重叶集被碰撞
+    ///         阻抗钉死为 finalize 时的承诺集，动态路由恒空集），数组中的
+    ///         重复项不改变根也不放大效果集，只让调用方自付 sortUnique
+    ///         O(n²) 的 gas；数值上限反而会拒绝比上限更大的合法承诺集。
     function root(bytes32[] memory leaves) internal pure returns (bytes32) {
         if (leaves.length == 0) {
             return EMPTY_ROOT;

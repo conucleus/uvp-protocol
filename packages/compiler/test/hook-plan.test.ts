@@ -1737,6 +1737,31 @@ test("carries null (dynamic-selection) targets as unresolved routes (§8.8)", ()
   assert.equal(staticPlan.unresolvedDockRoutes, undefined);
 });
 
+test("rejects an explicit empty unresolvedDockRoutes list (closed field set)", () => {
+  // 空数组与缺键不得共享同一 planHash：hookPlanPayloadForHash 对两者做
+  // 同一归一（空集不落键），放行空数组会让两种序列化形态落到同一哈希，
+  // 破坏封闭字段集对 plan 唯一字节形态的承诺。编译器对空集只落缺键
+  // （上一测试的正例），空数组只能是手改制品——按载荷重签后仍拒绝。
+  const dynamicTarget = structuredClone(baseZhixu) as ZhixuDefinition & {
+    spec: { taskPatterns: Array<{ stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } | null } } }> }> };
+  };
+  dynamicTarget.spec.taskPatterns[1]!.stages[0]!.executor!.zhixuExecutorConfig!.target = null;
+  const plan = compileZhixuHookPlan(
+    dynamicTarget as unknown as ZhixuDefinition,
+    demoManifest,
+  );
+  assert.ok(plan.unresolvedDockRoutes?.length === 1);
+  const issues = validateHookPlanArtifact(
+    resign({ ...plan, unresolvedDockRoutes: [] }),
+  );
+  assert.ok(
+    issues.some((issue) =>
+      /unresolvedDockRoutes must not be an empty array/.test(issue),
+    ),
+    issues.join("; "),
+  );
+});
+
 test("rejects dynamic targets without a manifest (no candidate universe to freeze)", () => {
   // DSL 壳与 Rust 声明面都不携带候选信息（target:null 只是目标空缺）；
   // 候选宇宙只能从 resolution manifest（链轨发布面）派生。无 manifest 的

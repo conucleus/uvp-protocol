@@ -1923,6 +1923,31 @@ test("rejects forged candidate lists and swapped dynamic leaves at the artifact 
   );
 });
 
+test("rejects an explicit empty unresolvedDockRoutes list (closed field set)", () => {
+  // 空数组与缺键不得共享同一 planHash：onchain 制品的哈希 preimage 装配
+  // 对"空数组/缺键"做同一归一（仅非空时入哈希），放行空数组会让两种
+  // 序列化形态落到同一哈希上，破坏封闭字段集对 plan 唯一字节形态的
+  // 承诺。编译器对空集只落缺键，空数组只能是手改制品——响亮拒绝。
+  const onchain = compileZhixuOnchainHookPlan(
+    dynamicExistingZhixu(null),
+    demoManifest,
+  );
+  assert.ok(onchain.unresolvedDockRoutes?.length === 1);
+  const emptied = { ...onchain, unresolvedDockRoutes: [] };
+  const { planHash: _staleHash, ...payload } = emptied;
+  void _staleHash;
+  const issues = validateOnchainHookPlanArtifact({
+    ...payload,
+    planHash: hashOnchainPlanPayload(payload as never),
+  } as unknown as OnchainHookPlanArtifact);
+  assert.ok(
+    issues.some((issue) =>
+      /unresolvedDockRoutes must not be an empty array/.test(issue),
+    ),
+    issues.join("; "),
+  );
+});
+
 test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
   const silentTriggerIssues = (issues: readonly string[]): readonly string[] =>
     issues.filter((issue) => /order trigger without emitReady/.test(issue));

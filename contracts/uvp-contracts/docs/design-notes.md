@@ -127,3 +127,43 @@ mint 出生（`triggerOrderFromOutsideFor`）要求出生事实在目标 plan �
 事实键取自 committed route 的 input 绑定叶（端口叶/接口承诺钉死），
 payload 由模块按 committed 值重算（`_inputPayloadHash`），调用方无从
 引入词表外事实，闸无对象可闸。
+
+## 3. attach 边界的已裁决信任面（4.4 终态口径）
+
+### 3.1 同意门三腿全在目标侧：镜像 plan 抢注 route instance 是接受的信任面
+
+attach 的同意门（目标单 creator / 目标单在任执行者 / 目标 plan
+publisher 预授权）三腿全部落在目标侧，父（route source）侧没有同
+意腿。接口承诺 word（`inputsRoot`/`outputsRoot`/`orderModesWord` 等）
+是公开可复算的承诺，不是秘密：任何人可发布一个镜像接口承诺的 plan
+并在其订单上满足 creator 腿，从而把父 plan 已 committed 的 existing
+路由实例抢先进册——`dockByLocalRoute` 唯一键被消耗后，向合法目标的
+attach 永久 `DockEndpointOccupied`。这是设计接受的信任面，不是漏
+洞：路由消费方（父侧）的缓解面在 route source 侧的发布方身份——
+判断一条挂接是否可信，依据是父 plan publisher 的身份与链下 resolution
+契约，而不是"挂接发生过"本身；被抢注的 route instance 若无消费价值，
+父侧以新 definitionRef 重新发路由即换新 routeId（实例键随之更换）。
+
+### 3.2 动态路由（target:null）的冻结形态：两绑定根恒 EMPTY
+
+动态路由在 finalize 冻结的形态是 `inputBindingsRoot =
+outputBindingsRoot = EMPTY_MERKLE_ROOT`：bindingHash 的 preimage 含
+目标端口寻址 word，选定前不可计算，因此 attach 对动态路由只按空绑定
+数组重算同一 routeHash preimage。这意味着 4.4 代的动态路径只承载链接
+语义——挂接关系建立、选定目标进 dockInstanceId 与父 route 唯一键两层
+终身钉住；端口绑定与交付面不在本代（静态路由的 submitDockedInput/
+submitDockedSignal 面不随动态路由开放）。若需要"动态路由携带绑定"，
+属合约下一代演进（候选叶扩绑定承诺面），不是本代的实现缺口。
+
+### 3.3 attach permit 不绑定中继者：抢跑重放结果等价
+
+`UVPDockAttachPermitV1` 没有 relay/spender 字段——publisher 签的是
+"这笔挂接可以发生"，不是"由谁执行"。mempool 抢跑者置换 msg.sender
+提交同一 permit，结果是同一挂接按同一 dockInstanceId 建立（身份由
+请求字段重算，与提交者无关）；被抢跑的原中继交易随后到达，幂等检查
+先于同意门，return false。抢跑无法把挂接改向别的目标/路由（permit
+digest 钉 targetPlanId/linkedOrderId/routeHash/dockInstanceId 全部
+身份 word），也无法消耗额外 nonce（首笔已置位）。这与 permissionless
+relay 模型一致：中继者是gas 承担者而非授权对象，给 permit 加中继者
+绑定只会把抢跑面换成"指定中继者被 DoS 时 permit 作废"，不缩小任何
+实际攻击面。

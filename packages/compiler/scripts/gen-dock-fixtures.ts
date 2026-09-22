@@ -29,7 +29,6 @@ import {
   evmRuntimeDomain,
   hookKey,
   interfaceNameKey,
-  keccakWords,
   linkedOrderId,
   localOrderKey,
   merkleProof,

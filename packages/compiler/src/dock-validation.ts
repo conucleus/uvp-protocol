@@ -12,6 +12,7 @@ import {
   routeHash as routeHashOf,
   stageKey,
 } from "./dock.js";
+import { DOCK_ROUTE_UNRESOLVED_SCHEMA_VERSION } from "./types/index.js";
 
 /**
  * Validate the Merkle commitments carried by a HookPlan artifact (dock v2).
@@ -518,6 +519,16 @@ export function validateUnresolvedDockRouteDeclarations(
   if (!Array.isArray(routes)) {
     return [`${path} must be an array when present`];
   }
+  // 显式空数组不得与缺键共享同一 planHash：封闭字段集承诺 plan 的唯一
+  // 字节形态，而两个制品的哈希 preimage 装配对"空数组/缺键"做同一归一
+  // （hookPlanPayloadForHash 及链轨同口径）——放行空数组会让两种序列化
+  // 形态落到同一哈希上。编译器自身对空集只落缺键（dock-commitments 的
+  // 装配分支），空数组只能是手改制品。
+  if (routes.length === 0) {
+    return [
+      `${path} must not be an empty array — omit the key instead; the closed field set pins one byte form per plan and the compiler never emits an empty list`,
+    ];
+  }
   for (const [index, route] of routes.entries()) {
     const prefix = `${path}[${index}]`;
     if (!isRecord(route)) {
@@ -526,7 +537,7 @@ export function validateUnresolvedDockRouteDeclarations(
     }
     expectLiteralValue(
       route.schemaVersion,
-      "uvp.dockRoute.unresolved.v1",
+      DOCK_ROUTE_UNRESOLVED_SCHEMA_VERSION,
       `${prefix}.schemaVersion`,
       issues,
     );
