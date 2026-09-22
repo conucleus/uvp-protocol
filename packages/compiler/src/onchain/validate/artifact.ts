@@ -1,4 +1,4 @@
-import { validateDockCommitments } from "../../dock-validation.js";
+import { validateDockCommitments, validateUnresolvedDockRouteDeclarations } from "../../dock-validation.js";
 import { hashOnchainPlanPayload } from "../hash/plan.js";
 import { capabilitiesRootOf } from "../capabilities-root.js";
 import {
@@ -73,6 +73,7 @@ const ONCHAIN_ARTIFACT_FIELDS: readonly string[] = [
   "executorRoutes",
   "dockInterface",
   "dockRoutes",
+  "unresolvedDockRoutes",
   "dockRoutesRoot",
   "dockInterfaceRoot",
   "capabilitiesRoot",
@@ -117,6 +118,14 @@ export function validateOnchainHookPlanArtifact(
   if (!Array.isArray(value.dockRoutes)) {
     issues.push("dockRoutes must be an array");
   }
+  // 动态路由声明面与 dockRoutes 同口径：在场而非数组必须显式报 issue，
+  // 不得静默跳过形状与承诺校验。
+  if (
+    value.unresolvedDockRoutes !== undefined &&
+    !Array.isArray(value.unresolvedDockRoutes)
+  ) {
+    issues.push("unresolvedDockRoutes must be an array when present");
+  }
   expectHexHash(value.dockRoutesRoot, "dockRoutesRoot", issues);
   expectHexHash(value.dockInterfaceRoot, "dockInterfaceRoot", issues);
   expectHexHash(value.capabilitiesRoot, "capabilitiesRoot", issues);
@@ -124,6 +133,18 @@ export function validateOnchainHookPlanArtifact(
   issues.push(...capabilitiesRootCommitmentIssues(value));
   if (Array.isArray(value.dockRoutes)) {
     issues.push(...onchainDockTrackIssues(value.dockRoutes));
+  }
+  // 动态路由声明面（仅非空时在场）：形状与 hook plan IR 共用单点实现，
+  // 本地承诺（routeId/candidatesRoot/routeHash + dockRoutesRoot 合树）由
+  // validateDockCommitments 重算，链轨接受域（mode）由下方门把关。
+  if (Array.isArray(value.unresolvedDockRoutes)) {
+    issues.push(
+      ...validateUnresolvedDockRouteDeclarations(
+        value.unresolvedDockRoutes,
+        "unresolvedDockRoutes",
+      ),
+      ...onchainUnresolvedRouteIssues(value.unresolvedDockRoutes),
+    );
   }
 
   const compiledHooks = Array.isArray(value.compiledHooks)
@@ -272,6 +293,7 @@ export function validateOnchainHookPlanArtifact(
   if (isPlanHashRecomputable(value)) {
     // 姊妹实现 hook-plan.ts 同口径：重算抛错（负载深层携带 undefined/非
     // JSON 值）按 issue 报告，校验器的契约是返回 issues 而非抛裸 TypeError。
+    // 动态路由声明面与 IR 同约定：仅非空时入哈希（空数组/缺失不落键）。
     try {
       const expectedPlanHash = hashOnchainPlanPayload({
         schemaVersion: value.schemaVersion,
@@ -285,6 +307,10 @@ export function validateOnchainHookPlanArtifact(
         executorRoutes: value.executorRoutes,
         dockInterface: value.dockInterface,
         dockRoutes: value.dockRoutes,
+        ...(Array.isArray(value.unresolvedDockRoutes) &&
+        value.unresolvedDockRoutes.length > 0
+          ? { unresolvedDockRoutes: value.unresolvedDockRoutes }
+          : {}),
         dockRoutesRoot: value.dockRoutesRoot,
         dockInterfaceRoot: value.dockInterfaceRoot,
         capabilitiesRoot: value.capabilitiesRoot,
@@ -316,14 +342,15 @@ export function assertOnchainHookPlanArtifact(
 }
 
 /**
- * 链轨 dock route 门（"明确不做"项）：
- * - `orderMode: "existing"`：Rust 两个编译 profile 都放行（existing 是云轨
- *   运行时语义），on-chain 编译必须显式拒绝，不得静默降级为 new 或吞掉；
- * - 未解析目标（target 缺失/非对象/无 zhixuUid，含 `target: null` 的动态
- *   选择 route）：on-chain 没有运行时选择面，按 UNRESOLVED_DOCK_TARGET
- *   口径拒绝（与 Rust 无 manifest 时的编译期错误同锚点）；
+ * 链轨 dock route 门（静态路由，UVPDockingModule 4.4 接受域）：
+ * - `orderMode: "existing"`：4.4 起链轨承接（attachDockedOrder 对等挂接，
+ *   不铸子单）；modeWord=existing 进 routeHash/dockInstanceId 双 preimage，
+ *   与 new 不可互冒——不再拒绝，产物原样承载。
  * - new 模式恰一条 input 绑定（Rust D010 / 合约 DockBindingCountInvalid
  *   镜像）：出生锚必须唯一确定，inputBindings 数 ≠1 在两个边界同口径拒绝。
+ * - 静态路由必须携带静态 target 块：动态（target:null）路由的唯一承载面
+ *   是 unresolvedDockRoutes（其叶已随 dockRoutesRoot 冻结），塞进
+ *   dockRoutes 的空 target 是形态走私。
  * 编译入口（compileOnchainHookPlan preflight）与反序列化边界
  * （validateOnchainHookPlanArtifact）共用本门。
  */
@@ -338,13 +365,6 @@ function onchainDockTrackIssues(routes: readonly unknown[]): readonly string[] {
         typeof route.local.stageIdentifier === "string" &&
         route.local.stageIdentifier) ||
       `dockRoutes[${index}]`;
-    if (route.orderMode === "existing") {
-      issues.push(
-        `dock route ${stageIdentifier} uses order mode "existing", which on-chain targets do not support; ` +
-          "the on-chain track requires an explicit rejection instead of a silent fallback — " +
-          'serve this route from a cloud runtime or bind an interface with order mode "new"',
-      );
-    }
     if (
       route.orderMode === "new" &&
       (Array.isArray(route.inputBindings) ? route.inputBindings.length : 0) !== 1
@@ -361,8 +381,8 @@ function onchainDockTrackIssues(routes: readonly unknown[]): readonly string[] {
       target.zhixuUid.trim().length === 0
     ) {
       issues.push(
-        `UNRESOLVED_DOCK_TARGET: dock route ${stageIdentifier} has no statically linked target; ` +
-          "on-chain compilation cannot fill a dynamic (null) target at runtime",
+        `dock route ${stageIdentifier} has no statically linked target block; ` +
+          "a dynamic (null) route must be carried in unresolvedDockRoutes (its route leaf is already frozen into dockRoutesRoot via the candidate-root target slot), never in dockRoutes",
       );
     }
   }
@@ -449,28 +469,32 @@ function capabilitiesRootCommitmentIssues(
 }
 
 /**
- * 未解析 route（target:null 动态选择，§8.8）的链轨门：Rust hook_plan 产物
- * 携带 unresolvedDockRoutes 声明面（云轨运行时由选择记录补齐），on-chain
- * 没有运行时选择面——按 UNRESOLVED_DOCK_TARGET 口径逐条响亮拒绝，不静默
- * 丢弃。onchain 产物自身不携带该字段，此门只作用于编译入口。
+ * 未解析 route（target:null 动态选择，§8.8 / UVPDockingModule 4.4）的链轨
+ * 接受域门：动态路由整体承接（声明面随产物携带，routeHash 目标槽 = 候选
+ * 集 root，随 dockRoutesRoot 在 finalize 冻结，attach 携 proof 选定），
+ * 唯一保留的拒绝是 orderMode=new——合约终态没有 new 模式动态路由的消费
+ * 方（openDockedOrder 只按静态目标槽重算 routeHash，无候选集回退；
+ * attachDockedOrder——唯一的动态路径——钉 existing）。编译入口与反序列化
+ * 边界共用本门。
  */
 function onchainUnresolvedRouteIssues(
   routes: readonly unknown[] | undefined,
 ): readonly string[] {
-  if (!Array.isArray(routes) || routes.length === 0) {
+  if (!Array.isArray(routes)) {
     return [];
   }
   const issues: string[] = [];
   for (const [index, route] of routes.entries()) {
+    if (!isRecord(route) || route.orderMode !== "new") {
+      continue;
+    }
     const stageIdentifier =
-      (isRecord(route) &&
-        typeof route.stageIdentifier === "string" &&
-        route.stageIdentifier) ||
+      (typeof route.stageIdentifier === "string" && route.stageIdentifier) ||
       `unresolvedDockRoutes[${index}]`;
     issues.push(
-      `UNRESOLVED_DOCK_TARGET: dock route ${stageIdentifier} declares a dynamic (null) target carried as an unresolved route; ` +
-        "on-chain compilation cannot fill it from selection records at runtime — " +
-        "serve this route from a cloud runtime or bind a static target",
+      `UNRESOLVED_DOCK_MODE: unresolved dock route ${stageIdentifier} declares order mode "new"; ` +
+        "the chain terminal state has no dynamic consumer for new-mode routes — " +
+        'openDockedOrder recomputes the static target slot only and attachDockedOrder (the dynamic path) pins order mode "existing"',
     );
   }
   return issues;
@@ -498,6 +522,8 @@ function isPlanHashRecomputable(
     Array.isArray(value.selectorBindings) &&
     Array.isArray(value.signalCapabilities) &&
     Array.isArray(value.dockRoutes) &&
+    (value.unresolvedDockRoutes === undefined ||
+      Array.isArray(value.unresolvedDockRoutes)) &&
     (value.dockInterface === null || isRecord(value.dockInterface)) &&
     isHexHash(value.dockRoutesRoot) &&
     isHexHash(value.dockInterfaceRoot) &&

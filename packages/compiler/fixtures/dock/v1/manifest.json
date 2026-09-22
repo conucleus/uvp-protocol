@@ -16,6 +16,7 @@
       "inputBinding": "UVP_DOCK_INPUT_BINDING_V2",
       "outputBinding": "UVP_DOCK_OUTPUT_BINDING_V2",
       "route": "UVP_DOCK_ROUTE_V2",
+      "dockCandidate": "UVP_DOCK_CANDIDATE_V1",
       "dockInstance": "UVP_DOCK_INSTANCE_V2",
       "dockOrder": "UVP_DOCK_ORDER_V1",
       "runtimeEip155": "UVP_RUNTIME_EIP155_V1",

@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
-import { keccak256, toBytes } from "viem";
 import { compileZhixuHookPlan } from "../src/hook-plan.js";
 import { validateDockCommitments } from "../src/dock-validation.js";
 import {
@@ -11,6 +10,7 @@ import {
   cloudRuntimeDomain,
   definitionRefHash,
   definitionUid,
+  dockCandidateLeaf,
   dockInputIdempotencyKey,
   dockInputPayloadHash,
   dockInstanceId,
@@ -486,18 +486,14 @@ test("existing evm instance and dynamic-selection vectors match the golden", () 
     expected.existingEvmDockInstanceId,
   );
 
-  // 候选叶公式镜像（合约 _DOMAIN_DOCK_CANDIDATE 权威）：
-  // H("UVP_DOCK_CANDIDATE_V1", routeId, targetDefinitionRefHash,
-  //   keccak(interfaceName))——keccakWords 无公共导出，逐字节数组拼装。
-  const DOMAIN_DOCK_CANDIDATE = "UVP_DOCK_CANDIDATE_V1";
-  const candidateLeaf = keccak256(
-    new Uint8Array([
-      ...toBytes(keccak256(toBytes(DOMAIN_DOCK_CANDIDATE))),
-      ...toBytes(dynamic.routeId),
-      ...toBytes(expected.targetDefinitionRefHash),
-      ...toBytes(interfaceNameKey("production_evidence")),
-    ]),
-  ) as HexString;
+  // 候选叶公式（合约 _DOMAIN_DOCK_CANDIDATE 权威）：正式实现
+  // src/dock.ts dockCandidateLeaf——H("UVP_DOCK_CANDIDATE_V1", routeId,
+  // targetDefinitionRefHash, keccak(interfaceName))。
+  const candidateLeaf = dockCandidateLeaf({
+    routeId: dynamic.routeId,
+    targetDefinitionRefHash: expected.targetDefinitionRefHash,
+    interfaceName: "production_evidence",
+  });
   assert.equal(candidateLeaf, dynamic.candidateLeaf);
   assert.equal(
     verifyMerkleProof(dynamic.candidatesRoot, dynamic.candidateLeaf, dynamic.candidateProof),

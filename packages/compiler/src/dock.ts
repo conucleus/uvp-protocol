@@ -11,7 +11,8 @@ import type {
 /**
  * Zhixu Dock v2 跨运行时哈希库（链轨权威实现）。
  *
- * word 布局定稿冻结于 UVPDockingModule abiVersion 4.2（规格 =
+ * word 布局定稿冻结于 UVPDockingModule abiVersion 4.2，动态选择候选叶域
+ * （UVP_DOCK_CANDIDATE_V1）随 4.4 追加（规格 =
  * packages/compiler/docs/dock-word-layout.md）：
  * - 所有 commitment = `keccak256(keccak256(domain) ‖ words…)`，等价于
  *   Solidity `keccak256(abi.encode(keccak256(domain), …))`；
@@ -40,6 +41,8 @@ export const DOMAIN_OUTPUT_BINDING = "UVP_DOCK_OUTPUT_BINDING_V2";
 export const DOMAIN_ROUTE = "UVP_DOCK_ROUTE_V2";
 export const DOMAIN_DOCK_INSTANCE = "UVP_DOCK_INSTANCE_V2";
 export const DOMAIN_DOCK_ORDER = "UVP_DOCK_ORDER_V1";
+/** target:null 动态选择的候选叶域（abiVersion 4.4，合约 _DOMAIN_DOCK_CANDIDATE 同字面量）。 */
+export const DOMAIN_DOCK_CANDIDATE = "UVP_DOCK_CANDIDATE_V1";
 /** Highest bit marks a derived dock child-order namespace. */
 export const DOCK_ORDER_NAMESPACE_MASK = 1n << 255n;
 export const DOMAIN_RUNTIME_EIP155 = "UVP_RUNTIME_EIP155_V1";
@@ -417,8 +420,11 @@ export function localOrderKey(orderId: string): HexString {
   return isWordLiteral(orderId) ? (orderId as HexString) : keccakWord(orderId);
 }
 
-/** existing 模式的目标 order 引用在 dockInstanceId preimage 中的 word 形态。
- * 链轨不承接 existing（编译边界拒绝），该槽只在云轨字符串引用上取值。 */
+/**
+ * existing 模式的目标 order 引用在 dockInstanceId preimage 中的 word 形态。
+ * EVM 轨该槽收 bytes32 word 原字（合约 _dockInstanceIdExisting 的尾 word =
+ * linkedOrderId，不二次哈希）；云轨字符串引用走 keccak(word 化)。
+ */
 export function targetOrderRefKey(orderRef: string): HexString {
   return isWordLiteral(orderRef) ? (orderRef as HexString) : keccakWord(orderRef);
 }
@@ -629,6 +635,27 @@ export function routeHash(input: {
     modeWord(input.orderMode),
     input.inputBindingsRoot,
     input.outputBindingsRoot,
+  ]);
+}
+
+/**
+ * target:null 动态选择（§8.8 / UVPDockingModule 4.4）的候选叶：
+ * `H(UVP_DOCK_CANDIDATE_V1; routeId, targetDefinitionRefHash,
+ * keccak(interfaceName))`。routeId 绑定（父定义, 父阶段）——跨路由/跨父
+ * 复用候选叶在 attach 的 membership 处失配。候选集 root 经 routeHash 的
+ * 目标槽随 dockRoutesRoot 在 finalize 冻结，不扩 PlanCommit/PlanMetadata
+ * ABI；attach 按候选集根重算 routeHash 后要求选定目标的候选叶 membership
+ * proof（合约 _DOMAIN_DOCK_CANDIDATE 权威，本函数逐字节镜像）。
+ */
+export function dockCandidateLeaf(input: {
+  readonly routeId: HexString;
+  readonly targetDefinitionRefHash: HexString;
+  readonly interfaceName: string;
+}): HexString {
+  return keccakWords(DOMAIN_DOCK_CANDIDATE, [
+    input.routeId,
+    input.targetDefinitionRefHash,
+    interfaceNameKey(input.interfaceName),
   ]);
 }
 

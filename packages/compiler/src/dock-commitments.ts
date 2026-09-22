@@ -2,6 +2,7 @@ import { hashCanonical } from "./hash.js";
 import {
   definitionRefHash,
   definitionUid,
+  dockCandidateLeaf,
   dockRouteId,
   EMPTY_MERKLE_ROOT,
   inputBindingHash,
@@ -24,6 +25,7 @@ import {
   COMPILER_VERSION,
   DOCK_INTERFACE_ARTIFACT_SCHEMA_VERSION,
   DOCK_ROUTE_SCHEMA_VERSION,
+  DOCK_ROUTE_UNRESOLVED_SCHEMA_VERSION,
   HOOK_PLAN_SCHEMA_VERSION,
   type DockInterfaceArtifactInterface,
   type DockInterfaceArtifactV2,
@@ -39,6 +41,8 @@ import {
   type NeutralInterfaceDeclaration,
   type NeutralResolutionManifest,
   type NeutralUnresolvedDockRoute,
+  type UnresolvedDockRouteCandidate,
+  type UnresolvedDockRouteV1,
   type ZhixuDefinition,
   type ZhixuPlatform,
 } from "./types/index.js";
@@ -611,6 +615,114 @@ export function buildDockRoute(
 }
 
 // ---------------------------------------------------------------------------
+// 中性未解析 route → 链轨承诺声明面（调用方侧，target:null 动态选择）
+// ---------------------------------------------------------------------------
+
+/**
+ * 未解析 route（target:null 动态选择）的候选集派生与本地承诺计算
+ * （UVPDockingModule 4.4）：
+ * - 候选来源 = resolution manifest（链轨发布面）：发布该具名接口且
+ *   orderModes 覆盖 route 模式的全部定义。DSL 壳对动态路由只声明
+ *   `target: null`（Rust 声明面无候选信息），manifest 是唯一既有的
+ *   "已知发布目标"声明面——候选集即选择宇宙，内容寻址、零新字段；
+ * - routeId 与静态路由同公式；候选叶 = dockCandidateLeaf（域、word 序与
+ *   合约 _DOMAIN_DOCK_CANDIDATE 逐字节一致）；
+ * - routeHash 的目标槽 = candidatesRoot，两绑定根恒 EMPTY（bindingHash 的
+ *   preimage 含目标端口寻址 word，选定前不可计算；合约 attach 对动态路由
+ *   以空绑定数组重算同一 preimage）。
+ */
+export function buildUnresolvedDockRoute(
+  neutral: NeutralUnresolvedDockRoute,
+  context: {
+    readonly localDefinitionRefHash: HexString;
+    readonly localPlanId: HexString;
+    readonly resolution: PreparedDockResolution | undefined;
+  },
+): UnresolvedDockRouteV1 {
+  const stageIdentifier = neutral.stageIdentifier;
+  const routeId = dockRouteId(
+    context.localDefinitionRefHash,
+    stageKey(stageIdentifier),
+  );
+  if (context.resolution === undefined) {
+    throw new RangeError(
+      `unresolved dock route ${stageIdentifier} declares a dynamic (null) target but no resolution manifest was prepared — ` +
+        "the candidate universe of a dynamic route is derived from the published targets in the manifest, so without one there is nothing to freeze into the route's candidate root",
+    );
+  }
+  const candidates: UnresolvedDockRouteCandidate[] = [];
+  for (const [name, target] of context.resolution.byName) {
+    const interfaceEntry = target.interfaces.find(
+      (candidate) => candidate.name === neutral.interfaceName,
+    );
+    if (
+      interfaceEntry === undefined ||
+      !interfaceEntry.orderModes.includes(neutral.orderMode)
+    ) {
+      continue;
+    }
+    candidates.push({
+      zhixuUid: target.uid,
+      zhixuName: name,
+      definitionRefHash: target.definitionRefHash,
+      artifactHash: target.artifactHash,
+      ...(target.cloudArtifactId === undefined
+        ? {}
+        : { cloudArtifactId: target.cloudArtifactId }),
+      ...(target.evmPlanId === undefined
+        ? {}
+        : { evmPlanId: target.evmPlanId }),
+    });
+  }
+  if (candidates.length === 0) {
+    throw new RangeError(
+      `unresolved dock route ${stageIdentifier} has an empty candidate set: no manifest definition publishes interface ` +
+        `${JSON.stringify(neutral.interfaceName)} for order mode ${JSON.stringify(neutral.orderMode)} — ` +
+        "the frozen candidate root would make the route permanently un-attachable (attach only accepts membership in the frozen root)",
+    );
+  }
+  candidates.sort((left, right) =>
+    left.definitionRefHash < right.definitionRefHash
+      ? -1
+      : left.definitionRefHash > right.definitionRefHash
+        ? 1
+        : 0,
+  );
+  const candidatesRoot = merkleRoot(
+    candidates.map((candidate) =>
+      dockCandidateLeaf({
+        routeId,
+        targetDefinitionRefHash: candidate.definitionRefHash,
+        interfaceName: neutral.interfaceName,
+      }),
+    ),
+  );
+  return {
+    schemaVersion: DOCK_ROUTE_UNRESOLVED_SCHEMA_VERSION,
+    stageIdentifier,
+    stageId: stageKey(stageIdentifier),
+    localDefinitionRefHash: context.localDefinitionRefHash,
+    localPlanId: context.localPlanId,
+    localSource: neutral.localSource,
+    interfaceName: neutral.interfaceName,
+    orderMode: neutral.orderMode,
+    inputBindings: neutral.inputBindings,
+    outputBindings: neutral.outputBindings,
+    routeId,
+    candidates,
+    candidatesRoot,
+    routeHash: routeHashOf({
+      localDefinitionRefHash: context.localDefinitionRefHash,
+      targetDefinitionRefHash: candidatesRoot,
+      interfaceName: neutral.interfaceName,
+      orderMode: neutral.orderMode,
+      inputBindingsRoot: EMPTY_MERKLE_ROOT,
+      outputBindingsRoot: EMPTY_MERKLE_ROOT,
+    }),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // 中性壳 → 链轨 hook plan 制品
 // ---------------------------------------------------------------------------
 
@@ -643,19 +755,19 @@ export function assembleChainTrackHookPlan(
       resolution: resolution ?? failNoResolution(route),
     }),
   );
-  const dockRoutesRoot = merkleRoot(dockRoutes.map((route) => route.routeHash));
-  const unresolvedDockRoutes = shell.unresolvedDockRoutes?.map((route) => ({
-    schemaVersion: route.schemaVersion,
-    stageIdentifier: route.stageIdentifier,
-    stageId: stageKey(route.stageIdentifier),
-    localDefinitionRefHash,
-    localPlanId: planId,
-    localSource: route.localSource,
-    interfaceName: route.interfaceName,
-    orderMode: route.orderMode,
-    inputBindings: route.inputBindings,
-    outputBindings: route.outputBindings,
-  }));
+  const unresolvedDockRoutes = shell.unresolvedDockRoutes?.map((route) =>
+    buildUnresolvedDockRoute(route, {
+      localDefinitionRefHash,
+      localPlanId: planId,
+      resolution,
+    }),
+  );
+  // dockRoutesRoot 是静态叶 ∪ 动态叶的最终根（onchain 产物与 finalize 冻结
+  // 同一口径）：动态叶的 routeHash 目标槽 = 候选集 root，两绑定根恒 EMPTY。
+  const dockRoutesRoot = merkleRoot([
+    ...dockRoutes.map((route) => route.routeHash),
+    ...(unresolvedDockRoutes ?? []).map((route) => route.routeHash),
+  ]);
 
   // planHash 的 source 快照剔除 metadata.annotations：注解永不参与任何
   // 身份，planHash 随业务内容变化、不随文档注解变化。

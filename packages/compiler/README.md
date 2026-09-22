@@ -123,6 +123,9 @@ Use these root-package entrypoints:
 - indexes dependencies by packed signal key;
 - exposes executor routes through route references;
 - carries `dockInterface`, resolved `dockRoutes`, and their committed roots;
+  dynamic (`target: null`) routes ride as the `unresolvedDockRoutes`
+  declaration face (manifest-derived candidate set occupies the route-hash
+  target slot; the leaf joins `dockRoutesRoot`);
 - compiles `selectedStageBindings` into sorted `selectorBindings` for
   `StageSelectorBinding` registration;
 - commits both tables — `selectorBindings` and `signalCapabilities` — into a

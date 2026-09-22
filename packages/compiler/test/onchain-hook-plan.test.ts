@@ -4,7 +4,15 @@ import {
   dockDemoTargetName,
   dockProductionTargetDefinition,
 } from "./dock-demo.js";
-import { EMPTY_MERKLE_ROOT, verifyMerkleProof } from "../src/dock.js";
+import {
+  EMPTY_MERKLE_ROOT,
+  verifyMerkleProof,
+  dockCandidateLeaf,
+  dockRouteId,
+  merkleRoot,
+  routeHash,
+  stageKey,
+} from "../src/dock.js";
 import test from "node:test";
 import {
   encodeAbiParameters,
@@ -1665,10 +1673,10 @@ test("dock entrance hooks materialize their stage (CORE-8 materialization gate)"
   );
 });
 
-test("rejects existing-mode dock routes on the on-chain track (explicit rejection)", () => {
-  // Rust 两个编译 profile 都放行 existing（云轨运行时语义）；on-chain 编译
-  // 必须显式拒绝，不静默降级。编译入口与反序列化边界同口径。
-  const existingZhixu: ZhixuDefinition = {
+/** execution.main 的 existing 挂接形态：production_evidence（只读既有
+ * 事实，无 input 端口）。target 传 null 即动态选择。 */
+function dynamicExistingZhixu(target: { zhixu: string } | null): ZhixuDefinition {
+  return {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
@@ -1685,7 +1693,7 @@ test("rejects existing-mode dock routes on the on-chain track (explicit rejectio
                 executor: {
                   supplierType: "zhixu" as const,
                   zhixuExecutorConfig: {
-                    target: { zhixu: dockDemoTargetName },
+                    target,
                     interface: "production_evidence",
                     order: { mode: "existing" as const },
                     signalMap: { cmp: "scrap_declared" },
@@ -1696,59 +1704,48 @@ test("rejects existing-mode dock routes on the on-chain track (explicit rejectio
       ),
     },
   };
+}
 
-  assert.throws(
-    () => compileZhixuOnchainHookPlan(existingZhixu, demoManifest),
-    (error: unknown) => {
-      assert.ok(error instanceof HookPlanCompilationError);
-      assert.ok(
-        error.issues.some(
-          (issue) =>
-            /order mode "existing"/.test(issue) &&
-            /on-chain targets do not support/.test(issue) &&
-            /explicit rejection instead of a silent fallback/.test(issue),
-        ),
-        error.issues.join("; "),
-      );
-      return true;
-    },
-  );
+test("carries existing-mode dock routes on the on-chain track (UVPDockingModule 4.4)", () => {
+  // 合约终态（attachDockedOrder）：existing 路由对等挂接既有目标单——
+  // modeWord=existing 进 routeHash 与 dockInstanceId 双 preimage，与 new
+  // 不可互冒。链轨编译不再拒绝，产物原样承载（旧拒绝闸直接删除，无
+  // 兼容轨）；编译入口与反序列化边界同口径接受。
+  const existingZhixu = dynamicExistingZhixu({ zhixu: dockDemoTargetName });
 
-  // 反序列化边界：云轨 hook_plan 产物合法携带 existing route，但喂给
-  // onchain 校验器必须被同一道门拒绝。compileOnchainHookPlan 的 preflight
-  // 会先抛，这里从 base 计划（new 模式合法产物）换挂 existing routes 后
-  // 重算 planHash，模拟反序列化视角。
-  const cloudPlan = compileZhixuHookPlan(existingZhixu, demoManifest);
-  assert.equal(cloudPlan.dockRoutes[0]?.orderMode, "existing");
-  const onchainBase = compileOnchainHookPlan(
-    compileZhixuHookPlan(baseZhixu, demoManifest),
+  const onchain = compileZhixuOnchainHookPlan(existingZhixu, demoManifest);
+  assert.equal(onchain.dockRoutes.length, 1);
+  const route = onchain.dockRoutes[0]!;
+  assert.equal(route.orderMode, "existing");
+  // existing 无出生锚：0 条 input 绑定（new 模式"恰 1 条"闸不适用）。
+  assert.equal(route.inputBindings.length, 0);
+  assert.equal(route.inputBindingsRoot, EMPTY_MERKLE_ROOT);
+  assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
+  assert.doesNotThrow(() => toSolidityRegisterPlanArgs(onchain));
+
+  // modeWord 槽钉 existing：同字段按 new 重算必失配（模式不可互冒的
+  // 产物面证据）。
+  assert.notEqual(
+    routeHash({
+      localDefinitionRefHash: route.local.definitionRefHash,
+      targetDefinitionRefHash: route.target.definitionRefHash,
+      interfaceName: route.target.interfaceName,
+      orderMode: "new",
+      inputBindingsRoot: route.inputBindingsRoot,
+      outputBindingsRoot: route.outputBindingsRoot,
+    }),
+    route.routeHash,
   );
-  const swapped = {
-    ...onchainBase,
-    dockRoutes: cloudPlan.dockRoutes,
-  };
-  const { planHash: _staleHash, ...swappedPayload } = swapped;
-  void _staleHash;
-  const boundaryIssues = validateOnchainHookPlanArtifact({
-    ...swappedPayload,
-    planHash: hashOnchainPlanPayload(swappedPayload as never),
-  } as unknown as OnchainHookPlanArtifact);
-  assert.ok(
-    boundaryIssues.some(
-      (issue) =>
-        /on-chain targets do not support/.test(issue) &&
-        /existing/.test(issue),
-    ),
-    boundaryIssues.join("; "),
-  );
+  assert.equal(route.routeHash, onchain.dockRoutesRoot); // 单叶树：根即叶
 });
 
-test("rejects unresolved dock targets on the on-chain track (UNRESOLVED_DOCK_TARGET)", () => {
+test("dynamic (null-target) routes never ride in dockRoutes (smuggling gate)", () => {
+  // 动态路由的唯一承载面是 unresolvedDockRoutes（其叶已随 dockRoutesRoot
+  // 经候选集根目标槽冻结）；把空 target 塞进 dockRoutes 是形态走私，两个
+  // 边界都必须响亮拒绝。
   const onchain = compileOnchainHookPlan(
     compileZhixuHookPlan(baseZhixu, demoManifest),
   );
-  // target:null 的动态选择 route：on-chain 没有运行时选择面，按
-  // UNRESOLVED_DOCK_TARGET 口径拒绝（与 Rust 无 manifest 编译错误同锚点）。
   const unresolved = structuredClone(onchain) as OnchainHookPlanArtifact & {
     dockRoutes: Array<Record<string, unknown>>;
   };
@@ -1760,38 +1757,169 @@ test("rejects unresolved dock targets on the on-chain track (UNRESOLVED_DOCK_TAR
     planHash: hashOnchainPlanPayload(payload as never),
   } as unknown as OnchainHookPlanArtifact);
   assert.ok(
-    issues.some(
-      (issue) =>
-        /UNRESOLVED_DOCK_TARGET/.test(issue) &&
-        /no statically linked target/.test(issue),
+    issues.some((issue) =>
+      /no statically linked target block/.test(issue) &&
+      /must be carried in unresolvedDockRoutes/.test(issue),
     ),
     issues.join("; "),
   );
 });
 
-test("rejects unresolvedDockRoutes at the on-chain compile boundary (UNRESOLVED_DOCK_TARGET)", () => {
-  // Wave3-E4（§8.8）：Rust hook_plan 对 target:null 放行并携带
-  // unresolvedDockRoutes 声明面；on-chain 编译入口必须响亮拒绝，不静默
-  // 丢弃未解析 route。
-  const dynamicTarget = structuredClone(baseZhixu) as ZhixuDefinition & {
+test("carries dynamic-selection (target:null) routes as unresolvedDockRoutes with candidate commitments", () => {
+  // target:null（§8.8 / UVPDockingModule 4.4）：候选集 root 占据 routeHash
+  // 目标槽，随 dockRoutesRoot 在 finalize 冻结；attach 携候选叶 membership
+  // proof 选定。候选清单是 manifest 派生的选择宇宙（DSL 壳不声明候选，
+  // Rust 声明面也不携带——resolution manifest 是唯一既有发布面）。
+  const dynamicZhixu = dynamicExistingZhixu(null);
+  const onchain = compileZhixuOnchainHookPlan(dynamicZhixu, demoManifest);
+  assert.equal(onchain.dockRoutes.length, 0);
+  const unresolved = onchain.unresolvedDockRoutes ?? [];
+  assert.equal(unresolved.length, 1);
+  const route = unresolved[0]!;
+  assert.equal(route.schemaVersion, "uvp.dockRoute.unresolved.v1");
+  assert.equal(route.stageIdentifier, "execution.main");
+  assert.equal(route.orderMode, "existing");
+  assert.equal(route.interfaceName, "production_evidence");
+  assert.deepEqual(
+    route.outputBindings.map((binding) => [binding.signal, binding.port]),
+    [["cmp", "scrap_declared"]],
+  );
+
+  // 候选面：demo manifest 唯一定义发布 production_evidence[existing]。
+  const manifestEntry = demoManifest.definitions[0]!;
+  assert.equal(route.candidates.length, 1);
+  assert.equal(route.candidates[0]?.zhixuName, manifestEntry.definition.metadata.name);
+  assert.equal(route.candidates[0]?.zhixuUid, manifestEntry.zhixu);
+  assert.equal(route.candidates[0]?.definitionRefHash, manifestEntry.definitionRefHash);
+
+  // 本地承诺逐项重算（与 validateDockCommitments 同公式，显式钉产物口径）。
+  const expectedRouteId = dockRouteId(
+    route.localDefinitionRefHash,
+    stageKey("execution.main"),
+  );
+  assert.equal(route.routeId, expectedRouteId);
+  const expectedCandidatesRoot = merkleRoot([
+    dockCandidateLeaf({
+      routeId: expectedRouteId,
+      targetDefinitionRefHash: manifestEntry.definitionRefHash,
+      interfaceName: "production_evidence",
+    }),
+  ]);
+  assert.equal(route.candidatesRoot, expectedCandidatesRoot);
+  assert.equal(
+    route.routeHash,
+    routeHash({
+      localDefinitionRefHash: route.localDefinitionRefHash,
+      targetDefinitionRefHash: expectedCandidatesRoot,
+      interfaceName: "production_evidence",
+      orderMode: "existing",
+      inputBindingsRoot: EMPTY_MERKLE_ROOT,
+      outputBindingsRoot: EMPTY_MERKLE_ROOT,
+    }),
+  );
+
+  // dockRoutesRoot 是 finalize 冻结的最终根：静态叶 ∪ 动态叶。
+  assert.equal(onchain.dockRoutesRoot, merkleRoot([route.routeHash]));
+  assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
+  assert.doesNotThrow(() => toSolidityRegisterPlanArgs(onchain));
+});
+
+test("rejects dynamic-selection routes declaring order mode new (chain terminal state)", () => {
+  // 合约终态没有 new 模式动态路由的消费方：openDockedOrder 只按静态目标
+  // 槽重算 routeHash（无候选集回退），attachDockedOrder——唯一的动态路
+  // 径——钉 existing。new 模式动态路由上链即永不可开的死路由，编译边界
+  // 响亮拒绝。
+  const dynamicNew = structuredClone(baseZhixu) as ZhixuDefinition & {
     spec: { taskPatterns: Array<{ stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } | null } } }> }> };
   };
-  dynamicTarget.spec.taskPatterns[1]!.stages[0]!.executor!.zhixuExecutorConfig!.target = null;
-  const cloudPlan = compileZhixuHookPlan(
-    dynamicTarget as unknown as ZhixuDefinition,
-    demoManifest,
-  );
-  assert.equal(cloudPlan.unresolvedDockRoutes?.length, 1);
+  dynamicNew.spec.taskPatterns[1]!.stages[0]!.executor!.zhixuExecutorConfig!.target = null;
   assert.throws(
-    () => compileOnchainHookPlan(cloudPlan),
+    () => compileZhixuOnchainHookPlan(dynamicNew as unknown as ZhixuDefinition, demoManifest),
     (error: unknown) => {
       assert.ok(error instanceof HookPlanCompilationError);
       const issues = error.issues.join("; ");
-      assert.match(issues, /UNRESOLVED_DOCK_TARGET/);
+      assert.match(issues, /UNRESOLVED_DOCK_MODE/);
       assert.match(issues, /execution\.main/);
-      assert.match(issues, /unresolved route/);
+      assert.match(issues, /order mode "new"/);
       return true;
     },
+  );
+
+  // 反序列化边界同口径：把已接受的动态条目改成 new 并重签全部承诺
+  // （routeHash/dockRoutesRoot/planHash 都按 new 重算，承诺自洽），只剩
+  // 接受域门可拦——校验器必须拒绝。
+  const accepted = compileZhixuOnchainHookPlan(
+    dynamicExistingZhixu(null),
+    demoManifest,
+  );
+  const entry = accepted.unresolvedDockRoutes![0]!;
+  const forgedRouteHash = routeHash({
+    localDefinitionRefHash: entry.localDefinitionRefHash,
+    targetDefinitionRefHash: entry.candidatesRoot,
+    interfaceName: entry.interfaceName,
+    orderMode: "new",
+    inputBindingsRoot: EMPTY_MERKLE_ROOT,
+    outputBindingsRoot: EMPTY_MERKLE_ROOT,
+  });
+  const forged = {
+    ...accepted,
+    unresolvedDockRoutes: [
+      { ...entry, orderMode: "new" as const, routeHash: forgedRouteHash },
+    ],
+    dockRoutesRoot: merkleRoot([forgedRouteHash]),
+  };
+  const { planHash: _staleHash, ...forgedPayload } = forged;
+  void _staleHash;
+  const issues = validateOnchainHookPlanArtifact({
+    ...forgedPayload,
+    planHash: hashOnchainPlanPayload(forgedPayload as never),
+  } as unknown as OnchainHookPlanArtifact);
+  assert.ok(
+    issues.some((issue) => /UNRESOLVED_DOCK_MODE/.test(issue)),
+    issues.join("; "),
+  );
+});
+
+test("rejects forged candidate lists and swapped dynamic leaves at the artifact boundary", () => {
+  const onchain = compileZhixuOnchainHookPlan(
+    dynamicExistingZhixu(null),
+    demoManifest,
+  );
+
+  // 伪造候选（换 definitionRefHash）：candidatesRoot 是候选叶 merkle，
+  // 换叶即失配——伪造的候选宇宙进不了冻结承诺。
+  const forgedCandidate = structuredClone(onchain);
+  (forgedCandidate.unresolvedDockRoutes![0]!.candidates[0] as {
+    definitionRefHash: `0x${string}`;
+  }).definitionRefHash = `0x${"ab".repeat(32)}`;
+  const candidateIssues = validateOnchainHookPlanArtifact(forgedCandidate);
+  assert.ok(
+    candidateIssues.some((issue) =>
+      /candidatesRoot must match the recomputed merkle root over candidate leaves/.test(
+        issue,
+      ),
+    ),
+    candidateIssues.join("; "),
+  );
+
+  // 换叶（routeHash 改值）：动态叶与 dockRoutesRoot 的对拍双双失配。
+  const swappedLeaf = structuredClone(onchain);
+  (swappedLeaf.unresolvedDockRoutes![0] as { routeHash: `0x${string}` })
+    .routeHash = `0x${"cd".repeat(32)}`;
+  const leafIssues = validateOnchainHookPlanArtifact(swappedLeaf);
+  assert.ok(
+    leafIssues.some((issue) =>
+      /routeHash must match the recomputed dynamic-route preimage/.test(issue),
+    ),
+    leafIssues.join("; "),
+  );
+  assert.ok(
+    leafIssues.some((issue) =>
+      /dockRoutesRoot must match the recomputed root over dock route hashes/.test(
+        issue,
+      ),
+    ),
+    leafIssues.join("; "),
   );
 });
 

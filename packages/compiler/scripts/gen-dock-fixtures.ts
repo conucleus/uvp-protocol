@@ -20,6 +20,7 @@ import {
   canonicalSignalHash,
   cloudRuntimeDomain,
   definitionRefHash,
+  dockCandidateLeaf,
   dockInputIdempotencyKey,
   dockInputPayloadHash,
   dockInstanceId,
@@ -38,6 +39,7 @@ import {
   sourceFactSetHash,
   DEFINITION_UID_DOMAIN,
   DOMAIN_DEFINITION_REF,
+  DOMAIN_DOCK_CANDIDATE,
   DOMAIN_DOCK_INSTANCE,
   DOMAIN_DOCK_ORDER,
   DOMAIN_INTERFACE,
@@ -247,23 +249,6 @@ function findRoute(
   return route;
 }
 
-/** target:null 候选叶（合约 UVPDockingModule._DOMAIN_DOCK_CANDIDATE 的 TS
- * 镜像）：H("UVP_DOCK_CANDIDATE_V1", routeId, targetDefinitionRefHash,
- * keccak(interfaceName))。routeId 绑定（父定义, 父阶段），跨路由/跨父复用
- * 候选叶在 membership 处失配。 */
-function dockCandidateLeaf(input: {
-  readonly routeId: HexString;
-  readonly targetDefinitionRefHash: HexString;
-  readonly interfaceName: string;
-}): HexString {
-  const DOMAIN_DOCK_CANDIDATE = "UVP_DOCK_CANDIDATE_V1";
-  return keccakWords(DOMAIN_DOCK_CANDIDATE, [
-    input.routeId,
-    input.targetDefinitionRefHash,
-    interfaceNameKey(input.interfaceName),
-  ]);
-}
-
 async function main(): Promise<void> {
   const target = targetProductionDefinition();
   const parent = parentSourcingDefinition(target.metadata.name);
@@ -343,9 +328,8 @@ async function main(): Promise<void> {
   });
 
   // ---- target:null 动态选择（UVPDockingModule 4.4 attach 的候选集承诺）----
-  // 候选叶公式镜像：链上权威是合约 _DOMAIN_DOCK_CANDIDATE（keccak 的
-  // preimage 与本函数逐字节一致）；src/dock.ts 的正式收录随 onchain
-  // existing/UNRESOLVED 接受域扩展任务一并落地，避免两任务改同一文件。
+  // 候选叶公式：src/dock.ts dockCandidateLeaf（合约 _DOMAIN_DOCK_CANDIDATE
+  // 的 TS 权威实现，链上 preimage 逐字节一致）。
   const evidenceOutputsRoot = merkleRoot(
     evidenceRoute.outputBindings.map((binding) => binding.bindingHash),
   );
@@ -466,6 +450,7 @@ async function main(): Promise<void> {
         inputBinding: DOMAIN_INPUT_BINDING,
         outputBinding: DOMAIN_OUTPUT_BINDING,
         route: DOMAIN_ROUTE,
+        dockCandidate: DOMAIN_DOCK_CANDIDATE,
         dockInstance: DOMAIN_DOCK_INSTANCE,
         dockOrder: DOMAIN_DOCK_ORDER,
         runtimeEip155: DOMAIN_RUNTIME_EIP155,

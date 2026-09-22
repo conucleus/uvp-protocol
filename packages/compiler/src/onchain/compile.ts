@@ -3,7 +3,7 @@ import {
   compileZhixuHookPlan,
   HookPlanCompilationError,
 } from "../hook-plan.js";
-import { dockRoutesRootOf, interfaceRootOf } from "../dock.js";
+import { interfaceRootOf, merkleRoot } from "../dock.js";
 import {
   OnchainHookPlanArtifactValidationError,
   onchainDockTrackIssues,
@@ -112,11 +112,12 @@ export function compileOnchainHookPlan(
       isCurrentOrder: capability.targetOrderRelation === "current",
     })),
   );
-  // 链轨拒绝：Rust 两个 profile 都放行 existing 与
-  // 动态 target（hook plan 产物携带 unresolvedDockRoutes 声明面，§8.8），
-  // 是否上链由宿主轨道决定——on-chain 编译在这里显式拒绝，不静默降级。
-  // Rust hook_plan 不再对 target:null 兜底拒绝，这里是 on-chain 边界对
-  // 未解析 route 的第一道门。
+  // 链轨接受域（UVPDockingModule 4.4 终态）：existing 路由与动态
+  // （target:null）路由不再整体拒绝——静态路由（new/existing）全部进
+  // dockRoutes，动态路由进 unresolvedDockRoutes 声明面（routeHash 目标槽
+  // = 候选集 root，随 dockRoutesRoot 冻结）。链轨仍拒的形态收窄为：
+  // 动态路由 orderMode=new（openDockedOrder 只按静态目标槽重算、无候选
+  // 集回退，attachDockedOrder——唯一的动态消费方——钉 existing）。
   const dockTrackIssues = onchainDockTrackIssues(hookPlanArtifact.dockRoutes);
   const unresolvedTrackIssues = onchainUnresolvedRouteIssues(
     hookPlanArtifact.unresolvedDockRoutes,
@@ -159,9 +160,18 @@ export function compileOnchainHookPlan(
     hookPlanArtifact.signalCapabilities,
   );
   // fail-closed：dock roots 由 TS 侧从 core 产物重算并断言一致，任何分叉
-  // 都在编译期暴露。
+  // 都在编译期暴露。dockRoutesRoot 是 finalize 冻结的最终根：静态叶 ∪
+  // 动态叶（动态叶目标槽 = 候选集 root），IR 组装层同口径产根。
   const dockRoutes = hookPlanArtifact.dockRoutes;
-  const recomputedRoutesRoot = dockRoutesRootOf(dockRoutes);
+  const unresolvedDockRoutes =
+    hookPlanArtifact.unresolvedDockRoutes !== undefined &&
+    hookPlanArtifact.unresolvedDockRoutes.length > 0
+      ? hookPlanArtifact.unresolvedDockRoutes
+      : undefined;
+  const recomputedRoutesRoot = merkleRoot([
+    ...dockRoutes.map((route) => route.routeHash),
+    ...(unresolvedDockRoutes ?? []).map((route) => route.routeHash),
+  ]);
   if (recomputedRoutesRoot !== hookPlanArtifact.dockRoutesRoot) {
     throw new OnchainHookPlanArtifactValidationError([
       "dockRoutesRoot does not match the recomputed root over dock route hashes",
@@ -203,6 +213,11 @@ export function compileOnchainHookPlan(
     executorRoutes,
     dockInterface: hookPlanArtifact.dockInterface,
     dockRoutes,
+    // 动态路由声明面（仅非空时入哈希与制品，与 IR 同约定）：planHash
+    // 覆盖其全部字段（含候选清单与三项承诺）。
+    ...(unresolvedDockRoutes === undefined
+      ? {}
+      : { unresolvedDockRoutes }),
     dockRoutesRoot: hookPlanArtifact.dockRoutesRoot,
     dockInterfaceRoot: hookPlanArtifact.dockInterfaceRoot,
     capabilitiesRoot,

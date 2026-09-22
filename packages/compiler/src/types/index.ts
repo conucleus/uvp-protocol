@@ -298,10 +298,30 @@ export interface DockRouteOutputBinding {
 }
 
 /**
- * 未解析 DockRoute（target:null 动态选择，设计文档 §8.8）：本地声明面完整、
- * 目标身份空缺。哈希承诺字段（routeId/routeHash/bindingHash/roots）与
- * target 块一律不携带——它们的 preimage 含目标定义身份与目标端口寻址
- * word，只能由云轨运行时在选择记录补齐目标后按 §8.2/§8.4/§8.5 重算。
+ * 动态选择（target:null，§8.8 / UVPDockingModule 4.4）的候选声明：resolution
+ * manifest（链轨发布面）中发布该具名接口且 orderModes 覆盖 route 模式的全部
+ * 定义。候选集是动态路由唯一的选择宇宙——candidatesRoot 冻结进 routeHash
+ * 目标槽后，attach 只接受候选叶 membership proof 选定的目标。
+ */
+export interface UnresolvedDockRouteCandidate {
+  /** 候选定义的内容派生身份（zx-<32hex>）。 */
+  readonly zhixuUid: string;
+  /** manifest 解析键（候选定义的 metadata.name）。 */
+  readonly zhixuName: string;
+  readonly definitionRefHash: HexString;
+  /** 候选目标 plan 的 planHash（运行期定位目标 plan 用，不入候选叶）。 */
+  readonly artifactHash: HexString;
+  readonly cloudArtifactId?: string;
+  readonly evmPlanId?: HexString;
+}
+
+/**
+ * 未解析 DockRoute（target:null 动态选择，设计文档 §8.8）：本地声明面完整，
+ * 目标身份空缺至运行期选择。4.4 起链轨承接动态路由——目标槽可承诺为候选集
+ * root（候选叶不含任何目标端口寻址 word），绑定根恒为 EMPTY（bindingHash 的
+ * preimage 含目标端口寻址 word，只能在选定后按静态公式重算），因此 routeId/
+ * candidates/candidatesRoot/routeHash 四个本地承诺随声明面携带；`target` 与
+ * `sourceSeam` 仍不得在场——它们只能在运行期选定目标后计算。
  */
 export interface UnresolvedDockRouteV1 {
   readonly schemaVersion: typeof DOCK_ROUTE_UNRESOLVED_SCHEMA_VERSION;
@@ -328,6 +348,19 @@ export interface UnresolvedDockRouteV1 {
     /** 目标 output 端口名（声明值）。 */
     readonly port: string;
   }[];
+  /** H(UVP_DOCK_ROUTE_ID_V1, localDefinitionRefHash, stageKey)——与静态路由同公式。 */
+  readonly routeId: HexString;
+  /** 按 definitionRefHash 字节序排序的候选清单（manifest 派生，非空）。 */
+  readonly candidates: readonly UnresolvedDockRouteCandidate[];
+  /** merkle(dockCandidateLeaf(routeId, candidate.definitionRefHash, interfaceName)…)。 */
+  readonly candidatesRoot: HexString;
+  /**
+   * H(UVP_DOCK_ROUTE_V2; localDefinitionRefHash, candidatesRoot,
+   * keccak(interfaceName), modeWord, EMPTY, EMPTY)——目标槽被候选集 root
+   * 占据、两绑定根恒 EMPTY（合约 attachDockedOrder 动态重算口径），随
+   * dockRoutesRoot 在 finalize 冻结。
+   */
+  readonly routeHash: HexString;
 }
 
 export interface HookPlanArtifact {
@@ -343,9 +376,10 @@ export interface HookPlanArtifact {
   readonly dockInterface: DockInterfaceArtifactV2 | null;
   readonly dockRoutes: readonly DockRouteV2[];
   /**
-   * target:null 动态选择 route 的声明面（§8.8）：仅非空时由 Rust core 落
-   * 字段。链轨（onchain 产物）不携带——上链在 TS onchain 边界按
-   * UNRESOLVED_DOCK_TARGET 响亮拒绝。
+   * target:null 动态选择 route 的声明面（§8.8）：仅非空时落字段，由 TS 承诺
+   * 层从 resolution manifest 派生候选集并计算本地承诺（routeId/
+   * candidatesRoot/routeHash）。4.4 起链轨承接——onchain 产物同面携带，其
+   * routeHash 目标槽（候选集 root）随 dockRoutesRoot 进 finalize 承诺。
    */
   readonly unresolvedDockRoutes?: readonly UnresolvedDockRouteV1[];
   readonly dockRoutesRoot: HexString;
@@ -509,6 +543,13 @@ export interface OnchainHookPlanArtifact {
   readonly executorRoutes: readonly OnchainExecutorRoute[];
   readonly dockInterface: DockInterfaceArtifactV2 | null;
   readonly dockRoutes: readonly DockRouteV2[];
+  /**
+   * target:null 动态选择 route 的声明面（§8.8 / UVPDockingModule 4.4）：
+   * 仅非空时落字段（与 hook plan IR 同约定）。动态 routeHash 的目标槽 =
+   * 候选集 root，已计入 dockRoutesRoot（finalize 冻结的最终根 = 静态叶 ∪
+   * 动态叶）；绑定根恒 EMPTY，选定目标后按静态公式在 attach 期重算。
+   */
+  readonly unresolvedDockRoutes?: readonly UnresolvedDockRouteV1[];
   readonly dockRoutesRoot: HexString;
   readonly dockInterfaceRoot: HexString;
   /** 能力表/绑定表的域分隔叶混编树根（链上唯一承诺形态）。 */

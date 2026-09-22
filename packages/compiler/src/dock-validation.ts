@@ -1,5 +1,6 @@
 import {
   definitionRefHash,
+  dockCandidateLeaf,
   dockRouteId,
   EMPTY_MERKLE_ROOT,
   inputBindingHash,
@@ -22,9 +23,16 @@ import {
  * stale or hand-crafted route/interface commitment and still pass local
  * validation.
  *
+ * Dynamic (target:null) routes join the same recomputation: each
+ * unresolvedDockRoutes entry's routeId/candidatesRoot/routeHash is
+ * re-derived from its carried fields, and dockRoutesRoot is compared against
+ * the combined leaf set (static route hashes ∪ dynamic route hashes) — the
+ * root finalize freezes.
+ *
  * This helper deliberately only checks the commitment surface.  The regular
  * HookPlan/on-chain validators own the rest of the schema and append their
- * detailed field diagnostics independently.
+ * detailed field diagnostics independently (declaration-face shape lives in
+ * validateUnresolvedDockRouteDeclarations).
  */
 export function validateDockCommitments(
   value: unknown,
@@ -35,7 +43,13 @@ export function validateDockCommitments(
   }
 
   const issues: string[] = [];
+
   const routes = value.dockRoutes;
+  const unresolvedRoutes = Array.isArray(value.unresolvedDockRoutes)
+    ? value.unresolvedDockRoutes
+    : undefined;
+  // dockRoutes/unresolvedDockRoutes 的数组形状由各制品校验器报告（层属
+  // 职责），此处只在数组在场时重算承诺——与既有 dockRoutes 口径一致。
   if (Array.isArray(routes)) {
     const routeHashes: string[] = [];
     let allRouteHashesValid = true;
@@ -56,6 +70,30 @@ export function validateDockCommitments(
       issues.push(
         ...validateDockRouteCommitments(route, `${path}.dockRoutes[${index}]`),
       );
+    }
+    // 动态（target:null）route 的叶与静态叶同树：dockRoutesRoot 是
+    // finalize 冻结的最终根（静态叶 ∪ 动态叶），两个制品边界按同一口径
+    // 重算。任一动态叶 routeHash 非法则整树对拍失效（fail-closed）。
+    if (unresolvedRoutes !== undefined) {
+      for (const [index, route] of unresolvedRoutes.entries()) {
+        if (
+          !isRecord(route) ||
+          !isHexHash(route.routeHash)
+        ) {
+          issues.push(
+            `${path}.unresolvedDockRoutes[${index}].routeHash must be a lowercase 32-byte hex hash`,
+          );
+          allRouteHashesValid = false;
+          continue;
+        }
+        routeHashes.push(route.routeHash);
+        issues.push(
+          ...validateUnresolvedRouteCommitments(
+            route,
+            `${path}.unresolvedDockRoutes[${index}]`,
+          ),
+        );
+      }
     }
     if (allRouteHashesValid && isHexHash(value.dockRoutesRoot)) {
       const expectedRoot = merkleRoot(routeHashes as `0x${string}`[]);
@@ -366,6 +404,283 @@ function validateDockRouteCommitments(
     }
   }
   return issues;
+}
+
+/**
+ * 单条未解析（target:null 动态选择）route 的承诺重算（UVPDockingModule
+ * 4.4）：routeId、candidatesRoot（候选叶 merkle）与 routeHash（目标槽 =
+ * 候选集 root、两绑定根恒 EMPTY）全部从携带字段独立重推导——候选清单
+ * 伪造/换叶/换根在此暴露，制品不得携带与声明面分叉的承诺。
+ */
+function validateUnresolvedRouteCommitments(
+  route: Record<string, unknown>,
+  path: string,
+): readonly string[] {
+  const issues: string[] = [];
+  const orderMode = route.orderMode;
+  if (orderMode !== "new" && orderMode !== "existing") {
+    issues.push(`${path}.orderMode must be "new" or "existing"`);
+    return issues;
+  }
+  const localDefinitionRefHash = route.localDefinitionRefHash;
+  const stageIdentifier = route.stageIdentifier;
+  const interfaceName = route.interfaceName;
+  if (!isHexHash(localDefinitionRefHash)) {
+    issues.push(
+      `${path}.localDefinitionRefHash must be a lowercase 32-byte hex hash`,
+    );
+    return issues;
+  }
+  if (typeof stageIdentifier !== "string" || stageIdentifier.length === 0) {
+    issues.push(`${path}.stageIdentifier must be a non-empty string`);
+    return issues;
+  }
+  if (typeof interfaceName !== "string" || interfaceName.length === 0) {
+    issues.push(`${path}.interfaceName must be a non-empty string`);
+    return issues;
+  }
+  if (!isHexHash(route.routeId)) {
+    issues.push(`${path}.routeId must be a lowercase 32-byte hex hash`);
+    return issues;
+  }
+  const recomputedRouteId = dockRouteId(
+    localDefinitionRefHash,
+    stageKey(stageIdentifier),
+  );
+  if (recomputedRouteId !== route.routeId) {
+    issues.push(
+      `${path}.routeId must match the recomputed H(UVP_DOCK_ROUTE_ID_V1, localDefinitionRefHash, stageKey)`,
+    );
+  }
+  const candidates = Array.isArray(route.candidates)
+    ? route.candidates
+    : undefined;
+  if (candidates === undefined || candidates.length === 0) {
+    issues.push(
+      `${path}.candidates must be a non-empty array (the frozen candidate root is the route's only selection universe)`,
+    );
+    return issues;
+  }
+  const candidateRefHashes: `0x${string}`[] = [];
+  for (const [index, candidate] of candidates.entries()) {
+    if (!isRecord(candidate) || !isHexHash(candidate.definitionRefHash)) {
+      issues.push(
+        `${path}.candidates[${index}].definitionRefHash must be a lowercase 32-byte hex hash`,
+      );
+      return issues;
+    }
+    candidateRefHashes.push(candidate.definitionRefHash);
+  }
+  expectHexHashCommitment(route.candidatesRoot, `${path}.candidatesRoot`, issues);
+  const recomputedCandidatesRoot = merkleRoot(
+    candidateRefHashes.map((definitionRefHash) =>
+      dockCandidateLeaf({
+        routeId: route.routeId as `0x${string}`,
+        targetDefinitionRefHash: definitionRefHash,
+        interfaceName,
+      }),
+    ),
+  );
+  if (route.candidatesRoot !== recomputedCandidatesRoot) {
+    issues.push(
+      `${path}.candidatesRoot must match the recomputed merkle root over candidate leaves H(UVP_DOCK_CANDIDATE_V1, routeId, candidateDefinitionRefHash, keccak(interfaceName))`,
+    );
+  }
+  if (isHexHash(route.candidatesRoot)) {
+    const recomputedRouteHash = routeHashOf({
+      localDefinitionRefHash,
+      targetDefinitionRefHash: route.candidatesRoot,
+      interfaceName,
+      orderMode,
+      inputBindingsRoot: EMPTY_MERKLE_ROOT,
+      outputBindingsRoot: EMPTY_MERKLE_ROOT,
+    });
+    if (recomputedRouteHash !== route.routeHash) {
+      issues.push(
+        `${path}.routeHash must match the recomputed dynamic-route preimage (target slot = candidatesRoot, empty binding roots)`,
+      );
+    }
+  }
+  return issues;
+}
+
+/**
+ * 未解析 route 声明面（§8.8，target:null 动态选择）逐元素形状校验：
+ * mode 枚举、端口名形态、至少一条映射（D019 镜像）、基础身份字段与候选
+ * 清单（manifest 派生的候选身份）。`target`/`sourceSeam` 不得在场——它们
+ * 只能在运行期选定目标后计算（hook plan IR 与 onchain 产物共用本面）。
+ */
+export function validateUnresolvedDockRouteDeclarations(
+  routes: unknown,
+  path = "artifact.unresolvedDockRoutes",
+): readonly string[] {
+  const issues: string[] = [];
+  if (!Array.isArray(routes)) {
+    return [`${path} must be an array when present`];
+  }
+  for (const [index, route] of routes.entries()) {
+    const prefix = `${path}[${index}]`;
+    if (!isRecord(route)) {
+      issues.push(`${prefix} must be an object`);
+      continue;
+    }
+    expectLiteralValue(
+      route.schemaVersion,
+      "uvp.dockRoute.unresolved.v1",
+      `${prefix}.schemaVersion`,
+      issues,
+    );
+    expectNonEmptyStringValue(route.stageIdentifier, `${prefix}.stageIdentifier`, issues);
+    expectHexHashValue(route.stageId, `${prefix}.stageId`, issues);
+    expectHexHashValue(route.localDefinitionRefHash, `${prefix}.localDefinitionRefHash`, issues);
+    expectHexHashValue(route.localPlanId, `${prefix}.localPlanId`, issues);
+    expectNonEmptyStringValue(route.localSource, `${prefix}.localSource`, issues);
+    expectNonEmptyStringValue(route.interfaceName, `${prefix}.interfaceName`, issues);
+    expectOneOfValue(route.orderMode, ["new", "existing"], `${prefix}.orderMode`, issues);
+    expectHexHashValue(route.routeId, `${prefix}.routeId`, issues);
+    expectHexHashValue(route.candidatesRoot, `${prefix}.candidatesRoot`, issues);
+    expectHexHashValue(route.routeHash, `${prefix}.routeHash`, issues);
+    for (const absent of ["target", "sourceSeam"]) {
+      if (route[absent] !== undefined) {
+        issues.push(
+          `${prefix}.${absent} must not be present on an unresolved route (computable only after runtime target selection)`,
+        );
+      }
+    }
+
+    const inputs = Array.isArray(route.inputBindings) ? route.inputBindings : undefined;
+    const outputs = Array.isArray(route.outputBindings) ? route.outputBindings : undefined;
+    if (!inputs) {
+      issues.push(`${prefix}.inputBindings must be an array`);
+    }
+    if (!outputs) {
+      issues.push(`${prefix}.outputBindings must be an array`);
+    }
+    if (inputs) {
+      for (const [bindingIndex, binding] of inputs.entries()) {
+        const bindingPath = `${prefix}.inputBindings[${bindingIndex}]`;
+        if (!isRecord(binding)) {
+          issues.push(`${bindingPath} must be an object`);
+          continue;
+        }
+        if (typeof binding.hookId !== "string" || !binding.hookId.includes("#")) {
+          issues.push(`${bindingPath}.hookId must be a full hook identifier <task>.<stage>#<channel>`);
+        }
+        if (!isPortName(binding.port)) {
+          issues.push(`${bindingPath}.port must match ^[a-z][a-z0-9_]{0,31}$`);
+        }
+      }
+    }
+    if (outputs) {
+      for (const [bindingIndex, binding] of outputs.entries()) {
+        const bindingPath = `${prefix}.outputBindings[${bindingIndex}]`;
+        if (!isRecord(binding)) {
+          issues.push(`${bindingPath} must be an object`);
+          continue;
+        }
+        expectNonEmptyStringValue(binding.signal, `${bindingPath}.signal`, issues);
+        if (!isPortName(binding.port)) {
+          issues.push(`${bindingPath}.port must match ^[a-z][a-z0-9_]{0,31}$`);
+        }
+      }
+    }
+    // D019 镜像：route 至少声明一项输入或输出映射。
+    if (inputs !== undefined && outputs !== undefined && inputs.length + outputs.length === 0) {
+      issues.push(
+        `${prefix} must declare at least one input or output binding (a route maps an input or an output)`,
+      );
+    }
+
+    const candidates = Array.isArray(route.candidates)
+      ? route.candidates
+      : undefined;
+    if (!candidates || candidates.length === 0) {
+      issues.push(
+        `${prefix}.candidates must be a non-empty array (a dynamic route freezes its selection universe at compile time)`,
+      );
+    } else {
+      const seenRefHashes = new Set<string>();
+      for (const [candidateIndex, candidate] of candidates.entries()) {
+        const candidatePath = `${prefix}.candidates[${candidateIndex}]`;
+        if (!isRecord(candidate)) {
+          issues.push(`${candidatePath} must be an object`);
+          continue;
+        }
+        expectNonEmptyStringValue(candidate.zhixuUid, `${candidatePath}.zhixuUid`, issues);
+        expectNonEmptyStringValue(candidate.zhixuName, `${candidatePath}.zhixuName`, issues);
+        expectHexHashValue(candidate.definitionRefHash, `${candidatePath}.definitionRefHash`, issues);
+        expectHexHashValue(candidate.artifactHash, `${candidatePath}.artifactHash`, issues);
+        if (candidate.cloudArtifactId !== undefined && typeof candidate.cloudArtifactId !== "string") {
+          issues.push(`${candidatePath}.cloudArtifactId must be a string when present`);
+        }
+        if (candidate.evmPlanId !== undefined && !isHexHash(candidate.evmPlanId)) {
+          issues.push(`${candidatePath}.evmPlanId must be a lowercase 32-byte hex hash when present`);
+        }
+        if (
+          typeof candidate.definitionRefHash === "string" &&
+          seenRefHashes.has(candidate.definitionRefHash)
+        ) {
+          issues.push(
+            `${candidatePath}.definitionRefHash duplicates an earlier candidate — one published definition cannot occupy two leaves`,
+          );
+        }
+        if (typeof candidate.definitionRefHash === "string") {
+          seenRefHashes.add(candidate.definitionRefHash);
+        }
+      }
+    }
+  }
+  return issues;
+}
+
+/** 端口名形态（与 Rust valid_port_name 同规则）：^[a-z][a-z0-9_]{0,31}$。 */
+function isPortName(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[a-z][a-z0-9_]{0,31}$/.test(value)
+  );
+}
+
+function expectLiteralValue(
+  value: unknown,
+  expected: string,
+  fieldName: string,
+  issues: string[],
+): void {
+  if (value !== expected) {
+    issues.push(`${fieldName} must be ${expected}`);
+  }
+}
+
+function expectNonEmptyStringValue(
+  value: unknown,
+  fieldName: string,
+  issues: string[],
+): void {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    issues.push(`${fieldName} must be a non-empty string`);
+  }
+}
+
+function expectHexHashValue(
+  value: unknown,
+  fieldName: string,
+  issues: string[],
+): void {
+  if (!isHexHash(value)) {
+    issues.push(`${fieldName} must be a lowercase 32-byte hex hash`);
+  }
+}
+
+function expectOneOfValue(
+  value: unknown,
+  allowed: readonly string[],
+  fieldName: string,
+  issues: string[],
+): void {
+  if (typeof value !== "string" || !allowed.includes(value)) {
+    issues.push(`${fieldName} must be one of ${allowed.join(", ")}`);
+  }
 }
 
 /** 单个具名接口的承诺重算：端口叶 → 两 root → interfaceLeaf_v2。 */

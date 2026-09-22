@@ -33,11 +33,15 @@ import {
 import {
   definitionRefHash,
   definitionUid,
+  dockCandidateLeaf,
+  dockRouteId,
   EMPTY_MERKLE_ROOT,
   inputPortLeaf,
   interfaceLeaf,
   merkleRoot,
   outputPortLeaf,
+  routeHash,
+  stageKey,
 } from "../src/dock.js";
 
 const demoManifest = dockDemoResolutionManifest();
@@ -1653,8 +1657,10 @@ test("demo sourcing parent links both demo interfaces (new + existing)", () => {
 
 test("carries null (dynamic-selection) targets as unresolved routes (§8.8)", () => {
   // target:null 不再整体拒绝（Wave3-E4）：hook plan 产物保留未解析 route 的
-  // 声明面（manifest 在场时不进 link、不报 D008），云轨运行时才由选择记录
-  // 补齐；链轨拒绝在 onchain 边界（见 onchain 测试）。
+  // 声明面（manifest 在场时不进 link、不报 D008）。4.4 起声明面还携带
+  // manifest 派生的候选清单与本地承诺（routeId/candidatesRoot/routeHash，
+  // 目标槽 = 候选集 root、两绑定根恒 EMPTY）——dockRoutesRoot 因此是
+  // 静态叶 ∪ 动态叶的最终根。
   const dynamicTarget = structuredClone(baseZhixu) as ZhixuDefinition & {
     spec: { taskPatterns: Array<{ stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } | null } } }> }> };
   };
@@ -1683,10 +1689,96 @@ test("carries null (dynamic-selection) targets as unresolved routes (§8.8)", ()
     [["cmp", "completed"], ["str", "started"]],
   );
   assert.equal(route.localPlanId, plan.planId);
+
+  // 候选清单（manifest 派生）：demo manifest 的唯一定义发布
+  // production_service[new]——new 模式动态路由的候选宇宙即它。
+  const manifestEntry = demoManifest.definitions[0]!;
+  assert.equal(route.candidates.length, 1);
+  assert.equal(route.candidates[0]?.zhixuUid, manifestEntry.zhixu);
+  assert.equal(route.candidates[0]?.definitionRefHash, manifestEntry.definitionRefHash);
+  assert.equal(
+    route.candidates[0]?.evmPlanId,
+    manifestEntry.evmPlanId,
+  );
+
+  // 本地承诺：routeId 与静态路由同公式；候选叶/根与动态叶（目标槽 =
+  // 候选集 root、两绑定根恒 EMPTY——bindingHash 的 preimage 含目标端口
+  // 寻址 word，选定前不可计算）。
+  const expectedRouteId = dockRouteId(
+    route.localDefinitionRefHash,
+    stageKey("execution.main"),
+  );
+  assert.equal(route.routeId, expectedRouteId);
+  const expectedCandidatesRoot = merkleRoot([
+    dockCandidateLeaf({
+      routeId: expectedRouteId,
+      targetDefinitionRefHash: manifestEntry.definitionRefHash,
+      interfaceName: "production_service",
+    }),
+  ]);
+  assert.equal(route.candidatesRoot, expectedCandidatesRoot);
+  assert.equal(
+    route.routeHash,
+    routeHash({
+      localDefinitionRefHash: route.localDefinitionRefHash,
+      targetDefinitionRefHash: expectedCandidatesRoot,
+      interfaceName: "production_service",
+      orderMode: "new",
+      inputBindingsRoot: EMPTY_MERKLE_ROOT,
+      outputBindingsRoot: EMPTY_MERKLE_ROOT,
+    }),
+  );
+  // 最终根 = 静态叶 ∪ 动态叶（本计划无静态路由，根即动态叶）。
+  assert.equal(plan.dockRoutesRoot, route.routeHash);
+
   // 声明面校验零 issue；无未解析 route 的产物不落字段。
   assert.deepEqual(validateHookPlanArtifact(plan), []);
   const staticPlan = compileZhixuHookPlan(baseZhixu, demoManifest);
   assert.equal(staticPlan.unresolvedDockRoutes, undefined);
+});
+
+test("rejects dynamic targets without a manifest (no candidate universe to freeze)", () => {
+  // DSL 壳与 Rust 声明面都不携带候选信息（target:null 只是目标空缺）；
+  // 候选宇宙只能从 resolution manifest（链轨发布面）派生。无 manifest 的
+  // 动态路由没有可冻结的候选集根——fail-closed 拒绝，不产出空宇宙死路由。
+  const dynamicOnly = structuredClone(baseZhixu) as ZhixuDefinition & {
+    spec: { taskPatterns: Array<{ stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } | null } } }> }> };
+  };
+  dynamicOnly.spec.taskPatterns[1]!.stages[0]!.executor!.zhixuExecutorConfig!.target = null;
+  assert.throws(
+    () => compileZhixuHookPlan(dynamicOnly as unknown as ZhixuDefinition),
+    /unresolved dock route execution\.main declares a dynamic \(null\) target but no resolution manifest was prepared/,
+  );
+});
+
+test("rejects dynamic targets whose interface is published in no candidate's mode (empty candidate set)", () => {
+  // 候选过滤 = 发布该具名接口且 orderModes 覆盖 route 模式（D020 的动态
+  // 面镜像）：接口存在但不支持该模式时候选集为空，冻结出的候选根会让
+  // 路由永不可 attach——编译期响亮拒绝。
+  const wrongMode = structuredClone(baseZhixu) as ZhixuDefinition & {
+    spec: {
+      taskPatterns: Array<{
+        stages: Array<{
+          executor?: {
+            zhixuExecutorConfig?: {
+              target: { zhixu: string } | null;
+              interface?: string;
+              order?: { mode?: string };
+            };
+          };
+        }>;
+      }>;
+    };
+  };
+  const config =
+    wrongMode.spec.taskPatterns[1]!.stages[0]!.executor!.zhixuExecutorConfig!;
+  config.target = null;
+  config.interface = "production_evidence";
+  config.order = { mode: "new" };
+  assert.throws(
+    () => compileZhixuHookPlan(wrongMode as unknown as ZhixuDefinition, demoManifest),
+    /unresolved dock route execution\.main has an empty candidate set.*production_evidence.*"new"/s,
+  );
 });
 
 test("compiles existing-mode routes on the cloud-facing hook plan profile", () => {

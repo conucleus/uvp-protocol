@@ -91,8 +91,8 @@ test("protocol freeze consumes one Rust dock fixture and one resolved artifact",
   assert.deepEqual(validateHookPlanArtifact(target), []);
   assert.deepEqual(validateHookPlanArtifact(parent), []);
 
-  // 双模式 instanceId 口径（链轨在 onchain 测试另行显式拒绝 existing）：
-  // hook_plan（云轨消费面）产物同时携带 new/existing 两条 route。
+  // 双模式 instanceId 口径：hook_plan 产物同时携带 new/existing 两条
+  // route（existing 挂接的链轨接受面在 onchain 测试另行断言）。
   assert.deepEqual(
     parent.dockRoutes.map((route) => [route.target.interfaceName, route.orderMode]),
     [

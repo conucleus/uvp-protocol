@@ -1,6 +1,7 @@
 # Zhixu Dock v2 word 布局规格（链轨内部，冻结）
 
-链轨哈希层的唯一权威规格。全部公式冻结于 `UVPDockingModule` abiVersion 4.2，
+链轨哈希层的唯一权威规格。公式冻结于 `UVPDockingModule` abiVersion 4.2，
+动态选择候选叶域（`UVP_DOCK_CANDIDATE_V1`）随 4.4 追加，
 实现 = 本包 `src/dock.ts`（TS 权威），Solidity（`DockMerkle` /
 `UVPDockingModule`）与 Foundry `DockManifestParity.t.sol` 逐字节对拍钉死。
 golden 向量由 `pnpm --filter @uvp-eth/compiler generate:dock-fixtures` 生成
@@ -42,6 +43,7 @@ golden 向量由 `pnpm --filter @uvp-eth/compiler generate:dock-fixtures` 生成
 | DOMAIN_INPUT_BINDING | `UVP_DOCK_INPUT_BINDING_V2` |
 | DOMAIN_OUTPUT_BINDING | `UVP_DOCK_OUTPUT_BINDING_V2` |
 | DOMAIN_ROUTE | `UVP_DOCK_ROUTE_V2` |
+| DOMAIN_DOCK_CANDIDATE | `UVP_DOCK_CANDIDATE_V1`（abiVersion 4.4，动态选择候选叶） |
 | DOMAIN_DOCK_INSTANCE | `UVP_DOCK_INSTANCE_V2` |
 | DOMAIN_DOCK_ORDER | `UVP_DOCK_ORDER_V1` |
 | DOMAIN_RUNTIME_EIP155 | `UVP_RUNTIME_EIP155_V1` |
@@ -123,6 +125,29 @@ dockRoutesRoot = merkle(routes[].routeHash)
 
 目标运行期身份（artifactHash/evmPlanId/cloudArtifactId）由 resolution
 manifest（链轨发布面）携带，不进 routeHash preimage。
+
+target:null 动态选择（§8.8 / UVPDockingModule 4.4，abiVersion 4.4）：
+
+```
+candidateLeaf_v1 = H(UVP_DOCK_CANDIDATE_V1; routeId,
+                     targetDefinitionRefHash, keccak(interfaceName))   // 3 word
+candidatesRoot   = merkle(candidateLeaf…)   // 候选 = manifest 中发布该接口
+                                            // 且 orderModes 覆盖 route 模式的定义
+动态路由 routeHash_v2 = H(UVP_DOCK_ROUTE_V2; localDefinitionRefHash,
+                candidatesRoot, keccak(interfaceName), modeWord,
+                EMPTY_MERKLE_ROOT, EMPTY_MERKLE_ROOT)   // 绑定根恒 EMPTY
+dockRoutesRoot = merkle(静态 routes[].routeHash ∪ 未解析 routes[].routeHash)
+```
+
+- 候选叶的 routeId 绑定（父定义, 父阶段）：跨路由/跨父复用候选叶在
+  attach 的 membership 处失配。
+- 绑定根恒 EMPTY：bindingHash 的 preimage 含目标端口寻址 word
+  （targetSourceId/targetSignalId），选定目标前不可计算；合约 attach 对
+  动态路由以空绑定数组重算同一 preimage（叶与重算逐字节一致）。
+- dockRoutesRoot 是 finalize 冻结的最终根：静态叶 ∪ 动态叶同一棵树。
+  链轨接受域：动态路由仅限 existing（openDockedOrder 只按静态目标槽重算
+  routeHash、无候选集回退；attachDockedOrder——唯一的动态消费方——钉
+  existing）。
 
 ### 4.4 运行时域与实例身份
 
