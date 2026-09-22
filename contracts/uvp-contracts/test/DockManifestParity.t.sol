@@ -491,11 +491,11 @@ contract DockManifestParityTest {
         }
         require(DockMerkle.verify(candidatesRoot, candidateLeaf, proof), "candidate proof does not verify");
 
-        // 动态路由叶：目标槽 = candidatesRoot（随 dockRoutesRoot 在 finalize
-        // 冻结），modeWord=existing、空 input 根。
-        bytes32[] memory evidenceOutputs = new bytes32[](1);
-        evidenceOutputs[0] =
-            _outputBindingHash(manifest, routeIdWord, evidenceNameId, ".expected.dockRoutes[1].outputBindings[0]");
+        // 动态路由叶 = 冻结形态（attachDockedOrder 对动态路由以空绑定数组
+        // 重算的同一 preimage）：目标槽 = candidatesRoot（随 dockRoutesRoot
+        // 在 finalize 冻结），modeWord=existing、两绑定根恒 EMPTY——
+        // bindingHash 的 preimage 含目标端口寻址 word，选定前不可计算，绑定
+        // 在 attach 时按接口承诺面验证。
         assertEq(
             keccak256(
                 abi.encode(
@@ -505,7 +505,7 @@ contract DockManifestParityTest {
                     evidenceNameId,
                     uint256(1), // modeWord existing
                     DockMerkle.EMPTY_ROOT,
-                    DockMerkle.root(evidenceOutputs)
+                    DockMerkle.EMPTY_ROOT
                 )
             ),
             _word(manifest, ".expected.dynamicSelection.dynamicRouteHash")

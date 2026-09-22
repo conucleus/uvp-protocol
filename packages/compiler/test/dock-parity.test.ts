@@ -499,8 +499,11 @@ test("existing evm instance and dynamic-selection vectors match the golden", () 
     verifyMerkleProof(dynamic.candidatesRoot, dynamic.candidateLeaf, dynamic.candidateProof),
     true,
   );
-  // 动态路由叶：目标槽被候选集 root 占据（随 dockRoutesRoot 在 finalize
-  // 冻结）；静态叶的目标槽则是具体 targetDefinitionRefHash。
+  // 动态路由叶 = 冻结形态（buildUnresolvedDockRoute / 合约 attach 以空
+  // 绑定数组重算的同一 preimage）：目标槽被候选集 root 占据（随
+  // dockRoutesRoot 在 finalize 冻结），两绑定根恒 EMPTY——bindingHash 的
+  // preimage 含目标端口寻址 word，选定前不可计算，绑定在 attach 时按接口
+  // 承诺面验证。静态叶的目标槽则是具体 targetDefinitionRefHash。
   assert.equal(
     routeHash({
       localDefinitionRefHash: expected.parentDefinitionRefHash,
@@ -508,9 +511,7 @@ test("existing evm instance and dynamic-selection vectors match the golden", () 
       interfaceName: "production_evidence",
       orderMode: "existing",
       inputBindingsRoot: EMPTY_MERKLE_ROOT,
-      outputBindingsRoot: merkleRoot(
-        evidenceRoute.outputBindings.map((binding) => binding.bindingHash),
-      ),
+      outputBindingsRoot: EMPTY_MERKLE_ROOT,
     }),
     dynamic.dynamicRouteHash,
   );

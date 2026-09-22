@@ -329,10 +329,8 @@ async function main(): Promise<void> {
 
   // ---- target:null 动态选择（UVPDockingModule 4.4 attach 的候选集承诺）----
   // 候选叶公式：src/dock.ts dockCandidateLeaf（合约 _DOMAIN_DOCK_CANDIDATE
-  // 的 TS 权威实现，链上 preimage 逐字节一致）。
-  const evidenceOutputsRoot = merkleRoot(
-    evidenceRoute.outputBindings.map((binding) => binding.bindingHash),
-  );
+  // 的 TS 权威实现，链上 preimage 逐字节一致）。第二候选是显式合成的
+  // （manifest 只发布一个定义）——两叶候选集用于钉死排序配对与 proof。
   const candidateLeaf = dockCandidateLeaf({
     routeId: evidenceRoute.routeId,
     targetDefinitionRefHash:
@@ -348,15 +346,18 @@ async function main(): Promise<void> {
   const candidateLeaves = [candidateLeaf, otherCandidateLeaf];
   const candidatesRoot = merkleRoot(candidateLeaves);
   const candidateProof = merkleProof(candidateLeaves, candidateLeaf)!;
-  // 动态路由叶：目标槽被候选集 root 占据（随 dockRoutesRoot 在 finalize
-  // 冻结）；静态叶的目标槽则是具体 targetDefinitionRefHash。
+  // 动态路由叶 = 冻结形态（与 buildUnresolvedDockRoute / 合约 attach 以空
+  // 绑定数组重算的 preimage 同一）：目标槽被候选集 root 占据（随
+  // dockRoutesRoot 在 finalize 冻结），两绑定根恒 EMPTY——bindingHash 的
+  // preimage 含目标端口寻址 word，选定前不可计算，绑定在 attach 时按接口
+  // 承诺面验证。静态叶的目标槽则是具体 targetDefinitionRefHash。
   const dynamicRouteHash = routeHash({
     localDefinitionRefHash: evidenceRoute.local.definitionRefHash,
     targetDefinitionRefHash: candidatesRoot,
     interfaceName: "production_evidence",
     orderMode: "existing",
     inputBindingsRoot: EMPTY_MERKLE_ROOT,
-    outputBindingsRoot: evidenceOutputsRoot,
+    outputBindingsRoot: EMPTY_MERKLE_ROOT,
   });
 
   // ---- input envelope（new 模式：唯一 input 绑定即出生锚）----
