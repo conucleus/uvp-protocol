@@ -2108,6 +2108,127 @@ test("mirrors _validateHook DELAY/NOT/anchor rejection branches at the artifact 
   );
 });
 
+test("admits the decaying veto at the conjunction slot and mirrors its position gates", () => {
+  const baseOnchain = compileOnchainHookPlan(
+    compileZhixuHookPlan(baseZhixu, demoManifest),
+  );
+  const rehashed = (artifact: OnchainHookPlanArtifact): OnchainHookPlanArtifact => {
+    const { planHash: _stale, ...payload } = artifact;
+    void _stale;
+    return {
+      ...payload,
+      planHash: hashOnchainPlanPayload(payload as never),
+    } as OnchainHookPlanArtifact;
+  };
+
+  const mutateHookInstructions = (
+    instructions: unknown,
+  ): OnchainHookPlanArtifact =>
+    rehashed({
+      ...structuredClone(baseOnchain),
+      compiledHooks: baseOnchain.compiledHooks.map((hook) =>
+        hook.hookName === "TIMEOUT" ? { ...hook, instructions } : hook,
+      ),
+    } as OnchainHookPlanArtifact);
+
+  const timeoutInstructions = baseOnchain.compiledHooks
+    .find((hook) => hook.hookName === "TIMEOUT")!
+    .instructions;
+  const [delaySignal, , plainSignal] = timeoutInstructions;
+
+  // 正例（合取直接子项）：SIGNAL,DELAY,NOT,SIGNAL,AND 零镜像 issue——
+  // 否决位由 AND 消费、整体经正信号含正锚。
+  const vetoOperand = mutateHookInstructions([
+    delaySignal,
+    { op: "DELAY", delaySeconds: 5 },
+    { op: "NOT" },
+    plainSignal,
+    { op: "AND", arity: 2 },
+  ]);
+  assert.deepEqual(
+    validateOnchainHookPlanArtifact(vetoOperand),
+    [],
+  );
+
+  // 根位：否决位必须由合取父项消费（veto_slot 闸镜像）。
+  assert.ok(
+    validateOnchainHookPlanArtifact(mutateHookInstructions([
+      delaySignal,
+      { op: "DELAY", delaySeconds: 5 },
+      { op: "NOT" },
+    ])).some((issue) => /leaves a decaying veto at the root/.test(issue)),
+  );
+
+  // Or 分支位：veto_slot 闸镜像。
+  assert.ok(
+    validateOnchainHookPlanArtifact(mutateHookInstructions([
+      delaySignal,
+      { op: "DELAY", delaySeconds: 5 },
+      { op: "NOT" },
+      plainSignal,
+      { op: "OR", arity: 2 },
+    ])).some((issue) => /cannot take a decaying veto operand/.test(issue)),
+  );
+
+  // 双重否定：第二层 NOT 的操作数既非裸 SIGNAL 也非 DELAY 产出。
+  assert.ok(
+    validateOnchainHookPlanArtifact(mutateHookInstructions([
+      delaySignal,
+      { op: "DELAY", delaySeconds: 5 },
+      { op: "NOT" },
+      { op: "NOT" },
+      plainSignal,
+      { op: "AND", arity: 2 },
+    ])).some((issue) => /requires a bare SIGNAL operand/.test(issue)),
+  );
+
+  // Delay 直接吃否决位（inside_delay_operand 闸镜像）。
+  assert.ok(
+    validateOnchainHookPlanArtifact(mutateHookInstructions([
+      delaySignal,
+      { op: "DELAY", delaySeconds: 5 },
+      { op: "NOT" },
+      { op: "DELAY", delaySeconds: 10 },
+      plainSignal,
+      { op: "AND", arity: 2 },
+    ])).some((issue) => /DELAY cannot consume an operand containing a decaying veto/.test(issue)),
+  );
+
+  // Delay 吃含否决位的 AND（任意深度）：该形态过正锚检查，否决深度闸是
+  // 唯一拒绝面——单独钉住。
+  assert.ok(
+    validateOnchainHookPlanArtifact(mutateHookInstructions([
+      delaySignal,
+      { op: "DELAY", delaySeconds: 5 },
+      { op: "NOT" },
+      plainSignal,
+      { op: "AND", arity: 2 },
+      { op: "DELAY", delaySeconds: 10 },
+    ])).some((issue) => /DELAY cannot consume an operand containing a decaying veto/.test(issue)),
+  );
+});
+
+test("compiles the decaying veto DSL form through the full on-chain pipeline", () => {
+  // 产出面正例：DSL 侧 ~(A+duration) 作为合取直接子项（uvp-core 校验放
+  // 行），全流水线（Rust IR → TS onchain 编译）产出 NOT-over-DELAY 指令。
+  const vetoZhixu: ZhixuDefinition = structuredClone(baseZhixu);
+  const execution = vetoZhixu.spec.taskPatterns[1]!.stages[0]!;
+  execution.receiveSignals!.TIMEOUT =
+    "buyer::execution.main.cmp & ~(selector.assign.executor_selected +5s)";
+
+  const onchain = compileZhixuOnchainHookPlan(vetoZhixu, demoManifest);
+  const timeoutHook = onchain.compiledHooks.find((hook) => hook.hookName === "TIMEOUT")!;
+  // 项序即产物序：正信号在前，否决项（SIGNAL,DELAY,NOT）随后，AND 收口。
+  assert.deepEqual(
+    timeoutHook.instructions.map((instruction) => instruction.op),
+    ["SIGNAL", "SIGNAL", "DELAY", "NOT", "AND"],
+  );
+  assert.deepEqual(
+    validateOnchainHookPlanArtifact(onchain),
+    [],
+  );
+});
+
 test("rejects DELAY on order-trigger conditions at the compile boundary (producer side)", () => {
   // core 的 D013 在 DSL 层已拒绝 input-port 钩子带延时；这里是第二道门：
   // 手工/漂移的 HookPlanArtifact（trigger 钩子 + delay AST）在 on-chain

@@ -282,9 +282,20 @@ library UVPPlanRegistration {
         // SIGNAL；注册边界拒绝。
         bool orderTrigger = _isOrderTrigger(hook.flags);
         // 裸 SIGNAL 栈标志：NOT 的操作数约束（编码层契约——操作数必须是
-        // 裸 SIGNAL 引用）。~(A&B)/~Delay(A) 一类组合否定的取消/锚点语义
-        // 与编译器产物形态分叉，注册边界拒绝。
+        // 裸 SIGNAL 引用，或下方否决位形态的 DELAY 产出）。~(A&B) 一类
+        // 组合否定的取消/锚点语义与编译器产物形态分叉，注册边界拒绝。
         bool[] memory bareSignal = new bool[](hook.instructions.length);
+        // DELAY 产出标志：NOT 的第二类合法操作数——衰减否决位
+        // ~(signal+duration) 的内层。
+        bool[] memory delayResult = new bool[](hook.instructions.length);
+        // 否决位标志（本槽即 `~(DELAY)` 产出，尚待合取父项消费）与
+        // 子树含否决位标志（穿透 AND/OR 传递）。位置规则镜像
+        // uvp-hook-dsl validate_anchors 的 veto_slot /
+        // inside_delay_operand 双闸：否决位唯一合法位置是合取直接子项，
+        // 且 Delay 操作数内任何深度一律禁止——否决位的 Ready 会衰减，
+        // Delay 成熟是永久的，外层延时锚在已过期的否决上会静默放行。
+        bool[] memory vetoTerm = new bool[](hook.instructions.length);
+        bool[] memory vetoInside = new bool[](hook.instructions.length);
         // 正向锚点栈标志：延时操作数须含正向信号锚点（对齐 uvp-hook-dsl
         // validate_anchors）。全否定/缺席的操作数在 value=true 时
         // anchorAt=0，到期时刻恒在过去，Delay 沦为立即放行。
@@ -308,6 +319,9 @@ library UVPPlanRegistration {
                 }
                 bareSignal[stackDepth] = true;
                 hasPosAnchor[stackDepth] = true;
+                delayResult[stackDepth] = false;
+                vetoTerm[stackDepth] = false;
+                vetoInside[stackDepth] = false;
                 stackDepth += 1;
             } else if (
                 instruction.op == uint8(UVPStateMachine.InstructionOp.Not)
@@ -329,17 +343,26 @@ library UVPPlanRegistration {
                     if (!hasPosAnchor[stackDepth - 1]) {
                         revert UVPStateMachine.InvalidInstruction();
                     }
+                    if (vetoTerm[stackDepth - 1] || vetoInside[stackDepth - 1]) {
+                        revert UVPStateMachine.InvalidInstruction();
+                    }
                     // Delay 结果的锚点口径 = 操作数口径（成熟时刻成为新
                     // 锚点，正负性随操作数）。
                     bareSignal[stackDepth - 1] = false;
+                    delayResult[stackDepth - 1] = true;
+                    vetoTerm[stackDepth - 1] = false;
+                    vetoInside[stackDepth - 1] = false;
                 } else {
-                    // NOT 操作数必须裸 SIGNAL（uvp-hook-dsl validate_anchors
-                    // 镜像的编码层契约）：~(A&B)/~Delay(A) 一类
-                    // 组合否定的取消/锚点语义与编译器产物形态分叉。
-                    if (!bareSignal[stackDepth - 1]) {
+                    // NOT 操作数词表：裸 SIGNAL（现状）或 DELAY 产出（衰减
+                    // 否决位内层）。否决位自身的合法位置（合取直接子项）
+                    // 由 vetoTerm 位交给消费方校验。
+                    if (!bareSignal[stackDepth - 1] && !delayResult[stackDepth - 1]) {
                         revert UVPStateMachine.InvalidInstruction();
                     }
+                    vetoTerm[stackDepth - 1] = delayResult[stackDepth - 1];
+                    vetoInside[stackDepth - 1] = vetoInside[stackDepth - 1] || vetoTerm[stackDepth - 1];
                     bareSignal[stackDepth - 1] = false;
+                    delayResult[stackDepth - 1] = false;
                     hasPosAnchor[stackDepth - 1] = false;
                 }
             } else if (
@@ -349,11 +372,27 @@ library UVPPlanRegistration {
                 if (instruction.arity < 2 || stackDepth < instruction.arity) {
                     revert UVPStateMachine.InvalidInstruction();
                 }
+                if (instruction.op == uint8(UVPStateMachine.InstructionOp.Or)) {
+                    // 否决位唯一合法位置是合取直接子项：Or 分支位一律拒绝
+                    // （uvp-hook-dsl validate_anchors 的 veto_slot 闸镜像）。
+                    for (uint256 j = stackDepth - instruction.arity; j < stackDepth; j++) {
+                        if (vetoTerm[j]) {
+                            revert UVPStateMachine.InvalidInstruction();
+                        }
+                    }
+                }
+                bool vetoInsideResult = false;
+                for (uint256 j = stackDepth - instruction.arity; j < stackDepth; j++) {
+                    vetoInsideResult = vetoInsideResult || vetoInside[j];
+                }
                 bool anchored = instruction.op == uint8(UVPStateMachine.InstructionOp.And)
                     ? _anyPosAnchor(hasPosAnchor, stackDepth - instruction.arity, instruction.arity)
                     : _allPosAnchor(hasPosAnchor, stackDepth - instruction.arity, instruction.arity);
                 stackDepth = stackDepth - instruction.arity + 1;
                 bareSignal[stackDepth - 1] = false;
+                delayResult[stackDepth - 1] = false;
+                vetoTerm[stackDepth - 1] = false;
+                vetoInside[stackDepth - 1] = vetoInsideResult;
                 hasPosAnchor[stackDepth - 1] = anchored;
             } else {
                 // 词表外操作码显式拒绝：op 以 uint8 承载，旧扇入操作码
@@ -362,6 +401,12 @@ library UVPPlanRegistration {
             }
         }
         if (stackDepth != 1) {
+            revert UVPStateMachine.InvalidInstruction();
+        }
+        // 根位的否决位拒绝（否决位必须由合取父项消费，validate_anchors
+        // 镜像）：根否决位同时缺正锚，两条闸都以 InvalidInstruction 拒绝，
+        // 显式判定让拒绝面可读而不是靠正锚闸的副作用。
+        if (vetoTerm[0]) {
             revert UVPStateMachine.InvalidInstruction();
         }
         // 整体至少一正锚（validate_anchors 镜像）：纯否定条件（如 ~A）在

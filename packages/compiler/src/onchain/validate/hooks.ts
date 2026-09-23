@@ -213,8 +213,8 @@ function validateOnchainCompiledHooks(
 
 /**
  * 镜像 UVPStateMachine._validateHook 的栈机语义（bareSignal/hasPosAnchor
- * 双轨），形状校验与语义镜像同址：形状坏项计入 issues 后仍按合同口径推进
- * 栈机，让单次校验暴露全部缺口。
+ * 双轨 + 否决位位置轨），形状校验与语义镜像同址：形状坏项计入 issues 后
+ * 仍按合同口径推进栈机，让单次校验暴露全部缺口。
  */
 function validateInstructions(
   instructions: readonly unknown[],
@@ -225,6 +225,13 @@ function validateInstructions(
   let stackDepth = 0;
   const bareSignal: boolean[] = [];
   const hasPosAnchor: boolean[] = [];
+  // DELAY 产出标志：NOT 的第二类合法操作数（衰减否决位内层）。
+  const delayResult: boolean[] = [];
+  // 否决位标志（本槽即 NOT-over-DELAY，尚待合取父项消费）与子树含否决位
+  // 标志（穿透 AND/OR）——位置规则镜像 uvp-hook-dsl validate_anchors 的
+  // veto_slot / inside_delay_operand 双闸与合约 _validateHook 的同位判定。
+  const vetoTerm: boolean[] = [];
+  const vetoInside: boolean[] = [];
 
   for (const [index, instruction] of instructions.entries()) {
     if (!isRecord(instruction)) {
@@ -274,24 +281,36 @@ function validateInstructions(
         }
         bareSignal[stackDepth] = true;
         hasPosAnchor[stackDepth] = true;
+        delayResult[stackDepth] = false;
+        vetoTerm[stackDepth] = false;
+        vetoInside[stackDepth] = false;
         stackDepth += 1;
         break;
-      case "NOT":
+      case "NOT": {
         if (stackDepth < 1) {
           issues.push(`${prefix}.op requires one stack item`);
           break;
         }
-        // NOT 操作数必须裸 SIGNAL（_validateHook 镜像）：~(A&B)/~Delay(A) 的
-        // 组合否定语义与编译器产物形态分叉，注册边界拒绝。
-        if (!bareSignal[stackDepth - 1]) {
+        // NOT 操作数词表（_validateHook 镜像）：裸 SIGNAL（现状），或
+        // DELAY 产出（衰减否决位 ~(A+duration)，唯一合法位置是合取直接
+        // 子项——位置由 vetoTerm 位交给消费方校验）。~(A&B) 一类组合否定
+        // 的取消/锚点语义与编译器产物形态分叉，注册边界拒绝。
+        if (!bareSignal[stackDepth - 1] && !delayResult[stackDepth - 1]) {
           issues.push(
             `${prefix}.op requires a bare SIGNAL operand `
-            + "(contract _validateHook reverts InvalidInstruction for NOT over composite/delayed operands)",
+              + "(contract _validateHook reverts InvalidInstruction for NOT over composite operands)",
           );
         }
+        // （数组下标读取在 noUncheckedIndexedAccess 下带 undefined——
+        // `=== true` 折回布尔，缺席即 false。）
+        const operandIsDelayResult = delayResult[stackDepth - 1] === true;
+        vetoTerm[stackDepth - 1] = operandIsDelayResult;
+        vetoInside[stackDepth - 1] = vetoInside[stackDepth - 1] === true || operandIsDelayResult;
         bareSignal[stackDepth - 1] = false;
+        delayResult[stackDepth - 1] = false;
         hasPosAnchor[stackDepth - 1] = false;
         break;
+      }
       case "AND":
       case "OR": {
         if (
@@ -306,6 +325,20 @@ function validateInstructions(
           issues.push(`${prefix}.op requires ${arity} stack items`);
           break;
         }
+        // 否决位唯一合法位置是合取直接子项（_validateHook 镜像）：Or 分支
+        // 位一律拒绝。
+        if (instruction.op === "OR") {
+          for (let j = stackDepth - arity; j < stackDepth; j++) {
+            if (vetoTerm[j]) {
+              issues.push(
+                `${prefix}.op cannot take a decaying veto operand; `
+                  + "decaying veto NOT-over-DELAY is only legal as a direct AND operand "
+                  + "(contract _validateHook reverts InvalidInstruction; the core validator rejects "
+                  + "the root/OR/NOT/delay-operand positions)",
+              );
+            }
+          }
+        }
         // And 取任一正锚，Or 需每一分支都有（Or 的缺席分支可单独就绪且
         // 锚点为 0）——只被 DELAY 的操作数正锚检查消费。
         const anchored =
@@ -316,8 +349,14 @@ function validateInstructions(
             : hasPosAnchor
                 .slice(stackDepth - arity, stackDepth)
                 .every(Boolean);
+        const vetoInsideResult = vetoInside
+          .slice(stackDepth - arity, stackDepth)
+          .some(Boolean);
         stackDepth = stackDepth - arity + 1;
         bareSignal[stackDepth - 1] = false;
+        delayResult[stackDepth - 1] = false;
+        vetoTerm[stackDepth - 1] = false;
+        vetoInside[stackDepth - 1] = vetoInsideResult;
         hasPosAnchor[stackDepth - 1] = anchored;
         break;
       }
@@ -352,10 +391,23 @@ function validateInstructions(
         if (!hasPosAnchor[stackDepth - 1]) {
           issues.push(
             `${prefix}.op DELAY requires an operand with a positive signal anchor `
-            + "(contract _validateHook reverts InvalidInstruction for delay over purely-negative operands)",
+              + "(contract _validateHook reverts InvalidInstruction for delay over purely-negative operands)",
+          );
+        }
+        // Delay 操作数内任何深度禁止否决位（_validateHook 镜像）：否决位
+        // 的 Ready 会衰减而 Delay 成熟是永久的——外层延时锚在已过期的
+        // 否决上会静默放行。
+        if (vetoTerm[stackDepth - 1] || vetoInside[stackDepth - 1]) {
+          issues.push(
+            `${prefix}.op DELAY cannot consume an operand containing a decaying veto `
+              + "(contract _validateHook reverts InvalidInstruction; a decaying veto's readiness expires "
+              + "while delay maturity is permanent, so the outer delay would anchor on an expired veto)",
           );
         }
         bareSignal[stackDepth - 1] = false;
+        delayResult[stackDepth - 1] = true;
+        vetoTerm[stackDepth - 1] = false;
+        vetoInside[stackDepth - 1] = false;
         break;
       default:
         issues.push(`${prefix}.op must be one of SIGNAL, NOT, AND, OR, DELAY`);
@@ -367,6 +419,13 @@ function validateInstructions(
   // preflight too (stack depth 0 !== 1 below).
   if (stackDepth !== 1) {
     issues.push(`${path} must leave exactly one stack item`);
+  } else if (vetoTerm[0]) {
+    // 根位否决位（_validateHook 镜像）：否决位必须由合取父项消费。
+    issues.push(
+      `${path} leaves a decaying veto at the root; `
+        + "decaying veto NOT-over-DELAY is only legal as a direct AND operand "
+        + "(contract _validateHook reverts InvalidInstruction)",
+    );
   } else if (!hasPosAnchor[0]) {
     // 整体至少一正锚（validate_anchors 镜像）：纯否定条件在 value=true 时
     // anchorAt=0，注册边界拒绝。

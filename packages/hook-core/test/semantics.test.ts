@@ -219,6 +219,66 @@ test("cancels delayed hooks when the negative signal arrives before the anchor",
   });
 });
 
+test("evaluates the decaying veto across its three states", () => {
+  const ast = parseHookExpression("buyer::task.pay.cmp & ~(task.cancel.cmp +5s)");
+
+  // 否决位延时被否定：依赖按 negative 投影、不出 timer（到期推进的是
+  // 否决成熟而非就绪等待，调度器无 poke 期限可言）。
+  assert.deepEqual(extractHookDependencies(ast), [
+    { kind: "negative", source: "buyer", signalName: "task.cancel.cmp" },
+    { kind: "positive", source: "buyer", signalName: "task.pay.cmp" }
+  ]);
+  // 态一：被否定信号缺席 → 放行（无期限）。
+  assert.deepEqual(evaluateHook(ast, index([["buyer", "task.pay.cmp", at]]), later), {
+    status: "reg"
+  });
+  // 态二：在案未熟 → 放行，有效期钉在成熟时刻（前一毫秒仍放行）。
+  assert.deepEqual(
+    evaluateHook(
+      ast,
+      index([
+        ["buyer", "task.pay.cmp", at],
+        ["buyer", "task.cancel.cmp", at]
+      ]),
+      "2026-04-27T00:00:04.999Z"
+    ),
+    { status: "reg", expiresAt: "2026-04-27T00:00:05.000Z" }
+  );
+  // 态三：在案已熟 → 否决（Not 语义短路整个门，与 ~A 同一取消理由面）。
+  assert.deepEqual(
+    evaluateHook(
+      ast,
+      index([
+        ["buyer", "task.pay.cmp", at],
+        ["buyer", "task.cancel.cmp", at]
+      ]),
+      "2026-04-27T00:00:05.000Z"
+    ),
+    { status: "cxl", reason: "negated condition exists: task.cancel.cmp+5s" }
+  );
+});
+
+test("rejects the decaying veto outside the conjunction-operand position", () => {
+  // 位置规则负例（uvp-core validate_anchors 的 veto_slot /
+  // inside_delay_operand 双闸）：根位 / Or 子项 / 双重否定 / Delay 操作数内。
+  assert.throws(
+    () => parseHookExpression("buyer::~(task.cancel.cmp +14d)"),
+    /decaying veto .\(signal\+duration\) is only allowed as a direct operand of a conjunction/
+  );
+  assert.throws(
+    () => parseHookExpression("buyer::task.a.cmp | ~(task.cancel.cmp +14d)"),
+    /decaying veto .\(signal\+duration\) is only allowed as a direct operand of a conjunction/
+  );
+  assert.throws(
+    () => parseHookExpression("buyer::task.a.cmp & ~(~(task.cancel.cmp +14d))"),
+    /negation only supports direct signal references/
+  );
+  assert.throws(
+    () => parseHookExpression("buyer::(task.a.cmp & ~(task.cancel.cmp +14d)) +5s"),
+    /decaying veto .\(signal\+duration\) is only allowed as a direct operand of a conjunction/
+  );
+});
+
 test("parses subscription entries with empty source header", () => {
   const ast = parseHookExpression("::ANCHOR(@seller::task.ship.cmp)");
 

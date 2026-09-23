@@ -78,6 +78,13 @@ export type HookEvaluation =
     }
   | {
       readonly status: "reg";
+      /**
+       * 衰减否决位（合取直接子项上的 `~(A + duration)`）就绪时的有效期
+       * （= 被否定延时的成熟时刻）。缺席 = 无限期。链上在信号到达交易内
+       * 即时求值、无调度器，该字段只描述"本次就绪成立到何时"，重评时机
+       * 由调用方决定。
+       */
+      readonly expiresAt?: string;
     }
   | {
       readonly status: "cxl";

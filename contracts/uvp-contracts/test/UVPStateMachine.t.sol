@@ -2034,6 +2034,247 @@ contract UVPStateMachineTest {
         require(!readyEmitted, "cancelled hook emitted ready");
     }
 
+    /// 衰减否决位态一（uvp-core Not(Wait) → Ready{expires_at} 的链上同
+    /// 义）：被否定信号缺席 → 否决项放行，正信号到达即 Ready。
+    function testDecayingVetoPassesWhileNegatedSignalAbsent() public {
+        UVPStateMachine machine = _registeredMachine(_decayingVetoHookPlan(HOOK_TIMEOUT, 5));
+
+        vm.warp(100);
+        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+
+        (UVPStateMachine.HookStatus status, uint64 dueAt, bool readyEmitted) =
+            machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
+        require(status == UVPStateMachine.HookStatus.Ready, "decaying veto hook not ready");
+        require(dueAt == 0, "absent-signal ready has no expiry to persist");
+        require(readyEmitted, "ready marker missing");
+    }
+
+    /// 衰减否决位态二：被否定信号在案未熟 → 放行（有效期只存在于本次
+    /// 求值内，链上无调度器、落库前归零）；态三：到达成熟时刻 → 否决，
+    /// 按 Not 语义把整个门推 Cancelled。边界钉在等号上（到期即否决，
+    /// 与 core 语料 "cancels exactly at the negated delay maturity" 同款）。
+    function testDecayingVetoPassesInWindowAndCancelsAtMaturity() public {
+        UVPStateMachine machine = _registeredMachine(_decayingVetoHookPlan(HOOK_TIMEOUT, 5));
+
+        vm.warp(100);
+        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+
+        (UVPStateMachine.HookStatus status,,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
+        require(status == UVPStateMachine.HookStatus.Init, "veto alone must not settle the gate");
+
+        vm.warp(104);
+        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, bytes32(uint256(0x9002)), _noAttribution(), _noBinding());
+
+        (UVPStateMachine.HookStatus windowStatus,, bool windowReady) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
+        status = windowStatus;
+        require(status == UVPStateMachine.HookStatus.Ready, "immature veto must pass");
+        require(windowReady, "ready marker missing");
+
+        UVPStateMachine machineLate = _registeredMachine(_decayingVetoHookPlan(HOOK_TIMEOUT, 5));
+
+        vm.warp(100);
+        machineLate.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        vm.warp(105);
+        machineLate.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, bytes32(uint256(0x9002)), _noAttribution(), _noBinding());
+
+        (UVPStateMachine.HookStatus lateStatus, uint64 lateDueAt, bool lateReady) =
+            machineLate.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
+        require(lateStatus == UVPStateMachine.HookStatus.Cancelled, "matured veto must cancel");
+        require(lateDueAt == 0, "cancelled hook has due");
+        require(!lateReady, "cancelled hook emitted ready");
+    }
+
+    /// 否决项的有效期不得混入 AND 的等待期限（core evaluator 的 And 只
+    /// 收集 Wait 成员的 ready_at；镜像 core 语料 "and with a live veto
+    /// still waits only on its positive branch"）：正分支 105s 到期、否决
+    /// 110s 才成熟，dueAt 必须钉在 105 而不是被 110 拉长。
+    function testDecayingVetoExpiryDoesNotExtendWaitDeadline() public {
+        UVPStateMachine machine = _registeredMachine(_liveVetoWaitHookPlan(HOOK_TIMEOUT));
+
+        vm.warp(100);
+        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, PAYLOAD_HASH, bytes32(uint256(0x9002)), _noAttribution(), _noBinding());
+
+        (UVPStateMachine.HookStatus status, uint64 dueAt, bool readyEmitted) =
+            machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
+        require(status == UVPStateMachine.HookStatus.Wait, "hook not waiting");
+        require(dueAt == 105, "veto expiry leaked into the wait deadline");
+        require(!readyEmitted, "early ready marker");
+
+        vm.warp(105);
+        machine.pokeTimer(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
+
+        (status,, readyEmitted) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
+        require(status == UVPStateMachine.HookStatus.Ready, "hook not ready at positive-branch due");
+        require(readyEmitted, "ready marker missing");
+    }
+
+    /// 否决位唯一合法位置是合取直接子项：根位在注册边界拒绝（uvp-hook-dsl
+    /// validate_anchors 的 veto_slot 闸镜像；根否决位同时缺正锚，双闸皆
+    /// InvalidInstruction）。
+    function testDecayingVetoAtRootIsRejectedAtCommit() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](3);
+        instructions[0] = _signal(SIGNAL_VERIFY_FAIL);
+        instructions[1] = _delay(5);
+        instructions[2] = _not();
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hookWithFlags(
+            HOOK_TIMEOUT, STAGE_INIT, HOOK_NAME_TIMEOUT, FLAG_EMIT_READY, instructions, _deps(SIGNAL_VERIFY_FAIL)
+        );
+
+        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
+        _commitPlan(
+            machine,
+            hooks,
+            new StageSelectorBinding[](0),
+            new SignalCapability[](0)
+        );
+    }
+
+    /// Or 分支位的否决在注册边界拒绝（veto_slot 闸镜像）。
+    function testDecayingVetoUnderOrBranchIsRejectedAtCommit() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](5);
+        instructions[0] = _signal(SIGNAL_TRIGGER);
+        instructions[1] = _signal(SIGNAL_VERIFY_FAIL);
+        instructions[2] = _delay(5);
+        instructions[3] = _not();
+        instructions[4] = _or(2);
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hookWithFlags(
+            HOOK_TIMEOUT, STAGE_INIT, HOOK_NAME_TIMEOUT, FLAG_EMIT_READY, instructions, _deps2(SIGNAL_TRIGGER, SIGNAL_VERIFY_FAIL)
+        );
+
+        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
+        _commitPlan(
+            machine,
+            hooks,
+            new StageSelectorBinding[](0),
+            new SignalCapability[](0)
+        );
+    }
+
+    /// 双重否定在注册边界拒绝：第二层 NOT 的操作数既非裸 SIGNAL 也非
+    /// DELAY 产出。
+    function testDoublyNegatedDecayingVetoIsRejectedAtCommit() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](6);
+        instructions[0] = _signal(SIGNAL_VERIFY_FAIL);
+        instructions[1] = _delay(5);
+        instructions[2] = _not();
+        instructions[3] = _not();
+        instructions[4] = _signal(SIGNAL_TRIGGER);
+        instructions[5] = _and(2);
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hookWithFlags(
+            HOOK_TIMEOUT, STAGE_INIT, HOOK_NAME_TIMEOUT, FLAG_EMIT_READY, instructions, _deps2(SIGNAL_VERIFY_FAIL, SIGNAL_TRIGGER)
+        );
+
+        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
+        _commitPlan(
+            machine,
+            hooks,
+            new StageSelectorBinding[](0),
+            new SignalCapability[](0)
+        );
+    }
+
+    /// Delay 操作数内禁止否决位（inside_delay_operand 闸镜像）：否决位的
+    /// Ready 会衰减而 Delay 成熟是永久的，外层延时锚在已过期的否决上会
+    /// 静默放行。直接操作数与经 AND 包裹的任意深度都拒绝。
+    function testDecayingVetoInsideDelayOperandIsRejectedAtCommit() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.Instruction[] memory direct = new UVPStateMachine.Instruction[](4);
+        direct[0] = _signal(SIGNAL_VERIFY_FAIL);
+        direct[1] = _delay(5);
+        direct[2] = _not();
+        direct[3] = _delay(10);
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hookWithFlags(
+            HOOK_TIMEOUT, STAGE_INIT, HOOK_NAME_TIMEOUT, FLAG_EMIT_READY, direct, _deps(SIGNAL_VERIFY_FAIL)
+        );
+
+        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
+        _commitPlan(
+            machine,
+            hooks,
+            new StageSelectorBinding[](0),
+            new SignalCapability[](0)
+        );
+
+        UVPStateMachine.Instruction[] memory nested = new UVPStateMachine.Instruction[](6);
+        nested[0] = _signal(SIGNAL_TRIGGER);
+        nested[1] = _signal(SIGNAL_VERIFY_FAIL);
+        nested[2] = _delay(5);
+        nested[3] = _not();
+        nested[4] = _and(2);
+        nested[5] = _delay(10);
+        UVPStateMachine.CompactHook[] memory wrapped = new UVPStateMachine.CompactHook[](1);
+        wrapped[0] = _hookWithFlags(
+            HOOK_TIMEOUT, STAGE_INIT, HOOK_NAME_TIMEOUT, FLAG_EMIT_READY, nested, _deps2(SIGNAL_TRIGGER, SIGNAL_VERIFY_FAIL)
+        );
+
+        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
+        _commitPlan(
+            machine,
+            wrapped,
+            new StageSelectorBinding[](0),
+            new SignalCapability[](0)
+        );
+    }
+
+    /// 位置正例：否决位在 And 直接子项（含 And 再嵌于 Or 之下的形态）
+    /// 注册放行——(B & ~(A+5s)) | C 是合法产物形态。
+    function testDecayingVetoUnderAndInsideOrRegisters() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.Instruction[] memory ordered = new UVPStateMachine.Instruction[](7);
+        ordered[0] = _signal(SIGNAL_TRIGGER);
+        ordered[1] = _signal(SIGNAL_VERIFY_FAIL);
+        ordered[2] = _delay(5);
+        ordered[3] = _not();
+        ordered[4] = _and(2);
+        ordered[5] = _signal(SIGNAL_INIT_CMP);
+        ordered[6] = _or(2);
+        UVPStateMachine.CompactHook[] memory orWrapped = new UVPStateMachine.CompactHook[](1);
+        orWrapped[0] = _hookWithFlags(
+            HOOK_TIMEOUT, STAGE_INIT, HOOK_NAME_TIMEOUT, FLAG_EMIT_READY, ordered, _deps3(SIGNAL_TRIGGER, SIGNAL_VERIFY_FAIL, SIGNAL_INIT_CMP)
+        );
+
+        bytes32 planId = _registerPlan(machine, orWrapped);
+        require(machine.planExists(planId), "and-inside-or veto plan not registered");
+    }
+
+    /// 求值 gas 是常数增量：相对 ~A 形态只多一条 DELAY 指令分派（存在性
+    /// 读取由 SIGNAL 指令承担，窗口判断只加一次时间比较），且不随窗口
+    /// 时长缩放（5s 与 1h 的求值路径逐指令相同）。
+    function testDecayingVetoEvaluationGasIsConstantIncrement() public {
+        UVPStateMachine plainMachine = _registeredMachine(_negativeHookPlan(HOOK_TIMEOUT));
+        vm.warp(100);
+        uint256 gasBefore = gasleft();
+        plainMachine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        uint256 plainSpent = gasBefore - gasleft();
+
+        UVPStateMachine machine = _registeredMachine(_decayingVetoHookPlan(HOOK_TIMEOUT, 5));
+        vm.warp(100);
+        gasBefore = gasleft();
+        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        uint256 vetoSpent = gasBefore - gasleft();
+
+        UVPStateMachine machineHour = _registeredMachine(_decayingVetoHookPlan(HOOK_TIMEOUT, 1 hours));
+        vm.warp(100);
+        gasBefore = gasleft();
+        machineHour.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        uint256 hourSpent = gasBefore - gasleft();
+
+        require(vetoSpent > plainSpent, "decaying veto must cost more than plain negation");
+        require(vetoSpent - plainSpent <= 2_000, "decaying veto delta exceeds the constant budget");
+        // 720 倍窗口差只允许存储字打包级的抖动（实测 6 gas / 150k），线性
+        // 或按比例增长在此响亮失败。
+        uint256 durationWobble = vetoSpent > hourSpent ? vetoSpent - hourSpent : hourSpent - vetoSpent;
+        require(durationWobble <= 100, "evaluation gas must not scale with the window duration");
+    }
+
     function testOrBranchTriggersRollback() public {
         UVPStateMachine machine = _registeredMachine(_orRollbackPlan());
 
@@ -4438,6 +4679,57 @@ contract UVPStateMachineTest {
         );
     }
 
+    /// 衰减否决位计划：TRIGGER & ~(VERIFY_FAIL + delaySeconds)——编译器
+    /// 对该 DSL 形态的指令产物（合取直接子项上的 NOT-over-DELAY）。
+    function _decayingVetoHookPlan(bytes32 hookId, uint64 delaySeconds)
+        private
+        pure
+        returns (UVPStateMachine.CompactHook[] memory hooks)
+    {
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](5);
+        instructions[0] = _signal(SIGNAL_TRIGGER);
+        instructions[1] = _signal(SIGNAL_VERIFY_FAIL);
+        instructions[2] = _delay(delaySeconds);
+        instructions[3] = _not();
+        instructions[4] = _and(2);
+
+        hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hookWithFlags(
+            hookId,
+            STAGE_INIT,
+            HOOK_NAME_TIMEOUT,
+            FLAG_EMIT_READY,
+            instructions,
+            _deps2(SIGNAL_TRIGGER, SIGNAL_VERIFY_FAIL)
+        );
+    }
+
+    /// 活否决 + 延时正分支：(TRIGGER +5s) & ~(VERIFY_FAIL +10s)——钉
+    /// AND 等待期限只取 Wait 成员、否决有效期不得混入的形态。
+    function _liveVetoWaitHookPlan(bytes32 hookId)
+        private
+        pure
+        returns (UVPStateMachine.CompactHook[] memory hooks)
+    {
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](6);
+        instructions[0] = _signal(SIGNAL_TRIGGER);
+        instructions[1] = _delay(5);
+        instructions[2] = _signal(SIGNAL_VERIFY_FAIL);
+        instructions[3] = _delay(10);
+        instructions[4] = _not();
+        instructions[5] = _and(2);
+
+        hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hookWithFlags(
+            hookId,
+            STAGE_INIT,
+            HOOK_NAME_TIMEOUT,
+            FLAG_EMIT_READY,
+            instructions,
+            _deps2(SIGNAL_TRIGGER, SIGNAL_VERIFY_FAIL)
+        );
+    }
+
     function _sharedDependencyPlanWithNonTriggerFirst()
         private
         pure
@@ -6238,3 +6530,4 @@ contract DockInputWriter {
         );
     }
 }
+

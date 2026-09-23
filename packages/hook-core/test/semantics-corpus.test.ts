@@ -40,6 +40,7 @@ interface EvalCase {
   readonly expect: {
     readonly state: string;
     readonly readyAt?: string;
+    readonly expiresAt?: string;
     readonly reasonContains?: string;
   };
 }
@@ -77,6 +78,7 @@ interface CoreParseHookOutput {
 interface CoreEvalHookOutput {
   readonly state: string;
   readonly readyAt?: string;
+  readonly expiresAt?: string;
   readonly reason?: string;
 }
 
@@ -137,8 +139,17 @@ test("uvp-core N-API evaluates hook semantic corpus", async () => {
     if (item.expect.readyAt) {
       assert.equal(output.readyAt, item.expect.readyAt, item.name);
     }
+    // 衰减维度对每个 eval 用例整体钉死（缺席 = 无限期），不做
+    // "写了才比对"（与 Rust 语料测试同款）：否则带否决位的用例漏写
+    // expiresAt 会被静默放过。
+    assert.equal(output.expiresAt, item.expect.expiresAt, item.name);
     if (item.expect.reasonContains) {
-      assert.match(output.reason ?? "", new RegExp(item.expect.reasonContains), item.name);
+      // Rust 语料消费是子串包含（contains）：否决位成熟用例的 reason 带
+      // `+14d`，按 RegExp 解释会把加号当量词误判——同口径用 includes。
+      assert.ok(
+        (output.reason ?? "").includes(item.expect.reasonContains),
+        item.name,
+      );
     }
   }
 });

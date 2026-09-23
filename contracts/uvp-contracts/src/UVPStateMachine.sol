@@ -218,6 +218,10 @@ contract UVPStateMachine {
         bool value;
         bool wait;
         bool cancel;
+        // dueAt 双语义槽：wait=true 时是重评期限；value=true 且 wait=false
+        // 时是衰减否决位的有效期（core evaluator 的 expires_at——链上无
+        // 调度器，到期不自动重评，该值只在本次求值内随 AND/OR 传递，落库
+        // 前由 _evaluateHook 归零）。
         uint64 dueAt;
         uint64 anchorAt;
     }
@@ -2082,8 +2086,17 @@ contract UVPStateMachine {
     }
 
     function _notValue(EvalValue memory value) private pure returns (EvalValue memory) {
-        if (value.value || value.wait) {
+        if (value.value) {
             return EvalValue({value: false, wait: false, cancel: true, dueAt: 0, anchorAt: 0});
+        }
+        // 衰减否决位（合取直接子项上的 ~(A+duration)，_validateHook 位置门
+        // 保证唯一合法形态）：内层在案未熟 → 本项此刻成立，dueAt 携带有效
+        // 期至成熟时刻（与 core evaluator 的 Not(Wait{ready_at}) →
+        // Ready{expires_at} 同义）。同一求值内 now 恒定，wait 分支的 dueAt
+        // 必严格晚于 block.timestamp——core 侧的"已过期防御臂"在此按构造
+        // 不可达，不设镜像。
+        if (value.wait) {
+            return EvalValue({value: true, wait: false, cancel: false, dueAt: value.dueAt, anchorAt: 0});
         }
         if (value.cancel) {
             return EvalValue({value: true, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
@@ -2111,7 +2124,14 @@ contract UVPStateMachine {
         }
         if (left.value && right.value) {
             return EvalValue({
-                value: true, wait: false, cancel: false, dueAt: 0, anchorAt: _maxAnchor(left.anchorAt, right.anchorAt)
+                value: true,
+                wait: false,
+                cancel: false,
+                // 衰减有效期取成员最紧者（_minDue 的 0=无限语义：无限不放宽
+                // 有限期）——任一成员到期即整体不再成立，与 core evaluator
+                // 的 min_expires 同义。
+                dueAt: _minDue(left.dueAt, right.dueAt),
+                anchorAt: _maxAnchor(left.anchorAt, right.anchorAt)
             });
         }
         if ((left.wait && (right.value || right.wait)) || (right.wait && (left.value || left.wait))) {
@@ -2119,7 +2139,10 @@ contract UVPStateMachine {
                 value: false,
                 wait: true,
                 cancel: false,
-                dueAt: _maxDue(left.dueAt, right.dueAt),
+                // 等待期限只由等待成员贡献：就绪成员的 dueAt 是衰减有效期而
+                // 非等待期限，不得混入 max（core evaluator 的 And 只收集
+                // Wait 成员的 ready_at）。
+                dueAt: _maxDue(left.wait ? left.dueAt : 0, right.wait ? right.dueAt : 0),
                 anchorAt: _maxAnchor(left.anchorAt, right.anchorAt)
             });
         }
@@ -2132,11 +2155,20 @@ contract UVPStateMachine {
         // arrival, matching the core evaluator and replay oracle.
         if (left.value || right.value) {
             // Only READY branches compete for the anchor; a waiting branch's
-            // stale anchor must not win (matches the core evaluator).
-            uint64 anchor = left.value && right.value
-                ? _minAnchor(left.anchorAt, right.anchorAt)
-                : left.value ? left.anchorAt : right.anchorAt;
-            return EvalValue({value: true, wait: false, cancel: false, dueAt: 0, anchorAt: anchor});
+            // stale anchor must not win (matches the core evaluator). The
+            // winning branch is carried through verbatim — including its
+            // decaying-veto expiry (dueAt): the winner's own validity never
+            // tightens across branches, and maturity ties keep the incumbent
+            // (left) branch, mirroring the core evaluator's strict
+            // less-than replacement.
+            bool leftWins = left.value && (!right.value || left.anchorAt <= right.anchorAt);
+            return EvalValue({
+                value: true,
+                wait: false,
+                cancel: false,
+                dueAt: leftWins ? left.dueAt : right.dueAt,
+                anchorAt: leftWins ? left.anchorAt : right.anchorAt
+            });
         }
         if (left.wait || right.wait) {
             return EvalValue({

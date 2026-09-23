@@ -18,6 +18,9 @@ interface CoreParseHookOutput {
 interface CoreEvaluateHookOutput {
   readonly state: "ready" | "wait" | "impossible" | "needs_more";
   readonly readyAt?: string;
+  // 衰减否决位（uvp-core Not(Wait) → Ready{expires_at}）的就绪有效期；
+  // 仅 ready 态可能在场，缺席 = 无限期。
+  readonly expiresAt?: string;
   readonly reason?: string;
 }
 
@@ -86,7 +89,11 @@ export function evaluateHook(
     }) as CoreEvaluateHookOutput;
     switch (evaluated.state) {
       case "ready":
-        return { status: "reg" };
+        // 衰减否决位的就绪带有效期（成熟时刻）；其余就绪无期限——不落
+        // undefined 键，两类 reg 形态保持可区分。
+        return evaluated.expiresAt === undefined
+          ? { status: "reg" }
+          : { status: "reg", expiresAt: evaluated.expiresAt };
       case "wait":
         if (!evaluated.readyAt) {
           throw new HookExpressionError("uvp-core wait result is missing readyAt");
