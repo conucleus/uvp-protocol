@@ -143,6 +143,10 @@ attach 永久 `DockEndpointOccupied`。这是设计接受的信任面，不是�
 判断一条挂接是否可信，依据是父 plan publisher 的身份与链下 resolution
 契约，而不是"挂接发生过"本身；被抢注的 route instance 若无消费价值，
 父侧以新 definitionRef 重新发路由即换新 routeId（实例键随之更换）。
+产品已追认该信任面（2026-09-23）：链轨上本系统订单的全部路由消费方
+都是一方系统，挂接可信性的判据始终是父 plan publisher 身份与
+resolution 契约、不是「挂接发生过」——被抢注实例对消费方只是噪音；
+换 definitionRef 重发路由的代价由运营方自担，可接受。
 
 ### 3.2 动态路由（target:null）的冻结形态：两绑定根恒 EMPTY
 
