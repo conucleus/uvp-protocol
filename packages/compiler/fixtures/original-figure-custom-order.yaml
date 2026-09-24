@@ -30,7 +30,7 @@ spec:
           # 在链上永不可物化、sendSignals 无钩子可挂）。
           receiveSignals:
             BEGIN: "client::figure.brief.seed"
-          sendSignals: ["cmp", "cxl", "err", "seed"]
+          sendSignals: [{ name: "cmp" }, { name: "cxl" }, { name: "err" }, { name: "seed" }]
           fileResources:
             brief_template:
               fileType: local
@@ -44,7 +44,7 @@ spec:
           source: platform
           receiveSignals:
             BRIEF_READY: "client::figure.brief.cmp"
-          sendSignals: ["pass", "reject", "err"]
+          sendSignals: [{ name: "pass" }, { name: "reject" }, { name: "err" }]
           fileResources:
             originality_policy:
               fileType: local
@@ -66,7 +66,7 @@ spec:
             - figure.paint_sample
             - figure.qa_review
             - figure.pack_ship
-          sendSignals: ["cmp", "err"]
+          sendSignals: [{ name: "cmp" }, { name: "err" }]
           fileResources:
             supplier_requirements:
               fileType: local
@@ -80,7 +80,7 @@ spec:
           source: artist
           receiveSignals:
             SUPPLIERS_READY: "platform::figure.supplier_selection.cmp"
-          sendSignals: ["str", "cmp", "err"]
+          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
           fileResources:
             concept_requirements:
               fileType: local
@@ -94,7 +94,7 @@ spec:
           source: client
           receiveSignals:
             CONCEPT_READY: "artist::figure.concept_sheet.cmp"
-          sendSignals: ["pass", "reject", "err"]
+          sendSignals: [{ name: "pass" }, { name: "reject" }, { name: "err" }]
           executor:
             supplierType: individual
             supplierID: "{{ .client_subject_uid }}"
@@ -103,7 +103,7 @@ spec:
           source: sculptor
           receiveSignals:
             CONCEPT_APPROVED: "client::figure.concept_approval.pass"
-          sendSignals: ["str", "cmp", "err"]
+          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
           fileResources:
             sculpt_delivery_spec:
               fileType: local
@@ -117,7 +117,7 @@ spec:
           source: printer
           receiveSignals:
             SCULPT_READY: "sculptor::figure.sculpt_model.cmp"
-          sendSignals: ["pass", "fail", "err"]
+          sendSignals: [{ name: "pass" }, { name: "fail" }, { name: "err" }]
           fileResources:
             printability_checklist:
               fileType: local
@@ -131,7 +131,7 @@ spec:
           source: printer
           receiveSignals:
             PRINTABILITY_PASS: "printer::figure.printability_check.pass"
-          sendSignals: ["str", "cmp", "err"]
+          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
           fileResources:
             prototype_photo_manifest:
               fileType: local
@@ -145,7 +145,7 @@ spec:
           source: painter
           receiveSignals:
             PROTOTYPE_READY: "printer::figure.prototype_print.cmp"
-          sendSignals: ["str", "cmp", "err"]
+          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
           fileResources:
             paint_style_guide:
               fileType: local
@@ -159,7 +159,7 @@ spec:
           source: qa
           receiveSignals:
             PAINT_READY: "painter::figure.paint_sample.cmp"
-          sendSignals: ["pass", "fail", "err"]
+          sendSignals: [{ name: "pass" }, { name: "fail" }, { name: "err" }]
           fileResources:
             qa_checklist:
               fileType: local
@@ -173,7 +173,7 @@ spec:
           source: logistics
           receiveSignals:
             QA_PASS: "qa::figure.qa_review.pass"
-          sendSignals: ["str", "cmp", "err"]
+          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
           fileResources:
             packing_manifest:
               fileType: local
@@ -187,7 +187,7 @@ spec:
           source: client
           receiveSignals:
             DELIVERED: "logistics::figure.pack_ship.cmp"
-          sendSignals: ["pass", "reject", "err"]
+          sendSignals: [{ name: "pass" }, { name: "reject" }, { name: "err" }]
           executor:
             supplierType: individual
             supplierID: "{{ .client_subject_uid }}"
@@ -206,7 +206,7 @@ spec:
             - figure.prototype_print
             - figure.paint_sample
             - figure.qa_review
-          sendSignals: ["str", "cmp", "err"]
+          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
           fileResources:
             rework_policy:
               fileType: local

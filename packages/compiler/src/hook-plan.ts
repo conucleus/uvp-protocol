@@ -135,6 +135,7 @@ const HOOK_PLAN_ARTIFACT_FIELDS: readonly string[] = [
   "dockInterfaceRoot",
   "selectedStageBindings",
   "signalCapabilities",
+  "admissions",
   "source",
   "planHash",
 ];
@@ -277,6 +278,14 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
   if (Array.isArray(value.signalCapabilities)) {
     issues.push(...validateSignalCapabilities(value.signalCapabilities));
   }
+  // 发射适格面（core 恒产数组，含空集）：条目形状/去重/阶段引用与
+  // compiledHooks 同纪律。语义拒绝（自引用/出生锚/订阅原子）由 core 编译
+  // 期收口，这里不重复。
+  if (Array.isArray(value.admissions)) {
+    issues.push(...validateAdmissions(value.admissions));
+  } else {
+    issues.push("admissions must be an array");
+  }
 
   // 元数据表的阶段引用必须落在 hooks 阶段集内：hooks 侧对元数据表不可见，
   // 悬空引用不会在注册路径暴露——链上 stageExists 只由 hook 注册置位，
@@ -288,6 +297,7 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
         compiledHooks,
         Array.isArray(value.selectedStageBindings) ? value.selectedStageBindings : [],
         Array.isArray(value.signalCapabilities) ? value.signalCapabilities : [],
+        Array.isArray(value.admissions) ? value.admissions : [],
       ),
     );
   }
@@ -425,16 +435,60 @@ function validateSignalCapabilities(capabilities: readonly unknown[]): readonly 
 }
 
 /**
+ * admissions 条目形状门（IR 边界）：(stageIdentifier, signalName) 去重镜像
+ * core D031 的产物面；阶段引用必须落在 compiledHooks 阶段集内——适格存储
+ * 以阶段的物化为前提，悬空阶段的适格面是永不可达的死承诺。
+ */
+function validateAdmissions(admissions: readonly unknown[]): readonly string[] {
+  const issues: string[] = [];
+  const seen = new Set<string>();
+  for (const [index, admission] of admissions.entries()) {
+    if (!isRecord(admission)) {
+      issues.push(`admissions[${index}] must be an object`);
+      continue;
+    }
+    const prefix = `admissions[${index}]`;
+    expectNonEmptyString(admission.stageIdentifier, `${prefix}.stageIdentifier`, issues);
+    expectNonEmptyString(admission.signalName, `${prefix}.signalName`, issues);
+    expectNonEmptyString(admission.rawExpression, `${prefix}.rawExpression`, issues);
+    expectNonEmptyString(admission.normalizedExpression, `${prefix}.normalizedExpression`, issues);
+    if (!isRecord(admission.ast)) {
+      issues.push(`${prefix}.ast must be an object`);
+    }
+    if (!Array.isArray(admission.dependencies)) {
+      issues.push(`${prefix}.dependencies must be an array`);
+    } else {
+      issues.push(...validateDependencies(admission.dependencies, `${prefix}.dependencies`));
+    }
+    if (
+      typeof admission.stageIdentifier === "string" &&
+      typeof admission.signalName === "string"
+    ) {
+      const key = `${admission.stageIdentifier}\u0000${admission.signalName}`;
+      if (seen.has(key)) {
+        issues.push(
+          `duplicate admission ${admission.stageIdentifier}::${admission.signalName}`,
+        );
+      }
+      seen.add(key);
+    }
+  }
+  return issues;
+}
+
+/**
  * 阶段存在性镜像：selectedStageBindings 与 signalCapabilities 引用的
- * 阶段必须 ∈ compiledHooks 的阶段集——链上 stageExists 只由 hook 注册
- * 置位，阶段的存在即其物化载体的存在。悬空引用的能力叶/绑定叶指向
+ * 阶段必须 ∈ compiledHooks 的阶段集——链上 stageExists 只由 hook 注册置
+ * 位，阶段的存在即其物化载体的存在。悬空引用的能力叶/绑定叶指向
  * 永不存在的阶段：携证解析与阶段物化/executor 门都无从谈起，制品在
- * 校验边界即拒绝，不送到链上变成不可消费的承诺。
+ * 校验边界即拒绝，不送到链上变成不可消费的承诺。admissions 同纪律：
+ * 适格面挂在永不物化的阶段上是死承诺。
  */
 function danglingMetadataStageIssues(
   hooks: readonly unknown[],
   selectedStageBindings: readonly unknown[],
   signalCapabilities: readonly unknown[],
+  admissions: readonly unknown[],
 ): readonly string[] {
   const issues: string[] = [];
   const hookStages = new Set<string>();
@@ -467,6 +521,14 @@ function danglingMetadataStageIssues(
         ? [{
             path: `signalCapabilities[${index}].stageIdentifier`,
             stage: capability.stageIdentifier,
+          }]
+        : [],
+    ),
+    ...admissions.flatMap((admission, index) =>
+      isRecord(admission) && typeof admission.stageIdentifier === "string"
+        ? [{
+            path: `admissions[${index}].stageIdentifier`,
+            stage: admission.stageIdentifier,
           }]
         : [],
     ),

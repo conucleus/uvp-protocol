@@ -15,6 +15,7 @@ import {
   duplicateBirthChannelKeyIssues,
   silentOrderTriggerIssues,
   unmaterializableStageIssues,
+  validateOnchainCompiledAdmissions,
   validateOnchainCompiledHooks,
 } from "./validate/hooks.js";
 import { planDependencyCountIssues } from "./validate/limits.js";
@@ -22,6 +23,8 @@ import { duplicateCurrentOrderFactKeyIssues } from "./validate/capabilities.js";
 import { capabilitiesRootOf } from "./capabilities-root.js";
 import {
   canonicalOrderIssues,
+  admissionOrderKey,
+  compareAdmissions,
   compareExecutorRoutes,
   compareOnchainHooks,
   hookOrderKey,
@@ -30,6 +33,7 @@ import { hashOnchainPlanPayload } from "./hash/plan.js";
 import {
   onchainHookId,
   onchainSignalId,
+  onchainSignalKey,
   onchainSourceId,
   onchainStageId,
 } from "./hash/route.js";
@@ -47,9 +51,12 @@ import {
 import { toSolidityRegisterPlanArgs } from "./solidity/registration.js";
 import {
   ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
+  type CompiledHookPlanAdmission,
   type DockResolutionManifest,
   type HookPlanArtifact,
+  type OnchainCompiledAdmission,
   type OnchainHookPlanArtifact,
+  type SignalCapability,
   type SolidityRegisterPlanArgs,
   type ZhixuDefinition,
 } from "../types/index.js";
@@ -81,6 +88,17 @@ export function compileOnchainHookPlan(
       ...(hook.route ? { routeRef: routeRefForRoute(hook.route) } : {}),
     }))
     .sort(compareOnchainHooks);
+  // 适格面编译：IR admissions 条目 → 过滤档指令计划（orderTriggerKind
+  // 恒 none：订阅原子沿用指令编译器的拒绝面，DELAY 放行——过滤档无
+  // 出生路径）。admissionId = 被发射事实的 signalKey，合约适格存储按它
+  // 寻址（提交路径只持有 (sourceId, signalId)，signalKey 是提交时可计算
+  // 的唯一承诺键）；声明阶段的 source 从 signalCapabilities 解析
+  // （sendSignals 声明恒产能力条目，relation=current 事实键在 plan 内
+  // 唯一属主——同全名异 source 的错位声明在此暴露）。
+  const admissions = compileSignalAdmissions(
+    hookPlanArtifact.admissions,
+    hookPlanArtifact.signalCapabilities,
+  );
   // 逐 hook 顺序语义与合约 _registerPlanHook 一致（见 crossStageDependencyIssues）。
   const crossStageIssues = crossStageDependencyIssues(compiledHooks);
   // 不可物化阶段（无 order-trigger / EMIT_READY hook 的阶段）不得挂任何
@@ -138,6 +156,13 @@ export function compileOnchainHookPlan(
         ...validateOnchainCompiledHooks(compiledHooks, executorRoutes),
         ...canonicalOrderIssues(compiledHooks, hookOrderKey, "compiledHooks"),
       ];
+  // 过滤档镜像预检（编译入口与反序列化边界同门）：hook 档非法而过滤档
+  // 合法的形态（裸衰减根、Or 下/延时操作数内的否决位）必须在这里放行，
+  // 任何把 hook 档锚点/位置闸混入适格面的漂移都在编译期暴露。
+  const admissionShapeIssues: readonly string[] = [
+    ...validateOnchainCompiledAdmissions(admissions),
+    ...canonicalOrderIssues(admissions, admissionOrderKey, "admissions"),
+  ];
   const preflightIssues = [
     ...crossStageIssues,
     ...materializationIssues,
@@ -148,6 +173,7 @@ export function compileOnchainHookPlan(
     ...dockTrackIssues,
     ...unresolvedTrackIssues,
     ...hookShapeIssues,
+    ...admissionShapeIssues,
   ];
   if (preflightIssues.length > 0) {
     throw new HookPlanCompilationError(preflightIssues);
@@ -223,6 +249,7 @@ export function compileOnchainHookPlan(
     capabilitiesRoot,
     selectorBindings,
     signalCapabilities,
+    admissions,
   };
 
   return {
@@ -238,6 +265,59 @@ export function compileZhixuOnchainHookPlan(
   return compileOnchainHookPlan(
     compileZhixuHookPlan(definition, resolutionManifest),
   );
+}
+
+/**
+ * IR admissions → 链轨适格面条目：指令经 compileHookInstructions
+ * （orderTriggerKind=none 的过滤档路径），身份三元组 (admissionId,
+ * stageId, signalId) 全部从声明重算——admissionId 占 CompactHook 的
+ * hookId 槽（= 事实键 signalKey），signalId 占 hookName 槽（=
+ * keccak(signalName)，hook 槽 word 布局的钩名位承载信号身份）。排序与
+ * core 产物同键（stageIdentifier, signalName）。
+ */
+function compileSignalAdmissions(
+  admissions: readonly CompiledHookPlanAdmission[],
+  signalCapabilities: readonly SignalCapability[],
+): OnchainCompiledAdmission[] {
+  const sourceByDeclaredSignal = new Map<string, string>();
+  for (const capability of signalCapabilities) {
+    if (capability.targetOrderRelation !== "current") {
+      continue;
+    }
+    sourceByDeclaredSignal.set(
+      `${capability.stageIdentifier}\u0000${capability.targetSignalName}`,
+      capability.targetSource,
+    );
+  }
+  return admissions
+    .map((admission) => {
+      const stageId = onchainStageId(admission.stageIdentifier);
+      const signalId = onchainSignalId(admission.signalName);
+      const declared = `${admission.stageIdentifier}\u0000${admission.signalName}`;
+      const targetSource = sourceByDeclaredSignal.get(declared);
+      if (targetSource === undefined) {
+        throw new HookPlanCompilationError([
+          `admission ${admission.stageIdentifier}::${admission.signalName} has no current-order signal capability for the declared emission; `
+            + "the admission face addresses the emitted fact key (sourceId, signalId), which only the declaring stage's capability carries",
+        ]);
+      }
+      const sourceId = onchainSourceId(targetSource);
+      return {
+        admissionId: onchainSignalKey(sourceId, signalId),
+        stageId,
+        stageIdentifier: admission.stageIdentifier,
+        signalName: admission.signalName,
+        signalId,
+        sourceId,
+        instructions: compileHookInstructions(
+          admission.ast,
+          admission.stageIdentifier,
+          { orderTriggerKind: "none" },
+        ),
+        dependencies: admission.dependencies.map(compileDependency),
+      };
+    })
+    .sort(compareAdmissions);
 }
 
 // These args feed the two-step `commitPlan` + `finalizePlan` flow. The

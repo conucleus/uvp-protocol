@@ -3,6 +3,7 @@ import { hashOnchainPlanPayload } from "../hash/plan.js";
 import { capabilitiesRootOf } from "../capabilities-root.js";
 import {
   canonicalOrderIssues,
+  admissionOrderKey,
   hookOrderKey,
   routeOrderKey,
   selectorBindingOrderKey,
@@ -26,6 +27,7 @@ import {
   duplicateBirthChannelKeyIssues,
   silentOrderTriggerIssues,
   unmaterializableStageIssues,
+  validateOnchainCompiledAdmissions,
   validateOnchainCompiledHooks,
   validateOnchainDependencyIndex,
 } from "./hooks.js";
@@ -79,6 +81,7 @@ const ONCHAIN_ARTIFACT_FIELDS: readonly string[] = [
   "capabilitiesRoot",
   "selectorBindings",
   "signalCapabilities",
+  "admissions",
   "planHash",
 ];
 
@@ -180,6 +183,15 @@ export function validateOnchainHookPlanArtifact(
     : undefined;
   if (!signalCapabilities) {
     issues.push("signalCapabilities must be an array");
+  }
+  // 适格面（与 IR 同约定：core 恒产数组，可为空）：在场而非数组必须显式
+  // 报 issue——缺失的 admissions 折成空集后哈希照常通过，未声明面与
+  // 空适格面在承诺上不可区分是 fail-open。
+  const admissions = Array.isArray(value.admissions)
+    ? value.admissions
+    : undefined;
+  if (!admissions) {
+    issues.push("admissions must be an array");
   }
 
   if (compiledHooks) {
@@ -289,6 +301,13 @@ export function validateOnchainHookPlanArtifact(
       ),
     );
   }
+  if (admissions) {
+    // 过滤档镜像门同样作用于反序列化 artifact 边界（与 hook 族同纪律）。
+    issues.push(...validateOnchainCompiledAdmissions(admissions));
+    issues.push(
+      ...canonicalOrderIssues(admissions, admissionOrderKey, "admissions"),
+    );
+  }
 
   if (isPlanHashRecomputable(value)) {
     // 姊妹实现 hook-plan.ts 同口径：重算抛错（负载深层携带 undefined/非
@@ -316,6 +335,7 @@ export function validateOnchainHookPlanArtifact(
         capabilitiesRoot: value.capabilitiesRoot,
         selectorBindings: value.selectorBindings,
         signalCapabilities: value.signalCapabilities,
+        admissions: value.admissions,
       });
       if (value.planHash !== expectedPlanHash) {
         issues.push(
@@ -521,6 +541,7 @@ function isPlanHashRecomputable(
     Array.isArray(value.executorRoutes) &&
     Array.isArray(value.selectorBindings) &&
     Array.isArray(value.signalCapabilities) &&
+    Array.isArray(value.admissions) &&
     Array.isArray(value.dockRoutes) &&
     (value.unresolvedDockRoutes === undefined ||
       Array.isArray(value.unresolvedDockRoutes)) &&

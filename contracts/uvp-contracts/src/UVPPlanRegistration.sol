@@ -10,6 +10,7 @@ import {
     _HOOK_FLAG_ORDER_TRIGGER_MINT as HOOK_FLAG_ORDER_TRIGGER_MINT,
     _HOOK_FLAG_ORDER_TRIGGER_DOCK as HOOK_FLAG_ORDER_TRIGGER_DOCK,
     _HOOK_FLAG_EMIT_READY as HOOK_FLAG_EMIT_READY,
+    _HOOK_FLAG_ADMISSION as HOOK_FLAG_ADMISSION,
     _MAX_HOOK_DELAY_SECONDS as MAX_HOOK_DELAY_SECONDS,
     _MAX_PLAN_DEPENDENCIES as MAX_PLAN_DEPENDENCIES,
     _EIP712_DOMAIN_TYPEHASH,
@@ -148,6 +149,15 @@ library UVPPlanRegistration {
         UVPStateMachine.CompactHook calldata input,
         uint256 seenCount
     ) private returns (uint256) {
+        // 适格面槽位（flag=8）：进 plan.admissions（按被发射事实的
+        // signalKey = hookId 槽寻址），不进 plan.hooks/dependencyIndex/
+        // hookIds——适格在提交一拍求值，不为事实到达所重评。与 hook 槽
+        // 共享 hooksHash 承诺与提交顺序（commitPlan 的阶段物化扫描对
+        // 两类槽位一视同仁：仅适格、无物化 hook 的阶段在此暴露）。
+        if (input.flags & HOOK_FLAG_ADMISSION != 0) {
+            _registerPlanAdmission(plan, input);
+            return seenCount;
+        }
         _validateHook(input);
         // 出生语义互斥——MINT 与 DOCK 不可同挂一个 hook。
         if (
@@ -265,6 +275,140 @@ library UVPPlanRegistration {
         plan.hookIds.push(input.hookId);
         plan.stageExists[input.stageId] = true;
         return updatedCount;
+    }
+
+    /// 适格面注册：hookId 槽 = 被发射事实的 signalKey（提交路径只持有
+    /// (sourceId, signalId)，signalKey 是它可计算的唯一寻址键；全名在
+    /// plan 内唯一属主保证键不碰撞）。首条适格置 plan.admissionsDeclared
+    /// （与 committed/finalized 同槽），_createOrder 复制进订单供提交
+    /// 卡点短路。chimera flags 拒绝：适格与出生/就绪位共用一个 word 会
+    /// 让同一槽位同时寻址两个人口。
+    function _registerPlanAdmission(UVPStateMachine.Plan storage plan, UVPStateMachine.CompactHook calldata input)
+        private
+    {
+        if (input.flags != HOOK_FLAG_ADMISSION) {
+            revert UVPStateMachine.InvalidHook();
+        }
+        _validateAdmission(input);
+        UVPStateMachine.StoredAdmission storage admission = plan.admissions[input.hookId];
+        if (admission.exists) {
+            revert UVPStateMachine.AdmissionAlreadyRegistered(input.hookId);
+        }
+        admission.exists = true;
+        for (uint256 j = 0; j < input.instructions.length; j++) {
+            admission.instructions.push(input.instructions[j]);
+        }
+        plan.admissionsDeclared = true;
+    }
+
+    /// `_validateHook` 的过滤档兄弟（发射适格面）：适格只在到达一拍对
+    /// pre-state 求值、不参与任何调度——无正锚要求（根/OR 分支/延时操作
+    /// 数均不要求），衰减否决位 ~(A+duration) 位置全放开（任何位置的瞬
+    /// 时值都良定义）。与钩子档同源的保留闸：NOT 操作数词表（裸 SIGNAL
+    /// 或 DELAY 产出，组合否定拒绝）、DELAY 时长 ∈ (0, 30d]、AND/OR
+    /// arity ≥ 2、栈深充足、结束恰一值、dependencyKeys 与 SIGNAL 原子键
+    /// 逐点一致。自引用/出生锚/订阅原子是编译期拒绝（uvp-compiler
+    /// D028-D030），注册门看到的只有指令形态。
+    function _validateAdmission(UVPStateMachine.CompactHook calldata admission) private pure {
+        if (
+            admission.hookId == bytes32(0) || admission.stageId == bytes32(0) || admission.hookName == bytes32(0)
+                || admission.instructions.length == 0 || admission.dependencyKeys.length == 0
+        ) {
+            revert UVPStateMachine.InvalidHook();
+        }
+
+        // 裸 SIGNAL 栈标志：NOT 操作数约束（裸 SIGNAL 或下方 DELAY 产出）。
+        bool[] memory bareSignal = new bool[](admission.instructions.length);
+        // DELAY 产出标志：NOT 的第二类合法操作数（否决位内层）。
+        bool[] memory delayResult = new bool[](admission.instructions.length);
+        uint256 stackDepth;
+        for (uint256 i = 0; i < admission.instructions.length; i++) {
+            UVPStateMachine.Instruction calldata instruction = admission.instructions[i];
+            if (instruction.op == uint8(UVPStateMachine.InstructionOp.Signal)) {
+                // 零字事实键与其余写入口同口径拒绝（_validateHook 镜像）：
+                // 零 sourceId 是 stage 物化与 executor 门的永久豁免键。
+                if (instruction.sourceId == bytes32(0)) {
+                    revert UVPStateMachine.ZeroSourceId();
+                }
+                if (instruction.signalId == bytes32(0)) {
+                    revert UVPStateMachine.InvalidInstruction();
+                }
+                bareSignal[stackDepth] = true;
+                delayResult[stackDepth] = false;
+                stackDepth += 1;
+            } else if (
+                instruction.op == uint8(UVPStateMachine.InstructionOp.Not)
+                    || instruction.op == uint8(UVPStateMachine.InstructionOp.Delay)
+            ) {
+                if (stackDepth == 0) {
+                    revert UVPStateMachine.InvalidInstruction();
+                }
+                if (instruction.op == uint8(UVPStateMachine.InstructionOp.Delay)) {
+                    if (instruction.delaySeconds == 0) {
+                        revert UVPStateMachine.InvalidInstruction();
+                    }
+                    if (instruction.delaySeconds > MAX_HOOK_DELAY_SECONDS) {
+                        revert UVPStateMachine.HookDelayTooLong(instruction.delaySeconds);
+                    }
+                    // 过滤档无锚点闸：操作数可以纯否定（一拍求值下瞬时值
+                    // 良定义，无外层调度可被过期锚静默放行）。
+                    bareSignal[stackDepth - 1] = false;
+                    delayResult[stackDepth - 1] = true;
+                } else {
+                    if (!bareSignal[stackDepth - 1] && !delayResult[stackDepth - 1]) {
+                        revert UVPStateMachine.InvalidInstruction();
+                    }
+                    bareSignal[stackDepth - 1] = false;
+                    delayResult[stackDepth - 1] = false;
+                }
+            } else if (
+                instruction.op == uint8(UVPStateMachine.InstructionOp.And)
+                    || instruction.op == uint8(UVPStateMachine.InstructionOp.Or)
+            ) {
+                if (instruction.arity < 2 || stackDepth < instruction.arity) {
+                    revert UVPStateMachine.InvalidInstruction();
+                }
+                stackDepth = stackDepth - instruction.arity + 1;
+                bareSignal[stackDepth - 1] = false;
+                delayResult[stackDepth - 1] = false;
+            } else {
+                revert UVPStateMachine.InvalidInstruction();
+            }
+        }
+        if (stackDepth != 1) {
+            revert UVPStateMachine.InvalidInstruction();
+        }
+        // dependencyKeys 与 SIGNAL 原子键集合逐点一致（_validateHook 同
+        // 口径）：错位键让制品与链上注册面分叉，注册边界对拍拒绝。
+        uint256 signalKeyCount = 0;
+        bytes32[] memory signalKeys = new bytes32[](admission.instructions.length);
+        for (uint256 i = 0; i < admission.instructions.length; i++) {
+            if (admission.instructions[i].op != uint8(UVPStateMachine.InstructionOp.Signal)) {
+                continue;
+            }
+            bytes32 signalKey =
+                keccak256(abi.encode(admission.instructions[i].sourceId, admission.instructions[i].signalId));
+            if (!_containsKey(signalKeys, signalKeyCount, signalKey)) {
+                signalKeys[signalKeyCount] = signalKey;
+                signalKeyCount += 1;
+            }
+        }
+        uint256 declaredKeyCount = 0;
+        bytes32[] memory declaredKeys = new bytes32[](admission.dependencyKeys.length);
+        for (uint256 j = 0; j < admission.dependencyKeys.length; j++) {
+            bytes32 dependencyKey = admission.dependencyKeys[j];
+            if (_containsKey(declaredKeys, declaredKeyCount, dependencyKey)) {
+                continue;
+            }
+            declaredKeys[declaredKeyCount] = dependencyKey;
+            declaredKeyCount += 1;
+            if (!_containsKey(signalKeys, signalKeyCount, dependencyKey)) {
+                revert UVPStateMachine.HookDependencyKeyMismatch(admission.hookId);
+            }
+        }
+        if (declaredKeyCount != signalKeyCount) {
+            revert UVPStateMachine.HookDependencyKeyMismatch(admission.hookId);
+        }
     }
 
     function _validateHook(UVPStateMachine.CompactHook calldata hook) private pure {

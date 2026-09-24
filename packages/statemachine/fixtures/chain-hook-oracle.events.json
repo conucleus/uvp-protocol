@@ -304,5 +304,95 @@
     "hookId": "0x0000000000000000000000000000000000000000000000000000000000003002",
     "stageIdentifier": "exec.main",
     "hookName": "TIMEOUT"
+  },
+  {
+    "eventName": "PlanRegistered",
+    "blockNumber": 9,
+    "logIndex": 0,
+    "transactionHash": "0x09",
+    "plan": {
+      "planId": "0x000000000000000000000000000000000000000000000000000000000000a201",
+      "zhixuId": "chain-oracle-admission",
+      "version": "1",
+      "compiledHooks": [
+        {
+          "hookId": "0x000000000000000000000000000000000000000000000000000000000000a211",
+          "stageId": "0x000000000000000000000000000000000000000000000000000000000000a221",
+          "stageIdentifier": "task.execute",
+          "hookName": "OBSERVE",
+          "instructions": [
+            {
+              "op": "SIGNAL",
+              "sourceId": "0x000000000000000000000000000000000000000000000000000000000000a231",
+              "signalId": "0x000000000000000000000000000000000000000000000000000000000000a241",
+              "signalKey": "0x000000000000000000000000000000000000000000000000000000000000a251"
+            }
+          ],
+          "orderTriggerKind": "none",
+          "emitReady": true
+        }
+      ],
+      "dependencyIndex": {
+        "0x000000000000000000000000000000000000000000000000000000000000a251": [
+          "0x000000000000000000000000000000000000000000000000000000000000a211"
+        ]
+      },
+      "admissions": [
+        {
+          "admissionId": "0x000000000000000000000000000000000000000000000000000000000000a261",
+          "stageIdentifier": "task.execute",
+          "signalName": "launch",
+          "instructions": [
+            {
+              "op": "SIGNAL",
+              "signalKey": "0x000000000000000000000000000000000000000000000000000000000000a271"
+            },
+            {
+              "op": "DELAY",
+              "delaySeconds": 1209600
+            },
+            {
+              "op": "NOT"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "eventName": "OrderRegistered",
+    "blockNumber": 10,
+    "logIndex": 0,
+    "transactionHash": "0x0a",
+    "planId": "0x000000000000000000000000000000000000000000000000000000000000a201",
+    "zhixuId": "chain-oracle-admission",
+    "orderId": "order-admission",
+    "registeredAt": "2026-04-27T00:02:00.000Z"
+  },
+  {
+    "eventName": "SignalSubmitted",
+    "blockNumber": 11,
+    "logIndex": 0,
+    "transactionHash": "0x0b",
+    "planId": "0x000000000000000000000000000000000000000000000000000000000000a201",
+    "zhixuId": "chain-oracle-admission",
+    "orderId": "order-admission",
+    "sourceId": "0x000000000000000000000000000000000000000000000000000000000000a231",
+    "signalId": "0x000000000000000000000000000000000000000000000000000000000000a241",
+    "signalKey": "0x000000000000000000000000000000000000000000000000000000000000a251",
+    "senderId": "gate-executor",
+    "submittedAt": "2026-04-27T00:02:01.000Z"
+  },
+  {
+    "eventName": "HookReady",
+    "blockNumber": 11,
+    "logIndex": 1,
+    "transactionHash": "0x0b",
+    "planId": "0x000000000000000000000000000000000000000000000000000000000000a201",
+    "zhixuId": "chain-oracle-admission",
+    "orderId": "order-admission",
+    "hookId": "0x000000000000000000000000000000000000000000000000000000000000a211",
+    "stageIdentifier": "task.execute",
+    "hookName": "OBSERVE"
   }
 ]

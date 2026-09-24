@@ -438,6 +438,291 @@ function validateInstructions(
   return issues;
 }
 
+/**
+ * 镜像 UVPPlanRegistration._validateAdmission 的过滤档栈机（_validateHook
+ * 的过滤档兄弟）：适格面只在到达一拍对 pre-state 求值、不参与任何调度——
+ * 无正锚要求（根/OR 分支/延时操作数均不要求），衰减否决位 ~(A+duration)
+ * 位置全放开（任何位置的瞬时值都良定义）。与钩子档同源的保留闸：NOT
+ * 操作数词表（裸 SIGNAL 或 DELAY 产出）、duration ∈ (0, 30d]、AND/OR
+ * arity ≥ 2、栈深、结束恰一值。自引用/出生锚/订阅原子是编译期拒绝
+ * （core D028-D030），注册门看到的只有指令形态。
+ */
+function validateAdmissionInstructions(
+  instructions: readonly unknown[],
+  path: string,
+): readonly string[] {
+  const issues: string[] = [];
+  let stackDepth = 0;
+  // 裸 SIGNAL 栈标志与 DELAY 产出标志：NOT 操作数词表的判定面（过滤档
+  // 不需要锚点/否决位位置轨）。
+  const bareSignal: boolean[] = [];
+  const delayResult: boolean[] = [];
+
+  for (const [index, instruction] of instructions.entries()) {
+    if (!isRecord(instruction)) {
+      issues.push(`${path}[${index}] must be an object`);
+      continue;
+    }
+
+    const prefix = `${path}[${index}]`;
+    switch (instruction.op) {
+      case "SIGNAL":
+        expectString(instruction.source, `${prefix}.source`, issues);
+        expectNonEmptyString(
+          instruction.signalName,
+          `${prefix}.signalName`,
+          issues,
+        );
+        expectHexHash(instruction.sourceId, `${prefix}.sourceId`, issues);
+        expectHexHash(instruction.signalId, `${prefix}.signalId`, issues);
+        expectHexHash(instruction.signalKey, `${prefix}.signalKey`, issues);
+        if (
+          typeof instruction.source === "string" &&
+          typeof instruction.sourceId === "string" &&
+          instruction.sourceId !== onchainSourceId(instruction.source)
+        ) {
+          issues.push(`${prefix}.sourceId must be keccak256(source)`);
+        }
+        if (
+          typeof instruction.signalName === "string" &&
+          typeof instruction.signalId === "string" &&
+          instruction.signalId !== onchainSignalId(instruction.signalName)
+        ) {
+          issues.push(
+            `${prefix}.signalId must be keccak256(task.stage.signal)`,
+          );
+        }
+        if (
+          typeof instruction.sourceId === "string" &&
+          typeof instruction.signalId === "string" &&
+          isHexHash(instruction.sourceId) &&
+          isHexHash(instruction.signalId) &&
+          instruction.signalKey !==
+            onchainSignalKey(instruction.sourceId, instruction.signalId)
+        ) {
+          issues.push(
+            `${prefix}.signalKey must be keccak256(abi.encodePacked(sourceId, signalId))`,
+          );
+        }
+        bareSignal[stackDepth] = true;
+        delayResult[stackDepth] = false;
+        stackDepth += 1;
+        break;
+      case "NOT": {
+        if (stackDepth < 1) {
+          issues.push(`${prefix}.op requires one stack item`);
+          break;
+        }
+        // NOT 操作数词表（_validateAdmission 镜像，与钩子档同源）：裸
+        // SIGNAL 或 DELAY 产出。~(A&B) 一类组合否定的取消/求值语义与
+        // 编译器产物形态分叉，注册边界拒绝。
+        if (!bareSignal[stackDepth - 1] && !delayResult[stackDepth - 1]) {
+          issues.push(
+            `${prefix}.op requires a bare SIGNAL operand `
+              + "(contract _validateAdmission reverts InvalidInstruction for NOT over composite operands)",
+          );
+        }
+        bareSignal[stackDepth - 1] = false;
+        delayResult[stackDepth - 1] = false;
+        break;
+      }
+      case "AND":
+      case "OR": {
+        if (
+          !Number.isSafeInteger(instruction.arity) ||
+          Number(instruction.arity) < 2
+        ) {
+          issues.push(`${prefix}.arity must be a safe integer greater than 1`);
+          break;
+        }
+        const arity = Number(instruction.arity);
+        if (stackDepth < arity) {
+          issues.push(`${prefix}.op requires ${arity} stack items`);
+          break;
+        }
+        stackDepth = stackDepth - arity + 1;
+        bareSignal[stackDepth - 1] = false;
+        delayResult[stackDepth - 1] = false;
+        break;
+      }
+      case "DELAY":
+        if (
+          !Number.isSafeInteger(instruction.delaySeconds) ||
+          Number(instruction.delaySeconds) <= 0
+        ) {
+          issues.push(`${prefix}.delaySeconds must be a positive safe integer`);
+        } else if (
+          Number(instruction.delaySeconds) > MAX_ONCHAIN_HOOK_DELAY_SECONDS
+        ) {
+          issues.push(
+            `${prefix}.delaySeconds must not exceed ${MAX_ONCHAIN_HOOK_DELAY_SECONDS} `
+              + "(contract MAX_HOOK_DELAY_SECONDS = 30 days, reverts HookDelayTooLong)",
+          );
+        }
+        if (stackDepth < 1) {
+          issues.push(`${prefix}.op requires one stack item`);
+          break;
+        }
+        // 过滤档无锚点闸、无否决位位置闸：延时操作数可以纯否定/含否决位
+        // （一拍求值下瞬时值良定义，无外层调度可被过期锚静默放行）。
+        bareSignal[stackDepth - 1] = false;
+        delayResult[stackDepth - 1] = true;
+        break;
+      default:
+        issues.push(`${prefix}.op must be one of SIGNAL, NOT, AND, OR, DELAY`);
+    }
+  }
+
+  if (stackDepth !== 1) {
+    issues.push(`${path} must leave exactly one stack item`);
+  }
+
+  return issues;
+}
+
+/**
+ * 适格面 artifact 校验（编译入口 preflight 与反序列化边界共用）：条目
+ * 形状、admissionId/stageId/signalId 派生重算、(stageIdentifier,
+ * signalName) 与 admissionId 去重、指令集过滤档镜像、依赖形状与
+ * dependencyKeys ≡ SIGNAL 原子键逐点一致（合约 _validateAdmission 的
+ * HookDependencyKeyMismatch 镜像——未声明键的事实到达永不触发求值面，
+ * 但适格是提交时求值，键错位意味着制品与链上注册面分叉）。
+ */
+function validateOnchainCompiledAdmissions(
+  admissions: readonly unknown[],
+): readonly string[] {
+  const issues: string[] = [];
+  const admissionIds = new Set<string>();
+  const declaredSignals = new Set<string>();
+
+  for (const [index, admission] of admissions.entries()) {
+    if (!isRecord(admission)) {
+      issues.push(`admissions[${index}] must be an object`);
+      continue;
+    }
+
+    const prefix = `admissions[${index}]`;
+    expectHexHash(admission.admissionId, `${prefix}.admissionId`, issues);
+    expectHexHash(admission.stageId, `${prefix}.stageId`, issues);
+    expectHexHash(admission.signalId, `${prefix}.signalId`, issues);
+    expectHexHash(admission.sourceId, `${prefix}.sourceId`, issues);
+    expectNonEmptyString(
+      admission.stageIdentifier,
+      `${prefix}.stageIdentifier`,
+      issues,
+    );
+    expectNonEmptyString(admission.signalName, `${prefix}.signalName`, issues);
+
+    if (
+      typeof admission.stageIdentifier === "string" &&
+      typeof admission.stageId === "string" &&
+      admission.stageId !== onchainStageId(admission.stageIdentifier)
+    ) {
+      issues.push(`${prefix}.stageId must be keccak256(stageIdentifier)`);
+    }
+    if (
+      typeof admission.signalName === "string" &&
+      typeof admission.signalId === "string" &&
+      admission.signalId !== onchainSignalId(admission.signalName)
+    ) {
+      issues.push(`${prefix}.signalId must be keccak256(task.stage.signal)`);
+    }
+    if (
+      typeof admission.sourceId === "string" &&
+      typeof admission.signalId === "string" &&
+      isHexHash(admission.sourceId) &&
+      isHexHash(admission.signalId) &&
+      admission.admissionId !==
+        onchainSignalKey(admission.sourceId, admission.signalId)
+    ) {
+      issues.push(
+        `${prefix}.admissionId must be keccak256(abi.encodePacked(sourceId, signalId)) `
+          + "(the on-chain admission store is keyed by the emitted fact's signalKey)",
+      );
+    }
+    if (typeof admission.admissionId === "string") {
+      if (admissionIds.has(admission.admissionId)) {
+        issues.push(`duplicate admissionId ${admission.admissionId}`);
+      }
+      admissionIds.add(admission.admissionId);
+    }
+    if (
+      typeof admission.stageIdentifier === "string" &&
+      typeof admission.signalName === "string"
+    ) {
+      const declared = `${admission.stageIdentifier}\u0000${admission.signalName}`;
+      if (declaredSignals.has(declared)) {
+        issues.push(
+          `duplicate admission ${admission.stageIdentifier}::${admission.signalName}`,
+        );
+      }
+      declaredSignals.add(declared);
+    }
+
+    if (!Array.isArray(admission.instructions)) {
+      issues.push(`${prefix}.instructions must be an array`);
+    } else if (admission.instructions.length === 0) {
+      issues.push(
+        `${prefix}.instructions must not be empty (contract reverts InvalidHook)`,
+      );
+    } else {
+      issues.push(
+        ...validateAdmissionInstructions(
+          admission.instructions,
+          `${prefix}.instructions`,
+        ),
+      );
+    }
+
+    if (!Array.isArray(admission.dependencies)) {
+      issues.push(`${prefix}.dependencies must be an array`);
+    } else {
+      issues.push(
+        ...validateOnchainDependencies(
+          admission.dependencies,
+          `${prefix}.dependencies`,
+        ),
+      );
+      const signalKeys = new Set<string>();
+      if (Array.isArray(admission.instructions)) {
+        for (const instruction of admission.instructions) {
+          if (
+            isRecord(instruction) &&
+            instruction.op === "SIGNAL" &&
+            typeof instruction.signalKey === "string"
+          ) {
+            signalKeys.add(instruction.signalKey);
+          }
+        }
+      }
+      const dependencyKeys = new Set<string>();
+      for (const dependency of admission.dependencies) {
+        if (isRecord(dependency) && typeof dependency.signalKey === "string") {
+          dependencyKeys.add(dependency.signalKey);
+        }
+      }
+      for (const key of dependencyKeys) {
+        if (!signalKeys.has(key)) {
+          issues.push(
+            `${prefix}.dependencies key ${key} is not a SIGNAL atom of this admission `
+              + "(contract _validateAdmission reverts HookDependencyKeyMismatch)",
+          );
+        }
+      }
+      for (const key of signalKeys) {
+        if (!dependencyKeys.has(key)) {
+          issues.push(
+            `${prefix}.instructions SIGNAL key ${key} is not declared in dependencies `
+              + "(contract _validateAdmission reverts HookDependencyKeyMismatch)",
+          );
+        }
+      }
+    }
+  }
+
+  return issues;
+}
+
 function validateOnchainDependencies(
   dependencies: readonly unknown[],
   path: string,
@@ -790,6 +1075,7 @@ function isOnchainHookDependency(
 
 export {
   validateOnchainCompiledHooks,
+  validateOnchainCompiledAdmissions,
   unmaterializableStageIssues,
   declaredStageIdentifiers,
   silentOrderTriggerIssues,

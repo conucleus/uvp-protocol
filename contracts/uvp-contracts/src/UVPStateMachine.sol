@@ -9,6 +9,7 @@ import {
     _HOOK_FLAG_ORDER_TRIGGER_MINT,
     _HOOK_FLAG_ORDER_TRIGGER_DOCK,
     _HOOK_FLAG_EMIT_READY,
+    _HOOK_FLAG_ADMISSION,
     _MAX_HOOK_DELAY_SECONDS,
     _MAX_PLAN_DEPENDENCIES,
     _EIP712_DOMAIN_TYPEHASH,
@@ -53,7 +54,9 @@ contract UVPStateMachine {
         bytes32 hookId;
         bytes32 stageId;
         bytes32 hookName;
-        // 位标志：1 = ORDER_TRIGGER_MINT；2 = ORDER_TRIGGER_DOCK；4 = EMIT_READY。
+        // 位标志：1 = ORDER_TRIGGER_MINT；2 = ORDER_TRIGGER_DOCK；4 = EMIT_READY；
+        // 8 = ADMISSION（发射适格面：hookId 槽 = 被发射事实的 signalKey，
+        // hookName 槽 = signalId，进入 plan.admissions 而非 plan.hooks）。
         uint8 flags;
         Instruction[] instructions;
         bytes32[] dependencyKeys;
@@ -179,6 +182,15 @@ contract UVPStateMachine {
         bool exists;
     }
 
+    /// 发射适格面（flag=8 槽位的存储形态）：按被发射事实的 signalKey
+    /// 寻址（= CompactHook.hookId 槽）。只存指令——适格在提交一拍求值，
+    /// 不参与 dependencyIndex 驱动的到达重评，dependencyKeys 只在注册边
+    /// 界参与承诺与对拍。
+    struct StoredAdmission {
+        Instruction[] instructions;
+        bool exists;
+    }
+
     struct Plan {
         bytes32 planHash;
         bytes32 hooksHash;
@@ -189,9 +201,14 @@ contract UVPStateMachine {
         bytes32[] hookIds;
         mapping(bytes32 hookId => StoredHook hook) hooks;
         mapping(bytes32 signalKey => bytes32[] hookIds) dependencyIndex;
+        mapping(bytes32 signalKey => StoredAdmission admission) admissions;
         mapping(bytes32 stageId => bool exists) stageExists;
         bool committed;
         bool finalized;
+        // 适格面在场位：与 committed/finalized 同槽打包（注册时随首条
+        // admission 置位），_createOrder 把它复制进订单——外部提交路径
+        // 因此只需读一个已加载槽即可判断"无适格面零成本跳过"。
+        bool admissionsDeclared;
     }
 
     struct Order {
@@ -202,6 +219,10 @@ contract UVPStateMachine {
         mapping(bytes32 stageId => bool materialized) materializedStages;
         bool materialized;
         bool exists;
+        // plan.admissionsDeclared 的订单级快照（创建时复制）：提交卡点读
+        // 的就是与 exists 同槽的布尔位，无适格面的 plan 不为适格面付任何
+        // 冷读成本。
+        bool admissionsDeclared;
     }
 
     struct ActiveStageExecutorPatch {
@@ -280,6 +301,13 @@ contract UVPStateMachine {
     error PlanNotCommitted();
     error PlanNotFinalized();
     error SignalAlreadyExists();
+    /// 发射适格拒绝（外部提交卡点，适格三态非 Ready）：携带信号身份——
+    /// 对发送方响亮的类型化业务错误，对事实流静默（零事实行/零钩子行，
+    /// 整笔回滚不留 marker）。
+    error SignalAdmissionRejected(bytes32 orderId, bytes32 sourceId, bytes32 signalId);
+    /// 同一 (stageId, signalKey) 适格面重复声明：注册边界拒绝（编译器
+    /// D031 的链上镜像）。
+    error AdmissionAlreadyRegistered(bytes32 signalKey);
     error SignalSubmitterAlreadyAuthorized(bytes32 orderId, bytes32 sourceId, bytes32 signalId, address submitter);
     /// HookReady 三线口径统一：order-trigger hook 必须携带 EMIT_READY。编译器
     /// 产物恒为 trigger|EMIT_READY（mint=5 / dock=6）；`_evaluateHook` 对
@@ -332,6 +360,7 @@ contract UVPStateMachine {
     uint8 public constant HOOK_FLAG_ORDER_TRIGGER_MINT = _HOOK_FLAG_ORDER_TRIGGER_MINT;
     uint8 public constant HOOK_FLAG_ORDER_TRIGGER_DOCK = _HOOK_FLAG_ORDER_TRIGGER_DOCK;
     uint8 public constant HOOK_FLAG_EMIT_READY = _HOOK_FLAG_EMIT_READY;
+    uint8 public constant HOOK_FLAG_ADMISSION = _HOOK_FLAG_ADMISSION;
     uint64 public constant MAX_HOOK_DELAY_SECONDS = _MAX_HOOK_DELAY_SECONDS;
     uint256 public constant MAX_PLAN_DEPENDENCIES = _MAX_PLAN_DEPENDENCIES;
 
@@ -652,6 +681,11 @@ contract UVPStateMachine {
             trigger.signalId,
             trigger.submitter
         );
+        // 无单外部出生同样过适格筛：出生订单的 pre-state 是空集，正锚
+        // 表达式的裁决自然是拒绝——这是封死「gated 信号绕窗铸单」的
+        // 口子（写在这里而不是 _recordSignal：内部出生/dock 写入不经
+        // 适格面）。新订单无重复事实可吸收，直接进适格判定。
+        _requireSignalAdmission(trigger.planId, orderId, trigger.sourceId, trigger.signalId);
         _recordSignal(
             trigger.planId,
             orderId,
@@ -855,6 +889,9 @@ contract UVPStateMachine {
         order.relayer = relayer;
         order.creator = creator;
         order.exists = true;
+        // plan 的适格面在场位复制进订单（与 exists 同槽）：提交卡点凭订单
+        // 级位短路，无适格面的 plan 不为适格面付冷读成本。
+        order.admissionsDeclared = plan.admissionsDeclared;
 
         for (uint256 i = 0; i < plan.hookIds.length; i++) {
             StoredHook storage hook = plan.hooks[plan.hookIds[i]];
@@ -1308,7 +1345,38 @@ contract UVPStateMachine {
         // 绕过属主阶段物化门，随后诚实 ASSIGN patch 永久 StageAlreadyHasSignal。
         bytes32 sourceStageId = _resolveSourceStage(planId, sourceId, signalId, attribution);
         _requireSourceStageReady(planId, orderId, sourceStageId, selectorBinding);
+        // ① 幂等吸收（外部提交路径的 first-win 语义）：已落库的重复提交
+        // 直接吸收返回、不再过适格——at-least-once 重试不得被过期窗口
+        // revert（_recordSignal 保留 SignalAlreadyExists 给内部写入口，
+        // 它们自带存在性预检，冲突即数据流事故）。
+        if (_hasSignal(planId, orderId, sourceId, signalId)) {
+            return;
+        }
+        // ② 发射适格面（仅外部提交过筛；内部生产者调用卡点以下层级）。
+        _requireSignalAdmission(planId, orderId, sourceId, signalId);
         _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false);
+    }
+
+    /// 发射适格面卡点：(stage, signal) 声明了 validWhen 时按 block.timestamp
+    /// 对 pre-state（不含本发）求值指令集，admit-iff-Ready（value && !wait
+    /// && !cancel），非 Ready revert SignalAdmissionRejected。无适格声明的
+    /// plan 由订单级 admissionsDeclared 位短路——该位读的是与 exists 同槽
+    /// 的布尔字（提交路径必读），无适格面的 plan 零额外冷读。
+    function _requireSignalAdmission(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId)
+        private
+        view
+    {
+        if (!_orders[planId][orderId].admissionsDeclared) {
+            return;
+        }
+        StoredAdmission storage admission = _plans[planId].admissions[_signalKey(sourceId, signalId)];
+        if (!admission.exists) {
+            return;
+        }
+        EvalValue memory result = _evaluateInstructions(planId, orderId, admission.instructions);
+        if (!result.value || result.wait || result.cancel) {
+            revert SignalAdmissionRejected(orderId, sourceId, signalId);
+        }
     }
 
     /// 属主阶段（提交方携 proof 自证或 source==stage 回退）的就绪门：阶段
@@ -1769,7 +1837,7 @@ contract UVPStateMachine {
         // 语义保持不变：用新单 plan 的 trigger hook 定义，评估 origin 订单的
         // 信号状态（origin 事实在 origin 订单的作用域内可见）。
         StoredHook storage hook = _validatedTriggerHook(planId, triggerHookId, triggerStageId);
-        EvalValue memory result = _evaluateInstructions(originPlanId, originOrderId, hook);
+        EvalValue memory result = _evaluateInstructions(originPlanId, originOrderId, hook.instructions);
         if (!result.value || result.wait || result.cancel) {
             revert InvalidTriggerHook(triggerHookId);
         }
@@ -1960,7 +2028,7 @@ contract UVPStateMachine {
 
         HookStatus previousStatus = runtime.status;
         uint64 previousDueAt = runtime.dueAt;
-        EvalValue memory result = _evaluateInstructions(planId, orderId, hook);
+        EvalValue memory result = _evaluateInstructions(planId, orderId, hook.instructions);
         HookStatus nextStatus = HookStatus.Init;
         uint64 nextDueAt;
         if (result.cancel) {
@@ -2035,15 +2103,15 @@ contract UVPStateMachine {
         emit StageMaterialized(planId, orderId, stageId, triggerHookId, triggerSourceId, triggerSignalId);
     }
 
-    function _evaluateInstructions(bytes32 planId, bytes32 orderId, StoredHook storage hook)
+    function _evaluateInstructions(bytes32 planId, bytes32 orderId, Instruction[] storage instructions)
         private
         view
         returns (EvalValue memory)
     {
-        EvalValue[] memory stack = new EvalValue[](hook.instructions.length);
+        EvalValue[] memory stack = new EvalValue[](instructions.length);
         uint256 stackDepth;
-        for (uint256 i = 0; i < hook.instructions.length; i++) {
-            Instruction storage instruction = hook.instructions[i];
+        for (uint256 i = 0; i < instructions.length; i++) {
+            Instruction storage instruction = instructions[i];
             if (instruction.op == uint8(InstructionOp.Signal)) {
                 stack[stackDepth++] = _signalValue(planId, orderId, instruction.sourceId, instruction.signalId);
             } else if (instruction.op == uint8(InstructionOp.Not)) {

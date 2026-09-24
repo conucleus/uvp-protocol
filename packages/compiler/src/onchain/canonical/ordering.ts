@@ -1,6 +1,7 @@
 import { compareCanonicalKey } from "../../hook-plan.js";
 import { isRecord } from "../shape.js";
 import type {
+  OnchainCompiledAdmission,
   OnchainCompiledHook,
   OnchainExecutorRoute,
   OnchainSignalCapability,
@@ -63,11 +64,23 @@ function compareSignalCapabilities(
   );
 }
 
+function compareAdmissions(
+  left: OnchainCompiledAdmission,
+  right: OnchainCompiledAdmission,
+): number {
+  return (
+    compareCanonicalKey(left.stageIdentifier, right.stageIdentifier) ||
+    compareCanonicalKey(left.signalName, right.signalName) ||
+    compareCanonicalKey(left.admissionId, right.admissionId)
+  );
+}
+
 export {
   compareOnchainHooks,
   compareExecutorRoutes,
   compareSelectorBindings,
   compareSignalCapabilities,
+  compareAdmissions,
 };
 
 /**
@@ -139,10 +152,19 @@ function signalCapabilityOrderKey(
   ];
 }
 
+function admissionOrderKey(admission: Record<string, unknown>): readonly string[] {
+  return [
+    String(admission.stageIdentifier),
+    String(admission.signalName),
+    String(admission.admissionId),
+  ];
+}
+
 export {
   canonicalOrderIssues,
   hookOrderKey,
   routeOrderKey,
   selectorBindingOrderKey,
   signalCapabilityOrderKey,
+  admissionOrderKey,
 };

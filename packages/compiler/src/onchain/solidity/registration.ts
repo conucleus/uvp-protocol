@@ -34,6 +34,8 @@ const PLAN_RUNTIME_HASH_DOMAIN = "uvp.plan.runtime.v3";
 export const HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
 export const HOOK_FLAG_ORDER_TRIGGER_DOCK = 2;
 export const HOOK_FLAG_EMIT_READY = 4;
+/** 发射适格面条目（admission）：hookId 槽 = signalKey，hookName 槽 = signalId。 */
+export const HOOK_FLAG_ADMISSION = 8;
 
 export function solidityHookFlags(
   orderTriggerKind: OrderTriggerKind,
@@ -60,29 +62,55 @@ export function toSolidityRegisterPlanArgs(
 ): SolidityRegisterPlanArgs {
   assertOnchainHookPlanArtifact(artifact);
 
-  const hooks = artifact.compiledHooks.map((hook) => {
-    const dependencyKeys = uniqueSorted(
-      hook.dependencies.map((dependency) => dependency.signalKey),
-    );
-    if (dependencyKeys.length === 0) {
-      // Fail-closed mirror of UVPStateMachine._validateHook, which reverts
-      // InvalidHook when hook.dependencyKeys is empty.
-      throw new OnchainHookPlanArtifactValidationError([
-        `compiledHooks ${hook.hookId} dependencyKeys must not be empty `
-        + "(contract reverts InvalidHook for empty dependencyKeys)",
-      ]);
-    }
-    const base = {
-      hookId: hook.hookId,
-      stageId: hook.stageId,
-      hookName: onchainHookName(hook.hookName),
-      kind: hook.kind,
-      flags: solidityHookFlags(hook.orderTriggerKind, hook.emitReady),
-      instructions: hook.instructions.map(toSolidityInstructionArg),
-      dependencyKeys,
-    };
-    return hook.routeRef ? { ...base, routeId: hook.routeRef.routeId } : base;
-  });
+  const hooks = [
+    ...artifact.compiledHooks.map((hook) => {
+      const dependencyKeys = uniqueSorted(
+        hook.dependencies.map((dependency) => dependency.signalKey),
+      );
+      if (dependencyKeys.length === 0) {
+        // Fail-closed mirror of UVPStateMachine._validateHook, which reverts
+        // InvalidHook when hook.dependencyKeys is empty.
+        throw new OnchainHookPlanArtifactValidationError([
+          `compiledHooks ${hook.hookId} dependencyKeys must not be empty `
+          + "(contract reverts InvalidHook for empty dependencyKeys)",
+        ]);
+      }
+      const base = {
+        hookId: hook.hookId,
+        stageId: hook.stageId,
+        hookName: onchainHookName(hook.hookName),
+        kind: hook.kind,
+        flags: solidityHookFlags(hook.orderTriggerKind, hook.emitReady),
+        instructions: hook.instructions.map(toSolidityInstructionArg),
+        dependencyKeys,
+      };
+      return hook.routeRef ? { ...base, routeId: hook.routeRef.routeId } : base;
+    }),
+    // 适格面复用 hook 槽形状进 hooksHash 承诺（不留未签名面）：flags=8、
+    // hookId 槽 = admissionId（事实键 signalKey）、hookName 槽 = signalId。
+    // 排序先 hooks 后 admissions（各自内部规范序）——同一 plan 的 calldata
+    // 保持唯一数组形态即可，两类槽位不共享存储人口。
+    ...artifact.admissions.map((admission) => {
+      const dependencyKeys = uniqueSorted(
+        admission.dependencies.map((dependency) => dependency.signalKey),
+      );
+      if (dependencyKeys.length === 0) {
+        throw new OnchainHookPlanArtifactValidationError([
+          `admission ${admission.admissionId} dependencyKeys must not be empty `
+          + "(contract reverts InvalidHook for empty dependencyKeys)",
+        ]);
+      }
+      return {
+        hookId: admission.admissionId,
+        stageId: admission.stageId,
+        hookName: admission.signalId,
+        kind: "admission" as const,
+        flags: HOOK_FLAG_ADMISSION,
+        instructions: admission.instructions.map(toSolidityInstructionArg),
+        dependencyKeys,
+      };
+    }),
+  ];
   const selectorBindings = artifact.selectorBindings.map((binding) => ({
     selectorStageId: binding.selectorStageId,
     targetStageId: binding.targetStageId,

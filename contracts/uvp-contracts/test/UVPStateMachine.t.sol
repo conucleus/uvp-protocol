@@ -133,7 +133,7 @@ contract UVPStateMachineTest {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.11");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.12");
     bytes32 private constant EMPTY_DOCK_ROOT = keccak256("");
     uint8 private constant FLAG_ORDER_TRIGGER_MINT = 1;
     uint8 private constant FLAG_ORDER_TRIGGER_DOCK = 2;
@@ -1868,8 +1868,8 @@ contract UVPStateMachineTest {
         vm.prank(SUBMITTER_B);
         machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, bytes32(uint256(1)), _noAttribution(), _noBinding());
 
+        // 后到授权者的重复提交按 first-win 幂等吸收（不 revert、不覆写）。
         vm.prank(SUBMITTER_A);
-        vm.expectRevert(UVPStateMachine.SignalAlreadyExists.selector);
         machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, bytes32(uint256(2)), _noAttribution(), _noBinding());
 
         (,,,, address submitter) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
@@ -2288,15 +2288,21 @@ contract UVPStateMachineTest {
         require(_countHookReady(vm.getRecordedLogs()) == 1, "rollback ready event");
     }
 
-    function testDuplicateSignalReverts() public {
+    /// 外部提交的重复事实幂等吸收（first-win）：已落库的重复提交直接返
+    /// 回、不再过适格面——at-least-once 重试不得被过期窗口拒绝。首写作
+    /// 者/载荷保持不变。内部写入口的冲突仍由 _recordSignal revert
+    /// SignalAlreadyExists（dock 模块侧测试覆盖该面）。
+    function testDuplicateExternalSignalIsAbsorbedFirstWin() public {
         UVPStateMachine machine = _registeredMachine(_positiveHookPlan(HOOK_INIT, true));
 
         machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
 
-        vm.expectRevert(UVPStateMachine.SignalAlreadyExists.selector);
         machine.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, bytes32(uint256(0x8002)), bytes32(uint256(0x9002))
         , _noAttribution(), _noBinding());
+
+        (,,,, address submitter) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
+        require(submitter == address(this), "absorbed retry changed the first writer");
     }
 
     /// 纯 flags=0 watcher 阶段在注册边界直接拒绝——该阶段永远无法
@@ -6400,7 +6406,7 @@ contract UVPStateMachineCapabilityTreeTest {
                             "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
                         ),
                         keccak256("UVPStateMachine"),
-                        keccak256("0.11"),
+                        keccak256("0.12"),
                         block.chainid,
                         address(machine)
                     )

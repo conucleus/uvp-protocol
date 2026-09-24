@@ -81,6 +81,51 @@ test("chain-mode replay matches hook expectations from stable chain events", asy
   );
 });
 
+test("chain replay registers admission-declared plans without replay-side filtering", async () => {
+  // 发射适格面（UVPStateMachine commitPlan 的 flag=8 槽位）：PlanRegistered
+  // 携带 admissions 时 native 注册门按 _validateAdmission 镜像校验指令形
+  // 态（过滤档：根位衰减否决合法）。适格求值发生在提交一拍——回放流
+  // 里被准入的发射只是普通 SignalSubmitted，拒绝面 revert 零事件：两种
+  // 情况都不产生任何 admission 派生观察，回放与无适格 plan 同形。
+  const events = await loadChainEvents();
+  const admissionPlanId = "0x000000000000000000000000000000000000000000000000000000000000a201";
+  const belongsToAdmissionPlan = (event: ChainModeEvent): boolean =>
+    event.eventName === "PlanRegistered"
+      ? event.plan.planId === admissionPlanId
+      : event.planId === admissionPlanId;
+  const admissionEvents = events.filter(belongsToAdmissionPlan);
+  assert.equal(admissionEvents.length, 4, "admission segment expected in the golden fixture");
+  const planRegistered = admissionEvents.find(
+    (event): event is Extract<typeof event, { eventName: "PlanRegistered" }> =>
+      event.eventName === "PlanRegistered",
+  );
+  assert.ok(planRegistered, "admission PlanRegistered expected");
+  assert.equal(planRegistered.plan.admissions?.length, 1);
+  assert.deepEqual(
+    planRegistered.plan.admissions?.[0]?.instructions.map((instruction) => instruction.op),
+    ["SIGNAL", "DELAY", "NOT"],
+  );
+
+  const result = replayChainEvents(events);
+
+  assert.deepEqual(result.mismatches, []);
+  assert.deepEqual(result.observed, result.expected);
+  const order = result.state.orders[`${admissionPlanId}::order-admission`];
+  assert.equal(
+    order?.signals["0x000000000000000000000000000000000000000000000000000000000000a251"]?.senderId,
+    "gate-executor",
+  );
+  assert.equal(
+    order?.hookStatuses["0x000000000000000000000000000000000000000000000000000000000000a211"]?.status,
+    "ready",
+  );
+  // 适格面对求值守卫/观察面零贡献：本段唯一的观察是 watcher 的 HookReady。
+  const admissionObservations = result.observed.filter(
+    (observation) => observation.planId === admissionPlanId,
+  );
+  assert.deepEqual(admissionObservations.map((observation) => observation.eventName), ["HookReady"]);
+});
+
 test("chain-mode ordering is the canonical (blockNumber, logIndex) pair", () => {
   // EVM 索引面的规范全序是 (blockNumber, logIndex)：logIndex 在块内跨
   // 交易唯一递增，transactionIndex 是可缺省的冗余 enrichment，不参与

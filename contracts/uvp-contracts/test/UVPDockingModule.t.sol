@@ -2110,7 +2110,7 @@ contract UVPDockingModuleTest {
             abi.encode(
                 keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
                 keccak256("UVPStateMachine"),
-                keccak256("0.11"),
+                keccak256("0.12"),
                 block.chainid,
                 address(machine)
             )

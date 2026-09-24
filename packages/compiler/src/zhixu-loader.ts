@@ -62,6 +62,9 @@ const KNOWN_FIELDS = {
     "receiveSignals",
     "fileResources",
   ],
+  // sendSignals 条目键闭集（镜像 uvp_model ZhixuSendSignal 的
+  // deny_unknown_fields：{name, validWhen}）。
+  sendSignalEntry: ["name", "validWhen"],
   executor: ["supplierType", "supplierID", "zhixuExecutorConfig", "selectableResource"],
   dockInterfaceEntry: ["orderModes", "inputs", "outputs"],
   dockInputPort: ["hook"],
@@ -165,6 +168,34 @@ function assertZhixuDefinitionShape(
         throw new ZhixuLoadError(`${sourceName}.${stagePath} must be an object`);
       }
       rejectUnknownFields(stage, "stage", stagePath, sourceName);
+      // sendSignals 条目形状在 loader 层响亮拒绝（镜像 serde 面的对象形
+      // 态与键闭集）：残缺条目静默放行会让"已过 loader 校验"的假象离开
+      // 本层，旧字符串形态等价迁移后不再有第二种合法形态。
+      if (stage.sendSignals !== undefined) {
+        if (!Array.isArray(stage.sendSignals)) {
+          throw new ZhixuLoadError(`${sourceName}.${stagePath}.sendSignals must be an array`);
+        }
+        stage.sendSignals.forEach((declared, signalIndex) => {
+          const entryPath = `${stagePath}.sendSignals[${signalIndex}]`;
+          if (!isRecord(declared)) {
+            throw new ZhixuLoadError(
+              `${sourceName}.${entryPath} must be an object {name, validWhen?} (bare string entries are not accepted)`,
+            );
+          }
+          rejectUnknownFields(declared, "sendSignalEntry", entryPath, sourceName);
+          if (typeof declared.name !== "string") {
+            throw new ZhixuLoadError(`${sourceName}.${entryPath}.name must be a string`);
+          }
+          if (
+            declared.validWhen !== undefined &&
+            typeof declared.validWhen !== "string"
+          ) {
+            throw new ZhixuLoadError(
+              `${sourceName}.${entryPath}.validWhen must be a string when present`,
+            );
+          }
+        });
+      }
       if (isRecord(stage.executor)) {
         rejectUnknownFields(
           stage.executor,

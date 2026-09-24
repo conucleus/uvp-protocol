@@ -28,7 +28,7 @@ under this folder; repository-level deployment scripts live under
 - `src/libraries/ECDSA.sol`: minimal signature recovery helper.
 - `src/libraries/UVPSignatures.sol`: shared signature struct used by relayed
   state-machine signal submission.
-- `fixtures/uvp-state-machine.v0.11.json` and module fixture JSON files:
+- `fixtures/uvp-state-machine.v0.12.json` and module fixture JSON files:
   pinned ABI/hash fixtures for the current core and module public interfaces.
 - `fixtures/uvp-identity-registry.v0.1.json`: pinned ABI/hash fixture for the
   identity registry public interface.
@@ -66,7 +66,7 @@ the TypeScript `statemachine` oracle.
 
 ## ABI Fixture
 
-`UVPStateMachine v0.11` treats these as public interfaces:
+`UVPStateMachine v0.12` treats these as public interfaces:
 
 - its no-argument constructor;
 - one-time module configuration followed by irreversible `freezeModules`;
@@ -142,7 +142,19 @@ code do not silently drift away from the contract ABI.
 6. Only authorized submitter wallets can call `submitSignal` for their bound
    `sourceId + signalId`. A gas relayer can use `submitSignalFor` with the
    authorized submitter's EIP-712 signature; the recorded submitter remains the
-   business signer, not the relayer.
+   business signer, not the relayer. External submissions are idempotent
+   first-win: a fact already recorded for the order is absorbed silently
+   instead of reverting (at-least-once retries must never be rejected by an
+   expired admission window). Plans may declare an emission admission face
+   (`CompactHook` flag 8, compiled from `sendSignals[].validWhen`): when the
+   plan commits one for the submitted fact key, the contract evaluates its
+   instruction plan over the pre-state at `block.timestamp` and reverts the
+   typed `SignalAdmissionRejected(orderId, sourceId, signalId)` unless the
+   verdict is Ready — nothing is recorded, no hooks advance. Internal
+   producers (dock deliveries/backfill, module signal mirrors, derived
+   signals) stay below this chokepoint; outside birth
+   (`triggerOrderFromOutsideFor`) is screened with an empty pre-state, so a
+   positive-anchored admission naturally rejects there.
 7. A wallet authorized for `EXECUTOR_PATCH_SIGNAL_ID` on a stage may apply an
    order-level executor patch through `UVPStagePatchModule` for a registered
    stage-to-target binding.
@@ -232,7 +244,7 @@ second registration of the same `orderId` reverts with
 `planId` into their domain so derived order ids are plan-scoped by
 construction. Function signatures take a leading `planId` parameter, and the
 from-signal trigger request carries `originPlanId`. Event signatures are
-pinned in the v0.11 and module fixtures; indexers must consume the composite
+pinned in the v0.12 and module fixtures; indexers must consume the composite
 identity in every event and projection rather than treating `orderId` as
 globally unique.
 

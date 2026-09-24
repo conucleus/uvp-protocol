@@ -19,6 +19,8 @@ interface Corpus {
 interface ParseCase {
   readonly name: string;
   readonly profile: string;
+  /** 校验档（uvp-hook-dsl Gate）：缺省 = 钩子档；filter = 发射适格面档。 */
+  readonly gate?: "hook" | "filter";
   readonly hookName: string;
   readonly hook: string;
   readonly expect: {
@@ -33,6 +35,8 @@ interface ParseCase {
 interface EvalCase {
   readonly name: string;
   readonly profile: string;
+  /** 校验档（uvp-hook-dsl Gate）：缺省 = 钩子档；filter = 发射适格面档。 */
+  readonly gate?: "hook" | "filter";
   readonly hookName: string;
   readonly hook: string;
   readonly signals: readonly SignalFact[];
@@ -48,6 +52,8 @@ interface EvalCase {
 interface InvalidCase {
   readonly name: string;
   readonly profile: string;
+  /** 校验档（uvp-hook-dsl Gate）：缺省 = 钩子档；filter = 发射适格面档。 */
+  readonly gate?: "hook" | "filter";
   readonly hookName: string;
   readonly hook: string;
   readonly messageContains: string;
@@ -108,6 +114,9 @@ test("uvp-core N-API parses hook semantic corpus", async () => {
   for (const item of corpus.parseCases) {
     const output = parseHookWithUvpCore({
       profile: item.profile,
+      // 过滤档用例按条目声明的 gate 走（缺省 = 钩子档，与 serde default
+      // 同口径）——漏传会把过滤档形态按钩子档误判。
+      ...(item.gate === undefined ? {} : { gate: item.gate }),
       hookName: item.hookName,
       hook: item.hook
     }) as CoreParseHookOutput;
@@ -125,11 +134,14 @@ test("uvp-core N-API evaluates hook semantic corpus", async () => {
   for (const item of corpus.evalCases) {
     const parsed = parseHookWithUvpCore({
       profile: item.profile,
+      ...(item.gate === undefined ? {} : { gate: item.gate }),
       hookName: item.hookName,
       hook: item.hook
     }) as CoreParseHookOutput;
     const output = evaluateHookWithUvpCore({
       profile: item.profile,
+      // 求值的解码防御按 gate 运行对应校验档（eval_compiled_hook 同参）。
+      ...(item.gate === undefined ? {} : { gate: item.gate }),
       ast: parsed.cloudAst,
       signals: item.signals,
       now: item.now
@@ -141,8 +153,10 @@ test("uvp-core N-API evaluates hook semantic corpus", async () => {
     }
     // 衰减维度对每个 eval 用例整体钉死（缺席 = 无限期），不做
     // "写了才比对"（与 Rust 语料测试同款）：否则带否决位的用例漏写
-    // expiresAt 会被静默放过。
-    assert.equal(output.expiresAt, item.expect.expiresAt, item.name);
+    // expiresAt 会被静默放过。语料 JSON 的显式 null 与 NAPI 输出的缺省
+    // 键是同一个"无期限"语义（serde Option skip_serializing_if），比较前
+    // 双侧归一，不为 null 形态单开第二种"有值"读法。
+    assert.equal(output.expiresAt ?? null, item.expect.expiresAt ?? null, item.name);
     if (item.expect.reasonContains) {
       // Rust 语料消费是子串包含（contains）：否决位成熟用例的 reason 带
       // `+14d`，按 RegExp 解释会把加号当量词误判——同口径用 includes。
@@ -161,6 +175,7 @@ test("uvp-core N-API rejects invalid hook semantic corpus", async () => {
     try {
       parseHookWithUvpCore({
         profile: item.profile,
+        ...(item.gate === undefined ? {} : { gate: item.gate }),
         hookName: item.hookName,
         hook: item.hook
       });

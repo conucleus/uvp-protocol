@@ -70,6 +70,8 @@ export interface HookPlanShell {
   readonly unresolvedDockRoutes?: readonly NeutralUnresolvedDockRoute[];
   readonly selectedStageBindings: readonly unknown[];
   readonly signalCapabilities: readonly unknown[];
+  /** 发射适格面条目（core 恒产数组，可为空）。 */
+  readonly admissions: readonly unknown[];
 }
 
 interface ShellHook {
@@ -770,7 +772,8 @@ export function assembleChainTrackHookPlan(
   ]);
 
   // planHash 的 source 快照剔除 metadata.annotations：注解永不参与任何
-  // 身份，planHash 随业务内容变化、不随文档注解变化。
+  // 身份，planHash 随业务内容变化、不随文档注解变化。admissions 与
+  // compiledHooks 同约定进 preimage（core 恒产数组，含空集）。
   const payload = {
     schemaVersion: HOOK_PLAN_SCHEMA_VERSION,
     planId,
@@ -786,6 +789,7 @@ export function assembleChainTrackHookPlan(
     dockInterfaceRoot,
     selectedStageBindings: shell.selectedStageBindings,
     signalCapabilities: shell.signalCapabilities,
+    admissions: shell.admissions,
     source: canonicalize(stripAnnotations(definition)),
     ...(unresolvedDockRoutes === undefined || unresolvedDockRoutes.length === 0
       ? {}
@@ -812,6 +816,7 @@ export function assembleChainTrackHookPlan(
       shell.selectedStageBindings as HookPlanArtifact["selectedStageBindings"],
     signalCapabilities:
       shell.signalCapabilities as HookPlanArtifact["signalCapabilities"],
+    admissions: shell.admissions as HookPlanArtifact["admissions"],
     source: payload.source,
     planHash,
   };
@@ -862,6 +867,7 @@ export function hookPlanPayloadForHash(
     dockInterfaceRoot: artifact.dockInterfaceRoot,
     selectedStageBindings: artifact.selectedStageBindings,
     signalCapabilities: artifact.signalCapabilities,
+    admissions: artifact.admissions,
     source: artifact.source,
     ...unresolved,
   };

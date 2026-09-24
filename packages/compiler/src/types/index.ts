@@ -1,6 +1,6 @@
 export const COMPILER_NAME = "uvp-eth-compiler" as const;
 export const COMPILER_VERSION = "0.1.0" as const;
-export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v2" as const;
+export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v3" as const;
 export const ONCHAIN_HOOK_PLAN_SCHEMA_VERSION =
   "uvp.onchainHookPlan.v3" as const;
 export const DOCK_INTERFACE_ARTIFACT_SCHEMA_VERSION =
@@ -71,9 +71,20 @@ export interface ZhixuStage {
   readonly mint?: "per-fact";
   readonly executor?: ExecuteConfigs;
   readonly selectedStages?: readonly string[];
-  readonly sendSignals?: readonly string[];
+  /**
+   * 发射适格面声明：`{name, validWhen?}` 条目键闭集（镜像 uvp-model
+   * ZhixuSendSignal 的 deny_unknown_fields）。缺省 validWhen = 无条件发射，
+   * 行为与无条件形态等价（不产 admissions 条目）。
+   */
+  readonly sendSignals?: readonly ZhixuSendSignal[];
   readonly receiveSignals?: Record<string, string>;
   readonly fileResources?: Record<string, FileResourceLike>;
+}
+
+/** sendSignals 条目（发射适格面声明面）：name 必填非空，validWhen 缺省=无条件。 */
+export interface ZhixuSendSignal {
+  readonly name: string;
+  readonly validWhen?: string;
 }
 
 export interface ExecuteConfigs {
@@ -387,6 +398,12 @@ export interface HookPlanArtifact {
   readonly selectedStageBindings: readonly SelectedStageBinding[];
   readonly signalCapabilities: readonly SignalCapability[];
   /**
+   * 发射适格面（core hook_plan 产物顶层 admissions 的逐字段镜像）：仅声明
+   * validWhen 的 sendSignals 产条目，signalName 用规范化全名
+   * （task.stage.signal）；无条件信号不产条目，数组恒在场（可为空）。
+   */
+  readonly admissions: readonly CompiledHookPlanAdmission[];
+  /**
    * planHash preimage 的 source 快照（canonical 剔除 metadata.annotations 的
    * 定义全文）：制品携带它是为了让边界校验能重算 planHash——否则篡改
    * compiledHooks 后保留旧 planHash 也能通过反序列化校验。
@@ -416,6 +433,21 @@ export interface HookPlanExecutorRoute {
   readonly stageIdentifier: string;
   readonly executor: ExecuteConfigs;
   readonly fileResources?: Record<string, FileResourceLike>;
+}
+
+/**
+ * hook_plan 产物 admissions 条目（core 权威产出，与 hook 条目同源形态）：
+ * signalName = 规范化全名（task.stage.signal），dependencies 与 hook 依赖
+ * 同源。表达式的编译期拒绝（D026-D031：空名/空白 validWhen/自引用/出生
+ * 锚/订阅原子/重复）由 core 收口，这里是链轨承诺层的消费面。
+ */
+export interface CompiledHookPlanAdmission {
+  readonly stageIdentifier: string;
+  readonly signalName: string;
+  readonly rawExpression: string;
+  readonly normalizedExpression: string;
+  readonly ast: import("@uvp-eth/hook-core").HookExpressionAst;
+  readonly dependencies: readonly import("@uvp-eth/hook-core").HookDependency[];
 }
 
 export interface SelectedStageBinding {
@@ -530,6 +562,24 @@ export interface OnchainCompiledHook {
   readonly routeRef?: OnchainExecutorRouteRef;
 }
 
+/**
+ * 链轨适格面条目：admissionId = 被发射事实的 signalKey
+ * （keccak(sourceId, signalId)，与合约适格存储的寻址键同源），signalId
+ * = keccak(signalName)（CompactHook 的 hookName 槽承载信号身份，与 hook
+ * 条目承载 keccak(hookName) 同一 word 布局）。过滤档指令计划：无正锚
+ * 要求、否决位位置放开（与 hook 档差异见 validate/hooks.ts）。
+ */
+export interface OnchainCompiledAdmission {
+  readonly admissionId: HexString;
+  readonly stageId: HexString;
+  readonly stageIdentifier: string;
+  readonly signalName: string;
+  readonly signalId: HexString;
+  readonly sourceId: HexString;
+  readonly instructions: readonly OnchainHookInstruction[];
+  readonly dependencies: readonly OnchainHookDependency[];
+}
+
 export interface OnchainHookPlanArtifact {
   readonly schemaVersion: typeof ONCHAIN_HOOK_PLAN_SCHEMA_VERSION;
   readonly planId: HexString;
@@ -556,6 +606,8 @@ export interface OnchainHookPlanArtifact {
   readonly capabilitiesRoot: HexString;
   readonly selectorBindings: readonly OnchainStageSelectorBinding[];
   readonly signalCapabilities: readonly OnchainSignalCapability[];
+  /** 发射适格面（与 IR 同约定：数组恒在场，可为空）。 */
+  readonly admissions: readonly OnchainCompiledAdmission[];
   readonly planHash: HexString;
 }
 
@@ -582,8 +634,9 @@ export interface SolidityRegisterHookArg {
   readonly hookId: HexString;
   readonly stageId: HexString;
   readonly hookName: HexString;
-  readonly kind: "receive";
-  /** 位标志：1=ORDER_TRIGGER_MINT，2=ORDER_TRIGGER_DOCK，4=EMIT_READY。 */
+  /** receive hook，或 flag 8 的发射适格面条目（hookId 槽 = signalKey，hookName 槽 = signalId）。 */
+  readonly kind: "receive" | "admission";
+  /** 位标志：1=ORDER_TRIGGER_MINT，2=ORDER_TRIGGER_DOCK，4=EMIT_READY，8=ADMISSION。 */
   readonly flags: number;
   readonly instructions: readonly SolidityRegisterInstructionArg[];
   readonly dependencyKeys: readonly HexString[];

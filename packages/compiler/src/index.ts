@@ -101,6 +101,7 @@ export {
   DOMAIN_INPUT_PAYLOAD,
 } from "./dock.js";
 export {
+  HOOK_FLAG_ADMISSION,
   HOOK_FLAG_EMIT_READY,
   HOOK_FLAG_ORDER_TRIGGER_DOCK,
   HOOK_FLAG_ORDER_TRIGGER_MINT,
@@ -132,6 +133,7 @@ export {
 } from "./types/index.js";
 export type {
   Address,
+  CompiledHookPlanAdmission,
   DockInterfaceArtifactInterface,
   DockInterfaceArtifactPortInput,
   DockInterfaceArtifactPortOutput,
@@ -149,6 +151,7 @@ export type {
   FileResourceLike,
   HexString,
   ObjectMeta,
+  OnchainCompiledAdmission,
   OnchainCompiledHook,
   OnchainDelayInstruction,
   OnchainExecutorRoute,
@@ -174,6 +177,7 @@ export type {
   ZhixuDefinition,
   ZhixuExecutorConfigSource,
   ZhixuPlatform,
+  ZhixuSendSignal,
   ZhixuStage,
   ZhixuTaskPattern,
 } from "./types/index.js";

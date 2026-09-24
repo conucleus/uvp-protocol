@@ -80,7 +80,7 @@ const baseZhixu: ZhixuDefinition = {
             receiveSignals: {
               PLACE: "buyer::selector.assign.seed"
             },
-            sendSignals: ["executor_selected", "seed"],
+            sendSignals: [{ name: "executor_selected" }, { name: "seed" }],
             executor: {
               supplierType: "organization",
               supplierID: "selector-org"
@@ -98,7 +98,7 @@ const baseZhixu: ZhixuDefinition = {
               START: "buyer::selector.assign.executor_selected",
               TIMEOUT: "buyer::(selector.assign.executor_selected +5s) & ~execution.main.cmp"
             },
-            sendSignals: ["str", "cmp", "err"],
+            sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
             executor: {
               supplierType: "zhixu",
               zhixuExecutorConfig: {
@@ -170,7 +170,7 @@ test("compiles internal HookPlan IR", () => {
   const plan = compileZhixuHookPlan(baseZhixu, demoManifest);
   const again = compileZhixuHookPlan(baseZhixu, demoManifest);
 
-  assert.equal(plan.schemaVersion, "uvp.hookPlan.v2");
+  assert.equal(plan.schemaVersion, "uvp.hookPlan.v3");
   // zhixuId = 定义内容派生身份，没有作者手写 uid。
   assert.match(plan.zhixuId, /^zx-[0-9a-f]{32}$/);
   assert.deepEqual(plan.platform, { type: "cloud" });
@@ -249,7 +249,7 @@ test("compiles source-qualified sendSignals as trigger-origin capabilities", () 
               receiveSignals: {
                 PLACE: "trade::settlement.close.seed"
               },
-              sendSignals: ["seed", "book::book.settlement_wait.cmp"],
+              sendSignals: [{ name: "seed" }, { name: "book::book.settlement_wait.cmp" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "settlement-operator"
@@ -354,7 +354,7 @@ test("planId preimage drops empty platform params across compile/validate calibe
               name: "forward",
               source: "operator",
               receiveSignals: { GO: "operator::relay.forward.go" },
-              sendSignals: ["cmp", "go"],
+              sendSignals: [{ name: "cmp" }, { name: "go" }],
               executor: {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
@@ -398,7 +398,7 @@ test("validates HookPlan IR artifacts at the internal boundary", () => {
   // （planHash 不重签的篡改形态在下方专门的承诺重算测试里）。
   assert.deepEqual(
     validateHookPlanArtifact(resign({ ...plan, schemaVersion: "wrong" })),
-    ["schemaVersion must be uvp.hookPlan.v2"]
+    ["schemaVersion must be uvp.hookPlan.v3"]
   );
   // 元数据表同步清空：零 hook 制品的能力表/绑定表引用全部悬空，会另报
   // 阶段存在性镜像 issue——本断言只钉 dependencyIndex 重算门。
@@ -523,7 +523,7 @@ function resolutionEntryWithStaticEdge(withEdges: boolean) {
               name: "forward",
               source: "operator",
               receiveSignals: { GO: "operator::relay.forward.go" },
-              sendSignals: ["done"],
+              sendSignals: [{ name: "done" }],
               executor: {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
@@ -971,7 +971,7 @@ test("mint stages accept single ANCHOR birth subscriptions and mark them order-t
               receiveSignals: {
                 PLACE: "buyer::feeder.gate.seed"
               },
-              sendSignals: ["ready", "seed"],
+              sendSignals: [{ name: "ready" }, { name: "seed" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "feeder-org"
@@ -989,7 +989,7 @@ test("mint stages accept single ANCHOR birth subscriptions and mark them order-t
               receiveSignals: {
                 START: "::ANCHOR(@buyer::feeder.gate.ready)"
               },
-              sendSignals: ["str", "cmp"],
+              sendSignals: [{ name: "str" }, { name: "cmp" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "executor"
@@ -1024,7 +1024,7 @@ test("rejects plain birth entries on mint stages (subscription only)", () => {
               receiveSignals: {
                 START: "buyer::(broken.main.ready & broken.main.ack)"
               },
-              sendSignals: ["ready", "ack"],
+              sendSignals: [{ name: "ready" }, { name: "ack" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "executor"
@@ -1062,7 +1062,7 @@ test("accepts multi-anchor receive stages without an entry table", () => {
               receiveSignals: {
                 PLACE: "seller::feed.quote.seed"
               },
-              sendSignals: ["updated", "seed"],
+              sendSignals: [{ name: "updated" }, { name: "seed" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "seller-feed"
@@ -1074,7 +1074,7 @@ test("accepts multi-anchor receive stages without an entry table", () => {
               receiveSignals: {
                 PLACE: "buyer::feed.bid.seed"
               },
-              sendSignals: ["updated", "seed"],
+              sendSignals: [{ name: "updated" }, { name: "seed" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "buyer-feed"
@@ -1092,7 +1092,7 @@ test("accepts multi-anchor receive stages without an entry table", () => {
                 SELLER_UPDATED: "seller::feed.quote.updated",
                 BUYER_UPDATED: "buyer::feed.bid.updated"
               },
-              sendSignals: ["matched"],
+              sendSignals: [{ name: "matched" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "matching-engine"
@@ -1141,7 +1141,7 @@ test("accepts same-source hook expressions with the full hook DSL", () => {
               receiveSignals: {
                 ALL_DONE: "buyer::((selector.assign.executor_selected +5s) & ~execution.main.err) | execution.main.cmp"
               },
-              sendSignals: ["allDone"],
+              sendSignals: [{ name: "allDone" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "buyer-executor"
@@ -1234,7 +1234,7 @@ test("rejects executor-less selected-stage chains at the materialization gate", 
         source: "buyer",
         selectedStages: ["flow.b"],
         receiveSignals: { PLACE: "buyer::flow.a.seed" },
-        sendSignals: ["seed"],
+        sendSignals: [{ name: "seed" }],
         executor: {
           supplierType: "organization",
           supplierID: "anchor-org"
@@ -1245,7 +1245,7 @@ test("rejects executor-less selected-stage chains at the materialization gate", 
         source: "buyer",
         selectedStages: ["flow.c"],
         receiveSignals: { PLACE: "buyer::flow.b.seed" },
-        sendSignals: ["seed"],
+        sendSignals: [{ name: "seed" }],
         executor: {
           supplierType: "organization",
           supplierID: "b-org"
@@ -1255,7 +1255,7 @@ test("rejects executor-less selected-stage chains at the materialization gate", 
         name: "c",
         source: "buyer",
         receiveSignals: { PLACE: "buyer::flow.c.seed" },
-        sendSignals: ["seed"],
+        sendSignals: [{ name: "seed" }],
         executor: {
           supplierType: "organization",
           supplierID: "c-org"
@@ -1375,7 +1375,7 @@ test("rejects local hook references to unknown stages or signals", () => {
             {
               name: "start",
               source: "buyer",
-              sendSignals: ["cmp"],
+              sendSignals: [{ name: "cmp" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "executor"
@@ -1408,7 +1408,7 @@ test("rejects local hook references to unknown stages or signals", () => {
             {
               name: "start",
               source: "buyer",
-              sendSignals: ["cmp"],
+              sendSignals: [{ name: "cmp" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "executor"
@@ -1483,7 +1483,7 @@ test("rejects non-canonical zhixu executor config shapes", () => {
               name: "main",
               source: "buyer",
               receiveSignals: { START: "buyer::selector.assign.executor_selected" },
-              sendSignals: ["str", "cmp"],
+              sendSignals: [{ name: "str" }, { name: "cmp" }],
               executor: {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
@@ -1549,7 +1549,7 @@ test("rejects locally invalid dock executor configs", () => {
               name: "main",
               source: "buyer",
               receiveSignals: { START: "buyer::selector.assign.executor_selected" },
-              sendSignals: ["str", "cmp"],
+              sendSignals: [{ name: "str" }, { name: "cmp" }],
               executor: {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
@@ -1603,7 +1603,7 @@ test("rejects locally invalid dock executor configs", () => {
               receiveSignals: {
                 START: "buyer::selector.assign.executor_selected"
               },
-              sendSignals: ["str", "cmp"],
+              sendSignals: [{ name: "str" }, { name: "cmp" }],
               executor: {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
@@ -1895,7 +1895,7 @@ test("unbound cross-source interface ports do not join the D012 seam", () => {
     name: "audit",
     source: "auditor",
     receiveSignals: { CHECK: "auditor::manufacturing.audit.check" },
-    sendSignals: ["report"],
+    sendSignals: [{ name: "report" }],
     executor: { supplierType: "organization", supplierID: "audit-org" },
   });
   const plan = compileZhixuHookPlan(
@@ -1926,7 +1926,7 @@ test("route-bound cross-source ports are rejected as HookPlanCompilationError, n
     name: "audit",
     source: "auditor",
     receiveSignals: { CHECK: "auditor::manufacturing.audit.check" },
-    sendSignals: ["report"],
+    sendSignals: [{ name: "report" }],
     executor: { supplierType: "organization", supplierID: "audit-org" },
   });
   const parent: ZhixuDefinition = {

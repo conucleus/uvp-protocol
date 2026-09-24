@@ -148,7 +148,7 @@ const baseZhixu: ZhixuDefinition = {
             receiveSignals: {
               PLACE: "buyer::selector.assign.seed",
             },
-            sendSignals: ["executor_selected", "seed"],
+            sendSignals: [{ name: "executor_selected" }, { name: "seed" }],
             executor: {
               supplierType: "organization",
               supplierID: "selector-org",
@@ -167,7 +167,7 @@ const baseZhixu: ZhixuDefinition = {
               TIMEOUT:
                 "buyer::(selector.assign.executor_selected +5s) & ~execution.main.cmp",
             },
-            sendSignals: ["str", "cmp", "err"],
+            sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
             executor: {
               supplierType: "zhixu",
               // mode=new 恰好一条 input 绑定（出生锚）；TIMEOUT 是本地
@@ -201,7 +201,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   // sourcePlanHash/planHash preimage 随定义内容变化；承诺公式本身冻结不变。
   assert.equal(
     onchain.planHash,
-    "0x36369c30724fafbd88a1796ba9b3a7b6355eaf5379789753b619064185cc120f",
+    "0x5417ef33808a10bd528e16e4409dd1072a9eb7ed91a1f68ea4e9da18b440d981",
   );
   // capabilitiesRoot 是两表叶子的唯一承诺形态（v3 新增字段，随 planHash
   // 一同钉死防漂移）：与生产公式 capabilitiesRootOf 逐字节一致。
@@ -307,7 +307,7 @@ test("serializes trigger-origin signal capabilities to Solidity relation 1", () 
               receiveSignals: {
                 START: "trade::settlement.close.start",
               },
-              sendSignals: ["start", "book::book.settlement_wait.cmp"],
+              sendSignals: [{ name: "start" }, { name: "book::book.settlement_wait.cmp" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "settlement-operator",
@@ -465,7 +465,7 @@ test("dependencyIndex hookIds follow calldata order, not keccak order (oracle pa
                 FIRST: "buyer::watch.stage.seed",
                 SECOND: "buyer::watch.stage.seed",
               },
-              sendSignals: ["seed"],
+              sendSignals: [{ name: "seed" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "watcher-org",
@@ -1277,7 +1277,7 @@ test("compiles mint birth subscriptions into order-trigger SIGNAL hooks", () => 
               receiveSignals: {
                 PUBLISH: "buyer::intake.post.seed",
               },
-              sendSignals: ["posted", "seed"],
+              sendSignals: [{ name: "posted" }, { name: "seed" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "intake-exec",
@@ -1295,7 +1295,7 @@ test("compiles mint birth subscriptions into order-trigger SIGNAL hooks", () => 
               receiveSignals: {
                 BIRTH: "::ANCHOR(@buyer::intake.post.posted)",
               },
-              sendSignals: ["str", "cmp", "err"],
+              sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "fulfiller-exec",
@@ -1463,7 +1463,7 @@ test("flags stages whose hooks can never materialize on-chain", () => {
               receiveSignals: {
                 PUBLISH: "buyer::intake.post.seed",
               },
-              sendSignals: ["posted", "seed"],
+              sendSignals: [{ name: "posted" }, { name: "seed" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "intake-exec",
@@ -1481,7 +1481,7 @@ test("flags stages whose hooks can never materialize on-chain", () => {
               receiveSignals: {
                 BIRTH: "::ANCHOR(@buyer::intake.post.posted)",
               },
-              sendSignals: ["str", "cmp", "err"],
+              sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "fulfiller-exec",

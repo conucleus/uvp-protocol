@@ -53,7 +53,7 @@ export function dockProductionTargetDefinition(): ZhixuDefinition {
               receiveSignals: {
                 EXECUTE: "factory::manufacturing.intake.execute",
               },
-              sendSignals: ["str"],
+              sendSignals: [{ name: "str" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "friction-factory",
@@ -66,7 +66,7 @@ export function dockProductionTargetDefinition(): ZhixuDefinition {
                 RUN: "factory::manufacturing.intake.str",
                 DOCK_AMEND: "factory::manufacturing.produce.amend",
               },
-              sendSignals: ["cmp", "scrap_created"],
+              sendSignals: [{ name: "cmp" }, { name: "scrap_created" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "friction-factory",
@@ -103,7 +103,7 @@ export function dockSourcingParentDefinition(targetName: string): ZhixuDefinitio
               // 物化门：零 hook 阶段在链上永不可物化；seed 是执行者
               // 自发入口信号。
               receiveSignals: { ORDER: "purchaser::procurement.confirm.seed" },
-              sendSignals: ["cmp", "seed"],
+              sendSignals: [{ name: "cmp" }, { name: "seed" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "purchaser-app",
@@ -120,7 +120,7 @@ export function dockSourcingParentDefinition(targetName: string): ZhixuDefinitio
               receiveSignals: {
                 EXECUTE: "purchaser::procurement.confirm.cmp",
               },
-              sendSignals: ["str", "cmp"],
+              sendSignals: [{ name: "str" }, { name: "cmp" }],
               executor: {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
@@ -138,7 +138,7 @@ export function dockSourcingParentDefinition(targetName: string): ZhixuDefinitio
               receiveSignals: {
                 READ: "recycler::sourcing.source_evidence.seed",
               },
-              sendSignals: ["cmp", "seed"],
+              sendSignals: [{ name: "cmp" }, { name: "seed" }],
               executor: {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {

@@ -29,7 +29,7 @@ spec:
           source: bootstrap
           receiveSignals:
             PUBLISH: "bootstrap::intake.submission.seed"
-          sendSignals: ["submitted", "seed"]
+          sendSignals: [{ name: "submitted" }, { name: "seed" }]
           executor:
             supplierID: "{{ .update_init_executor_uid }}"
             supplierType: individual
@@ -44,7 +44,7 @@ spec:
           mint: per-fact
           receiveSignals:
             TRIGGER: "::ANCHOR(@bootstrap::intake.submission.submitted)"
-          sendSignals: ["trigger", "str", "cmp", "err"]
+          sendSignals: [{ name: "trigger" }, { name: "str" }, { name: "cmp" }, { name: "err" }]
           fileResources:
             update_spec:
               fileType: local
@@ -58,7 +58,7 @@ spec:
           source: bootstrap
           receiveSignals:
             init_done: "registrar::update.init.cmp"
-          sendSignals: ["str", "pass", "reject", "cmp", "err"]
+          sendSignals: [{ name: "str" }, { name: "pass" }, { name: "reject" }, { name: "cmp" }, { name: "err" }]
           executor:
             supplierID: "{{ .update_audit_executor_uid }}"
             supplierType: individual
@@ -67,7 +67,7 @@ spec:
           source: bootstrap
           receiveSignals:
             audit_pass: "bootstrap::update.audit.pass"
-          sendSignals: ["str", "cmp", "err"]
+          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
           executor:
             supplierID: "{{ .update_prepare_executor_uid }}"
             supplierType: individual
@@ -76,7 +76,7 @@ spec:
           source: bootstrap
           receiveSignals:
             prepare_done: "bootstrap::update.prepare.cmp"
-          sendSignals: ["str", "cmp", "err"]
+          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
           executor:
             supplierID: "{{ .update_build_executor_uid }}"
             supplierType: individual
@@ -85,7 +85,7 @@ spec:
           source: bootstrap
           receiveSignals:
             build_done: "bootstrap::update.build.cmp"
-          sendSignals: ["str", "cmp", "err"]
+          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
           executor:
             supplierID: "{{ .update_deploy_executor_uid }}"
             supplierType: individual
@@ -94,7 +94,7 @@ spec:
           source: bootstrap
           receiveSignals:
             deploy_done: "bootstrap::update.deploy.cmp"
-          sendSignals: ["str", "pass", "fail", "cmp", "err"]
+          sendSignals: [{ name: "str" }, { name: "pass" }, { name: "fail" }, { name: "cmp" }, { name: "err" }]
           executor:
             supplierID: "{{ .update_verify_executor_uid }}"
             supplierType: individual
@@ -103,7 +103,7 @@ spec:
           source: bootstrap
           receiveSignals:
             verify_pass: "bootstrap::update.verify.pass"
-          sendSignals: ["str", "cmp", "err"]
+          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
           executor:
             supplierID: "{{ .update_switch_executor_uid }}"
             supplierType: individual
@@ -112,7 +112,7 @@ spec:
           source: bootstrap
           receiveSignals:
             switch_done: "bootstrap::update.switch.cmp"
-          sendSignals: ["str", "cmp", "err"]
+          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
           executor:
             supplierID: "{{ .update_cleanup_executor_uid }}"
             supplierType: individual
@@ -125,7 +125,7 @@ spec:
             deploy_failure: "bootstrap::update.deploy.err"
             verify_failure: "bootstrap::update.verify.fail"
             verify_error: "bootstrap::update.verify.err"
-          sendSignals: ["str", "cmp", "err"]
+          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
           executor:
             supplierID: "{{ .update_rollback_executor_uid }}"
             supplierType: individual

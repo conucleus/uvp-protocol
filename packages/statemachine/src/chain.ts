@@ -43,6 +43,19 @@ export interface ChainOraclePlan {
   readonly zhixuId: string;
   readonly compiledHooks: readonly ChainOracleHook[];
   readonly dependencyIndex: Record<HexString, readonly HexString[]>;
+  /**
+   * 发射适格面注册投影（UVPStateMachine commitPlan 的 flag=8 槽位）：
+   * native 回放的 _validateAdmission 注册门按条目校验指令形态；适格拒绝
+   * revert 零事件，无回放侧过滤。
+   */
+  readonly admissions?: readonly ChainOracleAdmission[];
+}
+
+export interface ChainOracleAdmission {
+  readonly admissionId: HexString;
+  readonly stageIdentifier: string;
+  readonly signalName: string;
+  readonly instructions: readonly ChainOracleInstruction[];
 }
 
 export interface ChainOracleHook {
