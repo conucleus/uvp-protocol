@@ -58,7 +58,7 @@ export const customsWallets = {
 export const customsPlanIds = {
   planId: "0x336d9b556f7ffa00c83f49600554819055a4a3b300f82abca70b401f6b161ddc",
   // 派生身份(zx-)+当前编译器 canonical payload / 链 runtime hash 重算钉住。
-  planHash: "0xcedc1e877f2679fb156eace1bcf8100a991cef433b1cb12c65cbebc6817b8595",
+  planHash: "0x2fd25c1fd0774e25ef69e10056dbd388a2761dfbc692da4c3074e77a5d9281ed",
   artifactHash: "0xfe94124e14b1e2260ae2e165023ff712689ca947ee671fa58ec21f7caa7ca785"
 } as const;
 
@@ -794,6 +794,7 @@ export const customsOnchainHookPlanArtifact = {
       capabilityHash: "0x5172f51040252f8548e24e94dbed408e1d458f0552d89e72f6bdd36bdb5d1bc1"
     }
   ],
+  admissions: [],
   planHash: customsPlanIds.planHash
 } as const;
 
@@ -820,7 +821,7 @@ export const customsStoreProductSchema: StoreProductSchemaDTO = {
   businessPersonaLabels: ["买家", "报关行", "关务服务商"],
   stages: customsStages,
   selectorBindings: customsOnchainHookPlanArtifact.selectorBindings,
-  schemaHash: "0x28ee2fc1edc60711f8ab1660267edc2df2f182c5585b224d8fa058095da01f49",
+  schemaHash: "0x16ab10fef269ba726bb14e43f0bbcd87315a0c6d6841d7a295b92f755c3ff03f",
   validation: {
     ok: true,
     status: "explicit",
