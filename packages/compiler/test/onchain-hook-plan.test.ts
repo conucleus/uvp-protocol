@@ -2455,9 +2455,9 @@ test("rejects non-map file-resource shapes at the on-chain compile boundary", ()
 
 test("artifact boundary enforces the executorType closed enum and non-empty executorId", () => {
   // 词表闸的第一道在编译入口（compileExecutorRoute，与 rust/go 同口径），
-  // 但制品边界不得放行词表外/空白 id 的自洽制品（重签 planHash）：手工/
-  // 第三方制品绕过 Rust 编译门后，闭集外 executorType/空 executorId 会经
-  // executorHash 烧进链上承诺且再无合约守卫可拦。
+  // 但制品边界不得放行词表外/空白 id 的自洽制品（重签 planHash）：executor
+  // 路由只进制品承诺、不进链上 PlanCommit，手工/第三方制品绕过 Rust 编译
+  // 门后没有合约守卫可拦。
   const onchain = compileOnchainHookPlan(
     compileZhixuHookPlanWithManifest(baseZhixu),
   );
@@ -2716,6 +2716,265 @@ test("rejects undeclared extra fields on on-chain HookPlan artifacts (L9)", () =
   assert.deepEqual(issues, [
     "unknown field `note` on the artifact — planHash does not cover undeclared fields, so the artifact would not be the plan's unique byte form; remove it or recompile",
   ]);
+});
+
+test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirror)", () => {
+  // 顶层 unknown-field 拒绝只覆盖第一层：深层对象（compiledHooks 及其
+  // instructions/dependencies/routeRef、admissions、三张能力表）携带未声明
+  // 额外键时，重签 planHash 即可通过承诺对拍——"同一 plan 唯一字节数组
+  // 形态"的键集闭包必须逐层成立，多一个键即拒。
+  const zhixu: ZhixuDefinition = {
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      taskPatterns: baseZhixu.spec.taskPatterns.map((pattern) => ({
+        ...pattern,
+        stages: pattern.stages.map((stage) =>
+          stage.name === "assign"
+            ? {
+                ...stage,
+                sendSignals: [
+                  { name: "executor_selected", validWhen: "buyer::selector.assign.seed" },
+                  { name: "seed" },
+                ],
+              }
+            : stage
+        ),
+      })),
+    },
+  };
+  const onchain = compileOnchainHookPlan(
+    compileZhixuHookPlan(zhixu, demoManifest),
+  );
+  assert.ok(onchain.admissions.length > 0, "fixture must carry an admission entry");
+
+  const rehashed = (mutated: OnchainHookPlanArtifact): OnchainHookPlanArtifact => {
+    const { planHash: _drop, ...payload } = mutated;
+    void _drop;
+    return {
+      ...mutated,
+      planHash: hashOnchainPlanPayload(payload as never),
+    } as OnchainHookPlanArtifact;
+  };
+  // 定位与变异都在克隆制品上进行（闭包对象是克隆实例，不是编译产物原例）。
+  const issuesOf = (
+    locate: (artifact: OnchainHookPlanArtifact) => object | undefined,
+  ): readonly string[] => {
+    const clone = structuredClone(onchain) as OnchainHookPlanArtifact;
+    const target = locate(clone);
+    if (target !== undefined) {
+      (target as Record<string, unknown>).smuggled = 1;
+    }
+    return validateOnchainHookPlanArtifact(rehashed(clone));
+  };
+  const closureIssue = (path: string): string =>
+    `unknown field \`smuggled\` on ${path} — the artifact schema is a closed field set, `
+    + "so the artifact would not be the plan's unique byte form; remove it or recompile";
+  const routedHookIndex = onchain.compiledHooks.findIndex(
+    (hook) => hook.stageIdentifier === "selector.assign",
+  );
+  assert.ok(routedHookIndex >= 0 && onchain.compiledHooks[routedHookIndex]!.routeRef,
+    "fixture must expose a routeRef");
+  const compositeHookIndex = onchain.compiledHooks.findIndex((hook) =>
+    hook.instructions.some((instruction) => instruction.op !== "SIGNAL"),
+  );
+  assert.ok(compositeHookIndex >= 0, "fixture must expose a non-SIGNAL instruction");
+  const compositeInstructionIndex = onchain.compiledHooks[compositeHookIndex]!.instructions
+    .findIndex((instruction) => instruction.op !== "SIGNAL");
+
+  // compiledHooks[i] 与其深层对象。
+  assert.ok(
+    issuesOf((a) => a.compiledHooks[0]).includes(closureIssue("compiledHooks[0]")),
+  );
+  assert.ok(
+    issuesOf((a) => a.compiledHooks[0]!.instructions[0]).includes(
+      closureIssue("compiledHooks[0].instructions[0]"),
+    ),
+  );
+  // 非 SIGNAL 指令（AND/OR/NOT/DELAY）的键集按 op 闭包：arity/delaySeconds
+  // 词表之外的额外键同样拒绝。
+  assert.ok(
+    issuesOf(
+      (a) =>
+        a.compiledHooks[compositeHookIndex]!.instructions[compositeInstructionIndex],
+    ).includes(
+      closureIssue(
+        `compiledHooks[${compositeHookIndex}].instructions[${compositeInstructionIndex}]`,
+      ),
+    ),
+  );
+  assert.ok(
+    issuesOf((a) => a.compiledHooks[0]!.dependencies[0]).includes(
+      closureIssue("compiledHooks[0].dependencies[0]"),
+    ),
+  );
+  assert.ok(
+    issuesOf((a) => a.compiledHooks[routedHookIndex]!.routeRef).includes(
+      closureIssue(`compiledHooks[${routedHookIndex}].routeRef`),
+    ),
+  );
+  // 适格面与三张能力表。
+  assert.ok(
+    issuesOf((a) => a.admissions[0]).includes(closureIssue("admissions[0]")),
+  );
+  assert.ok(
+    issuesOf((a) => a.executorRoutes[0]).includes(closureIssue("executorRoutes[0]")),
+  );
+  assert.ok(
+    issuesOf((a) => a.selectorBindings[0]).includes(closureIssue("selectorBindings[0]")),
+  );
+  assert.ok(
+    issuesOf((a) => a.signalCapabilities[0]).includes(closureIssue("signalCapabilities[0]")),
+  );
+
+  // 未变异制品重签后仍零 issue：闭包不收紧合法产物。
+  assert.deepEqual(
+    validateOnchainHookPlanArtifact(rehashed(structuredClone(onchain))),
+    [],
+  );
+});
+
+test("rejects mint birth stages without their own static executor route", () => {
+  // 执行者终生不可变镜像（Rust validate_stage_executors /
+  // validate_mint_anchors 的出生阶段条款）：出生阶段（orderTriggerKind=
+  // mint）的投递目标编译期定死、运行时禁止 executor patch——
+  // selectedStages 可达不构成绑定。正例：出生阶段带静态执行者，制品零
+  // issue；反例：剥掉 executor route 后，编译入口与制品边界都拒绝。
+  const zhixu: ZhixuDefinition = {
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      taskPatterns: [
+        ...baseZhixu.spec.taskPatterns,
+        {
+          // 出生订阅的信号必须只被出生钩子监视（链上守卫：非出生钩子在
+          // 未物化阶段监视同一信号会让提交交易永久 revert）。
+          name: "intake",
+          stages: [
+            {
+              name: "post",
+              source: "buyer",
+              receiveSignals: { PUBLISH: "buyer::intake.post.seed" },
+              sendSignals: [{ name: "posted" }, { name: "seed" }],
+              executor: { supplierType: "organization", supplierID: "intake-exec" },
+            },
+          ],
+        },
+        {
+          name: "fulfillment",
+          stages: [
+            {
+              name: "birth",
+              source: "fulfiller",
+              mint: "per-fact",
+              receiveSignals: {
+                BIRTH: "::ANCHOR(@buyer::intake.post.posted)",
+              },
+              sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
+              executor: { supplierType: "organization", supplierID: "fulfiller-exec" },
+            },
+          ],
+        },
+        {
+          // selectedStages 指向出生阶段：可达性不豁免静态执行者要求。
+          name: "routing",
+          stages: [
+            {
+              name: "assign",
+              source: "buyer",
+              selectedStages: ["fulfillment.birth"],
+              receiveSignals: { PLACE: "buyer::routing.assign.seed" },
+              sendSignals: [{ name: "picked" }, { name: "seed" }],
+              executor: { supplierType: "organization", supplierID: "routing-org" },
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const ir = compileZhixuHookPlan(zhixu, demoManifest);
+  const onchain = compileOnchainHookPlan(ir);
+  const birthHook = onchain.compiledHooks.find(
+    (hook) => hook.stageIdentifier === "fulfillment.birth",
+  );
+  assert.ok(birthHook, "birth hook missing from compiled plan");
+  assert.equal(birthHook.orderTriggerKind, "mint");
+  // selectorBindings 确实可达出生阶段（反例的"可达"前提成立）。
+  assert.ok(
+    onchain.selectorBindings.some(
+      (binding) => binding.targetStageIdentifier === "fulfillment.birth",
+    ),
+    "fixture must anchor the birth stage through selectedStages",
+  );
+  // 正例：带静态执行者的出生制品零 issue。
+  assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
+
+  // 反例（编译入口）：IR 剥掉出生阶段的 executor route 与 hook.route
+  // （隔离 routeRef 引用检查），重签 planHash 后编译必须拒绝。
+  const strippedIr = resign({
+    ...ir,
+    executorRoutes: Object.fromEntries(
+      Object.entries(ir.executorRoutes).filter(
+        ([stageIdentifier]) => stageIdentifier !== "fulfillment.birth",
+      ),
+    ),
+    compiledHooks: ir.compiledHooks.map((hook) => {
+      if (hook.stageIdentifier !== "fulfillment.birth") {
+        return hook;
+      }
+      // 显式 undefined 不进 canonical JSON（canonicalize 拒绝）——键必须
+      // 整体缺席。
+      const { route: _omitted, ...withoutRoute } = hook;
+      void _omitted;
+      return withoutRoute;
+    }),
+  } as typeof ir);
+  assert.throws(
+    () => compileOnchainHookPlan(strippedIr),
+    (error: unknown) =>
+      error instanceof HookPlanCompilationError &&
+      error.issues.some((issue) =>
+        /fulfillment\.birth is a subscription\/birth stage \(mint order-trigger\) and requires its own static executor route/.test(
+          issue,
+        )
+      ),
+    "compile preflight must reject a mint birth stage without its own executor route",
+  );
+
+  // 反例（制品边界）：链轨制品剥掉出生阶段的 route 与 routeRef 并重签
+  // planHash——selectorBindings 可达仍在，镜像同样拒绝（可达不豁免）。
+  const rehashed = (mutated: OnchainHookPlanArtifact): OnchainHookPlanArtifact => {
+    const { planHash: _drop, ...payload } = mutated;
+    void _drop;
+    return {
+      ...mutated,
+      planHash: hashOnchainPlanPayload(payload as never),
+    } as OnchainHookPlanArtifact;
+  };
+  const strippedOnchain = rehashed({
+    ...structuredClone(onchain),
+    executorRoutes: onchain.executorRoutes.filter(
+      (route) => route.stageIdentifier !== "fulfillment.birth",
+    ),
+    compiledHooks: onchain.compiledHooks.map((hook) => {
+      if (hook.stageIdentifier !== "fulfillment.birth") {
+        return hook;
+      }
+      // 与 IR 侧同口径：键整体缺席，不写显式 undefined。
+      const { routeRef: _omitted, ...withoutRouteRef } = hook;
+      void _omitted;
+      return withoutRouteRef;
+    }),
+  } as OnchainHookPlanArtifact);
+  assert.ok(
+    validateOnchainHookPlanArtifact(strippedOnchain).some((issue) =>
+      /fulfillment\.birth is a subscription\/birth stage \(mint order-trigger\) and requires its own static executor route/.test(
+        issue,
+      )
+    ),
+    "artifact boundary must reject a mint birth stage without its own executor route",
+  );
 });
 test("duplicate birth-channel key is rejected at compile and deserialization boundaries (U2 mirror)", () => {
   const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);

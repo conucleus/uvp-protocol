@@ -10,6 +10,7 @@ import {
   onchainUnresolvedRouteIssues,
 } from "./validate/artifact.js";
 import {
+  birthStageStaticExecutorIssues,
   crossStageDependencyIssues,
   declaredStageIdentifiers,
   duplicateBirthChannelKeyIssues,
@@ -145,6 +146,13 @@ export function compileOnchainHookPlan(
   const executorRoutes = Object.values(hookPlanArtifact.executorRoutes)
     .map(compileExecutorRoute)
     .sort(compareExecutorRoutes);
+  // 订阅/出生阶段静态执行者镜像（Rust validate_stage_executors 的 artifact
+  // 边界第二道）：手工/漂移的 IR 制品可在定义层绕过 Rust 门，出生阶段缺
+  // executor route 的毒制品必须在这里拒绝。
+  const birthStageExecutorIssues = birthStageStaticExecutorIssues(
+    compiledHooks,
+    executorRoutes,
+  );
   // _validateHook 镜像预检（MAX_ONCHAIN_HOOK_DELAY_SECONDS 等常量自述
   // "fail-closed 预检必须拒绝同样输入"）：EmptyPlan/空指令栈/空依赖/
   // 30 天延时上限等不能只在反序列化边界生效——否则手工/漂移的 IR 制品
@@ -165,6 +173,7 @@ export function compileOnchainHookPlan(
   const preflightIssues = [
     ...crossStageIssues,
     ...materializationIssues,
+    ...birthStageExecutorIssues,
     ...silentTriggerIssues,
     ...duplicateBirthKeyIssues,
     ...dependencyCountIssues,

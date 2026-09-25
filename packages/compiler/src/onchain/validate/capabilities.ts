@@ -8,6 +8,7 @@ import {
   routeHashFromDigests,
 } from "../hash/route.js";
 import {
+  expectClosedKeySet,
   expectHexHash,
   expectLiteral,
   expectNonEmptyString,
@@ -24,19 +25,56 @@ import type { HexString } from "../../types/index.js";
  */
 
 /**
+ * 三张表的封闭键集（与 types/index.ts 声明同步）：与顶层 unknown-field
+ * 拒绝同款——深层携带未声明额外键的制品不得作为 plan 的唯一字节数组
+ * 形态通过校验。
+ */
+const EXECUTOR_ROUTE_FIELDS: readonly string[] = [
+  "routeId",
+  "stageId",
+  "stageIdentifier",
+  "executorType",
+  "executorId",
+  "executorHash",
+  "resourcesHash",
+  "routeHash",
+];
+const SELECTOR_BINDING_FIELDS: readonly string[] = [
+  "selectorStageIdentifier",
+  "targetStageIdentifier",
+  "selectorStageId",
+  "targetStageId",
+  "bindingHash",
+];
+const SIGNAL_CAPABILITY_FIELDS: readonly string[] = [
+  "stageIdentifier",
+  "stageId",
+  "source",
+  "declaredSignal",
+  "targetSource",
+  "targetSourceId",
+  "targetSignalName",
+  "signalId",
+  "targetOrderRelation",
+  "capabilityHash",
+];
+
+/**
  * supplierType 闭集（与 uvp_model::SUPPLIER_TYPES / Go supplierTypes 同源，
- * 注册表 rule executor-supplier-type-closed-enum）：executorRoutes 把
- * supplierType 烧进链上承诺（executorHash），合约侧无闭集守卫——闭集外的
- * 字符串（含 "Zhixu" 等大小写变体）必须在链轨编译期拒绝，不是烧进承诺后
- * 才在消费侧炸开。比对精确匹配、不 trim：executorHash 哈希的是原文，
- * trim 后匹配会放行带空白的原文进承诺（与 Rust/Go 严格枚举闸同口径）。
+ * 注册表 rule executor-supplier-type-closed-enum）：executorRoutes 只进
+ * 制品承诺（executorHash → planHash），不进链上 PlanCommit（实参只有
+ * hooksHash/capabilitiesRoot/dock roots），链上没有闭集守卫——闭集外的
+ * 字符串（含 "Zhixu" 等大小写变体）只存在编译/制品边界这一道拦截。
+ * 比对精确匹配、不 trim：executorHash 哈希的是原文，trim 后匹配会放行
+ * 带空白的原文进承诺（与 Rust/Go 严格枚举闸同口径）。
  */
 const SUPPLIER_TYPES: readonly string[] = ["individual", "organization", "zhixu"];
 
 /**
  * fileResources 的 fileType 闭集（与 Go fileTypes 同源：
- * local|http|txcloud|plain_text）：fileResources 经 resourcesHash 进链上
- * 承诺，拼错的 fileType 不得静默成承诺内容。
+ * local|http|txcloud|plain_text）：fileResources 经 resourcesHash 进制品
+ * 承诺（与 executor 路由同面，不上链），拼错的 fileType 不得静默成承诺
+ * 内容。
  */
 const FILE_TYPES: readonly string[] = ["local", "http", "txcloud", "plain_text"];
 
@@ -90,6 +128,7 @@ function validateOnchainExecutorRoutes(
     }
 
     const prefix = `executorRoutes[${index}]`;
+    expectClosedKeySet(route, EXECUTOR_ROUTE_FIELDS, prefix, issues);
     expectHexHash(route.routeId, `${prefix}.routeId`, issues);
     expectHexHash(route.stageId, `${prefix}.stageId`, issues);
     expectNonEmptyString(
@@ -99,8 +138,9 @@ function validateOnchainExecutorRoutes(
     );
     expectNonEmptyString(route.executorType, `${prefix}.executorType`, issues);
     // executorType 闭集（编译入口 SUPPLIER_TYPES 同集同精确匹配口径）：
-    // 闭集外字符串经 executorHash 进链上承诺后无合约守卫可拦——手工/第三
-    // 方制品不得绕过 Rust 编译门把词表外值烧进承诺。
+    // executor 路由只进制品承诺、不进链上 PlanCommit，闭集外字符串没有
+    // 合约侧兜底——手工/第三方制品不得绕过 Rust 编译门把词表外值带进
+    // 承诺。
     if (
       typeof route.executorType === "string" &&
       !SUPPLIER_TYPES.includes(route.executorType)
@@ -174,6 +214,7 @@ function validateOnchainSelectorBindings(
     }
 
     const prefix = `selectorBindings[${index}]`;
+    expectClosedKeySet(binding, SELECTOR_BINDING_FIELDS, prefix, issues);
     expectNonEmptyString(
       binding.selectorStageIdentifier,
       `${prefix}.selectorStageIdentifier`,
@@ -249,6 +290,7 @@ function validateOnchainSignalCapabilities(
       continue;
     }
     const prefix = `signalCapabilities[${index}]`;
+    expectClosedKeySet(capability, SIGNAL_CAPABILITY_FIELDS, prefix, issues);
     expectNonEmptyString(
       capability.stageIdentifier,
       `${prefix}.stageIdentifier`,

@@ -76,6 +76,27 @@ export function expectOneOf(
   }
 }
 
+/**
+ * 深层对象的键集闭包（与顶层 ONCHAIN_ARTIFACT_FIELDS 同款响亮拒绝）：
+ * 制品 schema 是封闭字段集，深层对象携带未声明额外键时同样破坏"同一
+ * plan 唯一字节数组形态"承诺——放行会让仅多余字段不同的制品各自通过
+ * 校验。allowed 含可选键（routeRef/delaySeconds 等在场键位的全集）。
+ */
+export function expectClosedKeySet(
+  value: Record<string, unknown>,
+  allowed: readonly string[],
+  path: string,
+  issues: string[],
+): void {
+  for (const key of Object.keys(value)) {
+    if (!allowed.includes(key)) {
+      issues.push(
+        `unknown field \`${key}\` on ${path} — the artifact schema is a closed field set, so the artifact would not be the plan's unique byte form; remove it or recompile`,
+      );
+    }
+  }
+}
+
 export function assertNever(value: never): never {
   throw new Error(
     `unsupported on-chain HookPlan node: ${JSON.stringify(value)}`,

@@ -259,8 +259,9 @@ test("evaluates the decaying veto across its three states", () => {
 });
 
 test("rejects the decaying veto outside the conjunction-operand position", () => {
-  // 位置规则负例（uvp-core validate_anchors 的 veto_slot /
-  // inside_delay_operand 双闸）：根位 / Or 子项 / 双重否定 / Delay 操作数内。
+  // 位置规则负例（uvp-core validate_anchors 的 veto_slot 闸）：根位 /
+  // Or 子项 / 双重否定。Delay 操作数内的否决位先被嵌套延时闸拦截
+  // （正位与否决位同闸），报错为 no-nested-delays 口径。
   assert.throws(
     () => parseHookExpression("buyer::~(task.cancel.cmp +14d)"),
     /decaying veto .\(signal\+duration\) is only allowed as a direct operand of a conjunction/
@@ -275,7 +276,7 @@ test("rejects the decaying veto outside the conjunction-operand position", () =>
   );
   assert.throws(
     () => parseHookExpression("buyer::(task.a.cmp & ~(task.cancel.cmp +14d)) +5s"),
-    /decaying veto .\(signal\+duration\) is only allowed as a direct operand of a conjunction/
+    /no nested delays/
   );
 });
 

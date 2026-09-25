@@ -23,6 +23,7 @@ import {
   validateOnchainSignalCapabilities,
 } from "./capabilities.js";
 import {
+  birthStageStaticExecutorIssues,
   declaredStageIdentifiers,
   duplicateBirthChannelKeyIssues,
   silentOrderTriggerIssues,
@@ -247,6 +248,11 @@ export function validateOnchainHookPlanArtifact(
     );
     issues.push(
       ...silentOrderTriggerIssues(compiledHooks as readonly OnchainCompiledHook[]),
+    );
+    // 订阅/出生阶段静态执行者镜像（Rust validate_stage_executors 第二道）：
+    // mint 出生阶段的投递目标编译期定死，selectorBindings 可达不豁免。
+    issues.push(
+      ...birthStageStaticExecutorIssues(compiledHooks, executorRoutes ?? []),
     );
     // U2 同一守卫同样作用于反序列化 artifact 边界。
     issues.push(...duplicateBirthChannelKeyIssues(compiledHooks));

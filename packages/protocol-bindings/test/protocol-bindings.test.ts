@@ -40,6 +40,7 @@ import {
   buildTriggerOrderFromSignalTypedData,
   canonicalJson,
   capabilitiesRootOf,
+  deriveOrderLinkOrderId,
   deriveTriggerOrderId,
   EMPTY_CAPABILITIES_ROOT,
   factAttribution,
@@ -1613,6 +1614,90 @@ describe("protocol bindings", () => {
         "0x0000000000000000000000000000000000000000000000000000000000000000",
       ),
       "0x012893657d8eb2efad4de0a91bcd0e39ad9837745dec3ea923737ea803fc8e3d",
+    );
+  });
+
+  // pinned 向量：TS 镜像 deriveOrderLinkOrderId 与合约
+  // UVPStateMachine.orderLinkOrderIdFor 同公式（独立哈希域
+  // keccak256("uvp.order_link.order_id.v1") 前置七 word abi.encode，再清
+  // dock 子单命名空间保留位）。向量由 `cast keccak` 对拼接 preimage 生成，
+  // V3 的原始 digest 最高位为 1，专门钉住清位语义；两侧任一漂移即红。
+  it("derives order-link order ids matching the pinned contract vectors", () => {
+    // V1：小词输入（1..6）。
+    assert.equal(
+      deriveOrderLinkOrderId(
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x0000000000000000000000000000000000000000000000000000000000000002",
+        "0x0000000000000000000000000000000000000000000000000000000000000003",
+        "0x0000000000000000000000000000000000000000000000000000000000000004",
+        "0x0000000000000000000000000000000000000000000000000000000000000005",
+        "0x0000000000000000000000000000000000000000000000000000000000000006",
+      ),
+      "0x2a85d18c4db1553a4248c28a58ea2eb913f1026ffc9ae79238524b7ea562ef76",
+    );
+
+    // V2：keccak 产物资（planId=originPlanId=keccak("plan")、
+    // triggerOriginOrderId=keccak("payment")、
+    // originSourceId=originSignalId=keccak("payment.ready")、
+    // payloadHash=keccak("payload")）。
+    assert.equal(
+      deriveOrderLinkOrderId(
+        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
+        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
+        "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
+        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
+        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
+        "0xebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7",
+      ),
+      "0x51dc770df001368cdbd924a0ad6cebf1770018cc1c3b69245051bf57c45397cd",
+    );
+
+    // V3：同 V2 前五参，payloadHash=keccak("payload-2")——原始 digest
+    // 0xa570da95…最高位为 1，清位后首字节 0xa5→0x25。
+    assert.equal(
+      deriveOrderLinkOrderId(
+        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
+        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
+        "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
+        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
+        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
+        "0x8241913dbc6ac8cc21b32242513ef9be5acf2403b43493d66e9322c0c19dae2d",
+      ),
+      "0x2570da95a97484d11b2b3e8df25adb957eb8e33483b823e687c4035351b58f92",
+    );
+
+    // V4：全零边界。
+    assert.equal(
+      deriveOrderLinkOrderId(
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+      ),
+      "0x386a21380204a6d039123b05c9103a1e778bc502867331596620244f0c018177",
+    );
+
+    // 域分离钉子：link 派生域与 outside 派生域（deriveTriggerOrderId）
+    // 对同一事实键必须给出不同 id——两域前置字不同，结构性不可互冒
+    // （合约侧 testOrderLinkDerivedIdCannotSquatOutsideTriggerNamespace
+    // 的链上同款断言）。
+    assert.notEqual(
+      deriveOrderLinkOrderId(
+        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
+        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
+        "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
+        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
+        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
+        "0xebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7",
+      ),
+      deriveTriggerOrderId(
+        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
+        "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
+        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
+        "0xebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7",
+      ),
     );
   });
 

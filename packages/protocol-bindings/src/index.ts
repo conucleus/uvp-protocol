@@ -2192,6 +2192,43 @@ export function deriveTriggerOrderId(
   return toHex(derived, { size: 32 }) as Hex;
 }
 
+/**
+ * 一事一单：order-link 派生订单 id 的派生公式——镜像
+ * UVPStateMachine.orderLinkOrderIdFor。独立哈希域
+ * keccak256("uvp.order_link.order_id.v1") 前置 keccak256(abi.encode(planId,
+ * originPlanId, triggerOriginOrderId, originSourceId, originSignalId,
+ * payloadHash))，并清除 dock 子单命名空间保留位（最高位）；trigger 单的
+ * 自报 orderId 与派生值不一致即 revert InvalidOrderLinkOrderId。
+ */
+export function deriveOrderLinkOrderId(
+  planId: Hex | string,
+  originPlanId: Hex | string,
+  triggerOriginOrderId: Hex | string,
+  originSourceId: Hex | string,
+  originSignalId: Hex | string,
+  payloadHash: Hex | string,
+): Hex {
+  const digest = keccak256(
+    encodeAbiParameters(
+      parseAbiParameters(
+        "bytes32, bytes32, bytes32, bytes32, bytes32, bytes32, bytes32",
+      ),
+      [
+        keccak256(stringToHex("uvp.order_link.order_id.v1")),
+        normalizeBytes32(planId, "planId"),
+        normalizeBytes32(originPlanId, "originPlanId"),
+        normalizeBytes32(triggerOriginOrderId, "triggerOriginOrderId"),
+        normalizeBytes32(originSourceId, "originSourceId"),
+        normalizeBytes32(originSignalId, "originSignalId"),
+        normalizeBytes32(payloadHash, "payloadHash"),
+      ],
+    ),
+  );
+  const DOCK_ORDER_NAMESPACE_MASK = 1n << 255n;
+  const derived = BigInt(digest) & ~DOCK_ORDER_NAMESPACE_MASK;
+  return toHex(derived, { size: 32 }) as Hex;
+}
+
 export function hashSignalAuthorizations(
   authorizations: readonly SignalAuthorizationPayload[],
 ): Hex {

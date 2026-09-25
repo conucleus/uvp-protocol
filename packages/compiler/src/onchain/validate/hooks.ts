@@ -8,6 +8,7 @@ import {
 } from "../hash/route.js";
 import {
   expectBoolean,
+  expectClosedKeySet,
   expectHexHash,
   expectNonEmptyString,
   expectOneOf,
@@ -26,6 +27,67 @@ import type {
  * _validateHook 栈机镜像、依赖形状、阶段物化门、HookReady 三线口径、跨
  * 阶段依赖门与依赖索引重算。编译入口 preflight 与反序列化边界共用。
  */
+
+/**
+ * compiledHooks[i] 及更深对象（instructions/dependencies/routeRef、
+ * admissions 条目）的封闭键集（与 types/index.ts 声明同步）：顶层已有
+ * unknown-field 拒绝，深层缺同款闭包会让"唯一字节数组形态"承诺在深层
+ * fail-open。
+ */
+const COMPILED_HOOK_FIELDS: readonly string[] = [
+  "hookId",
+  "stageId",
+  "stageIdentifier",
+  "hookName",
+  "kind",
+  "orderTriggerKind",
+  "emitReady",
+  "instructions",
+  "dependencies",
+  "routeRef",
+];
+const ROUTE_REF_FIELDS: readonly string[] = ["routeId", "stageId", "routeHash"];
+const DEPENDENCY_FIELDS: readonly string[] = [
+  "kind",
+  "source",
+  "signalName",
+  "sourceId",
+  "signalId",
+  "signalKey",
+  "delaySeconds",
+];
+const ADMISSION_FIELDS: readonly string[] = [
+  "admissionId",
+  "stageId",
+  "stageIdentifier",
+  "signalName",
+  "signalId",
+  "sourceId",
+  "instructions",
+  "dependencies",
+];
+/** 指令键集按 op 闭包（未声明 op 无键集可查，由 op 词表 issue 报告）。 */
+const INSTRUCTION_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  SIGNAL: ["op", "source", "signalName", "sourceId", "signalId", "signalKey"],
+  NOT: ["op"],
+  AND: ["op", "arity"],
+  OR: ["op", "arity"],
+  DELAY: ["op", "delaySeconds"],
+};
+
+function expectInstructionKeyClosure(
+  instruction: Record<string, unknown>,
+  prefix: string,
+  issues: string[],
+): void {
+  const allowed =
+    typeof instruction.op === "string"
+      ? INSTRUCTION_FIELDS[instruction.op]
+      : undefined;
+  if (allowed !== undefined) {
+    expectClosedKeySet(instruction, allowed, prefix, issues);
+  }
+}
 
 function validateOnchainCompiledHooks(
   hooks: readonly unknown[],
@@ -53,6 +115,7 @@ function validateOnchainCompiledHooks(
     }
 
     const prefix = `compiledHooks[${index}]`;
+    expectClosedKeySet(hook, COMPILED_HOOK_FIELDS, prefix, issues);
     expectHexHash(hook.hookId, `${prefix}.hookId`, issues);
     expectHexHash(hook.stageId, `${prefix}.stageId`, issues);
     expectNonEmptyString(
@@ -160,6 +223,12 @@ function validateOnchainCompiledHooks(
       if (!isRecord(hook.routeRef)) {
         issues.push(`${prefix}.routeRef must be an object`);
       } else {
+        expectClosedKeySet(
+          hook.routeRef,
+          ROUTE_REF_FIELDS,
+          `${prefix}.routeRef`,
+          issues,
+        );
         expectHexHash(
           hook.routeRef.routeId,
           `${prefix}.routeRef.routeId`,
@@ -240,6 +309,7 @@ function validateInstructions(
     }
 
     const prefix = `${path}[${index}]`;
+    expectInstructionKeyClosure(instruction, prefix, issues);
     switch (instruction.op) {
       case "SIGNAL":
         expectString(instruction.source, `${prefix}.source`, issues);
@@ -465,6 +535,7 @@ function validateAdmissionInstructions(
     }
 
     const prefix = `${path}[${index}]`;
+    expectInstructionKeyClosure(instruction, prefix, issues);
     switch (instruction.op) {
       case "SIGNAL":
         expectString(instruction.source, `${prefix}.source`, issues);
@@ -602,6 +673,7 @@ function validateOnchainCompiledAdmissions(
     }
 
     const prefix = `admissions[${index}]`;
+    expectClosedKeySet(admission, ADMISSION_FIELDS, prefix, issues);
     expectHexHash(admission.admissionId, `${prefix}.admissionId`, issues);
     expectHexHash(admission.stageId, `${prefix}.stageId`, issues);
     expectHexHash(admission.signalId, `${prefix}.signalId`, issues);
@@ -744,6 +816,7 @@ function validateOnchainDependencies(
     }
 
     const prefix = `${path}[${index}]`;
+    expectClosedKeySet(dependency, DEPENDENCY_FIELDS, prefix, issues);
     expectOneOf(
       dependency.kind,
       ["positive", "negative", "timer"],
@@ -1073,6 +1146,50 @@ function isOnchainHookDependency(
   );
 }
 
+/**
+ * 执行者终生不可变镜像（uvp-core validate_stage_executors /
+ * validate_mint_anchors 的出生阶段条款，Rust 是第一道，这里是 artifact
+ * 边界的第二道）：订阅/出生阶段在 artifact 上的投影是 orderTriggerKind
+ * = mint 的 hook——投递目标编译期定死、运行时禁止 executor patch，
+ * selectedStages（selectorBindings）可达不构成绑定。缺静态执行者路由的
+ * 出生阶段是"出生即死"：阶段随出生事实物化，却没有 executor route 可
+ * 投递，又禁运行时补绑。zhixu 委托不适用（委托 route 不进 executorRoutes，
+ * 且 mint 出生 + 委托在 Rust 侧已是拒绝形态）。
+ */
+function birthStageStaticExecutorIssues(
+  hooks: readonly unknown[],
+  executorRoutes: readonly unknown[],
+): readonly string[] {
+  const routedStages = new Set<string>();
+  for (const route of executorRoutes) {
+    if (isRecord(route) && typeof route.stageIdentifier === "string") {
+      routedStages.add(route.stageIdentifier);
+    }
+  }
+  const issues: string[] = [];
+  const reported = new Set<string>();
+  for (const hook of hooks) {
+    if (
+      !isRecord(hook) ||
+      hook.orderTriggerKind !== "mint" ||
+      typeof hook.stageIdentifier !== "string"
+    ) {
+      continue;
+    }
+    const stageIdentifier = hook.stageIdentifier;
+    if (routedStages.has(stageIdentifier) || reported.has(stageIdentifier)) {
+      continue;
+    }
+    reported.add(stageIdentifier);
+    issues.push(
+      `stage ${stageIdentifier} is a subscription/birth stage (mint order-trigger) and requires its own static executor route; `
+        + "selectedStages reachability cannot bind it because subscription stages reject runtime executor patches "
+        + "— the Rust compiler must reject this shape",
+    );
+  }
+  return issues;
+}
+
 export {
   validateOnchainCompiledHooks,
   validateOnchainCompiledAdmissions,
@@ -1082,4 +1199,5 @@ export {
   crossStageDependencyIssues,
   duplicateBirthChannelKeyIssues,
   validateOnchainDependencyIndex,
+  birthStageStaticExecutorIssues,
 };

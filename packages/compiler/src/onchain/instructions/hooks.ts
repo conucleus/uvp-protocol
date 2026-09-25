@@ -154,7 +154,9 @@ function compileExecutorRoute(
     ]);
   }
   // supplierType 闭集（rule executor-supplier-type-closed-enum 的链轨编译
-  // 入口镜像）：闭集外字符串经 executorHash 进链上承诺后无合约守卫可拦。
+  // 入口镜像）：executor 路由只进制品承诺（executorHash → planHash），
+  // 不进链上 PlanCommit（实参只有 hooksHash/capabilitiesRoot/dock
+  // roots），链上没有闭集守卫——闭集外字符串只存在编译边界这一道拦截。
   // 精确匹配、不 trim：executorHash 哈希的是 executor 原文，trim 后匹配
   // 会放行 " organization " 这类原文——匹配面放行、承诺面按原文分叉，
   // 同一值既被宽容又被严格。

@@ -52,7 +52,7 @@ const admissionZhixu = (validWhen: string): ZhixuDefinition => ({
             receiveSignals: { RUN: "buyer::flow.gate.ready" },
             sendSignals: [
               { name: "cmp", validWhen },
-              { name: "err" },
+              { name: "cmp_err" },
             ],
             executor: { supplierType: "organization", supplierID: "work-org" },
           },
@@ -122,7 +122,7 @@ test("onchain admission entries carry the fact-key identity triple", () => {
   );
 });
 
-test("hook-profile-illegal but filter-legal forms compile: bare decaying root, OR branch, delay operand", () => {
+test("hook-profile-illegal but filter-legal decaying positions compile: bare root, OR branch", () => {
   const bareRoot = compileZhixuOnchainHookPlan(admissionZhixu("buyer::~(flow.work.cmp_err +14d)"));
   assert.deepEqual(
     firstAdmission(bareRoot.admissions).instructions.map((i) => i.op),
@@ -136,13 +136,16 @@ test("hook-profile-illegal but filter-legal forms compile: bare decaying root, O
     firstAdmission(orBranch.admissions).instructions.map((i) => i.op),
     ["SIGNAL", "SIGNAL", "DELAY", "NOT", "OR"],
   );
+});
 
-  const insideDelay = compileZhixuOnchainHookPlan(
-    admissionZhixu("buyer::(flow.gate.seed & ~(flow.work.cmp_err +14d)) +5s"),
-  );
-  assert.deepEqual(
-    firstAdmission(insideDelay.admissions).instructions.map((i) => i.op),
-    ["SIGNAL", "SIGNAL", "DELAY", "NOT", "AND", "DELAY"],
+test("delay operands wrapping a decaying veto are nested delays and rejected in the filter profile too", () => {
+  assert.throws(
+    () =>
+      compileZhixuOnchainHookPlan(
+        admissionZhixu("buyer::(flow.gate.seed & ~(flow.work.cmp_err +14d)) +5s"),
+      ),
+    (error: unknown) =>
+      error instanceof HookPlanCompilationError && /no nested delays/.test(error.message),
   );
 });
 

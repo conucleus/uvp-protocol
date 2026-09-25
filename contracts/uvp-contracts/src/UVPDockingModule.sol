@@ -650,8 +650,8 @@ contract UVPDockingModule {
         // 交付（createDockedOrderFromModule 写入 entrance 事实并发
         // DockInputSubmitted），_inputDelivered 必须同步置位，否则
         // dockInputDelivered(dockInstanceId, entranceBindingHash) 与链上
-        // 交付事实矛盾，且事后重放 submitDockedInput(entrance) 只会因
-        // mailbox 既有事实 DockInputConflict。
+        // 交付事实矛盾；事后重放 submitDockedInput(entrance) 在入口的
+        // 交付账本检查处按幂等重放返回 false，不会触达 mailbox 冲突检查。
         _inputDelivered[request.dockInstanceId][entranceBindingHash] = true;
 
         emit DockOpened(
