@@ -2,7 +2,8 @@
 pragma solidity ^0.8.24;
 
 /// @dev The test suite intentionally keeps its own narrow Vm interface so it
-/// does not need to vendor forge-std just to consume the Rust fixture.
+/// does not need to vendor forge-std just to consume the TS compiler golden
+/// fixture (packages/compiler gen-dock-fixtures).
 interface DockManifestVm {
     function projectRoot() external view returns (string memory);
     function readFile(string calldata path) external view returns (string memory);

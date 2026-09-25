@@ -86,7 +86,9 @@ export { SUPPLIER_TYPES, FILE_TYPES };
  * (targetSourceId, signalId) 在 plan 内有唯一属主阶段。属主唯一性是携证
  * 解析的前提——链上按能力叶声明事实属主，同一事实键存在两个声明属主时，
  * 任一方都能携证把事实落到自己的阶段（阶段物化/executor 门与 origin
- * 同意链的执行者腿随之被模糊）。Rust/Go 镜像仍欠（镜像债）。
+ * 同意链的执行者腿随之被模糊）。Rust 镜像（uvp-core uvp-compiler
+ * artifact/mod.rs build_signal_capabilities）已实现同规则；Go 编译面
+ * 不承载链轨能力面（权威分治：Go 云轨身份归 DB），无待补镜像。
  */
 function duplicateCurrentOrderFactKeyIssues(
   capabilities: readonly {

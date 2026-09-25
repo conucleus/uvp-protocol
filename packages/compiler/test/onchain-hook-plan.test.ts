@@ -1083,6 +1083,16 @@ test("rejects invalid on-chain HookPlan artifact shapes", () => {
       }),
     OnchainHookPlanArtifactValidationError,
   );
+  // 篡改 planId（钉值与公式分叉）→ onchain 边界与 IR 边界
+  // （hook-plan.ts）同口径拒绝——不重算时同一份数据 IR 拒、onchain 放行。
+  assert.ok(
+    validateOnchainHookPlanArtifact({
+      ...onchain,
+      planId: `0x${"22".repeat(32)}`,
+    }).includes(
+      "planId must match the recomputed H(uvp:hook-plan-id:v1; compiler/platform/zhixuId/zhixuName)",
+    ),
+  );
 });
 
 test("collects dock commitment shape violations as issues instead of throwing or pinning defaults", () => {

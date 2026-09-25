@@ -1,4 +1,5 @@
 import { validateDockCommitments, validateUnresolvedDockRouteDeclarations } from "../../dock-validation.js";
+import { planIdOf } from "../../dock-commitments.js";
 import { hashOnchainPlanPayload } from "../hash/plan.js";
 import { capabilitiesRootOf } from "../capabilities-root.js";
 import {
@@ -116,6 +117,34 @@ export function validateOnchainHookPlanArtifact(
   }
   expectHexHash(value.sourcePlanHash, "sourcePlanHash", issues);
   expectHexHash(value.planHash, "planHash", issues);
+  // 姊妹边界 hook-plan.ts 同口径：planId 从携带字段独立重推导（planIdOf
+  // 单点做空 params 归一，Rust 权威口径）——制品携带全部 preimage 字段
+  // （zhixuId/zhixuName/platform），planId 钉值与公式分叉必须在本边界
+  // 拒绝，不留"IR 边界拒、onchain 边界放"的双侧口径差。重算抛错
+  // （platform 携带非 JSON 值）按 issue 报告，校验器的契约是返回
+  // issues 而非抛裸 TypeError。
+  if (
+    isPlatform(value.platform) &&
+    typeof value.zhixuId === "string" &&
+    typeof value.zhixuName === "string"
+  ) {
+    try {
+      const recomputedPlanId = planIdOf(
+        value.zhixuId,
+        value.zhixuName,
+        value.platform,
+      );
+      if (typeof value.planId === "string" && value.planId !== recomputedPlanId) {
+        issues.push(
+          "planId must match the recomputed H(uvp:hook-plan-id:v1; compiler/platform/zhixuId/zhixuName)",
+        );
+      }
+    } catch {
+      issues.push(
+        "planId preimage is not canonicalizable (platform carries non-JSON values)",
+      );
+    }
+  }
   // 姊妹边界 hook-plan.ts 同口径：dock 字段缺失/畸形必须在形状层报 issue，
   // 而不是落进 planHash 重算的 ?? 兜底或 canonicalize 的未类型化
   // TypeError（fail-open：缺失被钉成 []/null 后哈希仍可通过）。

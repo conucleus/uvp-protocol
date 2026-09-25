@@ -56,10 +56,13 @@ export const customsWallets = {
 } as const;
 
 export const customsPlanIds = {
-  planId: "0x336d9b556f7ffa00c83f49600554819055a4a3b300f82abca70b401f6b161ddc",
-  // 派生身份(zx-)+当前编译器 canonical payload / 链 runtime hash 重算钉住。
-  planHash: "0xba0aa14dd78c11a0445b6736b4607914aea3837cb61dcb91cdb7e25bae4ce662",
-  artifactHash: "0xfe94124e14b1e2260ae2e165023ff712689ca947ee671fa58ec21f7caa7ca785"
+  // 三值按公式同批复算钉住（planId 变更会改写 canonical payload 哈希）：
+  // planId = planIdOf(zhixuId, zhixuName, platform)；planHash = 链 runtime
+  // hash（PlanCommit 注册哈希，与链上 planHash(planId) getter 同名同值）；
+  // artifactHash = 制品 canonical payload hash（hashOnchainPlanPayload）。
+  planId: "0xc17ec525b4686fa302e21811ed15c1f7888d9ee1313665393defc396b7702519",
+  planHash: "0xfe94124e14b1e2260ae2e165023ff712689ca947ee671fa58ec21f7caa7ca785",
+  artifactHash: "0x3075a03373d04aa513765731671189b03be646c44b200f7d780e7688ef5a9fea"
 } as const;
 
 export const customsResourceManifest: ProductResourceManifestDTO = {
@@ -798,7 +801,10 @@ export const customsOnchainHookPlanArtifact = {
     }
   ],
   admissions: [],
-  planHash: customsPlanIds.planHash
+  // 制品自身 planHash 字段是 canonical payload hash——与发布面
+  // customsPlanIds.artifactHash 同值（发布面 planHash 是链 runtime hash，
+  // 两个字段名的口径差是链 getter 命名权威与发布面命名的有意分工）。
+  planHash: customsPlanIds.artifactHash
 } as const;
 
 export const customsStoreProductSchema: StoreProductSchemaDTO = {

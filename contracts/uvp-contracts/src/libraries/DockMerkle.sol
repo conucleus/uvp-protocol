@@ -2,7 +2,10 @@
 pragma solidity ^0.8.24;
 
 /// @title Zhixu Dock Merkle 原语
-/// @dev 与 Rust `uvp-compiler::dock`、TS `compiler/src/dock.ts` 逐字节一致：
+/// @dev 与链轨 TS 权威 `packages/compiler/src/dock.ts` 逐字节一致（规格
+///      见 packages/compiler/docs/dock-word-layout.md；golden 向量由 TS
+///      编译器 generate:dock-fixtures 产出，Foundry
+///      DockManifestParity.t.sol 对拍钉死）：
 ///      叶子列表先按字节升序去重排序；配对合并
 ///      `keccak256(min(a,b) ‖ max(a,b))`；奇数尾叶直接提升；
 ///      空集合 root = `keccak256("")`。
