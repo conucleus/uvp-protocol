@@ -54,8 +54,8 @@ export function compareCanonicalKey(left: string, right: string): number {
 /**
  * 编译入口：core 产出中性 plan 壳（hooks/依赖索引/中性 dock 声明），
  * 链轨承诺（uid/planId/roots/routeHash/planHash）由 TS 在壳上计算组装
- * （TS 权威实现）。resolution manifest 是链轨发布面：TS
- * 先做内容寻址校验并派生 core linker 消费的中性 name 目录。
+ * （TS 权威实现）。resolution manifest 是链轨发布面：TS 先做内容寻址
+ * 校验并派生 core linker 消费的中性 uid 注册表。
  */
 export function compileZhixuHookPlan(
   definition: ZhixuDefinition,
@@ -82,7 +82,7 @@ export function compileZhixuHookPlan(
     shell = compileWithUvpCore({
       target: "hook_plan",
       definition,
-      ...(resolution === undefined ? {} : { resolutionManifest: resolution.neutral }),
+      ...(resolution === undefined ? {} : { dockTargets: resolution.neutral }),
     });
   } catch (error) {
     throw new HookPlanCompilationError([

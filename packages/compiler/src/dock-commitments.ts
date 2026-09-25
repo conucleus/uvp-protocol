@@ -38,8 +38,9 @@ import {
   type HexString,
   type HookPlanArtifact,
   type NeutralDockRoute,
+  type NeutralDockTarget,
+  type NeutralDockTargets,
   type NeutralInterfaceDeclaration,
-  type NeutralResolutionManifest,
   type NeutralUnresolvedDockRoute,
   type UnresolvedDockRouteCandidate,
   type UnresolvedDockRouteV1,
@@ -86,14 +87,19 @@ interface ShellHook {
 
 /** 链轨 resolution manifest 的校验+解析结果（route 组装的寻址面）。 */
 export interface PreparedDockResolution {
-  /** core linker 消费的中性 name 目录。 */
-  readonly neutral: NeutralResolutionManifest;
-  /** name → 发布面数据（含 TS 重算的定义级 dockInterfaceRoot）。 */
-  readonly byName: ReadonlyMap<string, PreparedTarget>;
+  /** core linker 消费的 {uid, definition} 注册表（条目=定义原文）。 */
+  readonly neutral: NeutralDockTargets;
+  /**
+   * uid → 发布面数据（含 TS 重算的定义级 dockInterfaceRoot）。uid 是唯一
+   * 解析键（显式重绑纪律，见 prepareDockResolution）。
+   */
+  readonly byUid: ReadonlyMap<string, PreparedTarget>;
 }
 
 export interface PreparedTarget {
   readonly uid: string;
+  /** 目标定义展示名（metadata.name，仅 JSON 投影，不参与寻址）。 */
+  readonly name: string;
   readonly definitionRefHash: HexString;
   readonly artifactHash: HexString;
   readonly interfaces: readonly DockInterfaceArtifactInterface[];
@@ -102,6 +108,12 @@ export interface PreparedTarget {
   readonly evmPlanId?: HexString;
 }
 
+/**
+ * 清单解析键 = definitionUid（显式重绑纪律）：route 钉的是目标定义的
+ * 内容派生 uid，解析按 uid 精确匹配、不跟随——目标内容变即新 uid，旧
+ * route 恒指旧 uid，升级必须由引用方改绑新 uid 重新发布；清单内重复 uid
+ * 是注入数据错误，响亮拒绝（同一 uid 两个 planId 的形态没有合法语义）。
+ */
 export function prepareDockResolution(
   manifest: DockResolutionManifest,
 ): PreparedDockResolution {
@@ -110,37 +122,29 @@ export function prepareDockResolution(
       `resolutionManifest.schemaVersion must be "uvp.dock.resolution.v2", received ${JSON.stringify(manifest.schemaVersion)}`,
     );
   }
-  const byName = new Map<string, PreparedTarget>();
-  type NeutralDefinition = NeutralResolutionManifest["definitions"][number];
-  const neutralDefinitions: NeutralDefinition[] = [];
+  const byUid = new Map<string, PreparedTarget>();
+  const neutralDefinitions: NeutralDockTarget[] = [];
   for (const [index, entry] of manifest.definitions.entries()) {
     const path = `resolutionManifest.definitions[${index}]`;
     const prepared = prepareTargetEntry(entry, path);
-    const name = entry.definition.metadata.name;
-    if (byName.has(name)) {
+    const uid = prepared.uid;
+    if (byUid.has(uid)) {
       throw new RangeError(
-        `${path}: duplicate definition name ${JSON.stringify(name)} — names are the resolution key and must be unique in the manifest`,
+        `${path}: duplicate definition uid ${JSON.stringify(uid)} — uid is the resolution key and must be unique in the manifest`,
       );
     }
-    byName.set(name, prepared);
+    byUid.set(uid, prepared);
+    // FFI 注入面是 {uid, definition}：接口声明与静态出边由 core 从定义
+    // 原文单源提取（D008），调用方自报清单的旧契约已退役；manifest 发布
+    // 面的接口/出边交叉校验仍在本函数（prepareTargetEntry）完成。
     neutralDefinitions.push({
-      name,
-      interfaces: entry.interfaces.map((interfaceEntry, interfaceIndex) =>
-        neutralInterfaceOf(
-          interfaceEntry,
-          entry.definition,
-          `${path}.interfaces[${interfaceIndex}]`,
-        ),
-      ),
-      ...(entry.dockEdges === undefined ? {} : { dockEdges: entry.dockEdges }),
+      uid,
+      definition: entry.definition,
     });
   }
   return {
-    neutral: {
-      schemaVersion: "uvp.dock.resolution.v2",
-      definitions: neutralDefinitions,
-    },
-    byName,
+    neutral: neutralDefinitions,
+    byUid,
   };
 }
 
@@ -251,6 +255,7 @@ function prepareTargetEntry(
   }
   return {
     uid,
+    name: entry.definition.metadata.name,
     definitionRefHash: refHash,
     artifactHash: entry.artifactHash,
     interfaces: entry.interfaces,
@@ -259,51 +264,6 @@ function prepareTargetEntry(
       ? {}
       : { cloudArtifactId: entry.cloudArtifactId }),
     ...(entry.evmPlanId === undefined ? {} : { evmPlanId: entry.evmPlanId }),
-  };
-}
-
-/**
- * 发布面接口 → core 中性声明（端口 map 形态，键序由 canonical 化消除）。
- * input 端口补 `{source, hook}`：source 从内嵌定义所属
- * stage 的声明 source 派生——缺失/空白即响亮失败，不回退、不臆造；发布面
- * artifact 端口自带的 source 与之交叉比对，自不一致的 manifest 拒绝
- * （core parse_interface_declaration 对中性声明按必填键校验同一形状）。
- */
-function neutralInterfaceOf(
-  interfaceEntry: DockInterfaceArtifactInterface,
-  definition: ZhixuDefinition,
-  path: string,
-): NeutralInterfaceDeclaration {
-  const stageSources = flattenStageSources(definition);
-  const inputs: Record<string, { source: string; hook: string }> = {};
-  for (const port of interfaceEntry.inputs) {
-    const stageSource = stageSources.get(port.stageIdentifier);
-    if (stageSource === undefined) {
-      throw new RangeError(
-        `${path}.inputs[${JSON.stringify(port.port)}] references hook ${JSON.stringify(port.hookId)} whose stage ${JSON.stringify(port.stageIdentifier)} is absent from the embedded definition — the neutral input-port source cannot be derived`,
-      );
-    }
-    if (stageSource.trim().length === 0) {
-      throw new RangeError(
-        `${path}.inputs[${JSON.stringify(port.port)}] references stage ${JSON.stringify(port.stageIdentifier)} which declares a blank source — the neutral input-port source cannot be derived`,
-      );
-    }
-    if (port.source !== stageSource) {
-      throw new RangeError(
-        `${path}.inputs[${JSON.stringify(port.port)}].source declares ${JSON.stringify(port.source)} but the embedded definition's stage ${JSON.stringify(port.stageIdentifier)} source is ${JSON.stringify(stageSource)} — the manifest is not content-addressed`,
-      );
-    }
-    inputs[port.port] = { source: stageSource, hook: port.hookId };
-  }
-  const outputs: Record<string, { signal: string }> = {};
-  for (const port of interfaceEntry.outputs) {
-    outputs[port.port] = { signal: port.canonicalOutputSignal };
-  }
-  return {
-    name: interfaceEntry.name,
-    orderModes: [...interfaceEntry.orderModes],
-    inputs,
-    outputs,
   };
 }
 
@@ -431,10 +391,13 @@ export function buildDockRoute(
   const stageIdentifier = neutral.local.stageIdentifier;
   const stageKeyWord = stageKey(stageIdentifier);
   const routeId = dockRouteId(context.localDefinitionRefHash, stageKeyWord);
-  const target = context.resolution.byName.get(neutral.target.name);
+  // 解析键 = 目标 uid（中性壳的 target.uid 引用即 DSL target.zhixu 的
+  // uid 串）：按 uid 精确查取，不按 name 跟随——显式重绑纪律见
+  // prepareDockResolution 的文档注释。
+  const target = context.resolution.byUid.get(neutral.target.uid);
   if (target === undefined) {
     throw new RangeError(
-      `dock route ${stageIdentifier} targets ${JSON.stringify(neutral.target.name)} which is absent from the validated resolution manifest`,
+      `dock route ${stageIdentifier} targets ${JSON.stringify(neutral.target.uid)} which is absent from the validated resolution manifest`,
     );
   }
   const interfaceEntry = target.interfaces.find(
@@ -442,7 +405,7 @@ export function buildDockRoute(
   );
   if (interfaceEntry === undefined) {
     throw new RangeError(
-      `dock route ${stageIdentifier} targets interface ${JSON.stringify(neutral.target.interfaceName)} which target ${neutral.target.name} does not publish`,
+      `dock route ${stageIdentifier} targets interface ${JSON.stringify(neutral.target.interfaceName)} which target ${neutral.target.uid} does not publish`,
     );
   }
 
@@ -589,7 +552,7 @@ export function buildDockRoute(
     target: {
       definitionRefHash: target.definitionRefHash,
       zhixuUid: target.uid,
-      zhixuName: neutral.target.name,
+      zhixuName: target.name,
       interfaceName: neutral.target.interfaceName,
       interfaceRoot: interfaceEntry.interfaceRoot,
       dockInterfaceRoot: target.dockInterfaceRoot,
@@ -653,7 +616,7 @@ export function buildUnresolvedDockRoute(
     );
   }
   const candidates: UnresolvedDockRouteCandidate[] = [];
-  for (const [name, target] of context.resolution.byName) {
+  for (const target of context.resolution.byUid.values()) {
     const interfaceEntry = target.interfaces.find(
       (candidate) => candidate.name === neutral.interfaceName,
     );
@@ -665,7 +628,7 @@ export function buildUnresolvedDockRoute(
     }
     candidates.push({
       zhixuUid: target.uid,
-      zhixuName: name,
+      zhixuName: target.name,
       definitionRefHash: target.definitionRefHash,
       artifactHash: target.artifactHash,
       ...(target.cloudArtifactId === undefined
@@ -925,7 +888,7 @@ function compareBytes(left: string, right: string): number {
 
 /**
  * dockEdges 声明 vs 内嵌定义静态出边（各 stage zhixu 执行者解析态目标
- * name 集）的交叉比对：D015 的启动图以 manifest 声明为边源，漏报即绕过
+ * uid 集）的交叉比对：D015 的启动图以 manifest 声明为边源，漏报即绕过
  * 环检测——集不相等（含缺声明/多声明/重复）一律拒绝。
  */
 function dockEdgeCorrespondenceIssues(

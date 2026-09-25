@@ -34,7 +34,7 @@ golden 向量由 `pnpm --filter @uvp-eth/compiler generate:dock-fixtures` 生成
 
 | 常量 | 值 |
 | --- | --- |
-| DEFINITION_UID_DOMAIN | `uvp:definition-uid:v1` |
+| DEFINITION_UID_DOMAIN | `uvp:definition-uid:v2` |
 | DOMAIN_DEFINITION_REF | `UVP_DEFINITION_REF_V1` |
 | DOMAIN_INTERFACE | `UVP_DOCK_INTERFACE_V2` |
 | DOMAIN_INTERFACE_INPUT | `UVP_DOCK_INTERFACE_INPUT_V2` |
@@ -76,10 +76,16 @@ golden 向量由 `pnpm --filter @uvp-eth/compiler generate:dock-fixtures` 生成
 ### 4.1 定义身份（canonical 域）
 
 ```
-digest = keccak256("uvp:definition-uid:v1:" + canonical_json(定义剔除 metadata.annotations))
+digest = keccak256("uvp:definition-uid:v2:" + canonical_json(定义剔除 metadata.name 与 metadata.annotations))
 uid    = "zx-" + digest_hex[0..32]
 definitionRefHash = H("UVP_DEFINITION_REF_V1"; keccak(uid))
 ```
+
+uid 内容派生、展示字段（name/annotations）不参与：改展示名不换身份，
+内容变即新 uid。引用一律 uid、解析按 uid 精确匹配不跟随——目标内容变
+后旧 route 恒指旧 uid，升级由引用方改绑新 uid 重新发布（显式重绑）；
+链侧清单（resolution manifest）按 uid 键，同 uid 重复条目响亮拒绝。
+planHash 的 `source` 快照仍只剔 `metadata.annotations`（§4.6）。
 
 ### 4.2 接口承诺（目标侧）
 
@@ -266,17 +272,17 @@ feeLimit 恒 0。
 
 ```
 EMPTY_MERKLE_ROOT      = 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470
-targetUid              = zx-459b6f6c0e1fe47ace72be19ef0fad4d
-targetDefinitionRefHash= 0x3085d8ba890395b08454591df427faf64ab6af3c8c343386915c873eff3192b4
-targetPlanId           = 0xa217a05f605edc13ae024f9e3baf15de239735c634a398cd9b77be86da3fb545
-targetArtifactHash     = 0x7d2de93fc28186ad67558b9230764e6d00d136665bd489ff81be552fcaf0ef5b
-production_service.interfaceRoot = 0x7d7a7dd35ea3d2eba8d57d6c00e27dde9bf651dc6523d5e6639fee72324e8c3c
-targetDockInterfaceRoot= 0x91b218ed9ecd83825428ddaad58bf36e4f4ab676fd5e3519a63d0c33d14f4faf
+targetUid              = zx-f0716311adc25af69becced4e4d04aef
+targetDefinitionRefHash= 0xbd684a0307c762203588fa01cb13678459886ff3c0e25d1aceb1c04672f384f4
+targetPlanId           = 0xafc403ebf6fb181d1d0317621d6ea0ab978f877042a69308ffc1d45904c31cef
+targetArtifactHash     = 0x7ef35a53170ba28e37cfc2f74ecadca550dcf3fb305b3029fba438e2ef07c50c
+production_service.interfaceRoot = 0x2f0f75f81d59262f671dae2d804b475161fe14a6f537b0a0962bc9fb11435766
+targetDockInterfaceRoot= 0x76a3b1b975b9ec31b1015db869cd8346926e4eaecf4e8dcc2ab118f54a34d29a
 evmRuntimeDomain(31337, 0x5FbDB2315678afecb367f032d93F642f64180aa3)
                        = 0xa94a0dfb7ca902548259fc0032f6f1cbf654f1f291c31b748af22732e6c7001e
 cloudRuntimeDomain("uvp-cloud-deployment-fixture", "uvp-cloud-security-fixture")
                        = 0xf9747a82566e7d832a4c9f925a41141970614a89f796997fde9e2796a4f0d820
 ```
 
-route/实例/信封向量依赖调用方定义内容（v2 起父定义 target 按 name 引用），
+route/实例/信封向量依赖调用方定义内容（父定义 target 按 uid 引用），
 以 golden manifest 为准，不在本文重复内联。

@@ -78,6 +78,7 @@ export {
   sourceFactSetHash,
   stageKey,
   stripAnnotations,
+  stripDisplayFields,
   targetOrderRefKey,
   u64Word,
   verifyMerkleProof,

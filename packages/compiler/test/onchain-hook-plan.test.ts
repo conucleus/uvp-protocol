@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import {
   dockDemoResolutionManifest,
-  dockDemoTargetName,
+  dockDemoTargetUid,
   dockProductionTargetDefinition,
 } from "./dock-demo.js";
 import {
   EMPTY_MERKLE_ROOT,
+  definitionUid,
   verifyMerkleProof,
   dockCandidateLeaf,
   dockRouteId,
@@ -173,7 +174,7 @@ const baseZhixu: ZhixuDefinition = {
               // mode=new 恰好一条 input 绑定（出生锚）；TIMEOUT 是本地
               // receiveSignals 通道但不参与 inputMap。
               zhixuExecutorConfig: {
-                target: { zhixu: dockDemoTargetName },
+                target: { zhixu: dockDemoTargetUid() },
                 interface: "production_service",
                 order: { mode: "new" },
                 inputMap: { START: "execute" },
@@ -197,11 +198,11 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.equal(onchain.planId, sourcePlan.planId);
   assert.deepEqual(onchain.platform, sourcePlan.platform);
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
-  // 父定义 target.zhixu 携带目标 name 引用（DSL 壳不携带派生身份），
-  // sourcePlanHash/planHash preimage 随定义内容变化；承诺公式本身冻结不变。
+  // target.zhixu 携带目标内容派生 uid 引用，sourcePlanHash/planHash
+  // preimage 随定义内容变化；承诺公式本身冻结不变。
   assert.equal(
     onchain.planHash,
-    "0x5417ef33808a10bd528e16e4409dd1072a9eb7ed91a1f68ea4e9da18b440d981",
+    "0x8bceeb31d37c41b326c1fcd6a455f6c3983d8b33928c4f9b6f14e922ab571fbe",
   );
   // capabilitiesRoot 是两表叶子的唯一承诺形态（v3 新增字段，随 planHash
   // 一同钉死防漂移）：与生产公式 capabilitiesRootOf 逐字节一致。
@@ -1657,7 +1658,7 @@ test("carries existing-mode dock routes on the on-chain track (UVPDockingModule 
   // modeWord=existing 进 routeHash 与 dockInstanceId 双 preimage，与 new
   // 不可互冒。链轨编译不再拒绝，产物原样承载（旧拒绝闸直接删除，无
   // 兼容轨）；编译入口与反序列化边界同口径接受。
-  const existingZhixu = dynamicExistingZhixu({ zhixu: dockDemoTargetName });
+  const existingZhixu = dynamicExistingZhixu({ zhixu: dockDemoTargetUid() });
 
   const onchain = compileZhixuOnchainHookPlan(existingZhixu, demoManifest);
   assert.equal(onchain.dockRoutes.length, 1);

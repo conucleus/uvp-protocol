@@ -169,7 +169,7 @@ test("frozen constants match the golden manifest", () => {
   );
   assert.equal(fixture.constants.merkle.emptyRoot, EMPTY_MERKLE_ROOT);
   assert.equal(fixture.constants.permitTypeHash.length > 0, true);
-  assert.equal(fixture.constants.domains.definitionUid, "uvp:definition-uid:v1");
+  assert.equal(fixture.constants.domains.definitionUid, "uvp:definition-uid:v2");
   assert.equal(fixture.constants.domains.dockInstance, "UVP_DOCK_INSTANCE_V2");
   assert.equal(fixture.constants.domains.dockInterface, "UVP_DOCK_INTERFACE_V2");
   assert.equal(
@@ -208,20 +208,50 @@ test("frozen constants match the golden manifest", () => {
 });
 
 test("definition uid parity: TS derivation matches the Rust-computed identities", () => {
-  // TS 对拍函数（仅测试/工具用）：canonical 去 annotations + 域前缀哈希，
-  // 必须与 Rust definition_uid 在 golden 样本上逐字符一致。
+  // TS 对拍函数（仅测试/工具用）：canonical 剔展示字段（name + annotations）
+  // + 域前缀哈希，必须与 Rust derive_definition_uid 在 golden 样本上逐字符
+  // 一致。
   assert.equal(definitionUid(fixture.targetDefinition), fixture.identities.targetUid);
   assert.equal(definitionUid(fixture.parentDefinition), fixture.identities.parentUid);
   assert.match(fixture.identities.targetUid, /^zx-[0-9a-f]{32}$/);
 
-  // 注解永不参与身份：加 annotations 派生不变，改 name/labels 即变。
-  const annotated = structuredClone(fixture.targetDefinition) as ZhixuDefinition & {
-    metadata: { annotations?: Record<string, string>; labels?: Record<string, string> };
+  // 金向量（Rust 权威 uvp_ir::derive_definition_uid）：域
+  // uvp:definition-uid:v2，preimage 剔 metadata.name + metadata.annotations。
+  assert.equal(
+    definitionUid({
+      apiVersion: "uvp/v0",
+      kind: "Zhixu",
+      metadata: { name: "weaving_order" },
+      spec: { platform: { type: "cloud" } },
+    }),
+    "zx-e906ad47866918682d1e2ed2528682f5",
+  );
+
+  // 展示字段永不参与身份：加 annotations / 改 name 派生不变，改内容即变
+  // （同名不同内容=不同 uid；同内容不同名=同 uid）。
+  const displayOnly = structuredClone(fixture.targetDefinition) as ZhixuDefinition & {
+    metadata: {
+      name: string;
+      annotations?: Record<string, string>;
+      labels?: Record<string, string>;
+    };
   };
-  annotated.metadata.annotations = { doc: "parity-probe" };
-  assert.equal(definitionUid(annotated), fixture.identities.targetUid);
-  annotated.metadata.labels = { site: "factory-a" };
-  assert.notEqual(definitionUid(annotated), fixture.identities.targetUid);
+  displayOnly.metadata.annotations = { doc: "parity-probe" };
+  assert.equal(definitionUid(displayOnly), fixture.identities.targetUid);
+  displayOnly.metadata.name = "renamed_target";
+  assert.equal(definitionUid(displayOnly), fixture.identities.targetUid);
+  // 同内容不同名=同 uid（改名不换身份；链侧清单按 uid 键，同 uid 多
+  // planId 的形态在清单层 fail-closed，见 prepareDockResolution 测试）。
+  const renamedOnly = {
+    ...structuredClone(fixture.targetDefinition),
+    metadata: { ...fixture.targetDefinition.metadata, name: "renamed_target" },
+  };
+  assert.equal(definitionUid(renamedOnly), definitionUid(fixture.targetDefinition));
+  // 改名 + 加注解两路展示字段变体同 uid（都被 preimage 剔除）。
+  assert.equal(definitionUid(displayOnly), definitionUid(renamedOnly));
+  // 内容变化（labels 进 canonical preimage）：不同 uid。
+  displayOnly.metadata.labels = { site: "factory-a" };
+  assert.notEqual(definitionUid(displayOnly), fixture.identities.targetUid);
 
   // definitionRefHash 公式不变（吃派生 uid）。
   assert.equal(

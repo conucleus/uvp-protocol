@@ -79,11 +79,19 @@ export function dockProductionTargetDefinition(): ZhixuDefinition {
   };
 }
 
-/** demo 目标定义的 metadata.name（slug）——调用方 target.zhixu 的引用键。 */
+/** demo 目标定义的 metadata.name（slug，纯展示标签，不参与寻址）。 */
 export const dockDemoTargetName = "friction_wheel_production";
 
+/**
+ * demo 目标的内容派生身份（zx-<32hex>），供调用方定义的 target.zhixu
+ * 引用（引用一律 uid；先编译目标再取 uid，与发布流程同序）。
+ */
+export function dockDemoTargetUid(): string {
+  return dockDemoResolutionManifest().definitions[0]!.zhixu;
+}
+
 /** 调用方定义：new 模式生产委托 + existing 模式既有事实引用，各一条 route。 */
-export function dockSourcingParentDefinition(targetName: string): ZhixuDefinition {
+export function dockSourcingParentDefinition(targetUid: string): ZhixuDefinition {
   return {
     apiVersion: "uvp/v0",
     kind: "Zhixu",
@@ -124,7 +132,7 @@ export function dockSourcingParentDefinition(targetName: string): ZhixuDefinitio
               executor: {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
-                  target: { zhixu: targetName },
+                  target: { zhixu: targetUid },
                   interface: "production_service",
                   order: { mode: "new" },
                   inputMap: { EXECUTE: "execute" },
@@ -142,7 +150,7 @@ export function dockSourcingParentDefinition(targetName: string): ZhixuDefinitio
               executor: {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
-                  target: { zhixu: targetName },
+                  target: { zhixu: targetUid },
                   interface: "production_evidence",
                   order: { mode: "existing" },
                   signalMap: { cmp: "scrap_declared" },
@@ -187,9 +195,4 @@ export function resolutionManifestFor(
       },
     ],
   };
-}
-
-/** demo 目标的内容派生身份（zx-<32hex>），供调用方定义的 target.zhixu 引用。 */
-export function dockDemoTargetUid(): string {
-  return dockDemoResolutionManifest().definitions[0]!.zhixu;
 }

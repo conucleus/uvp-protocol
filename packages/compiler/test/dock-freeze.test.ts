@@ -180,7 +180,7 @@ test("core linker errors retain stable code, path, and target reference", () => 
           (issue) =>
             /D009/.test(issue) &&
             /inputMap\.EXECUTE/.test(issue) &&
-            /friction_wheel_production/.test(issue),
+            issue.includes(fixture.identities.targetUid),
         ),
         error.issues.join("; "),
       );
@@ -221,7 +221,7 @@ test("D020 mode-not-allowed and D003 target-shape errors surface from the core l
     },
   );
 
-  // D003：target.zhixu 形态必须是与 metadata.name 同规则的 slug。
+  // D003：target.zhixu 形态必须是目标定义的内容派生 uid（zx-<32hex>）。
   const badName = structuredClone(fixture.parentDefinition) as unknown as ZhixuDefinition & {
     spec: {
       taskPatterns: Array<{
@@ -241,7 +241,7 @@ test("D020 mode-not-allowed and D003 target-shape errors surface from the core l
       assert.ok(error instanceof HookPlanCompilationError);
       assert.ok(
         error.issues.some(
-          (issue) => /D003/.test(issue) && /metadata\.name/.test(issue),
+          (issue) => /D003/.test(issue) && /content-derived uid/.test(issue),
         ),
         error.issues.join("; "),
       );

@@ -115,8 +115,8 @@
         }
       },
       "error": {
-        "rust": "exceeds 100 bytes (global_zhixu.name)",
-        "go": "exceeds 100 bytes (global_zhixu.name)",
+        "rust": "exceeds 100 bytes",
+        "go": "exceeds 100 bytes",
         "ts": "must match ^[a-z][a-z0-9_-]{0,99}$"
       },
       "applies": [

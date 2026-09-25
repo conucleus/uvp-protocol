@@ -1,11 +1,11 @@
 export const COMPILER_NAME = "uvp-eth-compiler" as const;
 export const COMPILER_VERSION = "0.1.0" as const;
-export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v3" as const;
+export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v4" as const;
 export const ONCHAIN_HOOK_PLAN_SCHEMA_VERSION =
   "uvp.onchainHookPlan.v3" as const;
 export const DOCK_INTERFACE_ARTIFACT_SCHEMA_VERSION =
   "uvp.dockInterfaceArtifact.v2" as const;
-export const DOCK_ROUTE_SCHEMA_VERSION = "uvp.dockRoute.v2" as const;
+export const DOCK_ROUTE_SCHEMA_VERSION = "uvp.dockRoute.v3" as const;
 /** 未解析 route（target:null 动态选择）的声明面形态（设计文档 §8.8）。 */
 export const DOCK_ROUTE_UNRESOLVED_SCHEMA_VERSION =
   "uvp.dockRoute.unresolved.v1" as const;
@@ -128,8 +128,8 @@ export interface ZhixuExecutorConfigSource {
 
 /**
  * Resolution manifest v2（链轨发布面）：由 Store/发布系统或离线 lock 文件
- * 提供。跨轨共享的解析面是中性 name 目录（uvp-core linker 消费的
- * NeutralResolutionManifest，由本包从每个 entry 派生）；内容寻址校验
+ * 提供。跨轨共享的解析面是中性 uid 注册表（uvp-core linker 消费的
+ * NeutralDockTargets，由本包从每个 entry 派生）；内容寻址校验
  * （uid/definitionRefHash/接口叶重算比对）是链轨 TS 自己的事，不入 core。
  */
 export interface DockResolutionManifest {
@@ -148,21 +148,25 @@ export interface DockResolutionTarget {
   readonly interfaces: readonly DockInterfaceArtifactInterface[];
   readonly cloudArtifactId?: string;
   readonly evmPlanId?: HexString;
-  /** 该定义声明的静态 dock 出边（目标定义 name），供 D015 启动图检测。 */
+  /** 该定义声明的静态 dock 出边（目标定义 uid），供 D015 启动图检测。 */
   readonly dockEdges?: readonly { readonly target: string }[];
 }
 
 /**
- * 中性 resolution manifest（uvp-core linker 的解析面）：name 目录 + 中性
- * 接口声明数组 + 可选 name 出边。无任何哈希/派生身份字段。
+ * 中性 dock 目标注册表（uvp-core linker 的解析面）：uid 键条目数组，
+ * 条目只携带目标定义原文——接口声明与静态出边由 core 从原文单源提取，
+ * 调用方不自报接口清单。无任何哈希/派生身份字段；uid 是解析键，
+ * 引用按内容精确指向。
  */
-export interface NeutralResolutionManifest {
-  readonly schemaVersion: typeof DOCK_RESOLUTION_SCHEMA_VERSION;
-  readonly definitions: readonly {
-    readonly name: string;
-    readonly interfaces: readonly NeutralInterfaceDeclaration[];
-    readonly dockEdges?: readonly { readonly target: string }[];
-  }[];
+export type NeutralDockTargets = readonly NeutralDockTarget[];
+
+export interface NeutralDockTarget {
+  /** 目标定义的内容派生身份（zx-<32hex>），注册表解析键。 */
+  readonly uid: string;
+  /** 目标定义完整原文（Rust uvp_model::ZhixuDefinition）：core 从原文
+   * 提取接口声明与静态出边，input 端口 source 由 hook 引用所属 stage 的
+   * source 推导（hook 引用不存在的 stage 按 D008 拒绝）。 */
+  readonly definition: ZhixuDefinition;
 }
 
 /**
@@ -181,11 +185,11 @@ export interface NeutralInterfaceDeclaration {
   readonly outputs?: Readonly<Record<string, { readonly signal: string }>>;
 }
 
-/** 中性已解析 route（core hook_plan 壳元素）：本地声明 + 目标 name 引用。 */
+/** 中性已解析 route（core hook_plan 壳元素）：本地声明 + 目标 uid 引用。 */
 export interface NeutralDockRoute {
   readonly schemaVersion: typeof DOCK_ROUTE_SCHEMA_VERSION;
   readonly local: { readonly stageIdentifier: string };
-  readonly target: { readonly name: string; readonly interfaceName: string };
+  readonly target: { readonly uid: string; readonly interfaceName: string };
   readonly orderMode: DockOrderMode;
   readonly inputBindings: readonly { readonly hookId: string; readonly port: string }[];
   readonly outputBindings: readonly { readonly signal: string; readonly port: string }[];
@@ -265,6 +269,7 @@ export interface DockRouteV2 {
   readonly target: {
     readonly definitionRefHash: HexString;
     readonly zhixuUid: string;
+    /** 目标定义展示名（metadata.name，仅 JSON 投影，不参与哈希）。 */
     readonly zhixuName: string;
     readonly interfaceName: string;
     /** 被绑定接口的 interfaceLeaf_v2（manifest interfaces[].interfaceRoot）。 */
@@ -317,7 +322,7 @@ export interface DockRouteOutputBinding {
 export interface UnresolvedDockRouteCandidate {
   /** 候选定义的内容派生身份（zx-<32hex>）。 */
   readonly zhixuUid: string;
-  /** manifest 解析键（候选定义的 metadata.name）。 */
+  /** 候选定义展示名（metadata.name，仅 JSON 投影，非解析键）。 */
   readonly zhixuName: string;
   readonly definitionRefHash: HexString;
   /** 候选目标 plan 的 planHash（运行期定位目标 plan 用，不入候选叶）。 */

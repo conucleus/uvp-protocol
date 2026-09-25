@@ -25,7 +25,7 @@ import {
 } from "../src/types/index.js";
 import {
   dockDemoResolutionManifest,
-  dockDemoTargetName,
+  dockDemoTargetUid,
   dockProductionTargetDefinition,
   dockSourcingParentDefinition,
   resolutionManifestFor,
@@ -45,6 +45,8 @@ import {
 } from "../src/dock.js";
 
 const demoManifest = dockDemoResolutionManifest();
+/** demo 目标的内容派生身份：引用一律 uid（同名不同内容=不同 uid，name 纯展示）。 */
+const demoTargetUid = dockDemoTargetUid();
 
 /** 变异制品后按载荷重签 planHash（承诺重算测试之外的形状测试需要）。 */
 function resign<A extends { planHash: string }>(artifact: A): A {
@@ -104,7 +106,7 @@ const baseZhixu: ZhixuDefinition = {
               zhixuExecutorConfig: {
                 // mode=new 恰好一条 input 绑定（出生锚）；TIMEOUT 是本地
                 // receiveSignals 通道但不参与 inputMap。
-                target: { zhixu: dockDemoTargetName },
+                target: { zhixu: demoTargetUid },
                 interface: "production_service",
                 order: { mode: "new" },
                 inputMap: { START: "execute" },
@@ -170,7 +172,7 @@ test("compiles internal HookPlan IR", () => {
   const plan = compileZhixuHookPlan(baseZhixu, demoManifest);
   const again = compileZhixuHookPlan(baseZhixu, demoManifest);
 
-  assert.equal(plan.schemaVersion, "uvp.hookPlan.v3");
+  assert.equal(plan.schemaVersion, "uvp.hookPlan.v4");
   // zhixuId = 定义内容派生身份，没有作者手写 uid。
   assert.match(plan.zhixuId, /^zx-[0-9a-f]{32}$/);
   assert.deepEqual(plan.platform, { type: "cloud" });
@@ -310,7 +312,7 @@ test("planId preimage drops empty platform params across compile/validate calibe
               executor: {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
-                  target: { zhixu: dockDemoTargetName },
+                  target: { zhixu: demoTargetUid },
                   interface: "production_evidence",
                   order: { mode: "existing" },
                   signalMap: { cmp: "scrap_declared" },
@@ -335,7 +337,7 @@ test("planId preimage drops empty platform params across compile/validate calibe
           artifactHash: `0x${"ab".repeat(32)}` as `0x${string}`,
           published: true,
           interfaces: [],
-          dockEdges: [{ target: dockDemoTargetName }],
+          dockEdges: [{ target: demoTargetUid }],
           evmPlanId: embeddedPlan.planId,
         },
       ],
@@ -350,7 +352,7 @@ test("validates HookPlan IR artifacts at the internal boundary", () => {
   // （planHash 不重签的篡改形态在下方专门的承诺重算测试里）。
   assert.deepEqual(
     validateHookPlanArtifact(resign({ ...plan, schemaVersion: "wrong" })),
-    ["schemaVersion must be uvp.hookPlan.v3"]
+    ["schemaVersion must be uvp.hookPlan.v4"]
   );
   // 元数据表同步清空：零 hook 制品的能力表/绑定表引用全部悬空，会另报
   // 阶段存在性镜像 issue——本断言只钉 dependencyIndex 重算门。
@@ -458,7 +460,7 @@ test("rejects metadata stage references outside the hooks stage set (stage exist
 });
 
 function resolutionEntryWithStaticEdge(withEdges: boolean) {
-  // 内嵌定义静态引用 dockDemoTargetName（zhixu 执行器），manifest 声明面
+  // 内嵌定义静态引用 demoTargetUid（zhixu 执行器），manifest 声明面
   // 必须等价携带该出边，否则 core D015 的启动图环检测被绕过。
   const definition: ZhixuDefinition = {
     apiVersion: "uvp/v0",
@@ -479,7 +481,7 @@ function resolutionEntryWithStaticEdge(withEdges: boolean) {
               executor: {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
-                  target: { zhixu: dockDemoTargetName },
+                  target: { zhixu: demoTargetUid },
                   interface: "production_evidence",
                   order: { mode: "existing" },
                   signalMap: { cmp: "scrap_declared" },
@@ -499,7 +501,7 @@ function resolutionEntryWithStaticEdge(withEdges: boolean) {
     artifactHash: `0x${"ab".repeat(32)}` as `0x${string}`,
     published: true,
     interfaces: [],
-    ...(withEdges ? { dockEdges: [{ target: dockDemoTargetName }] } : {}),
+    ...(withEdges ? { dockEdges: [{ target: demoTargetUid }] } : {}),
   };
 }
 
@@ -512,7 +514,7 @@ test("rejects resolution manifests whose dockEdges diverge from the embedded def
   // 漏报出边 = 绕过 D015 环检测的形态，编译期拒绝。
   assert.throws(
     () => prepareDockResolution(manifest(false)),
-    /dockEdges must declare static target "friction_wheel_production"/,
+    /dockEdges must declare static target "zx-/,
   );
   // 等价声明 → 放行。
   assert.doesNotThrow(() => prepareDockResolution(manifest(true)));
@@ -525,7 +527,7 @@ test("rejects resolution manifests whose dockEdges diverge from the embedded def
           {
             ...resolutionEntryWithStaticEdge(true),
             dockEdges: [
-              { target: dockDemoTargetName },
+              { target: demoTargetUid },
               { target: "phantom_target" },
             ],
           },
@@ -542,13 +544,13 @@ test("rejects resolution manifests whose dockEdges diverge from the embedded def
           {
             ...resolutionEntryWithStaticEdge(true),
             dockEdges: [
-              { target: dockDemoTargetName },
-              { target: dockDemoTargetName },
+              { target: demoTargetUid },
+              { target: demoTargetUid },
             ],
           },
         ],
       }),
-    /duplicates target "friction_wheel_production"/,
+    /duplicates target "zx-/,
   );
 });
 
@@ -568,30 +570,72 @@ test("rejects resolution manifests whose evmPlanId diverges from the embedded de
   );
 });
 
-test("neutral resolution manifest carries {source, hook} on every input port", () => {
-  // 发布面 → core 中性 name 目录：input 端口补 source 兄弟键（所属 stage
-  // 的 source 类），shape 与 uvp-core parse_interface_declaration 的必填键
-  // 逐字段对齐——缺该键 core 侧 D008 拒绝，TS 侧发射面必须恒携带。
+test("rejects manifests carrying the same uid under two names (uid is the resolution key)", () => {
+  // 同内容不同名=同 uid（name 纯展示，重签后两 entry 的 uid 相同、planId
+  // 不同——链上 list 里即"同 uid 多 planId"）。清单是寻址面不是目录页：
+  // byUid 精确查取要求键唯一，同 uid 重复条目 fail-closed 响亮拒绝；
+  // 升级走显式重绑（引用方改绑新 uid 重新发布），不靠清单内多义条目。
+  const renamed = structuredClone(resolutionEntryWithStaticEdge(true)) as DockResolutionTarget & {
+    definition: ZhixuDefinition;
+    zhixu: string;
+    definitionRefHash: `0x${string}`;
+    evmPlanId?: `0x${string}`;
+  };
+  renamed.definition = {
+    ...renamed.definition,
+    metadata: { ...renamed.definition.metadata, name: "edge_intermediary_alias" },
+  };
+  const uid = definitionUid(renamed.definition);
+  assert.equal(uid, resolutionEntryWithStaticEdge(true).zhixu);
+  renamed.zhixu = uid;
+  renamed.definitionRefHash = definitionRefHash(uid);
+  delete renamed.evmPlanId;
+  assert.throws(
+    () =>
+      prepareDockResolution({
+        schemaVersion: "uvp.dock.resolution.v2",
+        definitions: [resolutionEntryWithStaticEdge(true), renamed],
+      }),
+    /duplicate definition uid "zx-[0-9a-f]{32}" — uid is the resolution key and must be unique in the manifest/,
+  );
+});
+
+test("neutral dock target registry embeds the definition verbatim; core owns the input-port source face", () => {
+  // 发布面 → core 中性 uid 注册表：条目闭集 {uid, definition}，定义原文
+  // 逐字节内嵌（调用方不自报接口清单/出边，提取单源在 core，D008）。
   const prepared = prepareDockResolution(demoManifest);
-  const service = prepared.neutral.definitions[0]!.interfaces.find(
+  assert.deepEqual(prepared.neutral, [
+    { uid: demoTargetUid, definition: demoManifest.definitions[0]!.definition },
+  ]);
+  // 旧发射面的 {source, hook} 语义现属主是 core 的提取面：同一 definition
+  // 经 FFI 编译，产物接口面在 input 端口携带 hook 所属 stage 的 source
+  // （factory 类）——TS 侧承诺编码消费的正是这一面，与 manifest 发布面
+  // 同源对拍。
+  const targetPlan = compileZhixuHookPlan(
+    demoManifest.definitions[0]!.definition,
+  );
+  const service = targetPlan.dockInterface?.interfaces.find(
     (entry) => entry.name === "production_service",
   );
-  assert.ok(service, "demo manifest exposes production_service");
-  assert.deepEqual(service.inputs, {
-    execute: { source: "factory", hook: "manufacturing.intake#EXECUTE" },
-    amend: { source: "factory", hook: "manufacturing.produce#DOCK_AMEND" },
-  });
-  const evidence = prepared.neutral.definitions[0]!.interfaces.find(
+  assert.ok(service, "demo target publishes production_service");
+  assert.deepEqual(
+    service.inputs.map((port) => [port.port, port.source, port.hookId]),
+    [
+      ["amend", "factory", "manufacturing.produce#DOCK_AMEND"],
+      ["execute", "factory", "manufacturing.intake#EXECUTE"],
+    ],
+  );
+  const evidence = targetPlan.dockInterface?.interfaces.find(
     (entry) => entry.name === "production_evidence",
   );
-  assert.ok(evidence, "demo manifest exposes production_evidence");
-  assert.deepEqual(evidence.inputs, {});
+  assert.ok(evidence, "demo target publishes production_evidence");
+  assert.deepEqual(evidence.inputs, []);
 });
 
 /**
  * 就地变异内嵌定义后按内容寻址口径重签 entry：uid/refHash 跟随定义，接口
  * 承诺链（叶/两根/接口叶）按新 uid 重算——变异定义但不重签会让
- * prepareTargetEntry 的承诺重算先于本测试聚焦的 neutral 派生路径抛错。
+ * prepareTargetEntry 的承诺重算先于本测试聚焦的 core 提取路径抛错。
  */
 interface MutableInterfaceEntry {
   readonly name: string;
@@ -656,9 +700,11 @@ function readdress(entry: DockResolutionTarget): void {
   }
 }
 
-test("neutral input-port source derivation fails loud, no fallback", () => {
-  // (a) 所属 stage 缺席：接口声明引用了内嵌定义不存在的 stage——source 无
-  // 从派生，响亮拒绝而不是臆造空串。
+test("core extraction of dock targets fails loud, no fallback", () => {
+  // 提取单源在 core（条目=定义原文）：接口声明引用内嵌定义不存在的
+  // stage——input 端口 source 无从派生，core 在编译边界 D008 响亮拒绝，
+  // 不臆造空串；TS 发射面（prepareDockResolution）只做内容寻址校验，
+  // 此处按原样放行，拒绝面在 FFI 提取侧。
   const missingStageEntry = structuredClone(
     demoManifest.definitions[0],
   ) as (typeof demoManifest.definitions)[number];
@@ -669,16 +715,24 @@ test("neutral input-port source derivation fails loud, no fallback", () => {
     (stage) => stage.name !== "intake",
   );
   readdress(missingStageEntry);
+  const missingStageManifest = {
+    schemaVersion: "uvp.dock.resolution.v2",
+    definitions: [missingStageEntry],
+  } as const;
+  const missingStageUid = prepareDockResolution(
+    missingStageManifest,
+  ).neutral[0]!.uid;
   assert.throws(
     () =>
-      prepareDockResolution({
-        schemaVersion: "uvp.dock.resolution.v2",
-        definitions: [missingStageEntry],
-      }),
-    /stage "manufacturing\.intake" is absent from the embedded definition — the neutral input-port source cannot be derived/,
+      compileZhixuHookPlan(
+        dockSourcingParentDefinition(missingStageUid),
+        missingStageManifest,
+      ),
+    /D008 dockTargets\[0\]\.definition\.spec\.dockInterface\.production_service\.inputs\.execute\.hook: hook "manufacturing\.intake#EXECUTE" references stage "manufacturing\.intake" which does not exist in the target definition/,
   );
 
-  // (b) stage source 空白：core D022 同口径（对无 source 的 stage 拒绝派生）。
+  // stage source 空白：core 自定义派生的 input 端口 source（空白串）与
+  // route 绑定的输出信号前缀 seam 分叉，D012 响亮拒绝（无回退）。
   const blankSourceEntry = structuredClone(
     demoManifest.definitions[0],
   ) as (typeof demoManifest.definitions)[number];
@@ -688,34 +742,20 @@ test("neutral input-port source derivation fails loud, no fallback", () => {
     ) as unknown as { source: string }
   ).source = "   ";
   readdress(blankSourceEntry);
+  const blankSourceManifest = {
+    schemaVersion: "uvp.dock.resolution.v2",
+    definitions: [blankSourceEntry],
+  } as const;
+  const blankSourceUid = prepareDockResolution(
+    blankSourceManifest,
+  ).neutral[0]!.uid;
   assert.throws(
     () =>
-      prepareDockResolution({
-        schemaVersion: "uvp.dock.resolution.v2",
-        definitions: [blankSourceEntry],
-      }),
-    /declares a blank source — the neutral input-port source cannot be derived/,
-  );
-
-  // (c) 发布面 artifact 端口 source 与内嵌定义 stage source 分叉：manifest
-  // 自不一致（非内容寻址），拒绝。
-  const driftedEntry = structuredClone(
-    demoManifest.definitions[0],
-  ) as (typeof demoManifest.definitions)[number];
-  const serviceInterface = driftedEntry.interfaces.find(
-    (entry) => entry.name === "production_service",
-  )!;
-  const executePort = serviceInterface.inputs.find(
-    (port) => port.port === "execute",
-  )! as unknown as Record<string, unknown>;
-  executePort.source = "counterfeit-source";
-  assert.throws(
-    () =>
-      prepareDockResolution({
-        schemaVersion: "uvp.dock.resolution.v2",
-        definitions: [driftedEntry],
-      }),
-    /declares "counterfeit-source" but the embedded definition's stage "manufacturing\.intake" source is "factory" — the manifest is not content-addressed/,
+      compileZhixuHookPlan(
+        dockSourcingParentDefinition(blankSourceUid),
+        blankSourceManifest,
+      ),
+    /D012 .*single target source seam.*found \{"   ", "factory"\}/,
   );
 });
 
@@ -763,7 +803,7 @@ test("artifact validators require a non-empty source on input ports", () => {
 
 test("dock route commitment recomputation fails closed on missing identity fields", () => {
   const plan = compileZhixuHookPlan(
-    dockSourcingParentDefinition(dockDemoTargetName),
+    dockSourcingParentDefinition(demoTargetUid),
     demoManifest,
   );
   const stripped = {
@@ -1408,7 +1448,7 @@ test("rejects non-canonical zhixu executor config shapes", () => {
               executor: {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
-                  target: { zhixu: dockDemoTargetName },
+                  target: { zhixu: demoTargetUid },
                   interface: "production_service",
                   order: { mode: "new" },
                   inputMap: { START: "execute" },
@@ -1439,7 +1479,7 @@ test("rejects non-canonical zhixu executor config shapes", () => {
               executor: {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
-                  target: { zhixu: dockDemoTargetName },
+                  target: { zhixu: demoTargetUid },
                   interface: "production_service",
                   order: { mode: "new" },
                   inputMap: { START: "execute" },
@@ -1472,7 +1512,7 @@ test("rejects non-canonical zhixu executor config shapes", () => {
                 supplierType: "zhixu",
                 supplierID: "peer-zhixu",
                 zhixuExecutorConfig: {
-                  target: { zhixu: dockDemoTargetName },
+                  target: { zhixu: demoTargetUid },
                   interface: "production_service",
                   order: { mode: "new" },
                   inputMap: { START: "execute" },
@@ -1505,7 +1545,7 @@ test("rejects locally invalid dock executor configs", () => {
               executor: {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
-                  target: { zhixu: dockDemoTargetName },
+                  target: { zhixu: demoTargetUid },
                   interface: "production_service",
                   order: { mode: "new" },
                   signalMap: { str: "started", cmp: "completed" }
@@ -1527,7 +1567,7 @@ test("rejects locally invalid dock executor configs", () => {
   (badMode.spec.taskPatterns[0]!.stages[0]!.executor!.zhixuExecutorConfig!.order as { mode: string }).mode = "derived-v1";
   assertCompilationIssues(badMode as unknown as ZhixuDefinition, [/D004/]);
 
-  // D003：target.zhixu 必须是目标定义 metadata.name（slug 形态）。
+  // D003：target.zhixu 必须是目标定义的内容派生 uid（zx-<32hex>）。
   const badTarget = structuredClone(missingInputMap) as ZhixuDefinition & {
     spec: { taskPatterns: Array<{ stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } } } }> }> };
   };
@@ -1559,7 +1599,7 @@ test("rejects locally invalid dock executor configs", () => {
               executor: {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
-                  target: { zhixu: dockDemoTargetName },
+                  target: { zhixu: demoTargetUid },
                   interface: "production_service",
                   order: { mode: "new" },
                   inputMap: { MISSING: "execute" },
@@ -1590,7 +1630,7 @@ test("demo sourcing parent links both demo interfaces (new + existing)", () => {
   // 对齐 gen_dock_fixtures 的父定义形状：production_service[new] +
   // production_evidence[existing] 两条 route 在 demo manifest 上解析。
   const plan = compileZhixuHookPlan(
-    dockSourcingParentDefinition(dockDemoTargetName),
+    dockSourcingParentDefinition(demoTargetUid),
     demoManifest,
   );
   assert.deepEqual(
@@ -1776,7 +1816,7 @@ test("compiles existing-mode routes on the cloud-facing hook plan profile", () =
                   executor: {
                     supplierType: "zhixu" as const,
                     zhixuExecutorConfig: {
-                      target: { zhixu: dockDemoTargetName },
+                      target: { zhixu: demoTargetUid },
                       interface: "production_evidence",
                       order: { mode: "existing" as const },
                       signalMap: { cmp: "scrap_declared" }
@@ -1809,9 +1849,9 @@ test("rejects output bindings mapping one local fact key onto multiple ports", (
   // 表达不了该形态，可达面是手工/第三方中性壳，直接打 buildDockRoute。
   const resolution = prepareDockResolution(demoManifest);
   const neutral = {
-    schemaVersion: "uvp.dockRoute.v2" as const,
+    schemaVersion: "uvp.dockRoute.v3" as const,
     local: { stageIdentifier: "sourcing.manufacture" },
-    target: { name: dockDemoTargetName, interfaceName: "production_service" },
+    target: { uid: demoTargetUid, interfaceName: "production_service" },
     orderMode: "new" as const,
     inputBindings: [
       { hookId: "sourcing.manufacture#EXECUTE", port: "execute" },
@@ -1850,8 +1890,10 @@ test("unbound cross-source interface ports do not join the D012 seam", () => {
     sendSignals: [{ name: "report" }],
     executor: { supplierType: "organization", supplierID: "audit-org" },
   });
+  // 变异后的目标内容派生新 uid：引用方按显式重绑纪律改绑新 uid
+  // （引用一律 uid 精确匹配，不随目标内容漂移）。
   const plan = compileZhixuHookPlan(
-    dockSourcingParentDefinition(dockDemoTargetName),
+    dockSourcingParentDefinition(definitionUid(crossSeamTarget)),
     resolutionManifestFor(crossSeamTarget),
   );
   const manufactureRoute = plan.dockRoutes.find(
@@ -1881,11 +1923,13 @@ test("route-bound cross-source ports are rejected as HookPlanCompilationError, n
     sendSignals: [{ name: "report" }],
     executor: { supplierType: "organization", supplierID: "audit-org" },
   });
+  // 变异后的目标内容派生新 uid：引用方按显式重绑纪律改绑新 uid。
+  const crossSeamTargetUid = definitionUid(crossSeamTarget);
   const parent: ZhixuDefinition = {
-    ...dockSourcingParentDefinition(dockDemoTargetName),
+    ...dockSourcingParentDefinition(crossSeamTargetUid),
     spec: {
-      ...dockSourcingParentDefinition(dockDemoTargetName).spec,
-      taskPatterns: dockSourcingParentDefinition(dockDemoTargetName).spec.taskPatterns.map(
+      ...dockSourcingParentDefinition(crossSeamTargetUid).spec,
+      taskPatterns: dockSourcingParentDefinition(crossSeamTargetUid).spec.taskPatterns.map(
         (task) =>
           task.name !== "sourcing"
             ? task
@@ -1903,7 +1947,7 @@ test("route-bound cross-source ports are rejected as HookPlanCompilationError, n
                         executor: {
                           supplierType: "zhixu" as const,
                           zhixuExecutorConfig: {
-                            target: { zhixu: dockDemoTargetName },
+                            target: { zhixu: crossSeamTargetUid },
                             interface: "production_service",
                             order: { mode: "new" as const },
                             inputMap: { CHECK: "audit_check" },
@@ -1997,7 +2041,7 @@ test("dock commitment validation fails closed on incomplete shapes", () => {
   const missingBindings = validateDockCommitments({
     dockRoutes: [
       {
-        schemaVersion: "uvp.dockRoute.v2",
+        schemaVersion: "uvp.dockRoute.v3",
         routeId,
         local,
         target: { interfaceName: "svc" },
@@ -2024,7 +2068,7 @@ test("dock commitment validation fails closed on incomplete shapes", () => {
   const malformedBinding = validateDockCommitments({
     dockRoutes: [
       {
-        schemaVersion: "uvp.dockRoute.v2",
+        schemaVersion: "uvp.dockRoute.v3",
         routeId,
         local,
         target: { interfaceName: "svc" },

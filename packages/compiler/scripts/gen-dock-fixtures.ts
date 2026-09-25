@@ -4,9 +4,9 @@
  * - `fixtures/dock/v1/manifest.json`：冻结常量、目标/父定义、resolution
  *   manifest（链轨发布面）、全部 leaf/root/hash/ID/envelope/permit golden
  *   向量；
- * - 样本定义/向量形状移植自 uvp-core 292c536 版 gen_dock_fixtures.rs
- *   （父定义 target.zhixu 随 v2 契约改为目标 name 引用），期望值由
- *   `@uvp-eth/compiler`（TS 权威承诺层）计算。
+ * - 样本定义/向量形状移植自 uvp-core gen_dock_fixtures.rs（父定义
+ *   target.zhixu 为目标内容派生 uid 引用——引用一律 uid、name 纯展示），
+ *   期望值由 `@uvp-eth/compiler`（TS 权威承诺层）计算。
  *
  * 运行：`pnpm --filter @uvp-eth/compiler generate:dock-fixtures`（幂等重生成）。
  * TS parity/freeze、Foundry DockManifestParity、uvp-deploy verify-stack 都
@@ -138,8 +138,8 @@ function targetProductionDefinition(): ZhixuDefinition {
   };
 }
 
-/** 调用方定义：new 模式生产委托（建单型委托）+ existing 模式既有事实引用（只读引用）。目标按 name 引用（v2 契约：DSL 壳不携带派生身份）。 */
-function parentSourcingDefinition(targetName: string): ZhixuDefinition {
+/** 调用方定义：new 模式生产委托（建单型委托）+ existing 模式既有事实引用（只读引用）。目标按内容派生 uid 引用（引用一律 uid，name 纯展示）。 */
+function parentSourcingDefinition(targetUid: string): ZhixuDefinition {
   return {
     apiVersion: "uvp/v0",
     kind: "Zhixu",
@@ -178,7 +178,7 @@ function parentSourcingDefinition(targetName: string): ZhixuDefinition {
               executor: {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
-                  target: { zhixu: targetName },
+                  target: { zhixu: targetUid },
                   interface: "production_service",
                   order: { mode: "new" },
                   inputMap: { EXECUTE: "execute" },
@@ -196,7 +196,7 @@ function parentSourcingDefinition(targetName: string): ZhixuDefinition {
               executor: {
                 supplierType: "zhixu",
                 zhixuExecutorConfig: {
-                  target: { zhixu: targetName },
+                  target: { zhixu: targetUid },
                   interface: "production_evidence",
                   order: { mode: "existing" },
                   signalMap: { cmp: "scrap_declared" },
@@ -250,9 +250,11 @@ function findRoute(
 
 async function main(): Promise<void> {
   const target = targetProductionDefinition();
-  const parent = parentSourcingDefinition(target.metadata.name);
-
+  // 目标先编译、取内容派生 uid，再以 uid 组装父定义引用（发布同序：
+  // 引用一律 uid，name 纯展示）。
   const targetPlan = compileZhixuHookPlan(target);
+  const parent = parentSourcingDefinition(targetPlan.zhixuId);
+
   const manifest = buildManifest(target, targetPlan);
   const parentPlan = compileZhixuHookPlan(parent, manifest);
   const routes = parentPlan.dockRoutes;

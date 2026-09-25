@@ -30,7 +30,7 @@ import type {
 export const EMPTY_MERKLE_ROOT =
   "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470" as HexString;
 
-export const DEFINITION_UID_DOMAIN = "uvp:definition-uid:v1";
+export const DEFINITION_UID_DOMAIN = "uvp:definition-uid:v2";
 export const DOMAIN_DEFINITION_REF = "UVP_DEFINITION_REF_V1";
 export const DOMAIN_INTERFACE = "UVP_DOCK_INTERFACE_V2";
 export const DOMAIN_INTERFACE_INPUT = "UVP_DOCK_INTERFACE_INPUT_V2";
@@ -319,19 +319,46 @@ export function orderModesWord(modes: readonly string[]): HexString | undefined 
 // ---------------------------------------------------------------------------
 
 /**
- * 定义身份派生函数（链轨权威）：canonical 剔除
- * `metadata.annotations` 后按 `uvp:definition-uid:v1:` 域哈希，
- * `zx-` + hex 前 32 字符。链轨制品的 zhixuId 与 resolution manifest 的
- * 内容寻址校验都从这里派生——云轨不镜像本公式（其身份归 DB）。
+ * 定义身份派生函数（链轨权威，与 Rust uvp_ir::derive_definition_uid 同
+ * 公式，共享金向量语料互钉）：canonical 剔除展示性字段
+ * `metadata.name` + `metadata.annotations` 后按 `uvp:definition-uid:v2:`
+ * 域哈希，`zx-` + hex 前 32 字符（uid 总长 35）。name 纯展示——改名不换
+ * 身份；内容变即新 uid，引用按 uid 精确指向。链轨制品的 zhixuId 与
+ * resolution manifest 的内容寻址校验都从这里派生——云轨不镜像本公式
+ * （其身份归 DB）。
  */
 export function definitionUid(definition: unknown): string {
   const digest = keccak256Hex(
-    `${DEFINITION_UID_DOMAIN}:${canonicalStringify(stripAnnotations(definition))}`,
+    `${DEFINITION_UID_DOMAIN}:${canonicalStringify(stripDisplayFields(definition))}`,
   );
   return `zx-${digest.slice(2, 2 + 32)}`;
 }
 
-/** 派生输入剔除 `metadata.annotations`：注解永不参与任何身份/哈希。 */
+/**
+ * 定义身份 preimage 的展示性字段剔除：`metadata.name` 与
+ * `metadata.annotations` 都不参与定义身份。metadata 缺省时原样返回。
+ */
+export function stripDisplayFields(definition: unknown): unknown {
+  const node = canonicalize(definition);
+  if (node === null || typeof node !== "object" || Array.isArray(node)) {
+    return node;
+  }
+  const record = node as Record<string, unknown>;
+  const metadata = record.metadata;
+  if (metadata === null || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return node;
+  }
+  const { name: _name, annotations: _annotations, ...rest } = metadata as Record<string, unknown>;
+  void _name;
+  void _annotations;
+  return { ...record, metadata: rest };
+}
+
+/**
+ * planHash 的 source 快照剔除 `metadata.annotations`：注解永不参与任何
+ * 哈希。只剔注解不剔 name——plan 制品身份（planId preimage）本就携带
+ * zhixuName，快照保留它与制品字段同口径。
+ */
 export function stripAnnotations(definition: unknown): unknown {
   const node = canonicalize(definition);
   if (node === null || typeof node !== "object" || Array.isArray(node)) {
