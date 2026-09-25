@@ -412,7 +412,7 @@ function validateSignalCapabilities(capabilities: readonly unknown[]): readonly 
     expectNonEmptyString(capability.declaredSignal, `${prefix}.declaredSignal`, issues);
     expectNonEmptyString(capability.targetSource, `${prefix}.targetSource`, issues);
     expectNonEmptyString(capability.targetSignalName, `${prefix}.targetSignalName`, issues);
-    expectOneOf(capability.targetOrderRelation, ["current", "triggerOrigin"], `${prefix}.targetOrderRelation`, issues);
+    expectLiteral(capability.targetOrderRelation, "current", `${prefix}.targetOrderRelation`, issues);
     if (
       typeof capability.stageIdentifier === "string" &&
       typeof capability.targetSource === "string" &&

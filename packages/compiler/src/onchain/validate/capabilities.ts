@@ -9,8 +9,8 @@ import {
 } from "../hash/route.js";
 import {
   expectHexHash,
+  expectLiteral,
   expectNonEmptyString,
-  expectOneOf,
   isHexHash,
   isRecord,
 } from "../shape.js";
@@ -44,26 +44,22 @@ export { SUPPLIER_TYPES, FILE_TYPES };
 
 /**
  * E16 镜像（uvp-constraints.v1.json rejectionSurfaces
- * e16-current-order-factkey-unique-owner）：relation=0（current）的事实键
+ * e16-current-order-factkey-unique-owner）：事实键
  * (targetSourceId, signalId) 在 plan 内有唯一属主阶段。属主唯一性是携证
- * 解析的前提——链上按 relation=0 能力叶声明事实属主，同一事实键存在两个
- * 声明属主时，任一方都能携证把事实落到自己的阶段（阶段物化/executor 门
- * 与 origin 同意链的执行者腿随之被模糊）。Rust/Go 镜像仍欠（镜像债）。
+ * 解析的前提——链上按能力叶声明事实属主，同一事实键存在两个声明属主时，
+ * 任一方都能携证把事实落到自己的阶段（阶段物化/executor 门与 origin
+ * 同意链的执行者腿随之被模糊）。Rust/Go 镜像仍欠（镜像债）。
  */
 function duplicateCurrentOrderFactKeyIssues(
   capabilities: readonly {
     readonly stage: string;
     readonly sourceId: string;
     readonly signalId: string;
-    readonly isCurrentOrder: boolean;
   }[],
 ): readonly string[] {
   const issues: string[] = [];
   const owners = new Map<string, string>();
   for (const capability of capabilities) {
-    if (!capability.isCurrentOrder) {
-      continue;
-    }
     const factKey = `${capability.sourceId}:${capability.signalId}`;
     const owner = owners.get(factKey);
     if (owner === undefined) {
@@ -281,9 +277,9 @@ function validateOnchainSignalCapabilities(
       issues,
     );
     expectHexHash(capability.signalId, `${prefix}.signalId`, issues);
-    expectOneOf(
+    expectLiteral(
       capability.targetOrderRelation,
-      ["current", "triggerOrigin"],
+      "current",
       `${prefix}.targetOrderRelation`,
       issues,
     );
@@ -318,8 +314,7 @@ function validateOnchainSignalCapabilities(
       isHexHash(capability.stageId) &&
       isHexHash(capability.targetSourceId) &&
       isHexHash(capability.signalId) &&
-      (capability.targetOrderRelation === "current" ||
-        capability.targetOrderRelation === "triggerOrigin")
+      capability.targetOrderRelation === "current"
     ) {
       const expectedHash = onchainSignalCapabilityHash(
         capability.stageId,

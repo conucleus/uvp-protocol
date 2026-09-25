@@ -17,7 +17,6 @@ import type {
   OnchainHookInstruction,
   OnchainHookPlanArtifact,
   OrderTriggerKind,
-  SignalTargetOrderRelation,
   SolidityRegisterInstructionArg,
   SolidityRegisterPlanArgs,
 } from "../../types/index.js";
@@ -119,9 +118,7 @@ export function toSolidityRegisterPlanArgs(
     stageId: capability.stageId,
     targetSourceId: capability.targetSourceId,
     signalId: capability.signalId,
-    targetOrderRelation: solidityTargetOrderRelation(
-      capability.targetOrderRelation,
-    ),
+    targetOrderRelation: 0 as const,
   }));
   const hooksHash = hashSolidityHooks(hooks);
   const capabilitiesRoot = capabilitiesRootOf(selectorBindings, signalCapabilities);
@@ -293,19 +290,6 @@ function toSolidityInstructionArg(
       return { op: "DELAY", delaySeconds: instruction.delaySeconds };
     default:
       assertNever(instruction);
-  }
-}
-
-function solidityTargetOrderRelation(
-  relation: SignalTargetOrderRelation,
-): 0 | 1 {
-  switch (relation) {
-    case "current":
-      return 0;
-    case "triggerOrigin":
-      return 1;
-    default:
-      assertNever(relation);
   }
 }
 

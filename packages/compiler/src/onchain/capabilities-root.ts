@@ -162,8 +162,7 @@ export function capabilityTablesOf(artifact: OnchainHookPlanArtifact): {
         stageId: capability.stageId,
         targetSourceId: capability.targetSourceId,
         signalId: capability.signalId,
-        targetOrderRelation:
-          capability.targetOrderRelation === "current" ? (0 as const) : (1 as const),
+        targetOrderRelation: 0 as const,
       }),
     ),
   };

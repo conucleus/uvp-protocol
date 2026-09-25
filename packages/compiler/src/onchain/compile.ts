@@ -127,7 +127,6 @@ export function compileOnchainHookPlan(
       stage: capability.stageIdentifier,
       sourceId: onchainSourceId(capability.targetSource),
       signalId: onchainSignalId(capability.targetSignalName),
-      isCurrentOrder: capability.targetOrderRelation === "current",
     })),
   );
   // 链轨接受域（UVPDockingModule 4.4 终态）：existing 路由与动态
@@ -221,7 +220,7 @@ export function compileOnchainHookPlan(
     stageId: capability.stageId,
     targetSourceId: capability.targetSourceId,
     signalId: capability.signalId,
-    targetOrderRelation: capability.targetOrderRelation === "current" ? (0 as const) : (1 as const),
+    targetOrderRelation: 0 as const,
   }));
   const capabilitiesRoot = capabilitiesRootOf(
     soliditySelectorBindings,
@@ -281,9 +280,6 @@ function compileSignalAdmissions(
 ): OnchainCompiledAdmission[] {
   const sourceByDeclaredSignal = new Map<string, string>();
   for (const capability of signalCapabilities) {
-    if (capability.targetOrderRelation !== "current") {
-      continue;
-    }
     sourceByDeclaredSignal.set(
       `${capability.stageIdentifier}\u0000${capability.targetSignalName}`,
       capability.targetSource,

@@ -38,6 +38,17 @@ interface RawNumber {
   readonly value: number;
 }
 
+// 语料格式版本钉住：文件升版时这里必须先响亮失败（semantics/closed-sets
+// 消费面同款纪律）。
+const corpusDocument = JSON.parse(
+  readFileSync(corpusUrl, "utf8"),
+) as { readonly schemaVersion: string; readonly cases: readonly unknown[] };
+assert.equal(
+  corpusDocument.schemaVersion,
+  "uvp.canonicalJsonCorpus.v1",
+  "canonical corpus schemaVersion drifted; migrate this consumer before trusting the file",
+);
+
 interface CorpusCase {
   readonly name: string;
   readonly input: unknown;

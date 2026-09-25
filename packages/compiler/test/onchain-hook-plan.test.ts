@@ -289,56 +289,6 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.doesNotThrow(() => assertOnchainHookPlanArtifact(onchain));
 });
 
-test("serializes trigger-origin signal capabilities to Solidity relation 1", () => {
-  const onchain = compileZhixuOnchainHookPlanWithManifest({
-    ...baseZhixu,
-    metadata: {
-      name: "trigger_origin_signal_demo",
-    },
-    spec: {
-      ...baseZhixu.spec,
-      taskPatterns: [
-        {
-          name: "settlement",
-          stages: [
-            {
-              name: "close",
-              source: "trade",
-              receiveSignals: {
-                START: "trade::settlement.close.start",
-              },
-              sendSignals: [{ name: "start" }, { name: "book::book.settlement_wait.cmp" }],
-              executor: {
-                supplierType: "organization",
-                supplierID: "settlement-operator",
-              },
-            },
-          ],
-        },
-      ],
-    },
-  });
-  const args = toSolidityRegisterPlanArgs(onchain);
-
-  const triggerOriginCapabilities = onchain.signalCapabilities.filter(
-    (capability) => capability.targetOrderRelation === "triggerOrigin",
-  );
-  assert.deepEqual(
-    triggerOriginCapabilities.map((capability) => [
-      capability.targetSource,
-      capability.targetSignalName,
-      capability.targetOrderRelation,
-    ]),
-    [["book", "book.settlement_wait.cmp", "triggerOrigin"]],
-  );
-  assert.deepEqual(
-    args.signalCapabilities
-      .filter((capability) => capability.targetOrderRelation === 1)
-      .map((capability) => capability.targetOrderRelation),
-    [1],
-  );
-});
-
 test("compiles Hook AST nodes to stable on-chain instruction arrays", () => {
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   const timeoutHook = onchain.compiledHooks.find(
@@ -1032,7 +982,7 @@ test("compiles capability tables beyond gas caps into a verifiable capabilitiesR
     stageId: capability.stageId,
     targetSourceId: capability.targetSourceId,
     signalId: capability.signalId,
-    targetOrderRelation: capability.targetOrderRelation === "current" ? (0 as const) : (1 as const),
+    targetOrderRelation: 0 as const,
   }));
   const expandedRoot = capabilitiesRootOf(solidityBindings, solidityCapabilities);
   const expandedPayload = {
@@ -1079,20 +1029,6 @@ test("rejects cross-stage current-order fact key duplication (E16 mirror)", () =
       error.issues.some((issue) =>
         /current-order fact key .* already owned by stage .*must resolve to exactly one owner stage/.test(issue),
       ),
-  );
-  // 反例：同一阶段重复声明同一事实键合法（属主未变），且 relation≠0 的
-  // 事实键不受 E16 约束。
-  assert.doesNotThrow(() =>
-    compileOnchainHookPlan(
-      resign({
-        ...sourcePlan,
-        signalCapabilities: sourcePlan.signalCapabilities.map((capability) =>
-          capability === fact
-            ? { ...capability, targetOrderRelation: "triggerOrigin" as const }
-            : capability,
-        ),
-      }),
-    ),
   );
 });
 

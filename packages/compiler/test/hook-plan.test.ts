@@ -229,54 +229,6 @@ test("compiles internal HookPlan IR", () => {
   assert.doesNotThrow(() => assertHookPlanArtifact(plan));
 });
 
-test("compiles source-qualified sendSignals as trigger-origin capabilities", () => {
-  const plan = compileZhixuHookPlanWithManifest({
-    ...baseZhixu,
-    metadata: {
-      name: "trigger_origin_signal_demo"
-    },
-    spec: {
-      ...baseZhixu.spec,
-      taskPatterns: [
-        {
-          name: "settlement",
-          stages: [
-            {
-              name: "close",
-              source: "trade",
-              // PLACE 为自发种子入口钩子（uvp-core 物化门：零 hook 阶段
-              // 永不可物化、sendSignals 无钩子可挂）。
-              receiveSignals: {
-                PLACE: "trade::settlement.close.seed"
-              },
-              sendSignals: [{ name: "seed" }, { name: "book::book.settlement_wait.cmp" }],
-              executor: {
-                supplierType: "organization",
-                supplierID: "settlement-operator"
-              }
-            }
-          ]
-        }
-      ]
-    }
-  });
-
-  // 种子 capability 是物化门的伴随产物，断言聚焦 triggerOrigin 投影。
-  assert.deepEqual(
-    plan.signalCapabilities
-      .filter((capability) => capability.targetOrderRelation === "triggerOrigin")
-      .map((capability) => [
-        capability.stageIdentifier,
-        capability.targetSource,
-        capability.targetSignalName,
-        capability.targetOrderRelation
-      ]),
-    [
-      ["settlement.close", "book", "book.settlement_wait.cmp", "triggerOrigin"]
-    ],
-  );
-});
-
 test("preserves opaque platform metadata for future target schemas at the internal IR boundary", () => {
   const platform = {
     type: "blockchain",
@@ -475,7 +427,7 @@ test("rejects metadata stage references outside the hooks stage set (stage exist
         declaredSignal: "g",
         targetSource: "buyer",
         targetSignalName: "execution.main.cmp",
-        targetOrderRelation: "triggerOrigin",
+        targetOrderRelation: "current",
       },
     ],
   });

@@ -455,7 +455,7 @@ export interface SelectedStageBinding {
   readonly targetStageIdentifier: string;
 }
 
-export type SignalTargetOrderRelation = "current" | "triggerOrigin";
+export type SignalTargetOrderRelation = "current";
 
 export interface SignalCapability {
   readonly stageIdentifier: string;

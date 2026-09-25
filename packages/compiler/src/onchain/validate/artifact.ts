@@ -292,8 +292,6 @@ export function validateOnchainHookPlanArtifact(
                   stage: capability.stageIdentifier,
                   sourceId: capability.targetSourceId,
                   signalId: capability.signalId,
-                  isCurrentOrder:
-                    capability.targetOrderRelation === "current",
                 },
               ]
             : [],
@@ -465,15 +463,13 @@ function capabilitiesRootCommitmentIssues(
       isHexHash(capability.stageId) &&
       isHexHash(capability.targetSourceId) &&
       isHexHash(capability.signalId) &&
-      (capability.targetOrderRelation === "current" ||
-        capability.targetOrderRelation === "triggerOrigin")
+      capability.targetOrderRelation === "current"
     ) {
       capabilities.push({
         stageId: capability.stageId,
         targetSourceId: capability.targetSourceId,
         signalId: capability.signalId,
-        targetOrderRelation:
-          capability.targetOrderRelation === "current" ? 0 : 1,
+        targetOrderRelation: 0,
       });
     } else {
       return [];
