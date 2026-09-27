@@ -451,20 +451,6 @@
       "notes": "The receiver side mirrors this: pkg/executors/http_receiver re-derives retryable from statemachine.PermanentError so downstream-declared non-retry semantics survive the HTTP hop; BusinessError{Retryable:true} stays in the delivery retry lane with the standard exponential backoff."
     },
     {
-      "code": "sms_partial_send",
-      "condition": "Batch SMS partially succeeded: some numbers were charged and reached; resending the whole message would double-touch them (C13).",
-      "layer": "messaging",
-      "producers": ["go-cloud-engine"],
-      "retryable": false,
-      "backoff": "none",
-      "dead_letter": true,
-      "benign_scan_outcome": false,
-      "internal_names": {
-        "go-cloud-engine": ["v0.SMSPartialSendError", "MESSAGE_PARTIALLY_DELIVERED (BusinessError Retryable=false)"]
-      },
-      "notes": "Converted into a BusinessError with Retryable=false so the delivery layer dead-letters with the per-number success/failure ledger in the DLQ; remediation targets only the failed numbers."
-    },
-    {
       "code": "post_commit_step_pending",
       "condition": "A post-commit side effect (signal notification / projection automation) failed after the projection cursor advanced; it must not be dropped and must not rewind the cursor.",
       "layer": "infra",
