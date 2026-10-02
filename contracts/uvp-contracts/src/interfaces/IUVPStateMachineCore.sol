@@ -69,17 +69,24 @@ interface IUVPStateMachineCore {
         uint256 patchNonce,
         string calldata metadataURI
     ) external;
-    function delegateStageExecutorSignalFromModule(
+    /// UB-36①：委托授权通道退役后的替代入口——executor patch 生效时对
+    /// 新城执行者写入显式订单级授权集（仅 stage patch 模块可调用）。
+    function authorizeSignalSubmittersFromModule(
         bytes32 planId,
         bytes32 orderId,
-        bytes32 targetStageId,
-        bytes32 sourceId,
-        bytes32 signalId,
-        address executor,
-        bytes32 role,
-        bytes32 metadataHash,
-        uint256 patchNonce
+        SignalAuthorization[] calldata authorizations
     ) external;
+    /// 授权集哈希公式（trigger 出生与 executor patch 摘要的公共折叠公式）。
+    function signalAuthorizationsHash(SignalAuthorization[] calldata authorizations) external pure returns (bytes32);
+    /// 合约原生 per-stage 信号计数真源（UB-2）：ASSIGN/HANDOFF 时序闸的
+    /// 判定材料（count/末位提交者/末位时刻/同秒歧义标记）。
+    function stageSignalState(bytes32 planId, bytes32 orderId, bytes32 stageId)
+        external
+        view
+        returns (uint256 count, address lastSubmitter, uint64 lastAt, bool ambiguous);
+    /// plan 承诺的执行者候选集树根（UB-36②③）：EMPTY_ROOT = 无候选集，
+    /// 逐单 executor patch 恒拒。
+    function planExecutorCandidatesRoot(bytes32 planId) external view returns (bytes32);
     function hasExplicitSignalAuthorization(
         bytes32 planId,
         bytes32 orderId,
@@ -96,30 +103,40 @@ interface IUVPStateMachineCore {
     function planMetadataModule() external view returns (address);
     function planPublisher(bytes32 planId) external view returns (address);
     function sourceSignalCount(bytes32 planId, bytes32 orderId, bytes32 sourceId) external view returns (uint256);
-    function createDockedOrderFromModule(
-        bytes32 targetPlanId,
-        bytes32 linkedOrderId,
-        address creator,
-        address relayer,
-        bytes32 entranceHookId,
-        bytes32 entranceStageId,
-        bytes32 sourceId,
-        bytes32 signalId,
-        bytes32 payloadHash,
-        bytes32 idempotencyKey,
-        address submitter,
-        SignalAuthorization[] calldata authorizations
-    ) external;
 
-    function recordDockedInputFromModule(
-        bytes32 planId,
-        bytes32 orderId,
-        bytes32 sourceId,
-        bytes32 signalId,
-        bytes32 payloadHash,
-        bytes32 idempotencyKey,
-        address submitter
-    ) external;
+    /// dock 出生入口请求（UB-2 批随 UB-36 破坏窗口收束为单结构体入参：
+    /// 模块↔主合约 ABI，跨栈参数收拢）。
+    struct DockEntranceRequest {
+        bytes32 targetPlanId;
+        bytes32 linkedOrderId;
+        address creator;
+        address relayer;
+        bytes32 entranceHookId;
+        bytes32 entranceStageId;
+        bytes32 sourceId;
+        bytes32 signalId;
+        bytes32 payloadHash;
+        bytes32 idempotencyKey;
+        address submitter;
+        SignalAuthorization[] authorizations;
+        FactAttribution entranceAttribution;
+    }
+
+    /// dock input 事实写入请求（同上收拢）。
+    struct DockInputFact {
+        bytes32 planId;
+        bytes32 orderId;
+        bytes32 sourceId;
+        bytes32 signalId;
+        bytes32 payloadHash;
+        bytes32 idempotencyKey;
+        address submitter;
+        FactAttribution attribution;
+    }
+
+    function createDockedOrderFromModule(DockEntranceRequest calldata request) external;
+
+    function recordDockedInputFromModule(DockInputFact calldata fact) external;
 
     function planHookFlags(bytes32 planId, bytes32 hookId) external view returns (uint8);
 

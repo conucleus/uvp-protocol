@@ -28,7 +28,7 @@ under this folder; repository-level deployment scripts live under
 - `src/libraries/ECDSA.sol`: minimal signature recovery helper.
 - `src/libraries/UVPSignatures.sol`: shared signature struct used by relayed
   state-machine signal submission.
-- `fixtures/uvp-state-machine.v0.12.json` and module fixture JSON files:
+- `fixtures/uvp-state-machine.v0.13.json` and module fixture JSON files:
   pinned ABI/hash fixtures for the current core and module public interfaces.
 - `fixtures/uvp-identity-registry.v0.1.json`: pinned ABI/hash fixture for the
   identity registry public interface.
@@ -66,7 +66,7 @@ the TypeScript `statemachine` oracle.
 
 ## ABI Fixture
 
-`UVPStateMachine v0.12` treats these as public interfaces:
+`UVPStateMachine v0.13` treats these as public interfaces:
 
 - its no-argument constructor;
 - one-time module configuration followed by irreversible `freezeModules`;
@@ -82,23 +82,28 @@ the TypeScript `statemachine` oracle.
   `triggerOrderFromSignalFromModule`), `DOMAIN_SEPARATOR`, `pokeTimer`,
   `getHookStatus`, `isSignalSubmitterAuthorized`, `getSignalAuthorization`,
   dock order namespace mask, signal target relation constants,
-  `sourceSignalCount`, `lastSignalSubmitter`, plan-runtime-hash helpers,
+  `sourceSignalCount`, `lastSignalSubmitter`, per-stage native counting
+  (`stageSignalState`), fork helpers (`forkOrder`/`forkOrderIdFor`/`orderParent`),
+  plan-runtime-hash helpers (now covering `executorCandidatesRoot`),
   stage-overlay view helpers, and trigger-link view helpers. The signed
   from-signal trigger entrypoint is `triggerOrderFromSignalFor` on
   `UVPOrderLinkModule` (order-link module fixture), not a core selector;
-- module function selectors for stage patch (the `applyStage*PatchFor` entries
-  carry `bindingProof` + `stageFacts` proof arguments), derived signal,
+- module function selectors for stage patch (the `applyStage*PatchFor`
+  entries carry `bindingProof` + `candidateProof` +
+  `executorAuthorizations` proof arguments), derived signal,
   docking, and lens entrypoints/digest helpers/views, plus plan-metadata
   module views `capabilitiesRoot`, `hasCapabilityVocabulary`,
   `verifySignalCapability`, and `verifyStageSelectorBinding` (membership is
   checked as field-recomputed leaves against caller-supplied Merkle proofs);
 - event topics for ownership, module configuration/freeze,
-  `PlanCommitted`, `PlanFinalized`, `PlanRegistered`,
-  `PlanPublisherRecorded`, `OrderRegistered`, `OrderMaterialized`,
-  `OrderRelayerRecorded`, `OrderTriggered`, `SignalSubmitterAuthorized`, `SignalSubmitted`,
+  `PlanCommitted` (carries `executorCandidatesRoot`), `PlanFinalized`,
+  `PlanRegistered`, `PlanPublisherRecorded`, `OrderRegistered`,
+  `OrderMaterialized`, `OrderRelayerRecorded`, `OrderTriggered`,
+  `SignalSubmitterAuthorized`, `SignalSubmitted`,
   `StageMaterialized`, `HookStatusChanged`, `HookReady`, `TimerPoked`,
-  `StageExecutorActivated`, and
-  `StageExecutorSignalDelegated`;
+  `StageExecutorActivated`, and `OrderForked` (the fork birth channel,
+  UB-39; the retired delegation event `StageExecutorSignalDelegated` is
+  gone — patches now grant explicit order-level authorizations);
 - docking module event topics for `DockOpened`, `DockAttached`,
   `DockInputSubmitted`, `DockOutputSubmitted`, and `DockOutputSatisfied`;
   order-link module event topics for
@@ -157,17 +162,21 @@ code do not silently drift away from the contract ABI.
    positive-anchored admission naturally rejects there.
 7. A wallet authorized for `EXECUTOR_PATCH_SIGNAL_ID` on a stage may apply an
    order-level executor patch through `UVPStagePatchModule` for a registered
-   stage-to-target binding.
-   Executor patches use `assign` before the target stage has signals, `handoff`
-   after start with the previous executor's signature over the same EIP-712
-   digest, or `replacement` after start with a chain-visible approval signal.
+   stage-to-target binding. Every executor patch must prove
+   `(targetStageId, executor)` membership in the plan's committed
+   `executorCandidatesRoot` (plans without a candidate set reject all
+   executor patches — fail-closed). Executor patches use `assign` before the
+   target stage has signals, or `handoff` after start with the previous
+   executor's signature over the same EIP-712 digest; the `replacement` mode
+   and its approval-signal existence check are retired.
 8. Executor patches constrain executor-only patch actions. Normal business
    signals still require explicit order-level authorization or a compiled
-   derived signal capability. An active executor patch supersedes the
-   previous executor for subsequent signal submissions (the prior executor
-   loses its implicit submitter rights immediately, and the patch cannot be
-   undone to restore them); explicit order-level authorizations remain
-   intact, and prior `SignalSubmitted` events keep their original submitter.
+   derived signal capability. A patch taking effect grants the new executor
+   an explicit order-level authorization set (covered by the selector's
+   patch signature via `authorizationsHash`); explicit order-level
+   authorizations cannot be revoked by later patches (identical re-grants are
+   absorbed), and prior `SignalSubmitted` events keep their original
+   submitter. Timing gates read the contract-native per-stage count.
 9. A wallet authorized for `RESOURCE_PATCH_SIGNAL_ID` on a stage may apply an
     independent resource-manifest patch through `UVPStagePatchModule` for a
     target stage and resource key. The chain stores hashes, nonces, and manifest
@@ -244,7 +253,7 @@ second registration of the same `orderId` reverts with
 `planId` into their domain so derived order ids are plan-scoped by
 construction. Function signatures take a leading `planId` parameter, and the
 from-signal trigger request carries `originPlanId`. Event signatures are
-pinned in the v0.12 and module fixtures; indexers must consume the composite
+pinned in the v0.13 and module fixtures; indexers must consume the composite
 identity in every event and projection rather than treating `orderId` as
 globally unique.
 
@@ -264,9 +273,9 @@ Indexer and replay tooling should treat these event names as public interfaces:
 - `OrderMaterialized`
 - `OrderTriggered`
 - `SignalSubmitted`
+- `OrderForked`
 - `StageMaterialized`
 - `StageExecutorPatchApplied`
-- `StageExecutorSignalDelegated`
 - `StageResourcePatchApplied`
 - `StageExecutorActivated`
 - `HookStatusChanged`
@@ -316,6 +325,16 @@ different fact cannot push that line's mint hook to `Ready`, materialize its
 birth stage, or emit `HookReady` on that order (grammar §7.2: a birth fact
 arrival serves only the minting of its own unique order). Non-trigger hooks
 (`EMIT_READY` watchers and plain watchers) are evaluated as before.
+
+Per-stage counting note (UB-2): every signal write path resolves the fact's
+owning stage (proof-carried attribution first, `source==stage` fallback for
+zero-vocabulary plans) and maintains `stageSignalAccounts` — count, last
+submitter, last timestamp, and a same-second ambiguity flag. Vocabulary plans
+must carry valid attribution on every fact-write entry (submit, birth, dock
+entrance, dock input, module mirrors): omitting the proof reverts
+`InvalidSignalCapability`, so the count cannot be bypassed by
+"no-proof" submissions. The stage patch module's ASSIGN/HANDOFF timing gates
+read this native count instead of caller-supplied capability tables.
 
 Registration-bounds note: `MAX_PLAN_DEPENDENCIES` (1024) is a sanity ceiling,
 not a physically reachable target. Each distinct dependency key costs two

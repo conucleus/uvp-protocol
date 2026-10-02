@@ -39,14 +39,24 @@ contract BatchSubmitter {
         bytes32 secondSignalId
     ) external {
         machine.submitSignal(
-            planId, orderId, firstSourceId, firstSignalId, bytes32(uint256(0x8001)), bytes32(uint256(0x9001)),
+            planId,
+            orderId,
+            firstSourceId,
+            firstSignalId,
+            bytes32(uint256(0x8001)),
+            bytes32(uint256(0x9001)),
             UVPStateMachine.FactAttribution({
                 sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
             }),
             UVPStateMachine.SelectorBindingProof({selectorStageId: bytes32(0), proof: new bytes32[](0)})
         );
         machine.submitSignal(
-            planId, orderId, secondSourceId, secondSignalId, bytes32(uint256(0x8002)), bytes32(uint256(0x9002)),
+            planId,
+            orderId,
+            secondSourceId,
+            secondSignalId,
+            bytes32(uint256(0x8002)),
+            bytes32(uint256(0x9002)),
             UVPStateMachine.FactAttribution({
                 sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
             }),
@@ -87,9 +97,9 @@ contract UVPAdmissionTest {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.12");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.13");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,uint256 deadline)"
     );
     bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
@@ -143,21 +153,50 @@ contract UVPAdmissionTest {
         require(machine.planExists(planId), "veto-under-or plan not registered");
     }
 
-    /// 过滤档放行钩子档非法形态之三：延时操作数内的否决位（hook 档拒绝
-    /// ——否决位会衰减而延时成熟是永久的；适格无调度不构成该风险）。
+    /// UB-1 嵌套延时闸（过滤档同源）：适格面指令计划内的延时链
+    ///（Delay 操作数子树含 Delay）在注册边界直接拒绝——镜像
+    /// uvp-hook-dsl validate_filter_hook 的 reject_nested_delay 前置。
     function testDecayingVetoInsideDelayOperandAdmissionRegisters() public {
         UVPStateMachine machine = _newMachine();
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](3);
+        instructions[0] = _signal(SIGNAL_TRIGGER);
+        instructions[1] = _delay(30);
+        instructions[2] = _delay(30);
+        hooks[0] = _admissionHook(SIGNAL_TRIGGER, instructions);
+        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
+        _commitOnly(machine, hooks);
+    }
 
-        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](6);
-        instructions[0] = _signal(SIGNAL_ANCHOR);
-        instructions[1] = _signal(SIGNAL_CANCEL);
-        instructions[2] = _delay(5);
-        instructions[3] = _not();
-        instructions[4] = _and(2);
-        instructions[5] = _delay(10);
+    /// UB-1 适格面无锚延时：`(~A) + 5s` 的延时操作数无正向锚点（纯否定）
+    /// ——求值侧永不放行（Rust 权威 NeedsMore），注册即拒；裸衰减根
+    /// `~(A + 5s)` 仍是合法形态（NOT 的合法位不动）。
+    function testAdmissionRejectsUnanchoredDelayOperand() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](3);
+        instructions[0] = _signal(SIGNAL_TRIGGER);
+        instructions[1] = _not();
+        instructions[2] = _delay(30);
+        hooks[0] = _admissionHook(SIGNAL_TRIGGER, instructions);
+        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
+        _commitOnly(machine, hooks);
+    }
 
-        bytes32 planId = _registerPlan(machine, _withOrderStart(_admissionOnly(instructions)));
-        require(machine.planExists(planId), "veto-inside-delay plan not registered");
+    /// 回归：裸衰减根 `~(A + 5s)` 在适格位仍合法注册（UB-1 不动 NOT 位）。
+    function testAdmissionBareDecayingVetoRootStillRegisters() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.CompactHook[] memory base = _basePlan(true);
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](base.length + 1);
+        for (uint256 i = 0; i < base.length; i++) {
+            hooks[i] = base[i];
+        }
+        UVPStateMachine.Instruction[] memory veto = new UVPStateMachine.Instruction[](3);
+        veto[0] = _signal(SIGNAL_TRIGGER);
+        veto[1] = _delay(30);
+        veto[2] = _not();
+        hooks[base.length] = _admissionHook(SIGNAL_TRIGGER, veto);
+        _commitOnly(machine, hooks);
     }
 
     /// 过滤档保留闸：NOT 操作数词表（裸 SIGNAL 或 DELAY 产出）——双重
@@ -256,9 +295,7 @@ contract UVPAdmissionTest {
         hooks[1] = _admissionHook(SIGNAL_TRIGGER, instructions);
         hooks[2] = _admissionHook(SIGNAL_TRIGGER, instructions);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.AdmissionAlreadyRegistered.selector, hooks[1].hookId)
-        );
+        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.AdmissionAlreadyRegistered.selector, hooks[1].hookId));
         _commitOnly(machine, hooks);
     }
 
@@ -288,10 +325,28 @@ contract UVPAdmissionTest {
         UVPStateMachine machine = _gatedMachine(5);
         vm.warp(100);
 
-        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
-        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_ANCHOR,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_TRIGGER,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
 
-        (bool exists,,,, ) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
+        (bool exists,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(exists, "admitted fact missing");
         (UVPStateMachine.HookStatus status,, bool readyEmitted) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_INIT);
         require(status == UVPStateMachine.HookStatus.Ready, "dependent hook not ready");
@@ -306,17 +361,29 @@ contract UVPAdmissionTest {
 
         vm.recordLogs();
         vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.SignalAdmissionRejected.selector, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER)
+            abi.encodeWithSelector(
+                UVPStateMachine.SignalAdmissionRejected.selector, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER
+            )
         );
-        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_TRIGGER,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
 
-        (bool exists,,,, ) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
+        (bool exists,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(!exists, "rejected emission must not record a fact");
-        (UVPStateMachine.HookStatus status,, ) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_INIT);
+        (UVPStateMachine.HookStatus status,,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_INIT);
         require(status == UVPStateMachine.HookStatus.Init, "rejected emission must not advance hooks");
         Vm.Log[] memory logs = vm.getRecordedLogs();
         require(
-            _countTopic(logs, keccak256("SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)")) == 0,
+            _countTopic(logs, keccak256("SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)"))
+                == 0,
             "rejected emission emitted events"
         );
     }
@@ -327,20 +394,76 @@ contract UVPAdmissionTest {
     function testWindowBoundaryExactlyAtExpiryRejects() public {
         UVPStateMachine before = _gatedMachine(5);
         vm.warp(100);
-        before.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
-        before.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        before.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_ANCHOR,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
+        before.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_CANCEL,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
         vm.warp(104);
-        before.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        before.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_TRIGGER,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
 
         UVPStateMachine atExpiry = _gatedMachine(5);
         vm.warp(100);
-        atExpiry.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
-        atExpiry.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        atExpiry.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_ANCHOR,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
+        atExpiry.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_CANCEL,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
         vm.warp(105);
         vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.SignalAdmissionRejected.selector, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER)
+            abi.encodeWithSelector(
+                UVPStateMachine.SignalAdmissionRejected.selector, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER
+            )
         );
-        atExpiry.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        atExpiry.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_TRIGGER,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
     }
 
     /// 幂等吸收先于适格：已落库的重复提交在窗口过期后重试不 revert、
@@ -349,14 +472,50 @@ contract UVPAdmissionTest {
         UVPStateMachine machine = _gatedMachine(5);
         vm.warp(100);
 
-        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
-        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
-        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_ANCHOR,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_TRIGGER,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_CANCEL,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
 
         vm.warp(1000);
-        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, bytes32(uint256(0x8004)), IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_TRIGGER,
+            bytes32(uint256(0x8004)),
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
 
-        (, bytes32 payloadHash,,, ) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
+        (, bytes32 payloadHash,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(payloadHash == PAYLOAD_HASH, "absorbed retry overwrote the first write");
     }
 
@@ -368,11 +527,18 @@ contract UVPAdmissionTest {
 
         vm.prank(address(_dockingModules[address(machine)]));
         machine.submitSignalFromModule(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, address(this),
-            _noAttribution(), _noBinding()
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_TRIGGER,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            address(this),
+            _noAttribution(),
+            _noBinding()
         );
 
-        (bool exists,,,, ) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
+        (bool exists,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(exists, "internal producer write missing");
     }
 
@@ -396,7 +562,9 @@ contract UVPAdmissionTest {
             _triggerOrderFromOutsideSignature(machine, trigger, authorizations, SUBMITTER_PRIVATE_KEY);
 
         vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.SignalAdmissionRejected.selector, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START)
+            abi.encodeWithSelector(
+                UVPStateMachine.SignalAdmissionRejected.selector, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START
+            )
         );
         machine.triggerOrderFromOutsideFor(trigger, authorizations, signature, _noAttribution());
     }
@@ -409,13 +577,15 @@ contract UVPAdmissionTest {
         vm.warp(100);
 
         vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.SignalAdmissionRejected.selector, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER)
+            abi.encodeWithSelector(
+                UVPStateMachine.SignalAdmissionRejected.selector, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER
+            )
         );
         submitter.submitTwo(
             machine, PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER
         );
 
-        (bool cancelRecorded,,,, ) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL);
+        (bool cancelRecorded,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL);
         require(!cancelRecorded, "atomic rollback must erase the earlier eligible emission");
     }
 
@@ -432,7 +602,16 @@ contract UVPAdmissionTest {
 
         vm.warp(100);
         uint256 gasBefore = gasleft();
-        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_TRIGGER,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
         uint256 spent = gasBefore - gasleft();
 
         require(spent <= 128_082 + 1_500, "no-admission submit overhead exceeds the constant budget");
@@ -445,23 +624,77 @@ contract UVPAdmissionTest {
     function testAdmissionSubmitGasIsConstantIncrement() public {
         UVPStateMachine plain = _plainMachine();
         vm.warp(100);
-        plain.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        plain.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_ANCHOR,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
         uint256 gasBefore = gasleft();
-        plain.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        plain.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_TRIGGER,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
         uint256 plainSpent = gasBefore - gasleft();
 
         UVPStateMachine machine = _gatedTriggerMachine(5);
         vm.warp(100);
-        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_ANCHOR,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
         gasBefore = gasleft();
-        machine.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_TRIGGER,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
         uint256 admissionSpent = gasBefore - gasleft();
 
         UVPStateMachine machineHour = _gatedTriggerMachine(1 hours);
         vm.warp(100);
-        machineHour.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        machineHour.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_ANCHOR,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
         gasBefore = gasleft();
-        machineHour.submitSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution(), _noBinding());
+        machineHour.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_TRIGGER,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            _noAttribution(),
+            _noBinding()
+        );
         uint256 hourSpent = gasBefore - gasleft();
 
         require(admissionSpent > plainSpent, "admission face must cost more than the ungated path");
@@ -544,11 +777,7 @@ contract UVPAdmissionTest {
     }
 
     /// 出生单 + SIGNAL_TRIGGER 槽（watcher 形态可切换）。
-    function _basePlan(bool watcherIsTrigger)
-        private
-        pure
-        returns (UVPStateMachine.CompactHook[] memory hooks)
-    {
+    function _basePlan(bool watcherIsTrigger) private pure returns (UVPStateMachine.CompactHook[] memory hooks) {
         hooks = new UVPStateMachine.CompactHook[](2);
         hooks[0] = _signalHook(HOOK_ORDER_START, STAGE_INIT, HOOK_NAME_ORDER_START, true, SIGNAL_ORDER_START);
         hooks[1] = _signalHook(HOOK_INIT, STAGE_INIT, HOOK_NAME_TRIGGER, watcherIsTrigger, SIGNAL_TRIGGER);
@@ -715,6 +944,7 @@ contract UVPAdmissionTest {
             capabilitiesRoot: EMPTY_DOCK_ROOT,
             dockRoutesRoot: EMPTY_DOCK_ROOT,
             dockInterfaceRoot: EMPTY_DOCK_ROOT,
+            executorCandidatesRoot: EMPTY_DOCK_ROOT,
             deadline: block.timestamp + 1 hours
         });
         bytes32 structHash = keccak256(
@@ -725,12 +955,14 @@ contract UVPAdmissionTest {
                 commit.capabilitiesRoot,
                 commit.dockRoutesRoot,
                 commit.dockInterfaceRoot,
+                commit.executorCandidatesRoot,
                 commit.deadline
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _stateMachineDomainSeparator(machine), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PUBLISHER_PRIVATE_KEY, digest);
-        planId = machine.commitPlan(commit, hooks, _packedSignature(v, r, s));
+        planId =
+            machine.commitPlan(commit, hooks, new UVPStateMachine.ExecutorCandidate[](0), _packedSignature(v, r, s));
         machine.finalizePlan(planId);
         PLAN_ID = planId;
     }
@@ -745,6 +977,7 @@ contract UVPAdmissionTest {
             capabilitiesRoot: EMPTY_DOCK_ROOT,
             dockRoutesRoot: EMPTY_DOCK_ROOT,
             dockInterfaceRoot: EMPTY_DOCK_ROOT,
+            executorCandidatesRoot: EMPTY_DOCK_ROOT,
             deadline: block.timestamp + 1 hours
         });
         bytes32 structHash = keccak256(
@@ -755,12 +988,13 @@ contract UVPAdmissionTest {
                 commit.capabilitiesRoot,
                 commit.dockRoutesRoot,
                 commit.dockInterfaceRoot,
+                commit.executorCandidatesRoot,
                 commit.deadline
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _stateMachineDomainSeparator(machine), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PUBLISHER_PRIVATE_KEY, digest);
-        machine.commitPlan(commit, hooks, _packedSignature(v, r, s));
+        machine.commitPlan(commit, hooks, new UVPStateMachine.ExecutorCandidate[](0), _packedSignature(v, r, s));
     }
 
     function _submitTriggerOrderFromOutside(UVPStateMachine machine, address extraSubmitter) private {
@@ -867,7 +1101,13 @@ contract UVPAdmissionTest {
 
     function _stateMachineDomainSeparator(UVPStateMachine machine) private view returns (bytes32) {
         return keccak256(
-            abi.encode(EIP712_DOMAIN_TYPEHASH, STATE_MACHINE_NAME_HASH, STATE_MACHINE_VERSION_HASH, block.chainid, address(machine))
+            abi.encode(
+                EIP712_DOMAIN_TYPEHASH,
+                STATE_MACHINE_NAME_HASH,
+                STATE_MACHINE_VERSION_HASH,
+                block.chainid,
+                address(machine)
+            )
         );
     }
 
@@ -878,10 +1118,7 @@ contract UVPAdmissionTest {
 
     function _noAttribution() private pure returns (UVPStateMachine.FactAttribution memory) {
         return UVPStateMachine.FactAttribution({
-            sourceId: bytes32(0),
-            signalId: bytes32(0),
-            stageId: bytes32(0),
-            capabilityProof: new bytes32[](0)
+            sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
         });
     }
 

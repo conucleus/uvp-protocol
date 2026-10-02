@@ -59,9 +59,7 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
         pure
         returns (bytes32)
     {
-        return keccak256(
-            abi.encode(_DOMAIN_SIGNAL_CAPABILITY, stageId, targetSourceId, signalId, uint256(relation))
-        );
+        return keccak256(abi.encode(_DOMAIN_SIGNAL_CAPABILITY, stageId, targetSourceId, signalId, uint256(relation)));
     }
 
     function selectorBindingLeaf(bytes32 selectorStageId, bytes32 targetStageId) public pure returns (bytes32) {

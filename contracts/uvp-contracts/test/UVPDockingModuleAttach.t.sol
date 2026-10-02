@@ -70,10 +70,11 @@ contract UVPDockingModuleAttachTest {
     uint8 private constant FLAG_EMIT_READY = 4;
 
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,uint256 deadline)"
     );
     bytes32 private constant SIGNAL_CAPABILITY_LEAF_DOMAIN = keccak256("UVP_SIGNAL_CAPABILITY_V1");
     bytes32 private constant SELECTOR_BINDING_LEAF_DOMAIN = keccak256("UVP_SELECTOR_BINDING_V1");
+    bytes32 private constant EXECUTOR_CANDIDATE_LEAF_DOMAIN = keccak256("UVP_EXECUTOR_CANDIDATE_V1");
     bytes32 private constant TRIGGER_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
     );
@@ -554,12 +555,12 @@ contract UVPDockingModuleAttachTest {
         assertFalse(docking.dockInputDelivered(instance, amendInputBinding));
 
         vm.prank(KEEPER);
-        assertTrue(docking.submitDockedInput(instance, PARENT_EXEC_HOOK, amendInputBinding));
+        assertTrue(docking.submitDockedInput(instance, PARENT_EXEC_HOOK, amendInputBinding, _amendInputAttribution()));
         (bool delivered,,,,) = machine.getSignal(targetPlanId, targetOrder, TARGET_INPUT_SOURCE, TARGET_INPUT_SIGNAL);
         assertTrue(delivered);
         assertTrue(docking.dockInputDelivered(instance, amendInputBinding));
         vm.prank(KEEPER);
-        assertFalse(docking.submitDockedInput(instance, PARENT_EXEC_HOOK, amendInputBinding));
+        assertFalse(docking.submitDockedInput(instance, PARENT_EXEC_HOOK, amendInputBinding, _amendInputAttribution()));
     }
 
     /// 目标事实槽位已有不同 provenance 的事实：交付 fail-closed（A14，
@@ -581,7 +582,7 @@ contract UVPDockingModuleAttachTest {
         bytes32 instance = _attachInstanceId(parentOrder, attachRouteHash, targetOrder);
         vm.prank(KEEPER);
         _expect(abi.encodeWithSelector(UVPDockingModule.DockInputConflict.selector, instance, amendInputBinding));
-        docking.submitDockedInput(instance, PARENT_EXEC_HOOK, amendInputBinding);
+        docking.submitDockedInput(instance, PARENT_EXEC_HOOK, amendInputBinding, _amendInputAttribution());
         assertFalse(docking.dockInputDelivered(instance, amendInputBinding));
     }
 
@@ -673,8 +674,13 @@ contract UVPDockingModuleAttachTest {
         // 单叶树根即叶自身。
         bytes32 dynAmendBinding = keccak256(
             abi.encode(
-                DOMAIN_INPUT_BINDING, dynRouteId, INTERFACE_NAME_ID, PARENT_DYN_HOOK, AMEND_PORT,
-                TARGET_INPUT_SOURCE, TARGET_INPUT_SIGNAL
+                DOMAIN_INPUT_BINDING,
+                dynRouteId,
+                INTERFACE_NAME_ID,
+                PARENT_DYN_HOOK,
+                AMEND_PORT,
+                TARGET_INPUT_SOURCE,
+                TARGET_INPUT_SIGNAL
             )
         );
         UVPDockingModule.AttachInputBindingArg[] memory inputs = new UVPDockingModule.AttachInputBindingArg[](1);
@@ -702,8 +708,14 @@ contract UVPDockingModuleAttachTest {
         // 非空 outputs：同口径（output 绑定叶按 dynRouteId 重算自洽）。
         bytes32 dynDoneBinding = keccak256(
             abi.encode(
-                DOMAIN_OUTPUT_BINDING, dynRouteId, INTERFACE_NAME_ID, LOCAL_MAPPED_SOURCE, LOCAL_MAPPED_SIGNAL,
-                DONE_PORT, TARGET_SOURCE, TARGET_SIGNAL
+                DOMAIN_OUTPUT_BINDING,
+                dynRouteId,
+                INTERFACE_NAME_ID,
+                LOCAL_MAPPED_SOURCE,
+                LOCAL_MAPPED_SIGNAL,
+                DONE_PORT,
+                TARGET_SOURCE,
+                TARGET_SIGNAL
             )
         );
         UVPDockingModule.DockOutputBindingArg[] memory outputs = new UVPDockingModule.DockOutputBindingArg[](1);
@@ -1150,8 +1162,7 @@ contract UVPDockingModuleAttachTest {
             executorMetadataHash: bytes32(uint256(0xE1)),
             mode: EXECUTOR_PATCH_MODE_ASSIGN,
             previousExecutor: address(0),
-            approvalSourceId: bytes32(0),
-            approvalSignalId: bytes32(0),
+            authorizationsHash: _authsHashLocal(new IUVPStateMachineCore.SignalAuthorization[](0)),
             patchHash: keccak256("control-executor-patch"),
             patchNonce: 1,
             metadataURI: "uvp-eth://attach-test-patch"
@@ -1161,7 +1172,8 @@ contract UVPDockingModuleAttachTest {
             targetOrder,
             patch,
             _selectorBindingProof(targetPlanId, TARGET_CONTROL_STAGE),
-            new UVPStagePatchModule.StageCapabilityFact[](0)
+            _executorCandidateProof(targetPlanId, TARGET_CONTROL_STAGE, patch.executor),
+            new IUVPStateMachineCore.SignalAuthorization[](0)
         );
     }
 
@@ -1438,6 +1450,7 @@ contract UVPDockingModuleAttachTest {
         StageSelectorBinding[] bindings;
         SignalCapability[] capabilities;
         bytes32[] sortedLeaves;
+        bytes32[] candidateLeaves;
     }
 
     mapping(bytes32 planId => CapabilityTables tables) private _capabilityTables;
@@ -1452,12 +1465,30 @@ contract UVPDockingModuleAttachTest {
     ) private returns (bytes32) {
         address publisher = vm.addr(publisherKey);
         bytes32[] memory leaves = _capabilityLeaves(selectorBindings, signalCapabilities);
+        // UB-36②③：默认候选集 = plan 全部 hook 阶段 × {executor, PARENT}
+        //（attach 测试的执行者面默认全开）。
+        UVPStateMachine.ExecutorCandidate[] memory candidates =
+            new UVPStateMachine.ExecutorCandidate[](hooks.length * 2);
+        uint256 candidateCount;
+        for (uint256 i = 0; i < hooks.length; i++) {
+            candidates[candidateCount++] =
+                UVPStateMachine.ExecutorCandidate({stageId: hooks[i].stageId, executor: EXECUTOR_CONSENTER});
+            candidates[candidateCount++] =
+                UVPStateMachine.ExecutorCandidate({stageId: hooks[i].stageId, executor: address(this)});
+        }
+        bytes32[] memory candidateLeaves = new bytes32[](candidateCount);
+        for (uint256 i = 0; i < candidateCount; i++) {
+            candidateLeaves[i] = keccak256(
+                abi.encodePacked(EXECUTOR_CANDIDATE_LEAF_DOMAIN, candidates[i].stageId, candidates[i].executor)
+            );
+        }
         UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
             publisher: publisher,
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: DockMerkle.root(leaves),
             dockRoutesRoot: dockRoutesRoot,
             dockInterfaceRoot: dockInterfaceRoot,
+            executorCandidatesRoot: DockMerkle.root(candidateLeaves),
             deadline: block.timestamp + 1 hours
         });
         bytes32 structHash = keccak256(
@@ -1468,16 +1499,18 @@ contract UVPDockingModuleAttachTest {
                 commit.capabilitiesRoot,
                 commit.dockRoutesRoot,
                 commit.dockInterfaceRoot,
+                commit.executorCandidatesRoot,
                 commit.deadline
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _domainSeparator(), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(publisherKey, digest);
-        bytes32 planId = machine.commitPlan(commit, hooks, abi.encodePacked(r, s, v));
+        bytes32 planId = machine.commitPlan(commit, hooks, candidates, abi.encodePacked(r, s, v));
         CapabilityTables storage tables = _capabilityTables[planId];
         tables.bindings = selectorBindings;
         tables.capabilities = signalCapabilities;
         tables.sortedLeaves = _sortedUnique(leaves);
+        tables.candidateLeaves = _sortedUnique(candidateLeaves);
         machine.finalizePlan(planId);
         return planId;
     }
@@ -1576,6 +1609,55 @@ contract UVPDockingModuleAttachTest {
 
     function _pairOf(bytes32 left, bytes32 right) private pure returns (bytes32) {
         return left <= right ? keccak256(abi.encodePacked(left, right)) : keccak256(abi.encodePacked(right, left));
+    }
+
+    function _authsHashLocal(IUVPStateMachineCore.SignalAuthorization[] memory authorizations)
+        private
+        pure
+        returns (bytes32 rollingHash)
+    {
+        rollingHash = keccak256(abi.encode(authorizations.length));
+        for (uint256 i = 0; i < authorizations.length; i++) {
+            rollingHash = keccak256(
+                abi.encode(
+                    rollingHash,
+                    authorizations[i].sourceId,
+                    authorizations[i].signalId,
+                    authorizations[i].submitter,
+                    authorizations[i].role,
+                    authorizations[i].metadataHash
+                )
+            );
+        }
+    }
+
+    function _coreFactAttributionFor(bytes32 planId, bytes32 sourceId, bytes32 signalId)
+        private
+        view
+        returns (IUVPStateMachineCore.FactAttribution memory)
+    {
+        UVPStateMachine.FactAttribution memory attribution = _factAttributionFor(planId, sourceId, signalId);
+        return IUVPStateMachineCore.FactAttribution({
+            sourceId: attribution.sourceId,
+            signalId: attribution.signalId,
+            stageId: attribution.stageId,
+            capabilityProof: attribution.capabilityProof
+        });
+    }
+
+    /// amend input 事实的属主自证（目标 plan 词表内的映射事实键）。
+    function _amendInputAttribution() private view returns (IUVPStateMachineCore.FactAttribution memory) {
+        return _coreFactAttributionFor(targetPlanId, TARGET_INPUT_SOURCE, TARGET_INPUT_SIGNAL);
+    }
+
+    function _executorCandidateProof(bytes32 planId, bytes32 stageId, address executor)
+        private
+        view
+        returns (bytes32[] memory proof)
+    {
+        bytes32[] memory sorted = _capabilityTables[planId].candidateLeaves;
+        bytes32 leaf = keccak256(abi.encodePacked(EXECUTOR_CANDIDATE_LEAF_DOMAIN, stageId, executor));
+        proof = _merkleProofFor(sorted, leaf);
     }
 
     function _selectorBindingProof(bytes32 planId, bytes32 stageId)
@@ -1760,7 +1842,7 @@ contract UVPDockingModuleAttachTest {
             abi.encode(
                 keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
                 keccak256("UVPStateMachine"),
-                keccak256("0.12"),
+                keccak256("0.13"),
                 block.chainid,
                 address(machine)
             )

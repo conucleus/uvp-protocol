@@ -403,7 +403,11 @@ contract UVPDockingModule {
         DockInputBindingArg[] calldata inputs,
         DockOutputBindingArg[] calldata outputs,
         EntrancePermitV2 calldata permit,
-        IUVPStateMachineCore.FactAttribution[] calldata outputAttributions
+        IUVPStateMachineCore.FactAttribution[] calldata outputAttributions,
+        // entrance 事实的属主声明（UB-2 词表闸同口径）：有词表的目标 plan
+        // 必须携有效 attribution（能力叶 relation=0 membership proof），省证
+        // 出生事实无法落库绕过 per-stage 计数。
+        IUVPStateMachineCore.FactAttribution calldata entranceAttribution
     ) external returns (bool opened) {
         // 1. 父订单存在。
         if (!stateMachine.orderExists(request.localPlanId, request.localOrderId)) {
@@ -631,20 +635,22 @@ contract UVPDockingModule {
         // selector 权威）；子订单信号授权随后按目标定义自身的授权流
         // （executor patch / submitSignalFor）建立，不经 open 注入。
         address creator = stateMachine.planPublisher(request.targetPlanId);
-        stateMachine.createDockedOrderFromModule(
-            request.targetPlanId,
-            request.linkedOrderId,
-            creator,
-            msg.sender,
-            request.targetHookId,
-            request.targetStageId,
-            inputs[0].targetSourceId,
-            inputs[0].targetSignalId,
-            entrancePayloadHash,
-            entranceIdempotencyKey,
-            creator,
-            new IUVPStateMachineCore.SignalAuthorization[](0)
-        );
+        IUVPStateMachineCore.DockEntranceRequest memory entranceRequest = IUVPStateMachineCore.DockEntranceRequest({
+            targetPlanId: request.targetPlanId,
+            linkedOrderId: request.linkedOrderId,
+            creator: creator,
+            relayer: msg.sender,
+            entranceHookId: request.targetHookId,
+            entranceStageId: request.targetStageId,
+            sourceId: inputs[0].targetSourceId,
+            signalId: inputs[0].targetSignalId,
+            payloadHash: entrancePayloadHash,
+            idempotencyKey: entranceIdempotencyKey,
+            submitter: creator,
+            authorizations: new IUVPStateMachineCore.SignalAuthorization[](0),
+            entranceAttribution: entranceAttribution
+        });
+        stateMachine.createDockedOrderFromModule(entranceRequest);
 
         // entrance 交付账本（UVP-08）：open 本身就是 entrance input 的一次
         // 交付（createDockedOrderFromModule 写入 entrance 事实并发
@@ -935,10 +941,15 @@ contract UVPDockingModule {
     // submitDockedInput
     // ------------------------------------------------------------------
 
-    function submitDockedInput(bytes32 dockInstanceId, bytes32 localHookId, bytes32 inputBindingHash)
-        external
-        returns (bool submitted)
-    {
+    /// @param attribution 目标 mailbox 事实的属主声明（UB-2 词表闸同口径：
+    /// 有词表的 plan 必须携有效 attribution，省证事实无法落库绕过
+    /// per-stage 计数；keeper 只提供证明材料，无特权）。
+    function submitDockedInput(
+        bytes32 dockInstanceId,
+        bytes32 localHookId,
+        bytes32 inputBindingHash,
+        IUVPStateMachineCore.FactAttribution calldata attribution
+    ) external returns (bool submitted) {
         ActiveDockV2 storage dock = _docks[dockInstanceId];
         if (!dock.exists) {
             revert DockNotOpened(dockInstanceId);
@@ -989,13 +1000,16 @@ contract UVPDockingModule {
         // open 的 entrance 事实同口径，基础设施地址不进业务归因。
         address childCreator = stateMachine.orderCreator(dock.targetPlanId, dock.linkedOrderId);
         stateMachine.recordDockedInputFromModule(
-            dock.targetPlanId,
-            dock.linkedOrderId,
-            binding.targetSourceId,
-            binding.targetSignalId,
-            payloadHash,
-            idempotencyKey,
-            childCreator
+            IUVPStateMachineCore.DockInputFact({
+                planId: dock.targetPlanId,
+                orderId: dock.linkedOrderId,
+                sourceId: binding.targetSourceId,
+                signalId: binding.targetSignalId,
+                payloadHash: payloadHash,
+                idempotencyKey: idempotencyKey,
+                submitter: childCreator,
+                attribution: attribution
+            })
         );
 
         emit DockInputSubmitted(

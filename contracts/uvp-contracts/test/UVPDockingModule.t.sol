@@ -69,7 +69,7 @@ contract UVPDockingModuleTest {
     uint8 private constant FLAG_EMIT_READY = 4;
 
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,uint256 deadline)"
     );
     // 能力树叶域（与 UVPPlanMetadataModule / Rust·TS 编译器逐字节一致）。
     bytes32 private constant SIGNAL_CAPABILITY_LEAF_DOMAIN = keccak256("UVP_SIGNAL_CAPABILITY_V1");
@@ -320,7 +320,9 @@ contract UVPDockingModuleTest {
         // mailbox 既有事实 DockInputConflict，账本却显示未交付）。
         assertTrue(_open());
         assertTrue(docking.dockInputDelivered(dockInstanceId, entranceBinding));
-        assertFalse(docking.submitDockedInput(dockInstanceId, PARENT_EXEC_HOOK, entranceBinding));
+        assertFalse(
+            docking.submitDockedInput(dockInstanceId, PARENT_EXEC_HOOK, entranceBinding, _coreEntranceFactAttribution())
+        );
     }
 
     function testSubmitDockedInputRejectsUnknownBinding() public {
@@ -328,7 +330,7 @@ contract UVPDockingModuleTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPDockingModule.DockInputNotFound.selector, dockInstanceId, bytes32(uint256(0xBAD)))
         );
-        docking.submitDockedInput(dockInstanceId, PARENT_EXEC_HOOK, bytes32(uint256(0xBAD)));
+        docking.submitDockedInput(dockInstanceId, PARENT_EXEC_HOOK, bytes32(uint256(0xBAD)), _coreNoAttribution());
     }
 
     function testPermissionlessCallbackWritesParentMappedFact() public {
@@ -431,7 +433,8 @@ contract UVPDockingModuleTest {
                 _rogueInputs(route),
                 outputs,
                 _permitEmpty(),
-                _outputAttributionsFor(targetPlanId, outputs)
+                _outputAttributionsFor(targetPlanId, outputs),
+                _coreEntranceFactAttribution()
             )
         );
 
@@ -549,7 +552,8 @@ contract UVPDockingModuleTest {
             _inputs(),
             outputs,
             _permitEmpty(),
-            _outputAttributionsFor(targetPlanId, outputs)
+            _outputAttributionsFor(targetPlanId, outputs),
+            _coreNoAttribution()
         );
     }
 
@@ -616,7 +620,8 @@ contract UVPDockingModuleTest {
             inputs,
             _outputs(),
             _permitEmpty(),
-            _outputAttributionsFor(targetPlanId, _outputs())
+            _outputAttributionsFor(targetPlanId, _outputs()),
+            _coreEntranceFactAttribution()
         );
     }
 
@@ -704,7 +709,8 @@ contract UVPDockingModuleTest {
             inputs,
             _outputs(),
             _permitEmpty(),
-            _outputAttributionsFor(targetPlanId, _outputs())
+            _outputAttributionsFor(targetPlanId, _outputs()),
+            _coreEntranceFactAttribution()
         );
     }
 
@@ -738,7 +744,8 @@ contract UVPDockingModuleTest {
             inputs,
             _outputs(),
             _permitEmpty(),
-            _outputAttributionsFor(targetPlanId, _outputs())
+            _outputAttributionsFor(targetPlanId, _outputs()),
+            _coreEntranceFactAttribution()
         );
     }
 
@@ -774,7 +781,8 @@ contract UVPDockingModuleTest {
             _rogueInputs(route),
             outputs,
             _permitEmpty(),
-            _outputAttributionsFor(targetPlanId, outputs)
+            _outputAttributionsFor(targetPlanId, outputs),
+            _coreNoAttribution()
         );
     }
 
@@ -801,7 +809,8 @@ contract UVPDockingModuleTest {
             _permitEmpty(),
             // 词表剔除 TARGET_PENDING_SIGNAL：outputs[2] 的属主查询返回零
             // 声明，词表闸按该项事实键拒绝（本用例的可达性构造）。
-            _outputAttributionsFor(variantPlan, outputs)
+            _outputAttributionsFor(variantPlan, outputs),
+            _coreNoAttribution()
         );
     }
 
@@ -841,7 +850,8 @@ contract UVPDockingModuleTest {
             _rogueInputs(route),
             outputs,
             _permitEmpty(),
-            _outputAttributionsFor(targetPlanId, outputs)
+            _outputAttributionsFor(targetPlanId, outputs),
+            _coreNoAttribution()
         );
     }
 
@@ -1629,6 +1639,7 @@ contract UVPDockingModuleTest {
             capabilitiesRoot: DockMerkle.root(leaves),
             dockRoutesRoot: dockRoutesRoot,
             dockInterfaceRoot: dockInterfaceRoot,
+            executorCandidatesRoot: DockMerkle.EMPTY_ROOT,
             deadline: block.timestamp + 1 hours
         });
         bytes32 structHash = keccak256(
@@ -1639,12 +1650,14 @@ contract UVPDockingModuleTest {
                 commit.capabilitiesRoot,
                 commit.dockRoutesRoot,
                 commit.dockInterfaceRoot,
+                commit.executorCandidatesRoot,
                 commit.deadline
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _domainSeparator(), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(publisherKey, digest);
-        bytes32 planId = machine.commitPlan(commit, hooks, abi.encodePacked(r, s, v));
+        bytes32 planId =
+            machine.commitPlan(commit, hooks, new UVPStateMachine.ExecutorCandidate[](0), abi.encodePacked(r, s, v));
         CapabilityTables storage tables = _capabilityTables[planId];
         tables.bindings = selectorBindings;
         tables.capabilities = signalCapabilities;
@@ -1757,10 +1770,7 @@ contract UVPDockingModuleTest {
     // 不能隐式转换，两族各备一份。
     function _noAttribution() private pure returns (UVPStateMachine.FactAttribution memory) {
         return UVPStateMachine.FactAttribution({
-            sourceId: bytes32(0),
-            signalId: bytes32(0),
-            stageId: bytes32(0),
-            capabilityProof: new bytes32[](0)
+            sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
         });
     }
 
@@ -1768,12 +1778,31 @@ contract UVPDockingModuleTest {
         return UVPStateMachine.SelectorBindingProof({selectorStageId: bytes32(0), proof: new bytes32[](0)});
     }
 
+    /// 按测试留档能力表构造 core 类型属主自证（openDockedOrder 的
+    /// entranceAttribution / submitDockedInput 的 attribution 用）。
+    function _coreFactAttributionFor(bytes32 planId, bytes32 sourceId, bytes32 signalId)
+        private
+        view
+        returns (IUVPStateMachineCore.FactAttribution memory)
+    {
+        UVPStateMachine.FactAttribution memory attribution = _factAttributionFor(planId, sourceId, signalId);
+        return IUVPStateMachineCore.FactAttribution({
+            sourceId: attribution.sourceId,
+            signalId: attribution.signalId,
+            stageId: attribution.stageId,
+            capabilityProof: attribution.capabilityProof
+        });
+    }
+
+    /// dock 通道标准事实的属主自证：目标 plan 词表内的 TARGET_SOURCE/
+    /// TARGET_SIGNAL（无词表 plan 返回零声明——词表闸放行口径）。
+    function _coreEntranceFactAttribution() private view returns (IUVPStateMachineCore.FactAttribution memory) {
+        return _coreFactAttributionFor(targetPlanId, TARGET_SOURCE, TARGET_SIGNAL);
+    }
+
     function _coreNoAttribution() private pure returns (IUVPStateMachineCore.FactAttribution memory) {
         return IUVPStateMachineCore.FactAttribution({
-            sourceId: bytes32(0),
-            signalId: bytes32(0),
-            stageId: bytes32(0),
-            capabilityProof: new bytes32[](0)
+            sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
         });
     }
 
@@ -1796,9 +1825,7 @@ contract UVPDockingModuleTest {
                     && capability.signalId == signalId
             ) {
                 bytes32 leaf = keccak256(
-                    abi.encode(
-                        SIGNAL_CAPABILITY_LEAF_DOMAIN, capability.stageId, sourceId, signalId, uint256(0)
-                    )
+                    abi.encode(SIGNAL_CAPABILITY_LEAF_DOMAIN, capability.stageId, sourceId, signalId, uint256(0))
                 );
                 return UVPStateMachine.FactAttribution({
                     sourceId: sourceId,
@@ -1881,7 +1908,8 @@ contract UVPDockingModuleTest {
             _inputs(),
             _outputs(),
             _permitEmpty(),
-            _outputAttributionsFor(targetPlanId, _outputs())
+            _outputAttributionsFor(targetPlanId, _outputs()),
+            _coreEntranceFactAttribution()
         );
     }
 
@@ -1896,7 +1924,8 @@ contract UVPDockingModuleTest {
             _inputs(),
             _outputs(),
             permit,
-            _outputAttributionsFor(targetPlanId, _outputs())
+            _outputAttributionsFor(targetPlanId, _outputs()),
+            _coreEntranceFactAttribution()
         );
     }
 
@@ -1915,7 +1944,8 @@ contract UVPDockingModuleTest {
             _inputs(),
             _outputs(),
             _permitEmpty(),
-            _outputAttributionsFor(request.targetPlanId, _outputs())
+            _outputAttributionsFor(request.targetPlanId, _outputs()),
+            _coreNoAttribution()
         );
     }
 
@@ -2110,7 +2140,7 @@ contract UVPDockingModuleTest {
             abi.encode(
                 keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
                 keccak256("UVPStateMachine"),
-                keccak256("0.12"),
+                keccak256("0.13"),
                 block.chainid,
                 address(machine)
             )
