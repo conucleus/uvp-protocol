@@ -140,10 +140,7 @@ export function compileOnchainHookPlan(
       return "";
     },
   ).filter((issue) => issue.length > 0);
-  const executorCandidateList = normalizeExecutorCandidates(
-    executorCandidates ?? [],
-    (stageIdentifier) => onchainStageId(stageIdentifier),
-  );
+
   // 逐 hook 顺序语义与合约 _registerPlanHook 一致（见 crossStageDependencyIssues）。
   const crossStageIssues = crossStageDependencyIssues(compiledHooks);
   // 不可物化阶段（无 order-trigger / EMIT_READY hook 的阶段）不得挂任何
@@ -231,6 +228,13 @@ export function compileOnchainHookPlan(
   if (preflightIssues.length > 0) {
     throw new HookPlanCompilationError(preflightIssues);
   }
+  // 候选集归一在 preflight 之后：畸形输入（非字符串地址等）必须以
+  // 类型化 issue 落进上面的 HookPlanCompilationError，不能让归一化的
+  // 字符串操作先抛裸 TypeError 绕过类型化错误门。
+  const executorCandidateList = normalizeExecutorCandidates(
+    executorCandidates ?? [],
+    (stageIdentifier) => onchainStageId(stageIdentifier),
+  );
   const dependencyIndex = buildOnchainDependencyIndex(compiledHooks);
   const selectorBindings = compileSelectorBindings(
     hookPlanArtifact.selectedStageBindings,
