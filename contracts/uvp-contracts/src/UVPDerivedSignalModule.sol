@@ -220,14 +220,15 @@ contract UVPDerivedSignalModule {
                 request.fromPlanId, request.fromOrderId, request.targetPlanId, request.targetOrderId
             );
             // 能力成员资格按"字段重算叶 + 调用方携 proof"验证（叶子不自报）。
-            if (!_planMetadata().verifySignalCapability(
-                    request.fromPlanId,
-                    request.fromStageId,
-                    request.targetSourceId,
-                    request.signalId,
-                    relation,
-                    proofs.fromCapabilityProof
-                )) {
+            if (!_planMetadata()
+                    .verifySignalCapability(
+                        request.fromPlanId,
+                        request.fromStageId,
+                        request.targetSourceId,
+                        request.signalId,
+                        relation,
+                        proofs.fromCapabilityProof
+                    )) {
                 revert InvalidSignalCapability();
             }
             // capability 只查 from 订单的 plan 时，自版 plan 的攻击者
@@ -235,14 +236,15 @@ contract UVPDerivedSignalModule {
             // （origin）订单的 plan 声明同一 capability——目标侧的 plan/授权
             // 必须参与同意。
             if (relation != 0) {
-                if (!_planMetadata().verifySignalCapability(
-                        request.targetPlanId,
-                        request.fromStageId,
-                        request.targetSourceId,
-                        request.signalId,
-                        relation,
-                        proofs.targetCapabilityProof
-                    )) {
+                if (!_planMetadata()
+                        .verifySignalCapability(
+                            request.targetPlanId,
+                            request.fromStageId,
+                            request.targetSourceId,
+                            request.signalId,
+                            relation,
+                            proofs.targetCapabilityProof
+                        )) {
                     revert InvalidSignalCapability();
                 }
             }

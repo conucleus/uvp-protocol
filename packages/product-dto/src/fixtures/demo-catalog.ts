@@ -254,9 +254,6 @@ const demoCustomsResourceRequirements: readonly ProductResourceRequirementDTO[] 
 ];
 
 const demoPreviousExecutorWallet = "0x2222222222222222222222222222222222222222";
-const demoReplacementExecutorWallet = "0x3333333333333333333333333333333333333333";
-const demoApprovalSourceId = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const demoApprovalSignalId = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 const demoAssignPatchMode: ProductExecutorPatchRequirementDTO = {
   mode: "assign",
@@ -287,32 +284,6 @@ const demoHandoffPatchMode: ProductExecutorPatchRequirementDTO = {
   guidanceLabel: "需要原履约者签名"
 };
 
-const demoReplacementPatchMode: ProductExecutorPatchRequirementDTO = {
-  mode: "replacement",
-  modeLabel: "申请替换履约者",
-  allowed: true,
-  workStarted: true,
-  requiresSelectorSignature: true,
-  requiresPreviousExecutorSignature: false,
-  requiresApprovalSignal: true,
-  previousExecutor: demoPreviousExecutorWallet,
-  previousExecutorWallet: demoPreviousExecutorWallet,
-  previousExecutorLabel: "现任报关履约者",
-  approvalSourceId: demoApprovalSourceId,
-  approvalSignalId: demoApprovalSignalId,
-  approvalSignalLabel: "裁定方替换证明",
-  approvalSignal: {
-    approvalSourceId: demoApprovalSourceId,
-    approvalSignalId: demoApprovalSignalId,
-    label: "裁定方替换证明",
-    txHash: "0x9999999999999999999999999999999999999999999999999999999999990001",
-    blockNumber: "18,734,700"
-  },
-  priorAuthorityLabel: "已完成部分不变",
-  futureAuthorityLabel: "替换确认后，新履约者只接续后续工作",
-  guidanceLabel: "需要替换证明"
-};
-
 const demoSelectableTargets: readonly ProductSelectableTargetDTO[] = [
   {
     selectorStageId: "order-confirmed",
@@ -340,10 +311,7 @@ const demoSelectableTargets: readonly ProductSelectableTargetDTO[] = [
     previousExecutorWallet: demoPreviousExecutorWallet,
     previousExecutorLabel: "现任报关履约者",
     executorPatchMode: "handoff",
-    executorPatchModes: [demoHandoffPatchMode, demoReplacementPatchMode],
-    approvalSourceId: demoApprovalSourceId,
-    approvalSignalId: demoApprovalSignalId,
-    approvalSignalLabel: "裁定方替换证明",
+    executorPatchModes: [demoHandoffPatchMode],
     priorAuthorityLabel: "已完成部分不变",
     futureAuthorityLabel: "确认后只变更后续履约权限",
     resourceRequirements: demoCustomsResourceRequirements
@@ -1077,7 +1045,7 @@ export const demoFundingGuaranteeSignalContainers = [
     },
     prepare: {
       typedData: {
-        stateMachineLabel: "UVPStateMachine 0.12",
+        stateMachineLabel: "UVPStateMachine 0.13",
         primaryType: "SubmitSignal",
         messageHint: "funding_condition_satisfied"
       },
@@ -1134,7 +1102,7 @@ export const demoFundingGuaranteeSignalContainers = [
     },
     prepare: {
       typedData: {
-        stateMachineLabel: "UVPStateMachine 0.12",
+        stateMachineLabel: "UVPStateMachine 0.13",
         primaryType: "SubmitSignal",
         messageHint: "funding_condition_satisfied"
       },
@@ -1191,7 +1159,7 @@ export const demoFundingGuaranteeSignalContainers = [
     },
     prepare: {
       typedData: {
-        stateMachineLabel: "UVPStateMachine 0.12",
+        stateMachineLabel: "UVPStateMachine 0.13",
         primaryType: "SubmitSignal",
         messageHint: "funding_condition_satisfied"
       },
@@ -1225,7 +1193,7 @@ export const demoSelectorTask: ProductTaskDTO = {
   orderTitle: demoOrder.title,
   zhixuId: CROSS_BORDER_ZHIXU_ID,
   title: "选择或交接履约者",
-  subtitle: "未开始阶段可选择履约者；已开始阶段需走交接或替换证明。",
+  subtitle: "未开始阶段可选择履约者；已开始阶段需原履约者共签交接。",
   assigneeRole: "买家",
   stageId: "order-confirmed",
   stageName: "订单确认",
@@ -1235,7 +1203,7 @@ export const demoSelectorTask: ProductTaskDTO = {
   addOnKind: "stage_executor_patch",
   addOnManifest: selectorAddOnManifest,
   selectableTargets: demoSelectableTargets,
-  executorPatchModes: [demoAssignPatchMode, demoHandoffPatchMode, demoReplacementPatchMode],
+  executorPatchModes: [demoAssignPatchMode, demoHandoffPatchMode],
   primaryActionLabel: "选择履约者",
   participantRoleLabel: "买家",
   canSubmit: true,

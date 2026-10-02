@@ -21,7 +21,6 @@ import {
 import {
   EXECUTOR_PATCH_MODE_ASSIGN,
   EXECUTOR_PATCH_MODE_HANDOFF,
-  EXECUTOR_PATCH_MODE_REPLACEMENT,
   DERIVED_SIGNAL_MODULE_ABI,
   ORDER_LINK_MODULE_ABI,
   STATE_MACHINE_ABI,
@@ -169,7 +168,7 @@ const recipientEnvelopeRoot = bytes32("0b");
 const ciphertextHash = bytes32("0c");
 const resourceKey = bytes32("0d");
 const contentHash = bytes32("0e");
-const approvalSourceId = bytes32("0f");
+const authorizationsHash = bytes32("0f");
 const approvalSignalId = bytes32("10");
 const originSourceId = bytes32("16");
 const originSignalId = bytes32("17");
@@ -204,8 +203,7 @@ const assignExecutorPatchPayload = {
   executorMetadataHash,
   mode: EXECUTOR_PATCH_MODE_ASSIGN,
   previousExecutor: zeroAddress,
-  approvalSourceId: zeroBytes32,
-  approvalSignalId: zeroBytes32,
+  authorizationsHash: zeroBytes32,
   patchNonce: executorPatchNonce,
   metadataURI,
 } as const;
@@ -220,29 +218,27 @@ const handoffExecutorPatchPayload = {
   executorMetadataHash,
   mode: EXECUTOR_PATCH_MODE_HANDOFF,
   previousExecutor,
-  approvalSourceId: zeroBytes32,
-  approvalSignalId: zeroBytes32,
+  authorizationsHash: zeroBytes32,
   patchNonce: handoffPatchNonce,
   metadataURI: handoffMetadataURI,
 } as const;
 const handoffExecutorPatchHash = hashStageExecutorPatchPayload(
   handoffExecutorPatchPayload,
 );
-const replacementExecutorPatchPayload = {
+const rotatedExecutorPatchPayload = {
   selectorStageId,
   targetStageId,
   executor,
   role,
   executorMetadataHash,
-  mode: EXECUTOR_PATCH_MODE_REPLACEMENT,
+  mode: EXECUTOR_PATCH_MODE_HANDOFF,
   previousExecutor,
-  approvalSourceId,
-  approvalSignalId,
+  authorizationsHash,
   patchNonce: replacementPatchNonce,
   metadataURI: replacementMetadataURI,
 } as const;
-const replacementExecutorPatchHash = hashStageExecutorPatchPayload(
-  replacementExecutorPatchPayload,
+const rotatedExecutorPatchHash = hashStageExecutorPatchPayload(
+  rotatedExecutorPatchPayload,
 );
 const manifestHash = hashResourceManifest(resourceManifest);
 const resourcePatchHash = hashStageResourcePatchPayload({
@@ -330,7 +326,7 @@ describe("protocol bindings", () => {
     assert.deepEqual(typedData, {
       domain: {
         name: "UVPStateMachine",
-        version: "0.12",
+        version: "0.13",
         chainId: 31337,
         verifyingContract,
       },
@@ -394,6 +390,7 @@ describe("protocol bindings", () => {
       hooksHash: payloadHash,
       capabilitiesRoot: idempotencyKey,
       dockRoutesRoot: planId,
+      executorCandidatesRoot: idempotencyKey,
       dockInterfaceRoot: originPlanId,
       deadline,
     });
@@ -410,6 +407,7 @@ describe("protocol bindings", () => {
         "capabilitiesRoot",
         "dockRoutesRoot",
         "dockInterfaceRoot",
+        "executorCandidatesRoot",
         "deadline",
       ],
     );
@@ -477,12 +475,12 @@ describe("protocol bindings", () => {
         patchHash: assignExecutorPatchHash,
       },
       {
-        payload: handoffExecutorPatchPayload,
-        patchHash: handoffExecutorPatchHash,
+        payload: rotatedExecutorPatchPayload,
+        patchHash: rotatedExecutorPatchHash,
       },
       {
-        payload: replacementExecutorPatchPayload,
-        patchHash: replacementExecutorPatchHash,
+        payload: rotatedExecutorPatchPayload,
+        patchHash: rotatedExecutorPatchHash,
       },
     ] as const;
 
@@ -511,8 +509,7 @@ describe("protocol bindings", () => {
         { name: "executorMetadataHash", type: "bytes32" },
         { name: "mode", type: "bytes32" },
         { name: "previousExecutor", type: "address" },
-        { name: "approvalSourceId", type: "bytes32" },
-        { name: "approvalSignalId", type: "bytes32" },
+        { name: "authorizationsHash", type: "bytes32" },
         { name: "patchHash", type: "bytes32" },
         { name: "patchNonce", type: "uint256" },
         { name: "metadataURI", type: "string" },
@@ -543,12 +540,8 @@ describe("protocol bindings", () => {
         payload.previousExecutor,
       );
       assert.equal(
-        typedData.message.approvalSourceId,
-        payload.approvalSourceId,
-      );
-      assert.equal(
-        typedData.message.approvalSignalId,
-        payload.approvalSignalId,
+        typedData.message.authorizationsHash,
+        payload.authorizationsHash,
       );
       assert.equal(typedData.message.patchHash, patchHash);
       assert.equal(typedData.message.patchNonce, payload.patchNonce);
@@ -563,8 +556,8 @@ describe("protocol bindings", () => {
       verifyingContract,
       planId,
       orderId,
-      ...handoffExecutorPatchPayload,
-      patchHash: handoffExecutorPatchHash,
+      ...rotatedExecutorPatchPayload,
+      patchHash: rotatedExecutorPatchHash,
       selector: submitter,
       deadline,
     });
@@ -1150,6 +1143,18 @@ describe("protocol bindings", () => {
     const stageFacts = [
       { sourceId, signalId, capabilityProof: [idempotencyKey] },
     ] as const;
+
+// UB-36①②③：候选集成员证明 + patch 生效时对新城执行者写入的显式授权集。
+const candidateProof = [payloadHash, idempotencyKey] as const;
+const executorAuthorizations = [
+  {
+    sourceId,
+    signalId,
+    submitter,
+    role,
+    metadataHash: executorMetadataHash,
+  },
+] as const;
     const call = buildApplyStageExecutorPatchForCall(
       {
         stagePatchModuleAddress: verifyingContract,
@@ -1159,15 +1164,16 @@ describe("protocol bindings", () => {
         planId,
         orderId,
         patch: {
-          ...replacementExecutorPatchPayload,
-          patchHash: replacementExecutorPatchHash,
+          ...rotatedExecutorPatchPayload,
+          patchHash: rotatedExecutorPatchHash,
         },
         selector: submitter,
         deadline,
         selectorSignature,
         previousExecutorSignature,
         bindingProof,
-        stageFacts,
+        candidateProof,
+        executorAuthorizations,
       },
     );
     const decoded = decodeFunctionData({
@@ -1187,11 +1193,10 @@ describe("protocol bindings", () => {
         executor,
         role,
         executorMetadataHash,
-        EXECUTOR_PATCH_MODE_REPLACEMENT,
+        EXECUTOR_PATCH_MODE_HANDOFF,
         previousExecutor,
-        approvalSourceId,
-        approvalSignalId,
-        replacementExecutorPatchHash,
+        authorizationsHash,
+        rotatedExecutorPatchHash,
         BigInt(replacementPatchNonce),
         replacementMetadataURI,
       ],
@@ -1200,7 +1205,8 @@ describe("protocol bindings", () => {
       selectorSignature,
       previousExecutorSignature,
       { selectorStageId, proof: [payloadHash] },
-      [{ sourceId, signalId, capabilityProof: [idempotencyKey] }],
+      candidateProof,
+      executorAuthorizations,
     ]);
     assert.equal(decoded.functionName, "applyStageExecutorPatchFor");
     assert.ok(decoded.args);
@@ -1213,11 +1219,10 @@ describe("protocol bindings", () => {
       executor,
       role,
       executorMetadataHash,
-      mode: EXECUTOR_PATCH_MODE_REPLACEMENT,
+      mode: EXECUTOR_PATCH_MODE_HANDOFF,
       previousExecutor: previousExecutorAccount.address,
-      approvalSourceId,
-      approvalSignalId,
-      patchHash: replacementExecutorPatchHash,
+      authorizationsHash,
+      patchHash: rotatedExecutorPatchHash,
       patchNonce: BigInt(replacementPatchNonce),
       metadataURI: replacementMetadataURI,
     });
@@ -1226,9 +1231,15 @@ describe("protocol bindings", () => {
     assert.equal(decodedArgs[5], selectorSignature);
     assert.equal(decodedArgs[6], previousExecutorSignature);
     assert.deepEqual(decodedArgs[7], { selectorStageId, proof: [payloadHash] });
-    assert.deepEqual(decodedArgs[8], [
-      { sourceId, signalId, capabilityProof: [idempotencyKey] },
-    ]);
+    assert.deepEqual(decodedArgs[8], candidateProof);
+    // submitter 大小写由 EIP-55 校验和决定——比较按小写归一。
+    assert.deepEqual(
+      (decodedArgs[9] as Array<{ submitter: string }>).map((auth) => ({
+        ...auth,
+        submitter: auth.submitter.toLowerCase(),
+      })),
+      executorAuthorizations,
+    );
   });
 
   it("builds applyStageResourcePatchFor calls from the stage patch module ABI", () => {
@@ -1257,7 +1268,6 @@ describe("protocol bindings", () => {
         deadline,
         signature,
         bindingProof,
-        stageFacts,
       },
     );
     const decoded = decodeFunctionData({
@@ -1285,7 +1295,6 @@ describe("protocol bindings", () => {
       BigInt(deadline),
       signature,
       { selectorStageId, proof: [] },
-      [],
     ]);
     assert.equal(decoded.functionName, "applyStageResourcePatchFor");
     assert.ok(decoded.args);
@@ -1306,7 +1315,6 @@ describe("protocol bindings", () => {
     assert.equal(decodedArgs[4], BigInt(deadline));
     assert.equal(decodedArgs[5], signature);
     assert.deepEqual(decodedArgs[6], { selectorStageId, proof: [] });
-    assert.deepEqual(decodedArgs[7], []);
   });
 
   it("hashes canonical JSON in a browser-safe helper", () => {
@@ -1402,10 +1410,6 @@ describe("protocol bindings", () => {
       EXECUTOR_PATCH_MODE_HANDOFF,
       "0x68616e646f666600000000000000000000000000000000000000000000000000",
     );
-    assert.equal(
-      EXECUTOR_PATCH_MODE_REPLACEMENT,
-      "0x7265706c6163656d656e74000000000000000000000000000000000000000000",
-    );
     // payload 哈希必须吃进导出的域常量（域分离）——keccak256(abi
     // .encode(keccak256(domain), …payload))。独立重算而非同源引用。
     assert.equal(
@@ -1429,8 +1433,7 @@ describe("protocol bindings", () => {
             { name: "executorMetadataHash", type: "bytes32" },
             { name: "mode", type: "bytes32" },
             { name: "previousExecutor", type: "address" },
-            { name: "approvalSourceId", type: "bytes32" },
-            { name: "approvalSignalId", type: "bytes32" },
+            { name: "authorizationsHash", type: "bytes32" },
             { name: "patchNonce", type: "uint256" },
             { name: "metadataURI", type: "string" },
           ],
@@ -1445,7 +1448,6 @@ describe("protocol bindings", () => {
             executorMetadataHash,
             EXECUTOR_PATCH_MODE_ASSIGN,
             zeroAddress,
-            zeroBytes32,
             zeroBytes32,
             BigInt(executorPatchNonce),
             metadataURI,
@@ -1492,17 +1494,16 @@ describe("protocol bindings", () => {
         executorMetadataHash,
         mode: "assign",
         previousExecutor: zeroAddress,
-        approvalSourceId: zeroBytes32,
-        approvalSignalId: zeroBytes32,
+        authorizationsHash: zeroBytes32,
         patchNonce: BigInt(executorPatchNonce),
         metadataURI,
       }),
     );
     assert.equal(
-      replacementExecutorPatchHash,
+      rotatedExecutorPatchHash,
       hashStageExecutorPatchPayload({
-        ...replacementExecutorPatchPayload,
-        mode: "replacement",
+        ...rotatedExecutorPatchPayload,
+        mode: "handoff",
         patchNonce: BigInt(replacementPatchNonce),
       }),
     );

@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
 import {ECDSA} from "./libraries/ECDSA.sol";
 import {UVPSignatures} from "./libraries/UVPSignatures.sol";
+import {DockMerkle} from "./libraries/DockMerkle.sol";
 
 interface IUVPPlanMetadataModuleForStagePatch {
     function verifyStageSelectorBinding(
@@ -12,17 +13,23 @@ interface IUVPPlanMetadataModuleForStagePatch {
         bytes32 targetStageId,
         bytes32[] calldata proof
     ) external view returns (bool);
-    function verifySignalCapability(
-        bytes32 planId,
-        bytes32 stageId,
-        bytes32 targetSourceId,
-        bytes32 signalId,
-        uint8 relation,
-        bytes32[] calldata proof
-    ) external view returns (bool);
 }
 
+// 执行者候选集叶域（UB-36②③）：与 UVPStateMachineConstants 的
+// _EXECUTOR_CANDIDATE_LEAF_DOMAIN 同值（模块侧重导出为 public 常量，
+// 供链下构造 proof 的消费方对拍）。叶 = keccak256(abi.encodePacked(
+// EXECUTOR_CANDIDATE_LEAF_DOMAIN, stageId, executor))。
+bytes32 constant _EXECUTOR_CANDIDATE_LEAF_DOMAIN = keccak256("UVP_EXECUTOR_CANDIDATE_V1");
+
 contract UVPStagePatchModule {
+    /// executor patch 请求（UB-36①④/UB-39 后的终态形态）：
+    /// - REPLACEMENT 模式退役——approvalSourceId/approvalSignalId 字段删除
+    ///   （存在性-only 的链上审批信号不再是授权材料，forkOrder 的裁决
+    ///   信号绑定取而代之）。
+    /// - authorizationsHash（UB-36①）：patch 生效时对新城执行者写入的
+    ///   显式订单级授权集哈希（stateMachine.signalAuthorizationsHash 公式），
+    ///   进 EIP-712 digest——授权来源 = selector 的 patch 签名（签名覆盖
+    ///   授权集，provenance 可审计），替代已退役的委托授权通道。
     struct StageExecutorPatch {
         bytes32 selectorStageId;
         bytes32 targetStageId;
@@ -31,8 +38,7 @@ contract UVPStagePatchModule {
         bytes32 executorMetadataHash;
         bytes32 mode;
         address previousExecutor;
-        bytes32 approvalSourceId;
-        bytes32 approvalSignalId;
+        bytes32 authorizationsHash;
         bytes32 patchHash;
         uint256 patchNonce;
         string metadataURI;
@@ -47,16 +53,6 @@ contract UVPStagePatchModule {
         bytes32 patchHash;
         uint256 patchNonce;
         string manifestURI;
-    }
-
-    /// 目标阶段 relation=0 能力事实的携证声明：patch 的委任与治理时序
-    /// （StageAlreadyHasSignal / 上一执行者回退）需要枚举该阶段的全部
-    /// 能力键——能力树形态下枚举只能由调用方（编译产物持有者）携证供表，
-    /// 每条经 verifySignalCapability 验证后参与治理判定。
-    struct StageCapabilityFact {
-        bytes32 sourceId;
-        bytes32 signalId;
-        bytes32[] capabilityProof;
     }
 
     struct ActiveStageExecutorPatch {
@@ -86,7 +82,6 @@ contract UVPStagePatchModule {
     error InvalidStageResourcePatchSignature(address expectedSigner, address recoveredSigner);
     error InvalidStageResourcePatchSignatureLength(uint256 length);
     error StageAlreadyHasSignal(bytes32 orderId, bytes32 targetStageId);
-    error StageExecutorPatchApprovalSignalMissing(bytes32 orderId, bytes32 approvalSourceId, bytes32 approvalSignalId);
     error StageExecutorPatchNonceNotIncreasing(
         bytes32 orderId, bytes32 targetStageId, uint256 previousNonce, uint256 patchNonce
     );
@@ -98,15 +93,18 @@ contract UVPStagePatchModule {
     /// 逐单 executor patch 在合约侧读 plan hook flags 补门。
     /// 资源补丁不受此门——资源可替换。
     error StageExecutorPatchForbiddenOnBirthStage(bytes32 orderId, bytes32 targetStageId);
-    /// 同秒平局 fail-closed：最高 submittedAt 并列且提交者
-    /// 不同时，"上一执行者"没有确定序——拒绝而不是按 capability 数组枚举
-    /// 序静默取值。
+    /// 同秒平局 fail-closed：最高 submittedAt 并列且提交者不同时，
+    /// "上一执行者"没有确定序——拒绝而不是静默取值（判定材料改读合约
+    /// 原生 per-stage 计数的 ambiguity 标记，UB-2）。
     error StagePreviousExecutorAmbiguous(bytes32 orderId, bytes32 targetStageId, uint64 submittedAt);
     error StageResourcePatchNonceNotIncreasing(
         bytes32 orderId, bytes32 targetStageId, bytes32 resourceKey, uint256 previousNonce, uint256 patchNonce
     );
-    /// 携证能力事实验不过（键不在目标阶段的能力表内）或同键重复声明。
-    error StageCapabilityFactInvalid(bytes32 planId, bytes32 stageId, bytes32 sourceId, bytes32 signalId);
+    /// 候选集闸（UB-36②③）：(targetStageId, patch.executor) 不在 plan 承诺
+    /// 的执行者候选集内，或 plan 未承诺候选集（root==EMPTY_ROOT——无候选
+    /// 集的计划没有逐单换人面，patch 恒拒，fail-closed）。两类拒绝同报此
+    /// 错：对调用方而言都是"目标不是候选集成员"。
+    error StageExecutorNotCandidate(bytes32 planId, bytes32 orderId, bytes32 targetStageId, address executor);
     error StageSelectorBindingNotFound(bytes32 planId, bytes32 selectorStageId, bytes32 targetStageId);
     error UnauthorizedStageExecutorPatchSelector(bytes32 orderId, bytes32 selectorStageId, address selector);
     error UnauthorizedStageResourcePatchSelector(bytes32 orderId, bytes32 selectorStageId, address selector);
@@ -128,22 +126,25 @@ contract UVPStagePatchModule {
         0x6dff331f2bb7b785cbcd99a911e6d30dc8714f43b3b9ba80c658215445ddd0ba;
     bytes32 public constant EXECUTOR_PATCH_MODE_ASSIGN = bytes32("assign");
     bytes32 public constant EXECUTOR_PATCH_MODE_HANDOFF = bytes32("handoff");
-    bytes32 public constant EXECUTOR_PATCH_MODE_REPLACEMENT = bytes32("replacement");
+    /// 候选集叶域（UB-36②③）：commitPlan 建树与 patch 验叶同一公式。
+    bytes32 public constant EXECUTOR_CANDIDATE_LEAF_DOMAIN = _EXECUTOR_CANDIDATE_LEAF_DOMAIN;
 
     bytes32 private constant _EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _EIP712_NAME_HASH = keccak256("UVPStagePatchModule");
-    bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.1");
+    // 0.1 → 0.2（UB-36①④ 破坏性批）：StageExecutorPatch 结构变化
+    //（approval 字段删除、authorizationsHash 新增），digest 面整体换血。
+    bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.2");
     // patch 签名绑定订单的
     // (planId, orderId) 复合身份。
     bytes32 private constant _STAGE_EXECUTOR_PATCH_TYPEHASH = keccak256(
-        "UVPStagePatchModuleStageExecutorPatch(bytes32 planId,bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 approvalSourceId,bytes32 approvalSignalId,bytes32 patchHash,uint256 patchNonce,string metadataURI,address selector,uint256 deadline)"
+        "UVPStagePatchModuleStageExecutorPatch(bytes32 planId,bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 authorizationsHash,bytes32 patchHash,uint256 patchNonce,string metadataURI,address selector,uint256 deadline)"
     );
     bytes32 private constant _STAGE_RESOURCE_PATCH_TYPEHASH = keccak256(
         "UVPStagePatchModuleStageResourcePatch(bytes32 planId,bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,bytes32 resourceKey,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI,address selector,uint256 deadline)"
     );
     bytes32 private constant _STAGE_EXECUTOR_PATCH_APPLIED_TOPIC = keccak256(
-        "StageExecutorPatchApplied(bytes32,bytes32,bytes32,bytes32,address,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string)"
+        "StageExecutorPatchApplied(bytes32,bytes32,bytes32,bytes32,address,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256,string)"
     );
 
     // patch 存储按 (planId, orderId) 复合键寻址。
@@ -169,8 +170,9 @@ contract UVPStagePatchModule {
         bytes32 executorMetadataHash,
         bytes32 mode,
         address previousExecutor,
-        bytes32 approvalSourceId,
-        bytes32 approvalSignalId,
+        // UB-36①：授权集哈希随事件广播（委托授权 StageExecutorSignalDelegated
+        // 退役；授权明细经 SignalSubmitterAuthorized 事件流可完整重建）。
+        bytes32 authorizationsHash,
         bytes32 patchHash,
         uint256 patchNonce,
         string metadataURI
@@ -200,9 +202,12 @@ contract UVPStagePatchModule {
         bytes32 orderId,
         StageExecutorPatch calldata patch,
         IUVPStateMachineCore.SelectorBindingProof calldata bindingProof,
-        StageCapabilityFact[] calldata stageFacts
+        bytes32[] calldata candidateProof,
+        IUVPStateMachineCore.SignalAuthorization[] calldata executorAuthorizations
     ) external {
-        _applyStageExecutorPatch(planId, orderId, patch, msg.sender, address(0), bindingProof, stageFacts);
+        _applyStageExecutorPatch(
+            planId, orderId, patch, msg.sender, address(0), bindingProof, candidateProof, executorAuthorizations
+        );
     }
 
     function applyStageExecutorPatchFor(
@@ -214,7 +219,8 @@ contract UVPStagePatchModule {
         bytes calldata selectorSignature,
         bytes calldata previousExecutorSignature,
         IUVPStateMachineCore.SelectorBindingProof calldata bindingProof,
-        StageCapabilityFact[] calldata stageFacts
+        bytes32[] calldata candidateProof,
+        IUVPStateMachineCore.SignalAuthorization[] calldata executorAuthorizations
     ) external {
         if (block.timestamp > deadline) {
             revert ExpiredStageExecutorPatchSignature(deadline);
@@ -234,17 +240,25 @@ contract UVPStagePatchModule {
             recoveredPreviousExecutor = _recoverStageExecutorPatchSigner(digest, previousExecutorSignature);
         }
 
-        _applyStageExecutorPatch(planId, orderId, patch, selector, recoveredPreviousExecutor, bindingProof, stageFacts);
+        _applyStageExecutorPatch(
+            planId,
+            orderId,
+            patch,
+            selector,
+            recoveredPreviousExecutor,
+            bindingProof,
+            candidateProof,
+            executorAuthorizations
+        );
     }
 
     function applyStageResourcePatch(
         bytes32 planId,
         bytes32 orderId,
         StageResourcePatch calldata patch,
-        IUVPStateMachineCore.SelectorBindingProof calldata bindingProof,
-        StageCapabilityFact[] calldata stageFacts
+        IUVPStateMachineCore.SelectorBindingProof calldata bindingProof
     ) external {
-        _applyStageResourcePatch(planId, orderId, patch, msg.sender, bindingProof, stageFacts);
+        _applyStageResourcePatch(planId, orderId, patch, msg.sender, bindingProof);
     }
 
     function applyStageResourcePatchFor(
@@ -254,8 +268,7 @@ contract UVPStagePatchModule {
         address selector,
         uint256 deadline,
         bytes calldata signature,
-        IUVPStateMachineCore.SelectorBindingProof calldata bindingProof,
-        StageCapabilityFact[] calldata stageFacts
+        IUVPStateMachineCore.SelectorBindingProof calldata bindingProof
     ) external {
         if (block.timestamp > deadline) {
             revert ExpiredStageResourcePatchSignature(deadline);
@@ -271,7 +284,7 @@ contract UVPStagePatchModule {
             revert InvalidStageResourcePatchSignature(selector, recoveredSigner);
         }
 
-        _applyStageResourcePatch(planId, orderId, patch, selector, bindingProof, stageFacts);
+        _applyStageResourcePatch(planId, orderId, patch, selector, bindingProof);
     }
 
     function activeStageExecutor(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
@@ -403,10 +416,10 @@ contract UVPStagePatchModule {
         address selector,
         address previousExecutorSigner,
         IUVPStateMachineCore.SelectorBindingProof calldata bindingProof,
-        StageCapabilityFact[] calldata stageFacts
+        bytes32[] calldata candidateProof,
+        IUVPStateMachineCore.SignalAuthorization[] calldata executorAuthorizations
     ) private {
-        _validateStageExecutorPatch(planId, orderId, patch, selector, bindingProof);
-        _requireValidStageFacts(planId, patch.targetStageId, stageFacts);
+        _validateStageExecutorPatch(planId, orderId, patch, selector, bindingProof, candidateProof);
 
         ActiveStageExecutorPatch storage activePatch = _activeStageExecutorPatches[planId][orderId][patch.targetStageId];
         if (patch.patchNonce <= activePatch.patchNonce) {
@@ -414,7 +427,13 @@ contract UVPStagePatchModule {
                 orderId, patch.targetStageId, activePatch.patchNonce, patch.patchNonce
             );
         }
-        _validateStageExecutorPatchMode(planId, orderId, patch, activePatch, previousExecutorSigner, stageFacts);
+        _validateStageExecutorPatchMode(planId, orderId, patch, activePatch, previousExecutorSigner);
+        // 授权集一致性（UB-36①）：digest 承诺的 authorizationsHash 必须与
+        // 实际写入的授权集一致——selector 签名覆盖的就是这份集，中途换集
+        /// 等于伪造授权来源。
+        if (stateMachine.signalAuthorizationsHash(executorAuthorizations) != patch.authorizationsHash) {
+            revert InvalidStageExecutorPatchSignature(selector, address(0));
+        }
 
         activePatch.executor = patch.executor;
         activePatch.role = patch.role;
@@ -436,68 +455,10 @@ contract UVPStagePatchModule {
             patch.patchNonce,
             patch.metadataURI
         );
-        _delegateStageExecutorSignals(planId, orderId, patch, stageFacts);
-    }
-
-    /// 携证能力事实表整表验证：每条都必须是目标阶段能力表内的 relation=0
-    /// 成员（叶子重算 + proof），同键重复声明拒绝（重复项会让第二次
-    /// 委任撞 patch nonce）。诚实调用方按编译产物供全表；漏项只影响
-    /// 该阶段的委任覆盖与治理枚举（fail-closed 方向，见 _stageSignalState）。
-    function _requireValidStageFacts(bytes32 planId, bytes32 stageId, StageCapabilityFact[] calldata stageFacts)
-        private
-        view
-    {
-        for (uint256 i = 0; i < stageFacts.length; i++) {
-            StageCapabilityFact calldata fact = stageFacts[i];
-            if (
-                fact.sourceId == bytes32(0) || fact.signalId == bytes32(0) || !_planMetadata().verifySignalCapability(
-                    planId, stageId, fact.sourceId, fact.signalId, 0, fact.capabilityProof
-                )
-            ) {
-                revert StageCapabilityFactInvalid(planId, stageId, fact.sourceId, fact.signalId);
-            }
-            for (uint256 j = 0; j < i; j++) {
-                if (stageFacts[j].sourceId == fact.sourceId && stageFacts[j].signalId == fact.signalId) {
-                    revert StageCapabilityFactInvalid(planId, stageId, fact.sourceId, fact.signalId);
-                }
-            }
-        }
-    }
-
-    function _delegateStageExecutorSignals(
-        bytes32 planId,
-        bytes32 orderId,
-        StageExecutorPatch calldata patch,
-        StageCapabilityFact[] calldata stageFacts
-    ) private {
-        // 零 relation=0 capability 不再整体拒绝：零 capability 计划（手工/
-        // 触发型 plan）与仅声明 relation=1 或纯 source==stage 回退事实的阶段
-        // 在主合约处处有 fallback（mint 词表闸放行、source==stage 回退），
-        // executor overlay 正是这些阶段唯一的执行者门——跳过委托（无键可
-        // 委托）而照常写 overlay，与其余零 capability 口径一致。
-        for (uint256 i = 0; i < stageFacts.length; i++) {
-            _delegateStageExecutorSignal(planId, orderId, stageFacts[i].sourceId, stageFacts[i].signalId, patch);
-        }
-    }
-
-    function _delegateStageExecutorSignal(
-        bytes32 planId,
-        bytes32 orderId,
-        bytes32 targetSourceId,
-        bytes32 signalId,
-        StageExecutorPatch calldata patch
-    ) private {
-        stateMachine.delegateStageExecutorSignalFromModule(
-            planId,
-            orderId,
-            patch.targetStageId,
-            targetSourceId,
-            signalId,
-            patch.executor,
-            patch.role,
-            patch.executorMetadataHash,
-            patch.patchNonce
-        );
+        // 委托通道的替代（UB-36①）：patch 生效时对新城执行者写入显式订单
+        // 级授权（经 stateMachine 同口径入口——零字键/重复授权等注册期
+        // 校验与事件广播全部复用）。授权来源 = selector 的 patch 签名。
+        stateMachine.authorizeSignalSubmittersFromModule(planId, orderId, executorAuthorizations);
     }
 
     function _validateStageExecutorPatch(
@@ -505,7 +466,8 @@ contract UVPStagePatchModule {
         bytes32 orderId,
         StageExecutorPatch calldata patch,
         address selector,
-        IUVPStateMachineCore.SelectorBindingProof calldata bindingProof
+        IUVPStateMachineCore.SelectorBindingProof calldata bindingProof,
+        bytes32[] calldata candidateProof
     ) private view {
         if (selector == address(0)) {
             revert ZeroSelector();
@@ -535,12 +497,26 @@ contract UVPStagePatchModule {
         if (stateMachine.stageHasOrderTriggerHook(planId, patch.targetStageId)) {
             revert StageExecutorPatchForbiddenOnBirthStage(orderId, patch.targetStageId);
         }
+        // 候选集闸（UB-36②③）：所有模式的 executor patch 都必须证明
+        // (targetStageId, patch.executor) ∈ plan 承诺的候选集——无候选集
+        //（EMPTY_ROOT）恒拒（不开候选集的计划没有逐单换人面），有候选集
+        // 验不过 Merkle proof 恒拒。creator/selector 的 patch 权不变，但
+        // 目标必须命中候选集：候选集外没有任何人（包括 creator 指定）
+        // 可以成为逐单执行者。
+        {
+            bytes32 candidatesRoot = stateMachine.planExecutorCandidatesRoot(planId);
+            bytes32 leaf =
+                keccak256(abi.encodePacked(EXECUTOR_CANDIDATE_LEAF_DOMAIN, patch.targetStageId, patch.executor));
+            if (candidatesRoot == DockMerkle.EMPTY_ROOT || !DockMerkle.verify(candidatesRoot, leaf, candidateProof)) {
+                revert StageExecutorNotCandidate(planId, orderId, patch.targetStageId, patch.executor);
+            }
+        }
         // 绑定成员资格按"字段重算叶 + 携 proof"验证（叶子不自报）；证明
         // 携带的 selector 必须与 patch 声明一致。
         if (
-            bindingProof.selectorStageId != patch.selectorStageId || !_planMetadata().verifyStageSelectorBinding(
-                planId, patch.selectorStageId, patch.targetStageId, bindingProof.proof
-            )
+            bindingProof.selectorStageId != patch.selectorStageId
+                || !_planMetadata()
+                    .verifyStageSelectorBinding(planId, patch.selectorStageId, patch.targetStageId, bindingProof.proof)
         ) {
             revert StageSelectorBindingNotFound(planId, patch.selectorStageId, patch.targetStageId);
         }
@@ -561,26 +537,25 @@ contract UVPStagePatchModule {
         bytes32 orderId,
         StageExecutorPatch calldata patch,
         ActiveStageExecutorPatch storage activePatch,
-        address previousExecutorSigner,
-        StageCapabilityFact[] calldata stageFacts
+        address previousExecutorSigner
     ) private view {
         // previousExecutorSignature 只在 HANDOFF 是授权材料（上一执行者对
-        // 同一 digest 的会签）。ASSIGN/REPLACEMENT 携带非空签名时静默丢弃
+        // 同一 digest 的会签）。ASSIGN 携带非空签名时静默丢弃
         // 会让调用方误以为签名参与了授权——API 语义一致化：附带即拒绝
-        // （expected=0：该模式下没有任何被期待的上一执行者签名）。
+        //（expected=0：该模式下没有任何被期待的上一执行者签名）。
         if (patch.mode != EXECUTOR_PATCH_MODE_HANDOFF && previousExecutorSigner != address(0)) {
             revert InvalidStageExecutorPatchSignature(address(0), previousExecutorSigner);
         }
+        // 时序闸改读合约原生 per-stage 计数（UB-2 封口）：计数在
+        // _recordSignal 内按统一归属口径维护（携证属主优先，零词表回退
+        // source==stage），不再依赖调用方携证供表——省证提交无法绕过。
         (uint256 signalCount, address latestSignalSubmitter, uint64 latestSubmittedAt, bool latestAmbiguous) =
-            _stageSignalState(planId, orderId, patch.targetStageId, stageFacts);
+            stateMachine.stageSignalState(planId, orderId, patch.targetStageId);
         if (patch.mode == EXECUTOR_PATCH_MODE_ASSIGN) {
             if (patch.previousExecutor != address(0)) {
                 revert StageExecutorPatchPreviousExecutorMismatch(
                     orderId, patch.targetStageId, address(0), patch.previousExecutor
                 );
-            }
-            if (patch.approvalSourceId != bytes32(0) || patch.approvalSignalId != bytes32(0)) {
-                revert StageExecutorPatchApprovalSignalMissing(orderId, patch.approvalSourceId, patch.approvalSignalId);
             }
             if (signalCount != 0) {
                 revert StageAlreadyHasSignal(orderId, patch.targetStageId);
@@ -605,18 +580,11 @@ contract UVPStagePatchModule {
             );
         }
 
-        if (patch.mode == EXECUTOR_PATCH_MODE_HANDOFF) {
-            if (patch.approvalSourceId != bytes32(0) || patch.approvalSignalId != bytes32(0)) {
-                revert StageExecutorPatchApprovalSignalMissing(orderId, patch.approvalSourceId, patch.approvalSignalId);
-            }
-            if (previousExecutorSigner != patch.previousExecutor) {
-                revert InvalidStageExecutorPatchSignature(patch.previousExecutor, previousExecutorSigner);
-            }
-            return;
-        }
-
-        if (!stateMachine.hasSignal(planId, orderId, patch.approvalSourceId, patch.approvalSignalId)) {
-            revert StageExecutorPatchApprovalSignalMissing(orderId, patch.approvalSourceId, patch.approvalSignalId);
+        // HANDOFF：上一执行者对同一 digest 的会签是唯一授权材料
+        //（REPLACEMENT 已退役——链上审批信号的存在性证明不再是授权面，
+        // UB-36④/UB-39）。
+        if (previousExecutorSigner != patch.previousExecutor) {
+            revert InvalidStageExecutorPatchSignature(patch.previousExecutor, previousExecutorSigner);
         }
     }
 
@@ -625,8 +593,7 @@ contract UVPStagePatchModule {
         bytes32 orderId,
         StageResourcePatch calldata patch,
         address selector,
-        IUVPStateMachineCore.SelectorBindingProof calldata bindingProof,
-        StageCapabilityFact[] calldata stageFacts
+        IUVPStateMachineCore.SelectorBindingProof calldata bindingProof
     ) private {
         if (selector == address(0)) {
             revert ZeroSelector();
@@ -654,19 +621,20 @@ contract UVPStagePatchModule {
         }
 
         if (
-            bindingProof.selectorStageId != patch.selectorStageId || !_planMetadata().verifyStageSelectorBinding(
-                planId, patch.selectorStageId, patch.targetStageId, bindingProof.proof
-            )
+            bindingProof.selectorStageId != patch.selectorStageId
+                || !_planMetadata()
+                    .verifyStageSelectorBinding(planId, patch.selectorStageId, patch.targetStageId, bindingProof.proof)
         ) {
             revert StageSelectorBindingNotFound(planId, patch.selectorStageId, patch.targetStageId);
         }
-        _requireValidStageFacts(planId, patch.targetStageId, stageFacts);
         if (!stateMachine.hasExplicitSignalAuthorization(
                 planId, orderId, patch.selectorStageId, RESOURCE_PATCH_SIGNAL_ID, selector
             )) {
             revert UnauthorizedStageResourcePatchSelector(orderId, patch.selectorStageId, selector);
         }
-        (uint256 signalCount,,,) = _stageSignalState(planId, orderId, patch.targetStageId, stageFacts);
+        // 资源补丁时序闸同读合约原生 per-stage 计数（UB-2）：目标阶段收到
+        // 首个信号（任何归属口径）即永久关闭资源窗口。
+        (uint256 signalCount,,,) = stateMachine.stageSignalState(planId, orderId, patch.targetStageId);
         if (signalCount != 0) {
             revert StageAlreadyHasSignal(orderId, patch.targetStageId);
         }
@@ -702,72 +670,7 @@ contract UVPStagePatchModule {
     }
 
     function _isStageExecutorPatchMode(bytes32 mode) private pure returns (bool) {
-        return mode == EXECUTOR_PATCH_MODE_ASSIGN || mode == EXECUTOR_PATCH_MODE_HANDOFF
-            || mode == EXECUTOR_PATCH_MODE_REPLACEMENT;
-    }
-
-    /// Stage facts reach the target stage through two attribution paths that
-    /// _recordSignal treats identically: compiled capability declarations
-    /// (relation=0, enumerable per stage) and the source==stage fallback for
-    /// keys outside the declared vocabulary. Counting only the enumerable
-    /// path would let a fallback fact bypass the assign gate and strip a
-    /// sitting executor without any signature. The fallback flow's per-key
-    /// submittedAt is not enumerable here, so ordering cannot be rebuilt
-    /// across flows: when both flows hold facts with differing last
-    /// submitters, the previous-executor fallback must fail closed.
-    /// 能力流的枚举面来自调用方携证的 stageFacts（_requireValidStageFacts
-    /// 已验全表）；漏报只会把"有信号"误判为"无信号"或漏委任——前者把
-    /// assign 放宽（调用方是 selector 授权方，信任面与 patch 本身同阶），
-    /// 后者 fail-closed。
-    function _stageSignalState(
-        bytes32 planId,
-        bytes32 orderId,
-        bytes32 stageId,
-        StageCapabilityFact[] calldata stageFacts
-    )
-        private
-        view
-        returns (uint256 count, address latestSubmitter, uint64 latestSubmittedAt, bool latestAmbiguous)
-    {
-        for (uint256 i = 0; i < stageFacts.length; i++) {
-            (bytes32 sourceId, bytes32 signalId) = (stageFacts[i].sourceId, stageFacts[i].signalId);
-            (bool exists,,, uint64 submittedAt, address submitter) =
-                stateMachine.getSignal(planId, orderId, sourceId, signalId);
-            if (!exists) {
-                continue;
-            }
-            count += 1;
-            // 最高 submittedAt 的并列提交者检测：更大的时间戳重置判定，
-            // 同秒不同提交者标记歧义——消费者必须 fail-closed，不得按
-            // 携证表枚举序静默取"最后一个"。
-            if (submittedAt > latestSubmittedAt) {
-                latestSubmittedAt = submittedAt;
-                latestSubmitter = submitter;
-                latestAmbiguous = false;
-            } else if (submittedAt == latestSubmittedAt && submitter != latestSubmitter) {
-                latestAmbiguous = true;
-            }
-        }
-        // 并入 source==stage 回退归属的事实：_recordSignal 对两条归属
-        // 路径一视同仁，时序闸必须同口径计数，否则回退事实会绕过
-        // assign 闸、在任执行者被无签名替换。count 只被消费零/非零，
-        // 两流并存时同一事实双计不翻转判定；同键被其它阶段声明的跨
-        // 阶段词表只可能把"无信号"过计为"有信号"——同为 fail-closed
-        // 方向。
-        uint256 fallbackCount = stateMachine.sourceSignalCount(planId, orderId, stageId);
-        if (fallbackCount != 0) {
-            count += fallbackCount;
-            address fallbackSubmitter = stateMachine.lastSignalSubmitter(planId, orderId, stageId);
-            if (count == fallbackCount) {
-                // 纯回退流：capability 枚举无事实，lastSignalSubmitter
-                // 即写入序最近提交者。
-                latestSubmitter = fallbackSubmitter;
-            } else if (fallbackSubmitter != latestSubmitter) {
-                // 两流并存：回退事实逐键 submittedAt 不可枚举、无法跨流
-                // 定序——末位提交者不一致时按同秒并列同款 fail-closed。
-                latestAmbiguous = true;
-            }
-        }
+        return mode == EXECUTOR_PATCH_MODE_ASSIGN || mode == EXECUTOR_PATCH_MODE_HANDOFF;
     }
 
     function _planMetadata() private view returns (IUVPPlanMetadataModuleForStagePatch) {
@@ -781,7 +684,12 @@ contract UVPStagePatchModule {
         address selector,
         uint256 deadline
     ) private pure returns (bytes32) {
-        bytes memory encoded = new bytes(0x220);
+        // 手写偏移布局与 _STAGE_EXECUTOR_PATCH_TYPEHASH 字段序逐字对齐
+        //（16 词 = 0x200）：typehash, planId, orderId, selectorStageId,
+        // targetStageId, executor, role, executorMetadataHash, mode,
+        // previousExecutor, authorizationsHash, patchHash, patchNonce,
+        // keccak(metadataURI), selector, deadline。
+        bytes memory encoded = new bytes(0x200);
         _writeWord(encoded, 0x00, _STAGE_EXECUTOR_PATCH_TYPEHASH);
         _writeWord(encoded, 0x20, planId);
         _writeWord(encoded, 0x40, orderId);
@@ -792,13 +700,12 @@ contract UVPStagePatchModule {
         _writeWord(encoded, 0xe0, patch.executorMetadataHash);
         _writeWord(encoded, 0x100, patch.mode);
         _writeAddress(encoded, 0x120, patch.previousExecutor);
-        _writeWord(encoded, 0x140, patch.approvalSourceId);
-        _writeWord(encoded, 0x160, patch.approvalSignalId);
-        _writeWord(encoded, 0x180, patch.patchHash);
-        _writeWord(encoded, 0x1a0, bytes32(patch.patchNonce));
-        _writeWord(encoded, 0x1c0, keccak256(bytes(patch.metadataURI)));
-        _writeAddress(encoded, 0x1e0, selector);
-        _writeWord(encoded, 0x200, bytes32(deadline));
+        _writeWord(encoded, 0x140, patch.authorizationsHash);
+        _writeWord(encoded, 0x160, patch.patchHash);
+        _writeWord(encoded, 0x180, bytes32(patch.patchNonce));
+        _writeWord(encoded, 0x1a0, keccak256(bytes(patch.metadataURI)));
+        _writeAddress(encoded, 0x1c0, selector);
+        _writeWord(encoded, 0x1e0, bytes32(deadline));
         return keccak256(encoded);
     }
 
@@ -808,8 +715,12 @@ contract UVPStagePatchModule {
         StageExecutorPatch calldata patch,
         address selector
     ) private {
+        // 非 indexed 数据布局：10 个静态词（0x140）+ string 头偏移词（指向
+        // 0x160）+ 长度词 + 变长 URI 数据。planId, selector, executor, role,
+        // executorMetadataHash, mode, previousExecutor, authorizationsHash,
+        // patchHash, patchNonce。
         bytes memory metadataURI = bytes(patch.metadataURI);
-        bytes memory eventData = new bytes(0x1a0 + _paddedLength(metadataURI.length));
+        bytes memory eventData = new bytes(0x180 + _paddedLength(metadataURI.length));
         _writeWord(eventData, 0x00, planId);
         _writeAddress(eventData, 0x20, selector);
         _writeAddress(eventData, 0x40, patch.executor);
@@ -817,13 +728,12 @@ contract UVPStagePatchModule {
         _writeWord(eventData, 0x80, patch.executorMetadataHash);
         _writeWord(eventData, 0xa0, patch.mode);
         _writeAddress(eventData, 0xc0, patch.previousExecutor);
-        _writeWord(eventData, 0xe0, patch.approvalSourceId);
-        _writeWord(eventData, 0x100, patch.approvalSignalId);
-        _writeWord(eventData, 0x120, patch.patchHash);
-        _writeWord(eventData, 0x140, bytes32(patch.patchNonce));
-        _writeWord(eventData, 0x160, bytes32(uint256(0x180)));
-        _writeWord(eventData, 0x180, bytes32(metadataURI.length));
-        _copyBytes(eventData, 0x1a0, metadataURI);
+        _writeWord(eventData, 0xe0, patch.authorizationsHash);
+        _writeWord(eventData, 0x100, patch.patchHash);
+        _writeWord(eventData, 0x120, bytes32(patch.patchNonce));
+        _writeWord(eventData, 0x140, bytes32(uint256(0x160)));
+        _writeWord(eventData, 0x160, bytes32(metadataURI.length));
+        _copyBytes(eventData, 0x180, metadataURI);
 
         bytes32 selectorStageId = patch.selectorStageId;
         bytes32 targetStageId = patch.targetStageId;

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStateMachine",
-  "abiVersion": "0.12",
+  "abiVersion": "0.13",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStateMachine.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStateMachine.sol/UVPStateMachine.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xdcae02a4e81dbd051117fc6e1045fe9ec129d8abfd49333328b8f7cfcf2973ec",
-    "bytecodeHash": "0x432ce41b37ef40dcf0712a5c1697ae3d349123ff4b4f37541335e7426e669ef2",
-    "deployedBytecodeHash": "0x2c85572dd037475e0e51537c7c03916b02433bf690dd89f2eb13154fd92d5129",
-    "artifactHash": "0xc01995d849b450ad70ba1a5ab551a8870fb55c85d952da7bd6010fff73036940"
+    "abiHash": "0x25492ce0456ae4ba4d19551808b9ea04514c34c1882574d3085dfa9075d32091",
+    "bytecodeHash": "0x93c8d590db0971356571c23b0a74f96d2b698c3ab4b9e508e72cda012be145f8",
+    "deployedBytecodeHash": "0xa9e50fa803506b260779fd4b0247751601cc26cd0362152e36d94102d8564414",
+    "artifactHash": "0x3434df05eaaa51be139d4008520ed4e263bf899a737e0047aa804ecc18e57951"
   },
   "events": {
     "HookReady": {
@@ -22,6 +22,10 @@
     "HookStatusChanged": {
       "signature": "HookStatusChanged(bytes32,bytes32,bytes32,uint8,uint8,uint64)",
       "topic": "0xa0c688f78d307bee6d38b69ad4c19b02d9e1be8c6772327015b60fd21ec38fd2"
+    },
+    "OrderForked": {
+      "signature": "OrderForked(bytes32,bytes32,bytes32,bytes32,bytes32,address)",
+      "topic": "0x210047bff6e55996070825cc33ce48ae44be44730cac0d7e3f47d18b4616211d"
     },
     "OrderMaterialized": {
       "signature": "OrderMaterialized(bytes32,bytes32,bytes32)",
@@ -44,8 +48,8 @@
       "topic": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
     },
     "PlanCommitted": {
-      "signature": "PlanCommitted(bytes32,bytes32,address,bytes32,bytes32,uint256,bytes32,bytes32)",
-      "topic": "0x0a2a43fad4e88651b5b2082fcbe630a630b0a9f125ca4c68ee51482b85a2c91b"
+      "signature": "PlanCommitted(bytes32,bytes32,address,bytes32,bytes32,uint256,bytes32,bytes32,bytes32)",
+      "topic": "0x93b498932fe5f75d209807721697050ec95fab3061a414a96022f58cc0f84c8b"
     },
     "PlanFinalized": {
       "signature": "PlanFinalized(bytes32,bytes32,bytes32)",
@@ -70,10 +74,6 @@
     "StageExecutorActivated": {
       "signature": "StageExecutorActivated(bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256,string)",
       "topic": "0x93f06ae7a9f896bfe6b25b8620febd2f4b17a28d71102b5acb51a86a527aa543"
-    },
-    "StageExecutorSignalDelegated": {
-      "signature": "StageExecutorSignalDelegated(bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256)",
-      "topic": "0x791b037b21d23f96c3b6e34b1f9e443f8db9f32ad7ea3e74f294b6c259a4183b"
     },
     "StageMaterialized": {
       "signature": "StageMaterialized(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",
@@ -129,6 +129,10 @@
       "signature": "LENS_MODULE_ID()",
       "selector": "0x1a781337"
     },
+    "MAX_FORK_BIRTH_FACTS": {
+      "signature": "MAX_FORK_BIRTH_FACTS()",
+      "selector": "0x2e0eff3d"
+    },
     "MAX_HOOK_DELAY_SECONDS": {
       "signature": "MAX_HOOK_DELAY_SECONDS()",
       "selector": "0xe0f77f80"
@@ -165,17 +169,17 @@
       "signature": "activeStageExecutor(bytes32,bytes32,bytes32)",
       "selector": "0x43d35f65"
     },
+    "authorizeSignalSubmittersFromModule": {
+      "signature": "authorizeSignalSubmittersFromModule(bytes32,bytes32,(bytes32,bytes32,address,bytes32,bytes32)[])",
+      "selector": "0x815980b1"
+    },
     "commitPlan": {
-      "signature": "commitPlan((address,bytes32,bytes32,bytes32,bytes32,uint256),(bytes32,bytes32,bytes32,uint8,(uint8,bytes32,bytes32,uint16,uint64)[],bytes32[])[],bytes)",
-      "selector": "0x0ae52478"
+      "signature": "commitPlan((address,bytes32,bytes32,bytes32,bytes32,bytes32,uint256),(bytes32,bytes32,bytes32,uint8,(uint8,bytes32,bytes32,uint16,uint64)[],bytes32[])[],(bytes32,address)[],bytes)",
+      "selector": "0xa5fe1af8"
     },
     "createDockedOrderFromModule": {
-      "signature": "createDockedOrderFromModule(bytes32,bytes32,address,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,(bytes32,bytes32,address,bytes32,bytes32)[])",
-      "selector": "0xdb0687ca"
-    },
-    "delegateStageExecutorSignalFromModule": {
-      "signature": "delegateStageExecutorSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256)",
-      "selector": "0xf24853ff"
+      "signature": "createDockedOrderFromModule((bytes32,bytes32,address,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,(bytes32,bytes32,address,bytes32,bytes32)[],(bytes32,bytes32,bytes32,bytes32[])))",
+      "selector": "0xd3637f4d"
     },
     "derivedSignalModule": {
       "signature": "derivedSignalModule()",
@@ -188,6 +192,14 @@
     "finalizePlan": {
       "signature": "finalizePlan(bytes32)",
       "selector": "0xa08f0ff2"
+    },
+    "forkOrder": {
+      "signature": "forkOrder(bytes32,bytes32,bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32)[],(bytes32,bytes32,address,bytes32,bytes32)[])",
+      "selector": "0xc004a288"
+    },
+    "forkOrderIdFor": {
+      "signature": "forkOrderIdFor(bytes32,bytes32,bytes32)",
+      "selector": "0x6ce832fc"
     },
     "freezeModules": {
       "signature": "freezeModules()",
@@ -257,6 +269,10 @@
       "signature": "orderLinkOrderIdFor(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",
       "selector": "0xc31e315c"
     },
+    "orderParent": {
+      "signature": "orderParent(bytes32,bytes32)",
+      "selector": "0xd0f928d6"
+    },
     "orderRelayer": {
       "signature": "orderRelayer(bytes32,bytes32)",
       "selector": "0xd5fa735d"
@@ -272,6 +288,10 @@
     "planDockRoots": {
       "signature": "planDockRoots(bytes32)",
       "selector": "0xba3c0ddf"
+    },
+    "planExecutorCandidatesRoot": {
+      "signature": "planExecutorCandidatesRoot(bytes32)",
+      "selector": "0xf7e48849"
     },
     "planExists": {
       "signature": "planExists(bytes32)",
@@ -310,16 +330,16 @@
       "selector": "0x1b3c6520"
     },
     "planRuntimeHash": {
-      "signature": "planRuntimeHash(bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0x9e54357c"
+      "signature": "planRuntimeHash(bytes32,bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0xecd951e3"
     },
     "pokeTimer": {
       "signature": "pokeTimer(bytes32,bytes32,bytes32)",
       "selector": "0x1e0bb81e"
     },
     "recordDockedInputFromModule": {
-      "signature": "recordDockedInputFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
-      "selector": "0x0c20b076"
+      "signature": "recordDockedInputFromModule((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,(bytes32,bytes32,bytes32,bytes32[])))",
+      "selector": "0x61b7bc01"
     },
     "setDerivedSignalModule": {
       "signature": "setDerivedSignalModule(address)",
@@ -345,6 +365,10 @@
       "signature": "setStagePatchModule(address)",
       "selector": "0x61e22a35"
     },
+    "signalAuthorizationsHash": {
+      "signature": "signalAuthorizationsHash((bytes32,bytes32,address,bytes32,bytes32)[])",
+      "selector": "0x9d6b224d"
+    },
     "sourceSignalCount": {
       "signature": "sourceSignalCount(bytes32,bytes32,bytes32)",
       "selector": "0xca201c09"
@@ -356,6 +380,10 @@
     "stagePatchModule": {
       "signature": "stagePatchModule()",
       "selector": "0xfa894dec"
+    },
+    "stageSignalState": {
+      "signature": "stageSignalState(bytes32,bytes32,bytes32)",
+      "selector": "0x9bc685d3"
     },
     "submitDerivedSignalFromModule": {
       "signature": "submitDerivedSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,bool,(bytes32,bytes32[]))",

@@ -604,8 +604,11 @@ describe("product DTO catalog", () => {
   });
 
   it("models executor patch governance modes for executor patch tasks", () => {
-    const supportedModes: readonly ProductExecutorPatchMode[] = ["assign", "handoff", "replacement"];
-    assert.deepEqual(supportedModes, ["assign", "handoff", "replacement"]);
+    // UB-36/UB-39 裁决后链上 patch 双模式：assign（开工前）与 handoff（开工后
+    // 协作共签）；replacement 已退役，非协作换人走 fork 车道（新订单血缘，
+    // 不是 executor patch 模式）。
+    const supportedModes: readonly ProductExecutorPatchMode[] = ["assign", "handoff"];
+    assert.deepEqual(supportedModes, ["assign", "handoff"]);
     assert.deepEqual(demoSelectorTask.executorPatchModes?.map((mode) => mode.mode), supportedModes);
 
     const modeById = new Map(
@@ -616,7 +619,6 @@ describe("product DTO catalog", () => {
     );
     const assign = modeById.get("assign");
     const handoff = modeById.get("handoff");
-    const replacement = modeById.get("replacement");
 
     assert.ok(assign);
     assert.equal(assign.workStarted, false);
@@ -630,23 +632,16 @@ describe("product DTO catalog", () => {
     assert.equal(handoff.priorAuthorityLabel, "已完成部分不变");
     assert.ok(handoff.previousExecutor);
 
-    assert.ok(replacement);
-    assert.equal(replacement.workStarted, true);
-    assert.equal(replacement.requiresPreviousExecutorSignature, false);
-    assert.equal(replacement.requiresApprovalSignal, true);
-    assert.equal(replacement.guidanceLabel, "需要替换证明");
-    assert.ok(replacement.approvalSignal?.approvalSourceId);
-    assert.ok(replacement.approvalSignal?.approvalSignalId);
-
     const startedTarget = demoSelectorTask.selectableTargets?.find((target) => target.workStarted);
     assert.ok(startedTarget);
-    assert.deepEqual(startedTarget.executorPatchModes?.map((mode) => mode.mode), ["handoff", "replacement"]);
+    assert.deepEqual(startedTarget.executorPatchModes?.map((mode) => mode.mode), ["handoff"]);
     assert.equal(startedTarget.executorPatchModes?.some((mode) => mode.mode === "assign"), false);
     assert.equal(startedTarget.priorAuthorityLabel, "已完成部分不变");
 
     const parsed = JSON.parse(JSON.stringify(demoSelectorTask));
-    assert.equal(parsed.executorPatchModes[2].mode, "replacement");
-    assert.equal(parsed.executorPatchModes[2].approvalSignal.label, "裁定方替换证明");
+    assert.equal(parsed.executorPatchModes.length, 2);
+    assert.equal(parsed.executorPatchModes[1].mode, "handoff");
+    assert.equal(parsed.executorPatchModes[1].guidanceLabel, "需要原履约者签名");
 
     const governanceCopy = demoSelectorTask.executorPatchModes?.map((mode) => [
       mode.modeLabel,

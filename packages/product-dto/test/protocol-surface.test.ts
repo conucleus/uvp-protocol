@@ -73,8 +73,7 @@ const stageExecutorPatchFieldNames = [
   "executorMetadataHash",
   "mode",
   "previousExecutor",
-  "approvalSourceId",
-  "approvalSignalId",
+  "authorizationsHash",
   "patchHash",
   "patchNonce",
   "metadataURI",
@@ -98,11 +97,11 @@ const stageResourcePatchFieldNames = [
 ] as const;
 
 describe("Product DTO protocol surface", () => {
-  it("maps submit_signal fixtures to the current UVPStateMachine 0.12 submit action", async () => {
+  it("maps submit_signal fixtures to the current UVPStateMachine 0.13 submit action", async () => {
     const protocol = await loadProtocolBindings();
 
     assert.equal(protocol.PRODUCT_SUBMIT_DOMAIN_NAME, "UVPStateMachine");
-    assert.equal(protocol.PRODUCT_SUBMIT_DOMAIN_VERSION, "0.12");
+    assert.equal(protocol.PRODUCT_SUBMIT_DOMAIN_VERSION, "0.13");
     assert.equal(protocol.PRODUCT_SUBMIT_PRIMARY_TYPE, "UVPStateMachineSignal");
     assert.deepEqual(fieldNames(protocol.PRODUCT_SUBMIT_TYPED_DATA_FIELDS), [...submitSignalFieldNames]);
     assertAbiNames(protocol.STATE_MACHINE_ABI, "function", ["submitSignal", "submitSignalFor"]);
@@ -121,7 +120,7 @@ describe("Product DTO protocol surface", () => {
     for (const container of demoFundingGuaranteeSignalContainers) {
       assert.equal(container.schemaVersion, "uvp.signal-container.v1");
       assert.equal(container.actionKind, "submit_signal");
-      assert.equal(container.prepare.typedData.stateMachineLabel, "UVPStateMachine 0.12");
+      assert.equal(container.prepare.typedData.stateMachineLabel, "UVPStateMachine 0.13");
       assert.equal(container.prepare.typedData.stateMachineLabel, `${protocol.PRODUCT_SUBMIT_DOMAIN_NAME} ${protocol.PRODUCT_SUBMIT_DOMAIN_VERSION}`);
       assert.equal(productSubmitPrimaryType(container.prepare.typedData.primaryType), protocol.PRODUCT_SUBMIT_PRIMARY_TYPE);
       assert.equal(container.prepare.submitter, container.acceptedActor.wallet);
@@ -136,7 +135,7 @@ describe("Product DTO protocol surface", () => {
     const protocol = await loadProtocolBindings();
 
     assert.equal(protocol.STAGE_EXECUTOR_PATCH_DOMAIN_NAME, "UVPStagePatchModule");
-    assert.equal(protocol.STAGE_EXECUTOR_PATCH_DOMAIN_VERSION, "0.1");
+    assert.equal(protocol.STAGE_EXECUTOR_PATCH_DOMAIN_VERSION, "0.2");
     assert.equal(protocol.STAGE_EXECUTOR_PATCH_PRIMARY_TYPE, "UVPStagePatchModuleStageExecutorPatch");
     assert.deepEqual(fieldNames(protocol.STAGE_EXECUTOR_PATCH_TYPED_DATA_FIELDS), [...stageExecutorPatchFieldNames]);
     assertAbiNames(protocol.STAGE_PATCH_MODULE_ABI, "function", [
@@ -166,7 +165,7 @@ describe("Product DTO protocol surface", () => {
     }
 
     assert.equal(protocol.STAGE_RESOURCE_PATCH_DOMAIN_NAME, "UVPStagePatchModule");
-    assert.equal(protocol.STAGE_RESOURCE_PATCH_DOMAIN_VERSION, "0.1");
+    assert.equal(protocol.STAGE_RESOURCE_PATCH_DOMAIN_VERSION, "0.2");
     assert.equal(protocol.STAGE_RESOURCE_PATCH_PRIMARY_TYPE, "UVPStagePatchModuleStageResourcePatch");
     assert.deepEqual(fieldNames(protocol.STAGE_RESOURCE_PATCH_TYPED_DATA_FIELDS), [...stageResourcePatchFieldNames]);
     assertAbiNames(protocol.STAGE_PATCH_MODULE_ABI, "function", [

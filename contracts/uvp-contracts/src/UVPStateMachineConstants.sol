@@ -26,12 +26,22 @@ uint256 constant _MAX_PLAN_DEPENDENCIES = 1024;
 bytes32 constant _EIP712_DOMAIN_TYPEHASH =
     keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 bytes32 constant _EIP712_NAME_HASH = keccak256("UVPStateMachine");
-bytes32 constant _EIP712_VERSION_HASH = keccak256("0.12");
+// 0.12 → 0.13（UB-36①④/UB-39 破坏性 ABI 批）：委托授权通道与
+// REPLACEMENT patch 模式退役、per-stage 原生计数、executor 候选集根、
+// forkOrder 出生通道、PlanCommit 增 executorCandidatesRoot 槽。EIP-712
+// 域版本随公共摘要面（PlanCommit/patch digest 结构变化）同步升位。
+bytes32 constant _EIP712_VERSION_HASH = keccak256("0.13");
 
-// runtime hash 覆盖全部五个承诺域：hooks、能力树、两条 dock 树——
-// 不留"产物有、commitment 无"的悬空状态。
-bytes32 constant _PLAN_RUNTIME_HASH_DOMAIN = keccak256("uvp.plan.runtime.v3");
+// runtime hash 覆盖全部六个承诺域：hooks、能力树、两条 dock 树、执行者
+// 候选集树——不留"产物有、commitment 无"的悬空状态。v3 → v4：编码追加了
+// executorCandidatesRoot 槽（UB-36②③），升域字符串避免跨版本哈希撞形。
+bytes32 constant _PLAN_RUNTIME_HASH_DOMAIN = keccak256("uvp.plan.runtime.v4");
 bytes32 constant _PLAN_ID_HASH_DOMAIN = keccak256("uvp.plan.id.v1");
 bytes32 constant _PLAN_COMMIT_TYPEHASH = keccak256(
-    "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,uint256 deadline)"
+    "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,uint256 deadline)"
 );
+// 执行者候选集叶域（UB-36②③）：叶 = keccak256(abi.encodePacked(
+// _EXECUTOR_CANDIDATE_LEAF_DOMAIN, stageId, executor))，DockMerkle 同款
+// 排序去重建树；空集 = DockMerkle.EMPTY_ROOT（该形态下逐单 executor
+// patch 恒拒——不开候选集的计划没有逐单换人面）。
+bytes32 constant _EXECUTOR_CANDIDATE_LEAF_DOMAIN = keccak256("UVP_EXECUTOR_CANDIDATE_V1");

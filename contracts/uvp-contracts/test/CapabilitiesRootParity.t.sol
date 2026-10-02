@@ -26,8 +26,9 @@ contract CapabilitiesRootParityTest {
         CapabilitiesRootVm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
     function _fixture() private view returns (string memory) {
-        return
-            vm.readFile(string.concat(vm.projectRoot(), "/../../packages/compiler/fixtures/capabilities-root/v1/vectors.json"));
+        return vm.readFile(
+            string.concat(vm.projectRoot(), "/../../packages/compiler/fixtures/capabilities-root/v1/vectors.json")
+        );
     }
 
     function _sample(uint256 sample) private pure returns (string memory) {
@@ -73,8 +74,7 @@ contract CapabilitiesRootParityTest {
 
         for (uint256 i = 0; i < bindingCount; i++) {
             string memory inputBase = string.concat(sample, ".inputs.selectorBindings[", toString(i), "]");
-            string memory expectedBase =
-                string.concat(sample, ".expected.selectorBindingLeaves[", toString(i), "]");
+            string memory expectedBase = string.concat(sample, ".expected.selectorBindingLeaves[", toString(i), "]");
             bytes32 leafValue = metadataModule.selectorBindingLeaf(
                 vm.parseJsonBytes32(fixture, string.concat(inputBase, ".selectorStageId")),
                 vm.parseJsonBytes32(fixture, string.concat(inputBase, ".targetStageId"))
@@ -85,8 +85,7 @@ contract CapabilitiesRootParityTest {
 
         for (uint256 i = 0; i < capabilityCount; i++) {
             string memory inputBase = string.concat(sample, ".inputs.signalCapabilities[", toString(i), "]");
-            string memory expectedBase =
-                string.concat(sample, ".expected.signalCapabilityLeaves[", toString(i), "]");
+            string memory expectedBase = string.concat(sample, ".expected.signalCapabilityLeaves[", toString(i), "]");
             bytes32 leafValue = metadataModule.signalCapabilityLeaf(
                 vm.parseJsonBytes32(fixture, string.concat(inputBase, ".stageId")),
                 vm.parseJsonBytes32(fixture, string.concat(inputBase, ".targetSourceId")),

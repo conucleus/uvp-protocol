@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStagePatchModule",
-  "abiVersion": "0.4",
+  "abiVersion": "0.5",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStagePatchModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStagePatchModule.sol/UVPStagePatchModule.json",
   "compiler": {
@@ -9,15 +9,15 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xb4293173375bfed0a4dd9ae964c3c7be8a261046b41add67d4879260fd3f7ff8",
-    "bytecodeHash": "0xe844d966bddeedf9b3df53a1ba1643abbe6922e265431ea12421e7d2829623ca",
-    "deployedBytecodeHash": "0x74891ebe65a61c9d798325f4c0a54860144f953f746691380b00580ef0df36f8",
-    "artifactHash": "0x6fc3a47329ba3c0582b20ae71f184465097c7faf8fad2599127bddcc1fa75447"
+    "abiHash": "0xa68b247e9aa58f7402b2c1a08e6affb73c7a3b4ecf7a1af678a040f4efbfdf6f",
+    "bytecodeHash": "0x853b59d5b349b6cfaa0bf3f558578299d83c571a7b9a112c68d8c0fb29d771f7",
+    "deployedBytecodeHash": "0xcc81cf706a310a9e1b1193ec3ceff161008cdfc089cdefc6e293f76896074092",
+    "artifactHash": "0x931d19f772aa7a98be5fdfd8f2965a3f88e912a753eafd2beb52de6de46a6b28"
   },
   "events": {
     "StageExecutorPatchApplied": {
-      "signature": "StageExecutorPatchApplied(bytes32,bytes32,bytes32,bytes32,address,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string)",
-      "topic": "0x2805d503cb78bb6d500e56f98091161029cf83c70fd1877061344596be2ed094"
+      "signature": "StageExecutorPatchApplied(bytes32,bytes32,bytes32,bytes32,address,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256,string)",
+      "topic": "0x4f251bef40a877a48a036464cac1b0018e6d99517fe183a92cc55d81bcc3a7c5"
     },
     "StageResourcePatchApplied": {
       "signature": "StageResourcePatchApplied(bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,uint256,string)",
@@ -29,6 +29,10 @@
       "signature": "DOMAIN_SEPARATOR()",
       "selector": "0x3644e515"
     },
+    "EXECUTOR_CANDIDATE_LEAF_DOMAIN": {
+      "signature": "EXECUTOR_CANDIDATE_LEAF_DOMAIN()",
+      "selector": "0x0b154b5a"
+    },
     "EXECUTOR_PATCH_MODE_ASSIGN": {
       "signature": "EXECUTOR_PATCH_MODE_ASSIGN()",
       "selector": "0x40311d02"
@@ -36,10 +40,6 @@
     "EXECUTOR_PATCH_MODE_HANDOFF": {
       "signature": "EXECUTOR_PATCH_MODE_HANDOFF()",
       "selector": "0x6e99c81f"
-    },
-    "EXECUTOR_PATCH_MODE_REPLACEMENT": {
-      "signature": "EXECUTOR_PATCH_MODE_REPLACEMENT()",
-      "selector": "0xfc356f98"
     },
     "EXECUTOR_PATCH_SIGNAL_ID": {
       "signature": "EXECUTOR_PATCH_SIGNAL_ID()",
@@ -54,20 +54,20 @@
       "selector": "0x43d35f65"
     },
     "applyStageExecutorPatch": {
-      "signature": "applyStageExecutorPatch(bytes32,bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string),(bytes32,bytes32[]),(bytes32,bytes32,bytes32[])[])",
-      "selector": "0xb841d70b"
+      "signature": "applyStageExecutorPatch(bytes32,bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256,string),(bytes32,bytes32[]),bytes32[],(bytes32,bytes32,address,bytes32,bytes32)[])",
+      "selector": "0xca7072e0"
     },
     "applyStageExecutorPatchFor": {
-      "signature": "applyStageExecutorPatchFor(bytes32,bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string),address,uint256,bytes,bytes,(bytes32,bytes32[]),(bytes32,bytes32,bytes32[])[])",
-      "selector": "0x7e0061e1"
+      "signature": "applyStageExecutorPatchFor(bytes32,bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256,string),address,uint256,bytes,bytes,(bytes32,bytes32[]),bytes32[],(bytes32,bytes32,address,bytes32,bytes32)[])",
+      "selector": "0xd6a73a14"
     },
     "applyStageResourcePatch": {
-      "signature": "applyStageResourcePatch(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string),(bytes32,bytes32[]),(bytes32,bytes32,bytes32[])[])",
-      "selector": "0x41e6f3b0"
+      "signature": "applyStageResourcePatch(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string),(bytes32,bytes32[]))",
+      "selector": "0xb83a93e3"
     },
     "applyStageResourcePatchFor": {
-      "signature": "applyStageResourcePatchFor(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string),address,uint256,bytes,(bytes32,bytes32[]),(bytes32,bytes32,bytes32[])[])",
-      "selector": "0x6fdf6a77"
+      "signature": "applyStageResourcePatchFor(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string),address,uint256,bytes,(bytes32,bytes32[]))",
+      "selector": "0x980e49a4"
     },
     "getActiveStageExecutorPatch": {
       "signature": "getActiveStageExecutorPatch(bytes32,bytes32,bytes32)",
@@ -86,8 +86,8 @@
       "selector": "0x4ca77733"
     },
     "stageExecutorPatchDigest": {
-      "signature": "stageExecutorPatchDigest(bytes32,bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,string),address,uint256)",
-      "selector": "0x8c9382dc"
+      "signature": "stageExecutorPatchDigest(bytes32,bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256,string),address,uint256)",
+      "selector": "0x502daf8c"
     },
     "stageResourcePatchDigest": {
       "signature": "stageResourcePatchDigest(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string),address,uint256)",
