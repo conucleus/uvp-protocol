@@ -23,6 +23,11 @@ import { planDependencyCountIssues } from "./validate/limits.js";
 import { duplicateCurrentOrderFactKeyIssues } from "./validate/capabilities.js";
 import { capabilitiesRootOf } from "./capabilities-root.js";
 import {
+  executorCandidatesRootOf,
+  isExecutorAddress,
+  normalizeExecutorCandidates,
+} from "./executor-candidates.js";
+import {
   canonicalOrderIssues,
   admissionOrderKey,
   compareAdmissions,
@@ -54,6 +59,7 @@ import {
   ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
   type CompiledHookPlanAdmission,
   type DockResolutionManifest,
+  type ExecutorCandidateInput,
   type HookPlanArtifact,
   type OnchainCompiledAdmission,
   type OnchainHookPlanArtifact,
@@ -70,6 +76,7 @@ import {
  */
 export function compileOnchainHookPlan(
   hookPlanArtifact: HookPlanArtifact,
+  executorCandidates?: readonly ExecutorCandidateInput[],
 ): OnchainHookPlanArtifact {
   assertHookPlanArtifact(hookPlanArtifact);
 
@@ -99,6 +106,43 @@ export function compileOnchainHookPlan(
   const admissions = compileSignalAdmissions(
     hookPlanArtifact.admissions,
     hookPlanArtifact.signalCapabilities,
+  );
+  // 执行者候选集（UB-36②③）：发布面承诺的 (stage, executor) 对进
+  // PlanCommit。三道编译期门：阶段必须真实声明、目标阶段不得挂出生
+  // trigger hook（合约出生阶段守门的编译期镜像——出生阶段执行者终生
+  // 不可变）、地址必须合法非零。归一去重排序后随制品进 planHash。
+  const declaredStages = declaredStageIdentifiers(
+    hookPlanArtifact.signalCapabilities.map((capability) => capability.stageIdentifier),
+    Object.keys(hookPlanArtifact.executorRoutes),
+    hookPlanArtifact.dockRoutes.map((route) => route.local.stageIdentifier),
+    hookPlanArtifact.selectedStageBindings.flatMap((binding) => [
+      binding.selectorStageIdentifier,
+      binding.targetStageIdentifier,
+    ]),
+  );
+  const executorCandidateIssues: readonly string[] = (executorCandidates ?? []).map(
+    (candidate) => {
+      if (!declaredStages.has(candidate.stageIdentifier)) {
+        return `executor candidate stage "${candidate.stageIdentifier}" is not a stage declared in this plan`;
+      }
+      if (
+        compiledHooks.some(
+          (hook) =>
+            hook.stageIdentifier === candidate.stageIdentifier &&
+            hook.orderTriggerKind !== "none",
+        )
+      ) {
+        return `executor candidate stage "${candidate.stageIdentifier}" carries an order-trigger hook; birth-stage executors are immutable and cannot be per-order patch targets`;
+      }
+      if (!isExecutorAddress(candidate.executor)) {
+        return `executor candidate for stage "${candidate.stageIdentifier}" must be a non-zero 20-byte address, received ${JSON.stringify(candidate.executor)}`;
+      }
+      return "";
+    },
+  ).filter((issue) => issue.length > 0);
+  const executorCandidateList = normalizeExecutorCandidates(
+    executorCandidates ?? [],
+    (stageIdentifier) => onchainStageId(stageIdentifier),
   );
   // 逐 hook 顺序语义与合约 _registerPlanHook 一致（见 crossStageDependencyIssues）。
   const crossStageIssues = crossStageDependencyIssues(compiledHooks);
@@ -182,6 +226,7 @@ export function compileOnchainHookPlan(
     ...unresolvedTrackIssues,
     ...hookShapeIssues,
     ...admissionShapeIssues,
+    ...executorCandidateIssues,
   ];
   if (preflightIssues.length > 0) {
     throw new HookPlanCompilationError(preflightIssues);
@@ -235,6 +280,7 @@ export function compileOnchainHookPlan(
     soliditySelectorBindings,
     soliditySignalCapabilities,
   );
+  const executorCandidatesRoot = executorCandidatesRootOf(executorCandidateList);
   const payload = {
     schemaVersion: ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
     planId: hookPlanArtifact.planId,
@@ -258,6 +304,10 @@ export function compileOnchainHookPlan(
     selectorBindings,
     signalCapabilities,
     admissions,
+    // 候选集（与 admissions 同约定：数组恒在场，可为空；空集 root =
+    // EMPTY_MERKLE_ROOT，逐单 patch 恒拒的 fail-closed 形态）。
+    executorCandidates: executorCandidateList,
+    executorCandidatesRoot,
   };
 
   return {
@@ -269,9 +319,11 @@ export function compileOnchainHookPlan(
 export function compileZhixuOnchainHookPlan(
   definition: ZhixuDefinition,
   resolutionManifest?: DockResolutionManifest,
+  executorCandidates?: readonly ExecutorCandidateInput[],
 ): OnchainHookPlanArtifact {
   return compileOnchainHookPlan(
     compileZhixuHookPlan(definition, resolutionManifest),
+    executorCandidates,
   );
 }
 
@@ -331,8 +383,9 @@ function compileSignalAdmissions(
 export function compileZhixuRegisterPlanArgs(
   definition: ZhixuDefinition,
   resolutionManifest?: DockResolutionManifest,
+  executorCandidates?: readonly ExecutorCandidateInput[],
 ): SolidityRegisterPlanArgs {
   return toSolidityRegisterPlanArgs(
-    compileZhixuOnchainHookPlan(definition, resolutionManifest),
+    compileZhixuOnchainHookPlan(definition, resolutionManifest, executorCandidates),
   );
 }

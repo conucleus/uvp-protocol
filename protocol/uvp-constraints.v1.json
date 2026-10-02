@@ -540,7 +540,7 @@
       "sources": {
         "rust": "crates/uvp-hook-dsl/src/lib.rs MAX_DELAY_SECONDS = 30*24*60*60",
         "go": "pkg/hookdsl/hookdsl.go MaxDelaySeconds = 30*24*60*60（判定在 uvp-core FFI）",
-        "ts": "packages/compiler/src/onchain-hook-plan.ts MAX_ONCHAIN_HOOK_DELAY_SECONDS = 2_592_000（镜像 UVPStateMachine.MAX_HOOK_DELAY_SECONDS，reverts HookDelayTooLong）"
+        "ts": "packages/compiler/src/onchain/validate/limits.ts MAX_ONCHAIN_HOOK_DELAY_SECONDS = 2_592_000（镜像 UVPStateMachine.MAX_HOOK_DELAY_SECONDS，reverts HookDelayTooLong）"
       },
       "ruling": "延时为正整数、上限 30 天=2592000 秒；三线同值，链上以 HookDelayTooLong 回滚为准。"
     },
@@ -569,7 +569,7 @@
         "ts"
       ],
       "sources": {
-        "ts": "packages/compiler/src/onchain-hook-plan.ts validateOnchainCompiledHooks（对齐 UVPStateMachine._validateHook 的合法 op 集）"
+        "ts": "packages/compiler/src/onchain/validate/hooks.ts validateOnchainCompiledHooks（对齐 UVPStateMachine._validateHook 的合法 op 集）"
       },
       "ruling": "单线登记：op 闭集当前只有 TS artifact 边界与 Solidity 契约（uint8 op + _validateHook）持有；rust/go 不校验该层。"
     },
@@ -593,7 +593,7 @@
         "ts"
       ],
       "sources": {
-        "ts": "packages/compiler/src/onchain-hook-plan.ts MAX_PLAN_DEPENDENCIES = 1024（镜像 UVPStateMachine.MAX_PLAN_DEPENDENCIES，reverts TooManyDependencies）"
+        "ts": "packages/compiler/src/onchain/validate/limits.ts MAX_PLAN_DEPENDENCIES = 1024（镜像 UVPStateMachine.MAX_PLAN_DEPENDENCIES，reverts TooManyDependencies）"
       },
       "ruling": "单线登记：MAX_PLAN_DEPENDENCIES=1024 权威在 Solidity 契约 UVPStateMachine，TS preflight 同口径预检；rust/go 编译线无此上限。"
     },
@@ -1104,7 +1104,7 @@
         "go": "none",
         "ts": "mirrored"
       },
-      "note": "镜像债：此类 plan 可 commit、finalize 永久 revert（planId 烧毁）；TS 线预检镜像已补（packages/compiler/src/onchain-hook-plan.ts duplicateCurrentOrderFactKeyIssues，覆盖 compileOnchainHookPlan preflight 与 validateOnchainHookPlanArtifact 边界，回归测试 test/onchain-hook-plan.test.ts），Rust/Go 线仍欠。"
+      "note": "镜像债：此类 plan 可 commit、finalize 永久 revert（planId 烧毁）；TS 线预检镜像已补（packages/compiler/src/onchain/validate/capabilities.ts duplicateCurrentOrderFactKeyIssues，覆盖 compileOnchainHookPlan preflight 与 validateOnchainHookPlanArtifact 边界，回归测试 test/onchain-hook-plan.test.ts），Rust/Go 线仍欠。"
     },
     {
       "id": "signal-capability-vocabulary-gate",

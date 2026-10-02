@@ -5,11 +5,16 @@ import { capabilitiesRootOf } from "../capabilities-root.js";
 import {
   canonicalOrderIssues,
   admissionOrderKey,
+  executorCandidateOrderKey,
   hookOrderKey,
   routeOrderKey,
   selectorBindingOrderKey,
   signalCapabilityOrderKey,
 } from "../canonical/ordering.js";
+import {
+  executorCandidatesRootOf,
+  isExecutorAddress,
+} from "../executor-candidates.js";
 import {
   expectHexHash,
   expectLiteral,
@@ -84,6 +89,8 @@ const ONCHAIN_ARTIFACT_FIELDS: readonly string[] = [
   "selectorBindings",
   "signalCapabilities",
   "admissions",
+  "executorCandidates",
+  "executorCandidatesRoot",
   "planHash",
 ];
 
@@ -223,6 +230,16 @@ export function validateOnchainHookPlanArtifact(
   if (!admissions) {
     issues.push("admissions must be an array");
   }
+  // 候选集（与 admissions 同约定：core 恒产数组，可为空）：在场而非数组
+  // 必须显式报 issue——缺失折成空集后哈希照常通过，未声明候选面与空候选
+  // 面在承诺上不可区分是 fail-open。
+  const executorCandidates = Array.isArray(value.executorCandidates)
+    ? value.executorCandidates
+    : undefined;
+  if (!executorCandidates) {
+    issues.push("executorCandidates must be an array");
+  }
+  expectHexHash(value.executorCandidatesRoot, "executorCandidatesRoot", issues);
 
   if (compiledHooks) {
     issues.push(
@@ -341,6 +358,18 @@ export function validateOnchainHookPlanArtifact(
       ...canonicalOrderIssues(admissions, admissionOrderKey, "admissions"),
     );
   }
+  if (executorCandidates) {
+    issues.push(
+      ...executorCandidateCommitmentIssues(executorCandidates, compiledHooks ?? [], value.executorCandidatesRoot),
+    );
+    issues.push(
+      ...canonicalOrderIssues(
+        executorCandidates,
+        executorCandidateOrderKey,
+        "executorCandidates",
+      ),
+    );
+  }
 
   if (isPlanHashRecomputable(value)) {
     // 姊妹实现 hook-plan.ts 同口径：重算抛错（负载深层携带 undefined/非
@@ -369,6 +398,8 @@ export function validateOnchainHookPlanArtifact(
         selectorBindings: value.selectorBindings,
         signalCapabilities: value.signalCapabilities,
         admissions: value.admissions,
+        executorCandidates: value.executorCandidates,
+        executorCandidatesRoot: value.executorCandidatesRoot,
       });
       if (value.planHash !== expectedPlanHash) {
         issues.push(
@@ -520,6 +551,68 @@ function capabilitiesRootCommitmentIssues(
 }
 
 /**
+ * 候选集承诺重算与镜像门（与 capabilitiesRootCommitmentIssues 同纪律）：
+ * 登记边界按清单重算 root，制品自带 root 与清单不一致时必须响亮拒绝；
+ * 同时镜像两道编译期门——出生 trigger 阶段不可为候选（合约出生阶段守门
+ * 的制品边界第二道）、地址形态必须合法非零。条目形状非法时跳过重算，
+ * 形状 issue 在此报告。
+ */
+function executorCandidateCommitmentIssues(
+  candidates: readonly unknown[],
+  compiledHooks: readonly unknown[],
+  declaredRoot: unknown,
+): readonly string[] {
+  const issues: string[] = [];
+  const shaped: { stageId: HexString; executor: HexString; stageIdentifier?: string }[] = [];
+  for (const [index, candidate] of candidates.entries()) {
+    if (
+      !isRecord(candidate) ||
+      !isHexHash(candidate.stageId) ||
+      typeof candidate.executor !== "string" ||
+      !isExecutorAddress(candidate.executor)
+    ) {
+      issues.push(
+        `executorCandidates[${index}] must carry a 32-byte stageId and a non-zero 20-byte executor address`,
+      );
+      continue;
+    }
+    shaped.push({
+      stageId: candidate.stageId,
+      executor: candidate.executor,
+      ...(typeof candidate.stageIdentifier === "string"
+        ? { stageIdentifier: candidate.stageIdentifier }
+        : {}),
+    });
+  }
+  if (shaped.length !== candidates.length || !isHexHash(declaredRoot)) {
+    return issues;
+  }
+  if (declaredRoot !== executorCandidatesRootOf(shaped)) {
+    issues.push(
+      "executorCandidatesRoot must match the recomputed root over the candidate leaves",
+    );
+  }
+  for (const candidate of shaped) {
+    const stageLabel =
+      candidate.stageIdentifier ??
+      candidate.stageId;
+    const birthTrigger = compiledHooks.some(
+      (hook) =>
+        isRecord(hook) &&
+        hook.stageId === candidate.stageId &&
+        typeof hook.orderTriggerKind === "string" &&
+        hook.orderTriggerKind !== "none",
+    );
+    if (birthTrigger) {
+      issues.push(
+        `executor candidate stage ${stageLabel} carries an order-trigger hook; birth-stage executors are immutable and cannot be per-order patch targets`,
+      );
+    }
+  }
+  return issues;
+}
+
+/**
  * 未解析 route（target:null 动态选择，§8.8 / UVPDockingModule 4.4）的链轨
  * 接受域门：动态路由整体承接（声明面随产物携带，routeHash 目标槽 = 候选
  * 集 root，随 dockRoutesRoot 在 finalize 冻结，attach 携 proof 选定），
@@ -573,6 +666,8 @@ function isPlanHashRecomputable(
     Array.isArray(value.selectorBindings) &&
     Array.isArray(value.signalCapabilities) &&
     Array.isArray(value.admissions) &&
+    Array.isArray(value.executorCandidates) &&
+    isHexHash(value.executorCandidatesRoot) &&
     Array.isArray(value.dockRoutes) &&
     (value.unresolvedDockRoutes === undefined ||
       Array.isArray(value.unresolvedDockRoutes)) &&

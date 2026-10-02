@@ -35,6 +35,9 @@ export {
   onchainStageId,
 } from "./onchain/hash/route.js";
 export { hashCanonical, keccak256Hex } from "./hash.js";
+// 制品 canonical payload hash 的唯一权威公式（夹具维护者按生产公式重钉
+// artifactHash 用，与 hash/plan.ts 的导出注释同承诺）。
+export { hashOnchainPlanPayload } from "./onchain/hash/plan.js";
 export {
   canonicalSignalHash,
   cloudRuntimeDomain,
@@ -123,6 +126,16 @@ export {
   signalCapabilityLeaf,
   signalCapabilityProof,
 } from "./onchain/capabilities-root.js";
+// 执行者候选集树（executorCandidatesRoot）权威实现（UB-36②③）：叶公式
+// 与 UVPPlanRegistration._executorCandidatesRoot 逐字节一致，成员资格
+// 由使用方按"重算叶 + 携 proof"验证（逐单 executor patch 的候选门）。
+export {
+  EXECUTOR_CANDIDATE_LEAF_DOMAIN,
+  executorCandidateLeaf,
+  executorCandidateProof,
+  executorCandidatesRootOf,
+  isExecutorAddress,
+} from "./onchain/executor-candidates.js";
 export {
   COMPILER_NAME,
   COMPILER_VERSION,
@@ -149,6 +162,7 @@ export type {
   DockRouteOutputBinding,
   DockRouteV2,
   ExecuteConfigs,
+  ExecutorCandidateInput,
   OrderTriggerKind,
   FileResourceLike,
   HexString,
@@ -156,6 +170,7 @@ export type {
   OnchainCompiledAdmission,
   OnchainCompiledHook,
   OnchainDelayInstruction,
+  OnchainExecutorCandidate,
   OnchainExecutorRoute,
   OnchainExecutorRouteRef,
   OnchainHookDependency,
@@ -168,6 +183,7 @@ export type {
   OnchainUnaryInstruction,
   SignalTargetOrderRelation,
   SolidityRegisterDependencyIndexArg,
+  SolidityRegisterExecutorCandidateArg,
   SolidityRegisterExecutorRouteArg,
   SolidityRegisterHookArg,
   SolidityRegisterInstructionArg,

@@ -22,14 +22,13 @@ interface IUVPPlanMetadataModuleForStagePatch {
 bytes32 constant _EXECUTOR_CANDIDATE_LEAF_DOMAIN = keccak256("UVP_EXECUTOR_CANDIDATE_V1");
 
 contract UVPStagePatchModule {
-    /// executor patch 请求（UB-36①④/UB-39 后的终态形态）：
-    /// - REPLACEMENT 模式退役——approvalSourceId/approvalSignalId 字段删除
-    ///   （存在性-only 的链上审批信号不再是授权材料，forkOrder 的裁决
-    ///   信号绑定取而代之）。
+    /// executor patch 请求（UB-36①④/UB-39 形态）：
+    /// - 模式词表为 assign/handoff 闭集；非协作换人不在 patch 面——
+    ///   forkOrder 车道以裁决信号绑定承接。
     /// - authorizationsHash（UB-36①）：patch 生效时对新城执行者写入的
     ///   显式订单级授权集哈希（stateMachine.signalAuthorizationsHash 公式），
     ///   进 EIP-712 digest——授权来源 = selector 的 patch 签名（签名覆盖
-    ///   授权集，provenance 可审计），替代已退役的委托授权通道。
+    ///   授权集，provenance 可审计）。
     struct StageExecutorPatch {
         bytes32 selectorStageId;
         bytes32 targetStageId;
@@ -170,8 +169,8 @@ contract UVPStagePatchModule {
         bytes32 executorMetadataHash,
         bytes32 mode,
         address previousExecutor,
-        // UB-36①：授权集哈希随事件广播（委托授权 StageExecutorSignalDelegated
-        // 退役；授权明细经 SignalSubmitterAuthorized 事件流可完整重建）。
+        // UB-36①：授权集哈希随事件广播（授权明细经
+        // SignalSubmitterAuthorized 事件流可完整重建）。
         bytes32 authorizationsHash,
         bytes32 patchHash,
         uint256 patchNonce,
@@ -580,9 +579,7 @@ contract UVPStagePatchModule {
             );
         }
 
-        // HANDOFF：上一执行者对同一 digest 的会签是唯一授权材料
-        //（REPLACEMENT 已退役——链上审批信号的存在性证明不再是授权面，
-        // UB-36④/UB-39）。
+        // HANDOFF：上一执行者对同一 digest 的会签是唯一授权材料。
         if (previousExecutorSigner != patch.previousExecutor) {
             revert InvalidStageExecutorPatchSignature(patch.previousExecutor, previousExecutorSigner);
         }

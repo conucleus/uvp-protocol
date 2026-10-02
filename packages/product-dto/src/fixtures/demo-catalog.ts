@@ -540,8 +540,7 @@ const selectorAddOnManifest: ParticipantAddOnManifestDTO = {
             { componentId: "target-stage", componentKind: "stage_select", inputId: "selector.targetStageId", label: "目标阶段", required: true },
             { componentId: "mode", componentKind: "select", inputId: "selector.mode", label: "处理方式", required: true, defaultValue: "assign", options: [
               { value: "assign", label: "选择履约者" },
-              { value: "handoff", label: "交接履约者" },
-              { value: "replacement", label: "申请替换履约者" }
+              { value: "handoff", label: "交接履约者" }
             ] },
             { componentId: "selector-wallet", componentKind: "wallet", inputId: "selector.selectorWallet", label: "选择方钱包", required: true },
             { componentId: "executor-wallet", componentKind: "wallet", inputId: "selector.executorWallet", label: "履约者钱包", required: true },

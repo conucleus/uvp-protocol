@@ -525,8 +525,8 @@ contract UVPStateMachine {
     // 合约原生 per-stage 信号计数（UB-2 封口）：事实归属 stage = 提交方
     // 携证声明的属主 stageId；未声明时按 source==stage 回退（sourceId 是
     // 本 plan 已注册 stage id 时归属该 stage）。stage patch 模块的
-    // ASSIGN/HANDOFF 时序闸改读本计数——不再依赖调用方携证供表
-    // （StageCapabilityFact 枚举面已退役），"省证绕计数"的口子在各写入口
+    // ASSIGN/HANDOFF 时序闸改读本计数——不依赖调用方携证供表，
+    // "省证绕计数"的口子在各写入口
     // 的词表闸（_resolveSourceStage：有词表的 plan 事实必须携有效
     // attribution 才能落库）封死。同秒歧义（最高 submittedAt 并列且提交者
     // 不同）由 _stageSignalAmbiguous 标记，HANDOFF 回退链 fail-closed。
@@ -1053,7 +1053,7 @@ contract UVPStateMachine {
         );
     }
 
-    /// 仅 stage patch 模块可调用（UB-36①：委托通道退役后的替代入口）。
+    /// 仅 stage patch 模块可调用（UB-36①）。
     /// executor patch 生效时把新城执行者的显式订单级授权集写入本合约——
     /// 授权来源 = selector 的 patch EIP-712 签名（authorizationsHash 进
     /// patch digest，签名覆盖授权集，provenance 可审计），写入经
@@ -1335,7 +1335,7 @@ contract UVPStateMachine {
         if (!_isSignalSubmitterAuthorized(planId, orderId, sourceId, signalId, submitter)) {
             revert UnauthorizedSignalSubmitter(orderId, sourceId, signalId, submitter);
         }
-        // 在任执行者门（UB-36① 后）：委托授权通道退役，普通提交路径的
+        // 在任执行者门（UB-36①）：普通提交路径的
         // 授权唯一来源是显式订单级授权（出生通道写入或 patch 生效时对新城
         // 执行者写入的 executorAuthorizations）——显式授权独立于执行者委任
         // 且不可被后续 patch 撤销，故本路径不再有按事实键的执行者新鲜度
@@ -1563,8 +1563,7 @@ contract UVPStateMachine {
     ///        （归属口径：携证属主优先，零词表 plan 回退 source==stage）；
     ///         lastSubmitter/lastAt = 最高 submittedAt 的提交者与时刻；
     ///         ambiguous = 最高 submittedAt 并列且提交者不同（同秒歧义，
-    ///         消费者 fail-closed）。单视图替代逐键枚举（旧
-    ///         StageCapabilityFact 携证供表面已退役）。
+    ///         消费者 fail-closed）。
     function stageSignalState(bytes32 planId, bytes32 orderId, bytes32 stageId)
         external
         view
@@ -1703,7 +1702,7 @@ contract UVPStateMachine {
     /// 同意集合（party 持有 origin 订单上的任一身份即算同意）：
     /// 1. origin 订单创建者——订单级权威；
     /// 2. origin 事实 (originSourceId, originSignalId) 的显式授权提交者
-    ///   （UB-36① 委托通道退役后唯一授权来源，收紧方向）；
+    ///   （UB-36①，收紧方向）；
     /// 3. origin 源阶段的 active stage executor——执行者 overlay 下唯一的
     ///    阶段发言方。
     ///

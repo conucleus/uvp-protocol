@@ -160,6 +160,12 @@ function admissionOrderKey(admission: Record<string, unknown>): readonly string[
   ];
 }
 
+function executorCandidateOrderKey(
+  candidate: Record<string, unknown>,
+): readonly string[] {
+  return [String(candidate.stageId), String(candidate.executor)];
+}
+
 export {
   canonicalOrderIssues,
   hookOrderKey,
@@ -167,4 +173,5 @@ export {
   selectorBindingOrderKey,
   signalCapabilityOrderKey,
   admissionOrderKey,
+  executorCandidateOrderKey,
 };

@@ -12,6 +12,8 @@ import {
   keccak256,
   stringToHex,
   toEventHash,
+  toEventSignature,
+  toFunctionSignature,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
@@ -22,6 +24,7 @@ import {
   EXECUTOR_PATCH_MODE_ASSIGN,
   EXECUTOR_PATCH_MODE_HANDOFF,
   DERIVED_SIGNAL_MODULE_ABI,
+  DOCKING_MODULE_ABI,
   ORDER_LINK_MODULE_ABI,
   STATE_MACHINE_ABI,
   STAGE_PATCH_MODULE_ABI,
@@ -1826,3 +1829,59 @@ function foldProof(leaf: `0x${string}`, proof: readonly `0x${string}`[]) {
   }
   return current;
 }
+
+// 手写 parseAbi 面 ⊆ 冻结 fixture 且逐字一致（UB-17 的机械收口腿）：
+// 手写 ABI 是有意子集（消费面裁剪），但子集内的每条签名必须与协议冻结
+// fixture 的规范形态完全一致——openDockedOrder 尾参滞后正是从这里漏过
+// 的（合约 v4.5 加 entranceAttribution，手写串停在 7 参，无任何门变红）。
+describe("handwritten ABI entries stay identical to the frozen fixtures", () => {
+  const fixturesDir = resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../../contracts/uvp-contracts/fixtures",
+  );
+  const handwrittenToFixture: readonly [readonly unknown[], string][] = [
+    [STATE_MACHINE_ABI, "uvp-state-machine.v0.13.json"],
+    [ORDER_LINK_MODULE_ABI, "uvp-order-link-module.v0.3.json"],
+    [STAGE_PATCH_MODULE_ABI, "uvp-stage-patch-module.v0.5.json"],
+    [DERIVED_SIGNAL_MODULE_ABI, "uvp-derived-signal-module.v0.3.json"],
+    [DOCKING_MODULE_ABI, "uvp-docking-module.v4.5.json"],
+  ];
+  for (const [abi, fixtureName] of handwrittenToFixture) {
+    it(`${fixtureName}: every handwritten entry matches the frozen signature`, () => {
+      const fixture = JSON.parse(
+        readFileSync(resolve(fixturesDir, fixtureName), "utf8"),
+      ) as {
+        readonly events: Readonly<Record<string, { readonly signature: string }>>;
+        readonly functions: Readonly<Record<string, { readonly signature: string }>>;
+      };
+      for (const entry of abi) {
+        const item = entry as { readonly type: string };
+        if (item.type === "function") {
+          const signature = toFunctionSignature(item as never);
+          const match = fixture.functions[signature.split("(")[0] ?? ""];
+          assert.ok(
+            match,
+            `${fixtureName}: handwritten function ${signature} is absent from the frozen fixture`,
+          );
+          assert.equal(
+            match.signature,
+            signature,
+            `${fixtureName}: handwritten function ${signature} drifted from the frozen signature ${match.signature}`,
+          );
+        } else if (item.type === "event") {
+          const signature = toEventSignature(item as never);
+          const match = fixture.events[signature.split("(")[0] ?? ""];
+          assert.ok(
+            match,
+            `${fixtureName}: handwritten event ${signature} is absent from the frozen fixture`,
+          );
+          assert.equal(
+            match.signature,
+            signature,
+            `${fixtureName}: handwritten event ${signature} drifted from the frozen signature ${match.signature}`,
+          );
+        }
+      }
+    });
+  }
+});
