@@ -457,6 +457,24 @@ export interface SelectedStageBinding {
 
 export type SignalTargetOrderRelation = "current";
 
+/**
+ * executor 候选集输入（UB-36②③，commitPlan 的第三入参源头）：候选集是
+ * 发布面承诺——定义声明的执行者只有 supplierID 字符串身份，钱包地址由
+ * 发布方在发布期解析后随编译进入 PlanCommit。stageIdentifier 必须是计划
+ * 内真实声明的阶段，executor 必须是合法非零地址。
+ */
+export interface ExecutorCandidateInput {
+  readonly stageIdentifier: string;
+  readonly executor: HexString;
+}
+
+/** 候选集条目的制品形态（进 planHash 与发布产物）。 */
+export interface OnchainExecutorCandidate {
+  readonly stageIdentifier: string;
+  readonly stageId: HexString;
+  readonly executor: HexString;
+}
+
 export interface SignalCapability {
   readonly stageIdentifier: string;
   readonly source: string;
@@ -608,6 +626,15 @@ export interface OnchainHookPlanArtifact {
   readonly signalCapabilities: readonly OnchainSignalCapability[];
   /** 发射适格面（与 IR 同约定：数组恒在场，可为空）。 */
   readonly admissions: readonly OnchainCompiledAdmission[];
+  /**
+   * 执行者候选集（与 admissions 同约定：数组恒在场，可为空）。ASSIGN
+   * 收窄后逐单 executor patch 的目标必须命中该集（叶/建树公式见
+   * onchain/executor-candidates.ts，与合约逐字节一致）；空集 = 计划
+   * 不开放逐单换人面（fail-closed）。
+   */
+  readonly executorCandidates: readonly OnchainExecutorCandidate[];
+  /** 候选集排序去重树根（空集 = EMPTY_MERKLE_ROOT）。 */
+  readonly executorCandidatesRoot: HexString;
   readonly planHash: HexString;
 }
 
@@ -671,6 +698,12 @@ export interface SolidityRegisterSignalCapabilityArg {
   readonly targetOrderRelation: 0 | 1;
 }
 
+/** commitPlan 第三入参的条目形态（UVPStateMachine.ExecutorCandidate 镜像）。 */
+export interface SolidityRegisterExecutorCandidateArg {
+  readonly stageId: HexString;
+  readonly executor: HexString;
+}
+
 export interface SolidityRegisterPlanArgs {
   readonly schemaVersion: typeof ONCHAIN_HOOK_PLAN_SCHEMA_VERSION;
   readonly sourcePlanId: HexString;
@@ -681,9 +714,11 @@ export interface SolidityRegisterPlanArgs {
   readonly capabilitiesRoot: HexString;
   readonly dockRoutesRoot: HexString;
   readonly dockInterfaceRoot: HexString;
+  readonly executorCandidatesRoot: HexString;
   readonly hooks: readonly SolidityRegisterHookArg[];
   readonly dependencyIndex: readonly SolidityRegisterDependencyIndexArg[];
   readonly executorRoutes: readonly SolidityRegisterExecutorRouteArg[];
+  readonly executorCandidates: readonly SolidityRegisterExecutorCandidateArg[];
   readonly selectorBindings: readonly SolidityRegisterStageSelectorBindingArg[];
   readonly signalCapabilities: readonly SolidityRegisterSignalCapabilityArg[];
 }

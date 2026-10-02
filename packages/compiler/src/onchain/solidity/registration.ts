@@ -27,7 +27,7 @@ import type {
  * 的 ABI 编码冻结口径。
  */
 
-const PLAN_RUNTIME_HASH_DOMAIN = "uvp.plan.runtime.v3";
+const PLAN_RUNTIME_HASH_DOMAIN = "uvp.plan.runtime.v4";
 
 /** CompactHook flags 位定义。 */
 export const HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
@@ -122,11 +122,12 @@ export function toSolidityRegisterPlanArgs(
   }));
   const hooksHash = hashSolidityHooks(hooks);
   const capabilitiesRoot = capabilitiesRootOf(selectorBindings, signalCapabilities);
-  // PlanCommit runtime hash 覆盖能力树与 dock roots。
+  // PlanCommit runtime hash 覆盖能力树、dock roots 与候选集树根（v4 六域，
+  // 与合约 _PLAN_RUNTIME_HASH_DOMAIN=uvp.plan.runtime.v4 同公式）。
   const planHash = keccak256(
     encodeAbiParameters(
       parseAbiParameters(
-        "bytes32 domain, bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot",
+        "bytes32 domain, bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot, bytes32 executorCandidatesRoot",
       ),
       [
         keccak256(stringToHex(PLAN_RUNTIME_HASH_DOMAIN)),
@@ -134,6 +135,7 @@ export function toSolidityRegisterPlanArgs(
         capabilitiesRoot,
         artifact.dockRoutesRoot,
         artifact.dockInterfaceRoot,
+        artifact.executorCandidatesRoot,
       ],
     ),
   ) as HexString;
@@ -148,6 +150,7 @@ export function toSolidityRegisterPlanArgs(
     capabilitiesRoot,
     dockRoutesRoot: artifact.dockRoutesRoot,
     dockInterfaceRoot: artifact.dockInterfaceRoot,
+    executorCandidatesRoot: artifact.executorCandidatesRoot,
     hooks,
     dependencyIndex: Object.entries(artifact.dependencyIndex)
       .sort(([left], [right]) => compareCanonicalKey(left, right))
@@ -163,6 +166,12 @@ export function toSolidityRegisterPlanArgs(
       executorHash: route.executorHash,
       resourcesHash: route.resourcesHash,
       routeHash: route.routeHash,
+    })),
+    // commitPlan 第三入参（UVPStateMachine.ExecutorCandidate[]）：候选集
+    // 清单以制品承诺为源（root 随 PlanCommit 签名进链）。
+    executorCandidates: artifact.executorCandidates.map((candidate) => ({
+      stageId: candidate.stageId,
+      executor: candidate.executor,
     })),
     selectorBindings,
     signalCapabilities,

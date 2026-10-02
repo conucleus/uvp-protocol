@@ -605,7 +605,7 @@ describe("product DTO catalog", () => {
 
   it("models executor patch governance modes for executor patch tasks", () => {
     // UB-36/UB-39 裁决后链上 patch 双模式：assign（开工前）与 handoff（开工后
-    // 协作共签）；replacement 已退役，非协作换人走 fork 车道（新订单血缘，
+    // 协作共签）；非协作换人走 fork 车道（新订单血缘，
     // 不是 executor patch 模式）。
     const supportedModes: readonly ProductExecutorPatchMode[] = ["assign", "handoff"];
     assert.deepEqual(supportedModes, ["assign", "handoff"]);

@@ -58,7 +58,7 @@ export type ParticipantAddOnManifestComponentKind =
   | "evidence_refs"
   | "resource_requirements"
   | "proof_rows";
-export type ProductExecutorPatchMode = "assign" | "handoff" | "replacement";
+export type ProductExecutorPatchMode = "assign" | "handoff";
 export type ProductResourceRequirementSource =
   | "plan_default"
   | "resource_patch"

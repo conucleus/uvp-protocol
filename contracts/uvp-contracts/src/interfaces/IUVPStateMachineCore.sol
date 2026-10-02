@@ -69,8 +69,8 @@ interface IUVPStateMachineCore {
         uint256 patchNonce,
         string calldata metadataURI
     ) external;
-    /// UB-36①：委托授权通道退役后的替代入口——executor patch 生效时对
-    /// 新城执行者写入显式订单级授权集（仅 stage patch 模块可调用）。
+    /// UB-36①：executor patch 生效时对新城执行者写入显式订单级授权集
+    ///（仅 stage patch 模块可调用）。
     function authorizeSignalSubmittersFromModule(
         bytes32 planId,
         bytes32 orderId,

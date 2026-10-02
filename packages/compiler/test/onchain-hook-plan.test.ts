@@ -187,11 +187,16 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.deepEqual(onchain.platform, sourcePlan.platform);
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
   // target.zhixu 携带目标内容派生 uid 引用，sourcePlanHash/planHash
-  // preimage 随定义内容变化；承诺公式本身冻结不变。
+  // preimage 随定义内容变化；承诺公式本身冻结不变。v4 起制品负载含
+  // executorCandidates/executorCandidatesRoot（空集恒在场）。
   assert.equal(
     onchain.planHash,
     "0x697d855dea2391c8c8f41b8d38e3624e07d97fb3e8c4b2625cacb08cc55f5bc1",
   );
+  // 空候选集：root = EMPTY_MERKLE_ROOT（逐单 patch 恒拒的 fail-closed
+  // 形态），与合约 DockMerkle.root([]) 同值。
+  assert.deepEqual(onchain.executorCandidates, []);
+  assert.equal(onchain.executorCandidatesRoot, EMPTY_MERKLE_ROOT);
   // capabilitiesRoot 是两表叶子的唯一承诺形态（v3 新增字段，随 planHash
   // 一同钉死防漂移）：与生产公式 capabilitiesRootOf 逐字节一致。
   assert.equal(
@@ -504,14 +509,15 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
     keccak256(
       encodeAbiParameters(
         parseAbiParameters(
-          "bytes32 domain, bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot",
+          "bytes32 domain, bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot, bytes32 executorCandidatesRoot",
         ),
         [
-          keccak256(stringToHex("uvp.plan.runtime.v3")),
+          keccak256(stringToHex("uvp.plan.runtime.v4")),
           args.hooksHash,
           args.capabilitiesRoot,
           args.dockRoutesRoot,
           args.dockInterfaceRoot,
+          args.executorCandidatesRoot,
         ],
       ),
     ),

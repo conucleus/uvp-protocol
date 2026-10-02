@@ -629,7 +629,7 @@ contract UVPDockingModule {
 
         // keeper 只提供活性（relayer/opener 归 keeper）。creator 与 dock 事实
         // 提交者不得是 keeper——基础设施地址没有业务身份，混入
-        // lastSignalSubmitter 会让 HANDOFF/REPLACEMENT 的"上一执行者"回退取
+        // lastSignalSubmitter 会让 HANDOFF 的"上一执行者"回退取
         // 到 keeper。dock 通道事实的提交者记为 creator（= 目标 plan
         // publisher，permit 路由的签名者同源，且本就是该子单的 patch
         // selector 权威）；子订单信号授权随后按目标定义自身的授权流

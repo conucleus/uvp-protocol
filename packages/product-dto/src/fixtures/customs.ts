@@ -61,8 +61,8 @@ export const customsPlanIds = {
   // hash（PlanCommit 注册哈希，与链上 planHash(planId) getter 同名同值）；
   // artifactHash = 制品 canonical payload hash（hashOnchainPlanPayload）。
   planId: "0xc17ec525b4686fa302e21811ed15c1f7888d9ee1313665393defc396b7702519",
-  planHash: "0xfe94124e14b1e2260ae2e165023ff712689ca947ee671fa58ec21f7caa7ca785",
-  artifactHash: "0x3075a03373d04aa513765731671189b03be646c44b200f7d780e7688ef5a9fea"
+  planHash: "0xa990f484cc8b97561f6dd6adddd978a09976b24100b439e6debba3c18615935a",
+  artifactHash: "0xd0c73aff30c51014acdc04f1fc89458884aa5ae0d8e3766a9cc181cf5393765a"
 } as const;
 
 export const customsResourceManifest: ProductResourceManifestDTO = {
@@ -801,6 +801,10 @@ export const customsOnchainHookPlanArtifact = {
     }
   ],
   admissions: [],
+  // 执行者候选集（UB-36②③）：customs 演示域不开逐单换人面——空集 root =
+  // EMPTY_MERKLE_ROOT，逐单 executor patch 对本计划恒拒（fail-closed）。
+  executorCandidates: [],
+  executorCandidatesRoot: "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
   // 制品自身 planHash 字段是 canonical payload hash——与发布面
   // customsPlanIds.artifactHash 同值（发布面 planHash 是链 runtime hash，
   // 两个字段名的口径差是链 getter 命名权威与发布面命名的有意分工）。
