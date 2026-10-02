@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  compileZhixuHookPlan,
   compileZhixuOnchainHookPlan,
   compileZhixuRegisterPlanArgs,
   HookPlanCompilationError,
@@ -15,6 +16,7 @@ import {
   type OnchainHookPlanArtifact,
   type ZhixuDefinition,
 } from "../src/index.js";
+import { compileOnchainHookPlan } from "../src/onchain/compile.js";
 import { hashOnchainPlanPayload } from "../src/onchain/hash/plan.js";
 import {
   encodeAbiParameters,
@@ -654,5 +656,90 @@ test("artifact boundary mirrors the birth-stage immutability gate", () => {
   assert.ok(
     issues.some((issue) => issue.includes("birth-stage executors are immutable")),
     `expected birth-stage issue, got: ${issues.join("; ")}`,
+  );
+});
+
+
+test("non-string executor fails as a typed compilation issue, not a bare TypeError", () => {
+  // D1 回归：归一化在 preflight 之后，畸形输入走类型化错误门。
+  try {
+    compileOnchainHookPlan(compileZhixuHookPlan(twoStageZhixu), [
+      { stageIdentifier: "order_exec.main", executor: 42 as unknown as `0x${string}` },
+    ]);
+    assert.fail("expected HookPlanCompilationError");
+  } catch (error) {
+    assert.ok(error instanceof HookPlanCompilationError);
+    assert.ok(
+      error.issues.some((issue) => issue.includes("non-zero 20-byte address")),
+    );
+  }
+});
+
+test("artifact boundary enforces the lowercase executor form in both directions", () => {
+  // D2 回归：混合大小写条目显式拒绝（编译器恒产小写）。
+  const withCandidates = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
+    { stageIdentifier: "order_exec.main", executor: WALLET_A_EIP55 },
+  ]);
+  const mixedCase = {
+    ...withCandidates,
+    executorCandidates: withCandidates.executorCandidates.map((candidate) => ({
+      ...candidate,
+      executor: candidate.executor.slice(0, 4) + candidate.executor.slice(4).toUpperCase(),
+    })),
+  };
+  const { planHash: _ignored, ...mixedPayload } = mixedCase;
+  assert.ok(
+    validateOnchainHookPlanArtifact(mixedPayload).some((issue) =>
+      issue.includes("lowercase address form"),
+    ),
+  );
+});
+
+test("candidate entries reject unknown fields (closed key set)", () => {
+  // D3 回归：条目级封闭字段集，与 hooks/capabilities 条目同纪律。
+  const withCandidates = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
+    { stageIdentifier: "order_exec.main", executor: WALLET_A },
+  ]);
+  const smuggled = {
+    ...withCandidates,
+    executorCandidates: withCandidates.executorCandidates.map((candidate) => ({
+      ...candidate,
+      note: "smuggled",
+    })),
+  };
+  const { planHash: _ignored, ...smuggledPayload } = smuggled;
+  assert.ok(
+    validateOnchainHookPlanArtifact(smuggledPayload).some((issue) =>
+      issue.includes("unknown field `note` on executorCandidates[0]"),
+    ),
+  );
+});
+
+test("artifact boundary mirrors the declared-stage gate", () => {
+  // D4 回归：候选 stageId 不在本计划已注册 hook 阶段集合内 → 制品边界拒绝。
+  const withCandidates = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
+    { stageIdentifier: "order_exec.main", executor: WALLET_A },
+  ]);
+  const ghostStageId = "0x" + "99".repeat(32);
+  const ghost = {
+    ...withCandidates,
+    executorCandidates: [
+      ...withCandidates.executorCandidates,
+      {
+        stageIdentifier: "ghost.stage",
+        stageId: ghostStageId,
+        executor: WALLET_B,
+      },
+    ],
+    executorCandidatesRoot: executorCandidatesRootOf([
+      ...withCandidates.executorCandidates,
+      { stageId: ghostStageId, executor: WALLET_B },
+    ]),
+  };
+  const { planHash: _ignored, ...ghostPayload } = ghost;
+  assert.ok(
+    validateOnchainHookPlanArtifact(ghostPayload).some((issue) =>
+      issue.includes("is not a stage declared in this plan"),
+    ),
   );
 });

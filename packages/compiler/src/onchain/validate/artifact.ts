@@ -16,6 +16,7 @@ import {
   isExecutorAddress,
 } from "../executor-candidates.js";
 import {
+  expectClosedKeySet,
   expectHexHash,
   expectLiteral,
   expectNonEmptyString,
@@ -563,16 +564,35 @@ function executorCandidateCommitmentIssues(
   declaredRoot: unknown,
 ): readonly string[] {
   const issues: string[] = [];
+  // 条目字段封闭集（与 hooks/capabilities 条目同纪律）：planHash 覆盖
+  // 候选数组，未声明字段不进哈希会让"唯一字节数组形态"承诺失效。
+  const allowedKeys: readonly string[] = ["stageId", "executor", "stageIdentifier"];
   const shaped: { stageId: HexString; executor: HexString; stageIdentifier?: string }[] = [];
   for (const [index, candidate] of candidates.entries()) {
+    const prefix = `executorCandidates[${index}]`;
+    if (!isRecord(candidate)) {
+      issues.push(
+        `${prefix} must carry a 32-byte stageId and a non-zero 20-byte executor address`,
+      );
+      continue;
+    }
+    expectClosedKeySet(candidate, allowedKeys, prefix, issues);
     if (
-      !isRecord(candidate) ||
       !isHexHash(candidate.stageId) ||
       typeof candidate.executor !== "string" ||
       !isExecutorAddress(candidate.executor)
     ) {
       issues.push(
-        `executorCandidates[${index}] must carry a 32-byte stageId and a non-zero 20-byte executor address`,
+        `${prefix} must carry a 32-byte stageId and a non-zero 20-byte executor address`,
+      );
+      continue;
+    }
+    // 地址小写规范形（与 stageId 的小写规范形同纪律）：编译器恒产小写；
+    // 混合大小写形态按裸字符串排序会同时制造"非规范形被放行"与"规范序
+    // 被误杀"两个方向的口径差。
+    if (candidate.executor !== candidate.executor.toLowerCase()) {
+      issues.push(
+        `${prefix}.executor must be the lowercase address form; the compiler never emits a mixed-case executor`,
       );
       continue;
     }
@@ -592,10 +612,24 @@ function executorCandidateCommitmentIssues(
       "executorCandidatesRoot must match the recomputed root over the candidate leaves",
     );
   }
+  // 声明阶段镜像（与出生门同口径）：候选条目的 stageId 必须命中本计划
+  // 已注册 hook 的阶段集合——编译入口拒绝未声明阶段，制品边界不留
+  // "编译面拒、反序列化面放"的双侧口径差。
+  const declaredStageIds = new Set(
+    compiledHooks.flatMap((hook) =>
+      isRecord(hook) && isHexHash(hook.stageId) ? [hook.stageId] : [],
+    ),
+  );
   for (const candidate of shaped) {
     const stageLabel =
       candidate.stageIdentifier ??
       candidate.stageId;
+    if (declaredStageIds.size > 0 && !declaredStageIds.has(candidate.stageId)) {
+      issues.push(
+        `executor candidate stage ${stageLabel} is not a stage declared in this plan`,
+      );
+      continue;
+    }
     const birthTrigger = compiledHooks.some(
       (hook) =>
         isRecord(hook) &&
