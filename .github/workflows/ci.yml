@@ -29,7 +29,7 @@ jobs:
 
       # packages/hook-core 依赖 @conucleus/uvp-core-node workspace:*，本仓
       # pnpm-workspace.yaml 已声明 ../uvp-core/crates/uvp-node——姊妹路径
-      # 检出即解析（反向同 uvp-core 仓既有 ci.yml 检出 uvp-protocol）。
+      # 检出即解析（core 亦是 protocol/ 契约表的宿主仓）。
       # ref 用默认分支，沿用该既有形态。跨仓私有 checkout 用伞仓
       # CI_SUBMODULE_TOKEN 模式。
       - name: Checkout uvp-core (uvp-node native module)

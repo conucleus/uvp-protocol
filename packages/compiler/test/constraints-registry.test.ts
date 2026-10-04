@@ -1,7 +1,7 @@
 /**
  * uvp-constraints.v1 一致性 harness（TS 线）。
  *
- * 约束注册表 `protocol/uvp-constraints.v1.json`（uvp-protocol 仓根）
+ * 约束注册表自宿主于 uvp-core 仓 `protocol/uvp-constraints.v1.json`（姊妹检出）
  * 是跨语言接受面规则（zhixu / hook-dsl / dock / onchain-plan）的单一出处。
  * 本 harness：
  *   1. 钉住注册表 version，并把实际 sha256 与同目录 meta 文件声明的值比对
@@ -38,12 +38,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // ---------------------------------------------------------------------------
 
 const CONSTRAINTS_ENV_VAR = "UVP_CONSTRAINTS_PATH";
-// 默认路径：packages/compiler/test → 仓库根 protocol/。
+// 默认路径：packages/compiler/test → uvp-eth 工作区根 → uvp-core 姊妹检出。
 const DEFAULT_CONSTRAINTS_PATH = join(
   __dirname,
   "..",
   "..",
   "..",
+  "..",
+  "uvp-core",
   "protocol",
   "uvp-constraints.v1.json",
 );

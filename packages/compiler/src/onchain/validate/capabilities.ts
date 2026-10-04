@@ -81,7 +81,7 @@ const FILE_TYPES: readonly string[] = ["local", "http", "txcloud", "plain_text"]
 export { SUPPLIER_TYPES, FILE_TYPES };
 
 /**
- * E16 镜像（uvp-constraints.v1.json rejectionSurfaces
+ * E16 镜像（uvp-constraints.v1.json（自宿主 uvp-core protocol/）rejectionSurfaces
  * e16-current-order-factkey-unique-owner）：事实键
  * (targetSourceId, signalId) 在 plan 内有唯一属主阶段。属主唯一性是携证
  * 解析的前提——链上按能力叶声明事实属主，同一事实键存在两个声明属主时，
