@@ -88,17 +88,15 @@
       },
       "error": {
         "rust": "metadata.name must be non-empty",
-        "go": "metadata.name is required and cannot be blank",
+        "go": null,
         "ts": "metadata.name is required"
       },
       "applies": [
         "rust",
-        "go",
         "ts"
       ],
       "sources": {
         "rust": "crates/uvp-compiler/src/validate/mod.rs validate_zhixu_shape",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions",
         "ts": "packages/compiler/src/zhixu-loader.ts assertZhixuDefinitionShape"
       },
       "ruling": "metadata.name 必填非空（rust/go trim 后非空；ts 要求 string）。"
@@ -116,17 +114,15 @@
       },
       "error": {
         "rust": "exceeds 100 bytes",
-        "go": "exceeds 100 bytes",
+        "go": null,
         "ts": "must match ^[a-z][a-z0-9_-]{0,99}$"
       },
       "applies": [
         "rust",
-        "go",
         "ts"
       ],
       "sources": {
         "rust": "crates/uvp-compiler/src/validate/mod.rs MAX_IDENTIFIER_BYTES",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions",
         "ts": "packages/compiler/src/zhixu-loader.ts assertZhixuDefinitionShape（Buffer.byteLength 上限与 slug 正则同一拒绝面，锚点共用）"
       },
       "ruling": "≤100 字节（global_zhixu.name VARCHAR(100) DDL 镜像）。"
@@ -196,16 +192,14 @@
       },
       "error": {
         "rust": "exceeds 100 bytes (global_stage.stage_identifier)",
-        "go": "exceeds 100 bytes (global_stage.stage_identifier)",
+        "go": null,
         "ts": null
       },
       "applies": [
-        "rust",
-        "go"
+        "rust"
       ],
       "sources": {
-        "rust": "crates/uvp-compiler/src/validate/mod.rs MAX_IDENTIFIER_BYTES",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions"
+        "rust": "crates/uvp-compiler/src/validate/mod.rs MAX_IDENTIFIER_BYTES"
       },
       "ruling": "stage identifier ≤100 字节（global_stage.stage_identifier VARCHAR(100)）。"
     },
@@ -222,16 +216,14 @@
       },
       "error": {
         "rust": "exceeds 36 bytes",
-        "go": "exceeds 36 bytes (hook/subscription source namespace)",
+        "go": null,
         "ts": null
       },
       "applies": [
-        "rust",
-        "go"
+        "rust"
       ],
       "sources": {
-        "rust": "crates/uvp-compiler/src/validate/mod.rs MAX_STAGE_SOURCE_BYTES",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions"
+        "rust": "crates/uvp-compiler/src/validate/mod.rs MAX_STAGE_SOURCE_BYTES"
       },
       "ruling": "壳层 source 上限与 hook 标头/订阅目标的 source 类上限收敛到 36（同一 source 类命名空间，37-100 字节是\"声明即死\"命名空间：hook/订阅引用在解析层被拒）；严于落库列宽（source_zhixu_id VARCHAR(64)、global_stage.source VARCHAR(100)）。rust 与 go 两线均已收敛到 36。"
     },
@@ -331,6 +323,30 @@
       "ruling": "stage name 字符集与 taskPatterns name 同规则；跨 task 的同名 stage 合法（stage identifier 含 task 段），task 内重名由唯一性检查拒绝。"
     },
     {
+      "id": "executor-supplier-id-max-length",
+      "area": "zhixu",
+      "target": "taskPatterns[].stages[].executor.supplierID",
+      "constraint": {
+        "type": "max_length",
+        "params": {
+          "max": 36,
+          "unit": "bytes"
+        }
+      },
+      "error": {
+        "rust": "exceeds 36 bytes",
+        "go": null,
+        "ts": null
+      },
+      "applies": [
+        "rust"
+      ],
+      "sources": {
+        "rust": "crates/uvp-compiler/src/validate/mod.rs validate_stage_executors（MAX_SUPPLIER_ID_BYTES）"
+      },
+      "ruling": "≤36 字节（UUID 长度）：云侧 definitions 引用的 supplier 注册 objectId 为 uuid v4（36），链侧 store 默认生成式 supplier-<shorthex>≤28，两轨定义 fixture 全为短 slug。定义内执行者引用统一为 UUID 长度身份，超长引用在共享编译校验拒绝（hook_plan/cloud 两目标同闸）；store 治理面的 supplierId（1-128 URL-safe）不进定义，不在本约束射程。"
+    },
+    {
       "id": "executor-supplier-type-closed-enum",
       "area": "zhixu",
       "target": "taskPatterns[].stages[].executor.supplierType",
@@ -374,16 +390,14 @@
       },
       "error": {
         "rust": "exceeds 100 bytes combined (individual_record.signal_name)",
-        "go": "exceeds 100 bytes combined (individual_record.signal_name)",
+        "go": null,
         "ts": null
       },
       "applies": [
-        "rust",
-        "go"
+        "rust"
       ],
       "sources": {
-        "rust": "crates/uvp-compiler/src/validate/mod.rs MAX_SIGNAL_NAME_BYTES（sendSignals 组合维度：canonical 三段式按原文精确计长、裸名拼 stage 前缀）",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions（maxSignalNameBytes=100，全名精确计）"
+        "rust": "crates/uvp-compiler/src/validate/mod.rs MAX_SIGNAL_NAME_BYTES（sendSignals 组合维度：canonical 三段式按原文精确计长、裸名拼 stage 前缀）"
       },
       "ruling": "执行器自发信号名落 individual_record.signal_name VARCHAR(100)，全名 ≤100：canonical 三段式声明本身即全名、按原文精确计长；裸名才拼 stage 前缀（三段式再拼一次前缀会把 task.stage 段重复计入，误拒真实 ≤100 的合法声明）。两侧实现（rust validate/mod.rs、go validateDDLDimensions）已统一为该口径；stage 标识符合法不等于组合合法。"
     },
@@ -400,16 +414,14 @@
       },
       "error": {
         "rust": "hook_name must be 1-36 characters",
-        "go": "hook_name must be 1-36 characters（go 线可达路径是 uvp-core FFI 文案；Go 本地文案 exceeds 36 bytes (global_hook.hook_name) 因 validateTaskPatterns 先行返回而不可达）",
+        "go": null,
         "ts": null
       },
       "applies": [
-        "rust",
-        "go"
+        "rust"
       ],
       "sources": {
-        "rust": "crates/uvp-hook-dsl/src/lib.rs parse（hook_name 1..=36）",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateDDLDimensions"
+        "rust": "crates/uvp-hook-dsl/src/lib.rs parse（hook_name 1..=36）"
       },
       "ruling": "receiveSignals 键 ≤36 字节。rust 在 parse 期以 hook_name 名义拒绝；go 在 schema validator 以 DDL 名义拒绝（CompileHook 经 FFI 亦会拒）。"
     },
@@ -426,16 +438,14 @@
       },
       "error": {
         "rust": "hook source class exceeds the maximum length of 36",
-        "go": "hook source class exceeds the maximum length of 36（go 线可达路径是 uvp-core FFI 文案；Go 本地纵深文案 source class exceeds 36 bytes 被 FFI 先行拒绝，实测不可达）",
+        "go": null,
         "ts": null
       },
       "applies": [
-        "rust",
-        "go"
+        "rust"
       ],
       "sources": {
-        "rust": "crates/uvp-hook-dsl/src/lib.rs parse（标头 source ≤36）",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateStage（defense-in-depth）；实际先由 uvp-core FFI parse 拒绝，锚点两文案任一命中均可"
+        "rust": "crates/uvp-hook-dsl/src/lib.rs parse（标头 source ≤36）"
       },
       "ruling": "hook 标头 source 类 ≤36 字节；落库列 hook_dependency.source_zhixu_id 实宽 VARCHAR(64)（uvp/database/core-ddl.sql），36 字节编译期上限三线一致且严于列宽，注记按 DDL 真源修正。"
     },
@@ -476,16 +486,14 @@
       },
       "error": {
         "rust": "subscription source exceeds the maximum length of 36",
-        "go": "subscription source exceeds the maximum length of 36（go 线可达路径是 uvp-core FFI 文案；Go 本地纵深文案 subscription source class exceeds 36 bytes 被 FFI 先行拒绝，实测不可达）",
+        "go": null,
         "ts": null
       },
       "applies": [
-        "rust",
-        "go"
+        "rust"
       ],
       "sources": {
-        "rust": "crates/uvp-hook-dsl/src/lib.rs parse_subscription",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateStage（defense-in-depth）；实测先由 uvp-core FFI 拒绝"
+        "rust": "crates/uvp-hook-dsl/src/lib.rs parse_subscription"
       },
       "ruling": "订阅 source 类 ≤36 字节，与标头 source 同值；落库列 hook_dependency.source_zhixu_id 实宽 VARCHAR(64)（uvp/database/core-ddl.sql），36 字节编译期上限三线一致且严于列宽，注记按 DDL 真源修正。"
     },
@@ -502,16 +510,14 @@
       },
       "error": {
         "rust": "subscription target signal exceeds the maximum length of 100",
-        "go": "subscription target signal exceeds the maximum length of 100（go 线可达路径是 uvp-core FFI 文案；Go 本地文案 exceeds 100 bytes (hook_dependency.signal_name) 被 FFI 先行拒绝，实测不可达）",
+        "go": null,
         "ts": null
       },
       "applies": [
-        "rust",
-        "go"
+        "rust"
       ],
       "sources": {
-        "rust": "crates/uvp-hook-dsl/src/lib.rs parse_subscription",
-        "go": "pkg/compiler/validator/zhixu_schema.go validateStage（SubscriptionTarget.SignalName / dependencies，maxSignalNameBytes=100）"
+        "rust": "crates/uvp-hook-dsl/src/lib.rs parse_subscription"
       },
       "ruling": "订阅目标信号名 ≤100 字节（signal_name VARCHAR(100)）。"
     },
@@ -791,16 +797,14 @@
       },
       "error": {
         "rust": "D005/D006 value must be a port name matching ^[a-z][a-z0-9_]{0,31}$",
-        "go": "must match ^[a-z][a-z0-9_]{0,31}$",
+        "go": null,
         "ts": null
       },
       "applies": [
-        "rust",
-        "go"
+        "rust"
       ],
       "sources": {
-        "rust": "crates/uvp-compiler/src/dock.rs valid_port_name / MAX_PORT_NAME_BYTES（D005/D006 引用）",
-        "go": "pkg/compiler/validator/docking.go validateDockPortName（经 validateDockInterfaceShape 的接口/端口名形态闸触达）"
+        "rust": "crates/uvp-compiler/src/dock.rs valid_port_name / MAX_PORT_NAME_BYTES（D005/D006 引用）"
       },
       "ruling": "外部配置使用公开端口名，端口名 ^[a-z][a-z0-9_]{0,31}$（≤32 字节），与接口名同规则。"
     },
@@ -817,16 +821,14 @@
       },
       "error": {
         "rust": "D006",
-        "go": "must be at most 26 bytes",
+        "go": null,
         "ts": null
       },
       "applies": [
-        "rust",
-        "go"
+        "rust"
       ],
       "sources": {
-        "rust": "crates/uvp-compiler/src/dock.rs MAX_SIGNAL_MAP_KEY_LENGTH（错误码 D006）",
-        "go": "pkg/compiler/validator/executor.go validateZhixuExecutorDimensions（DDL 字节上限本地门；语义判定权威在 uvp-core dock.rs）"
+        "rust": "crates/uvp-compiler/src/dock.rs MAX_SIGNAL_MAP_KEY_LENGTH（错误码 D006）"
       },
       "ruling": "signalMap 键（本地 sendSignals 信号名）≤26 字节（\"signalMap.\" + key 共 36 字节列宽，10 字节前缀）。"
     },
@@ -870,16 +872,14 @@
       },
       "error": {
         "rust": "D006",
-        "go": "exceeds 100 (individual_record.signal_name)",
+        "go": null,
         "ts": null
       },
       "applies": [
-        "rust",
-        "go"
+        "rust"
       ],
       "sources": {
-        "rust": "crates/uvp-compiler/src/dock.rs MAX_SIGNAL_NAME_BYTES（D006）",
-        "go": "pkg/compiler/validator/executor.go validateZhixuExecutorDimensions（DDL 字节上限本地门）"
+        "rust": "crates/uvp-compiler/src/dock.rs MAX_SIGNAL_NAME_BYTES（D006）"
       },
       "ruling": "stage 标识符 + \".\" + signalMap 键组合落 individual_record.signal_name VARCHAR(100)，组合 ≤100。"
     },
