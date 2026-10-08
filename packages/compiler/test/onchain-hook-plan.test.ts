@@ -2671,7 +2671,7 @@ test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirr
           ? {
               ...stage,
               sendSignals: [
-                { name: "executor_selected", validWhen: "buyer::assign.seed" },
+                { name: "executor_selected", validWhen: ["buyer::assign.seed"] },
                 { name: "seed" },
               ],
             }

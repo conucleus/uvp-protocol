@@ -167,13 +167,16 @@ function assertZhixuDefinitionShape(
         if (typeof declared.name !== "string") {
           throw new ZhixuLoadError(`${sourceName}.${entryPath}.name must be a string`);
         }
-        if (
-          declared.validWhen !== undefined &&
-          typeof declared.validWhen !== "string"
-        ) {
-          throw new ZhixuLoadError(
-            `${sourceName}.${entryPath}.validWhen must be a string when present`,
-          );
+        if (declared.validWhen !== undefined) {
+          if (
+            !Array.isArray(declared.validWhen) ||
+            declared.validWhen.length === 0 ||
+            declared.validWhen.some((item: unknown) => typeof item !== "string" || item.trim() === "")
+          ) {
+            throw new ZhixuLoadError(
+              `${sourceName}.${entryPath}.validWhen must be a non-empty array of non-empty strings (drop the key to declare unconditional admission)`,
+            );
+          }
         }
       });
     }

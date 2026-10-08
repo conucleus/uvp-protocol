@@ -79,7 +79,7 @@ export interface ZhixuStage {
 /** sendSignals 条目（发射适格面声明面）：name 必填非空，validWhen 缺省=无条件。 */
 export interface ZhixuSendSignal {
   readonly name: string;
-  readonly validWhen?: string;
+  readonly validWhen?: readonly string[];
 }
 
 export interface ExecuteConfigs {
@@ -444,7 +444,7 @@ export interface HookPlanExecutorRoute {
 export interface CompiledHookPlanAdmission {
   readonly stageIdentifier: string;
   readonly signalName: string;
-  readonly rawExpression: string;
+  readonly rawExpression: readonly string[];
   readonly normalizedExpression: string;
   readonly ast: import("@uvp-eth/hook-core").HookExpressionAst;
   readonly dependencies: readonly import("@uvp-eth/hook-core").HookDependency[];

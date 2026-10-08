@@ -450,7 +450,13 @@ function validateAdmissions(admissions: readonly unknown[]): readonly string[] {
     const prefix = `admissions[${index}]`;
     expectNonEmptyString(admission.stageIdentifier, `${prefix}.stageIdentifier`, issues);
     expectNonEmptyString(admission.signalName, `${prefix}.signalName`, issues);
-    expectNonEmptyString(admission.rawExpression, `${prefix}.rawExpression`, issues);
+    if (
+      !Array.isArray(admission.rawExpression) ||
+      admission.rawExpression.length === 0 ||
+      admission.rawExpression.some((item: unknown) => typeof item !== "string" || item === "")
+    ) {
+      issues.push(`${prefix}.rawExpression must be a non-empty array of non-empty strings`);
+    }
     expectNonEmptyString(admission.normalizedExpression, `${prefix}.normalizedExpression`, issues);
     if (!isRecord(admission.ast)) {
       issues.push(`${prefix}.ast must be an object`);

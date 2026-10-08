@@ -48,7 +48,7 @@ const admissionZhixu = (validWhen: string): ZhixuDefinition => ({
         source: "buyer",
         receiveSignals: { RUN: "buyer::gate.ready" },
         sendSignals: [
-          { name: "cmp", validWhen },
+          { name: "cmp", validWhen: [validWhen] },
           { name: "cmp_err" },
         ],
         executor: { supplierType: "organization", supplierID: "work-org" },
@@ -286,7 +286,7 @@ test("sendSignals entries are a closed key set at the loader boundary", () => {
     () => parseZhixuDefinition(loaderCaseZhixu([{ name: "cmp", validWhen: 14 }])),
     (error: unknown) =>
       error instanceof ZhixuLoadError &&
-      /validWhen must be a string when present/.test(error.message),
+      /validWhen must be a non-empty array of non-empty strings/.test(error.message),
   );
 });
 
