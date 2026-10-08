@@ -848,15 +848,13 @@ function failNoResolution(route: NeutralDockRoute): PreparedDockResolution {
   );
 }
 
-/** taskPattern.name + stage.name 的两段标识（与 core flatten_stages 同口径）。 */
+/** stage.name 单段标识（与 core flatten_stages 同口径）。 */
 function flattenStageSources(
   definition: ZhixuDefinition,
 ): Map<string, string> {
   const sources = new Map<string, string>();
-  for (const pattern of definition.spec.taskPatterns) {
-    for (const stage of pattern.stages) {
-      sources.set(`${pattern.name}.${stage.name}`, stage.source);
-    }
+  for (const stage of definition.spec.stages) {
+    sources.set(stage.name, stage.source);
   }
   return sources;
 }
@@ -865,7 +863,7 @@ function stageIdentifierOfHook(hookId: string): string {
   const hashIndex = hookId.indexOf("#");
   if (hashIndex <= 0) {
     throw new RangeError(
-      `hook reference must be <task>.<stage>#<hookName>, received ${JSON.stringify(hookId)}`,
+      `hook reference must be <stage>#<hookName>, received ${JSON.stringify(hookId)}`,
     );
   }
   return hookId.slice(0, hashIndex);
@@ -875,7 +873,7 @@ function hookNameOfHook(hookId: string): string {
   const hashIndex = hookId.indexOf("#");
   if (hashIndex <= 0 || hashIndex === hookId.length - 1) {
     throw new RangeError(
-      `hook reference must be <task>.<stage>#<hookName>, received ${JSON.stringify(hookId)}`,
+      `hook reference must be <stage>#<hookName>, received ${JSON.stringify(hookId)}`,
     );
   }
   return hookId.slice(hashIndex + 1);
@@ -897,12 +895,10 @@ function dockEdgeCorrespondenceIssues(
 ): readonly string[] {
   const issues: string[] = [];
   const derived = new Set<string>();
-  for (const pattern of entry.definition.spec.taskPatterns) {
-    for (const stage of pattern.stages) {
-      const targetName = stage.executor?.zhixuExecutorConfig?.target?.zhixu;
-      if (typeof targetName === "string") {
-        derived.add(targetName);
-      }
+  for (const stage of entry.definition.spec.stages) {
+    const targetName = stage.executor?.zhixuExecutorConfig?.target?.zhixu;
+    if (typeof targetName === "string") {
+      derived.add(targetName);
     }
   }
   const declared = entry.dockEdges ?? [];

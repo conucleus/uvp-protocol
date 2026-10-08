@@ -847,11 +847,11 @@ export const demoZhixuDetail: ZhixuDetailDTO = {
       title: "资金保障秩序",
       desc: "对接外部付款凭证、担保证明或资金适配器证明；不处理资金。",
       inputs: [
-        { portName: "payment_evidence", label: "资金条件确认", hook: "funding.intake#EXECUTE" }
+        { portName: "payment_evidence", label: "资金条件确认", hook: "intake#EXECUTE" }
       ],
       outputs: [
-        { portName: "guarantee_proof", label: "担保证明", signal: "guarantor::funding.escrow.guarantee" },
-        { portName: "adapter_proof", label: "适配器证明", signal: "adapter::funding.escrow.backing" }
+        { portName: "guarantee_proof", label: "担保证明", signal: "guarantor::escrow.guarantee" },
+        { portName: "adapter_proof", label: "适配器证明", signal: "adapter::escrow.backing" }
       ],
       status: "connected"
     },
@@ -861,11 +861,11 @@ export const demoZhixuDetail: ZhixuDetailDTO = {
       title: "物流交付秩序",
       desc: "对接报关、装船、到港和入仓节点。",
       inputs: [
-        { portName: "dispatch", label: "报关完成", hook: "logistics.intake#EXECUTE" }
+        { portName: "dispatch", label: "报关完成", hook: "intake#EXECUTE" }
       ],
       outputs: [
-        { portName: "bill_of_lading", label: "提单", signal: "carrier::logistics.transit.bl" },
-        { portName: "warehouse_receipt", label: "入仓凭证", signal: "warehouse::logistics.arrival.receipt" }
+        { portName: "bill_of_lading", label: "提单", signal: "carrier::transit.bl" },
+        { portName: "warehouse_receipt", label: "入仓凭证", signal: "warehouse::arrival.receipt" }
       ],
       status: "available"
     },
@@ -875,11 +875,11 @@ export const demoZhixuDetail: ZhixuDetailDTO = {
       title: "检验验收秩序",
       desc: "对接第三方检验、买方验收和补证请求。",
       inputs: [
-        { portName: "amend", label: "补证", hook: "inspection.review#AMEND" }
+        { portName: "amend", label: "补证", hook: "review#AMEND" }
       ],
       outputs: [
-        { portName: "inspection_report", label: "检验报告", signal: "inspector::inspection.review.report" },
-        { portName: "acceptance", label: "验收单", signal: "buyer::inspection.review.acceptance" }
+        { portName: "inspection_report", label: "检验报告", signal: "inspector::review.report" },
+        { portName: "acceptance", label: "验收单", signal: "buyer::review.acceptance" }
       ],
       status: "available"
     },
@@ -890,7 +890,7 @@ export const demoZhixuDetail: ZhixuDetailDTO = {
       desc: "对接争议暂停、双方补证和裁定结果。",
       inputs: [],
       outputs: [
-        { portName: "ruling", label: "裁定", signal: "arbiter::dispute.hearing.ruling" }
+        { portName: "ruling", label: "裁定", signal: "arbiter::hearing.ruling" }
       ],
       status: "planned"
     }

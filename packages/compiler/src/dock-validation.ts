@@ -575,7 +575,7 @@ export function validateUnresolvedDockRouteDeclarations(
           continue;
         }
         if (typeof binding.hookId !== "string" || !binding.hookId.includes("#")) {
-          issues.push(`${bindingPath}.hookId must be a full hook identifier <task>.<stage>#<channel>`);
+          issues.push(`${bindingPath}.hookId must be a full hook identifier <stage>#<channel>`);
         }
         if (!isPortName(binding.port)) {
           issues.push(`${bindingPath}.port must match ^[a-z][a-z0-9_]{0,31}$`);

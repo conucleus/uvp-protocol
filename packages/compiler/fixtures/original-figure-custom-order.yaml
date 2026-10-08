@@ -21,197 +21,195 @@ spec:
     id: figure-studio-nucleus
     params:
       category: original-character-physicalization
-  taskPatterns:
-    - name: figure
-      stages:
-        - name: brief
-          source: client
-          # BEGIN 为自发种子入口钩子（uvp-core 659a388 物化门：零 hook 阶段
-          # 在链上永不可物化、sendSignals 无钩子可挂）。
-          receiveSignals:
-            BEGIN: "client::figure.brief.seed"
-          sendSignals: [{ name: "cmp" }, { name: "cxl" }, { name: "err" }, { name: "seed" }]
-          fileResources:
-            brief_template:
-              fileType: local
-              localFile:
-                path: "./fixtures/figure/brief-template.json"
-          executor:
-            supplierType: individual
-            supplierID: "{{ .client_subject_uid }}"
+  stages:
+    - name: brief
+      source: client
+      # BEGIN 为自发种子入口钩子（uvp-core 659a388 物化门：零 hook 阶段
+      # 在链上永不可物化、sendSignals 无钩子可挂）。
+      receiveSignals:
+        BEGIN: "client::brief.seed"
+      sendSignals: [{ name: "cmp" }, { name: "cxl" }, { name: "err" }, { name: "seed" }]
+      fileResources:
+        brief_template:
+          fileType: local
+          localFile:
+            path: "./fixtures/figure/brief-template.json"
+      executor:
+        supplierType: individual
+        supplierID: "{{ .client_subject_uid }}"
 
-        - name: license_review
-          source: platform
-          receiveSignals:
-            BRIEF_READY: "client::figure.brief.cmp"
-          sendSignals: [{ name: "pass" }, { name: "reject" }, { name: "err" }]
-          fileResources:
-            originality_policy:
-              fileType: local
-              localFile:
-                path: "./fixtures/figure/originality-policy.json"
-          executor:
-            supplierType: organization
-            supplierID: "{{ .platform_ip_review_uid }}"
+    - name: license_review
+      source: platform
+      receiveSignals:
+        BRIEF_READY: "client::brief.cmp"
+      sendSignals: [{ name: "pass" }, { name: "reject" }, { name: "err" }]
+      fileResources:
+        originality_policy:
+          fileType: local
+          localFile:
+            path: "./fixtures/figure/originality-policy.json"
+      executor:
+        supplierType: organization
+        supplierID: "{{ .platform_ip_review_uid }}"
 
-        - name: supplier_selection
-          source: platform
-          receiveSignals:
-            LICENSE_PASS: "platform::figure.license_review.pass"
-          selectedStages:
-            - figure.concept_sheet
-            - figure.sculpt_model
-            - figure.printability_check
-            - figure.prototype_print
-            - figure.paint_sample
-            - figure.qa_review
-            - figure.pack_ship
-          sendSignals: [{ name: "cmp" }, { name: "err" }]
-          fileResources:
-            supplier_requirements:
-              fileType: local
-              localFile:
-                path: "./fixtures/figure/supplier-requirements.json"
-          executor:
-            supplierType: organization
-            supplierID: "{{ .platform_operator_uid }}"
+    - name: supplier_selection
+      source: platform
+      receiveSignals:
+        LICENSE_PASS: "platform::license_review.pass"
+      selectedStages:
+        - concept_sheet
+        - sculpt_model
+        - printability_check
+        - prototype_print
+        - paint_sample
+        - qa_review
+        - pack_ship
+      sendSignals: [{ name: "cmp" }, { name: "err" }]
+      fileResources:
+        supplier_requirements:
+          fileType: local
+          localFile:
+            path: "./fixtures/figure/supplier-requirements.json"
+      executor:
+        supplierType: organization
+        supplierID: "{{ .platform_operator_uid }}"
 
-        - name: concept_sheet
-          source: artist
-          receiveSignals:
-            SUPPLIERS_READY: "platform::figure.supplier_selection.cmp"
-          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
-          fileResources:
-            concept_requirements:
-              fileType: local
-              localFile:
-                path: "./fixtures/figure/concept-requirements.json"
-          executor:
-            supplierType: individual
-            supplierID: "{{ .concept_artist_uid }}"
+    - name: concept_sheet
+      source: artist
+      receiveSignals:
+        SUPPLIERS_READY: "platform::supplier_selection.cmp"
+      sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
+      fileResources:
+        concept_requirements:
+          fileType: local
+          localFile:
+            path: "./fixtures/figure/concept-requirements.json"
+      executor:
+        supplierType: individual
+        supplierID: "{{ .concept_artist_uid }}"
 
-        - name: concept_approval
-          source: client
-          receiveSignals:
-            CONCEPT_READY: "artist::figure.concept_sheet.cmp"
-          sendSignals: [{ name: "pass" }, { name: "reject" }, { name: "err" }]
-          executor:
-            supplierType: individual
-            supplierID: "{{ .client_subject_uid }}"
+    - name: concept_approval
+      source: client
+      receiveSignals:
+        CONCEPT_READY: "artist::concept_sheet.cmp"
+      sendSignals: [{ name: "pass" }, { name: "reject" }, { name: "err" }]
+      executor:
+        supplierType: individual
+        supplierID: "{{ .client_subject_uid }}"
 
-        - name: sculpt_model
-          source: sculptor
-          receiveSignals:
-            CONCEPT_APPROVED: "client::figure.concept_approval.pass"
-          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
-          fileResources:
-            sculpt_delivery_spec:
-              fileType: local
-              localFile:
-                path: "./fixtures/figure/sculpt-delivery-spec.json"
-          executor:
-            supplierType: individual
-            supplierID: "{{ .sculptor_uid }}"
+    - name: sculpt_model
+      source: sculptor
+      receiveSignals:
+        CONCEPT_APPROVED: "client::concept_approval.pass"
+      sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
+      fileResources:
+        sculpt_delivery_spec:
+          fileType: local
+          localFile:
+            path: "./fixtures/figure/sculpt-delivery-spec.json"
+      executor:
+        supplierType: individual
+        supplierID: "{{ .sculptor_uid }}"
 
-        - name: printability_check
-          source: printer
-          receiveSignals:
-            SCULPT_READY: "sculptor::figure.sculpt_model.cmp"
-          sendSignals: [{ name: "pass" }, { name: "fail" }, { name: "err" }]
-          fileResources:
-            printability_checklist:
-              fileType: local
-              localFile:
-                path: "./fixtures/figure/printability-checklist.json"
-          executor:
-            supplierType: organization
-            supplierID: "{{ .print_shop_uid }}"
+    - name: printability_check
+      source: printer
+      receiveSignals:
+        SCULPT_READY: "sculptor::sculpt_model.cmp"
+      sendSignals: [{ name: "pass" }, { name: "fail" }, { name: "err" }]
+      fileResources:
+        printability_checklist:
+          fileType: local
+          localFile:
+            path: "./fixtures/figure/printability-checklist.json"
+      executor:
+        supplierType: organization
+        supplierID: "{{ .print_shop_uid }}"
 
-        - name: prototype_print
-          source: printer
-          receiveSignals:
-            PRINTABILITY_PASS: "printer::figure.printability_check.pass"
-          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
-          fileResources:
-            prototype_photo_manifest:
-              fileType: local
-              localFile:
-                path: "./fixtures/figure/prototype-photo-manifest.json"
-          executor:
-            supplierType: organization
-            supplierID: "{{ .print_shop_uid }}"
+    - name: prototype_print
+      source: printer
+      receiveSignals:
+        PRINTABILITY_PASS: "printer::printability_check.pass"
+      sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
+      fileResources:
+        prototype_photo_manifest:
+          fileType: local
+          localFile:
+            path: "./fixtures/figure/prototype-photo-manifest.json"
+      executor:
+        supplierType: organization
+        supplierID: "{{ .print_shop_uid }}"
 
-        - name: paint_sample
-          source: painter
-          receiveSignals:
-            PROTOTYPE_READY: "printer::figure.prototype_print.cmp"
-          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
-          fileResources:
-            paint_style_guide:
-              fileType: local
-              localFile:
-                path: "./fixtures/figure/paint-style-guide.json"
-          executor:
-            supplierType: individual
-            supplierID: "{{ .painter_uid }}"
+    - name: paint_sample
+      source: painter
+      receiveSignals:
+        PROTOTYPE_READY: "printer::prototype_print.cmp"
+      sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
+      fileResources:
+        paint_style_guide:
+          fileType: local
+          localFile:
+            path: "./fixtures/figure/paint-style-guide.json"
+      executor:
+        supplierType: individual
+        supplierID: "{{ .painter_uid }}"
 
-        - name: qa_review
-          source: qa
-          receiveSignals:
-            PAINT_READY: "painter::figure.paint_sample.cmp"
-          sendSignals: [{ name: "pass" }, { name: "fail" }, { name: "err" }]
-          fileResources:
-            qa_checklist:
-              fileType: local
-              localFile:
-                path: "./fixtures/figure/qa-checklist.json"
-          executor:
-            supplierType: organization
-            supplierID: "{{ .qa_reviewer_uid }}"
+    - name: qa_review
+      source: qa
+      receiveSignals:
+        PAINT_READY: "painter::paint_sample.cmp"
+      sendSignals: [{ name: "pass" }, { name: "fail" }, { name: "err" }]
+      fileResources:
+        qa_checklist:
+          fileType: local
+          localFile:
+            path: "./fixtures/figure/qa-checklist.json"
+      executor:
+        supplierType: organization
+        supplierID: "{{ .qa_reviewer_uid }}"
 
-        - name: pack_ship
-          source: logistics
-          receiveSignals:
-            QA_PASS: "qa::figure.qa_review.pass"
-          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
-          fileResources:
-            packing_manifest:
-              fileType: local
-              localFile:
-                path: "./fixtures/figure/packing-manifest.json"
-          executor:
-            supplierType: organization
-            supplierID: "{{ .logistics_uid }}"
+    - name: pack_ship
+      source: logistics
+      receiveSignals:
+        QA_PASS: "qa::qa_review.pass"
+      sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
+      fileResources:
+        packing_manifest:
+          fileType: local
+          localFile:
+            path: "./fixtures/figure/packing-manifest.json"
+      executor:
+        supplierType: organization
+        supplierID: "{{ .logistics_uid }}"
 
-        - name: final_acceptance
-          source: client
-          receiveSignals:
-            DELIVERED: "logistics::figure.pack_ship.cmp"
-          sendSignals: [{ name: "pass" }, { name: "reject" }, { name: "err" }]
-          executor:
-            supplierType: individual
-            supplierID: "{{ .client_subject_uid }}"
+    - name: final_acceptance
+      source: client
+      receiveSignals:
+        DELIVERED: "logistics::pack_ship.cmp"
+      sendSignals: [{ name: "pass" }, { name: "reject" }, { name: "err" }]
+      executor:
+        supplierType: individual
+        supplierID: "{{ .client_subject_uid }}"
 
-        - name: rework
-          source: platform
-          receiveSignals:
-            CONCEPT_REJECTED: "client::figure.concept_approval.reject"
-            PRINT_FAILED: "printer::figure.printability_check.fail"
-            QA_FAILED: "qa::figure.qa_review.fail"
-            BUYER_REJECTED: "client::figure.final_acceptance.reject"
-          selectedStages:
-            - figure.concept_sheet
-            - figure.sculpt_model
-            - figure.printability_check
-            - figure.prototype_print
-            - figure.paint_sample
-            - figure.qa_review
-          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
-          fileResources:
-            rework_policy:
-              fileType: local
-              localFile:
-                path: "./fixtures/figure/rework-policy.json"
-          executor:
-            supplierType: organization
-            supplierID: "{{ .platform_operator_uid }}"
+    - name: rework
+      source: platform
+      receiveSignals:
+        CONCEPT_REJECTED: "client::concept_approval.reject"
+        PRINT_FAILED: "printer::printability_check.fail"
+        QA_FAILED: "qa::qa_review.fail"
+        BUYER_REJECTED: "client::final_acceptance.reject"
+      selectedStages:
+        - concept_sheet
+        - sculpt_model
+        - printability_check
+        - prototype_print
+        - paint_sample
+        - qa_review
+      sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
+      fileResources:
+        rework_policy:
+          fileType: local
+          localFile:
+            path: "./fixtures/figure/rework-policy.json"
+      executor:
+        supplierType: organization
+        supplierID: "{{ .platform_operator_uid }}"

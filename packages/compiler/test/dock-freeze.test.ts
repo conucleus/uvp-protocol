@@ -152,16 +152,14 @@ test("artifact validators reject stale dock roots with structured issues", () =>
 test("core linker errors retain stable code, path, and target reference", () => {
   const brokenParent = structuredClone(fixture.parentDefinition) as unknown as {
     spec: {
-      taskPatterns: Array<{
-        stages: Array<{
-          executor?: {
-            zhixuExecutorConfig?: { inputMap: Record<string, string> };
-          };
-        }>;
+      stages: Array<{
+        executor?: {
+          zhixuExecutorConfig?: { inputMap: Record<string, string> };
+        };
       }>;
     };
   };
-  const dockStage = brokenParent.spec.taskPatterns[1]?.stages[0];
+  const dockStage = brokenParent.spec.stages[1];
   assert.ok(dockStage?.executor?.zhixuExecutorConfig, "fixture route missing");
   // 本地形状保持合法（EXECUTE 是真实通道、恰一条绑定满足 D010 出生锚），
   // 让 link 期 D009（目标接口没有该 input 端口）成为首个错误。
@@ -194,17 +192,15 @@ test("D020 mode-not-allowed and D003 target-shape errors surface from the core l
   // 模式本地允许 0..N 条 input 绑定，故不会先触发 D010）。
   const wrongMode = structuredClone(fixture.parentDefinition) as unknown as ZhixuDefinition & {
     spec: {
-      taskPatterns: Array<{
-        stages: Array<{
-          name: string;
-          executor?: {
-            zhixuExecutorConfig?: { order: { mode: string } };
-          };
-        }>;
+      stages: Array<{
+        name: string;
+        executor?: {
+          zhixuExecutorConfig?: { order: { mode: string } };
+        };
       }>;
     };
   };
-  const manufactureStage = wrongMode.spec.taskPatterns[1]!.stages[0]!;
+  const manufactureStage = wrongMode.spec.stages[1]!;
   (manufactureStage.executor!.zhixuExecutorConfig!.order as { mode: string }).mode = "existing";
   assert.throws(
     () =>
@@ -224,16 +220,14 @@ test("D020 mode-not-allowed and D003 target-shape errors surface from the core l
   // D003：target.zhixu 形态必须是目标定义的内容派生 uid（zx-<32hex>）。
   const badName = structuredClone(fixture.parentDefinition) as unknown as ZhixuDefinition & {
     spec: {
-      taskPatterns: Array<{
-        stages: Array<{
-          executor?: {
-            zhixuExecutorConfig?: { target: { zhixu: string } };
-          };
-        }>;
+      stages: Array<{
+        executor?: {
+          zhixuExecutorConfig?: { target: { zhixu: string } };
+        };
       }>;
     };
   };
-  badName.spec.taskPatterns[1]!.stages[0]!.executor!.zhixuExecutorConfig!.target.zhixu =
+  badName.spec.stages[1]!.executor!.zhixuExecutorConfig!.target.zhixu =
     "Payment-Zhixu";
   assert.throws(
     () => compileZhixuHookPlan(badName as unknown as ZhixuDefinition, fixture.resolutionManifest),

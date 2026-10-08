@@ -34,29 +34,24 @@ const admissionZhixu = (validWhen: string): ZhixuDefinition => ({
   spec: {
     platform: { type: "cloud" },
     nucleation: { id: "core" },
-    taskPatterns: [
+    stages: [
       {
-        name: "flow",
-        stages: [
-          {
-            // 自发种子阶段：BEGIN 自收 seed 物化自身（静态 executor 钩子）。
-            name: "gate",
-            source: "buyer",
-            receiveSignals: { BEGIN: "buyer::flow.gate.seed" },
-            sendSignals: [{ name: "seed" }, { name: "ready" }],
-            executor: { supplierType: "organization", supplierID: "gate-org" },
-          },
-          {
-            name: "work",
-            source: "buyer",
-            receiveSignals: { RUN: "buyer::flow.gate.ready" },
-            sendSignals: [
-              { name: "cmp", validWhen },
-              { name: "cmp_err" },
-            ],
-            executor: { supplierType: "organization", supplierID: "work-org" },
-          },
+        // 自发种子阶段：BEGIN 自收 seed 物化自身（静态 executor 钩子）。
+        name: "gate",
+        source: "buyer",
+        receiveSignals: { BEGIN: "buyer::gate.seed" },
+        sendSignals: [{ name: "seed" }, { name: "ready" }],
+        executor: { supplierType: "organization", supplierID: "gate-org" },
+      },
+      {
+        name: "work",
+        source: "buyer",
+        receiveSignals: { RUN: "buyer::gate.ready" },
+        sendSignals: [
+          { name: "cmp", validWhen },
+          { name: "cmp_err" },
         ],
+        executor: { supplierType: "organization", supplierID: "work-org" },
       },
     ],
   },
@@ -85,13 +80,13 @@ function firstAdmission(
 
 test("declared validWhen compiles into hook_plan admissions; unconditional entries do not", () => {
   const plan = compileZhixuHookPlan(
-    admissionZhixu("buyer::flow.gate.seed & ~(flow.work.cmp_err +14d)"),
+    admissionZhixu("buyer::gate.seed & ~(work.cmp_err +14d)"),
   );
 
   assert.equal(plan.admissions.length, 1);
   const admission = plan.admissions[0] as CompiledHookPlanAdmission;
-  assert.equal(admission.stageIdentifier, "flow.work");
-  assert.equal(admission.signalName, "flow.work.cmp");
+  assert.equal(admission.stageIdentifier, "work");
+  assert.equal(admission.signalName, "work.cmp");
   assert.deepEqual(
     admission.dependencies.map((dependency) => [
       dependency.kind,
@@ -99,23 +94,23 @@ test("declared validWhen compiles into hook_plan admissions; unconditional entri
       dependency.signalName,
     ]),
     [
-      ["negative", "buyer", "flow.work.cmp_err"],
-      ["positive", "buyer", "flow.gate.seed"],
+      ["negative", "buyer", "work.cmp_err"],
+      ["positive", "buyer", "gate.seed"],
     ],
   );
 });
 
 test("onchain admission entries carry the fact-key identity triple", () => {
   const onchain = compileZhixuOnchainHookPlan(
-    admissionZhixu("buyer::flow.gate.seed & ~(flow.work.cmp_err +14d)"),
+    admissionZhixu("buyer::gate.seed & ~(work.cmp_err +14d)"),
   );
 
   const admission = firstAdmission(onchain.admissions);
-  const expectedSignalId = onchainSignalId("flow.work.cmp");
+  const expectedSignalId = onchainSignalId("work.cmp");
   const expectedSourceId = onchainSourceId("buyer");
   assert.equal(admission.admissionId, onchainSignalKey(expectedSourceId, expectedSignalId));
   assert.equal(admission.signalId, expectedSignalId);
-  assert.equal(admission.stageId, onchainStageId("flow.work"));
+  assert.equal(admission.stageId, onchainStageId("work"));
   assert.deepEqual(
     admission.instructions.map((instruction) => instruction.op),
     ["SIGNAL", "SIGNAL", "DELAY", "NOT", "AND"],
@@ -123,14 +118,14 @@ test("onchain admission entries carry the fact-key identity triple", () => {
 });
 
 test("hook-profile-illegal but filter-legal decaying positions compile: bare root, OR branch", () => {
-  const bareRoot = compileZhixuOnchainHookPlan(admissionZhixu("buyer::~(flow.work.cmp_err +14d)"));
+  const bareRoot = compileZhixuOnchainHookPlan(admissionZhixu("buyer::~(work.cmp_err +14d)"));
   assert.deepEqual(
     firstAdmission(bareRoot.admissions).instructions.map((i) => i.op),
     ["SIGNAL", "DELAY", "NOT"],
   );
 
   const orBranch = compileZhixuOnchainHookPlan(
-    admissionZhixu("buyer::flow.gate.seed | ~(flow.work.cmp_err +14d)"),
+    admissionZhixu("buyer::gate.seed | ~(work.cmp_err +14d)"),
   );
   assert.deepEqual(
     firstAdmission(orBranch.admissions).instructions.map((i) => i.op),
@@ -142,7 +137,7 @@ test("delay operands wrapping a decaying veto are nested delays and rejected in 
   assert.throws(
     () =>
       compileZhixuOnchainHookPlan(
-        admissionZhixu("buyer::(flow.gate.seed & ~(flow.work.cmp_err +14d)) +5s"),
+        admissionZhixu("buyer::(gate.seed & ~(work.cmp_err +14d)) +5s"),
       ),
     (error: unknown) =>
       error instanceof HookPlanCompilationError && /no nested delays/.test(error.message),
@@ -151,7 +146,7 @@ test("delay operands wrapping a decaying veto are nested delays and rejected in 
 
 test("admission registration args reuse the hook slot shape with flag 8 inside hooksHash", () => {
   const onchain = compileZhixuOnchainHookPlan(
-    admissionZhixu("buyer::flow.gate.seed & ~(flow.work.cmp_err +14d)"),
+    admissionZhixu("buyer::gate.seed & ~(work.cmp_err +14d)"),
   );
   const args = toSolidityRegisterPlanArgs(onchain);
   const admission = firstAdmission(onchain.admissions);
@@ -178,7 +173,7 @@ function admissionIssuesOf(
   mutate: (admission: OnchainCompiledAdmission) => OnchainCompiledAdmission,
 ): readonly string[] {
   const onchain = compileZhixuOnchainHookPlan(
-    admissionZhixu("buyer::flow.gate.seed & ~(flow.work.cmp_err +14d)"),
+    admissionZhixu("buyer::gate.seed & ~(work.cmp_err +14d)"),
   );
   const mutated = {
     ...onchain,
@@ -191,7 +186,7 @@ test("filter-profile mirror rejects NOT vocabulary violations", () => {
   const issues = admissionIssuesOf((admission) => ({
     ...admission,
     instructions: [
-      seedInstruction("flow.work.cmp_err"),
+      seedInstruction("work.cmp_err"),
       { op: "DELAY", delaySeconds: 14 },
       { op: "NOT" },
       { op: "NOT" },
@@ -204,7 +199,7 @@ test("filter-profile mirror keeps the 30d delay cap", () => {
   const issues = admissionIssuesOf((admission) => ({
     ...admission,
     instructions: [
-      seedInstruction("flow.work.cmp_err"),
+      seedInstruction("work.cmp_err"),
       { op: "DELAY", delaySeconds: 30 * 24 * 60 * 60 + 1 },
     ],
   }));
@@ -215,8 +210,8 @@ test("filter-profile mirror rejects roots that do not leave a single stack item"
   const issues = admissionIssuesOf((admission) => ({
     ...admission,
     instructions: [
-      seedInstruction("flow.work.cmp_err"),
-      seedInstruction("flow.gate.seed"),
+      seedInstruction("work.cmp_err"),
+      seedInstruction("gate.seed"),
     ],
   }));
   assert.match(issues.join("; "), /must leave exactly one stack item/);
@@ -252,25 +247,20 @@ function loaderCaseZhixu(
     spec: {
       platform: { type: "cloud" },
       nucleation: { id: "core" },
-      taskPatterns: [
+      stages: [
         {
-          name: "flow",
-          stages: [
-            {
-              name: "gate",
-              source: "buyer",
-              receiveSignals: { BEGIN: "buyer::flow.gate.seed" },
-              sendSignals: [{ name: "seed" }],
-              executor: { supplierType: "organization", supplierID: "gate-org" },
-            },
-            {
-              name: "work",
-              source: "buyer",
-              receiveSignals: { RUN: "buyer::flow.gate.ready" },
-              sendSignals,
-              executor: { supplierType: "organization", supplierID: "work-org" },
-            },
-          ],
+          name: "gate",
+          source: "buyer",
+          receiveSignals: { BEGIN: "buyer::gate.seed" },
+          sendSignals: [{ name: "seed" }],
+          executor: { supplierType: "organization", supplierID: "gate-org" },
+        },
+        {
+          name: "work",
+          source: "buyer",
+          receiveSignals: { RUN: "buyer::gate.ready" },
+          sendSignals,
+          executor: { supplierType: "organization", supplierID: "work-org" },
         },
       ],
     },
@@ -302,7 +292,7 @@ test("sendSignals entries are a closed key set at the loader boundary", () => {
 
 test("compiler-side rejections mirror core: self-reference and blank validWhen", () => {
   assert.throws(
-    () => compileZhixuHookPlan(admissionZhixu("buyer::flow.work.cmp & flow.gate.seed")),
+    () => compileZhixuHookPlan(admissionZhixu("buyer::work.cmp & gate.seed")),
     (error: unknown) =>
       error instanceof HookPlanCompilationError && /D028/.test(error.message),
   );

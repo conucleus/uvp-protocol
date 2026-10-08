@@ -38,7 +38,7 @@ export interface ZhixuDefinition {
       readonly id: string;
       readonly params?: Record<string, string>;
     };
-    readonly taskPatterns: readonly ZhixuTaskPattern[];
+    readonly stages: readonly ZhixuStage[];
     /** 目标侧公开的具名对接接口 map（接口名 = key）。 */
     readonly dockInterface?: DockInterfaceSource;
   };
@@ -53,11 +53,6 @@ export interface ZhixuPlatform {
   readonly network?: string;
   readonly version?: string;
   readonly params?: Record<string, string>;
-}
-
-export interface ZhixuTaskPattern {
-  readonly name: string;
-  readonly stages: readonly ZhixuStage[];
 }
 
 export interface ZhixuStage {
@@ -102,9 +97,9 @@ export type DockInterfaceSource = Record<string, DockInterfaceSpecSource>;
 export interface DockInterfaceSpecSource {
   /** {new, existing} 的非空子集，无重复。 */
   readonly orderModes: readonly DockOrderMode[];
-  /** port -> hook 引用（`<task>.<stage>#<receiveHookName>`）；省略 = 空集合。 */
+  /** port -> hook 引用（`<stage>#<receiveHookName>`）；省略 = 空集合。 */
   readonly inputs?: Record<string, { readonly hook: string }>;
-  /** port -> canonical signal（`<source>::<task>.<stage>.<signal>`）；省略 = 空集合。 */
+  /** port -> canonical signal（`<source>::<stage>.<signal>`）；省略 = 空集合。 */
   readonly outputs?: Record<string, { readonly signal: string }>;
 }
 
@@ -234,12 +229,12 @@ export interface DockInterfaceArtifactPortInput {
   readonly port: string;
   readonly stageIdentifier: string;
   readonly hookName: string;
-  /** `<task>.<stage>#<receiveHookName>` 原文（即 leaf preimage 的 hookRef）。 */
+  /** `<stage>#<receiveHookName>` 原文（即 leaf preimage 的 hookRef）。 */
   readonly hookId: string;
   readonly canonicalInputSignal: string;
   readonly canonicalInputSignalHash: HexString;
   readonly source: string;
-  /** 运行期投递寻址数据（keccak(source) / keccak(task.stage.signal)），随产物携带但不入叶哈希。 */
+  /** 运行期投递寻址数据（keccak(source) / keccak(stage.signal)），随产物携带但不入叶哈希。 */
   readonly sourceId: HexString;
   readonly signalId: HexString;
   readonly leafHash: HexString;
@@ -247,7 +242,7 @@ export interface DockInterfaceArtifactPortInput {
 
 export interface DockInterfaceArtifactPortOutput {
   readonly port: string;
-  /** `<source>::<task>.<stage>.<signal>` 原文（即 leaf preimage 的 canonicalSignal）。 */
+  /** `<source>::<stage>.<signal>` 原文（即 leaf preimage 的 canonicalSignal）。 */
   readonly canonicalOutputSignal: string;
   readonly canonicalOutputSignalHash: HexString;
   readonly source: string;
@@ -353,7 +348,7 @@ export interface UnresolvedDockRouteV1 {
   readonly interfaceName: string;
   readonly orderMode: DockOrderMode;
   readonly inputBindings: readonly {
-    /** 本地被绑定通道的完整 hook 标识 `<task>.<stage>#<receiveHookName>`。 */
+    /** 本地被绑定通道的完整 hook 标识 `<stage>#<receiveHookName>`。 */
     readonly hookId: string;
     /** 目标 input 端口名（声明值）。 */
     readonly port: string;
@@ -405,7 +400,7 @@ export interface HookPlanArtifact {
   /**
    * 发射适格面（core hook_plan 产物顶层 admissions 的逐字段镜像）：仅声明
    * validWhen 的 sendSignals 产条目，signalName 用规范化全名
-   * （task.stage.signal）；无条件信号不产条目，数组恒在场（可为空）。
+   * （stage.signal）；无条件信号不产条目，数组恒在场（可为空）。
    */
   readonly admissions: readonly CompiledHookPlanAdmission[];
   /**
@@ -442,7 +437,7 @@ export interface HookPlanExecutorRoute {
 
 /**
  * hook_plan 产物 admissions 条目（core 权威产出，与 hook 条目同源形态）：
- * signalName = 规范化全名（task.stage.signal），dependencies 与 hook 依赖
+ * signalName = 规范化全名（stage.signal），dependencies 与 hook 依赖
  * 同源。表达式的编译期拒绝（D026-D031：空名/空白 validWhen/自引用/出生
  * 锚/订阅原子/重复）由 core 收口，这里是链轨承诺层的消费面。
  */

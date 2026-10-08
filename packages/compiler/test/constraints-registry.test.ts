@@ -172,7 +172,7 @@ const MINIMAL_ZHIXU_YAML = [
   "metadata:",
   "  name: constraints-probe",
   "spec:",
-  "  taskPatterns: []",
+  "  stages: []",
 ].join("\n");
 
 const FIXTURE_PATH = join(__dirname, "..", "fixtures", "uvp-update-zhixu-v2.yaml");
@@ -270,7 +270,7 @@ const TS_PROBES = new Map<string, Probe>([
       dependencies: Array<{ kind: string; source: string; signalName: string }>;
     }>;
     for (let i = 0; i < 1025; i += 1) {
-      hooks[0]!.dependencies.push({ kind: "positive", source: "probe", signalName: `task.stage.s${i}` });
+      hooks[0]!.dependencies.push({ kind: "positive", source: "probe", signalName: `stage.s${i}` });
     }
     // 同步重建 dependencyIndex（key = `${source}::${signalName}` → hookIds），
     // 否则 artifact 形状校验会先于依赖数 preflight 报错。

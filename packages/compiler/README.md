@@ -138,7 +138,7 @@ Stable ids use raw Keccak-256:
 - `hookId = keccak256(stageIdentifier#hookName)`;
 - `stageId = keccak256(stageIdentifier)`;
 - `sourceId = keccak256(source)`;
-- `signalId = keccak256(task.stage.signal)`;
+- `signalId = keccak256(stage.signal)`;
 - `signalKey = keccak256(abi.encodePacked(sourceId, signalId))`;
 - `selectorStageId` / `targetStageId = keccak256(stageIdentifier)`.
 

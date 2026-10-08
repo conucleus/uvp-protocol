@@ -98,40 +98,40 @@ contract UVPDockingModuleAttachTest {
     bytes32 private constant EXECUTOR_PATCH_MODE_ASSIGN = bytes32("assign");
 
     // 父侧 stage/hook。
-    bytes32 private constant PARENT_START_HOOK = keccak256("attach.parent.start#START");
-    bytes32 private constant PARENT_STAGE = keccak256("attach.parent.start");
+    bytes32 private constant PARENT_START_HOOK = keccak256("start#START");
+    bytes32 private constant PARENT_STAGE = keccak256("start");
     bytes32 private constant SIGNAL_START = keccak256("start");
-    bytes32 private constant PARENT_EXEC_HOOK = keccak256("attach.parent.exec#EXECUTE");
-    bytes32 private constant PARENT_EXEC_STAGE = keccak256("attach.parent.exec");
+    bytes32 private constant PARENT_EXEC_HOOK = keccak256("exec#EXECUTE");
+    bytes32 private constant PARENT_EXEC_STAGE = keccak256("exec");
     bytes32 private constant SIGNAL_EXEC = keccak256("exec");
-    bytes32 private constant PARENT_DYN_HOOK = keccak256("attach.parent.dyn#SELECT");
-    bytes32 private constant PARENT_DYN_STAGE = keccak256("attach.parent.dyn");
+    bytes32 private constant PARENT_DYN_HOOK = keccak256("dyn#SELECT");
+    bytes32 private constant PARENT_DYN_STAGE = keccak256("dyn");
     bytes32 private constant SIGNAL_DYN = keccak256("select");
 
     // 目标定义身份与具名接口（existing-only：mask=2）。
     bytes32 private constant TARGET_UID_ID = keccak256("zx-b0ba5e11e77a2c0ffee0dd5eed1c0deb0a");
     bytes32 private constant INTERFACE_NAME_ID = keccak256("evidence");
-    bytes32 private constant TARGET_BIRTH_HOOK = keccak256("observe.pay#MINT");
-    bytes32 private constant TARGET_STAGE = keccak256("observe.pay");
+    bytes32 private constant TARGET_BIRTH_HOOK = keccak256("pay#MINT");
+    bytes32 private constant TARGET_STAGE = keccak256("pay");
     bytes32 private constant TARGET_BIRTH_SOURCE = keccak256("observe");
-    bytes32 private constant TARGET_BIRTH_SIGNAL = keccak256("observe.pay.born");
+    bytes32 private constant TARGET_BIRTH_SIGNAL = keccak256("pay.born");
     // output 事实（attach 前已成立→回填；接口经 done/progress 两端口暴露）。
     bytes32 private constant TARGET_SOURCE = keccak256("payroll");
-    bytes32 private constant TARGET_SIGNAL = keccak256("observe.pay.paid");
+    bytes32 private constant TARGET_SIGNAL = keccak256("pay.paid");
     // input 交付事实（经 amend 端口写入既有单）。
     bytes32 private constant TARGET_INPUT_SOURCE = keccak256("audit");
-    bytes32 private constant TARGET_INPUT_SIGNAL = keccak256("observe.pay.amend");
-    bytes32 private constant TARGET_RECEIVE_HOOK = keccak256("observe.pay#RECEIVE");
+    bytes32 private constant TARGET_INPUT_SIGNAL = keccak256("pay.amend");
+    bytes32 private constant TARGET_RECEIVE_HOOK = keccak256("pay#RECEIVE");
     // executor 同意腿的可 patch 阶段（无 order-trigger hook）。
-    bytes32 private constant TARGET_CONTROL_STAGE = keccak256("observe.control");
-    bytes32 private constant TARGET_CONTROL_HOOK = keccak256("observe.control#WATCH");
+    bytes32 private constant TARGET_CONTROL_STAGE = keccak256("control");
+    bytes32 private constant TARGET_CONTROL_HOOK = keccak256("control#WATCH");
     bytes32 private constant TARGET_CONTROL_SOURCE = keccak256("control");
-    bytes32 private constant TARGET_CONTROL_SIGNAL = keccak256("observe.control.tick");
+    bytes32 private constant TARGET_CONTROL_SIGNAL = keccak256("control.tick");
     // 输出镜像的本地事实键。
     bytes32 private constant LOCAL_MAPPED_SOURCE = keccak256("recycler");
-    bytes32 private constant LOCAL_MAPPED_SIGNAL = keccak256("attach.parent.exec.paid");
+    bytes32 private constant LOCAL_MAPPED_SIGNAL = keccak256("exec.paid");
     bytes32 private constant LOCAL_PROGRESS_SOURCE = keccak256("recycler");
-    bytes32 private constant LOCAL_PROGRESS_SIGNAL = keccak256("attach.parent.exec.progress");
+    bytes32 private constant LOCAL_PROGRESS_SIGNAL = keccak256("exec.progress");
 
     bytes32 private constant AMEND_PORT = keccak256("amend");
     bytes32 private constant DONE_PORT = keccak256("done");

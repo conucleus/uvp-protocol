@@ -554,12 +554,12 @@ export function outputPortLeaf(input: {
   ]);
 }
 
-/** `<source>::<task>.<stage>.<signal>` → [source, `<task>.<stage>.<signal>`]。 */
+/** `<source>::<stage>.<signal>` → [source, `<stage>.<signal>`]。 */
 export function splitCanonicalSignal(signal: string): [string, string] {
   const separator = signal.indexOf("::");
   if (separator <= 0) {
     throw new RangeError(
-      `signal must be <source>::<task>.<stage>.<signal>, received ${JSON.stringify(signal)}`,
+      `signal must be <source>::<stage>.<signal>, received ${JSON.stringify(signal)}`,
     );
   }
   return [signal.slice(0, separator), signal.slice(separator + 2)];
@@ -598,7 +598,7 @@ export function interfaceLeaf(input: {
 
 /**
  * `inputBindingHash_v2 = H(UVP_DOCK_INPUT_BINDING_V2; routeId,
- * keccak(interfaceName), keccak("<task>.<stage>#<channel>"),
+ * keccak(interfaceName), keccak("<stage>#<channel>"),
  * keccak(portName), targetSourceId, targetSignalId)`。
  */
 export function inputBindingHash(input: {

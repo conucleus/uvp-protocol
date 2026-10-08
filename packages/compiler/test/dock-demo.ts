@@ -26,53 +26,48 @@ export function dockProductionTargetDefinition(): ZhixuDefinition {
         production_service: {
           orderModes: ["new"],
           inputs: {
-            execute: { hook: "manufacturing.intake#EXECUTE" },
-            amend: { hook: "manufacturing.produce#DOCK_AMEND" },
+            execute: { hook: "intake#EXECUTE" },
+            amend: { hook: "produce#DOCK_AMEND" },
           },
           outputs: {
-            started: { signal: "factory::manufacturing.intake.str" },
-            completed: { signal: "factory::manufacturing.produce.cmp" },
+            started: { signal: "factory::intake.str" },
+            completed: { signal: "factory::produce.cmp" },
           },
         },
         production_evidence: {
           orderModes: ["existing"],
           outputs: {
             scrap_declared: {
-              signal: "factory::manufacturing.produce.scrap_created",
+              signal: "factory::produce.scrap_created",
             },
           },
         },
       },
-      taskPatterns: [
+      stages: [
         {
-          name: "manufacturing",
-          stages: [
-            {
-              name: "intake",
-              source: "factory",
-              receiveSignals: {
-                EXECUTE: "factory::manufacturing.intake.execute",
-              },
-              sendSignals: [{ name: "str" }],
-              executor: {
-                supplierType: "organization",
-                supplierID: "friction-factory",
-              },
-            },
-            {
-              name: "produce",
-              source: "factory",
-              receiveSignals: {
-                RUN: "factory::manufacturing.intake.str",
-                DOCK_AMEND: "factory::manufacturing.produce.amend",
-              },
-              sendSignals: [{ name: "cmp" }, { name: "scrap_created" }],
-              executor: {
-                supplierType: "organization",
-                supplierID: "friction-factory",
-              },
-            },
-          ],
+          name: "intake",
+          source: "factory",
+          receiveSignals: {
+            EXECUTE: "factory::intake.execute",
+          },
+          sendSignals: [{ name: "str" }],
+          executor: {
+            supplierType: "organization",
+            supplierID: "friction-factory",
+          },
+        },
+        {
+          name: "produce",
+          source: "factory",
+          receiveSignals: {
+            RUN: "factory::intake.str",
+            DOCK_AMEND: "factory::produce.amend",
+          },
+          sendSignals: [{ name: "cmp" }, { name: "scrap_created" }],
+          executor: {
+            supplierType: "organization",
+            supplierID: "friction-factory",
+          },
         },
       ],
     },
@@ -101,63 +96,53 @@ export function dockSourcingParentDefinition(targetUid: string): ZhixuDefinition
     spec: {
       platform: { type: "cloud" },
       nucleation: { id: "sourcing-core" },
-      taskPatterns: [
+      stages: [
         {
-          name: "procurement",
-          stages: [
-            {
-              name: "confirm",
-              source: "purchaser",
-              // 物化门：零 hook 阶段在链上永不可物化；seed 是执行者
-              // 自发入口信号。
-              receiveSignals: { ORDER: "purchaser::procurement.confirm.seed" },
-              sendSignals: [{ name: "cmp" }, { name: "seed" }],
-              executor: {
-                supplierType: "organization",
-                supplierID: "purchaser-app",
-              },
-            },
-          ],
+          name: "confirm",
+          source: "purchaser",
+          // 物化门：零 hook 阶段在链上永不可物化；seed 是执行者
+          // 自发入口信号。
+          receiveSignals: { ORDER: "purchaser::confirm.seed" },
+          sendSignals: [{ name: "cmp" }, { name: "seed" }],
+          executor: {
+            supplierType: "organization",
+            supplierID: "purchaser-app",
+          },
         },
         {
-          name: "sourcing",
-          stages: [
-            {
-              name: "manufacture",
-              source: "purchaser",
-              receiveSignals: {
-                EXECUTE: "purchaser::procurement.confirm.cmp",
-              },
-              sendSignals: [{ name: "str" }, { name: "cmp" }],
-              executor: {
-                supplierType: "zhixu",
-                zhixuExecutorConfig: {
-                  target: { zhixu: targetUid },
-                  interface: "production_service",
-                  order: { mode: "new" },
-                  inputMap: { EXECUTE: "execute" },
-                  signalMap: { str: "started", cmp: "completed" },
-                },
-              },
+          name: "manufacture",
+          source: "purchaser",
+          receiveSignals: {
+            EXECUTE: "purchaser::confirm.cmp",
+          },
+          sendSignals: [{ name: "str" }, { name: "cmp" }],
+          executor: {
+            supplierType: "zhixu",
+            zhixuExecutorConfig: {
+              target: { zhixu: targetUid },
+              interface: "production_service",
+              order: { mode: "new" },
+              inputMap: { EXECUTE: "execute" },
+              signalMap: { str: "started", cmp: "completed" },
             },
-            {
-              name: "source_evidence",
-              source: "recycler",
-              receiveSignals: {
-                READ: "recycler::sourcing.source_evidence.seed",
-              },
-              sendSignals: [{ name: "cmp" }, { name: "seed" }],
-              executor: {
-                supplierType: "zhixu",
-                zhixuExecutorConfig: {
-                  target: { zhixu: targetUid },
-                  interface: "production_evidence",
-                  order: { mode: "existing" },
-                  signalMap: { cmp: "scrap_declared" },
-                },
-              },
+          },
+        },
+        {
+          name: "source_evidence",
+          source: "recycler",
+          receiveSignals: {
+            READ: "recycler::source_evidence.seed",
+          },
+          sendSignals: [{ name: "cmp" }, { name: "seed" }],
+          executor: {
+            supplierType: "zhixu",
+            zhixuExecutorConfig: {
+              target: { zhixu: targetUid },
+              interface: "production_evidence",
+              order: { mode: "existing" },
+              signalMap: { cmp: "scrap_declared" },
             },
-          ],
+          },
         },
       ],
     },

@@ -559,7 +559,7 @@ test("envelope and idempotency keys match the golden vectors", () => {
 
   assert.equal(
     sourceFactSetHash([
-      canonicalSignalHash("purchaser::procurement.confirm.cmp"),
+      canonicalSignalHash("purchaser::confirm.cmp"),
     ]),
     expected.sourceFactSetHash,
   );
@@ -571,7 +571,7 @@ test("envelope and idempotency keys match the golden vectors", () => {
       localPlanId: inputs.parentPlanIdWord,
       localOrderId: expected.localOrderKey,
       localStageId: serviceRoute.local.stageKey,
-      localHookId: hookKey("sourcing.manufacture#EXECUTE"),
+      localHookId: hookKey("manufacture#EXECUTE"),
       targetPlanId: expected.targetPlanId,
       linkedOrderId: expected.linkedOrderId,
       targetPort: "execute",
@@ -596,7 +596,7 @@ test("envelope and idempotency keys match the golden vectors", () => {
       outputBindingHash: completedOutput.bindingHash,
       targetFactId: signalKey(
         interfaceNameKey("factory"),
-        interfaceNameKey("manufacturing.produce.cmp"),
+        interfaceNameKey("produce.cmp"),
       ),
     }),
     expected.outputIdempotencyKey,

@@ -334,7 +334,7 @@ function validateInstructions(
           instruction.signalId !== onchainSignalId(instruction.signalName)
         ) {
           issues.push(
-            `${prefix}.signalId must be keccak256(task.stage.signal)`,
+            `${prefix}.signalId must be keccak256(stage.signal)`,
           );
         }
         if (
@@ -560,7 +560,7 @@ function validateAdmissionInstructions(
           instruction.signalId !== onchainSignalId(instruction.signalName)
         ) {
           issues.push(
-            `${prefix}.signalId must be keccak256(task.stage.signal)`,
+            `${prefix}.signalId must be keccak256(stage.signal)`,
           );
         }
         if (
@@ -697,7 +697,7 @@ function validateOnchainCompiledAdmissions(
       typeof admission.signalId === "string" &&
       admission.signalId !== onchainSignalId(admission.signalName)
     ) {
-      issues.push(`${prefix}.signalId must be keccak256(task.stage.signal)`);
+      issues.push(`${prefix}.signalId must be keccak256(stage.signal)`);
     }
     if (
       typeof admission.sourceId === "string" &&
@@ -840,7 +840,7 @@ function validateOnchainDependencies(
       typeof dependency.signalId === "string" &&
       dependency.signalId !== onchainSignalId(dependency.signalName)
     ) {
-      issues.push(`${prefix}.signalId must be keccak256(task.stage.signal)`);
+      issues.push(`${prefix}.signalId must be keccak256(stage.signal)`);
     }
     if (
       typeof dependency.sourceId === "string" &&

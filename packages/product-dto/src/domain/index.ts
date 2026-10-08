@@ -452,9 +452,9 @@ export interface RoleSlotDTO {
 export interface DockableZhixuModulePortDTO {
   readonly portName: string;
   readonly label: string;
-  /** input 端口的目标侧 hook 引用（`<task>.<stage>#<channel>`）。 */
+  /** input 端口的目标侧 hook 引用（`<stage>#<channel>`）。 */
   readonly hook?: string;
-  /** output 端口的目标侧 canonical signal（`<source>::<task>.<stage>.<signal>`）。 */
+  /** output 端口的目标侧 canonical signal（`<source>::<stage>.<signal>`）。 */
   readonly signal?: string;
 }
 

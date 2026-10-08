@@ -96,10 +96,10 @@ contract UVPDockingModuleTest {
         "UVPDockEntrancePermitV2(bytes32 targetPlanId,bytes32 targetEntrancePortId,bytes32 interfaceNameId,bytes32 localPlanId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,uint256 feeLimit,uint256 nonce,uint256 deadline)"
     );
 
-    bytes32 private constant PARENT_START_HOOK = keccak256("parent.start#START");
-    bytes32 private constant PARENT_STAGE = keccak256("parent.start");
-    bytes32 private constant PARENT_EXEC_HOOK = keccak256("parent.exec#EXECUTE");
-    bytes32 private constant PARENT_EXEC_STAGE = keccak256("parent.exec");
+    bytes32 private constant PARENT_START_HOOK = keccak256("start#START");
+    bytes32 private constant PARENT_STAGE = keccak256("start");
+    bytes32 private constant PARENT_EXEC_HOOK = keccak256("exec#EXECUTE");
+    bytes32 private constant PARENT_EXEC_STAGE = keccak256("exec");
     bytes32 private constant SIGNAL_START = keccak256("start");
     bytes32 private constant SIGNAL_EXEC = keccak256("exec");
     // 兄弟 hook 监听、测试内永不喂入的信号（保持兄弟 hook 未就绪）。
@@ -109,23 +109,23 @@ contract UVPDockingModuleTest {
     bytes32 private constant TARGET_UID_ID = keccak256("zx-a11ce00c0ffee0ddba5e5eed1c0deb0a");
     bytes32 private constant INTERFACE_NAME_ID = keccak256("production");
 
-    bytes32 private constant TARGET_ENTRANCE_HOOK = keccak256("pay.init#DOCK_EXECUTE");
-    bytes32 private constant TARGET_MINT_HOOK = keccak256("pay.init#MINT");
-    bytes32 private constant TARGET_STAGE = keccak256("pay.init");
+    bytes32 private constant TARGET_ENTRANCE_HOOK = keccak256("init#DOCK_EXECUTE");
+    bytes32 private constant TARGET_MINT_HOOK = keccak256("init#MINT");
+    bytes32 private constant TARGET_STAGE = keccak256("init");
     bytes32 private constant TARGET_HOOK_NAME = keccak256("DOCK_EXECUTE");
     bytes32 private constant TARGET_SOURCE = keccak256("payment");
-    bytes32 private constant TARGET_SIGNAL = keccak256("pay.init.execute");
+    bytes32 private constant TARGET_SIGNAL = keccak256("init.execute");
     // outside 触发出生事实（MINT 词表用，与 entrance 事实分离）。
     bytes32 private constant TARGET_OUT_SOURCE = keccak256("payment");
-    bytes32 private constant TARGET_OUT_SIGNAL = keccak256("pay.init.done");
-    bytes32 private constant TARGET_OUT_STAGE = keccak256("pay.out");
+    bytes32 private constant TARGET_OUT_SIGNAL = keccak256("init.done");
+    bytes32 private constant TARGET_OUT_STAGE = keccak256("out");
     // 输出绑定回调的本地映射事实。
     bytes32 private constant LOCAL_MAPPED_SOURCE = keccak256("buyer");
-    bytes32 private constant LOCAL_MAPPED_SIGNAL = keccak256("parent.exec.str");
+    bytes32 private constant LOCAL_MAPPED_SIGNAL = keccak256("exec.str");
     bytes32 private constant LOCAL_PROGRESS_SOURCE = keccak256("buyer");
-    bytes32 private constant LOCAL_PROGRESS_SIGNAL = keccak256("parent.exec.progress");
+    bytes32 private constant LOCAL_PROGRESS_SIGNAL = keccak256("exec.progress");
     // 尚未成立的远端事实（DockOutputNotReady 拒绝路径）。
-    bytes32 private constant TARGET_PENDING_SIGNAL = keccak256("pay.control.settle");
+    bytes32 private constant TARGET_PENDING_SIGNAL = keccak256("control.settle");
 
     bytes32 private constant ENTRANCE_PORT = keccak256("execute");
     bytes32 private constant DONE_PORT = keccak256("done");
@@ -136,10 +136,10 @@ contract UVPDockingModuleTest {
     // 目标接口从未宣告的端口/信号 word（拒绝路径）。
     bytes32 private constant ROGUE_PORT = keccak256("rogue_port");
     // 词表外事实键（端口已宣告但绑定内容错配的拒绝路径）。
-    bytes32 private constant ROGUE_FACT_SOURCE = keccak256("rogue.source");
-    bytes32 private constant ROGUE_FACT_SIGNAL = keccak256("rogue.signal");
+    bytes32 private constant ROGUE_FACT_SOURCE = keccak256("source");
+    bytes32 private constant ROGUE_FACT_SIGNAL = keccak256("signal");
     // 同阶段的兄弟 hook（EMIT_READY，但从未就绪）——冒名开仓路径。
-    bytes32 private constant PARENT_SIBLING_HOOK = keccak256("parent.exec#SIBLING");
+    bytes32 private constant PARENT_SIBLING_HOOK = keccak256("exec#SIBLING");
     bytes32 private constant PAYLOAD = bytes32(uint256(0xBEEF));
 
     uint256 private constant PARENT_PUBLISHER_KEY = 0xA11CE;
@@ -622,7 +622,7 @@ contract UVPDockingModuleTest {
 
     function testRejectsEntrancePortLeafMismatch() public {
         UVPDockingModule.DockInterfacePortLeafV2 memory leaf = _openLeafData();
-        leaf.hookKey = keccak256("pay.init#OTHER_HOOK");
+        leaf.hookKey = keccak256("init#OTHER_HOOK");
         bytes32 recomputedLeaf =
             keccak256(abi.encode(DOMAIN_INTERFACE_INPUT, TARGET_UID_ID, INTERFACE_NAME_ID, leaf.portKey, leaf.hookKey));
         _expect(

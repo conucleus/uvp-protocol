@@ -21,7 +21,7 @@ export interface SignalConditionAst {
 }
 
 /**
- * Subscription entry `::ANCHOR(@source::task.stage.signal)`: empty source
+ * Subscription entry `::ANCHOR(@source::stage.signal)`: empty source
  * header, delivered per contributing event, no expression verdict. Field name
  * mirrors uvp-hook-dsl `expr_to_ts_value` (`signal`, not `signalName`).
  */

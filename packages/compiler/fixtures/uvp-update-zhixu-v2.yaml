@@ -18,114 +18,111 @@ spec:
     version: "0.1.3"
   nucleation:
     id: uvp-bootstrap
-  taskPatterns:
-    - name: intake
-      stages:
-        - name: submission
-          # 注册提交的落点：bootstrap 域发出 submitted 事实，作为 init 的
-          # 出生订阅源（订阅类必须等于目标阶段 source，且不等于接收方）。
-          # PUBLISH 为自发种子入口钩子（uvp-core 659a388 物化门：零 hook
-          # 阶段在链上永不可物化、sendSignals 无钩子可挂）。
-          source: bootstrap
-          receiveSignals:
-            PUBLISH: "bootstrap::intake.submission.seed"
-          sendSignals: [{ name: "submitted" }, { name: "seed" }]
-          executor:
-            supplierID: "{{ .update_init_executor_uid }}"
-            supplierType: individual
-    - name: update
-      stages:
-        - name: init
-          source: registrar
-          # 出生阶段（mint）：订阅 bootstrap 域的注册提交事实即出生
-          # （triggerOrderFromOutsideFor），链上 order-trigger 出生钩子
-          # （emitReady=true）；出生只接受订阅通道，ANCHOR 编译为单条
-          # SIGNAL 指令。
-          mint: per-fact
-          receiveSignals:
-            TRIGGER: "::ANCHOR(@bootstrap::intake.submission.submitted)"
-          sendSignals: [{ name: "trigger" }, { name: "str" }, { name: "cmp" }, { name: "err" }]
-          fileResources:
-            update_spec:
-              fileType: local
-              localFile:
-                path: "./bootstrap/update/update_spec.sample.json"
-          executor:
-            supplierID: "{{ .update_init_executor_uid }}"
-            supplierType: individual
+  stages:
+    - name: submission
+      # 注册提交的落点：bootstrap 域发出 submitted 事实，作为 init 的
+      # 出生订阅源（订阅类必须等于目标阶段 source，且不等于接收方）。
+      # PUBLISH 为自发种子入口钩子（uvp-core 659a388 物化门：零 hook
+      # 阶段在链上永不可物化、sendSignals 无钩子可挂）。
+      source: bootstrap
+      receiveSignals:
+        PUBLISH: "bootstrap::submission.seed"
+      sendSignals: [{ name: "submitted" }, { name: "seed" }]
+      executor:
+        supplierID: "{{ .update_init_executor_uid }}"
+        supplierType: individual
 
-        - name: audit
-          source: bootstrap
-          receiveSignals:
-            init_done: "registrar::update.init.cmp"
-          sendSignals: [{ name: "str" }, { name: "pass" }, { name: "reject" }, { name: "cmp" }, { name: "err" }]
-          executor:
-            supplierID: "{{ .update_audit_executor_uid }}"
-            supplierType: individual
+    - name: init
+      source: registrar
+      # 出生阶段（mint）：订阅 bootstrap 域的注册提交事实即出生
+      # （triggerOrderFromOutsideFor），链上 order-trigger 出生钩子
+      # （emitReady=true）；出生只接受订阅通道，ANCHOR 编译为单条
+      # SIGNAL 指令。
+      mint: per-fact
+      receiveSignals:
+        TRIGGER: "::ANCHOR(@bootstrap::submission.submitted)"
+      sendSignals: [{ name: "trigger" }, { name: "str" }, { name: "cmp" }, { name: "err" }]
+      fileResources:
+        update_spec:
+          fileType: local
+          localFile:
+            path: "./bootstrap/update/update_spec.sample.json"
+      executor:
+        supplierID: "{{ .update_init_executor_uid }}"
+        supplierType: individual
 
-        - name: prepare
-          source: bootstrap
-          receiveSignals:
-            audit_pass: "bootstrap::update.audit.pass"
-          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
-          executor:
-            supplierID: "{{ .update_prepare_executor_uid }}"
-            supplierType: individual
+    - name: audit
+      source: bootstrap
+      receiveSignals:
+        init_done: "registrar::init.cmp"
+      sendSignals: [{ name: "str" }, { name: "pass" }, { name: "reject" }, { name: "cmp" }, { name: "err" }]
+      executor:
+        supplierID: "{{ .update_audit_executor_uid }}"
+        supplierType: individual
 
-        - name: build
-          source: bootstrap
-          receiveSignals:
-            prepare_done: "bootstrap::update.prepare.cmp"
-          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
-          executor:
-            supplierID: "{{ .update_build_executor_uid }}"
-            supplierType: individual
+    - name: prepare
+      source: bootstrap
+      receiveSignals:
+        audit_pass: "bootstrap::audit.pass"
+      sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
+      executor:
+        supplierID: "{{ .update_prepare_executor_uid }}"
+        supplierType: individual
 
-        - name: deploy
-          source: bootstrap
-          receiveSignals:
-            build_done: "bootstrap::update.build.cmp"
-          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
-          executor:
-            supplierID: "{{ .update_deploy_executor_uid }}"
-            supplierType: individual
+    - name: build
+      source: bootstrap
+      receiveSignals:
+        prepare_done: "bootstrap::prepare.cmp"
+      sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
+      executor:
+        supplierID: "{{ .update_build_executor_uid }}"
+        supplierType: individual
 
-        - name: verify
-          source: bootstrap
-          receiveSignals:
-            deploy_done: "bootstrap::update.deploy.cmp"
-          sendSignals: [{ name: "str" }, { name: "pass" }, { name: "fail" }, { name: "cmp" }, { name: "err" }]
-          executor:
-            supplierID: "{{ .update_verify_executor_uid }}"
-            supplierType: individual
+    - name: deploy
+      source: bootstrap
+      receiveSignals:
+        build_done: "bootstrap::build.cmp"
+      sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
+      executor:
+        supplierID: "{{ .update_deploy_executor_uid }}"
+        supplierType: individual
 
-        - name: switch
-          source: bootstrap
-          receiveSignals:
-            verify_pass: "bootstrap::update.verify.pass"
-          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
-          executor:
-            supplierID: "{{ .update_switch_executor_uid }}"
-            supplierType: individual
+    - name: verify
+      source: bootstrap
+      receiveSignals:
+        deploy_done: "bootstrap::deploy.cmp"
+      sendSignals: [{ name: "str" }, { name: "pass" }, { name: "fail" }, { name: "cmp" }, { name: "err" }]
+      executor:
+        supplierID: "{{ .update_verify_executor_uid }}"
+        supplierType: individual
 
-        - name: cleanup
-          source: bootstrap
-          receiveSignals:
-            switch_done: "bootstrap::update.switch.cmp"
-          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
-          executor:
-            supplierID: "{{ .update_cleanup_executor_uid }}"
-            supplierType: individual
+    - name: switch
+      source: bootstrap
+      receiveSignals:
+        verify_pass: "bootstrap::verify.pass"
+      sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
+      executor:
+        supplierID: "{{ .update_switch_executor_uid }}"
+        supplierType: individual
 
-        - name: rollback
-          source: bootstrap
-          receiveSignals:
-            prepare_failure: "bootstrap::update.prepare.err"
-            build_failure: "bootstrap::update.build.err"
-            deploy_failure: "bootstrap::update.deploy.err"
-            verify_failure: "bootstrap::update.verify.fail"
-            verify_error: "bootstrap::update.verify.err"
-          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
-          executor:
-            supplierID: "{{ .update_rollback_executor_uid }}"
-            supplierType: individual
+    - name: cleanup
+      source: bootstrap
+      receiveSignals:
+        switch_done: "bootstrap::switch.cmp"
+      sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
+      executor:
+        supplierID: "{{ .update_cleanup_executor_uid }}"
+        supplierType: individual
+
+    - name: rollback
+      source: bootstrap
+      receiveSignals:
+        prepare_failure: "bootstrap::prepare.err"
+        build_failure: "bootstrap::build.err"
+        deploy_failure: "bootstrap::deploy.err"
+        verify_failure: "bootstrap::verify.fail"
+        verify_error: "bootstrap::verify.err"
+      sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
+      executor:
+        supplierID: "{{ .update_rollback_executor_uid }}"
+        supplierType: individual

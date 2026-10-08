@@ -69,52 +69,42 @@ const baseZhixu: ZhixuDefinition = {
     nucleation: {
       id: "core"
     },
-    taskPatterns: [
+    stages: [
       {
-        name: "selector",
-        stages: [
-          {
-            name: "assign",
-            source: "buyer",
-            selectedStages: ["execution.main"],
-            // PLACE 为自发种子入口钩子（uvp-core 阶段物化门：零 hook
-            // 阶段在链上永不可物化、sendSignals 无钩子可挂）。
-            receiveSignals: {
-              PLACE: "buyer::selector.assign.seed"
-            },
-            sendSignals: [{ name: "executor_selected" }, { name: "seed" }],
-            executor: {
-              supplierType: "organization",
-              supplierID: "selector-org"
-            }
-          }
-        ]
+        name: "assign",
+        source: "buyer",
+        selectedStages: ["main"],
+        // PLACE 为自发种子入口钩子（uvp-core 阶段物化门：零 hook
+        // 阶段在链上永不可物化、sendSignals 无钩子可挂）。
+        receiveSignals: {
+          PLACE: "buyer::assign.seed"
+        },
+        sendSignals: [{ name: "executor_selected" }, { name: "seed" }],
+        executor: {
+          supplierType: "organization",
+          supplierID: "selector-org"
+        }
       },
       {
-        name: "execution",
-        stages: [
-          {
-            name: "main",
-            source: "buyer",
-            receiveSignals: {
-              START: "buyer::selector.assign.executor_selected",
-              TIMEOUT: "buyer::(selector.assign.executor_selected +5s) & ~execution.main.cmp"
-            },
-            sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
-            executor: {
-              supplierType: "zhixu",
-              zhixuExecutorConfig: {
-                // mode=new 恰好一条 input 绑定（出生锚）；TIMEOUT 是本地
-                // receiveSignals 通道但不参与 inputMap。
-                target: { zhixu: demoTargetUid },
-                interface: "production_service",
-                order: { mode: "new" },
-                inputMap: { START: "execute" },
-                signalMap: { str: "started", cmp: "completed" }
-              }
-            }
+        name: "main",
+        source: "buyer",
+        receiveSignals: {
+          START: "buyer::assign.executor_selected",
+          TIMEOUT: "buyer::(assign.executor_selected +5s) & ~main.cmp"
+        },
+        sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
+        executor: {
+          supplierType: "zhixu",
+          // mode=new 恰好一条 input 绑定（出生锚）；TIMEOUT 是本地
+          // receiveSignals 通道但不参与 inputMap。
+          zhixuExecutorConfig: {
+            target: { zhixu: demoTargetUid },
+            interface: "production_service",
+            order: { mode: "new" },
+            inputMap: { START: "execute" },
+            signalMap: { str: "started", cmp: "completed" }
           }
-        ]
+        }
       }
     ]
   }
@@ -158,12 +148,7 @@ function topologyZhixu(stages: readonly ZhixuStage[]): ZhixuDefinition {
       nucleation: {
         id: "core"
       },
-      taskPatterns: [
-        {
-          name: "flow",
-          stages
-        }
-      ]
+      stages
     }
   };
 }
@@ -182,25 +167,25 @@ test("compiles internal HookPlan IR", () => {
   assert.match(plan.planHash, /^0x[0-9a-f]{64}$/);
   assert.equal(plan.compiledHooks.length, 3);
   assert.deepEqual(plan.compiledHooks.map((hook) => hook.hookId), [
-    "selector.assign#PLACE",
-    "execution.main#START",
-    "execution.main#TIMEOUT"
+    "assign#PLACE",
+    "main#START",
+    "main#TIMEOUT"
   ]);
-  assert.deepEqual(plan.dependencyIndex["buyer::selector.assign.executor_selected"], [
-    "execution.main#START",
-    "execution.main#TIMEOUT"
+  assert.deepEqual(plan.dependencyIndex["buyer::assign.executor_selected"], [
+    "main#START",
+    "main#TIMEOUT"
   ]);
-  assert.deepEqual(plan.dependencyIndex["buyer::execution.main.cmp"], [
-    "execution.main#TIMEOUT"
+  assert.deepEqual(plan.dependencyIndex["buyer::main.cmp"], [
+    "main#TIMEOUT"
   ]);
   // 种子入口钩子的自引用依赖（uvp-core 阶段物化门语料对齐）。
-  assert.deepEqual(plan.dependencyIndex["buyer::selector.assign.seed"], [
-    "selector.assign#PLACE"
+  assert.deepEqual(plan.dependencyIndex["buyer::assign.seed"], [
+    "assign#PLACE"
   ]);
   assert.deepEqual(plan.selectedStageBindings, [
     {
-      selectorStageIdentifier: "selector.assign",
-      targetStageIdentifier: "execution.main"
+      selectorStageIdentifier: "assign",
+      targetStageIdentifier: "main"
     }
   ]);
   assert.deepEqual(plan.signalCapabilities.map((capability) => [
@@ -209,15 +194,15 @@ test("compiles internal HookPlan IR", () => {
     capability.targetSignalName,
     capability.targetOrderRelation
   ]), [
-    ["execution.main", "buyer", "execution.main.cmp", "current"],
-    ["execution.main", "buyer", "execution.main.err", "current"],
-    ["execution.main", "buyer", "execution.main.str", "current"],
-    ["selector.assign", "buyer", "selector.assign.executor_selected", "current"],
-    ["selector.assign", "buyer", "selector.assign.seed", "current"]
+    ["assign", "buyer", "assign.executor_selected", "current"],
+    ["assign", "buyer", "assign.seed", "current"],
+    ["main", "buyer", "main.cmp", "current"],
+    ["main", "buyer", "main.err", "current"],
+    ["main", "buyer", "main.str", "current"]
   ]);
-  assert.equal(plan.executorRoutes["execution.main"], undefined);
+  assert.equal(plan.executorRoutes["main"], undefined);
   assert.equal(plan.dockRoutes.length, 1);
-  assert.equal(plan.dockRoutes[0]?.local.stageIdentifier, "execution.main");
+  assert.equal(plan.dockRoutes[0]?.local.stageIdentifier, "main");
   assert.equal(plan.dockRoutes[0]?.orderMode, "new");
   assert.equal(plan.dockRoutes[0]?.target.interfaceName, "production_service");
   assert.equal(plan.dockRoutes[0]?.inputBindings[0]?.localHookName, "START");
@@ -300,14 +285,10 @@ test("planId preimage drops empty platform params across compile/validate calibe
     spec: {
       platform: { type: "cloud", params: {} },
       nucleation: { id: "core" },
-      taskPatterns: [
-        {
-          name: "relay",
-          stages: [
-            {
+      stages: [{
               name: "forward",
               source: "operator",
-              receiveSignals: { GO: "operator::relay.forward.go" },
+              receiveSignals: { GO: "operator::forward.go" },
               sendSignals: [{ name: "cmp" }, { name: "go" }],
               executor: {
                 supplierType: "zhixu",
@@ -318,10 +299,7 @@ test("planId preimage drops empty platform params across compile/validate calibe
                   signalMap: { cmp: "scrap_declared" },
                 },
               },
-            },
-          ],
-        },
-      ],
+            }],
     },
   };
   const embeddedUid = definitionUid(embeddedDefinition);
@@ -368,7 +346,7 @@ test("validates HookPlan IR artifacts at the internal boundary", () => {
         ...plan,
         dependencyIndex: {
           ...plan.dependencyIndex,
-          "buyer::selector.assign.executor_selected": ["execution.main#START"]
+          "buyer::assign.executor_selected": ["main#START"]
         }
       }),
     HookPlanArtifactValidationError
@@ -424,17 +402,17 @@ test("rejects metadata stage references outside the hooks stage set (stage exist
     signalCapabilities: [
       ...plan.signalCapabilities,
       {
-        stageIdentifier: "ghost.stage",
+        stageIdentifier: "stage",
         source: "ghost",
         declaredSignal: "g",
         targetSource: "buyer",
-        targetSignalName: "execution.main.cmp",
+        targetSignalName: "main.cmp",
         targetOrderRelation: "current",
       },
     ],
   });
   assert.deepEqual(danglingStageIssues(validateHookPlanArtifact(danglingCapability)), [
-    "signalCapabilities[" + plan.signalCapabilities.length + "].stageIdentifier references stage ghost.stage "
+    "signalCapabilities[" + plan.signalCapabilities.length + "].stageIdentifier references stage stage "
       + "which has no compiled hooks; on-chain stage existence is established solely by hook registration, "
       + "so capability and binding leaves anchored to this stage can never be materialized or proven — "
       + "reference a stage declared by at least one hook",
@@ -446,13 +424,13 @@ test("rejects metadata stage references outside the hooks stage set (stage exist
     selectedStageBindings: [
       ...plan.selectedStageBindings,
       {
-        selectorStageIdentifier: "selector.assign",
-        targetStageIdentifier: "ghost.target",
+        selectorStageIdentifier: "assign",
+        targetStageIdentifier: "target",
       },
     ],
   });
   assert.deepEqual(danglingStageIssues(validateHookPlanArtifact(danglingBinding)), [
-    "selectedStageBindings[" + plan.selectedStageBindings.length + "].targetStageIdentifier references stage ghost.target "
+    "selectedStageBindings[" + plan.selectedStageBindings.length + "].targetStageIdentifier references stage target "
       + "which has no compiled hooks; on-chain stage existence is established solely by hook registration, "
       + "so capability and binding leaves anchored to this stage can never be materialized or proven — "
       + "reference a stage declared by at least one hook",
@@ -469,14 +447,10 @@ function resolutionEntryWithStaticEdge(withEdges: boolean) {
     spec: {
       platform: { type: "cloud" },
       nucleation: { id: "edge-core" },
-      taskPatterns: [
-        {
-          name: "relay",
-          stages: [
-            {
+      stages: [{
               name: "forward",
               source: "operator",
-              receiveSignals: { GO: "operator::relay.forward.go" },
+              receiveSignals: { GO: "operator::forward.go" },
               sendSignals: [{ name: "done" }],
               executor: {
                 supplierType: "zhixu",
@@ -487,10 +461,7 @@ function resolutionEntryWithStaticEdge(withEdges: boolean) {
                   signalMap: { cmp: "scrap_declared" },
                 },
               },
-            },
-          ],
-        },
-      ],
+            }],
     },
   };
   const uid = definitionUid(definition);
@@ -621,8 +592,8 @@ test("neutral dock target registry embeds the definition verbatim; core owns the
   assert.deepEqual(
     service.inputs.map((port) => [port.port, port.source, port.hookId]),
     [
-      ["amend", "factory", "manufacturing.produce#DOCK_AMEND"],
-      ["execute", "factory", "manufacturing.intake#EXECUTE"],
+      ["amend", "factory", "produce#DOCK_AMEND"],
+      ["execute", "factory", "intake#EXECUTE"],
     ],
   );
   const evidence = targetPlan.dockInterface?.interfaces.find(
@@ -708,12 +679,10 @@ test("core extraction of dock targets fails loud, no fallback", () => {
   const missingStageEntry = structuredClone(
     demoManifest.definitions[0],
   ) as (typeof demoManifest.definitions)[number];
-  const missingPattern = missingStageEntry.definition.spec.taskPatterns[0]! as unknown as {
-    stages: ZhixuStage[];
-  };
-  missingPattern.stages = missingPattern.stages.filter(
-    (stage) => stage.name !== "intake",
-  );
+  (missingStageEntry.definition.spec as unknown as { stages: ZhixuStage[] }).stages =
+    missingStageEntry.definition.spec.stages.filter(
+      (stage) => stage.name !== "intake",
+    );
   readdress(missingStageEntry);
   const missingStageManifest = {
     schemaVersion: "uvp.dock.resolution.v2",
@@ -728,7 +697,7 @@ test("core extraction of dock targets fails loud, no fallback", () => {
         dockSourcingParentDefinition(missingStageUid),
         missingStageManifest,
       ),
-    /D008 dockTargets\[0\]\.definition\.spec\.dockInterface\.production_service\.inputs\.execute\.hook: hook "manufacturing\.intake#EXECUTE" references stage "manufacturing\.intake" which does not exist in the target definition/,
+    /D008 dockTargets\[0\]\.definition\.spec\.dockInterface\.production_service\.inputs\.execute\.hook: hook "intake#EXECUTE" references stage "intake" which does not exist in the target definition/,
   );
 
   // stage source 空白：core 自定义派生的 input 端口 source（空白串）与
@@ -737,7 +706,7 @@ test("core extraction of dock targets fails loud, no fallback", () => {
     demoManifest.definitions[0],
   ) as (typeof demoManifest.definitions)[number];
   (
-    blankSourceEntry.definition.spec.taskPatterns[0]!.stages.find(
+    blankSourceEntry.definition.spec.stages.find(
       (stage) => stage.name === "intake",
     ) as unknown as { source: string }
   ).source = "   ";
@@ -831,8 +800,8 @@ test("dependencyIndex ordering follows code-point (Rust byte) order for astral-p
   // （字节序 = 码点序）。U+FFFD（高 BMP）按码点小于 U+1F600（星面），但
   // UTF-16 码元序会把代理对排到前面——按默认 .sort()/compareCanonicalKey
   // 重算会把合法 Rust 产物误判为 dependencyIndex 不匹配。
-  const astralStage = "\u{1F600}.stage";
-  const bmpStage = "\u{FFFD}.stage";
+  const astralStage = "\u{1F600}";
+  const bmpStage = "\u{FFFD}";
   const astralHook = `${astralStage}#W`;
   const bmpHook = `${bmpStage}#W`;
   assert.ok(astralHook < bmpHook, "fixture guard: UTF-16 order must differ here");
@@ -919,11 +888,7 @@ test("rejects invalid mint declarations", () => {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: [
-        {
-          name: "broken",
-          stages: [
-            {
+      stages: [{
               name: "main",
               source: "buyer",
               mint: "per-order" as unknown as "per-fact",
@@ -931,15 +896,12 @@ test("rejects invalid mint declarations", () => {
                 supplierType: "organization",
                 supplierID: "executor"
               }
-            }
-          ]
-        }
-      ]
+            }]
     }
   };
 
   assertCompilationIssues(invalid, [
-    /broken\.main\.mint only supports per-fact: per-order/
+    /main.mint only supports per-fact: per-order/
   ]);
 });
 
@@ -950,44 +912,34 @@ test("mint stages accept single ANCHOR birth subscriptions and mark them order-t
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: [
+      stages: [
         {
           // 出生事实的发出方：buyer 域的 feeder 阶段（订阅类必须等于目标
           // 阶段的 source，且不得等于接收阶段自身的 source）。PLACE 种子
           // 入口钩子满足物化门（零 hook 阶段在链上永不可物化）。
-          name: "feeder",
-          stages: [
-            {
-              name: "gate",
-              source: "buyer",
-              receiveSignals: {
-                PLACE: "buyer::feeder.gate.seed"
-              },
-              sendSignals: [{ name: "ready" }, { name: "seed" }],
-              executor: {
-                supplierType: "organization",
-                supplierID: "feeder-org"
-              }
-            }
-          ]
+          name: "gate",
+          source: "buyer",
+          receiveSignals: {
+            PLACE: "buyer::gate.seed"
+          },
+          sendSignals: [{ name: "ready" }, { name: "seed" }],
+          executor: {
+            supplierType: "organization",
+            supplierID: "feeder-org"
+          }
         },
         {
-          name: "broken",
-          stages: [
-            {
-              name: "main",
-              source: "runner",
-              mint: "per-fact",
-              receiveSignals: {
-                START: "::ANCHOR(@buyer::feeder.gate.ready)"
-              },
-              sendSignals: [{ name: "str" }, { name: "cmp" }],
-              executor: {
-                supplierType: "organization",
-                supplierID: "executor"
-              }
-            }
-          ]
+          name: "main",
+          source: "runner",
+          mint: "per-fact",
+          receiveSignals: {
+            START: "::ANCHOR(@buyer::gate.ready)"
+          },
+          sendSignals: [{ name: "str" }, { name: "cmp" }],
+          executor: {
+            supplierType: "organization",
+            supplierID: "executor"
+          }
         }
       ]
     }
@@ -1005,31 +957,24 @@ test("rejects plain birth entries on mint stages (subscription only)", () => {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: [
-        {
-          name: "broken",
-          stages: [
-            {
+      stages: [{
               name: "main",
               source: "buyer",
               mint: "per-fact",
               receiveSignals: {
-                START: "buyer::(broken.main.ready & broken.main.ack)"
+                START: "buyer::(main.ready & main.ack)"
               },
               sendSignals: [{ name: "ready" }, { name: "ack" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "executor"
               }
-            }
-          ]
-        }
-      ]
+            }]
     }
   };
 
   assertCompilationIssues(invalid, [
-    /broken\.main\.receiveSignals\.START: mint stage accepts ANCHOR\(@…\) subscription entries only; plain birth-entry hooks are retired/
+    /main.receiveSignals.START: mint stage accepts ANCHOR\(@…\) subscription entries only; plain birth-entry hooks are retired/
   ]);
 });
 
@@ -1041,65 +986,55 @@ test("accepts multi-anchor receive stages without an entry table", () => {
     },
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: [
+      stages: [
         {
           // source 类是 zhixu 局部命名空间：hook 引用的 seller/buyer 必须有
           // 声明阶段承载（引用存在性 + 本域 source 校验）。PLACE 种子入口
           // 钩子满足物化门（零 hook 阶段在链上永不可物化）。
-          name: "feed",
-          stages: [
-            {
-              name: "quote",
-              source: "seller",
-              receiveSignals: {
-                PLACE: "seller::feed.quote.seed"
-              },
-              sendSignals: [{ name: "updated" }, { name: "seed" }],
-              executor: {
-                supplierType: "organization",
-                supplierID: "seller-feed"
-              }
-            },
-            {
-              name: "bid",
-              source: "buyer",
-              receiveSignals: {
-                PLACE: "buyer::feed.bid.seed"
-              },
-              sendSignals: [{ name: "updated" }, { name: "seed" }],
-              executor: {
-                supplierType: "organization",
-                supplierID: "buyer-feed"
-              }
-            }
-          ]
+          name: "quote",
+          source: "seller",
+          receiveSignals: {
+            PLACE: "seller::quote.seed"
+          },
+          sendSignals: [{ name: "updated" }, { name: "seed" }],
+          executor: {
+            supplierType: "organization",
+            supplierID: "seller-feed"
+          }
         },
         {
-          name: "market",
-          stages: [
-            {
-              name: "match",
-              source: "orderbook",
-              receiveSignals: {
-                SELLER_UPDATED: "seller::feed.quote.updated",
-                BUYER_UPDATED: "buyer::feed.bid.updated"
-              },
-              sendSignals: [{ name: "matched" }],
-              executor: {
-                supplierType: "organization",
-                supplierID: "matching-engine"
-              }
-            }
-          ]
+          name: "bid",
+          source: "buyer",
+          receiveSignals: {
+            PLACE: "buyer::bid.seed"
+          },
+          sendSignals: [{ name: "updated" }, { name: "seed" }],
+          executor: {
+            supplierType: "organization",
+            supplierID: "buyer-feed"
+          }
+        },
+        {
+          name: "match",
+          source: "orderbook",
+          receiveSignals: {
+            SELLER_UPDATED: "seller::quote.updated",
+            BUYER_UPDATED: "buyer::bid.updated"
+          },
+          sendSignals: [{ name: "matched" }],
+          executor: {
+            supplierType: "organization",
+            supplierID: "matching-engine"
+          }
         }
       ]
     }
   });
 
-  // 断言聚焦 market.match 的多锚接收钩子（feed 阶段的 PLACE 种子钩子是
+  // 断言聚焦 match 的多锚接收钩子（feed 阶段的 PLACE 种子钩子是
   // 物化门伴随产物）。
   const matchHooks = plan.compiledHooks.filter(
-    (hook) => hook.stageIdentifier === "market.match"
+    (hook) => hook.stageIdentifier === "match"
   );
   assert.deepEqual(
     matchHooks.map((hook) => [hook.hookName, hook.orderTriggerKind, hook.emitReady]),
@@ -1110,7 +1045,7 @@ test("accepts multi-anchor receive stages without an entry table", () => {
   );
   assert.deepEqual(
     matchHooks.flatMap((hook) => hook.dependencies.map((dependency) => `${dependency.source}::${dependency.signalName}`)).sort(),
-    ["buyer::feed.bid.updated", "seller::feed.quote.updated"]
+    ["buyer::bid.updated", "seller::quote.updated"]
   );
 });
 
@@ -1122,39 +1057,33 @@ test("accepts same-source hook expressions with the full hook DSL", () => {
     },
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: [
-        ...baseZhixu.spec.taskPatterns,
+      stages: [
+        ...baseZhixu.spec.stages,
         {
-          name: "buyer",
-          stages: [
-            {
-              name: "close",
+          name: "close",
               source: "buyer",
               receiveSignals: {
-                ALL_DONE: "buyer::((selector.assign.executor_selected +5s) & ~execution.main.err) | execution.main.cmp"
+                ALL_DONE: "buyer::((assign.executor_selected +5s) & ~main.err) | main.cmp"
               },
               sendSignals: [{ name: "allDone" }],
               executor: {
                 supplierType: "organization",
                 supplierID: "buyer-executor"
               }
-            }
-          ]
-        }
-      ]
+            }]
     }
   });
 
-  const hook = plan.compiledHooks.find((item) => item.stageIdentifier === "buyer.close" && item.hookName === "ALL_DONE");
+  const hook = plan.compiledHooks.find((item) => item.stageIdentifier === "close" && item.hookName === "ALL_DONE");
   assert.equal(hook?.orderTriggerKind, "none");
   assert.equal(hook?.emitReady, true);
   assert.deepEqual(
     hook?.dependencies.map((dependency) => `${dependency.kind}:${dependency.source}::${dependency.signalName}${dependency.delaySeconds ? `+${dependency.delaySeconds}` : ""}`).sort(),
     [
-      "negative:buyer::execution.main.err",
-      "positive:buyer::execution.main.cmp",
-      "positive:buyer::selector.assign.executor_selected",
-      "timer:buyer::selector.assign.executor_selected+5"
+      "negative:buyer::main.err",
+      "positive:buyer::assign.executor_selected",
+      "positive:buyer::main.cmp",
+      "timer:buyer::assign.executor_selected+5"
     ]
   );
 });
@@ -1164,22 +1093,15 @@ test("rejects unbound stages", () => {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: [
-        {
-          name: "unbound",
-          stages: [
-            {
+      stages: [{
               name: "main",
               source: "buyer",
-            }
-          ]
-        }
-      ]
+            }]
     }
   };
 
   assertCompilationIssues(invalid, [
-    /unbound\.main has no static executor and is not reachable from a static executor through selectedStages/
+    /main has no static executor and is not reachable from a static executor through selectedStages/
   ]);
 });
 
@@ -1194,7 +1116,7 @@ test("rejects executor-less selected-stage chains at the materialization gate", 
       {
         name: "a",
         source: "buyer",
-        selectedStages: ["flow.b"],
+        selectedStages: ["b"],
         executor: {
           supplierType: "organization",
           supplierID: "anchor-org"
@@ -1203,7 +1125,7 @@ test("rejects executor-less selected-stage chains at the materialization gate", 
       {
         name: "b",
         source: "buyer",
-        selectedStages: ["flow.c"]
+        selectedStages: ["c"]
       },
       {
         name: "c",
@@ -1211,9 +1133,9 @@ test("rejects executor-less selected-stage chains at the materialization gate", 
       }
     ]),
     [
-      /flow\.a declares no receiveSignals and compiles to zero hooks/,
-      /flow\.b declares no receiveSignals and compiles to zero hooks/,
-      /flow\.c declares no receiveSignals and compiles to zero hooks/,
+      /a declares no receiveSignals and compiles to zero hooks/,
+      /b declares no receiveSignals and compiles to zero hooks/,
+      /c declares no receiveSignals and compiles to zero hooks/,
     ]
   );
 
@@ -1224,8 +1146,8 @@ test("rejects executor-less selected-stage chains at the materialization gate", 
       {
         name: "a",
         source: "buyer",
-        selectedStages: ["flow.b"],
-        receiveSignals: { PLACE: "buyer::flow.a.seed" },
+        selectedStages: ["b"],
+        receiveSignals: { PLACE: "buyer::a.seed" },
         sendSignals: [{ name: "seed" }],
         executor: {
           supplierType: "organization",
@@ -1235,8 +1157,8 @@ test("rejects executor-less selected-stage chains at the materialization gate", 
       {
         name: "b",
         source: "buyer",
-        selectedStages: ["flow.c"],
-        receiveSignals: { PLACE: "buyer::flow.b.seed" },
+        selectedStages: ["c"],
+        receiveSignals: { PLACE: "buyer::b.seed" },
         sendSignals: [{ name: "seed" }],
         executor: {
           supplierType: "organization",
@@ -1246,7 +1168,7 @@ test("rejects executor-less selected-stage chains at the materialization gate", 
       {
         name: "c",
         source: "buyer",
-        receiveSignals: { PLACE: "buyer::flow.c.seed" },
+        receiveSignals: { PLACE: "buyer::c.seed" },
         sendSignals: [{ name: "seed" }],
         executor: {
           supplierType: "organization",
@@ -1258,17 +1180,17 @@ test("rejects executor-less selected-stage chains at the materialization gate", 
 
   assert.deepEqual(plan.selectedStageBindings, [
     {
-      selectorStageIdentifier: "flow.a",
-      targetStageIdentifier: "flow.b"
+      selectorStageIdentifier: "a",
+      targetStageIdentifier: "b"
     },
     {
-      selectorStageIdentifier: "flow.b",
-      targetStageIdentifier: "flow.c"
+      selectorStageIdentifier: "b",
+      targetStageIdentifier: "c"
     }
   ]);
-  assert.equal(plan.executorRoutes["flow.a"]?.executor.supplierID, "anchor-org");
-  assert.ok(plan.executorRoutes["flow.b"]);
-  assert.ok(plan.executorRoutes["flow.c"]);
+  assert.equal(plan.executorRoutes["a"]?.executor.supplierID, "anchor-org");
+  assert.ok(plan.executorRoutes["b"]);
+  assert.ok(plan.executorRoutes["c"]);
 });
 
 test("rejects executor-less selected cycles without a static anchor", () => {
@@ -1277,17 +1199,17 @@ test("rejects executor-less selected cycles without a static anchor", () => {
       {
         name: "a",
         source: "buyer",
-        selectedStages: ["flow.b"]
+        selectedStages: ["b"]
       },
       {
         name: "b",
         source: "buyer",
-        selectedStages: ["flow.a"]
+        selectedStages: ["a"]
       }
     ]),
     [
-      /flow\.a has no static executor and is not reachable from a static executor through selectedStages/,
-      /flow\.b has no static executor and is not reachable from a static executor through selectedStages/
+      /a has no static executor and is not reachable from a static executor through selectedStages/,
+      /b has no static executor and is not reachable from a static executor through selectedStages/
     ]
   );
 });
@@ -1298,7 +1220,7 @@ test("rejects executor-less stages reached only through non-anchored selector ch
       {
         name: "a",
         source: "buyer",
-        selectedStages: ["flow.b"]
+        selectedStages: ["b"]
       },
       {
         name: "b",
@@ -1306,7 +1228,7 @@ test("rejects executor-less stages reached only through non-anchored selector ch
       }
     ]),
     [
-      /flow\.b has no static executor and is not reachable from a static executor through selectedStages/
+      /b has no static executor and is not reachable from a static executor through selectedStages/
     ]
   );
 });
@@ -1316,42 +1238,28 @@ test("rejects unknown or duplicate selected stages", () => {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: baseZhixu.spec.taskPatterns.map((task) =>
-        task.name !== "selector"
-          ? task
-          : {
-              ...task,
-              stages: task.stages.map((stage) => ({
-                ...stage,
-                selectedStages: ["missing.stage"]
-              }))
-            }
-      )
+      stages: baseZhixu.spec.stages.map((stage) => ({
+        ...stage,
+        selectedStages: ["stage"]
+      }))
     }
   };
   const duplicateSelected: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: baseZhixu.spec.taskPatterns.map((task) =>
-        task.name !== "selector"
-          ? task
-          : {
-              ...task,
-              stages: task.stages.map((stage) => ({
-                ...stage,
-                selectedStages: ["execution.main", "execution.main"]
-              }))
-            }
-      )
+      stages: baseZhixu.spec.stages.map((stage) => ({
+        ...stage,
+        selectedStages: ["main", "main"]
+      }))
     }
   };
 
   assertCompilationIssues(unknownSelected, [
-    /selector\.assign\.selectedStages references unknown stage missing\.stage/
+    /assign.selectedStages references unknown stage stage/
   ]);
   assertCompilationIssues(duplicateSelected, [
-    /selector\.assign\.selectedStages contains duplicate target execution\.main/
+    /assign.selectedStages contains duplicate target main/
   ]);
 });
 
@@ -1360,11 +1268,7 @@ test("rejects local hook references to unknown stages or signals", () => {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: [
-        {
-          name: "flow",
-          stages: [
-            {
+      stages: [{
               name: "start",
               source: "buyer",
               sendSignals: [{ name: "cmp" }],
@@ -1377,27 +1281,20 @@ test("rejects local hook references to unknown stages or signals", () => {
               name: "wait",
               source: "buyer",
               receiveSignals: {
-                READY: "buyer::flow.missing.cmp"
+                READY: "buyer::missing.cmp"
               },
               executor: {
                 supplierType: "organization",
                 supplierID: "executor"
               }
-            }
-          ]
-        }
-      ]
+            }]
     }
   };
   const unknownSignal: ZhixuDefinition = {
     ...unknownStage,
     spec: {
       ...unknownStage.spec,
-      taskPatterns: [
-        {
-          name: "flow",
-          stages: [
-            {
+      stages: [{
               name: "start",
               source: "buyer",
               sendSignals: [{ name: "cmp" }],
@@ -1410,24 +1307,21 @@ test("rejects local hook references to unknown stages or signals", () => {
               name: "wait",
               source: "buyer",
               receiveSignals: {
-                READY: "buyer::flow.start.err"
+                READY: "buyer::start.err"
               },
               executor: {
                 supplierType: "organization",
                 supplierID: "executor"
               }
-            }
-          ]
-        }
-      ]
+            }]
     }
   };
 
   assertCompilationIssues(unknownStage, [
-    /flow\.wait\.receiveSignals\.READY references unknown stage flow\.missing/
+    /wait.receiveSignals.READY references unknown stage missing/
   ]);
   assertCompilationIssues(unknownSignal, [
-    /flow\.wait\.receiveSignals\.READY references unknown signal flow\.start\.err/
+    /wait.receiveSignals.READY references unknown signal start.err/
   ]);
 });
 
@@ -1438,11 +1332,7 @@ test("rejects non-canonical zhixu executor config shapes", () => {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: [
-        {
-          name: "peer",
-          stages: [
-            {
+      stages: [{
               name: "main",
               source: "buyer",
               executor: {
@@ -1452,13 +1342,10 @@ test("rejects non-canonical zhixu executor config shapes", () => {
                   interface: "production_service",
                   order: { mode: "new" },
                   inputMap: { START: "execute" },
-                  triggerEntrance: "flow.init"
+                  triggerEntrance: "init"
                 } as never
               }
-            }
-          ]
-        }
-      ]
+            }]
     }
   };
   assertCompilationIssues(entranceConfig, [/D002.*triggerEntrance/]);
@@ -1467,14 +1354,10 @@ test("rejects non-canonical zhixu executor config shapes", () => {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: [
-        {
-          name: "peer",
-          stages: [
-            {
+      stages: [{
               name: "main",
               source: "buyer",
-              receiveSignals: { START: "buyer::selector.assign.executor_selected" },
+              receiveSignals: { START: "buyer::assign.executor_selected" },
               sendSignals: [{ name: "str" }, { name: "cmp" }],
               executor: {
                 supplierType: "zhixu",
@@ -1484,15 +1367,12 @@ test("rejects non-canonical zhixu executor config shapes", () => {
                   order: { mode: "new" },
                   inputMap: { START: "execute" },
                   signalMap: {
-                    str: "factory::manufacturing.intake.str",
+                    str: "factory::intake.str",
                     cmp: "completed"
                   }
                 }
               }
-            }
-          ]
-        }
-      ]
+            }]
     }
   };
   assertCompilationIssues(hookDslSignalMap, [/D006.*signalMap\.str/]);
@@ -1501,11 +1381,7 @@ test("rejects non-canonical zhixu executor config shapes", () => {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: [
-        {
-          name: "peer",
-          stages: [
-            {
+      stages: [{
               name: "main",
               source: "buyer",
               executor: {
@@ -1519,10 +1395,7 @@ test("rejects non-canonical zhixu executor config shapes", () => {
                   signalMap: { str: "started", cmp: "completed" }
                 }
               }
-            }
-          ]
-        }
-      ]
+            }]
     }
   };
   assertCompilationIssues(crossZhixuSupplierId, [/D001/]);
@@ -1533,14 +1406,10 @@ test("rejects locally invalid dock executor configs", () => {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: [
-        {
-          name: "peer",
-          stages: [
-            {
+      stages: [{
               name: "main",
               source: "buyer",
-              receiveSignals: { START: "buyer::selector.assign.executor_selected" },
+              receiveSignals: { START: "buyer::assign.executor_selected" },
               sendSignals: [{ name: "str" }, { name: "cmp" }],
               executor: {
                 supplierType: "zhixu",
@@ -1551,10 +1420,7 @@ test("rejects locally invalid dock executor configs", () => {
                   signalMap: { str: "started", cmp: "completed" }
                 }
               }
-            }
-          ]
-        }
-      ]
+            }]
     }
   };
   // mode=new 恰好一条 input 绑定（出生锚）：0 条即 D010。
@@ -1562,38 +1428,34 @@ test("rejects locally invalid dock executor configs", () => {
 
   // D004：order.mode 闭集 {new, existing}。
   const badMode = structuredClone(missingInputMap) as ZhixuDefinition & {
-    spec: { taskPatterns: Array<{ stages: Array<{ executor?: { zhixuExecutorConfig?: { order: { mode: string } } } }> }> };
+    spec: { stages: Array<{ executor?: { zhixuExecutorConfig?: { order: { mode: string } } } }> };
   };
-  (badMode.spec.taskPatterns[0]!.stages[0]!.executor!.zhixuExecutorConfig!.order as { mode: string }).mode = "derived-v1";
+  (badMode.spec.stages[0]!.executor!.zhixuExecutorConfig!.order as { mode: string }).mode = "derived-v1";
   assertCompilationIssues(badMode as unknown as ZhixuDefinition, [/D004/]);
 
   // D003：target.zhixu 必须是目标定义的内容派生 uid（zx-<32hex>）。
   const badTarget = structuredClone(missingInputMap) as ZhixuDefinition & {
-    spec: { taskPatterns: Array<{ stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } } } }> }> };
+    spec: { stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } } } }> };
   };
-  badTarget.spec.taskPatterns[0]!.stages[0]!.executor!.zhixuExecutorConfig!.target.zhixu = "Payment-Zhixu";
+  badTarget.spec.stages[0]!.executor!.zhixuExecutorConfig!.target.zhixu = "Payment-Zhixu";
   assertCompilationIssues(badTarget as unknown as ZhixuDefinition, [/D003/]);
 
   // D019：至少声明一项输入或输出映射（str/cmp 不再强制）。
   const noMappings = structuredClone(missingInputMap) as ZhixuDefinition & {
-    spec: { taskPatterns: Array<{ stages: Array<{ executor?: { zhixuExecutorConfig?: { signalMap?: Record<string, string> } } }> }> };
+    spec: { stages: Array<{ executor?: { zhixuExecutorConfig?: { signalMap?: Record<string, string> } } }> };
   };
-  delete noMappings.spec.taskPatterns[0]!.stages[0]!.executor!.zhixuExecutorConfig!.signalMap;
+  delete noMappings.spec.stages[0]!.executor!.zhixuExecutorConfig!.signalMap;
   assertCompilationIssues(noMappings as unknown as ZhixuDefinition, [/D019/]);
 
   const unknownLocalHook: ZhixuDefinition = {
     ...missingInputMap,
     spec: {
       ...missingInputMap.spec,
-      taskPatterns: [
-        {
-          name: "peer",
-          stages: [
-            {
+      stages: [{
               name: "main",
               source: "buyer",
               receiveSignals: {
-                START: "buyer::selector.assign.executor_selected"
+                START: "buyer::assign.executor_selected"
               },
               sendSignals: [{ name: "str" }, { name: "cmp" }],
               executor: {
@@ -1606,10 +1468,7 @@ test("rejects locally invalid dock executor configs", () => {
                   signalMap: { str: "started", cmp: "completed" }
                 }
               }
-            }
-          ]
-        }
-      ]
+            }]
     }
   };
   assertCompilationIssues(unknownLocalHook, [/D005.*inputMap\.MISSING/]);
@@ -1640,8 +1499,8 @@ test("demo sourcing parent links both demo interfaces (new + existing)", () => {
       route.orderMode,
     ]),
     [
-      ["sourcing.manufacture", "production_service", "new"],
-      ["sourcing.source_evidence", "production_evidence", "existing"],
+      ["manufacture", "production_service", "new"],
+      ["source_evidence", "production_evidence", "existing"],
     ],
   );
   assert.deepEqual(validateHookPlanArtifact(plan), []);
@@ -1654,9 +1513,9 @@ test("carries null (dynamic-selection) targets as unresolved routes (§8.8)", ()
   // 目标槽 = 候选集 root、两绑定根恒 EMPTY）——dockRoutesRoot 因此是
   // 静态叶 ∪ 动态叶的最终根。
   const dynamicTarget = structuredClone(baseZhixu) as ZhixuDefinition & {
-    spec: { taskPatterns: Array<{ stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } | null } } }> }> };
+    spec: { stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } | null } } }> };
   };
-  dynamicTarget.spec.taskPatterns[1]!.stages[0]!.executor!.zhixuExecutorConfig!.target = null;
+  dynamicTarget.spec.stages[1]!.executor!.zhixuExecutorConfig!.target = null;
   const plan = compileZhixuHookPlan(
     dynamicTarget as unknown as ZhixuDefinition,
     demoManifest,
@@ -1666,13 +1525,13 @@ test("carries null (dynamic-selection) targets as unresolved routes (§8.8)", ()
   assert.equal(unresolved.length, 1);
   const route = unresolved[0]!;
   assert.equal(route.schemaVersion, "uvp.dockRoute.unresolved.v1");
-  assert.equal(route.stageIdentifier, "execution.main");
+  assert.equal(route.stageIdentifier, "main");
   assert.equal(route.localSource, "buyer");
   assert.equal(route.interfaceName, "production_service");
   assert.equal(route.orderMode, "new");
   assert.deepEqual(
     route.inputBindings.map((binding) => [binding.hookId, binding.port]),
-    [["execution.main#START", "execute"]],
+    [["main#START", "execute"]],
   );
   assert.deepEqual(
     route.outputBindings
@@ -1698,7 +1557,7 @@ test("carries null (dynamic-selection) targets as unresolved routes (§8.8)", ()
   // 寻址 word，选定前不可计算）。
   const expectedRouteId = dockRouteId(
     route.localDefinitionRefHash,
-    stageKey("execution.main"),
+    stageKey("main"),
   );
   assert.equal(route.routeId, expectedRouteId);
   const expectedCandidatesRoot = merkleRoot([
@@ -1735,9 +1594,9 @@ test("rejects an explicit empty unresolvedDockRoutes list (closed field set)", (
   // 破坏封闭字段集对 plan 唯一字节形态的承诺。编译器对空集只落缺键
   // （上一测试的正例），空数组只能是手改制品——按载荷重签后仍拒绝。
   const dynamicTarget = structuredClone(baseZhixu) as ZhixuDefinition & {
-    spec: { taskPatterns: Array<{ stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } | null } } }> }> };
+    spec: { stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } | null } } }> };
   };
-  dynamicTarget.spec.taskPatterns[1]!.stages[0]!.executor!.zhixuExecutorConfig!.target = null;
+  dynamicTarget.spec.stages[1]!.executor!.zhixuExecutorConfig!.target = null;
   const plan = compileZhixuHookPlan(
     dynamicTarget as unknown as ZhixuDefinition,
     demoManifest,
@@ -1759,12 +1618,12 @@ test("rejects dynamic targets without a manifest (no candidate universe to freez
   // 候选宇宙只能从 resolution manifest（链轨发布面）派生。无 manifest 的
   // 动态路由没有可冻结的候选集根——fail-closed 拒绝，不产出空宇宙死路由。
   const dynamicOnly = structuredClone(baseZhixu) as ZhixuDefinition & {
-    spec: { taskPatterns: Array<{ stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } | null } } }> }> };
+    spec: { stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } | null } } }> };
   };
-  dynamicOnly.spec.taskPatterns[1]!.stages[0]!.executor!.zhixuExecutorConfig!.target = null;
+  dynamicOnly.spec.stages[1]!.executor!.zhixuExecutorConfig!.target = null;
   assert.throws(
     () => compileZhixuHookPlan(dynamicOnly as unknown as ZhixuDefinition),
-    /unresolved dock route execution\.main declares a dynamic \(null\) target but no resolution manifest was prepared/,
+    /unresolved dock route main declares a dynamic \(null\) target but no resolution manifest was prepared/,
   );
 });
 
@@ -1774,27 +1633,25 @@ test("rejects dynamic targets whose interface is published in no candidate's mod
   // 路由永不可 attach——编译期响亮拒绝。
   const wrongMode = structuredClone(baseZhixu) as ZhixuDefinition & {
     spec: {
-      taskPatterns: Array<{
-        stages: Array<{
-          executor?: {
-            zhixuExecutorConfig?: {
-              target: { zhixu: string } | null;
-              interface?: string;
-              order?: { mode?: string };
-            };
+      stages: Array<{
+        executor?: {
+          zhixuExecutorConfig?: {
+            target: { zhixu: string } | null;
+            interface?: string;
+            order?: { mode?: string };
           };
-        }>;
+        };
       }>;
     };
   };
   const config =
-    wrongMode.spec.taskPatterns[1]!.stages[0]!.executor!.zhixuExecutorConfig!;
+    wrongMode.spec.stages[1]!.executor!.zhixuExecutorConfig!;
   config.target = null;
   config.interface = "production_evidence";
   config.order = { mode: "new" };
   assert.throws(
     () => compileZhixuHookPlan(wrongMode as unknown as ZhixuDefinition, demoManifest),
-    /unresolved dock route execution\.main has an empty candidate set.*production_evidence.*"new"/s,
+    /unresolved dock route main has an empty candidate set.*production_evidence.*"new"/s,
   );
 });
 
@@ -1806,23 +1663,20 @@ test("compiles existing-mode routes on the cloud-facing hook plan profile", () =
       ...baseZhixu,
       spec: {
         ...baseZhixu.spec,
-        taskPatterns: baseZhixu.spec.taskPatterns.map((task) =>
-          task.name !== "execution"
-            ? task
+        stages: baseZhixu.spec.stages.map((stage) =>
+          stage.name !== "main"
+            ? stage
             : {
-                ...task,
-                stages: task.stages.map((stage) => ({
-                  ...stage,
-                  executor: {
-                    supplierType: "zhixu" as const,
-                    zhixuExecutorConfig: {
-                      target: { zhixu: demoTargetUid },
-                      interface: "production_evidence",
-                      order: { mode: "existing" as const },
-                      signalMap: { cmp: "scrap_declared" }
-                    }
+                ...stage,
+                executor: {
+                  supplierType: "zhixu" as const,
+                  zhixuExecutorConfig: {
+                    target: { zhixu: demoTargetUid },
+                    interface: "production_evidence",
+                    order: { mode: "existing" as const },
+                    signalMap: { cmp: "scrap_declared" }
                   }
-                }))
+                }
               }
         )
       }
@@ -1850,11 +1704,11 @@ test("rejects output bindings mapping one local fact key onto multiple ports", (
   const resolution = prepareDockResolution(demoManifest);
   const neutral = {
     schemaVersion: "uvp.dockRoute.v3" as const,
-    local: { stageIdentifier: "sourcing.manufacture" },
+    local: { stageIdentifier: "manufacture" },
     target: { uid: demoTargetUid, interfaceName: "production_service" },
     orderMode: "new" as const,
     inputBindings: [
-      { hookId: "sourcing.manufacture#EXECUTE", port: "execute" },
+      { hookId: "manufacture#EXECUTE", port: "execute" },
     ],
     outputBindings: [
       { signal: "str", port: "started" },
@@ -1864,7 +1718,7 @@ test("rejects output bindings mapping one local fact key onto multiple ports", (
   const context = {
     localDefinitionRefHash: `0x${"11".repeat(32)}` as `0x${string}`,
     localPlanId: `0x${"22".repeat(32)}` as `0x${string}`,
-    localStageSources: new Map([["sourcing.manufacture", "purchaser"]]),
+    localStageSources: new Map([["manufacture", "purchaser"]]),
     resolution,
   };
   assert.throws(
@@ -1881,12 +1735,12 @@ test("unbound cross-source interface ports do not join the D012 seam", () => {
   // route，不得以旧口径（被绑定接口的全部 input 端口参与 seam）误拒。
   const crossSeamTarget = dockProductionTargetDefinition();
   crossSeamTarget.spec.dockInterface!.production_service!.inputs!.audit_check = {
-    hook: "manufacturing.audit#CHECK",
+    hook: "audit#CHECK",
   };
-  (crossSeamTarget.spec.taskPatterns[0]!.stages as ZhixuStage[]).push({
+  (crossSeamTarget.spec.stages as ZhixuStage[]).push({
     name: "audit",
     source: "auditor",
-    receiveSignals: { CHECK: "auditor::manufacturing.audit.check" },
+    receiveSignals: { CHECK: "auditor::audit.check" },
     sendSignals: [{ name: "report" }],
     executor: { supplierType: "organization", supplierID: "audit-org" },
   });
@@ -1897,7 +1751,7 @@ test("unbound cross-source interface ports do not join the D012 seam", () => {
     resolutionManifestFor(crossSeamTarget),
   );
   const manufactureRoute = plan.dockRoutes.find(
-    (route) => route.local.stageIdentifier === "sourcing.manufacture",
+    (route) => route.local.stageIdentifier === "manufacture",
   );
   assert.ok(manufactureRoute !== undefined);
   // 本 route 只绑定 factory 源端口（execute/started/completed）——
@@ -1914,12 +1768,12 @@ test("route-bound cross-source ports are rejected as HookPlanCompilationError, n
   // HookPlanCompilationError，组装阶段的裸 RangeError 不得逃逸。
   const crossSeamTarget = dockProductionTargetDefinition();
   crossSeamTarget.spec.dockInterface!.production_service!.inputs!.audit_check = {
-    hook: "manufacturing.audit#CHECK",
+    hook: "audit#CHECK",
   };
-  (crossSeamTarget.spec.taskPatterns[0]!.stages as ZhixuStage[]).push({
+  (crossSeamTarget.spec.stages as ZhixuStage[]).push({
     name: "audit",
     source: "auditor",
-    receiveSignals: { CHECK: "auditor::manufacturing.audit.check" },
+    receiveSignals: { CHECK: "auditor::audit.check" },
     sendSignals: [{ name: "report" }],
     executor: { supplierType: "organization", supplierID: "audit-org" },
   });
@@ -1929,33 +1783,26 @@ test("route-bound cross-source ports are rejected as HookPlanCompilationError, n
     ...dockSourcingParentDefinition(crossSeamTargetUid),
     spec: {
       ...dockSourcingParentDefinition(crossSeamTargetUid).spec,
-      taskPatterns: dockSourcingParentDefinition(crossSeamTargetUid).spec.taskPatterns.map(
-        (task) =>
-          task.name !== "sourcing"
-            ? task
+      stages: dockSourcingParentDefinition(crossSeamTargetUid).spec.stages.map(
+        (stage) =>
+          stage.name !== "manufacture"
+            ? stage
             : {
-                ...task,
-                stages: task.stages.map((stage) =>
-                  stage.name !== "manufacture"
-                    ? stage
-                    : {
-                        ...stage,
-                        receiveSignals: {
-                          ...stage.receiveSignals,
-                          CHECK: "purchaser::procurement.confirm.seed",
-                        },
-                        executor: {
-                          supplierType: "zhixu" as const,
-                          zhixuExecutorConfig: {
-                            target: { zhixu: crossSeamTargetUid },
-                            interface: "production_service",
-                            order: { mode: "new" as const },
-                            inputMap: { CHECK: "audit_check" },
-                            signalMap: { str: "started" },
-                          },
-                        },
-                      },
-                ),
+                ...stage,
+                receiveSignals: {
+                  ...stage.receiveSignals,
+                  CHECK: "purchaser::confirm.seed",
+                },
+                executor: {
+                  supplierType: "zhixu" as const,
+                  zhixuExecutorConfig: {
+                    target: { zhixu: crossSeamTargetUid },
+                    interface: "production_service",
+                    order: { mode: "new" as const },
+                    inputMap: { CHECK: "audit_check" },
+                    signalMap: { str: "started" },
+                  },
+                },
               },
       ),
     },
@@ -1980,19 +1827,19 @@ test("dockInterface input ports require the hook to be exactly one positive atom
     name: "production_service",
     orderModes: ["new"],
     inputs: {
-      execute: { source: "factory", hook: "manufacturing.intake#EXECUTE" },
+      execute: { source: "factory", hook: "intake#EXECUTE" },
     },
     outputs: {},
   };
   const hooksById = new Map([
     [
-      "manufacturing.intake#EXECUTE",
+      "intake#EXECUTE",
       {
-        hookId: "manufacturing.intake#EXECUTE",
-        stageIdentifier: "manufacturing.intake",
+        hookId: "intake#EXECUTE",
+        stageIdentifier: "intake",
         dependencies: [
-          { kind: "positive", source: "factory", signalName: "manufacturing.intake.execute" },
-          { kind: "negative", source: "factory", signalName: "manufacturing.produce.cmp" },
+          { kind: "positive", source: "factory", signalName: "intake.execute" },
+          { kind: "negative", source: "factory", signalName: "produce.cmp" },
         ],
       },
     ],
@@ -2004,12 +1851,12 @@ test("dockInterface input ports require the hook to be exactly one positive atom
 
   const singleAtom = new Map([
     [
-      "manufacturing.intake#EXECUTE",
+      "intake#EXECUTE",
       {
-        hookId: "manufacturing.intake#EXECUTE",
-        stageIdentifier: "manufacturing.intake",
+        hookId: "intake#EXECUTE",
+        stageIdentifier: "intake",
         dependencies: [
-          { kind: "positive", source: "factory", signalName: "manufacturing.intake.execute" },
+          { kind: "positive", source: "factory", signalName: "intake.execute" },
         ],
       },
     ],
@@ -2019,7 +1866,7 @@ test("dockInterface input ports require the hook to be exactly one positive atom
     "zx-test",
     singleAtom,
   );
-  assert.equal(artifact.interfaces[0]!.inputs[0]!.canonicalInputSignal, "factory::manufacturing.intake.execute");
+  assert.equal(artifact.interfaces[0]!.inputs[0]!.canonicalInputSignal, "factory::intake.execute");
 });
 
 test("compareCanonicalKey orders by Rust byte order, not UTF-16 code units", () => {
@@ -2034,7 +1881,7 @@ test("compareCanonicalKey orders by Rust byte order, not UTF-16 code units", () 
 test("dock commitment validation fails closed on incomplete shapes", () => {
   const local = {
     definitionRefHash: `0x${"aa".repeat(32)}` as `0x${string}`,
-    stageIdentifier: "task.stage",
+    stageIdentifier: "stage",
   };
   const routeId = `0x${"bb".repeat(32)}` as `0x${string}`;
   // (a) 绑定数组缺失：不得按空集重算后放行携带 EMPTY root 的残缺 route。

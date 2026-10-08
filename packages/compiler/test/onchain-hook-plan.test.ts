@@ -136,55 +136,43 @@ const baseZhixu: ZhixuDefinition = {
     nucleation: {
       id: "core",
     },
-    taskPatterns: [
-      {
-        name: "selector",
-        stages: [
-          {
-            name: "assign",
-            source: "buyer",
-            selectedStages: ["execution.main"],
-            // PLACE 为自发种子入口钩子（uvp-core 阶段物化门：零 hook
-            // 阶段在链上永不可物化、sendSignals 无钩子可挂）。
-            receiveSignals: {
-              PLACE: "buyer::selector.assign.seed",
-            },
-            sendSignals: [{ name: "executor_selected" }, { name: "seed" }],
-            executor: {
-              supplierType: "organization",
-              supplierID: "selector-org",
-            },
-          },
-        ],
+    stages: [{
+        name: "assign",
+        source: "buyer",
+        selectedStages: ["main"],
+        // PLACE 为自发种子入口钩子（uvp-core 阶段物化门：零 hook
+        // 阶段在链上永不可物化、sendSignals 无钩子可挂）。
+        receiveSignals: {
+          PLACE: "buyer::assign.seed",
+        },
+        sendSignals: [{ name: "executor_selected" }, { name: "seed" }],
+        executor: {
+          supplierType: "organization",
+          supplierID: "selector-org",
+        },
       },
-      {
-        name: "execution",
-        stages: [
-          {
-            name: "main",
-            source: "buyer",
-            receiveSignals: {
-              START: "buyer::selector.assign.executor_selected",
-              TIMEOUT:
-                "buyer::(selector.assign.executor_selected +5s) & ~execution.main.cmp",
-            },
-            sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
-            executor: {
-              supplierType: "zhixu",
-              // mode=new 恰好一条 input 绑定（出生锚）；TIMEOUT 是本地
-              // receiveSignals 通道但不参与 inputMap。
-              zhixuExecutorConfig: {
-                target: { zhixu: dockDemoTargetUid() },
-                interface: "production_service",
-                order: { mode: "new" },
-                inputMap: { START: "execute" },
-                signalMap: { str: "started", cmp: "completed" },
-              },
-            },
+{
+        name: "main",
+        source: "buyer",
+        receiveSignals: {
+          START: "buyer::assign.executor_selected",
+          TIMEOUT:
+            "buyer::(assign.executor_selected +5s) & ~main.cmp",
+        },
+        sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
+        executor: {
+          supplierType: "zhixu",
+          // mode=new 恰好一条 input 绑定（出生锚）；TIMEOUT 是本地
+          // receiveSignals 通道但不参与 inputMap。
+          zhixuExecutorConfig: {
+            target: { zhixu: dockDemoTargetUid() },
+            interface: "production_service",
+            order: { mode: "new" },
+            inputMap: { START: "execute" },
+            signalMap: { str: "started", cmp: "completed" },
           },
-        ],
-      },
-    ],
+        },
+      }],
   },
 };
 
@@ -202,13 +190,13 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   // preimage 随定义内容变化；承诺公式本身冻结不变。
   assert.equal(
     onchain.planHash,
-    "0x8bceeb31d37c41b326c1fcd6a455f6c3983d8b33928c4f9b6f14e922ab571fbe",
+    "0x697d855dea2391c8c8f41b8d38e3624e07d97fb3e8c4b2625cacb08cc55f5bc1",
   );
   // capabilitiesRoot 是两表叶子的唯一承诺形态（v3 新增字段，随 planHash
   // 一同钉死防漂移）：与生产公式 capabilitiesRootOf 逐字节一致。
   assert.equal(
     onchain.capabilitiesRoot,
-    "0x4b7926cdf597ce56cca5dc87d9c39270ef9fb95ebb59a81c3b6afb078c4357dd",
+    "0x76fb8ce722d40eecf190b71fa0fff923eb9de0073dabd9b4657b57100b21c208",
   );
   assert.equal(
     onchain.capabilitiesRoot,
@@ -227,13 +215,13 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   );
   assert.deepEqual(onchain.selectorBindings, [
     {
-      selectorStageIdentifier: "selector.assign",
-      targetStageIdentifier: "execution.main",
-      selectorStageId: keccak256Hex("selector.assign"),
-      targetStageId: keccak256Hex("execution.main"),
+      selectorStageIdentifier: "assign",
+      targetStageIdentifier: "main",
+      selectorStageId: keccak256Hex("assign"),
+      targetStageId: keccak256Hex("main"),
       bindingHash: onchainSelectorBindingHash(
-        keccak256Hex("selector.assign"),
-        keccak256Hex("execution.main"),
+        keccak256Hex("assign"),
+        keccak256Hex("main"),
       ),
     },
   ]);
@@ -245,45 +233,45 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
       capability.targetOrderRelation,
     ]),
     [
-      ["execution.main", "buyer", "execution.main.cmp", "current"],
-      ["execution.main", "buyer", "execution.main.err", "current"],
-      ["execution.main", "buyer", "execution.main.str", "current"],
+      ["assign", "buyer", "assign.seed", "current"],
       [
-        "selector.assign",
+        "assign",
         "buyer",
-        "selector.assign.executor_selected",
+        "assign.executor_selected",
         "current",
       ],
-      ["selector.assign", "buyer", "selector.assign.seed", "current"],
+      ["main", "buyer", "main.str", "current"],
+      ["main", "buyer", "main.err", "current"],
+      ["main", "buyer", "main.cmp", "current"],
     ],
   );
   assert.deepEqual(
     onchain.compiledHooks.map((hook) => hook.hookId),
     [
-      "0x07fec9e5326c8025bd807a2d26a55476168f38f6b9b1d3ef3af9df18f758da96",
-      "0x2a799fd6d3c55a26d5b940bc8fedc135a5feae293bce3e0c6cd375c4a946fc89",
-      "0x9ca6abf270eaace38c6f86f21c09e9fa9a81346c198a54de2b4927ebf82e5f52",
+      "0xc04b87f873ad87ab715a6832a137ec6385d144adb11f87bb75fc74af7252f365",
+      "0xba0b51c636886102cf9187a49d54f74059f630f8a08c22a301144b7bf0a06a64",
+      "0x06bd2f15baa717eaf5dd21f3fe27553dfdf46b39fba3ec0307af57fa21e12b5b",
     ],
   );
   assert.equal(
-    onchain.compiledHooks[0]?.hookId,
-    keccak256Hex("execution.main#START"),
+    onchain.compiledHooks[1]?.hookId,
+    keccak256Hex("main#START"),
   );
   assert.equal(
-    onchain.compiledHooks[0]?.stageId,
-    keccak256Hex("execution.main"),
+    onchain.compiledHooks[1]?.stageId,
+    keccak256Hex("main"),
   );
 
-  const startSignal = onchain.compiledHooks[0]
+  const startSignal = onchain.compiledHooks[1]
     ?.instructions[0] as OnchainSignalInstruction;
   assert.equal(startSignal.sourceId, keccak256Hex("buyer"));
   assert.equal(
     startSignal.signalId,
-    keccak256Hex("selector.assign.executor_selected"),
+    keccak256Hex("assign.executor_selected"),
   );
   assert.equal(
     startSignal.signalKey,
-    "0xcf7c8f26d55e2223a316d1220b6f7c902d1654622e82b458a98871bdf4c4e433",
+    "0x1b1de81020b6a7096a0b9065a7794434b919e4672276725e9db798cf42be930d",
   );
 
   assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
@@ -300,13 +288,13 @@ test("compiles Hook AST nodes to stable on-chain instruction arrays", () => {
     {
       op: "SIGNAL",
       source: "buyer",
-      signalName: "selector.assign.executor_selected",
+      signalName: "assign.executor_selected",
       sourceId:
         "0x9c1bfc34ea7e295ac684c026c6d4de765734cb6b37fa07330bcfc241743ebbaf",
       signalId:
-        "0xa0756ea7615d348df1d40db5b1f47a5dbf14775409e8340b067202afb9c95bab",
+        "0xa5deb3301e6adb05d817001102db90a89e616cbb0b973d8c2d9804de3c9023ee",
       signalKey:
-        "0xcf7c8f26d55e2223a316d1220b6f7c902d1654622e82b458a98871bdf4c4e433",
+        "0x1b1de81020b6a7096a0b9065a7794434b919e4672276725e9db798cf42be930d",
     },
     {
       op: "DELAY",
@@ -315,13 +303,13 @@ test("compiles Hook AST nodes to stable on-chain instruction arrays", () => {
     {
       op: "SIGNAL",
       source: "buyer",
-      signalName: "execution.main.cmp",
+      signalName: "main.cmp",
       sourceId:
         "0x9c1bfc34ea7e295ac684c026c6d4de765734cb6b37fa07330bcfc241743ebbaf",
       signalId:
-        "0x7aac3bcb090fc9f71f030794082ffa827a686948f2bef40b5452cd121a82eee7",
+        "0xfc048ed71eb35af7cf07cd3fd924feda583a9c3fb1bef1ad593f2472956ca060",
       signalKey:
-        "0x1845455a34645910fcbc7220c18dcb6661ad3f045893d3694d22a99a1a5dcc11",
+        "0x25414fc8fc1bb291d8a071f2578468f9e877eb0d5a9feca914c77e8371f87d2f",
     },
     {
       op: "NOT",
@@ -336,18 +324,15 @@ test("compiles Hook AST nodes to stable on-chain instruction arrays", () => {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: baseZhixu.spec.taskPatterns.map((task) =>
-        task.name !== "execution"
-          ? task
+      stages: baseZhixu.spec.stages.map((stage) =>
+        stage.name !== "main"
+          ? stage
           : {
-              ...task,
-              stages: task.stages.map((stage) => ({
-                ...stage,
-                receiveSignals: {
-                  ...stage.receiveSignals,
-                  ALT: "buyer::execution.main.str | execution.main.err",
-                },
-              })),
+              ...stage,
+              receiveSignals: {
+                ...stage.receiveSignals,
+                ALT: "buyer::main.str | main.err",
+              },
             },
       ),
     },
@@ -367,22 +352,22 @@ test("builds a stable on-chain dependency index and route references", () => {
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
 
   assert.deepEqual(onchain.dependencyIndex, {
-    "0x1845455a34645910fcbc7220c18dcb6661ad3f045893d3694d22a99a1a5dcc11": [
-      "0x2a799fd6d3c55a26d5b940bc8fedc135a5feae293bce3e0c6cd375c4a946fc89",
+    "0x25414fc8fc1bb291d8a071f2578468f9e877eb0d5a9feca914c77e8371f87d2f": [
+      "0x06bd2f15baa717eaf5dd21f3fe27553dfdf46b39fba3ec0307af57fa21e12b5b",
     ],
-    // 种子入口钩子的自引用依赖（buyer::selector.assign.seed → PLACE）。
-    "0x92101349c0a8769bf471123524c5e6130565d09bb781684372b1c5d07fbe1081": [
-      "0x9ca6abf270eaace38c6f86f21c09e9fa9a81346c198a54de2b4927ebf82e5f52",
+    // 种子入口钩子的自引用依赖（buyer::assign.seed → PLACE）。
+    "0xb54bec63127fe06ab8c13d6946d6ebcccf61559e49a9fcf8b44e77c15cc990fc": [
+      "0xc04b87f873ad87ab715a6832a137ec6385d144adb11f87bb75fc74af7252f365",
     ],
-    "0xcf7c8f26d55e2223a316d1220b6f7c902d1654622e82b458a98871bdf4c4e433": [
-      "0x07fec9e5326c8025bd807a2d26a55476168f38f6b9b1d3ef3af9df18f758da96",
-      "0x2a799fd6d3c55a26d5b940bc8fedc135a5feae293bce3e0c6cd375c4a946fc89",
+    "0x1b1de81020b6a7096a0b9065a7794434b919e4672276725e9db798cf42be930d": [
+      "0xba0b51c636886102cf9187a49d54f74059f630f8a08c22a301144b7bf0a06a64",
+      "0x06bd2f15baa717eaf5dd21f3fe27553dfdf46b39fba3ec0307af57fa21e12b5b",
     ],
   });
 
   assert.deepEqual(
     onchain.executorRoutes.map((route) => route.routeId),
-    ["0x50a98fb0b72e21bff21f57c8269a01953f1400a33ee2a92483825ea897feb09a"],
+    ["0x35f6e55806e8018d555e976995705fa96f202a0a8499a801846c3d0c8d83c1e4"],
   );
   // zhixu 委托 stage 不挂静态 executor route（routeRef 只属于静态执行者）。
   assert.equal(
@@ -405,32 +390,25 @@ test("dependencyIndex hookIds follow calldata order, not keccak order (oracle pa
     },
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: [
-        {
-          name: "watch",
-          stages: [
-            {
-              name: "stage",
-              source: "buyer",
-              receiveSignals: {
-                FIRST: "buyer::watch.stage.seed",
-                SECOND: "buyer::watch.stage.seed",
-              },
-              sendSignals: [{ name: "seed" }],
-              executor: {
-                supplierType: "organization",
-                supplierID: "watcher-org",
-              },
-            },
-          ],
-        },
-      ],
+      stages: [{
+          name: "stage",
+          source: "buyer",
+          receiveSignals: {
+            FIRST: "buyer::stage.seed",
+            SECOND: "buyer::stage.seed",
+          },
+          sendSignals: [{ name: "seed" }],
+          executor: {
+            supplierType: "organization",
+            supplierID: "watcher-org",
+          },
+        }],
     },
   };
   const onchain = compileZhixuOnchainHookPlanWithManifest(zhixu);
   const seedKey = onchainSignalKey(
     onchainSourceId("buyer"),
-    onchainSignalId("watch.stage.seed"),
+    onchainSignalId("stage.seed"),
   );
   const calldataOrder = onchain.compiledHooks.map((hook) => hook.hookId);
   assert.deepEqual(
@@ -542,14 +520,14 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
   assert.equal(args.hooksHash, hashSolidityRegisterHooks(args.hooks));
   assert.match(args.hooksHash, /^0x[0-9a-f]{64}$/);
   assert.match(args.capabilitiesRoot, /^0x[0-9a-f]{64}$/);
-  assert.equal(args.hooks[1]?.hookName, keccak256Hex("TIMEOUT"));
+  assert.equal(args.hooks[2]?.hookName, keccak256Hex("TIMEOUT"));
   assert.deepEqual(
-    args.hooks[1]?.instructions.map((instruction) => instruction.op),
+    args.hooks[2]?.instructions.map((instruction) => instruction.op),
     ["SIGNAL", "DELAY", "SIGNAL", "NOT", "AND"],
   );
-  assert.deepEqual(args.hooks[1]?.dependencyKeys, [
-    "0x1845455a34645910fcbc7220c18dcb6661ad3f045893d3694d22a99a1a5dcc11",
-    "0xcf7c8f26d55e2223a316d1220b6f7c902d1654622e82b458a98871bdf4c4e433",
+  assert.deepEqual(args.hooks[2]?.dependencyKeys, [
+    "0x1b1de81020b6a7096a0b9065a7794434b919e4672276725e9db798cf42be930d",
+    "0x25414fc8fc1bb291d8a071f2578468f9e877eb0d5a9feca914c77e8371f87d2f",
   ]);
   assert.equal(args.dependencyIndex.length, 3);
   // zhixu 委托 stage 不产生静态 executor route：executorRoutes 只含
@@ -562,8 +540,8 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
   assert.notEqual(args.dockRoutesRoot, EMPTY_MERKLE_ROOT);
   assert.deepEqual(args.selectorBindings, [
     {
-      selectorStageId: keccak256Hex("selector.assign"),
-      targetStageId: keccak256Hex("execution.main"),
+      selectorStageId: keccak256Hex("assign"),
+      targetStageId: keccak256Hex("main"),
     },
   ]);
   assert.deepEqual(
@@ -578,17 +556,10 @@ test("includes selector bindings in on-chain plan hash", () => {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: baseZhixu.spec.taskPatterns.map((task) =>
-        task.name !== "selector"
-          ? task
-          : {
-              ...task,
-              stages: task.stages.map((stage) => ({
-                ...stage,
-                selectedStages: [],
-              })),
-            },
-      ),
+      stages: baseZhixu.spec.stages.map((stage) => ({
+        ...stage,
+        selectedStages: [],
+      })),
     },
   };
   const withoutBinding = compileOnchainHookPlan(
@@ -613,17 +584,10 @@ test("capability tables feed the capabilitiesRoot and the runtime plan hash", ()
           ...baseZhixu,
           spec: {
             ...baseZhixu.spec,
-            taskPatterns: baseZhixu.spec.taskPatterns.map((task) =>
-              task.name !== "selector"
-                ? task
-                : {
-                    ...task,
-                    stages: task.stages.map((stage) => ({
-                      ...stage,
-                      selectedStages: [],
-                    })),
-                  },
-            ),
+            stages: baseZhixu.spec.stages.map((stage) => ({
+              ...stage,
+              selectedStages: [],
+            })),
           },
         },
         demoManifest,
@@ -759,8 +723,10 @@ test("cross-stage dependency guard fires on deserialized artifacts and follows c
   // (1) 反序列化边界（0300 M-7）：守卫读 orderTriggerKind 派生 trigger 位。
   // 把一个 watcher 挪到外阶段（保持 hookId/stageId 自洽）后，共享键上的
   // 跨阶段非 trigger watcher 必须在 validateOnchainHookPlanArtifact 报错。
-  const sharedKey = onchain.compiledHooks.find((hook) => hook.orderTriggerKind === "none")
-    ?.dependencies[0]?.signalKey;
+  const sharedKey = onchainSignalKey(
+    onchainSourceId("buyer"),
+    onchainSignalId("assign.executor_selected"),
+  );
   assert.ok(sharedKey, "base artifact must expose a watcher dependency");
   const watchesSharedKey = (hook: (typeof onchain.compiledHooks)[number]) =>
     hook.orderTriggerKind === "none" &&
@@ -772,7 +738,7 @@ test("cross-stage dependency guard fires on deserialized artifacts and follows c
   // 基线工件里共享键上至少要有两个 watcher（不同 hook），后者保持原阶段——
   // 否则"挪走一个、留下一个"的跨阶段形态不成立。
   assert.ok(watcherIndex >= 0 && laterWatcherIndex > watcherIndex, "need two shared-key watchers");
-  const foreignStageIdentifier = "foreign.stage";
+  const foreignStageIdentifier = "stage";
   const tamperedHooks = onchain.compiledHooks.map((hook, index) =>
     index === watcherIndex
       ? {
@@ -840,13 +806,13 @@ test("cross-stage dependency guard fires on deserialized artifacts and follows c
   });
   const sequentialHookLists = {
     accepted: [
-      hookOf("t1", "stage.a", stageA, "mint"),
-      hookOf("t2", "stage.b", stageB, "mint"),
-      hookOf("w1", "stage.a", stageA, "none"),
+      hookOf("t1", "a", stageA, "mint"),
+      hookOf("t2", "b", stageB, "mint"),
+      hookOf("w1", "a", stageA, "none"),
     ],
     rejected: [
-      hookOf("w1", "stage.a", stageA, "none"),
-      hookOf("t1", "stage.b", stageB, "mint"),
+      hookOf("w1", "a", stageA, "none"),
+      hookOf("t1", "b", stageB, "mint"),
     ],
   };
   const sequentialArtifact = (hooks: readonly ReturnType<typeof hookOf>[]) => ({
@@ -879,7 +845,7 @@ test("compiles capability tables beyond gas caps into a verifiable capabilitiesR
   const tableCapabilities = Array.from({ length: 400 }, (_, index) => ({
     stageId: keccak256Hex(`capability.stage-${index}`),
     targetSourceId: keccak256Hex(`capability.source-${index}`),
-    signalId: keccak256Hex(`task.stage.signal-${index}`),
+    signalId: keccak256Hex(`stage.signal-${index}`),
     targetOrderRelation: (index % 2 === 0 ? 0 : 1) as 0 | 1,
   }));
   const root = capabilitiesRootOf(tableBindings, tableCapabilities);
@@ -949,7 +915,7 @@ test("compiles capability tables beyond gas caps into a verifiable capabilitiesR
   assert.ok(template);
   const expanded = Array.from({ length: 400 }, (_, index) => {
     const targetSource = `bulk-source-${index}`;
-    const targetSignalName = `execution.main.bulk-${index}`;
+    const targetSignalName = `main.bulk-${index}`;
     const targetSourceId = onchainSourceId(targetSource);
     const signalId = onchainSignalId(targetSignalName);
     return {
@@ -1013,7 +979,7 @@ test("rejects cross-stage current-order fact key duplication (E16 mirror)", () =
   const otherStage =
     sourcePlan.signalCapabilities.find(
       (capability) => capability.stageIdentifier !== fact.stageIdentifier,
-    )?.stageIdentifier ?? "zz.other";
+    )?.stageIdentifier ?? "other";
   const crossStageDuplicate = resign({
     ...sourcePlan,
     signalCapabilities: [
@@ -1161,30 +1127,27 @@ test("collects dock commitment shape violations as issues instead of throwing or
 
 test("rejects non-birth subscription receive hooks with the typed compilation error", () => {
   for (const [hookName, expression] of [
-    ["START", "::ANCHOR(@buyer::selector.assign.executor_selected)"]
+    ["START", "::ANCHOR(@buyer::assign.executor_selected)"]
   ] as const) {
     const zhixu: ZhixuDefinition = {
       ...baseZhixu,
       spec: {
         ...baseZhixu.spec,
-        taskPatterns: baseZhixu.spec.taskPatterns.map((pattern) => ({
-          ...pattern,
-          stages: pattern.stages.map((stage) =>
-            stage.name === "main"
-              ? {
-                  ...stage,
-                  receiveSignals: { [hookName]: expression },
-                  // 普通静态执行者：zhixu 委托 + 订阅会被 Rust 侧
-                  // validate_subscription_delegation 先行拒绝，这里专门
-                  // 验证 TS 侧"非出生订阅不上链"的类型化错误。
-                  executor: {
-                    supplierType: "organization",
-                    supplierID: "execution-org"
-                  }
+        stages: baseZhixu.spec.stages.map((stage) =>
+          stage.name === "main"
+            ? {
+                ...stage,
+                receiveSignals: { [hookName]: expression },
+                // 普通静态执行者：zhixu 委托 + 订阅会被 Rust 侧
+                // validate_subscription_delegation 先行拒绝，这里专门
+                // 验证 TS 侧"非出生订阅不上链"的类型化错误。
+                executor: {
+                  supplierType: "organization",
+                  supplierID: "execution-org"
                 }
-              : stage
-          )
-        }))
+              }
+            : stage
+        )
       }
     };
 
@@ -1209,48 +1172,35 @@ test("compiles mint birth subscriptions into order-trigger SIGNAL hooks", () => 
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: [
-        ...baseZhixu.spec.taskPatterns,
+      stages: [
+        ...baseZhixu.spec.stages,
         {
-          // 出生订阅的信号必须只被出生钩子监视（链上守卫：非出生钩子在
-          // 未物化阶段监视同一信号会让提交交易永久 revert）。
-          name: "intake",
-          stages: [
-            {
-              name: "post",
-              source: "buyer",
-              // PUBLISH 为自发种子入口钩子（uvp-core 阶段物化门：零
-              // hook 阶段在链上永不可物化、sendSignals 无钩子可挂）。
-              receiveSignals: {
-                PUBLISH: "buyer::intake.post.seed",
-              },
-              sendSignals: [{ name: "posted" }, { name: "seed" }],
-              executor: {
-                supplierType: "organization",
-                supplierID: "intake-exec",
-              },
-            },
-          ],
+          name: "post",
+          source: "buyer",
+          // PUBLISH 为自发种子入口钩子（uvp-core 阶段物化门：零
+          // hook 阶段在链上永不可物化、sendSignals 无钩子可挂）。
+          receiveSignals: {
+            PUBLISH: "buyer::post.seed",
+          },
+          sendSignals: [{ name: "posted" }, { name: "seed" }],
+          executor: {
+            supplierType: "organization",
+            supplierID: "intake-exec",
+          },
         },
         {
-          name: "fulfillment",
-          stages: [
-            {
-              name: "birth",
-              source: "fulfiller",
-              mint: "per-fact",
-              receiveSignals: {
-                BIRTH: "::ANCHOR(@buyer::intake.post.posted)",
-              },
-              sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
-              executor: {
-                supplierType: "organization",
-                supplierID: "fulfiller-exec",
-              },
-            },
-          ],
-        },
-      ],
+          name: "birth",
+          source: "fulfiller",
+          mint: "per-fact",
+          receiveSignals: {
+            BIRTH: "::ANCHOR(@buyer::post.posted)",
+          },
+          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
+          executor: {
+            supplierType: "organization",
+            supplierID: "fulfiller-exec",
+          },
+        }],
     },
   };
 
@@ -1264,7 +1214,7 @@ test("compiles mint birth subscriptions into order-trigger SIGNAL hooks", () => 
   const birth = hook.instructions[0] as OnchainSignalInstruction;
   assert.equal(birth.op, "SIGNAL");
   assert.equal(birth.sourceId, onchainSourceId("buyer"));
-  assert.equal(birth.signalId, onchainSignalId("intake.post.posted"));
+  assert.equal(birth.signalId, onchainSignalId("post.posted"));
 });
 
 test("rejects empty instructions the way the contract reverts InvalidHook", () => {
@@ -1362,19 +1312,16 @@ test("rejects a dependency key shared across stages", () => {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: baseZhixu.spec.taskPatterns.map((pattern) => ({
-        ...pattern,
-        stages: pattern.stages.map((stage) =>
-          stage.name === "assign"
-            ? {
-                ...stage,
-                receiveSignals: {
-                  ECHO: "buyer::selector.assign.executor_selected"
-                }
+      stages: baseZhixu.spec.stages.map((stage) =>
+        stage.name === "assign"
+          ? {
+              ...stage,
+              receiveSignals: {
+                ECHO: "buyer::assign.executor_selected"
               }
-            : stage
-        )
-      }))
+            }
+          : stage
+      )
     }
   };
 
@@ -1397,46 +1344,35 @@ test("flags stages whose hooks can never materialize on-chain", () => {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: [
-        ...baseZhixu.spec.taskPatterns,
+      stages: [
+        ...baseZhixu.spec.stages,
         {
-          name: "intake",
-          stages: [
-            {
-              name: "post",
-              source: "buyer",
-              // PUBLISH 为自发种子入口钩子（uvp-core 阶段物化门：零
-              // hook 阶段在链上永不可物化、sendSignals 无钩子可挂）。
-              receiveSignals: {
-                PUBLISH: "buyer::intake.post.seed",
-              },
-              sendSignals: [{ name: "posted" }, { name: "seed" }],
-              executor: {
-                supplierType: "organization",
-                supplierID: "intake-exec",
-              },
-            },
-          ],
+          name: "post",
+          source: "buyer",
+          // PUBLISH 为自发种子入口钩子（uvp-core 阶段物化门：零
+          // hook 阶段在链上永不可物化、sendSignals 无钩子可挂）。
+          receiveSignals: {
+            PUBLISH: "buyer::post.seed",
+          },
+          sendSignals: [{ name: "posted" }, { name: "seed" }],
+          executor: {
+            supplierType: "organization",
+            supplierID: "intake-exec",
+          },
         },
         {
-          name: "fulfillment",
-          stages: [
-            {
-              name: "birth",
-              source: "fulfiller",
-              mint: "per-fact",
-              receiveSignals: {
-                BIRTH: "::ANCHOR(@buyer::intake.post.posted)",
-              },
-              sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
-              executor: {
-                supplierType: "organization",
-                supplierID: "fulfiller-exec",
-              },
-            },
-          ],
-        },
-      ],
+          name: "birth",
+          source: "fulfiller",
+          mint: "per-fact",
+          receiveSignals: {
+            BIRTH: "::ANCHOR(@buyer::post.posted)",
+          },
+          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
+          executor: {
+            supplierType: "organization",
+            supplierID: "fulfiller-exec",
+          },
+        }],
     },
   };
   const mintOnchain = compileOnchainHookPlan(
@@ -1456,21 +1392,21 @@ test("flags stages whose hooks can never materialize on-chain", () => {
   const dockOnchain: OnchainHookPlanArtifact = {
     ...baseOnchain,
     compiledHooks: baseOnchain.compiledHooks.map((hook) =>
-      hook.stageIdentifier === "execution.main"
+      hook.stageIdentifier === "main"
         ? { ...hook, orderTriggerKind: "dock" as const }
         : hook,
     ),
   };
   assert.deepEqual(materializationIssues(validateOnchainHookPlanArtifact(dockOnchain)), []);
 
-  // 反例（纯 receive hook 形态）：把 execution.main 的全部 hook 压成
+  // 反例（纯 receive hook 形态）：把 main 的全部 hook 压成
   // orderTriggerKind=none、emitReady=false 的 flags=0 纯 watcher——该阶段
   // 永不可物化，正是 Rust validate_onchain_stage_materialization 在定义层
   // 拒绝的形态；artifact 边界（第二道门）必须同样拒绝。
   const watcherOnly: OnchainHookPlanArtifact = {
     ...baseOnchain,
     compiledHooks: baseOnchain.compiledHooks.map((hook) =>
-      hook.stageIdentifier === "execution.main"
+      hook.stageIdentifier === "main"
         ? { ...hook, orderTriggerKind: "none" as const, emitReady: false }
         : hook,
     ),
@@ -1483,7 +1419,7 @@ test("flags stages whose hooks can never materialize on-chain", () => {
   for (const issue of watcherIssues) {
     assert.match(
       issue,
-      /^stage execution\.main has no order-trigger or EMIT_READY hook; its hooks compile to flags=0 watchers which can never materialize the stage on-chain \(deadlock, no recovery path\) — the Rust compiler must reject this shape$/,
+      /^stage main has no order-trigger or EMIT_READY hook; its hooks compile to flags=0 watchers which can never materialize the stage on-chain \(deadlock, no recovery path\) — the Rust compiler must reject this shape$/,
     );
   }
 
@@ -1494,7 +1430,7 @@ test("flags stages whose hooks can never materialize on-chain", () => {
   const mutatedSourcePlan = {
     ...watcherSourcePlan,
     compiledHooks: watcherSourcePlan.compiledHooks.map((hook) =>
-      hook.stageIdentifier === "execution.main"
+      hook.stageIdentifier === "main"
         ? { ...hook, orderTriggerKind: "none" as const, emitReady: false }
         : hook,
     ),
@@ -1508,7 +1444,7 @@ test("flags stages whose hooks can never materialize on-chain", () => {
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
       error.issues.some((issue) =>
-        /stage execution\.main has no order-trigger or EMIT_READY hook/.test(issue),
+        /stage main has no order-trigger or EMIT_READY hook/.test(issue),
       ),
   );
 });
@@ -1521,32 +1457,32 @@ test("rejects stages that compile to zero hooks (materialization gate)", () => {
   const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
   const onchain = compileOnchainHookPlan(sourcePlan);
 
-  // 正例：带物化位的阶段放行——selector.assign 的种子入口钩子靠静态
+  // 正例：带物化位的阶段放行——assign 的种子入口钩子靠静态
   // executor 得到 emitReady=true（flags=4），全计划零物化 issue。
   const placeHook = onchain.compiledHooks.find(
     (hook) => hook.hookName === "PLACE",
   );
-  assert.equal(placeHook?.stageIdentifier, "selector.assign");
+  assert.equal(placeHook?.stageIdentifier, "assign");
   assert.equal(placeHook?.orderTriggerKind, "none");
   assert.equal(placeHook?.emitReady, true);
   assert.deepEqual(zeroHookIssues(validateOnchainHookPlanArtifact(onchain)), []);
 
-  // 反例（编译入口）：把 selector.assign 的钩子全部剥掉，阶段仅剩
+  // 反例（编译入口）：把 assign 的钩子全部剥掉，阶段仅剩
   // sendSignals/executor 声明投影——零 hook 阶段永不可物化、信号没有
   // 钩子可挂，compileOnchainHookPlan 预检即抛，不产出制品。
   // （dependencyIndex 同步剔除被剥钩子，让形状校验先行通过，确保
-  // 拦截者就是物化门本身；能力表/绑定表对 selector.assign 的引用同步
+  // 拦截者就是物化门本身；能力表/绑定表对 assign 的引用同步
   // 剥离——剥离后即悬空引用，会被 IR 校验的阶段存在性镜像先拒，
   // 抢在本测试要钉的物化门之前。）
   const strippedHookIds = new Set(
     sourcePlan.compiledHooks
-      .filter((hook) => hook.stageIdentifier === "selector.assign")
+      .filter((hook) => hook.stageIdentifier === "assign")
       .map((hook) => hook.hookId),
   );
   const zeroHookSourcePlan = {
     ...sourcePlan,
     compiledHooks: sourcePlan.compiledHooks.filter(
-      (hook) => hook.stageIdentifier !== "selector.assign",
+      (hook) => hook.stageIdentifier !== "assign",
     ),
     dependencyIndex: Object.fromEntries(
       Object.entries(sourcePlan.dependencyIndex)
@@ -1557,10 +1493,10 @@ test("rejects stages that compile to zero hooks (materialization gate)", () => {
         .filter(([, hookIds]) => hookIds.length > 0),
     ),
     selectedStageBindings: sourcePlan.selectedStageBindings.filter(
-      (binding) => binding.selectorStageIdentifier !== "selector.assign",
+      (binding) => binding.selectorStageIdentifier !== "assign",
     ),
     signalCapabilities: sourcePlan.signalCapabilities.filter(
-      (capability) => capability.stageIdentifier !== "selector.assign",
+      (capability) => capability.stageIdentifier !== "assign",
     ),
   };
   // 重签 planHash：让拦截者聚焦在物化门本身（承诺重算由 hook-plan 边界
@@ -1574,7 +1510,7 @@ test("rejects stages that compile to zero hooks (materialization gate)", () => {
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
       zeroHookIssues(error.issues).length === 1 &&
-      /^stage selector\.assign declares no receiveSignals and compiles to zero hooks: the stage can never materialize on-chain \(materialization only happens via this stage's own order-trigger\/EMIT_READY hooks\) and its sendSignals have no hook to hang on — submitSignal requires the source stage to be materialized and reverts UnknownHook forever \(deadlock, no recovery path\); declare receiveSignals carrying a mint\/dock entrance or a static executor$/.test(
+      /^stage assign declares no receiveSignals and compiles to zero hooks: the stage can never materialize on-chain \(materialization only happens via this stage's own order-trigger\/EMIT_READY hooks\) and its sendSignals have no hook to hang on — submitSignal requires the source stage to be materialized and reverts UnknownHook forever \(deadlock, no recovery path\); declare receiveSignals carrying a mint\/dock entrance or a static executor$/.test(
         zeroHookIssues(error.issues)[0] ?? "",
       ),
   );
@@ -1583,7 +1519,7 @@ test("rejects stages that compile to zero hooks (materialization gate)", () => {
   const zeroHookOnchain: OnchainHookPlanArtifact = {
     ...onchain,
     compiledHooks: onchain.compiledHooks.filter(
-      (hook) => hook.stageIdentifier !== "selector.assign",
+      (hook) => hook.stageIdentifier !== "assign",
     ),
   };
   const boundaryIssues = zeroHookIssues(
@@ -1592,7 +1528,7 @@ test("rejects stages that compile to zero hooks (materialization gate)", () => {
   assert.equal(boundaryIssues.length, 1);
   assert.match(
     boundaryIssues[0] ?? "",
-    /^stage selector\.assign declares no receiveSignals and compiles to zero hooks/,
+    /^stage assign declares no receiveSignals and compiles to zero hooks/,
   );
 });
 
@@ -1602,14 +1538,14 @@ test("dock entrance hooks materialize their stage (CORE-8 materialization gate)"
       /no order-trigger or EMIT_READY hook|compiles to zero hooks/.test(issue),
     );
 
-  // 真实 dockInterface input 端口：目标定义的 manufacturing.intake#EXECUTE
+  // 真实 dockInterface input 端口：目标定义的 intake#EXECUTE
   // 编译为 dock|emitReady（flags=6）——Rust dock_entrance_hook_ids
   // 豁免的产物投影，artifact 层按编译后物化位放行，不按 watcher 误拒。
   const targetOnchain = compileZhixuOnchainHookPlan(
     dockProductionTargetDefinition(),
   );
   const entranceHook = targetOnchain.compiledHooks.find(
-    (hook) => hook.stageIdentifier === "manufacturing.intake",
+    (hook) => hook.stageIdentifier === "intake",
   );
   assert.equal(entranceHook?.hookName, "EXECUTE");
   assert.equal(entranceHook?.orderTriggerKind, "dock");
@@ -1620,33 +1556,30 @@ test("dock entrance hooks materialize their stage (CORE-8 materialization gate)"
   );
 });
 
-/** execution.main 的 existing 挂接形态：production_evidence（只读既有
+/** main 的 existing 挂接形态：production_evidence（只读既有
  * 事实，无 input 端口）。target 传 null 即动态选择。 */
 function dynamicExistingZhixu(target: { zhixu: string } | null): ZhixuDefinition {
   return {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: baseZhixu.spec.taskPatterns.map((task) =>
-        task.name !== "execution"
-          ? task
+      stages: baseZhixu.spec.stages.map((stage) =>
+        stage.name !== "main"
+          ? stage
           : {
-              ...task,
-              stages: task.stages.map((stage) => ({
-                ...stage,
-                receiveSignals: {
-                  START: "buyer::selector.assign.executor_selected",
+              ...stage,
+              receiveSignals: {
+                START: "buyer::assign.executor_selected",
+              },
+              executor: {
+                supplierType: "zhixu" as const,
+                zhixuExecutorConfig: {
+                  target,
+                  interface: "production_evidence",
+                  order: { mode: "existing" as const },
+                  signalMap: { cmp: "scrap_declared" },
                 },
-                executor: {
-                  supplierType: "zhixu" as const,
-                  zhixuExecutorConfig: {
-                    target,
-                    interface: "production_evidence",
-                    order: { mode: "existing" as const },
-                    signalMap: { cmp: "scrap_declared" },
-                  },
-                },
-              })),
+              },
             },
       ),
     },
@@ -1724,7 +1657,7 @@ test("carries dynamic-selection (target:null) routes as unresolvedDockRoutes wit
   assert.equal(unresolved.length, 1);
   const route = unresolved[0]!;
   assert.equal(route.schemaVersion, "uvp.dockRoute.unresolved.v1");
-  assert.equal(route.stageIdentifier, "execution.main");
+  assert.equal(route.stageIdentifier, "main");
   assert.equal(route.orderMode, "existing");
   assert.equal(route.interfaceName, "production_evidence");
   assert.deepEqual(
@@ -1742,7 +1675,7 @@ test("carries dynamic-selection (target:null) routes as unresolvedDockRoutes wit
   // 本地承诺逐项重算（与 validateDockCommitments 同公式，显式钉产物口径）。
   const expectedRouteId = dockRouteId(
     route.localDefinitionRefHash,
-    stageKey("execution.main"),
+    stageKey("main"),
   );
   assert.equal(route.routeId, expectedRouteId);
   const expectedCandidatesRoot = merkleRoot([
@@ -1777,16 +1710,16 @@ test("rejects dynamic-selection routes declaring order mode new (chain terminal 
   // 径——钉 existing。new 模式动态路由上链即永不可开的死路由，编译边界
   // 响亮拒绝。
   const dynamicNew = structuredClone(baseZhixu) as ZhixuDefinition & {
-    spec: { taskPatterns: Array<{ stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } | null } } }> }> };
+    spec: { stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } | null } } }> };
   };
-  dynamicNew.spec.taskPatterns[1]!.stages[0]!.executor!.zhixuExecutorConfig!.target = null;
+  dynamicNew.spec.stages[1]!.executor!.zhixuExecutorConfig!.target = null;
   assert.throws(
     () => compileZhixuOnchainHookPlan(dynamicNew as unknown as ZhixuDefinition, demoManifest),
     (error: unknown) => {
       assert.ok(error instanceof HookPlanCompilationError);
       const issues = error.issues.join("; ");
       assert.match(issues, /UNRESOLVED_DOCK_MODE/);
-      assert.match(issues, /execution\.main/);
+      assert.match(issues, /main/);
       assert.match(issues, /order mode "new"/);
       return true;
     },
@@ -1913,7 +1846,7 @@ test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
   const silentMint: OnchainHookPlanArtifact = {
     ...baseOnchain,
     compiledHooks: baseOnchain.compiledHooks.map((hook) =>
-      hook.stageIdentifier === "execution.main" && hook.hookName === "START"
+      hook.stageIdentifier === "main" && hook.hookName === "START"
         ? { ...hook, orderTriggerKind: "mint" as const, emitReady: false }
         : hook,
     ),
@@ -1923,7 +1856,7 @@ test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
   for (const issue of mintIssues) {
     assert.match(
       issue,
-      /hook execution\.main#.+ is an order trigger without emitReady; UVPStateMachine\.commitPlan reverts SilentOrderTriggerHook — the Rust compiler must always emit trigger flags with EMIT_READY$/,
+      /hook main#.+ is an order trigger without emitReady; UVPStateMachine\.commitPlan reverts SilentOrderTriggerHook — the Rust compiler must always emit trigger flags with EMIT_READY$/,
     );
   }
 
@@ -1932,7 +1865,7 @@ test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
   const silentDock: OnchainHookPlanArtifact = {
     ...baseOnchain,
     compiledHooks: baseOnchain.compiledHooks.map((hook) =>
-      hook.stageIdentifier === "execution.main" && hook.hookName === "START"
+      hook.stageIdentifier === "main" && hook.hookName === "START"
         ? { ...hook, orderTriggerKind: "dock" as const, emitReady: false }
         : hook,
     ),
@@ -1949,7 +1882,7 @@ test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
   const mutatedSilentPlan = resign({
     ...silentSourcePlan,
     compiledHooks: silentSourcePlan.compiledHooks.map((hook) =>
-      hook.stageIdentifier === "execution.main" && hook.hookName === "START"
+      hook.stageIdentifier === "main" && hook.hookName === "START"
         ? { ...hook, orderTriggerKind: "mint" as const, emitReady: false }
         : hook,
     ),
@@ -2159,9 +2092,9 @@ test("compiles the decaying veto DSL form through the full on-chain pipeline", (
   // 产出面正例：DSL 侧 ~(A+duration) 作为合取直接子项（uvp-core 校验放
   // 行），全流水线（Rust IR → TS onchain 编译）产出 NOT-over-DELAY 指令。
   const vetoZhixu: ZhixuDefinition = structuredClone(baseZhixu);
-  const execution = vetoZhixu.spec.taskPatterns[1]!.stages[0]!;
+  const execution = vetoZhixu.spec.stages[1]!;
   execution.receiveSignals!.TIMEOUT =
-    "buyer::execution.main.cmp & ~(selector.assign.executor_selected +5s)";
+    "buyer::main.cmp & ~(assign.executor_selected +5s)";
 
   const onchain = compileZhixuOnchainHookPlan(vetoZhixu, demoManifest);
   const timeoutHook = onchain.compiledHooks.find((hook) => hook.hookName === "TIMEOUT")!;
@@ -2185,7 +2118,7 @@ test("rejects DELAY on order-trigger conditions at the compile boundary (produce
     demoManifest,
   );
   const triggerHook = targetPlan.compiledHooks.find(
-    (hook) => hook.stageIdentifier === "manufacturing.intake" && hook.hookName === "EXECUTE",
+    (hook) => hook.stageIdentifier === "intake" && hook.hookName === "EXECUTE",
   );
   assert.ok(triggerHook, "target fixture must expose the dock entrance trigger hook");
   assert.equal(triggerHook.orderTriggerKind, "dock");
@@ -2234,10 +2167,10 @@ test("rejects supplierType outside the closed enum at the on-chain compile bound
     ...hookPlan,
     executorRoutes: {
       ...hookPlan.executorRoutes,
-      "selector.assign": {
-        ...hookPlan.executorRoutes["selector.assign"]!,
+      "assign": {
+        ...hookPlan.executorRoutes["assign"]!,
         executor: {
-          ...hookPlan.executorRoutes["selector.assign"]!.executor,
+          ...hookPlan.executorRoutes["assign"]!.executor,
           supplierType: "Organization",
         },
       },
@@ -2266,10 +2199,10 @@ test("rejects whitespace-padded supplierType at the on-chain compile boundary", 
       ...hookPlan,
       executorRoutes: {
         ...hookPlan.executorRoutes,
-        "selector.assign": {
-          ...hookPlan.executorRoutes["selector.assign"]!,
+        "assign": {
+          ...hookPlan.executorRoutes["assign"]!,
           executor: {
-            ...hookPlan.executorRoutes["selector.assign"]!.executor,
+            ...hookPlan.executorRoutes["assign"]!.executor,
             supplierType,
           },
         },
@@ -2297,27 +2230,22 @@ test("rejects selectableResource fileType outside the closed enum at the on-chai
   // fileType（含带空白变体）与 fileResources 同口径拒绝——同为
   // FileResource 面，不因挂在 executor 下而逃过闭集。
   // 合法形态走定义级全量编译（native 权威面同样校验该闭集，两侧同集）。
-  const selectorStage = baseZhixu.spec.taskPatterns[0]!.stages[0]!;
+  const selectorStage = baseZhixu.spec.stages[0]!;
   const withSelectableZhixu: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: [
-        {
-          ...baseZhixu.spec.taskPatterns[0]!,
-          stages: [
-            {
-              ...selectorStage,
-              executor: {
-                ...selectorStage.executor!,
-                selectableResource: {
-                  dataset: { fileType: "plain_text", plainText: { content: "x" } },
-                },
-              },
+      stages: [
+        ...baseZhixu.spec.stages.slice(0, 1).map((stage) => ({
+          ...stage,
+          executor: {
+            ...stage.executor!,
+            selectableResource: {
+              dataset: { fileType: "plain_text", plainText: { content: "x" } },
             },
-          ],
-        },
-        ...baseZhixu.spec.taskPatterns.slice(1),
+          },
+        })),
+        ...baseZhixu.spec.stages.slice(1),
       ],
     },
   };
@@ -2331,10 +2259,10 @@ test("rejects selectableResource fileType outside the closed enum at the on-chai
       ...hookPlan,
       executorRoutes: {
         ...hookPlan.executorRoutes,
-        "selector.assign": {
-          ...hookPlan.executorRoutes["selector.assign"]!,
+        "assign": {
+          ...hookPlan.executorRoutes["assign"]!,
           executor: {
-            ...hookPlan.executorRoutes["selector.assign"]!.executor,
+            ...hookPlan.executorRoutes["assign"]!.executor,
             selectableResource: {
               dataset: { fileType, plainText: { content: "x" } },
             },
@@ -2359,12 +2287,12 @@ test("rejects selectableResource fileType outside the closed enum at the on-chai
 
 test("rejects fileResources fileType outside the closed enum at the on-chain compile boundary", () => {
   const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
-  const route = hookPlan.executorRoutes["selector.assign"]!;
+  const route = hookPlan.executorRoutes["assign"]!;
   const mutated = resign({
     ...hookPlan,
     executorRoutes: {
       ...hookPlan.executorRoutes,
-      "selector.assign": {
+      "assign": {
         ...route,
         fileResources: {
           contract_template: { fileType: "locale", path: "./template.md" },
@@ -2400,10 +2328,10 @@ test("rejects non-map file-resource shapes at the on-chain compile boundary", ()
       ...hookPlan,
       executorRoutes: {
         ...hookPlan.executorRoutes,
-        "selector.assign": {
-          ...hookPlan.executorRoutes["selector.assign"]!,
+        "assign": {
+          ...hookPlan.executorRoutes["assign"]!,
           executor: {
-            ...hookPlan.executorRoutes["selector.assign"]!.executor,
+            ...hookPlan.executorRoutes["assign"]!.executor,
             ...(selectableResource === undefined
               ? {}
               : { selectableResource }),
@@ -2443,8 +2371,8 @@ test("rejects non-map file-resource shapes at the on-chain compile boundary", ()
       ...hookPlan,
       executorRoutes: {
         ...hookPlan.executorRoutes,
-        "selector.assign": {
-          ...hookPlan.executorRoutes["selector.assign"]!,
+        "assign": {
+          ...hookPlan.executorRoutes["assign"]!,
           fileResources: shape,
         },
       },
@@ -2548,10 +2476,10 @@ test("compile boundary rejects whitespace-only executor.supplierID", () => {
     ...hookPlan,
     executorRoutes: {
       ...hookPlan.executorRoutes,
-      "selector.assign": {
-        ...hookPlan.executorRoutes["selector.assign"]!,
+      "assign": {
+        ...hookPlan.executorRoutes["assign"]!,
         executor: {
-          ...hookPlan.executorRoutes["selector.assign"]!.executor,
+          ...hookPlan.executorRoutes["assign"]!.executor,
           supplierID: "   ",
         },
       },
@@ -2738,20 +2666,17 @@ test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirr
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: baseZhixu.spec.taskPatterns.map((pattern) => ({
-        ...pattern,
-        stages: pattern.stages.map((stage) =>
-          stage.name === "assign"
-            ? {
-                ...stage,
-                sendSignals: [
-                  { name: "executor_selected", validWhen: "buyer::selector.assign.seed" },
-                  { name: "seed" },
-                ],
-              }
-            : stage
-        ),
-      })),
+      stages: baseZhixu.spec.stages.map((stage) =>
+        stage.name === "assign"
+          ? {
+              ...stage,
+              sendSignals: [
+                { name: "executor_selected", validWhen: "buyer::assign.seed" },
+                { name: "seed" },
+              ],
+            }
+          : stage
+      ),
     },
   };
   const onchain = compileOnchainHookPlan(
@@ -2782,7 +2707,7 @@ test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirr
     `unknown field \`smuggled\` on ${path} — the artifact schema is a closed field set, `
     + "so the artifact would not be the plan's unique byte form; remove it or recompile";
   const routedHookIndex = onchain.compiledHooks.findIndex(
-    (hook) => hook.stageIdentifier === "selector.assign",
+    (hook) => hook.stageIdentifier === "assign",
   );
   assert.ok(routedHookIndex >= 0 && onchain.compiledHooks[routedHookIndex]!.routeRef,
     "fixture must expose a routeRef");
@@ -2855,66 +2780,66 @@ test("rejects mint birth stages without their own static executor route", () => 
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      taskPatterns: [
-        ...baseZhixu.spec.taskPatterns,
+      // 拍平后 routing 的 assign 与 selector 的 assign 撞名：两条都改用
+      // 所属 task 名（selector / routing），引用同步改指 selector。
+      stages: [
+        ...baseZhixu.spec.stages.map((stage) =>
+          stage.name === "assign"
+            ? {
+                ...stage,
+                name: "selector",
+                receiveSignals: { PLACE: "buyer::selector.seed" },
+              }
+            : stage.name === "main"
+              ? {
+                  ...stage,
+                  receiveSignals: {
+                    START: "buyer::selector.executor_selected",
+                    TIMEOUT:
+                      "buyer::(selector.executor_selected +5s) & ~main.cmp",
+                  },
+                }
+              : stage,
+        ),
         {
-          // 出生订阅的信号必须只被出生钩子监视（链上守卫：非出生钩子在
-          // 未物化阶段监视同一信号会让提交交易永久 revert）。
-          name: "intake",
-          stages: [
-            {
-              name: "post",
-              source: "buyer",
-              receiveSignals: { PUBLISH: "buyer::intake.post.seed" },
-              sendSignals: [{ name: "posted" }, { name: "seed" }],
-              executor: { supplierType: "organization", supplierID: "intake-exec" },
-            },
-          ],
+          name: "post",
+          source: "buyer",
+          receiveSignals: { PUBLISH: "buyer::post.seed" },
+          sendSignals: [{ name: "posted" }, { name: "seed" }],
+          executor: { supplierType: "organization", supplierID: "intake-exec" },
         },
         {
-          name: "fulfillment",
-          stages: [
-            {
-              name: "birth",
-              source: "fulfiller",
-              mint: "per-fact",
-              receiveSignals: {
-                BIRTH: "::ANCHOR(@buyer::intake.post.posted)",
-              },
-              sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
-              executor: { supplierType: "organization", supplierID: "fulfiller-exec" },
-            },
-          ],
+          name: "birth",
+          source: "fulfiller",
+          mint: "per-fact",
+          receiveSignals: {
+            BIRTH: "::ANCHOR(@buyer::post.posted)",
+          },
+          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
+          executor: { supplierType: "organization", supplierID: "fulfiller-exec" },
         },
         {
-          // selectedStages 指向出生阶段：可达性不豁免静态执行者要求。
           name: "routing",
-          stages: [
-            {
-              name: "assign",
-              source: "buyer",
-              selectedStages: ["fulfillment.birth"],
-              receiveSignals: { PLACE: "buyer::routing.assign.seed" },
-              sendSignals: [{ name: "picked" }, { name: "seed" }],
-              executor: { supplierType: "organization", supplierID: "routing-org" },
-            },
-          ],
-        },
-      ],
+          source: "buyer",
+          selectedStages: ["birth"],
+          receiveSignals: { PLACE: "buyer::routing.seed" },
+          sendSignals: [{ name: "picked" }, { name: "seed" }],
+          executor: { supplierType: "organization", supplierID: "routing-org" },
+        }],
     },
   };
 
   const ir = compileZhixuHookPlan(zhixu, demoManifest);
   const onchain = compileOnchainHookPlan(ir);
   const birthHook = onchain.compiledHooks.find(
-    (hook) => hook.stageIdentifier === "fulfillment.birth",
+    (hook) => hook.stageIdentifier === "birth",
   );
   assert.ok(birthHook, "birth hook missing from compiled plan");
   assert.equal(birthHook.orderTriggerKind, "mint");
   // selectorBindings 确实可达出生阶段（反例的"可达"前提成立）。
   assert.ok(
     onchain.selectorBindings.some(
-      (binding) => binding.targetStageIdentifier === "fulfillment.birth",
+      (binding) => binding.targetStageIdentifier === "birth",
     ),
     "fixture must anchor the birth stage through selectedStages",
   );
@@ -2927,11 +2852,11 @@ test("rejects mint birth stages without their own static executor route", () => 
     ...ir,
     executorRoutes: Object.fromEntries(
       Object.entries(ir.executorRoutes).filter(
-        ([stageIdentifier]) => stageIdentifier !== "fulfillment.birth",
+        ([stageIdentifier]) => stageIdentifier !== "birth",
       ),
     ),
     compiledHooks: ir.compiledHooks.map((hook) => {
-      if (hook.stageIdentifier !== "fulfillment.birth") {
+      if (hook.stageIdentifier !== "birth") {
         return hook;
       }
       // 显式 undefined 不进 canonical JSON（canonicalize 拒绝）——键必须
@@ -2946,7 +2871,7 @@ test("rejects mint birth stages without their own static executor route", () => 
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
       error.issues.some((issue) =>
-        /fulfillment\.birth is a subscription\/birth stage \(mint order-trigger\) and requires its own static executor route/.test(
+        /birth is a subscription\/birth stage \(mint order-trigger\) and requires its own static executor route/.test(
           issue,
         )
       ),
@@ -2966,10 +2891,10 @@ test("rejects mint birth stages without their own static executor route", () => 
   const strippedOnchain = rehashed({
     ...structuredClone(onchain),
     executorRoutes: onchain.executorRoutes.filter(
-      (route) => route.stageIdentifier !== "fulfillment.birth",
+      (route) => route.stageIdentifier !== "birth",
     ),
     compiledHooks: onchain.compiledHooks.map((hook) => {
-      if (hook.stageIdentifier !== "fulfillment.birth") {
+      if (hook.stageIdentifier !== "birth") {
         return hook;
       }
       // 与 IR 侧同口径：键整体缺席，不写显式 undefined。
@@ -2980,7 +2905,7 @@ test("rejects mint birth stages without their own static executor route", () => 
   } as OnchainHookPlanArtifact);
   assert.ok(
     validateOnchainHookPlanArtifact(strippedOnchain).some((issue) =>
-      /fulfillment\.birth is a subscription\/birth stage \(mint order-trigger\) and requires its own static executor route/.test(
+      /birth is a subscription\/birth stage \(mint order-trigger\) and requires its own static executor route/.test(
         issue,
       )
     ),
@@ -3082,9 +3007,9 @@ test("duplicate birth-channel key is rejected at compile and deserialization bou
     dependencies: [dep],
   });
   const birthHooks = [
-    hookOf("mint_line", "stage.a", stageA, "mint"),
-    hookOf("dock_line", "stage.b", stageB, "dock"),
-    hookOf("watcher", "stage.a", stageA, "none"),
+    hookOf("mint_line", "a", stageA, "mint"),
+    hookOf("dock_line", "b", stageB, "dock"),
+    hookOf("watcher", "a", stageA, "none"),
   ];
   const issues = validateOnchainHookPlanArtifact({
     ...onchain,
@@ -3100,8 +3025,8 @@ test("duplicate birth-channel key is rejected at compile and deserialization bou
 
   // (3) mint∪mint 扇出（customs 基准 plan 形态）放行。
   const fanOutHooks = [
-    hookOf("mint_line", "stage.a", stageA, "mint"),
-    hookOf("mint_line_2", "stage.b", stageB, "mint"),
+    hookOf("mint_line", "a", stageA, "mint"),
+    hookOf("mint_line_2", "b", stageB, "mint"),
   ];
   const fanOutIssues = validateOnchainHookPlanArtifact({
     ...onchain,
@@ -3179,17 +3104,10 @@ test("capabilitiesRoot varies with table contents and pins empty tables to EMPTY
         ...baseZhixu,
         spec: {
           ...baseZhixu.spec,
-          taskPatterns: baseZhixu.spec.taskPatterns.map((task) =>
-            task.name !== "selector"
-              ? task
-              : {
-                  ...task,
-                  stages: task.stages.map((stage) => ({
-                    ...stage,
-                    selectedStages: [],
-                  })),
-                },
-          ),
+          stages: baseZhixu.spec.stages.map((stage) => ({
+            ...stage,
+            selectedStages: [],
+          })),
         },
       },
       demoManifest,

@@ -100,9 +100,9 @@ interfaceLeaf_v2  = H(UVP_DOCK_INTERFACE_V2; keccak(uid), keccak(interfaceName),
 dockInterfaceRoot = merkle(interfaces[].interfaceLeaf)
 ```
 
-`hookRef` = `<task>.<stage>#<receiveHookName>` 原文；`canonicalSignal` =
-`<source>::<task>.<stage>.<signal>` 原文。output 叶的
-`targetSourceId = keccak(source)`、`targetSignalId = keccak(task.stage.signal)`
+`hookRef` = `<stage>#<receiveHookName>` 原文；`canonicalSignal` =
+`<source>::<stage>.<signal>` 原文。output 叶的
+`targetSourceId = keccak(source)`、`targetSignalId = keccak(stage.signal)`
 与 §4.3 绑定侧 target 分量同派生输入：链上 membership 校验由此可与
 binding 承诺的事实键互证。输入端口无信号身份，叶以 `hookRef` 钉接收
 钩子。
@@ -114,7 +114,7 @@ routeId = H(UVP_DOCK_ROUTE_ID_V1; localDefinitionRefHash, stageKey)
 stageKey = keccak(stageIdentifier)
 
 inputBindingHash_v2 = H(UVP_DOCK_INPUT_BINDING_V2; routeId, keccak(interfaceName),
-                        keccak("<task>.<stage>#<channel>"), keccak(portName),
+                        keccak("<stage>#<channel>"), keccak(portName),
                         targetSourceId, targetSignalId)
 outputBindingHash_v2 = H(UVP_DOCK_OUTPUT_BINDING_V2; routeId, keccak(interfaceName),
                         localSourceId, localSignalId, keccak(portName),
@@ -237,7 +237,7 @@ capabilitiesRoot        = merkle(selectorBindings[].leaf ++ signalCapabilities[]
 能力表与绑定表以域分隔叶混编进同一棵 §1 排序配对 Merkle 树（域串防
 跨表叶混淆）；`relation`：current=0、triggerOrigin=1（u256 word）。各
 分量 word 与制品身份同派生：`stageId = keccak(stageIdentifier)`、
-`targetSourceId = keccak(source)`、`signalId = keccak(task.stage.signal)`、
+`targetSourceId = keccak(source)`、`signalId = keccak(stage.signal)`、
 `selectorStageId`/`targetStageId = keccak(stageIdentifier)`。两表皆空时
 root = `EMPTY_MERKLE_ROOT`。
 

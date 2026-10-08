@@ -132,18 +132,18 @@ function buildSample(
 // 样本 1：双表混编、5 叶奇数集（钉奇数尾叶提升），含 relation=1 叶。
 // ---------------------------------------------------------------------
 const stages = {
-  init: word("payment.init"),
-  audit: word("payment.audit"),
-  settle: word("payment.settle"),
+  init: word("init"),
+  audit: word("audit"),
+  settle: word("settle"),
 } as const;
 const sources = {
   payment: word("payment"),
   evidence: word("evidence"),
 } as const;
 const signals = {
-  ready: word("payment.ready"),
-  confirmed: word("payment.confirmed"),
-  failed: word("payment.failed"),
+  ready: word("ready"),
+  confirmed: word("confirmed"),
+  failed: word("failed"),
 } as const;
 
 const mixedTables = buildSample(

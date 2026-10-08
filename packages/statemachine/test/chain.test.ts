@@ -625,7 +625,7 @@ test("chain replay fails loudly when TimerPoked targets an unknown order/plan/ho
         {
           hookId,
           stageId,
-          stageIdentifier: "task.main",
+          stageIdentifier: "main",
           hookName: "TIMEOUT",
           orderTriggerKind: "none",
           emitReady: true,
@@ -637,7 +637,7 @@ test("chain replay fails loudly when TimerPoked targets an unknown order/plan/ho
         {
           hookId: quietHookId,
           stageId,
-          stageIdentifier: "task.main",
+          stageIdentifier: "main",
           hookName: "QUIET",
           orderTriggerKind: "none",
           emitReady: true,
@@ -769,7 +769,7 @@ test("TimerPokeGate parses strictly-RFC3339 timestamps and compares in the secon
           {
             hookId,
             stageId,
-            stageIdentifier: "task.main",
+            stageIdentifier: "main",
             hookName: "TIMEOUT",
             orderTriggerKind: "none",
             emitReady: true,
@@ -875,7 +875,7 @@ test("TimerPokeGate parses strictly-RFC3339 timestamps and compares in the secon
       zhixuId,
       orderId: "order-1",
       hookId,
-      stageIdentifier: "task.main",
+      stageIdentifier: "main",
       hookName: "TIMEOUT",
     },
   ]);
@@ -993,7 +993,7 @@ test("chain replay sorts the stream into canonical order before gating", () => {
         {
           hookId,
           stageId,
-          stageIdentifier: "task.main",
+          stageIdentifier: "main",
           hookName: "TIMEOUT",
           orderTriggerKind: "none",
           emitReady: true,
@@ -1054,7 +1054,7 @@ test("chain replay sorts the stream into canonical order before gating", () => {
     transactionHash: "0x06",
     ...base,
     hookId,
-    stageIdentifier: "task.main",
+    stageIdentifier: "main",
     hookName: "TIMEOUT",
   };
   const scrambled: ChainModeEvent[] = [
@@ -1113,7 +1113,7 @@ test("chain replay fails loudly when TimerPoked carries no pokedAt", () => {
           {
             hookId,
             stageId,
-            stageIdentifier: "task.main",
+            stageIdentifier: "main",
             hookName: "TIMEOUT",
             orderTriggerKind: "none",
             emitReady: true,

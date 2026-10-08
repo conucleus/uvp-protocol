@@ -59,11 +59,11 @@
     "localOrderId": "order-fixture-001",
     "existingTargetOrderRef": "factory-a/P001",
     "existingEvmTargetOrderRef": "0xabababababababababababababababababababababababababababababababab",
-    "parentPlanIdWord": "0x4b3c8793c10b3e489c9ae39f518041c238cdf6a45d001a9e834fea53f54345e4"
+    "parentPlanIdWord": "0xa7c69eb7fbf5928ebc528881e0f277db3fe8f1c1c71c55531fcfb6f10c32de5a"
   },
   "identities": {
-    "targetUid": "zx-f0716311adc25af69becced4e4d04aef",
-    "parentUid": "zx-c6d60f6bae3d5a9cbc980577d74ea208"
+    "targetUid": "zx-d78c0c3d0e8a8d37661ce4cfda373103",
+    "parentUid": "zx-2d7b96a1d8758c54b27fdc809123aebc"
   },
   "targetDefinition": {
     "apiVersion": "uvp/v0",
@@ -85,18 +85,18 @@
           ],
           "inputs": {
             "execute": {
-              "hook": "manufacturing.intake#EXECUTE"
+              "hook": "intake#EXECUTE"
             },
             "amend": {
-              "hook": "manufacturing.produce#DOCK_AMEND"
+              "hook": "produce#DOCK_AMEND"
             }
           },
           "outputs": {
             "started": {
-              "signal": "factory::manufacturing.intake.str"
+              "signal": "factory::intake.str"
             },
             "completed": {
-              "signal": "factory::manufacturing.produce.cmp"
+              "signal": "factory::produce.cmp"
             }
           }
         },
@@ -106,52 +106,47 @@
           ],
           "outputs": {
             "scrap_declared": {
-              "signal": "factory::manufacturing.produce.scrap_created"
+              "signal": "factory::produce.scrap_created"
             }
           }
         }
       },
-      "taskPatterns": [
+      "stages": [
         {
-          "name": "manufacturing",
-          "stages": [
+          "name": "intake",
+          "source": "factory",
+          "receiveSignals": {
+            "EXECUTE": "factory::intake.execute"
+          },
+          "sendSignals": [
             {
-              "name": "intake",
-              "source": "factory",
-              "receiveSignals": {
-                "EXECUTE": "factory::manufacturing.intake.execute"
-              },
-              "sendSignals": [
-                {
-                  "name": "str"
-                }
-              ],
-              "executor": {
-                "supplierType": "organization",
-                "supplierID": "friction-factory"
-              }
+              "name": "str"
+            }
+          ],
+          "executor": {
+            "supplierType": "organization",
+            "supplierID": "friction-factory"
+          }
+        },
+        {
+          "name": "produce",
+          "source": "factory",
+          "receiveSignals": {
+            "RUN": "factory::intake.str",
+            "DOCK_AMEND": "factory::produce.amend"
+          },
+          "sendSignals": [
+            {
+              "name": "cmp"
             },
             {
-              "name": "produce",
-              "source": "factory",
-              "receiveSignals": {
-                "RUN": "factory::manufacturing.intake.str",
-                "DOCK_AMEND": "factory::manufacturing.produce.amend"
-              },
-              "sendSignals": [
-                {
-                  "name": "cmp"
-                },
-                {
-                  "name": "scrap_created"
-                }
-              ],
-              "executor": {
-                "supplierType": "organization",
-                "supplierID": "friction-factory"
-              }
+              "name": "scrap_created"
             }
-          ]
+          ],
+          "executor": {
+            "supplierType": "organization",
+            "supplierID": "friction-factory"
+          }
         }
       ]
     }
@@ -169,99 +164,89 @@
       "nucleation": {
         "id": "sourcing-core"
       },
-      "taskPatterns": [
+      "stages": [
         {
-          "name": "procurement",
-          "stages": [
+          "name": "confirm",
+          "source": "purchaser",
+          "receiveSignals": {
+            "ORDER": "purchaser::confirm.seed"
+          },
+          "sendSignals": [
             {
-              "name": "confirm",
-              "source": "purchaser",
-              "receiveSignals": {
-                "ORDER": "purchaser::procurement.confirm.seed"
-              },
-              "sendSignals": [
-                {
-                  "name": "cmp"
-                },
-                {
-                  "name": "seed"
-                }
-              ],
-              "executor": {
-                "supplierType": "organization",
-                "supplierID": "purchaser-app"
-              }
-            }
-          ]
-        },
-        {
-          "name": "sourcing",
-          "stages": [
-            {
-              "name": "manufacture",
-              "source": "purchaser",
-              "receiveSignals": {
-                "EXECUTE": "purchaser::procurement.confirm.cmp"
-              },
-              "sendSignals": [
-                {
-                  "name": "str"
-                },
-                {
-                  "name": "cmp"
-                }
-              ],
-              "executor": {
-                "supplierType": "zhixu",
-                "zhixuExecutorConfig": {
-                  "target": {
-                    "zhixu": "zx-f0716311adc25af69becced4e4d04aef"
-                  },
-                  "interface": "production_service",
-                  "order": {
-                    "mode": "new"
-                  },
-                  "inputMap": {
-                    "EXECUTE": "execute"
-                  },
-                  "signalMap": {
-                    "str": "started",
-                    "cmp": "completed"
-                  }
-                }
-              }
+              "name": "cmp"
             },
             {
-              "name": "source_evidence",
-              "source": "recycler",
-              "receiveSignals": {
-                "READ": "recycler::sourcing.source_evidence.seed"
+              "name": "seed"
+            }
+          ],
+          "executor": {
+            "supplierType": "organization",
+            "supplierID": "purchaser-app"
+          }
+        },
+        {
+          "name": "manufacture",
+          "source": "purchaser",
+          "receiveSignals": {
+            "EXECUTE": "purchaser::confirm.cmp"
+          },
+          "sendSignals": [
+            {
+              "name": "str"
+            },
+            {
+              "name": "cmp"
+            }
+          ],
+          "executor": {
+            "supplierType": "zhixu",
+            "zhixuExecutorConfig": {
+              "target": {
+                "zhixu": "zx-d78c0c3d0e8a8d37661ce4cfda373103"
               },
-              "sendSignals": [
-                {
-                  "name": "cmp"
-                },
-                {
-                  "name": "seed"
-                }
-              ],
-              "executor": {
-                "supplierType": "zhixu",
-                "zhixuExecutorConfig": {
-                  "target": {
-                    "zhixu": "zx-f0716311adc25af69becced4e4d04aef"
-                  },
-                  "interface": "production_evidence",
-                  "order": {
-                    "mode": "existing"
-                  },
-                  "signalMap": {
-                    "cmp": "scrap_declared"
-                  }
-                }
+              "interface": "production_service",
+              "order": {
+                "mode": "new"
+              },
+              "inputMap": {
+                "EXECUTE": "execute"
+              },
+              "signalMap": {
+                "str": "started",
+                "cmp": "completed"
               }
             }
-          ]
+          }
+        },
+        {
+          "name": "source_evidence",
+          "source": "recycler",
+          "receiveSignals": {
+            "READ": "recycler::source_evidence.seed"
+          },
+          "sendSignals": [
+            {
+              "name": "cmp"
+            },
+            {
+              "name": "seed"
+            }
+          ],
+          "executor": {
+            "supplierType": "zhixu",
+            "zhixuExecutorConfig": {
+              "target": {
+                "zhixu": "zx-d78c0c3d0e8a8d37661ce4cfda373103"
+              },
+              "interface": "production_evidence",
+              "order": {
+                "mode": "existing"
+              },
+              "signalMap": {
+                "cmp": "scrap_declared"
+              }
+            }
+          }
         }
       ]
     }
@@ -270,7 +255,7 @@
     "schemaVersion": "uvp.dock.resolution.v2",
     "definitions": [
       {
-        "zhixu": "zx-f0716311adc25af69becced4e4d04aef",
+        "zhixu": "zx-d78c0c3d0e8a8d37661ce4cfda373103",
         "definition": {
           "apiVersion": "uvp/v0",
           "kind": "Zhixu",
@@ -291,18 +276,18 @@
                 ],
                 "inputs": {
                   "execute": {
-                    "hook": "manufacturing.intake#EXECUTE"
+                    "hook": "intake#EXECUTE"
                   },
                   "amend": {
-                    "hook": "manufacturing.produce#DOCK_AMEND"
+                    "hook": "produce#DOCK_AMEND"
                   }
                 },
                 "outputs": {
                   "started": {
-                    "signal": "factory::manufacturing.intake.str"
+                    "signal": "factory::intake.str"
                   },
                   "completed": {
-                    "signal": "factory::manufacturing.produce.cmp"
+                    "signal": "factory::produce.cmp"
                   }
                 }
               },
@@ -312,58 +297,53 @@
                 ],
                 "outputs": {
                   "scrap_declared": {
-                    "signal": "factory::manufacturing.produce.scrap_created"
+                    "signal": "factory::produce.scrap_created"
                   }
                 }
               }
             },
-            "taskPatterns": [
+            "stages": [
               {
-                "name": "manufacturing",
-                "stages": [
+                "name": "intake",
+                "source": "factory",
+                "receiveSignals": {
+                  "EXECUTE": "factory::intake.execute"
+                },
+                "sendSignals": [
                   {
-                    "name": "intake",
-                    "source": "factory",
-                    "receiveSignals": {
-                      "EXECUTE": "factory::manufacturing.intake.execute"
-                    },
-                    "sendSignals": [
-                      {
-                        "name": "str"
-                      }
-                    ],
-                    "executor": {
-                      "supplierType": "organization",
-                      "supplierID": "friction-factory"
-                    }
+                    "name": "str"
+                  }
+                ],
+                "executor": {
+                  "supplierType": "organization",
+                  "supplierID": "friction-factory"
+                }
+              },
+              {
+                "name": "produce",
+                "source": "factory",
+                "receiveSignals": {
+                  "RUN": "factory::intake.str",
+                  "DOCK_AMEND": "factory::produce.amend"
+                },
+                "sendSignals": [
+                  {
+                    "name": "cmp"
                   },
                   {
-                    "name": "produce",
-                    "source": "factory",
-                    "receiveSignals": {
-                      "RUN": "factory::manufacturing.intake.str",
-                      "DOCK_AMEND": "factory::manufacturing.produce.amend"
-                    },
-                    "sendSignals": [
-                      {
-                        "name": "cmp"
-                      },
-                      {
-                        "name": "scrap_created"
-                      }
-                    ],
-                    "executor": {
-                      "supplierType": "organization",
-                      "supplierID": "friction-factory"
-                    }
+                    "name": "scrap_created"
                   }
-                ]
+                ],
+                "executor": {
+                  "supplierType": "organization",
+                  "supplierID": "friction-factory"
+                }
               }
             ]
           }
         },
-        "definitionRefHash": "0xbd684a0307c762203588fa01cb13678459886ff3c0e25d1aceb1c04672f384f4",
-        "artifactHash": "0x738739001e98f9304183606d0b22518f1cf0ea42d2c2e64d96498e38a6761f56",
+        "definitionRefHash": "0x333b710fc77c7d9e5a95cd5a259b984d782dd2a778871578faedfd180b1efe75",
+        "artifactHash": "0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4",
         "published": true,
         "interfaces": [
           {
@@ -375,17 +355,17 @@
             "outputs": [
               {
                 "port": "scrap_declared",
-                "canonicalOutputSignal": "factory::manufacturing.produce.scrap_created",
-                "canonicalOutputSignalHash": "0x2e49af87aafeabf0d1d0332f098483aff6029541193827ba2e02fbad3cd9d74b",
+                "canonicalOutputSignal": "factory::produce.scrap_created",
+                "canonicalOutputSignalHash": "0x50df28179e2d9c14fda72f079c7e3f8c8d1497d61e346727ed5c880e9fdf942b",
                 "source": "factory",
                 "sourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
-                "signalId": "0xbc2ed06bee2b19d5da48e9fb85cc819ca17502d01592b153c975b3d92ba6daf9",
-                "leafHash": "0x8ac8f2ed4505ed17f7629699ccac2d5ac5c8b67bd7cfca77500c88428dc3100c"
+                "signalId": "0x8b4fff07b8c10ba1f19c8353ee56a2abca859d39323ead7ffa1fc0f70e73f238",
+                "leafHash": "0x693c26edf4095f6dc271928ae7364e8e69dc305739d849353d2e7c098ba57a5d"
               }
             ],
             "inputsRoot": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
-            "outputsRoot": "0x8ac8f2ed4505ed17f7629699ccac2d5ac5c8b67bd7cfca77500c88428dc3100c",
-            "interfaceRoot": "0x43afbc49118d11022ca75020a08d70b7c2eedf2cc8d1f81bb8984599360a60a6"
+            "outputsRoot": "0x693c26edf4095f6dc271928ae7364e8e69dc305739d849353d2e7c098ba57a5d",
+            "interfaceRoot": "0x0cef6a00b2457b36211fdd7fc9d35e494f42d7f2f6af87b2f209b8dd823e6f75"
           },
           {
             "name": "production_service",
@@ -395,71 +375,71 @@
             "inputs": [
               {
                 "port": "amend",
-                "stageIdentifier": "manufacturing.produce",
+                "stageIdentifier": "produce",
                 "hookName": "DOCK_AMEND",
-                "hookId": "manufacturing.produce#DOCK_AMEND",
-                "canonicalInputSignal": "factory::manufacturing.produce.amend",
-                "canonicalInputSignalHash": "0x99d8096dee33ef3ed2edcb23942fc8c529a6fe1b6def5395d22e61a583c0e7f8",
+                "hookId": "produce#DOCK_AMEND",
+                "canonicalInputSignal": "factory::produce.amend",
+                "canonicalInputSignalHash": "0x8b30c37ecaeb8d805605855375ffd5aacea7d3f66e0924b5102be5af0caf88fe",
                 "source": "factory",
                 "sourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
-                "signalId": "0x3bdcdcd4b86ad2dbe7bfe0f673359859cebccb1fe73b2f1f45539e7cc383eac2",
-                "leafHash": "0x024fc9cf52972c665d142996425f3ae27b5264cb402b8e50c6f30418b3d879ec"
+                "signalId": "0xf895eff1788a31957e29a30346b66855798e5ba41c501432907f44d78aea9a39",
+                "leafHash": "0xf61318ec32093d23b2cb35d731022ab035638835a837ece512ea59623bb62901"
               },
               {
                 "port": "execute",
-                "stageIdentifier": "manufacturing.intake",
+                "stageIdentifier": "intake",
                 "hookName": "EXECUTE",
-                "hookId": "manufacturing.intake#EXECUTE",
-                "canonicalInputSignal": "factory::manufacturing.intake.execute",
-                "canonicalInputSignalHash": "0x2222fa7555de9b0a10f73134a3bd4cfb9f588bbb9e7c82a3dd993cee09c2d29f",
+                "hookId": "intake#EXECUTE",
+                "canonicalInputSignal": "factory::intake.execute",
+                "canonicalInputSignalHash": "0xd0ebd860ed259e6dcaf9115941328f401a9aafea2d73631d52bb4de269a1aa87",
                 "source": "factory",
                 "sourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
-                "signalId": "0x6ed266defe4a2f9643bb6b954a7ef7a3db6856d843225b0f5abad5ac7d485118",
-                "leafHash": "0x294b903a655ba2eec1a71ddeeaf39371310ec3780be0d6ddd1810213c1fabb82"
+                "signalId": "0x3cafc453a97ab2777674dd7f2adf026dd4462b56c4cf321178be59a03778897e",
+                "leafHash": "0x9ded09b3effc85c8b09af28db5fd4dfa8d31c3ff62a2a4b13106ba6870ce2bc8"
               }
             ],
             "outputs": [
               {
                 "port": "completed",
-                "canonicalOutputSignal": "factory::manufacturing.produce.cmp",
-                "canonicalOutputSignalHash": "0x95a093109f208b6875ddbece62fd8892c8e53b134cc2f1a2cf131b42f9a97321",
+                "canonicalOutputSignal": "factory::produce.cmp",
+                "canonicalOutputSignalHash": "0x75a48a58d64fbeec5a7f31ce47d1169723468955af37f3487ff32523a52862a5",
                 "source": "factory",
                 "sourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
-                "signalId": "0x3ed20177708f3d168b4f2d8b4de029d2021dfa818b0b60f0c33a18b7edf72b88",
-                "leafHash": "0x07e487a8dfa0e5355d57eb0ab8ea1f0d826f32a5c38dcfe2d03c0019229f9dc4"
+                "signalId": "0x4e5ad88c74e2500fe8c03fc3e5842a9c5912691e7f0df6b1c00dfe0b374fcb9f",
+                "leafHash": "0xf3e39043f2c60bde31d363a40c45c18bf1cc785398dead407d7b5600d668e6c2"
               },
               {
                 "port": "started",
-                "canonicalOutputSignal": "factory::manufacturing.intake.str",
-                "canonicalOutputSignalHash": "0x6c1d0ceb7b17eb8b46e90737eef48ad0429d84e3f972425778851f42bbed1106",
+                "canonicalOutputSignal": "factory::intake.str",
+                "canonicalOutputSignalHash": "0xea54847cb4de3cd8981da9c4e88c014bea49a20826ba20a12516ce0f77bb8606",
                 "source": "factory",
                 "sourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
-                "signalId": "0x1ad5e81d6c2669d986cbb6753af9bcfaa8edea699805586268405b4a1dc273d9",
-                "leafHash": "0xdd61dd2b3c8fda2da64d2524fa0ca352d843ab0e1069caff1fad164796a4bf4e"
+                "signalId": "0x01181cce357e648ddf8731fa1672ffa44382952666697f8249cfd80c15e209db",
+                "leafHash": "0x4e9823aea8125c4f2dcdafa29f103fb13421890cb696c20f3d308d43f672ddfe"
               }
             ],
-            "inputsRoot": "0xb196cb9af75e0df59e51b0d2ade993e7f7040845ef0bbc275083c628e55418c3",
-            "outputsRoot": "0x3ffb61bb8fb213aaf5c9a653c113d798df13523f2dbbd35c101b4b0badfe4dfd",
-            "interfaceRoot": "0x2f0f75f81d59262f671dae2d804b475161fe14a6f537b0a0962bc9fb11435766"
+            "inputsRoot": "0xfc005bea9f9208e630d8d79de725a264ae2dc5ecf0a7f416025d0859cd984e2d",
+            "outputsRoot": "0x85419b9a6c0a7aec1ced1882c6ce3e9a50757ef198913aacdbf7965f3bf03995",
+            "interfaceRoot": "0x59241571ea80dfeb54b1dd40f298c62a1045481f552de4c4341f8b2be59baaa7"
           }
         ],
-        "evmPlanId": "0xafc403ebf6fb181d1d0317621d6ea0ab978f877042a69308ffc1d45904c31cef",
-        "cloudArtifactId": "artifact://0x738739001e98f9304183606d0b22518f1cf0ea42d2c2e64d96498e38a6761f56"
+        "evmPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3",
+        "cloudArtifactId": "artifact://0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4"
       }
     ]
   },
   "expected": {
-    "targetDefinitionRefHash": "0xbd684a0307c762203588fa01cb13678459886ff3c0e25d1aceb1c04672f384f4",
-    "parentDefinitionRefHash": "0x6648e561a31af66672ad47c1ff36430b31117f6c05218d06bee217e4d0676c53",
-    "targetPlanId": "0xafc403ebf6fb181d1d0317621d6ea0ab978f877042a69308ffc1d45904c31cef",
-    "targetArtifactHash": "0x738739001e98f9304183606d0b22518f1cf0ea42d2c2e64d96498e38a6761f56",
+    "targetDefinitionRefHash": "0x333b710fc77c7d9e5a95cd5a259b984d782dd2a778871578faedfd180b1efe75",
+    "parentDefinitionRefHash": "0x545ce758fb306fdc45bc708504bba0a35dca37b486ad75021cbee4be75ae9fe0",
+    "targetPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3",
+    "targetArtifactHash": "0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4",
     "interfaceArtifact": {
       "schemaVersion": "uvp.dockInterfaceArtifact.v2",
       "definition": {
-        "uid": "zx-f0716311adc25af69becced4e4d04aef",
-        "definitionRefHash": "0xbd684a0307c762203588fa01cb13678459886ff3c0e25d1aceb1c04672f384f4"
+        "uid": "zx-d78c0c3d0e8a8d37661ce4cfda373103",
+        "definitionRefHash": "0x333b710fc77c7d9e5a95cd5a259b984d782dd2a778871578faedfd180b1efe75"
       },
-      "interfaceRoot": "0x76a3b1b975b9ec31b1015db869cd8346926e4eaecf4e8dcc2ab118f54a34d29a",
+      "interfaceRoot": "0xd6be0319e52c855c043b914d5b24cbb5ebda5f852ffe7ce1dd9c578b4a89a024",
       "interfaces": [
         {
           "name": "production_evidence",
@@ -470,17 +450,17 @@
           "outputs": [
             {
               "port": "scrap_declared",
-              "canonicalOutputSignal": "factory::manufacturing.produce.scrap_created",
-              "canonicalOutputSignalHash": "0x2e49af87aafeabf0d1d0332f098483aff6029541193827ba2e02fbad3cd9d74b",
+              "canonicalOutputSignal": "factory::produce.scrap_created",
+              "canonicalOutputSignalHash": "0x50df28179e2d9c14fda72f079c7e3f8c8d1497d61e346727ed5c880e9fdf942b",
               "source": "factory",
               "sourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
-              "signalId": "0xbc2ed06bee2b19d5da48e9fb85cc819ca17502d01592b153c975b3d92ba6daf9",
-              "leafHash": "0x8ac8f2ed4505ed17f7629699ccac2d5ac5c8b67bd7cfca77500c88428dc3100c"
+              "signalId": "0x8b4fff07b8c10ba1f19c8353ee56a2abca859d39323ead7ffa1fc0f70e73f238",
+              "leafHash": "0x693c26edf4095f6dc271928ae7364e8e69dc305739d849353d2e7c098ba57a5d"
             }
           ],
           "inputsRoot": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
-          "outputsRoot": "0x8ac8f2ed4505ed17f7629699ccac2d5ac5c8b67bd7cfca77500c88428dc3100c",
-          "interfaceRoot": "0x43afbc49118d11022ca75020a08d70b7c2eedf2cc8d1f81bb8984599360a60a6"
+          "outputsRoot": "0x693c26edf4095f6dc271928ae7364e8e69dc305739d849353d2e7c098ba57a5d",
+          "interfaceRoot": "0x0cef6a00b2457b36211fdd7fc9d35e494f42d7f2f6af87b2f209b8dd823e6f75"
         },
         {
           "name": "production_service",
@@ -490,52 +470,52 @@
           "inputs": [
             {
               "port": "amend",
-              "stageIdentifier": "manufacturing.produce",
+              "stageIdentifier": "produce",
               "hookName": "DOCK_AMEND",
-              "hookId": "manufacturing.produce#DOCK_AMEND",
-              "canonicalInputSignal": "factory::manufacturing.produce.amend",
-              "canonicalInputSignalHash": "0x99d8096dee33ef3ed2edcb23942fc8c529a6fe1b6def5395d22e61a583c0e7f8",
+              "hookId": "produce#DOCK_AMEND",
+              "canonicalInputSignal": "factory::produce.amend",
+              "canonicalInputSignalHash": "0x8b30c37ecaeb8d805605855375ffd5aacea7d3f66e0924b5102be5af0caf88fe",
               "source": "factory",
               "sourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
-              "signalId": "0x3bdcdcd4b86ad2dbe7bfe0f673359859cebccb1fe73b2f1f45539e7cc383eac2",
-              "leafHash": "0x024fc9cf52972c665d142996425f3ae27b5264cb402b8e50c6f30418b3d879ec"
+              "signalId": "0xf895eff1788a31957e29a30346b66855798e5ba41c501432907f44d78aea9a39",
+              "leafHash": "0xf61318ec32093d23b2cb35d731022ab035638835a837ece512ea59623bb62901"
             },
             {
               "port": "execute",
-              "stageIdentifier": "manufacturing.intake",
+              "stageIdentifier": "intake",
               "hookName": "EXECUTE",
-              "hookId": "manufacturing.intake#EXECUTE",
-              "canonicalInputSignal": "factory::manufacturing.intake.execute",
-              "canonicalInputSignalHash": "0x2222fa7555de9b0a10f73134a3bd4cfb9f588bbb9e7c82a3dd993cee09c2d29f",
+              "hookId": "intake#EXECUTE",
+              "canonicalInputSignal": "factory::intake.execute",
+              "canonicalInputSignalHash": "0xd0ebd860ed259e6dcaf9115941328f401a9aafea2d73631d52bb4de269a1aa87",
               "source": "factory",
               "sourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
-              "signalId": "0x6ed266defe4a2f9643bb6b954a7ef7a3db6856d843225b0f5abad5ac7d485118",
-              "leafHash": "0x294b903a655ba2eec1a71ddeeaf39371310ec3780be0d6ddd1810213c1fabb82"
+              "signalId": "0x3cafc453a97ab2777674dd7f2adf026dd4462b56c4cf321178be59a03778897e",
+              "leafHash": "0x9ded09b3effc85c8b09af28db5fd4dfa8d31c3ff62a2a4b13106ba6870ce2bc8"
             }
           ],
           "outputs": [
             {
               "port": "completed",
-              "canonicalOutputSignal": "factory::manufacturing.produce.cmp",
-              "canonicalOutputSignalHash": "0x95a093109f208b6875ddbece62fd8892c8e53b134cc2f1a2cf131b42f9a97321",
+              "canonicalOutputSignal": "factory::produce.cmp",
+              "canonicalOutputSignalHash": "0x75a48a58d64fbeec5a7f31ce47d1169723468955af37f3487ff32523a52862a5",
               "source": "factory",
               "sourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
-              "signalId": "0x3ed20177708f3d168b4f2d8b4de029d2021dfa818b0b60f0c33a18b7edf72b88",
-              "leafHash": "0x07e487a8dfa0e5355d57eb0ab8ea1f0d826f32a5c38dcfe2d03c0019229f9dc4"
+              "signalId": "0x4e5ad88c74e2500fe8c03fc3e5842a9c5912691e7f0df6b1c00dfe0b374fcb9f",
+              "leafHash": "0xf3e39043f2c60bde31d363a40c45c18bf1cc785398dead407d7b5600d668e6c2"
             },
             {
               "port": "started",
-              "canonicalOutputSignal": "factory::manufacturing.intake.str",
-              "canonicalOutputSignalHash": "0x6c1d0ceb7b17eb8b46e90737eef48ad0429d84e3f972425778851f42bbed1106",
+              "canonicalOutputSignal": "factory::intake.str",
+              "canonicalOutputSignalHash": "0xea54847cb4de3cd8981da9c4e88c014bea49a20826ba20a12516ce0f77bb8606",
               "source": "factory",
               "sourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
-              "signalId": "0x1ad5e81d6c2669d986cbb6753af9bcfaa8edea699805586268405b4a1dc273d9",
-              "leafHash": "0xdd61dd2b3c8fda2da64d2524fa0ca352d843ab0e1069caff1fad164796a4bf4e"
+              "signalId": "0x01181cce357e648ddf8731fa1672ffa44382952666697f8249cfd80c15e209db",
+              "leafHash": "0x4e9823aea8125c4f2dcdafa29f103fb13421890cb696c20f3d308d43f672ddfe"
             }
           ],
-          "inputsRoot": "0xb196cb9af75e0df59e51b0d2ade993e7f7040845ef0bbc275083c628e55418c3",
-          "outputsRoot": "0x3ffb61bb8fb213aaf5c9a653c113d798df13523f2dbbd35c101b4b0badfe4dfd",
-          "interfaceRoot": "0x2f0f75f81d59262f671dae2d804b475161fe14a6f537b0a0962bc9fb11435766"
+          "inputsRoot": "0xfc005bea9f9208e630d8d79de725a264ae2dc5ecf0a7f416025d0859cd984e2d",
+          "outputsRoot": "0x85419b9a6c0a7aec1ced1882c6ce3e9a50757ef198913aacdbf7965f3bf03995",
+          "interfaceRoot": "0x59241571ea80dfeb54b1dd40f298c62a1045481f552de4c4341f8b2be59baaa7"
         }
       ]
     },
@@ -546,23 +526,23 @@
     "dockRoutes": [
       {
         "schemaVersion": "uvp.dockRoute.v3",
-        "routeId": "0xe0e271eaac2db6aba508ab2b0d15cc60e29e8ed7a350c491f0207f9e7abc2efb",
+        "routeId": "0xdefa5ca5fe4c10fd1b1f39be44b909794b09d110d161b7f74587263a1ecd7e44",
         "local": {
-          "definitionRefHash": "0x6648e561a31af66672ad47c1ff36430b31117f6c05218d06bee217e4d0676c53",
-          "planId": "0x4b3c8793c10b3e489c9ae39f518041c238cdf6a45d001a9e834fea53f54345e4",
-          "stageIdentifier": "sourcing.manufacture",
-          "stageKey": "0xc70716f62fbab1ccd4714dfae133adc06c30902fe62d02a109ab3b0359933654"
+          "definitionRefHash": "0x545ce758fb306fdc45bc708504bba0a35dca37b486ad75021cbee4be75ae9fe0",
+          "planId": "0xa7c69eb7fbf5928ebc528881e0f277db3fe8f1c1c71c55531fcfb6f10c32de5a",
+          "stageIdentifier": "manufacture",
+          "stageKey": "0xcb394534b45420b7dd9c5a326388828a4fc035bdf29fd2776c257cca18c76711"
         },
         "target": {
-          "definitionRefHash": "0xbd684a0307c762203588fa01cb13678459886ff3c0e25d1aceb1c04672f384f4",
-          "zhixuUid": "zx-f0716311adc25af69becced4e4d04aef",
+          "definitionRefHash": "0x333b710fc77c7d9e5a95cd5a259b984d782dd2a778871578faedfd180b1efe75",
+          "zhixuUid": "zx-d78c0c3d0e8a8d37661ce4cfda373103",
           "zhixuName": "friction_wheel_production",
           "interfaceName": "production_service",
-          "interfaceRoot": "0x2f0f75f81d59262f671dae2d804b475161fe14a6f537b0a0962bc9fb11435766",
-          "dockInterfaceRoot": "0x76a3b1b975b9ec31b1015db869cd8346926e4eaecf4e8dcc2ab118f54a34d29a",
-          "artifactHash": "0x738739001e98f9304183606d0b22518f1cf0ea42d2c2e64d96498e38a6761f56",
-          "cloudArtifactId": "artifact://0x738739001e98f9304183606d0b22518f1cf0ea42d2c2e64d96498e38a6761f56",
-          "evmPlanId": "0xafc403ebf6fb181d1d0317621d6ea0ab978f877042a69308ffc1d45904c31cef"
+          "interfaceRoot": "0x59241571ea80dfeb54b1dd40f298c62a1045481f552de4c4341f8b2be59baaa7",
+          "dockInterfaceRoot": "0xd6be0319e52c855c043b914d5b24cbb5ebda5f852ffe7ce1dd9c578b4a89a024",
+          "artifactHash": "0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4",
+          "cloudArtifactId": "artifact://0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4",
+          "evmPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3"
         },
         "orderMode": "new",
         "sourceSeam": "factory",
@@ -570,61 +550,61 @@
           {
             "localHookName": "EXECUTE",
             "targetPort": "execute",
-            "targetInputSignalHash": "0x2222fa7555de9b0a10f73134a3bd4cfb9f588bbb9e7c82a3dd993cee09c2d29f",
+            "targetInputSignalHash": "0xd0ebd860ed259e6dcaf9115941328f401a9aafea2d73631d52bb4de269a1aa87",
             "targetSourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
-            "targetSignalId": "0x6ed266defe4a2f9643bb6b954a7ef7a3db6856d843225b0f5abad5ac7d485118",
-            "targetStageIdentifier": "manufacturing.intake",
-            "targetSignalName": "factory::manufacturing.intake.execute",
-            "bindingHash": "0xfd45ae70f0c26ae56df0fc073c21f8065779d2ed845b777668172f6929765ba1"
+            "targetSignalId": "0x3cafc453a97ab2777674dd7f2adf026dd4462b56c4cf321178be59a03778897e",
+            "targetStageIdentifier": "intake",
+            "targetSignalName": "factory::intake.execute",
+            "bindingHash": "0xb8d8de6f5005081507abb15fc4c843a733721a4167f9165851ea446668e33bfc"
           }
         ],
         "outputBindings": [
           {
-            "localSignalName": "str",
-            "localSourceId": "0x5cd9763eb0769e05e47a6515df0fedff76d312b6727c9aef2e804b125f56ae63",
-            "localSignalId": "0x1e061f849e417a55c28431cc8530cf4b997c95be150d69b046889c478c3be526",
-            "targetPort": "started",
-            "targetOutputSignalHash": "0x6c1d0ceb7b17eb8b46e90737eef48ad0429d84e3f972425778851f42bbed1106",
-            "targetSourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
-            "targetSignalId": "0x1ad5e81d6c2669d986cbb6753af9bcfaa8edea699805586268405b4a1dc273d9",
-            "targetSignalName": "factory::manufacturing.intake.str",
-            "bindingHash": "0x9b4cbeee596b1748e93e431ca64aaab7232a0df18d64e478dcb9b079c4077ce2"
-          },
-          {
             "localSignalName": "cmp",
             "localSourceId": "0x5cd9763eb0769e05e47a6515df0fedff76d312b6727c9aef2e804b125f56ae63",
-            "localSignalId": "0x9a366593e4d57b2246894e41497635fa7d7221b49aa56e0cca7721675da5a303",
+            "localSignalId": "0x2a0ad8bd470697ce71381dc6f611e7e30c300556772f48be2ee7a60445748f60",
             "targetPort": "completed",
-            "targetOutputSignalHash": "0x95a093109f208b6875ddbece62fd8892c8e53b134cc2f1a2cf131b42f9a97321",
+            "targetOutputSignalHash": "0x75a48a58d64fbeec5a7f31ce47d1169723468955af37f3487ff32523a52862a5",
             "targetSourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
-            "targetSignalId": "0x3ed20177708f3d168b4f2d8b4de029d2021dfa818b0b60f0c33a18b7edf72b88",
-            "targetSignalName": "factory::manufacturing.produce.cmp",
-            "bindingHash": "0xab139f10fb048715fdd3de9d638cd6f178d21430d88ea8cd7e232fae1943a249"
+            "targetSignalId": "0x4e5ad88c74e2500fe8c03fc3e5842a9c5912691e7f0df6b1c00dfe0b374fcb9f",
+            "targetSignalName": "factory::produce.cmp",
+            "bindingHash": "0x026d50251d5f867d4ddf53e3768bc1d7c0aae0d65538ed0ded0f77ed6b36a3d7"
+          },
+          {
+            "localSignalName": "str",
+            "localSourceId": "0x5cd9763eb0769e05e47a6515df0fedff76d312b6727c9aef2e804b125f56ae63",
+            "localSignalId": "0xd630baa6b8f51369a946770198647cc7dfac29639d5d29ee5c947e4d921ffbd6",
+            "targetPort": "started",
+            "targetOutputSignalHash": "0xea54847cb4de3cd8981da9c4e88c014bea49a20826ba20a12516ce0f77bb8606",
+            "targetSourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
+            "targetSignalId": "0x01181cce357e648ddf8731fa1672ffa44382952666697f8249cfd80c15e209db",
+            "targetSignalName": "factory::intake.str",
+            "bindingHash": "0xafbc7f9a5d49b32bce833d5e95796c664d37737ee60cd894544c6da782cc555e"
           }
         ],
-        "inputBindingsRoot": "0xfd45ae70f0c26ae56df0fc073c21f8065779d2ed845b777668172f6929765ba1",
-        "outputBindingsRoot": "0x3570ece445f3926ed25b674775ff00e2a842f6adfe804f7f6691c5fc8a4d35a6",
-        "routeHash": "0x803fb23fb28c33be2147511f46edbeccc6ca72d9101c69696a0405e49da2e690"
+        "inputBindingsRoot": "0xb8d8de6f5005081507abb15fc4c843a733721a4167f9165851ea446668e33bfc",
+        "outputBindingsRoot": "0xdbc5910d0dae415fe8e117fb19d21e437f4a4c4c188423baa51fed7fa60f4d52",
+        "routeHash": "0xe9d114b07a154b45c59a2e07628e66330bd6bc8cd38a57f33b9682620060344e"
       },
       {
         "schemaVersion": "uvp.dockRoute.v3",
-        "routeId": "0xc374148a5a757a210575098d81041cf0ddf0ec25138303ada20537d4e53066a4",
+        "routeId": "0x951792df8c1f23c587854ab2ea77212ac787b3634933ff4c2c01294c3b8cd90e",
         "local": {
-          "definitionRefHash": "0x6648e561a31af66672ad47c1ff36430b31117f6c05218d06bee217e4d0676c53",
-          "planId": "0x4b3c8793c10b3e489c9ae39f518041c238cdf6a45d001a9e834fea53f54345e4",
-          "stageIdentifier": "sourcing.source_evidence",
-          "stageKey": "0x0f8a344058c632809bbd916b3365aab0099013ffb7a766c528b7b68fd07db2ca"
+          "definitionRefHash": "0x545ce758fb306fdc45bc708504bba0a35dca37b486ad75021cbee4be75ae9fe0",
+          "planId": "0xa7c69eb7fbf5928ebc528881e0f277db3fe8f1c1c71c55531fcfb6f10c32de5a",
+          "stageIdentifier": "source_evidence",
+          "stageKey": "0x0c6812992eb8203b802ae2b44a3b8a6486c910ebde54919416e9422f30786338"
         },
         "target": {
-          "definitionRefHash": "0xbd684a0307c762203588fa01cb13678459886ff3c0e25d1aceb1c04672f384f4",
-          "zhixuUid": "zx-f0716311adc25af69becced4e4d04aef",
+          "definitionRefHash": "0x333b710fc77c7d9e5a95cd5a259b984d782dd2a778871578faedfd180b1efe75",
+          "zhixuUid": "zx-d78c0c3d0e8a8d37661ce4cfda373103",
           "zhixuName": "friction_wheel_production",
           "interfaceName": "production_evidence",
-          "interfaceRoot": "0x43afbc49118d11022ca75020a08d70b7c2eedf2cc8d1f81bb8984599360a60a6",
-          "dockInterfaceRoot": "0x76a3b1b975b9ec31b1015db869cd8346926e4eaecf4e8dcc2ab118f54a34d29a",
-          "artifactHash": "0x738739001e98f9304183606d0b22518f1cf0ea42d2c2e64d96498e38a6761f56",
-          "cloudArtifactId": "artifact://0x738739001e98f9304183606d0b22518f1cf0ea42d2c2e64d96498e38a6761f56",
-          "evmPlanId": "0xafc403ebf6fb181d1d0317621d6ea0ab978f877042a69308ffc1d45904c31cef"
+          "interfaceRoot": "0x0cef6a00b2457b36211fdd7fc9d35e494f42d7f2f6af87b2f209b8dd823e6f75",
+          "dockInterfaceRoot": "0xd6be0319e52c855c043b914d5b24cbb5ebda5f852ffe7ce1dd9c578b4a89a024",
+          "artifactHash": "0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4",
+          "cloudArtifactId": "artifact://0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4",
+          "evmPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3"
         },
         "orderMode": "existing",
         "sourceSeam": "factory",
@@ -633,53 +613,53 @@
           {
             "localSignalName": "cmp",
             "localSourceId": "0x3000db70fbb30dda63c57034bc6e139e0380cf09e7bfbe7485050f735db5f473",
-            "localSignalId": "0x82c44b6ab4564c67f9fb021d73caa49895b7ee43fcb9861967994713401ca1b4",
+            "localSignalId": "0xde9c244d395feb702218b444bffc901aaaaad590a8cef1c9bdbf03da8efb1e9b",
             "targetPort": "scrap_declared",
-            "targetOutputSignalHash": "0x2e49af87aafeabf0d1d0332f098483aff6029541193827ba2e02fbad3cd9d74b",
+            "targetOutputSignalHash": "0x50df28179e2d9c14fda72f079c7e3f8c8d1497d61e346727ed5c880e9fdf942b",
             "targetSourceId": "0xe366a98476020cb9ff8cc566d0cdeac414e546d2e7ede445f4e7032a4272c771",
-            "targetSignalId": "0xbc2ed06bee2b19d5da48e9fb85cc819ca17502d01592b153c975b3d92ba6daf9",
-            "targetSignalName": "factory::manufacturing.produce.scrap_created",
-            "bindingHash": "0x53ed9f8494d07814d09aa0f44ab9c0ce3f758b4c0f541d2bd2a21e674c5d7c26"
+            "targetSignalId": "0x8b4fff07b8c10ba1f19c8353ee56a2abca859d39323ead7ffa1fc0f70e73f238",
+            "targetSignalName": "factory::produce.scrap_created",
+            "bindingHash": "0x95fe3d33fa8c4fc4fbf1e6d5f59324f87e442db38b62c2be5fd4b83e1d428057"
           }
         ],
         "inputBindingsRoot": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
-        "outputBindingsRoot": "0x53ed9f8494d07814d09aa0f44ab9c0ce3f758b4c0f541d2bd2a21e674c5d7c26",
-        "routeHash": "0xc2f45afb2373a4b02cf04ea9027ee3e8a2fcf579411d4e0c4f2238cf3889f6aa"
+        "outputBindingsRoot": "0x95fe3d33fa8c4fc4fbf1e6d5f59324f87e442db38b62c2be5fd4b83e1d428057",
+        "routeHash": "0x23d86a58eae90a68701c9201a8c0342a8ce68e88400809c8be7c6492b1120354"
       }
     ],
-    "dockRoutesRoot": "0x7818503ab9e42aac6c1a7d076248c3e45863dc8b4be193c42eac245e1836579a",
+    "dockRoutesRoot": "0xe28c2d63a37004b9fa6e7591755ba338ba6acf98d757d648d4820074b1624562",
     "dockInterfaceRoot": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
     "evmRuntimeDomain": "0xa94a0dfb7ca902548259fc0032f6f1cbf654f1f291c31b748af22732e6c7001e",
     "cloudRuntimeDomain": "0xf9747a82566e7d832a4c9f925a41141970614a89f796997fde9e2796a4f0d820",
     "localOrderKey": "0x49235cda0289508fe38e33fd2d40e8ad56e1d7474121432e28e9fefc5e6f4740",
-    "dockInstanceId": "0x2cc48ae44b8dfa5cc48a31edafc60de970f18c4e2e9000ed2fa07912632c2dcb",
-    "linkedOrderId": "0xa9bbf2d0b871e495f72f44de14cdc6a8a8810df02e33b4cd04759c92047e2ba1",
-    "existingDockInstanceId": "0x313a782f5259861b9b2c0e0aca0575a59d08c9f1389c0306cb7505ffbd58dae6",
-    "existingEvmDockInstanceId": "0xe83f9f6d328eaf48a0eeff3c8955cdcd2f9cea9e17da7bee379a58b64d108174",
+    "dockInstanceId": "0x5e618b2c11d2db0c8ff395fc50e710e9d1e6e667a2a6ed79c194888c56cc3b62",
+    "linkedOrderId": "0xaf7cf473f84aca868855aed43cc6a088e7d8a7439bdb1b9c92be16c3f46548fe",
+    "existingDockInstanceId": "0x942ccc01102a592be91b42a9941da941d390e6633012f4f2ffd351a5cb9226d3",
+    "existingEvmDockInstanceId": "0xf46bfe8de335e88ad7f1e04127863ebac2df5e82ab41069934952a57c1cf5d41",
     "dynamicSelection": {
-      "routeId": "0xc374148a5a757a210575098d81041cf0ddf0ec25138303ada20537d4e53066a4",
-      "candidateLeaf": "0x0906bd48714329c41770488b85be151af520d4479573f43a3e1ad25a7c8f00b1",
-      "otherCandidateLeaf": "0xbef2606711a8c0a511f8b3fe93ff1da0528ef9460e985b6114f666e49f2e5901",
-      "candidatesRoot": "0x9eed8d8bc285ae7082eb0d2ec28a55bc6982efd3791c7d6e18c7cdb7643a509e",
+      "routeId": "0x951792df8c1f23c587854ab2ea77212ac787b3634933ff4c2c01294c3b8cd90e",
+      "candidateLeaf": "0x03e83ddf8a75d62d5e53167ee739f30616347bf89235aecb506870cf39e669fa",
+      "otherCandidateLeaf": "0xb57b6427af63f50a5feaad50e3fd99b7124e4e9ebb7b8bb20b517051e5aa7a0b",
+      "candidatesRoot": "0xb88c6db433678e67fa126d5d985cc16677bc0bd23e000c91f1326a55b1dd36e0",
       "candidateProof": [
-        "0xbef2606711a8c0a511f8b3fe93ff1da0528ef9460e985b6114f666e49f2e5901"
+        "0xb57b6427af63f50a5feaad50e3fd99b7124e4e9ebb7b8bb20b517051e5aa7a0b"
       ],
       "candidateProofLength": 1,
-      "dynamicRouteHash": "0x53aa8539c5f7d746c526c11865a231e5625bcb4be976d38d59aac603c3597813"
+      "dynamicRouteHash": "0x34135a279cf2ec33154f326bc37a3aadca09729343180be2af4166ad0e01acde"
     },
-    "sourceFactSetHash": "0x8fb2a65a025f1fd6ea7c3e3dea761ede80cd33ef8e06b0358c6d81067e7701f6",
-    "inputPayloadHash": "0xa2b9e705efd4ea62f7a4a7f6ee67bc548e5b75b91db3a98317b1df0f9163eb7d",
-    "inputIdempotencyKey": "0x6725180e4282310b8cd7994140702e11ca498f222a945690639e918a4f1757df",
-    "outputIdempotencyKey": "0xc70904a6ae172e91c260f36279f56125184feb2da4ca44972e370ba50a8f373b",
-    "permitDigest": "0x0793af0e1fd33330a93023c997f5a68a1ff2b0fd0156a7261931ebf09c2ff815",
+    "sourceFactSetHash": "0x4184669d78f2389ce940e285c81ba315f3802dd7744ebfc32d26123ed5d980f3",
+    "inputPayloadHash": "0x215f8d8930bc24f49e0d64ba20ca3c01459e6abf18411e47033e9960ddeb9a8a",
+    "inputIdempotencyKey": "0x868a1e9cfcda447d42002f4f812087d6b896033298d8360039c9bf6d2d1ba951",
+    "outputIdempotencyKey": "0x7556eaa94bf0e05ee59487f3691cffd33980f8917f6ccbdeea70f64c9f0eee67",
+    "permitDigest": "0x3649d060d8ef27ee0eeed318753d8304d9c852a7c4dd2466138bf4d44b394796",
     "routeLeafProof": [
-      "0xc2f45afb2373a4b02cf04ea9027ee3e8a2fcf579411d4e0c4f2238cf3889f6aa"
+      "0x23d86a58eae90a68701c9201a8c0342a8ce68e88400809c8be7c6492b1120354"
     ],
     "interfaceLeafProof": [
-      "0x43afbc49118d11022ca75020a08d70b7c2eedf2cc8d1f81bb8984599360a60a6"
+      "0x0cef6a00b2457b36211fdd7fc9d35e494f42d7f2f6af87b2f209b8dd823e6f75"
     ],
     "inputPortLeafProof": [
-      "0x024fc9cf52972c665d142996425f3ae27b5264cb402b8e50c6f30418b3d879ec"
+      "0xf61318ec32093d23b2cb35d731022ab035638835a837ece512ea59623bb62901"
     ]
   }
 }

@@ -617,8 +617,8 @@ function validateZhixuShape(definition: ZhixuDefinition): readonly string[] {
   if (!isPlatform(definition.spec?.platform)) {
     issues.push("spec.platform must be an object with a non-empty type");
   }
-  if (!definition.spec?.taskPatterns?.length) {
-    issues.push("spec.taskPatterns must contain at least one task pattern");
+  if (!definition.spec?.stages?.length) {
+    issues.push("spec.stages must contain at least one stage");
   }
   return issues;
 }

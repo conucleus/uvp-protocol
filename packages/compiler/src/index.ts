@@ -181,5 +181,4 @@ export type {
   ZhixuPlatform,
   ZhixuSendSignal,
   ZhixuStage,
-  ZhixuTaskPattern,
 } from "./types/index.js";

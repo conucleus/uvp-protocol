@@ -39,11 +39,11 @@ test("loads UVP update zhixu yaml and compiles stable on-chain plan", async () =
   assert.equal(onchain.compiledHooks.length, 14);
   assert.equal(args.hooks.length, 14);
   assert.equal(
-    onchain.compiledHooks.filter((hook) => hook.stageIdentifier === "update.rollback").length,
+    onchain.compiledHooks.filter((hook) => hook.stageIdentifier === "rollback").length,
     5
   );
   assert.equal(
-    onchain.compiledHooks.some((hook) => hook.stageIdentifier === "update.init"),
+    onchain.compiledHooks.some((hook) => hook.stageIdentifier === "init"),
     true
   );
 });
@@ -63,16 +63,16 @@ test("loads original figure custom order yaml and compiles multi-party plan", as
   assert.ok(
     hookPlan.selectedStageBindings.some(
       (binding) =>
-        binding.selectorStageIdentifier === "figure.supplier_selection" &&
-        binding.targetStageIdentifier === "figure.sculpt_model"
+        binding.selectorStageIdentifier === "supplier_selection" &&
+        binding.targetStageIdentifier === "sculpt_model"
     )
   );
   assert.ok(
     hookPlan.signalCapabilities.some(
       (capability) =>
-        capability.stageIdentifier === "figure.final_acceptance" &&
+        capability.stageIdentifier === "final_acceptance" &&
         capability.targetSource === "client" &&
-        capability.targetSignalName === "figure.final_acceptance.pass"
+        capability.targetSignalName === "final_acceptance.pass"
     )
   );
 });
@@ -98,7 +98,7 @@ test("rejects authored metadata.uid as an unknown field", () => {
           "  name: uid-probe",
           "  uid: zhixu-uid-probe-v1",
           "spec:",
-          "  taskPatterns: []"
+          "  stages: []"
         ].join("\n"),
         "inline.yaml",
       ),
@@ -119,7 +119,7 @@ test("rejects metadata.name that is not a slug", () => {
       "metadata:",
       `  name: ${JSON.stringify(badName)}`,
       "spec:",
-      "  taskPatterns: []"
+      "  stages: []"
     ].join("\n");
     assert.throws(
       () => parseZhixuDefinition(yaml, "inline.yaml"),
@@ -132,7 +132,7 @@ test("rejects metadata.name that is not a slug", () => {
   // 合法 slug（含中划线/下划线/数字）照常通过。
   assert.doesNotThrow(() =>
     parseZhixuDefinition(
-      "apiVersion: uvp/v0\nkind: Zhixu\nmetadata:\n  name: probe_2nd-gen\nspec:\n  taskPatterns: []\n",
+      "apiVersion: uvp/v0\nkind: Zhixu\nmetadata:\n  name: probe_2nd-gen\nspec:\n  stages: []\n",
       "inline.yaml",
     ),
   );
@@ -143,16 +143,16 @@ test("rejects unknown fields at every structural level", () => {
   // 确定性非法输入，静默忽略会把"看似生效"的定义落成零值。
   const cases: readonly [string, RegExp][] = [
     [
-      "apiVersion: uvp/v0\nkind: Zhixu\nmetadata:\n  name: probe\nextra: 1\nspec:\n  taskPatterns: []\n",
+      "apiVersion: uvp/v0\nkind: Zhixu\nmetadata:\n  name: probe\nextra: 1\nspec:\n  stages: []\n",
       /unknown field `extra` — accepted fields are apiVersion, kind, metadata, spec/,
     ],
     [
-      "apiVersion: uvp/v0\nkind: Zhixu\nmetadata:\n  name: probe\n  annotaions: {}\nspec:\n  taskPatterns: []\n",
+      "apiVersion: uvp/v0\nkind: Zhixu\nmetadata:\n  name: probe\n  annotaions: {}\nspec:\n  stages: []\n",
       /metadata: unknown field `annotaions` — accepted fields are name, labels, annotations/,
     ],
     [
-      "apiVersion: uvp/v0\nkind: Zhixu\nmetadata:\n  name: probe\nspec:\n  taskPatterns: []\n  platfrom: {type: cloud}\n",
-      /spec: unknown field `platfrom` — accepted fields are platform, nucleation, taskPatterns, dockInterface/,
+      "apiVersion: uvp/v0\nkind: Zhixu\nmetadata:\n  name: probe\nspec:\n  stages: []\n  platfrom: {type: cloud}\n",
+      /spec: unknown field `platfrom` — accepted fields are platform, nucleation, stages, dockInterface/,
     ],
     [
       [
@@ -163,12 +163,10 @@ test("rejects unknown fields at every structural level", () => {
         "spec:",
         "  platform: {type: cloud}",
         "  nucleation: {id: core}",
-        "  taskPatterns:",
-        "    - name: main",
-        "      stages:",
-        "        - name: work",
-        "          source: buyer",
-        "          delaiy: 5",
+        "  stages:",
+        "    - name: work",
+        "      source: buyer",
+        "      delaiy: 5",
       ].join("\n"),
       /stages\[0\]: unknown field `delaiy`/,
     ],
@@ -181,12 +179,10 @@ test("rejects unknown fields at every structural level", () => {
         "spec:",
         "  platform: {type: cloud}",
         "  nucleation: {id: core}",
-        "  taskPatterns:",
-        "    - name: main",
-        "      stages:",
-        "        - name: work",
-        "          source: buyer",
-        "          executor:",
+        "  stages:",
+        "    - name: work",
+        "      source: buyer",
+        "      executor:",
         "            supplierType: organization",
         "            supplierID: org-1",
         "            suplierID: org-1",
@@ -202,12 +198,12 @@ test("rejects unknown fields at every structural level", () => {
         "spec:",
         "  platform: {type: cloud}",
         "  nucleation: {id: core}",
-        "  taskPatterns: []",
+        "  stages: []",
         "  dockInterface:",
         "    svc:",
         "      orderModes: [new]",
         "      inputs:",
-        "        execute: {hook: main.work#RUN, extra: 1}",
+        "        execute: {hook: work#RUN, extra: 1}",
       ].join("\n"),
       /inputs\[execute\]: unknown field `extra` — accepted fields are hook/,
     ],
@@ -222,7 +218,7 @@ test("rejects unknown fields at every structural level", () => {
   }
 });
 
-test("rejects taskPatterns whose stages are missing or malformed (no silent pass-through)", () => {
+test("rejects spec.stages that are missing or malformed (no silent pass-through)", () => {
   // 2609100328 疑点10：loader 声明契约 = 镜像 uvp_model 的 serde 形状面
   // （typed 反序列化对 stages 缺失/非数组、非 map 的 stage 条目响亮失败），
   // 静默 return 会让残缺 pattern 带着"已过 loader 校验"的假象离开本层。
@@ -239,25 +235,17 @@ test("rejects taskPatterns whose stages are missing or malformed (no silent pass
   assert.throws(
     () =>
       parseZhixuDefinition(
-        [head, "  taskPatterns:", "    - name: taskA"].join("\n"),
+        [head, "  stages: nope"].join("\n"),
         "loader-probe",
       ),
-    /taskPatterns\[0\]\.stages must be an array/,
+    /spec\.stages must be an array/,
   );
   assert.throws(
     () =>
       parseZhixuDefinition(
-        [head, "  taskPatterns:", "    - name: taskA", "      stages: nope"].join("\n"),
+        [head, "  stages:", "    - plain-string"].join("\n"),
         "loader-probe",
       ),
-    /taskPatterns\[0\]\.stages must be an array/,
-  );
-  assert.throws(
-    () =>
-      parseZhixuDefinition(
-        [head, "  taskPatterns:", "    - name: taskA", "      stages:", "        - plain-string"].join("\n"),
-        "loader-probe",
-      ),
-    /taskPatterns\[0\]\.stages\[0\] must be an object/,
+    /spec\.stages\[0\] must be an object/,
   );
 });

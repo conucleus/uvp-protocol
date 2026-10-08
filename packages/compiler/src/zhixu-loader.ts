@@ -40,18 +40,16 @@ const NAME_SLUG_PATTERN = /^[a-z][a-z0-9_-]{0,99}$/;
 /**
  * 未知字段拒绝的层级字段集，镜像 uvp_model 的 serde deny_unknown_fields
  * （ZhixuDefinition/ObjectMeta/ZhixuSpec/ZhixuPlatform/Nucleation/
- * ZhixuTaskPattern/ZhixuStage/ZhixuExecutor/DockInterfaceSpec/端口）。
- * Value 型开放面（fileResources 条目、selectableResource、
+ * ZhixuStage/ZhixuExecutor/DockInterfaceSpec/端口）。Value 型开放面（fileResources 条目、selectableResource、
  * zhixuExecutorConfig 的键、labels/annotations/params 的键）不在其中——
  * 它们是数据，不是结构字段。
  */
 const KNOWN_FIELDS = {
   root: ["apiVersion", "kind", "metadata", "spec"],
   metadata: ["name", "labels", "annotations"],
-  spec: ["platform", "nucleation", "taskPatterns", "dockInterface"],
+  spec: ["platform", "nucleation", "stages", "dockInterface"],
   platform: ["type", "provider", "network", "version", "params"],
   nucleation: ["id", "params"],
-  taskPattern: ["name", "stages"],
   stage: [
     "name",
     "source",
@@ -121,8 +119,8 @@ function assertZhixuDefinitionShape(
       `${sourceName}.metadata.name must match ^[a-z][a-z0-9_-]{0,99}$ (definition-local technical label)`,
     );
   }
-  if (!isRecord(value.spec) || !Array.isArray(value.spec.taskPatterns)) {
-    throw new ZhixuLoadError(`${sourceName}.spec.taskPatterns must be an array`);
+  if (!isRecord(value.spec) || !Array.isArray(value.spec.stages)) {
+    throw new ZhixuLoadError(`${sourceName}.spec.stages must be an array`);
   }
   rejectUnknownFields(value.spec, "spec", "spec", sourceName);
   if (isRecord(value.spec.platform)) {
@@ -141,70 +139,52 @@ function assertZhixuDefinitionShape(
       sourceName,
     );
   }
-  value.spec.taskPatterns.forEach((pattern, patternIndex) => {
-    if (!isRecord(pattern)) {
-      throw new ZhixuLoadError(
-        `${sourceName}.spec.taskPatterns[${patternIndex}] must be an object`,
-      );
+  // stages 形状在本层响亮拒绝：loader 的声明契约是镜像 uvp_model 的
+  // serde 形状面（typed 反序列化对缺失/非数组的 stages、非 map 的
+  // stage 条目都会响亮失败），静默 return 会让残缺声明携带"已过
+  // loader 校验"的假象离开本层。
+  value.spec.stages.forEach((stage: unknown, stageIndex: number) => {
+    const stagePath = `spec.stages[${stageIndex}]`;
+    if (!isRecord(stage)) {
+      throw new ZhixuLoadError(`${sourceName}.${stagePath} must be an object`);
     }
-    rejectUnknownFields(
-      pattern,
-      "taskPattern",
-      `spec.taskPatterns[${patternIndex}]`,
-      sourceName,
-    );
-    // stages 形状在本层响亮拒绝：loader 的声明契约是镜像 uvp_model 的
-    // serde 形状面（typed 反序列化对缺失/非数组的 stages、非 map 的
-    // stage 条目都会响亮失败），静默 return 会让残缺 pattern 携带"已过
-    // loader 校验"的假象离开本层。
-    if (!Array.isArray(pattern.stages)) {
-      throw new ZhixuLoadError(
-        `${sourceName}.spec.taskPatterns[${patternIndex}].stages must be an array`,
-      );
-    }
-    pattern.stages.forEach((stage, stageIndex) => {
-      const stagePath = `spec.taskPatterns[${patternIndex}].stages[${stageIndex}]`;
-      if (!isRecord(stage)) {
-        throw new ZhixuLoadError(`${sourceName}.${stagePath} must be an object`);
+    rejectUnknownFields(stage, "stage", stagePath, sourceName);
+    // sendSignals 条目形状在 loader 层响亮拒绝（镜像 serde 面的对象形
+    // 态与键闭集）：残缺条目静默放行会让"已过 loader 校验"的假象离开
+    // 本层，旧字符串形态等价迁移后不再有第二种合法形态。
+    if (stage.sendSignals !== undefined) {
+      if (!Array.isArray(stage.sendSignals)) {
+        throw new ZhixuLoadError(`${sourceName}.${stagePath}.sendSignals must be an array`);
       }
-      rejectUnknownFields(stage, "stage", stagePath, sourceName);
-      // sendSignals 条目形状在 loader 层响亮拒绝（镜像 serde 面的对象形
-      // 态与键闭集）：残缺条目静默放行会让"已过 loader 校验"的假象离开
-      // 本层，旧字符串形态等价迁移后不再有第二种合法形态。
-      if (stage.sendSignals !== undefined) {
-        if (!Array.isArray(stage.sendSignals)) {
-          throw new ZhixuLoadError(`${sourceName}.${stagePath}.sendSignals must be an array`);
+      stage.sendSignals.forEach((declared: unknown, signalIndex: number) => {
+        const entryPath = `${stagePath}.sendSignals[${signalIndex}]`;
+        if (!isRecord(declared)) {
+          throw new ZhixuLoadError(
+            `${sourceName}.${entryPath} must be an object {name, validWhen?} (bare string entries are not accepted)`,
+          );
         }
-        stage.sendSignals.forEach((declared, signalIndex) => {
-          const entryPath = `${stagePath}.sendSignals[${signalIndex}]`;
-          if (!isRecord(declared)) {
-            throw new ZhixuLoadError(
-              `${sourceName}.${entryPath} must be an object {name, validWhen?} (bare string entries are not accepted)`,
-            );
-          }
-          rejectUnknownFields(declared, "sendSignalEntry", entryPath, sourceName);
-          if (typeof declared.name !== "string") {
-            throw new ZhixuLoadError(`${sourceName}.${entryPath}.name must be a string`);
-          }
-          if (
-            declared.validWhen !== undefined &&
-            typeof declared.validWhen !== "string"
-          ) {
-            throw new ZhixuLoadError(
-              `${sourceName}.${entryPath}.validWhen must be a string when present`,
-            );
-          }
-        });
-      }
-      if (isRecord(stage.executor)) {
-        rejectUnknownFields(
-          stage.executor,
-          "executor",
-          `${stagePath}.executor`,
-          sourceName,
-        );
-      }
-    });
+        rejectUnknownFields(declared, "sendSignalEntry", entryPath, sourceName);
+        if (typeof declared.name !== "string") {
+          throw new ZhixuLoadError(`${sourceName}.${entryPath}.name must be a string`);
+        }
+        if (
+          declared.validWhen !== undefined &&
+          typeof declared.validWhen !== "string"
+        ) {
+          throw new ZhixuLoadError(
+            `${sourceName}.${entryPath}.validWhen must be a string when present`,
+          );
+        }
+      });
+    }
+    if (isRecord(stage.executor)) {
+      rejectUnknownFields(
+        stage.executor,
+        "executor",
+        `${stagePath}.executor`,
+        sourceName,
+      );
+    }
   });
   if (isRecord(value.spec.dockInterface)) {
     for (const [interfaceName, entry] of Object.entries(value.spec.dockInterface)) {
