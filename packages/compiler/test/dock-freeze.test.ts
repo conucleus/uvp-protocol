@@ -217,29 +217,31 @@ test("D020 mode-not-allowed and D003 target-shape errors surface from the core l
     },
   );
 
-  // D003：target.zhixu 形态必须是目标定义的内容派生 uid（zx-<32hex>）。
-  const badName = structuredClone(fixture.parentDefinition) as unknown as ZhixuDefinition & {
-    spec: {
-      stages: Array<{
-        executor?: {
-          zhixuExecutorConfig?: { target: { zhixu: string } };
-        };
-      }>;
+  // D003：target.zhixu 形态必须是目标定义的内容派生 uid（zx-<32hex>）；
+  // 合法 slug 形态但非 zx-uid 的 name 式引用同样拒绝（name 不是寻址面）。
+  for (const badTargetValue of ["Payment-Zhixu", "payment-zhixu"]) {
+    const badName = structuredClone(fixture.parentDefinition) as unknown as ZhixuDefinition & {
+      spec: {
+        stages: Array<{
+          executor?: {
+            zhixuExecutorConfig?: { target: { zhixu: string } };
+          };
+        }>;
+      };
     };
-  };
-  badName.spec.stages[1]!.executor!.zhixuExecutorConfig!.target.zhixu =
-    "Payment-Zhixu";
-  assert.throws(
-    () => compileZhixuHookPlan(badName as unknown as ZhixuDefinition, fixture.resolutionManifest),
-    (error: unknown) => {
-      assert.ok(error instanceof HookPlanCompilationError);
-      assert.ok(
-        error.issues.some(
-          (issue) => /D003/.test(issue) && /content-derived uid/.test(issue),
-        ),
-        error.issues.join("; "),
-      );
-      return true;
-    },
-  );
+    badName.spec.stages[1]!.executor!.zhixuExecutorConfig!.target.zhixu = badTargetValue;
+    assert.throws(
+      () => compileZhixuHookPlan(badName as unknown as ZhixuDefinition, fixture.resolutionManifest),
+      (error: unknown) => {
+        assert.ok(error instanceof HookPlanCompilationError);
+        assert.ok(
+          error.issues.some(
+            (issue) => /D003/.test(issue) && /content-derived uid/.test(issue),
+          ),
+          `${badTargetValue}: ${error.issues.join("; ")}`,
+        );
+        return true;
+      },
+    );
+  }
 });

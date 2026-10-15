@@ -30,6 +30,7 @@ import {
   dockSourcingParentDefinition,
   resolutionManifestFor,
 } from "./dock-demo.js";
+import { commitmentGoldenCase } from "./commitment-golden.js";
 import {
   definitionRefHash,
   definitionUid,
@@ -158,13 +159,17 @@ test("compiles internal HookPlan IR", () => {
   const again = compileZhixuHookPlan(baseZhixu, demoManifest);
 
   assert.equal(plan.schemaVersion, "uvp.hookPlan.v4");
-  // zhixuId = 定义内容派生身份，没有作者手写 uid。
+  // zhixuId = 定义内容派生身份，没有作者手写 uid；uid/IR planHash 由共享
+  // 金向量（uvp-core fixtures/commitments）钉死——Rust derive_definition_uid
+  // 消费同一格的 expected.uid。
+  const golden = commitmentGoldenCase("demo_zhixu_production_dock");
   assert.match(plan.zhixuId, /^zx-[0-9a-f]{32}$/);
+  assert.equal(plan.zhixuId, golden.expected.uid);
   assert.deepEqual(plan.platform, { type: "cloud" });
   assert.match(plan.planId, /^0x[0-9a-f]{64}$/);
   assert.match(plan.planHash, /^0x[0-9a-f]{64}$/);
   assert.equal(plan.planHash, again.planHash);
-  assert.match(plan.planHash, /^0x[0-9a-f]{64}$/);
+  assert.equal(plan.planHash, golden.expected.hookPlanHash);
   assert.equal(plan.compiledHooks.length, 3);
   assert.deepEqual(plan.compiledHooks.map((hook) => hook.hookId), [
     "assign#PLACE",
@@ -1433,12 +1438,15 @@ test("rejects locally invalid dock executor configs", () => {
   (badMode.spec.stages[0]!.executor!.zhixuExecutorConfig!.order as { mode: string }).mode = "derived-v1";
   assertCompilationIssues(badMode as unknown as ZhixuDefinition, [/D004/]);
 
-  // D003：target.zhixu 必须是目标定义的内容派生 uid（zx-<32hex>）。
-  const badTarget = structuredClone(missingInputMap) as ZhixuDefinition & {
-    spec: { stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } } } }> };
-  };
-  badTarget.spec.stages[0]!.executor!.zhixuExecutorConfig!.target.zhixu = "Payment-Zhixu";
-  assertCompilationIssues(badTarget as unknown as ZhixuDefinition, [/D003/]);
+  // D003：target.zhixu 必须是目标定义的内容派生 uid（zx-<32hex>）；合法
+  // slug 形态但非 zx-uid 的 name 式引用同样拒绝（name 不是寻址面）。
+  for (const badTargetValue of ["Payment-Zhixu", "payment-zhixu"]) {
+    const badTarget = structuredClone(missingInputMap) as ZhixuDefinition & {
+      spec: { stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } } } }> };
+    };
+    badTarget.spec.stages[0]!.executor!.zhixuExecutorConfig!.target.zhixu = badTargetValue;
+    assertCompilationIssues(badTarget as unknown as ZhixuDefinition, [/D003/]);
+  }
 
   // D019：至少声明一项输入或输出映射（str/cmp 不再强制）。
   const noMappings = structuredClone(missingInputMap) as ZhixuDefinition & {

@@ -24,6 +24,11 @@ import {
   parseAbiParameters,
   stringToHex,
 } from "viem";
+import {
+  commitmentGoldenCase,
+  commitmentRegisterHooksArgs,
+} from "./commitment-golden.js";
+import { hashSolidityRegisterHooks } from "../src/onchain/solidity/registration.js";
 
 /**
  * 执行者候选集黑盒对抗测试：只依据行为规格（候选集承诺面）自由探索，
@@ -157,6 +162,41 @@ function candidateWith(
 ): ExecutorCandidateInput {
   return { stageIdentifier, executor };
 }
+
+// ---------------------------------------------------------------------------
+// 共享金向量（uvp-core fixtures/commitments）：本文件的双阶段/出生 fixture
+// 的基线承诺值由共享文件钉死（Foundry 侧对同一 hooks 数组重算 hooksHash/
+// runtimePlanHash），黑盒变异测试在此基础上fork。
+// ---------------------------------------------------------------------------
+
+test("baseline commitments are pinned by the shared golden vectors", () => {
+  for (const name of [
+    "candidates_blackbox_two_stage",
+    "candidates_blackbox_with_candidates",
+    "candidates_blackbox_birth",
+  ]) {
+    const golden = commitmentGoldenCase(name);
+    const onchain = compileZhixuOnchainHookPlan(
+      golden.input.definition,
+      undefined,
+      golden.input.executorCandidates,
+    );
+    const args = toSolidityRegisterPlanArgs(onchain);
+    assert.equal(onchain.planHash, golden.expected.onchainPlanHash, `${name}: onchain planHash`);
+    assert.equal(args.planHash, golden.expected.runtimePlanHash, `${name}: runtime planHash`);
+    assert.equal(args.hooksHash, golden.expected.hooksHash, `${name}: hooksHash`);
+    assert.equal(
+      onchain.executorCandidatesRoot,
+      golden.expected.executorCandidatesRoot,
+      `${name}: executorCandidatesRoot`,
+    );
+    assert.equal(
+      hashSolidityRegisterHooks(commitmentRegisterHooksArgs(golden.input.hooks)),
+      golden.expected.hooksHash,
+      `${name}: pinned hooks array must rehash to the expected hooksHash`,
+    );
+  }
+});
 
 // ---------------------------------------------------------------------------
 // 编译入口门（规格 3）：地址形态

@@ -151,7 +151,7 @@ export function factAttribution(
 }
 
 /**
- * 目标阶段的 selector 绑定证明：submitSignal 族 selectorBinding 参数的
+ * 目标阶段的 selector 绑定证明：stage patch 族 bindingProof 参数的
  * 造证入口。同一目标阶段存在多条绑定时取表序第一条；目标阶段未被
  * 绑定时返回 undefined（调用方提交零 selectorStageId 的空证明）。
  */

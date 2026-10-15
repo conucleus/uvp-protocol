@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
@@ -8,12 +9,24 @@ import {
 } from "../src/index.js";
 
 const corpusUrl = new URL("../../../../uvp-core/fixtures/hook/semantics.v1.json", import.meta.url);
+const corpusMetaUrl = new URL(
+  "../../../../uvp-core/fixtures/hook/semantics.v1.meta.json",
+  import.meta.url
+);
 
 interface Corpus {
   readonly schemaVersion: string;
   readonly parseCases: readonly ParseCase[];
   readonly evalCases: readonly EvalCase[];
   readonly invalidCases: readonly InvalidCase[];
+  readonly delayLiteralCases: readonly DelayLiteralCase[];
+}
+
+interface DelayLiteralCase {
+  readonly name: string;
+  readonly literal: string;
+  /** 缺席 = 非法字面量（解析面必须拒绝）。 */
+  readonly seconds?: number;
 }
 
 interface ParseCase {
@@ -89,7 +102,21 @@ interface CoreEvalHookOutput {
 }
 
 async function loadCorpus(): Promise<Corpus> {
-  const corpus = JSON.parse(await readFile(corpusUrl, "utf8")) as Corpus;
+  const raw = await readFile(corpusUrl, "utf8");
+  // 内容指纹门（Rust corpus_is_pinned_by_content_sha256 同款）：语料与同目录
+  // meta 声明的 sha256 不一致即响亮失败，防止就地改写语料而消费测试仍静默
+  // 按旧口径通过。本钉只实现 sha256；改算法须三线 harness 同批迁移。
+  const meta = JSON.parse(await readFile(corpusMetaUrl, "utf8")) as {
+    readonly algorithm: string;
+    readonly contentSha256: string;
+  };
+  assert.equal(meta.algorithm, "sha256", "corpus meta algorithm drifted; only sha256 is implemented");
+  assert.equal(
+    createHash("sha256").update(raw, "utf8").digest("hex"),
+    meta.contentSha256,
+    "semantic corpus content diverged from semantics.v1.meta.json contentSha256; recompute and update the meta in the same change"
+  );
+  const corpus = JSON.parse(raw) as Corpus;
   // 语料格式版本钉住：v2 迁移时这里必须先响亮失败，消费面不得静默按旧
   // 口径解读新文件（Rust replay/Go 消费测试同款断言）。
   assert.equal(
@@ -165,6 +192,36 @@ test("uvp-core N-API evaluates hook semantic corpus", async () => {
         item.name,
       );
     }
+  }
+});
+
+test("uvp-core N-API pins delay literal cases from the semantic corpus", async () => {
+  // 与 Go 线 delay_parity_test.go 同款装载面（cloud_compat/TIMEOUT，
+  // buyer::(a.cmp + <lit>)）：合法例断言 timer 依赖携带语料秒数，非法例
+  // 断言解析拒绝。TS 线的延时字面量解析面即 parseHookWithUvpCore（本包
+  // 无独立字面量解析器）。
+  const corpus = await loadCorpus();
+  assert.ok(corpus.delayLiteralCases.length > 0, "corpus must carry delayLiteralCases");
+  for (const item of corpus.delayLiteralCases) {
+    const hook = `buyer::(a.cmp + ${item.literal})`;
+    if (item.seconds === undefined) {
+      let message = "";
+      try {
+        parseHookWithUvpCore({ profile: "cloud_compat", hookName: "TIMEOUT", hook });
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      assert.notEqual(message, "", item.name);
+      continue;
+    }
+    const output = parseHookWithUvpCore({
+      profile: "cloud_compat",
+      hookName: "TIMEOUT",
+      hook
+    }) as CoreParseHookOutput;
+    const timers = output.dependencies.filter((dependency) => dependency.kind === "timer");
+    assert.equal(timers.length, 1, item.name);
+    assert.equal(timers[0]?.delaySeconds, item.seconds, item.name);
   }
 });
 

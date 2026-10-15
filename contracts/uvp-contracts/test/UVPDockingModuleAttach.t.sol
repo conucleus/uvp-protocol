@@ -442,6 +442,20 @@ contract UVPDockingModuleAttachTest {
         assertEq(digest, keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash)));
     }
 
+    /// B7 自挂接拒绝：父单与目标单同 (planId, orderId) 复合键即镜像退化
+    ///（output 把订单自身事实写回自身），身份比较在接口/路由证明之前
+    /// 响亮拒绝——深度上限不是这条路径的防御（合法挂接同样消耗深度）。
+    function testAttachRejectsSelfAttach() public {
+        bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
+        UVPDockingModule.AttachDockRequestV1 memory request =
+            _baseRequest(execRouteId, attachRouteHash, PARENT_EXEC_STAGE, parentOrder, parentOrder);
+        request.targetPlanId = parentPlanId;
+        request.linkedOrderId = parentOrder;
+        vm.prank(KEEPER);
+        _expect(abi.encodeWithSelector(UVPDockingModule.DockSelfAttach.selector, parentPlanId, parentOrder));
+        _attachRaw(request);
+    }
+
     /// 重放在幂等检查之后：已成功的 dock 重放 return false，不因 nonce
     /// 已消费而回退（与 open 的 entrance permit 同口径）。
     function testAttachPermitReplayReturnsFalseAfterDockExists() public {
@@ -498,8 +512,7 @@ contract UVPDockingModuleAttachTest {
             docking.submitDockedSignal(
                 _attachInstanceId(parentA, attachRouteHash, targetOrder),
                 doneOutputBinding,
-                _coreNoAttribution(),
-                _coreNoBinding()
+                _coreNoAttribution()
             )
         );
         vm.prank(KEEPER);
@@ -507,8 +520,7 @@ contract UVPDockingModuleAttachTest {
             docking.submitDockedSignal(
                 _attachInstanceId(parentB, attachRouteHash, targetOrder),
                 doneOutputBinding,
-                _coreNoAttribution(),
-                _coreNoBinding()
+                _coreNoAttribution()
             )
         );
         (bool mappedA, bytes32 payloadA,,,) =
@@ -524,8 +536,7 @@ contract UVPDockingModuleAttachTest {
             docking.submitDockedSignal(
                 _attachInstanceId(parentA, attachRouteHash, targetOrder),
                 progressOutputBinding,
-                _coreNoAttribution(),
-                _coreNoBinding()
+                _coreNoAttribution()
             )
         );
         vm.prank(KEEPER);
@@ -533,8 +544,7 @@ contract UVPDockingModuleAttachTest {
             docking.submitDockedSignal(
                 _attachInstanceId(parentA, attachRouteHash, targetOrder),
                 progressOutputBinding,
-                _coreNoAttribution(),
-                _coreNoBinding()
+                _coreNoAttribution()
             )
         );
     }
@@ -576,8 +586,7 @@ contract UVPDockingModuleAttachTest {
             TARGET_INPUT_SIGNAL,
             bytes32(uint256(0xA11)),
             bytes32(uint256(0x1)),
-            _factAttributionFor(targetPlanId, TARGET_INPUT_SOURCE, TARGET_INPUT_SIGNAL),
-            _noBinding()
+            _factAttributionFor(targetPlanId, TARGET_INPUT_SOURCE, TARGET_INPUT_SIGNAL)
         );
         bytes32 instance = _attachInstanceId(parentOrder, attachRouteHash, targetOrder);
         vm.prank(KEEPER);
@@ -1106,8 +1115,7 @@ contract UVPDockingModuleAttachTest {
             readySignal,
             PAYLOAD,
             bytes32(uint256(0x100 + _spawnNonce)),
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         return orderId;
     }
@@ -1145,8 +1153,7 @@ contract UVPDockingModuleAttachTest {
             TARGET_SIGNAL,
             TARGET_FACT_PAYLOAD,
             bytes32(uint256(0x99)),
-            _factAttributionFor(targetPlanId, TARGET_SOURCE, TARGET_SIGNAL),
-            _noBinding()
+            _factAttributionFor(targetPlanId, TARGET_SOURCE, TARGET_SIGNAL)
         );
     }
 
@@ -1678,10 +1685,6 @@ contract UVPDockingModuleAttachTest {
         });
     }
 
-    function _noBinding() private pure returns (UVPStateMachine.SelectorBindingProof memory) {
-        return UVPStateMachine.SelectorBindingProof({selectorStageId: bytes32(0), proof: new bytes32[](0)});
-    }
-
     function _coreNoAttribution() private pure returns (IUVPStateMachineCore.FactAttribution memory) {
         return IUVPStateMachineCore.FactAttribution({
             sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
@@ -1842,7 +1845,7 @@ contract UVPDockingModuleAttachTest {
             abi.encode(
                 keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
                 keccak256("UVPStateMachine"),
-                keccak256("0.13"),
+                keccak256("0.14"),
                 block.chainid,
                 address(machine)
             )

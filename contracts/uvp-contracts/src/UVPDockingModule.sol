@@ -7,7 +7,7 @@ import {DockMerkle} from "./libraries/DockMerkle.sol";
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
 import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 
-/// @title UVPDockingModule — 统一 Zhixu DockRoute（abiVersion 4.4）
+/// @title UVPDockingModule — 统一 Zhixu DockRoute（abiVersion 4.6）
 /// @notice 所有 Zhixu dock 来自 committed route，两种 order mode：
 ///          - new（openDockedOrder）：一笔交易内原子完成 child 创建、link
 ///            登记、entrance fact 写入，并同步置位 entrance 交付账本。恰一条
@@ -224,6 +224,11 @@ contract UVPDockingModule {
     error DockUnknownTargetPlan();
     /// attach 的前置：目标单必须已存在（对等挂接的对象是既有订单）。
     error DockUnknownTargetOrder(bytes32 targetPlanId, bytes32 linkedOrderId);
+    /// 自挂接拒绝（B7）：父单与目标单是同一 (planId, orderId) 复合键时，
+    /// output 镜像退化为把订单自己的事实写回自身（吸收、深度+1、纯噪声），
+    /// 动态选择路由把自身 uid 放进候选集的形态也在此封口。深度上限不是
+    /// 这条路径的正确防御（合法挂接同样消耗深度）。
+    error DockSelfAttach(bytes32 planId, bytes32 orderId);
     /// 同意门：调用方既不是目标单 creator、也不是目标单 targetStageId 的
     /// 在任执行者，又不携目标 plan publisher 的 attach 预授权。
     error DockAttachConsentRequired(bytes32 dockInstanceId, address caller);
@@ -726,6 +731,10 @@ contract UVPDockingModule {
         if (!stateMachine.orderExists(request.targetPlanId, request.linkedOrderId)) {
             revert DockUnknownTargetOrder(request.targetPlanId, request.linkedOrderId);
         }
+        // 4.5 身份比较（B7）：父单与目标单同键即自挂接，见 DockSelfAttach。
+        if (request.localPlanId == request.targetPlanId && request.localOrderId == request.linkedOrderId) {
+            revert DockSelfAttach(request.localPlanId, request.localOrderId);
+        }
         if (outputs.length > MAX_DOCK_OUTPUTS) {
             revert DockBindingLimitExceeded(outputs.length, MAX_DOCK_OUTPUTS);
         }
@@ -1035,8 +1044,7 @@ contract UVPDockingModule {
     function submitDockedSignal(
         bytes32 dockInstanceId,
         bytes32 outputBindingHash,
-        IUVPStateMachineCore.FactAttribution calldata attribution,
-        IUVPStateMachineCore.SelectorBindingProof calldata selectorBinding
+        IUVPStateMachineCore.FactAttribution calldata attribution
     ) external returns (bool submitted) {
         ActiveDockV2 storage dock = _docks[dockInstanceId];
         if (!dock.exists) {
@@ -1111,8 +1119,7 @@ contract UVPDockingModule {
             payloadHash,
             idempotencyKey,
             parentCreator,
-            attribution,
-            selectorBinding
+            attribution
         );
 
         emit DockOutputSubmitted(

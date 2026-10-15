@@ -336,11 +336,11 @@ contract UVPDockingModuleTest {
     function testPermissionlessCallbackWritesParentMappedFact() public {
         assertTrue(_open());
         vm.prank(KEEPER);
-        assertTrue(docking.submitDockedSignal(dockInstanceId, outputBinding, _coreNoAttribution(), _coreNoBinding()));
+        assertTrue(docking.submitDockedSignal(dockInstanceId, outputBinding, _coreNoAttribution()));
         (bool mapped,,,,) = machine.getSignal(parentPlanId, PARENT_ORDER_ID, LOCAL_MAPPED_SOURCE, LOCAL_MAPPED_SIGNAL);
         assertTrue(mapped);
         vm.prank(KEEPER);
-        assertFalse(docking.submitDockedSignal(dockInstanceId, outputBinding, _coreNoAttribution(), _coreNoBinding()));
+        assertFalse(docking.submitDockedSignal(dockInstanceId, outputBinding, _coreNoAttribution()));
     }
 
     /// terminal 语义移除后没有跨输出终态闸：任意两条输出绑定各自按
@@ -348,17 +348,17 @@ contract UVPDockingModuleTest {
     function testOutputDeliveriesArePerBindingIdempotentWithoutTerminalGate() public {
         assertTrue(_open());
         vm.prank(KEEPER);
-        assertTrue(docking.submitDockedSignal(dockInstanceId, outputBinding, _coreNoAttribution(), _coreNoBinding()));
+        assertTrue(docking.submitDockedSignal(dockInstanceId, outputBinding, _coreNoAttribution()));
         vm.prank(KEEPER);
-        assertFalse(docking.submitDockedSignal(dockInstanceId, outputBinding, _coreNoAttribution(), _coreNoBinding()));
+        assertFalse(docking.submitDockedSignal(dockInstanceId, outputBinding, _coreNoAttribution()));
         // 另一条输出绑定读同一远端事实、写不同本地事实：仍可交付。
         vm.prank(KEEPER);
         assertTrue(
-            docking.submitDockedSignal(dockInstanceId, progressOutBinding, _coreNoAttribution(), _coreNoBinding())
+            docking.submitDockedSignal(dockInstanceId, progressOutBinding, _coreNoAttribution())
         );
         vm.prank(KEEPER);
         assertFalse(
-            docking.submitDockedSignal(dockInstanceId, progressOutBinding, _coreNoAttribution(), _coreNoBinding())
+            docking.submitDockedSignal(dockInstanceId, progressOutBinding, _coreNoAttribution())
         );
         (bool mappedDone,,,,) =
             machine.getSignal(parentPlanId, PARENT_ORDER_ID, LOCAL_MAPPED_SOURCE, LOCAL_MAPPED_SIGNAL);
@@ -372,7 +372,7 @@ contract UVPDockingModuleTest {
         assertTrue(_open());
         vm.prank(KEEPER);
         _expect(abi.encodeWithSelector(UVPDockingModule.DockOutputNotReady.selector, dockInstanceId, settleBinding));
-        docking.submitDockedSignal(dockInstanceId, settleBinding, _coreNoAttribution(), _coreNoBinding());
+        docking.submitDockedSignal(dockInstanceId, settleBinding, _coreNoAttribution());
     }
 
     /// 同一本地事实键的多条 output 绑定（不同端口 → 不同 bindingHash，链上
@@ -440,7 +440,7 @@ contract UVPDockingModuleTest {
 
         vm.prank(KEEPER);
         assertTrue(
-            docking.submitDockedSignal(route.dockInstanceId, doneBinding, _coreNoAttribution(), _coreNoBinding())
+            docking.submitDockedSignal(route.dockInstanceId, doneBinding, _coreNoAttribution())
         );
         // 兄弟绑定镜像同一本地事实键、同一 payload：幂等吸收，不 revert——
         // 吸收即收敛为已交付（账本置位 + DockOutputSatisfied 事件），否则
@@ -462,14 +462,14 @@ contract UVPDockingModuleTest {
             targetFactSubmitter
         );
         assertFalse(
-            docking.submitDockedSignal(route.dockInstanceId, progressBinding, _coreNoAttribution(), _coreNoBinding())
+            docking.submitDockedSignal(route.dockInstanceId, progressBinding, _coreNoAttribution())
         );
         assertTrue(docking.dockOutputDelivered(route.dockInstanceId, progressBinding));
         assertTrue(docking.dockOutputDelivered(route.dockInstanceId, doneBinding));
         // 账本置位后的重复提交走交付账本短路：不再发任何事件。
         vm.prank(KEEPER);
         assertFalse(
-            docking.submitDockedSignal(route.dockInstanceId, progressBinding, _coreNoAttribution(), _coreNoBinding())
+            docking.submitDockedSignal(route.dockInstanceId, progressBinding, _coreNoAttribution())
         );
         (bool mapped,,,,) = machine.getSignal(route.planId, route.orderId, LOCAL_MAPPED_SOURCE, LOCAL_MAPPED_SIGNAL);
         assertTrue(mapped);
@@ -863,7 +863,7 @@ contract UVPDockingModuleTest {
     function testSubmitDockedSignalRecordsParentCreatorAsParentFactSubmitter() public {
         assertTrue(_open());
         vm.prank(KEEPER);
-        assertTrue(docking.submitDockedSignal(dockInstanceId, outputBinding, _coreNoAttribution(), _coreNoBinding()));
+        assertTrue(docking.submitDockedSignal(dockInstanceId, outputBinding, _coreNoAttribution()));
         (,,,, address parentFactSubmitter) =
             machine.getSignal(parentPlanId, PARENT_ORDER_ID, LOCAL_MAPPED_SOURCE, LOCAL_MAPPED_SIGNAL);
         require(parentFactSubmitter == ORDER_CREATOR, "mirrored fact must be booked to the parent order creator");
@@ -1015,7 +1015,7 @@ contract UVPDockingModuleTest {
     function testGasSubmitDockedSignal() public {
         assertTrue(_open());
         vm.prank(KEEPER);
-        docking.submitDockedSignal(dockInstanceId, outputBinding, _coreNoAttribution(), _coreNoBinding());
+        docking.submitDockedSignal(dockInstanceId, outputBinding, _coreNoAttribution());
     }
 
     // ------------------------------------------------------------------
@@ -1490,8 +1490,7 @@ contract UVPDockingModuleTest {
             SIGNAL_EXEC,
             PAYLOAD,
             bytes32(uint256(0x78)),
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
 
         route.dockInstanceId = keccak256(
@@ -1592,8 +1591,7 @@ contract UVPDockingModuleTest {
             SIGNAL_EXEC,
             PAYLOAD,
             bytes32(uint256(0x77)),
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
     }
 
@@ -1772,10 +1770,6 @@ contract UVPDockingModuleTest {
         return UVPStateMachine.FactAttribution({
             sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
         });
-    }
-
-    function _noBinding() private pure returns (UVPStateMachine.SelectorBindingProof memory) {
-        return UVPStateMachine.SelectorBindingProof({selectorStageId: bytes32(0), proof: new bytes32[](0)});
     }
 
     /// 按测试留档能力表构造 core 类型属主自证（openDockedOrder 的
@@ -2140,7 +2134,7 @@ contract UVPDockingModuleTest {
             abi.encode(
                 keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
                 keccak256("UVPStateMachine"),
-                keccak256("0.13"),
+                keccak256("0.14"),
                 block.chainid,
                 address(machine)
             )

@@ -106,7 +106,7 @@ contract ExecutorChangeBlackBoxTest {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.13");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.14");
     bytes32 private constant EXECUTOR_CANDIDATE_LEAF_DOMAIN = keccak256("UVP_EXECUTOR_CANDIDATE_V1");
     bytes32 private constant SIGNAL_CAPABILITY_LEAF_DOMAIN = keccak256("UVP_SIGNAL_CAPABILITY_V1");
     bytes32 private constant SELECTOR_BINDING_LEAF_DOMAIN = keccak256("UVP_SELECTOR_BINDING_V1");
@@ -248,8 +248,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0x9101)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
         PreparedPatch memory prepared = _prepareRelayed(
             machine,
@@ -424,8 +423,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0x9102)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
     }
 
@@ -456,8 +454,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0x9103)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
         vm.prank(E3);
         machine.submitSignal(
@@ -467,8 +464,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0x9104)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
         (,,,, address submitter) = machine.getSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE);
         require(submitter == E3, "patched executor submission not recorded");
@@ -489,8 +485,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0x9105)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
         PreparedPatch memory handoff = _prepareRelayed(
             machine,
@@ -513,8 +508,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_REVIEW,
             PAYLOAD_HASH,
             bytes32(uint256(0x9106)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
         );
         (,,,, address reviewSubmitter) = machine.getSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW);
         require(reviewSubmitter == E1(), "old executor explicit auth not preserved");
@@ -537,8 +531,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_REVIEW,
             PAYLOAD_HASH,
             bytes32(uint256(0x9107)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
         );
     }
 
@@ -570,8 +563,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0x9108)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
     }
 
@@ -638,8 +630,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0x9109)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
         PreparedPatch memory handoff1 = _prepareRelayed(
             machine,
@@ -719,8 +710,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0x9120)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
 
         // 直接路径无会签材料（previousExecutorSigner 恒为 0）。
@@ -771,10 +761,15 @@ contract ExecutorChangeBlackBoxTest {
     /// 同秒并列两提交者（无 active patch）→ handoff fail-closed 拒绝；
     /// 同秒同提交者不歧义 → handoff 放行；有 active patch 时歧义标记不
     /// 参与判定（patch executor 是权威上一执行者）。
+    /// assign 前置闸（B8a）后，"无 active patch + 有计数"只余 fork 重放一
+    /// 条合法构造：场景 1/2 的歧义计数先在父单（已 assign）制造，再经
+    /// fork 重放进子单（无 patch、计数承袭原始提交者）。
     function testHandoffFailClosedOnSameSecondAmbiguousSubmitters() public {
         UVPStateMachine machine = _patchMachineReady();
 
-        // 场景 1：同秒不同提交者 → StagePreviousExecutorAmbiguous。
+        // 场景 1：同秒不同提交者 → 子单计数歧义 → StagePreviousExecutorAmbiguous。
+        vm.prank(CREATOR);
+        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
         vm.prank(E1());
         machine.submitSignal(
             PLAN_ID,
@@ -783,8 +778,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0x9110)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
         vm.prank(E2());
         machine.submitSignal(
@@ -794,15 +788,27 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_REVIEW,
             PAYLOAD_HASH,
             bytes32(uint256(0x9111)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
         );
-        (uint256 count,,, bool ambiguous) = machine.stageSignalState(PLAN_ID, ORDER_ID, STAGE_AUDIT);
+        vm.prank(CREATOR);
+        bytes32 ambiguousChild = machine.forkOrder(
+            PLAN_ID,
+            ORDER_ID,
+            bytes32(uint256(0xABA1)),
+            STAGE_AUDIT,
+            SIGNAL_STAGE_DONE,
+            _twoFacts(
+                STAGE_AUDIT, SIGNAL_STAGE_DONE, bytes32(uint256(0x9110)),
+                STAGE_AUDIT, SIGNAL_STAGE_REVIEW, bytes32(uint256(0x9111))
+            ),
+            _forkChildAuthorizations()
+        );
+        (uint256 count,,, bool ambiguous) = machine.stageSignalState(PLAN_ID, ambiguousChild, STAGE_AUDIT);
         require(count == 2 && ambiguous, "ambiguity flag not raised");
         PreparedPatch memory ambiguousHandoff = _prepareRelayed(
             machine,
             PLAN_ID,
-            ORDER_ID,
+            ambiguousChild,
             _patchWithMode(1, E3, PATCH_HASH, EXECUTOR_PATCH_MODE_HANDOFF, E1()),
             SELECTOR_PRIVATE_KEY,
             EXECUTOR1_PRIVATE_KEY
@@ -810,15 +816,17 @@ contract ExecutorChangeBlackBoxTest {
         vm.expectRevert(
             abi.encodeWithSelector(
                 UVPStagePatchModule.StagePreviousExecutorAmbiguous.selector,
-                ORDER_ID,
+                ambiguousChild,
                 STAGE_AUDIT,
                 uint64(block.timestamp)
             )
         );
-        _sendRelayed(machine, PLAN_ID, ORDER_ID, ambiguousHandoff);
+        _sendRelayed(machine, PLAN_ID, ambiguousChild, ambiguousHandoff);
 
         // 场景 2：同秒同提交者 → 无歧义，handoff 放行。
         bytes32 secondOrder = _birthSecondOrder(machine, keccak256("ambiguous-test/second"));
+        vm.prank(CREATOR);
+        _patchDirect(machine, PLAN_ID, secondOrder, _patch(1, E1(), PATCH_HASH));
         vm.prank(E1());
         machine.submitSignal(
             PLAN_ID,
@@ -827,8 +835,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0x9112)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
         vm.prank(E1());
         machine.submitSignal(
@@ -838,21 +845,33 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_REVIEW,
             PAYLOAD_HASH,
             bytes32(uint256(0x9113)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
         );
-        (,,, bool secondAmbiguous) = machine.stageSignalState(PLAN_ID, secondOrder, STAGE_AUDIT);
+        vm.prank(CREATOR);
+        bytes32 cleanChild = machine.forkOrder(
+            PLAN_ID,
+            secondOrder,
+            bytes32(uint256(0xABA2)),
+            STAGE_AUDIT,
+            SIGNAL_STAGE_DONE,
+            _twoFacts(
+                STAGE_AUDIT, SIGNAL_STAGE_DONE, bytes32(uint256(0x9112)),
+                STAGE_AUDIT, SIGNAL_STAGE_REVIEW, bytes32(uint256(0x9113))
+            ),
+            _forkChildAuthorizations()
+        );
+        (,,, bool secondAmbiguous) = machine.stageSignalState(PLAN_ID, cleanChild, STAGE_AUDIT);
         require(!secondAmbiguous, "same-submitter same-second must not be ambiguous");
         PreparedPatch memory cleanHandoff = _prepareRelayed(
             machine,
             PLAN_ID,
-            secondOrder,
+            cleanChild,
             _patchWithMode(1, E2(), PATCH_HASH, EXECUTOR_PATCH_MODE_HANDOFF, E1()),
             SELECTOR_PRIVATE_KEY,
             EXECUTOR1_PRIVATE_KEY
         );
-        _sendRelayed(machine, PLAN_ID, secondOrder, cleanHandoff);
-        require(machine.activeStageExecutor(PLAN_ID, secondOrder, STAGE_AUDIT) == E2(), "clean handoff failed");
+        _sendRelayed(machine, PLAN_ID, cleanChild, cleanHandoff);
+        require(machine.activeStageExecutor(PLAN_ID, cleanChild, STAGE_AUDIT) == E2(), "clean handoff failed");
 
         // 场景 3：active patch 在场时歧义标记不参与——patch executor 权威。
         bytes32 thirdOrder = _birthSecondOrder(machine, keccak256("ambiguous-test/third"));
@@ -866,8 +885,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0x9114)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
         vm.prank(E2());
         machine.submitSignal(
@@ -877,8 +895,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_REVIEW,
             PAYLOAD_HASH,
             bytes32(uint256(0x9115)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
         );
         (,,, bool thirdAmbiguous) = machine.stageSignalState(PLAN_ID, thirdOrder, STAGE_AUDIT);
         require(thirdAmbiguous, "setup: expected ambiguity");
@@ -911,8 +928,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0x9121)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
 
         // 以最近提交者 E2 冒充上一执行者：拒绝（expected = patch executor E1）。
@@ -963,8 +979,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0x9116)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
 
         // 首信号之后 assign 永久顶死。
@@ -994,15 +1009,16 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_REVIEW,
             PAYLOAD_HASH,
             bytes32(uint256(0x9117)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
         );
         (uint256 finalCount,,,,) = _stageStateAbi(machine, ORDER_ID);
         require(finalCount == 2, "stage count mismatch");
     }
 
-    /// 携证属主业务事实同样进 per-stage 计数（非 stage 键事实按
-    /// attribution 声明阶段归属）——assign 的零信号闸同口径关闭。
+    /// B8a：候选集覆盖阶段的 assign 前置闸不依赖调用方携证——显式授权的
+    /// 携证业务事实在指派前同样拒收（旧形态落库后把 assign 恒顶死，时序
+    /// DoS 面）；指派后同键事实正常落库并进 per-stage 计数，后续 assign
+    /// 的零信号闸同口径关闭。
     function testAssignBlockedByProofAttributedBusinessFact() public {
         UVPStateMachine machine = _newMachine();
         SignalCapability[] memory extra = new SignalCapability[](1);
@@ -1023,6 +1039,9 @@ contract ExecutorChangeBlackBoxTest {
         _materializeAuditStage(machine, ORDER_ID);
 
         vm.prank(E1());
+        vm.expectRevert(
+            abi.encodeWithSelector(UVPStateMachine.StageExecutorNotAssigned.selector, ORDER_ID, STAGE_AUDIT)
+        );
         machine.submitSignal(
             PLAN_ID,
             ORDER_ID,
@@ -1030,8 +1049,24 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_EXTRA,
             PAYLOAD_HASH,
             bytes32(uint256(0x9118)),
-            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_EXTRA),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_EXTRA)
+        );
+        (uint256 preCount,,,,) = _stageStateAbi(machine, ORDER_ID);
+        require(preCount == 0, "rejected pre-assign fact must leave no state");
+
+        vm.prank(CREATOR);
+        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
+        require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E1(), "assign must survive rejection");
+
+        vm.prank(E1());
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_EXTRA,
+            PAYLOAD_HASH,
+            bytes32(uint256(0x9118)),
+            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_EXTRA)
         );
         (uint256 count,,,,) = _stageStateAbi(machine, ORDER_ID);
         require(count == 1, "attributed business fact not counted");
@@ -1040,7 +1075,7 @@ contract ExecutorChangeBlackBoxTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, ORDER_ID, STAGE_AUDIT)
         );
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
+        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(2, E1(), PATCH_HASH_2));
     }
 
     // ==================================================================
@@ -1091,7 +1126,25 @@ contract ExecutorChangeBlackBoxTest {
             _stagePatch(machine).getActiveStageResourcePatch(PLAN_ID, ORDER_ID, STAGE_AUDIT, RESOURCE_KEY);
         require(exists, "resource patch not applied");
 
-        // 首个信号后与 assign 同闸关闭。
+        // B8a：资源补丁不是执行者指派——首个携证信号在 executor assign
+        // 前仍被 assign 前置闸拒收。
+        vm.prank(E1());
+        vm.expectRevert(
+            abi.encodeWithSelector(UVPStateMachine.StageExecutorNotAssigned.selector, ORDER_ID, STAGE_AUDIT)
+        );
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            STAGE_AUDIT,
+            SIGNAL_STAGE_DONE,
+            PAYLOAD_HASH,
+            bytes32(uint256(0x9119)),
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
+        );
+
+        // executor assign 后首个信号落地，资源补丁与其共用零信号闸关闭。
+        vm.prank(CREATOR);
+        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
         vm.prank(E1());
         machine.submitSignal(
             PLAN_ID,
@@ -1100,8 +1153,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0x9119)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
         vm.prank(_selector());
         vm.expectRevert(
@@ -1132,8 +1184,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0xF001)),
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
 
         vm.prank(CREATOR);
@@ -1169,8 +1220,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0xF001)),
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         vm.prank(E2());
         machine.submitSignal(
@@ -1180,8 +1230,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_REVIEW,
             PAYLOAD_HASH,
             bytes32(uint256(0xF002)),
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
 
         // EXECUTOR1 提交过 DONE，但裁决信号是 REVIEW（提交者 EXECUTOR2）。
@@ -1211,8 +1260,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0xF001)),
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         UVPStateMachine.ForkBirthFact[] memory facts = new UVPStateMachine.ForkBirthFact[](1);
         facts[0] = UVPStateMachine.ForkBirthFact({
@@ -1253,8 +1301,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0xF001)),
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         vm.prank(E2());
         machine.submitSignal(
@@ -1264,8 +1311,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_REVIEW,
             PAYLOAD_HASH,
             bytes32(uint256(0xF002)),
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
 
         UVPStateMachine.ForkBirthFact[] memory facts = new UVPStateMachine.ForkBirthFact[](1);
@@ -1304,8 +1350,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0xF001)),
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
 
         vm.prank(E1());
@@ -1355,8 +1400,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0xF001)),
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
 
         vm.recordLogs();
@@ -1394,8 +1438,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0xF001)),
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         vm.prank(E2());
         machine.submitSignal(
@@ -1405,8 +1448,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_REVIEW,
             PAYLOAD_HASH,
             bytes32(uint256(0xF002)),
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
 
         vm.prank(E1());
@@ -1530,8 +1572,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_REVIEW,
             PAYLOAD_HASH,
             bytes32(uint256(0xFC00)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
         );
     }
 
@@ -1784,8 +1825,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_INIT_CMP,
             PAYLOAD_HASH,
             bytes32(uint256(0x9201)),
-            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP)
         );
     }
 
@@ -2239,10 +2279,6 @@ contract ExecutorChangeBlackBoxTest {
         });
     }
 
-    function _noBinding() private pure returns (UVPStateMachine.SelectorBindingProof memory) {
-        return UVPStateMachine.SelectorBindingProof({selectorStageId: bytes32(0), proof: new bytes32[](0)});
-    }
-
     function _stageStateAbi(UVPStateMachine machine, bytes32 orderId)
         private
         view
@@ -2402,7 +2438,10 @@ contract ExecutorChangeBlackBoxTest {
         _submitBirth(machine, CREATOR, auths);
         _materializeAuditStage(machine, ORDER_ID);
 
-        // 父单 stage 键事实：EXECUTOR1 提交（fork 裁决信号 + 计数源）。
+        // B8a：候选集覆盖 STAGE_AUDIT，父单 stage 键事实（fork 裁决信号 +
+        // 计数源）须在 assign 后提交——EXECUTOR1 先被指派再提交。
+        vm.prank(CREATOR);
+        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
         vm.prank(E1());
         machine.submitSignal(
             PLAN_ID,
@@ -2411,8 +2450,7 @@ contract ExecutorChangeBlackBoxTest {
             SIGNAL_STAGE_DONE,
             PAYLOAD_HASH,
             bytes32(uint256(0xF001)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE),
-            _noBinding()
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
     }
 

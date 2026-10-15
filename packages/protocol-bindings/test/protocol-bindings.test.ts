@@ -329,7 +329,7 @@ describe("protocol bindings", () => {
     assert.deepEqual(typedData, {
       domain: {
         name: "UVPStateMachine",
-        version: "0.13",
+        version: "0.14",
         chainId: 31337,
         verifyingContract,
       },
@@ -658,10 +658,6 @@ describe("protocol bindings", () => {
           stageId: targetStageId,
           capabilityProof,
         },
-        selectorBinding: {
-          selectorStageId,
-          proof: [],
-        },
       },
     );
 
@@ -680,7 +676,6 @@ describe("protocol bindings", () => {
       signature,
       // attribution 归一化：大小写折叠 + proof 数组逐词 bytes32 校验。
       { sourceId, signalId, stageId: targetStageId, capabilityProof: [...capabilityProof] },
-      { selectorStageId, proof: [] },
     ]);
     assert.match(call.data, /^0x[0-9a-f]+$/);
     const decoded = decodeFunctionData({
@@ -699,11 +694,9 @@ describe("protocol bindings", () => {
       unknown,
       unknown,
       { sourceId: `0x${string}`; capabilityProof: readonly `0x${string}`[] },
-      { selectorStageId: `0x${string}`; proof: readonly `0x${string}`[] },
     ];
     assert.equal(decodedArgs[9].sourceId, sourceId);
     assert.deepEqual(decodedArgs[9].capabilityProof, [...capabilityProof]);
-    assert.equal(decodedArgs[10].selectorStageId, selectorStageId);
   });
 
   it("matches the shared capabilities-root golden vectors consumed by compiler and Foundry", () => {
@@ -712,7 +705,7 @@ describe("protocol bindings", () => {
     // 同一份）：叶公式/建树/证明规则漂移时三份实现共享同一报警面，本包
     // 不自产硬编码根值。
     assert.equal(golden.schemaVersion, "uvp.capabilities-root.golden.v1");
-    assert.equal(golden.samples.length, 2);
+    assert.equal(golden.samples.length, 5);
     for (const sample of golden.samples) {
       const selectorBindings = goldenBindings(sample);
       const signalCapabilities = goldenCapabilities(sample);
@@ -862,12 +855,7 @@ describe("protocol bindings", () => {
       { stageId: stageA, targetSourceId: sourceId, signalId, relation: 0 },
     ] as const;
     const attribution = factAttribution(bindings, capabilities, sourceId, signalId);
-    const selectorBinding = selectorBindingProofFor(
-      bindings,
-      capabilities,
-      stageB,
-    );
-    assert.ok(attribution && selectorBinding);
+    assert.ok(attribution);
 
     const call = buildSubmitSignalForCall(
       { stateMachineAddress: verifyingContract, chainId: 31337 },
@@ -887,7 +875,6 @@ describe("protocol bindings", () => {
           stageId: attribution.stageId,
           capabilityProof: attribution.capabilityProof,
         },
-        selectorBinding: selectorBinding,
       },
     );
     assert.deepEqual(call.args[9], {
@@ -895,10 +882,6 @@ describe("protocol bindings", () => {
       signalId,
       stageId: stageA,
       capabilityProof: attribution.capabilityProof,
-    });
-    assert.deepEqual(call.args[10], {
-      selectorStageId: stageA,
-      proof: selectorBinding.proof,
     });
     const decoded = decodeFunctionData({
       abi: STATE_MACHINE_ABI,
@@ -983,7 +966,6 @@ describe("protocol bindings", () => {
     const proofs = {
       fromCapabilityProof: [payloadHash],
       targetCapabilityProof: [idempotencyKey],
-      selectorBinding: { selectorStageId, proof: [] },
     } as const;
     const call = buildSubmitDerivedSignalForCall(
       {
@@ -1028,7 +1010,6 @@ describe("protocol bindings", () => {
       {
         fromCapabilityProof: [payloadHash],
         targetCapabilityProof: [idempotencyKey],
-        selectorBinding: { selectorStageId, proof: [] },
       },
     ]);
     assert.match(call.data, /^0x[0-9a-f]+$/);
@@ -1143,9 +1124,6 @@ describe("protocol bindings", () => {
     const selectorSignature = `0x${"bb".repeat(65)}` as const;
     const previousExecutorSignature = `0x${"dd".repeat(65)}` as const;
     const bindingProof = { selectorStageId, proof: [payloadHash] } as const;
-    const stageFacts = [
-      { sourceId, signalId, capabilityProof: [idempotencyKey] },
-    ] as const;
 
 // UB-36①②③：候选集成员证明 + patch 生效时对新城执行者写入的显式授权集。
 const candidateProof = [payloadHash, idempotencyKey] as const;
@@ -1248,7 +1226,6 @@ const executorAuthorizations = [
   it("builds applyStageResourcePatchFor calls from the stage patch module ABI", () => {
     const signature = `0x${"cc".repeat(65)}` as const;
     const bindingProof = { selectorStageId, proof: [] } as const;
-    const stageFacts = [] as const;
     const call = buildApplyStageResourcePatchForCall(
       {
         stagePatchModuleAddress: verifyingContract,
@@ -1840,11 +1817,11 @@ describe("handwritten ABI entries stay identical to the frozen fixtures", () => 
     "../../../contracts/uvp-contracts/fixtures",
   );
   const handwrittenToFixture: readonly [readonly unknown[], string][] = [
-    [STATE_MACHINE_ABI, "uvp-state-machine.v0.13.json"],
+    [STATE_MACHINE_ABI, "uvp-state-machine.v0.14.json"],
     [ORDER_LINK_MODULE_ABI, "uvp-order-link-module.v0.3.json"],
     [STAGE_PATCH_MODULE_ABI, "uvp-stage-patch-module.v0.5.json"],
-    [DERIVED_SIGNAL_MODULE_ABI, "uvp-derived-signal-module.v0.3.json"],
-    [DOCKING_MODULE_ABI, "uvp-docking-module.v4.5.json"],
+    [DERIVED_SIGNAL_MODULE_ABI, "uvp-derived-signal-module.v0.4.json"],
+    [DOCKING_MODULE_ABI, "uvp-docking-module.v4.6.json"],
   ];
   for (const [abi, fixtureName] of handwrittenToFixture) {
     it(`${fixtureName}: every handwritten entry matches the frozen signature`, () => {

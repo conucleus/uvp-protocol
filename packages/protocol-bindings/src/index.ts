@@ -161,10 +161,10 @@ export const STATE_MACHINE_ABI = [
   "function triggerOrderIdFor(bytes32 planId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash) pure returns (bytes32)",
   "function orderLinkOrderIdFor(bytes32 planId,bytes32 originPlanId,bytes32 triggerOriginOrderId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash) pure returns (bytes32)",
   "function stageHasOrderTriggerHook(bytes32 planId,bytes32 stageId) view returns (bool)",
-  "function submitSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution,(bytes32 selectorStageId,bytes32[] proof) selectorBinding)",
-  "function submitSignalFor(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline,bytes signature,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution,(bytes32 selectorStageId,bytes32[] proof) selectorBinding)",
-  "function submitSignalFromModule(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution,(bytes32 selectorStageId,bytes32[] proof) selectorBinding)",
-  "function submitDerivedSignalFromModule(bytes32 planId,bytes32 orderId,bytes32 stageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,bool currentOrderFact,(bytes32 selectorStageId,bytes32[] proof) selectorBinding)",
+  "function submitSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution)",
+  "function submitSignalFor(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline,bytes signature,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution)",
+  "function submitSignalFromModule(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution)",
+  "function submitDerivedSignalFromModule(bytes32 planId,bytes32 orderId,bytes32 fromPlanId,bytes32 fromOrderId,bytes32 stageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter)",
   "function createDockedOrderFromModule((bytes32 targetPlanId,bytes32 linkedOrderId,address creator,address relayer,bytes32 entranceHookId,bytes32 entranceStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) entranceAttribution) request)",
   "function recordDockedInputFromModule((bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution) fact)",
   "function planHookFlags(bytes32 planId,bytes32 hookId) view returns (uint8)",
@@ -355,8 +355,8 @@ export const STAGE_PATCH_MODULE_ABI = [
 export const DERIVED_SIGNAL_MODULE_ABI = parseAbi([
   "event DerivedSignalSubmitted(bytes32 indexed fromOrderId,bytes32 indexed targetOrderId,bytes32 indexed signalId,bytes32 fromPlanId,bytes32 targetPlanId,bytes32 fromStageId,bytes32 targetSourceId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter)",
   "struct DerivedSignalRequest {bytes32 fromPlanId;bytes32 fromOrderId;bytes32 fromStageId;bytes32 targetPlanId;bytes32 targetOrderId;bytes32 targetSourceId;bytes32 signalId;bytes32 payloadHash;bytes32 idempotencyKey}",
-  "function submitDerivedSignal(DerivedSignalRequest request,address submitter,(bytes32[] fromCapabilityProof,bytes32[] targetCapabilityProof,(bytes32 selectorStageId,bytes32[] proof) selectorBinding) proofs)",
-  "function submitDerivedSignalFor(DerivedSignalRequest request,address submitter,uint256 deadline,bytes signature,(bytes32[] fromCapabilityProof,bytes32[] targetCapabilityProof,(bytes32 selectorStageId,bytes32[] proof) selectorBinding) proofs)",
+  "function submitDerivedSignal(DerivedSignalRequest request,address submitter,(bytes32[] fromCapabilityProof,bytes32[] targetCapabilityProof) proofs)",
+  "function submitDerivedSignalFor(DerivedSignalRequest request,address submitter,uint256 deadline,bytes signature,(bytes32[] fromCapabilityProof,bytes32[] targetCapabilityProof) proofs)",
   "function derivedSignalDigest(DerivedSignalRequest request,address submitter,uint256 deadline) view returns (bytes32)",
 ]);
 
@@ -369,7 +369,7 @@ export const DOCKING_MODULE_ABI = parseAbi([
   "function openDockedOrder((bytes32 dockInstanceId,bytes32 localPlanId,bytes32 localOrderId,bytes32 localStageId,bytes32 localHookId,bytes32 localDefinitionRefHash,bytes32 routeId,bytes32 routeHash,bytes32 interfaceNameId,bytes32 targetUidId,bytes32 targetDefinitionRefHash,bytes32 targetPlanId,bytes32 linkedOrderId,bytes32 targetStageId,bytes32 targetHookId,uint8 parentDepth) request,bytes32[] routeProof,((bytes32 leafHash,bytes32 portKey,bytes32 hookKey) entranceLeaf,bytes32[] portProof,(uint8 orderModesWord,bytes32 inputsRoot,bytes32 outputsRoot) commitment,bytes32[] interfaceProof) interfaceProof,(bytes32 localHookId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,bytes32 bindingHash)[] inputs,(bytes32 localSourceId,bytes32 localSignalId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,bytes32 bindingHash,bytes32[] portProof)[] outputs,(uint256 nonce,uint256 deadline,bytes signature) permit,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof)[] outputAttributions,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) entranceAttribution) returns (bool opened)",
   "function attachDockedOrder((bytes32 dockInstanceId,bytes32 localPlanId,bytes32 localOrderId,bytes32 localStageId,bytes32 localDefinitionRefHash,bytes32 routeId,bytes32 routeHash,bytes32 interfaceNameId,bytes32 targetUidId,bytes32 targetDefinitionRefHash,bytes32 targetPlanId,bytes32 linkedOrderId,bytes32 targetStageId,uint8 parentDepth,bytes32 targetCandidatesRoot) request,bytes32[] routeProof,((uint8 orderModesWord,bytes32 inputsRoot,bytes32 outputsRoot) commitment,bytes32[] interfaceProof,bytes32[] candidateProof) attachProof,(bytes32 localHookId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,bytes32 bindingHash,bytes32 targetHookId,bytes32[] portProof)[] inputs,(bytes32 localSourceId,bytes32 localSignalId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,bytes32 bindingHash,bytes32[] portProof)[] outputs,(uint256 nonce,uint256 deadline,bytes signature) permit,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof)[] outputAttributions) returns (bool attached)",
   "function submitDockedInput(bytes32 dockInstanceId,bytes32 localHookId,bytes32 inputBindingHash,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution) returns (bool submitted)",
-  "function submitDockedSignal(bytes32 dockInstanceId,bytes32 outputBindingHash,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution,(bytes32 selectorStageId,bytes32[] proof) selectorBinding) returns (bool submitted)",
+  "function submitDockedSignal(bytes32 dockInstanceId,bytes32 outputBindingHash,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution) returns (bool submitted)",
   "function getActiveDock(bytes32 dockInstanceId) view returns (bytes32 localPlanId,bytes32 localOrderId,bytes32 localStageId,bytes32 routeId,bytes32 routeHash,bytes32 targetPlanId,bytes32 linkedOrderId,bytes32 interfaceNameId,uint8 depth,bool exists)",
   "function getDockInputBinding(bytes32 dockInstanceId,bytes32 inputBindingHash) view returns (bytes32 localHookId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,bool exists)",
   "function getDockOutputBinding(bytes32 dockInstanceId,bytes32 outputBindingHash) view returns (bytes32 localSourceId,bytes32 localSignalId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,bool exists)",
@@ -410,7 +410,7 @@ export const STATE_MACHINE_LENS_ABI = parseAbi([
 ]);
 
 export const PRODUCT_SUBMIT_DOMAIN_NAME = "UVPStateMachine";
-export const PRODUCT_SUBMIT_DOMAIN_VERSION = "0.13";
+export const PRODUCT_SUBMIT_DOMAIN_VERSION = "0.14";
 export const PRODUCT_SUBMIT_PRIMARY_TYPE = "UVPStateMachineSignal";
 export const PLAN_COMMIT_PRIMARY_TYPE = "UVPStateMachinePlanCommit";
 export const TRIGGER_ORDER_FROM_OUTSIDE_PRIMARY_TYPE =
@@ -989,8 +989,10 @@ export interface SignalAttributionCallStruct {
   readonly capabilityProof: readonly Hex[];
 }
 
-// 阶段 selector 绑定证明（submitSignal 族 selectorBinding 参数）：
+// 阶段 selector 绑定证明（stage patch 族的 bindingProof 参数）：
 // selectorStageId=0 表示目标阶段未被 selector 绑定（无需证明）。
+// submitSignal 族与 docked/derived 提交面已收敛为 anchored 词表语义，
+// 不再随交易携带 selector 绑定证明。
 export interface SelectorBindingPayload {
   readonly selectorStageId: Hex | string;
   readonly proof: readonly (Hex | string)[];
@@ -999,30 +1001,6 @@ export interface SelectorBindingPayload {
 export interface SelectorBindingCallStruct {
   readonly selectorStageId: Hex;
   readonly proof: readonly Hex[];
-}
-
-// 阶段事实自证（stage patch 的 stageFacts 项）：只携事实键与能力证明，
-// 属主阶段由合约按 (sourceId, signalId) 反查叶归属。
-export interface StageFactPayload {
-  readonly sourceId: Hex | string;
-  readonly signalId: Hex | string;
-  readonly capabilityProof: readonly (Hex | string)[];
-}
-
-export interface StageFactCallStruct {
-  readonly sourceId: Hex;
-  readonly signalId: Hex;
-  readonly capabilityProof: readonly Hex[];
-}
-
-function normalizeStageFact(fact: StageFactPayload): StageFactCallStruct {
-  return {
-    sourceId: normalizeBytes32(fact.sourceId, "stageFact.sourceId"),
-    signalId: normalizeBytes32(fact.signalId, "stageFact.signalId"),
-    capabilityProof: fact.capabilityProof.map((word, index) =>
-      normalizeBytes32(word, `stageFact.capabilityProof[${index}]`),
-    ),
-  };
 }
 
 function normalizeSignalAttribution(
@@ -1063,7 +1041,6 @@ export interface SubmitSignalForCallArgs {
   readonly deadline: bigint | number | string;
   readonly signature: Hex | string;
   readonly attribution: SignalAttributionPayload;
-  readonly selectorBinding: SelectorBindingPayload;
 }
 
 export interface DerivedSignalRequestCallStruct {
@@ -1106,17 +1083,15 @@ export interface SubmitDerivedSignalForCallArgs {
   readonly proofs: DerivedSignalProofsPayload;
 }
 
-// 派生信号提交的两端能力证明 + 目标阶段 selector 绑定证明。
+// 派生信号提交的两端能力证明（target 侧仅 relation!=0 时需要）。
 export interface DerivedSignalProofsPayload {
   readonly fromCapabilityProof: readonly (Hex | string)[];
   readonly targetCapabilityProof: readonly (Hex | string)[];
-  readonly selectorBinding: SelectorBindingPayload;
 }
 
 export interface DerivedSignalProofsCallStruct {
   readonly fromCapabilityProof: readonly Hex[];
   readonly targetCapabilityProof: readonly Hex[];
-  readonly selectorBinding: SelectorBindingCallStruct;
 }
 
 function normalizeDerivedSignalProofs(
@@ -1129,7 +1104,6 @@ function normalizeDerivedSignalProofs(
     targetCapabilityProof: proofs.targetCapabilityProof.map((word, index) =>
       normalizeBytes32(word, `proofs.targetCapabilityProof[${index}]`),
     ),
-    selectorBinding: normalizeSelectorBinding(proofs.selectorBinding),
   };
 }
 
@@ -1216,7 +1190,6 @@ export interface SubmitSignalForCall {
     bigint,
     Hex,
     SignalAttributionCallStruct,
-    SelectorBindingCallStruct,
   ];
   readonly data: Hex;
   readonly chainId?: number;
@@ -1783,7 +1756,6 @@ export function buildSubmitSignalForCall(
     normalizeUintBigInt(args.deadline, "deadline"),
     normalizeHex(args.signature, "signature"),
     normalizeSignalAttribution(args.attribution),
-    normalizeSelectorBinding(args.selectorBinding),
   ] as const satisfies readonly [
     Hex,
     Hex,
@@ -1795,7 +1767,6 @@ export function buildSubmitSignalForCall(
     bigint,
     Hex,
     SignalAttributionCallStruct,
-    SelectorBindingCallStruct,
   ];
 
   return {
@@ -2331,7 +2302,7 @@ function normalizeStageExecutorPatchMode(value: Hex | string): Hex {
 
   const normalized = normalizeBytes32(value, "mode");
   if (!EXECUTOR_PATCH_MODE_VALUE_SET.has(normalized)) {
-    throw new Error("mode must be assign, handoff, or replacement");
+    throw new Error("mode must be assign or handoff");
   }
   return normalized;
 }

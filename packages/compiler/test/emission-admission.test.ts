@@ -20,6 +20,10 @@ import {
   type ZhixuDefinition,
 } from "../src/index.js";
 import { compileZhixuOnchainHookPlan } from "../src/onchain/compile.js";
+import {
+  commitmentGoldenCase,
+  commitmentRegisterHooksArgs,
+} from "./commitment-golden.js";
 
 /**
  * 发射适格面（admissions）编译面测试：IR/onchain 产物条目、过滤档指令
@@ -162,6 +166,32 @@ test("admission registration args reuse the hook slot shape with flag 8 inside h
   );
   // hooksHash 对提交的 calldata 重算——适格面随 hook 槽一同入承诺。
   assert.equal(args.hooksHash, hashSolidityRegisterHooks(args.hooks));
+});
+
+test("admission commitments are pinned by the shared golden vectors", () => {
+  // 共享金向量（uvp-core fixtures/commitments）：declared/bare-root 两种
+  // validWhen 形态的 hooksHash（含 flags=8 admission 槽）与制品承诺由共享
+  // 文件钉死，Foundry 侧对同一 hooks 数组重算 hooksHash/runtimePlanHash。
+  for (const name of [
+    "admission_demo_declared_valid_when",
+    "admission_demo_bare_root_veto",
+  ]) {
+    const golden = commitmentGoldenCase(name);
+    const onchain = compileZhixuOnchainHookPlan(golden.input.definition);
+    const args = toSolidityRegisterPlanArgs(onchain);
+    assert.ok(
+      args.hooks.some((hook) => hook.flags === HOOK_FLAG_ADMISSION),
+      `${name}: fixture must carry an admission hook slot`,
+    );
+    assert.equal(onchain.planHash, golden.expected.onchainPlanHash, `${name}: onchain planHash`);
+    assert.equal(args.hooksHash, golden.expected.hooksHash, `${name}: hooksHash`);
+    assert.equal(args.planHash, golden.expected.runtimePlanHash, `${name}: runtime planHash`);
+    assert.equal(
+      hashSolidityRegisterHooks(commitmentRegisterHooksArgs(golden.input.hooks)),
+      golden.expected.hooksHash,
+      `${name}: pinned hooks array must rehash to the expected hooksHash`,
+    );
+  }
 });
 
 /**

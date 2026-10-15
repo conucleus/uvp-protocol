@@ -41,7 +41,8 @@ interface IUVPStateMachineCore {
     }
 
     /// selector 绑定目标的成员资格证明（(selectorStageId, targetStageId)
-    /// 绑定叶）。selectorStageId==0 表示不携证。
+    /// 绑定叶）——executor/resource patch 面的判定材料（换人面必须证明
+    /// selector 对目标的绑定在能力树内）。
     struct SelectorBindingProof {
         bytes32 selectorStageId;
         bytes32[] proof;
@@ -170,25 +171,24 @@ interface IUVPStateMachineCore {
         bytes32 payloadHash,
         bytes32 idempotencyKey,
         address submitter,
-        FactAttribution calldata attribution,
-        SelectorBindingProof calldata selectorBinding
+        FactAttribution calldata attribution
     ) external;
-    /// Derived signals carry the stage that authorizes the originating path
-    /// separately from the target signal source. The target order receives the
-    /// fact, while its active executor (if any) still gates the write.
-    /// relation 由派生模块判定：currentOrderFact = relation==0（生产事实
-    /// 过属主就绪门），false = trigger-origin 回写（不经门）。
+    /// Derived signals write a fact to a target order while the capability's
+    /// stage belongs to the producing (from) path. The from identities ride
+    /// the call so the executor leg binds to the producing order's stage；
+    /// relation=0（from==target 复合键）生产事实过属主就绪门，relation=1
+    /// trigger-origin 回写不经门。
     function submitDerivedSignalFromModule(
         bytes32 planId,
         bytes32 orderId,
+        bytes32 fromPlanId,
+        bytes32 fromOrderId,
         bytes32 stageId,
         bytes32 sourceId,
         bytes32 signalId,
         bytes32 payloadHash,
         bytes32 idempotencyKey,
-        address submitter,
-        bool currentOrderFact,
-        SelectorBindingProof calldata selectorBinding
+        address submitter
     ) external;
     function triggerOrderFromSignalFromModule(
         TriggerOrderFromSignalRequest calldata trigger,

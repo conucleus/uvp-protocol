@@ -83,6 +83,12 @@ library UVPPlanRegistration {
         plan.executorCandidatesRoot = executorCandidatesRoot;
         plan.publisher = commit.publisher;
         plan.committed = true;
+        // 候选集阶段投影（B8a）：assign 前置闸的免证判定材料随建树数组
+        // 落库——数组与 root 同源（planId 即由数组派生 root 键出），此处
+        // 落库的是同一承诺的阶段面，不引入第二个可信来源。
+        for (uint256 i = 0; i < executorCandidates.length; i++) {
+            plan.executorCandidateStages[executorCandidates[i].stageId] = true;
+        }
 
         // Cross-stage dependency scan scratch: scoped so the large memory
         // arrays release their stack slots before the commit events fire.

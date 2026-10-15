@@ -136,14 +136,6 @@ contract UVPStateMachine {
         bytes32[] capabilityProof;
     }
 
-    /// selector 绑定目标的成员资格证明（(selectorStageId, targetStageId)
-    /// 绑定叶）：assign 前置闸（StageExecutorNotAssigned）的判定材料。
-    /// selectorStageId=0 表示不携证（该门在无证时不可判定，跳过）。
-    struct SelectorBindingProof {
-        bytes32 selectorStageId;
-        bytes32[] proof;
-    }
-
     /// fork 出生事实（UB-39 链轨形态）：每条必须与父单既有信号逐字段匹配
     /// （键 + payloadHash + idempotencyKey 一致），不匹配 revert——重放
     /// 输入只能来自父单真实历史（fail-closed，伪造事实无法借 fork 注入）。
@@ -258,6 +250,11 @@ contract UVPStateMachine {
         mapping(bytes32 signalKey => bytes32[] hookIds) dependencyIndex;
         mapping(bytes32 signalKey => StoredAdmission admission) admissions;
         mapping(bytes32 stageId => bool exists) stageExists;
+        // 候选集的阶段投影（commit 时随建树数组落库）：assign 前置闸的
+        // 免证判定材料——"该阶段是否属于逐单换人面"不再依赖调用方携
+        // selector 绑定证明（不携证即放行的旧形态是时序 DoS 面），也不可
+        // 能从 root 侧枚举（Merkle 存在性查询无非成员证明）。
+        mapping(bytes32 stageId => bool covered) executorCandidateStages;
         bool committed;
         bool finalized;
         // 适格面在场位：与 committed/finalized 同槽打包（注册时随首条
@@ -953,8 +950,7 @@ contract UVPStateMachine {
     /// 即必须验过该阶段对 (sourceId, signalId, relation=0) 的成员资格；
     /// 有词表的 plan 不声明即拒绝（词表闸与出生/dock output 通道同口径，
     /// 免证事实无法证明词表成员资格），零词表的手工 plan 按 source==stage
-    /// 回退解析属主。SelectorBindingProof 在阶段尚无 active patch 时参与
-    /// assign 闸（证明该阶段是 selector 绑定目标）。
+    /// 回退解析属主。
     function submitSignal(
         bytes32 planId,
         bytes32 orderId,
@@ -962,12 +958,9 @@ contract UVPStateMachine {
         bytes32 signalId,
         bytes32 payloadHash,
         bytes32 idempotencyKey,
-        FactAttribution calldata attribution,
-        SelectorBindingProof calldata selectorBinding
+        FactAttribution calldata attribution
     ) external {
-        _submitSignal(
-            planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, msg.sender, attribution, selectorBinding
-        );
+        _submitSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, msg.sender, attribution);
     }
 
     function submitSignalFor(
@@ -980,8 +973,7 @@ contract UVPStateMachine {
         address submitter,
         uint256 deadline,
         bytes calldata signature,
-        FactAttribution calldata attribution,
-        SelectorBindingProof calldata selectorBinding
+        FactAttribution calldata attribution
     ) external {
         if (block.timestamp > deadline) {
             revert ExpiredSignalSignature(deadline);
@@ -1000,9 +992,7 @@ contract UVPStateMachine {
             revert InvalidSignalSignature(submitter, recoveredSigner);
         }
 
-        _submitSignal(
-            planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, attribution, selectorBinding
-        );
+        _submitSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, attribution);
     }
 
     function activateStageExecutorFromModule(
@@ -1238,8 +1228,7 @@ contract UVPStateMachine {
         bytes32 payloadHash,
         bytes32 idempotencyKey,
         address submitter,
-        FactAttribution calldata attribution,
-        SelectorBindingProof calldata selectorBinding
+        FactAttribution calldata attribution
     ) external {
         if (msg.sender != dockingModule) {
             revert UnauthorizedStateMachineModule(msg.sender);
@@ -1264,27 +1253,29 @@ contract UVPStateMachine {
             revert InvalidSignalCapability(planId, sourceId, signalId);
         }
         bytes32 sourceStageId = _resolveSourceStage(planId, sourceId, signalId, attribution);
-        _requireSourceStageReady(planId, orderId, sourceStageId, selectorBinding);
+        _requireSourceStageReady(planId, orderId, sourceStageId);
         _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false, sourceStageId);
     }
 
-    /// Derived signals write a fact to a target/origin order while the
-    /// capability's stage belongs to the originating path. Keep that stage
-    /// explicit so an active executor patch on the target order cannot be
-    /// bypassed by conflating the business source id with the stage id.
-    /// relation 由派生模块判定并显式传入：relation=0 的能力成员资格（即
-    /// fromStageId 是该事实键的属主）已在模块入口经 proof 验证。
+    /// Derived signals write a fact to a target order while the capability's
+    /// stage belongs to the producing (from) path. The from identities ride
+    /// the call so the executor leg binds to the producing order's stage, not
+    /// the target order's——relation=1 的 from-执行者路径与派生模块的模块门
+    /// （from 侧在任执行者）必须同口径放行，否则该路径过模块门后在 SM 层
+    /// 恒 UnauthorizedStageExecutor（fail-closed 不可用）。relation 由派生
+    /// 模块判定并显式传入：relation=0 的能力成员资格（即 fromStageId 是
+    /// 该事实键的属主）已在模块入口经 proof 验证。
     function submitDerivedSignalFromModule(
         bytes32 planId,
         bytes32 orderId,
+        bytes32 fromPlanId,
+        bytes32 fromOrderId,
         bytes32 stageId,
         bytes32 sourceId,
         bytes32 signalId,
         bytes32 payloadHash,
         bytes32 idempotencyKey,
-        address submitter,
-        bool currentOrderFact,
-        SelectorBindingProof calldata selectorBinding
+        address submitter
     ) external {
         if (msg.sender != derivedSignalModule) {
             revert UnauthorizedStateMachineModule(msg.sender);
@@ -1292,18 +1283,22 @@ contract UVPStateMachine {
         if (submitter == address(0)) {
             revert ZeroSubmitter();
         }
-        // 与普通 submitSignal 路径同口径（两维度独立）：显式 order 级授权
-        // 豁免 active executor patch 检查——同一事实两条入口结论必须一致。
+        // 执行者腿（两维度独立）：目标单显式 order 级授权豁免（与普通
+        // submitSignal 同口径——显式授权独立于执行者委任）；否则绑 from
+        // 单该阶段的在任执行者。
         if (!_hasExplicitSignalAuthorization(planId, orderId, sourceId, signalId, submitter)) {
-            _requireActiveStageExecutorByStage(planId, orderId, stageId, submitter);
+            _requireActiveStageExecutorByStage(fromPlanId, fromOrderId, stageId, submitter);
         }
         // relation=0（from==target 本单生产事实）与普通 submitSignal 同口径
-        // 过物化门 + executor 存在门——否则显式授权者可在 assign 前写入生产
+        // 过物化门 + assign 前置门——否则显式授权者可在 assign 前写入生产
         // 事实，StageAlreadyHasSignal 把 assign 永久顶死；relation=1 回写
         // 不经两门（origin 订单无需物化 from 侧阶段），也不进 per-stage 计数
-        //（事实不归属本单阶段——计数口径与物化门口径一致）。
+        //（事实不归属本单阶段——计数口径与物化门口径一致）。模块侧
+        // targetOrderRelation 的 relation=0 判据就是 from==target 复合键，
+        // 此处按同式重导，两口径不可能分叉。
+        bool currentOrderFact = fromPlanId == planId && fromOrderId == orderId;
         bytes32 sourceStageId = currentOrderFact ? stageId : bytes32(0);
-        _requireSourceStageReady(planId, orderId, sourceStageId, selectorBinding);
+        _requireSourceStageReady(planId, orderId, sourceStageId);
         _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false, sourceStageId);
     }
 
@@ -1315,8 +1310,7 @@ contract UVPStateMachine {
         bytes32 payloadHash,
         bytes32 idempotencyKey,
         address submitter,
-        FactAttribution calldata attribution,
-        SelectorBindingProof calldata selectorBinding
+        FactAttribution calldata attribution
     ) private {
         // 零字事实键与出生/授权入口同口径拒绝（triggerOrderFromOutsideFor /
         // _authorizeSignalSubmitter）：显式授权虽在注册期已拒零字键，普通
@@ -1345,7 +1339,7 @@ contract UVPStateMachine {
         // 属主阶段解析统一走 _resolveSourceStage：免证落库会按词表外口径
         // 绕过属主阶段物化门，随后诚实 ASSIGN patch 永久 StageAlreadyHasSignal。
         bytes32 sourceStageId = _resolveSourceStage(planId, sourceId, signalId, attribution);
-        _requireSourceStageReady(planId, orderId, sourceStageId, selectorBinding);
+        _requireSourceStageReady(planId, orderId, sourceStageId);
         // ① 幂等吸收（外部提交路径的 first-win 语义）：已落库的重复提交
         // 直接吸收返回、不再过适格——at-least-once 重试不得被过期窗口
         // revert（_recordSignal 保留 SignalAlreadyExists 给内部写入口，
@@ -1378,14 +1372,9 @@ contract UVPStateMachine {
     }
 
     /// 属主阶段（提交方携 proof 自证或 source==stage 回退）的就绪门：阶段
-    /// 已物化且（若仍是 selector 绑定目标）已有执行者。0 属主 = 词表外
-    /// 事实，两门均不绑定（旧口径一致）。
-    function _requireSourceStageReady(
-        bytes32 planId,
-        bytes32 orderId,
-        bytes32 sourceStageId,
-        SelectorBindingProof calldata selectorBinding
-    ) private view {
+    /// 已物化且（若在候选集换人面内）已有执行者。0 属主 = 词表外事实，
+    /// 两门均不绑定（旧口径一致）。
+    function _requireSourceStageReady(bytes32 planId, bytes32 orderId, bytes32 sourceStageId) private view {
         if (sourceStageId == bytes32(0)) {
             return;
         }
@@ -1393,7 +1382,7 @@ contract UVPStateMachine {
         if (!order.materializedStages[sourceStageId]) {
             revert UnknownHook();
         }
-        _requireStageExecutorAssigned(planId, orderId, sourceStageId, selectorBinding);
+        _requireStageExecutorAssigned(planId, orderId, sourceStageId);
     }
 
     /// 属主就绪门与物化检查都在入口完成；此处只写入事实、记账并驱动受
@@ -1758,7 +1747,10 @@ contract UVPStateMachine {
         if (originStageId != bytes32(0) && activePatch.exists) {
             return activePatch.executor == party;
         }
-        return _isSignalSubmitterAuthorized(originPlanId, originOrderId, originSourceId, originSignalId, party);
+        // 三腿穷尽：创建者 / 显式 order 级授权 / origin 源阶段在任执行者。
+        // 历史末位兜底只是显式授权的重查（此处必为假），与库孪生
+        // L_triggerOriginConsent 对齐，直接 fail-closed。
+        return false;
     }
 
     function _isPlanStage(bytes32 planId, bytes32 stageId) private view returns (bool) {
@@ -1768,32 +1760,26 @@ contract UVPStateMachine {
         return _s.plans[planId].stageExists[stageId];
     }
 
-    /// selector 绑定目标的 assign 前置闸。"阶段是否绑定目标"在能力树形态
-    /// 下是存在性查询，只能由携证方证明（SelectorBindingProof）：不携证时
-    /// 该门不可判定、放行。放行面覆盖所有携证可选的写入口——_submitSignal
-    /// 的显式授权者与 submitSignalFromModule 的 dock 镜像提交同样可以省
-    /// selector 证写入属主事实（跳过 assign 前置），随后该阶段的 ASSIGN
-    /// patch 可能被 StageAlreadyHasSignal 顶死。要 fail-closed 必须把
-    /// selector 绑定目标集承诺进 PlanCommit（ABI 级裁决），仅凭调用方
-    /// 携证无法封死该面。
-    function _requireStageExecutorAssigned(
-        bytes32 planId,
-        bytes32 orderId,
-        bytes32 targetStageId,
-        SelectorBindingProof calldata selectorBinding
-    ) private view {
-        if (
-            _s.activeStageExecutorPatches[planId][orderId][targetStageId].exists || _s.planMetadataModule == address(0)
-                || selectorBinding.selectorStageId == bytes32(0)
-        ) {
+    /// selector 绑定目标的 assign 前置闸（法条「指派先于信号」）：阶段在
+    /// 候选集换人面内（executorCandidateStages，commit 时随候选数组落库）
+    /// 且尚无 active patch 时，外部信号提交恒拒——判定不依赖调用方携证
+    /// （不携证即放行的旧形态下，订单级显式授权提交者可在 ASSIGN 前写入
+    /// 首个事实，StageAlreadyHasSignal 把该阶段的 ASSIGN 永久顶死，时序
+    /// DoS）。已 assign（patch 存在）放行；目标阶段计数非零也放行——能
+    /// 绕过本门的内部生产者（出生/dock entrance/dock input/fork 重放）已
+    /// 把该阶段的 assign 面消耗为事实史，此时再拦外部信号只会饿死同阶段
+    /// 的其余 watcher，不保护任何残余的 assign 机会。
+    function _requireStageExecutorAssigned(bytes32 planId, bytes32 orderId, bytes32 targetStageId) private view {
+        if (_s.activeStageExecutorPatches[planId][orderId][targetStageId].exists) {
             return;
         }
-        if (IUVPPlanMetadataModule(_s.planMetadataModule)
-                .verifyStageSelectorBinding(
-                    planId, selectorBinding.selectorStageId, targetStageId, selectorBinding.proof
-                )) {
-            revert StageExecutorNotAssigned(orderId, targetStageId);
+        if (!_s.plans[planId].executorCandidateStages[targetStageId]) {
+            return;
         }
+        if (_s.stageSignalAccounts[planId][orderId][targetStageId].count != 0) {
+            return;
+        }
+        revert StageExecutorNotAssigned(orderId, targetStageId);
     }
 
     function _evaluateAffectedHooks(

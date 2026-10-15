@@ -26,12 +26,12 @@ uint256 constant _MAX_PLAN_DEPENDENCIES = 1024;
 bytes32 constant _EIP712_DOMAIN_TYPEHASH =
     keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 bytes32 constant _EIP712_NAME_HASH = keccak256("UVPStateMachine");
-// 0.12 → 0.13（UB-36①④/UB-39 破坏性 ABI 批）：patch 授权与换人面
-// 收敛为显式订单级授权 + assign/handoff 闭集、per-stage 原生计数、
-// executor 候选集根、forkOrder 出生通道、PlanCommit 增
-// executorCandidatesRoot 槽。EIP-712 域版本随公共摘要面（PlanCommit/
-// patch digest 结构变化）同步升位。
-bytes32 constant _EIP712_VERSION_HASH = keccak256("0.13");
+// 0.13 → 0.14（Wave1 合约批）：submitSignal/submitSignalFor/
+// submitSignalFromModule/submitDockedSignal 摘参收敛、
+// submitDerivedSignalFromModule 换参、StageExecutorNotAssigned/
+// DockSelfAttach 新 error、executorCandidateStages 落库。EIP-712 域
+// 版本随公共签名面（submit digest 结构变化）同步升位。
+bytes32 constant _EIP712_VERSION_HASH = keccak256("0.14");
 
 // runtime hash 覆盖全部六个承诺域：hooks、能力树、两条 dock 树、执行者
 // 候选集树——不留"产物有、commitment 无"的悬空状态。v3 → v4：编码追加了

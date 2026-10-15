@@ -32,7 +32,6 @@ import {
   validateOnchainHookPlanArtifact,
   type OnchainHookPlanArtifact,
   type OnchainSignalInstruction,
-  type SolidityRegisterPlanArgs,
   type ZhixuDefinition,
 } from "../src/index.js";
 import {
@@ -60,8 +59,18 @@ import {
   onchainSignalCapabilityHash,
 } from "../src/onchain/hash/route.js";
 import type { HookPlanArtifact } from "../src/types/index.js";
+import {
+  commitmentGoldenCase,
+  commitmentGoldenVectors,
+  commitmentRegisterHooksArgs,
+  commitmentRegisterHooksVector,
+} from "./commitment-golden.js";
 
 const demoManifest = dockDemoResolutionManifest();
+// 承诺面金向量（uvp-core 共享文件）：本测试文件原先内联钉死的
+// planHash/capabilitiesRoot/hookId/hooksHash 字面量一律改由该文件驱动，
+// Rust（uid）与 Foundry（hooksHash/runtimePlanHash）消费同一份。
+const goldenDemo = commitmentGoldenCase("demo_zhixu_production_dock");
 
 /** 变异 hook plan 制品后按载荷重签 planHash（承诺重算由专门的篡改测试覆盖）。 */
 function resign<A extends { planHash: string }>(artifact: A): A {
@@ -189,20 +198,14 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   // target.zhixu 携带目标内容派生 uid 引用，sourcePlanHash/planHash
   // preimage 随定义内容变化；承诺公式本身冻结不变。v4 起制品负载含
   // executorCandidates/executorCandidatesRoot（空集恒在场）。
-  assert.equal(
-    onchain.planHash,
-    "0x8261a65a85db85b70945fa8417ba9cafd81630f123a75535007c41b3bf5df511",
-  );
+  assert.equal(onchain.planHash, goldenDemo.expected.onchainPlanHash);
   // 空候选集：root = EMPTY_MERKLE_ROOT（逐单 patch 恒拒的 fail-closed
   // 形态），与合约 DockMerkle.root([]) 同值。
   assert.deepEqual(onchain.executorCandidates, []);
   assert.equal(onchain.executorCandidatesRoot, EMPTY_MERKLE_ROOT);
   // capabilitiesRoot 是两表叶子的唯一承诺形态（v3 新增字段，随 planHash
   // 一同钉死防漂移）：与生产公式 capabilitiesRootOf 逐字节一致。
-  assert.equal(
-    onchain.capabilitiesRoot,
-    "0x76fb8ce722d40eecf190b71fa0fff923eb9de0073dabd9b4657b57100b21c208",
-  );
+  assert.equal(onchain.capabilitiesRoot, goldenDemo.expected.capabilitiesRoot);
   assert.equal(
     onchain.capabilitiesRoot,
     capabilitiesRootOf(
@@ -252,11 +255,8 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   );
   assert.deepEqual(
     onchain.compiledHooks.map((hook) => hook.hookId),
-    [
-      "0xc04b87f873ad87ab715a6832a137ec6385d144adb11f87bb75fc74af7252f365",
-      "0xba0b51c636886102cf9187a49d54f74059f630f8a08c22a301144b7bf0a06a64",
-      "0x06bd2f15baa717eaf5dd21f3fe27553dfdf46b39fba3ec0307af57fa21e12b5b",
-    ],
+    // hookId 钉值改由共享金向量驱动（forge 侧对同一数组重算 hooksHash）。
+    goldenDemo.input.hooks.map((hook) => hook.hookId),
   );
   assert.equal(
     onchain.compiledHooks[1]?.hookId,
@@ -662,65 +662,78 @@ test("capability tables feed the capabilitiesRoot and the runtime plan hash", ()
 });
 
 test("hooksHash frozen vector pins the zero-word instruction fill cross-language", () => {
-  // 与 UVPStateMachine.t.sol 的同名冻结向量逐字节一致：非 SIGNAL 指令的
-  // sourceId/signalId 填 Solidity 零字，arity/delaySeconds 未用位填 0。
-  // 任何一方（TS compiler / uvp-deploy 驱动 / Rust）在填充位引入别的字
-  // 节（例如 keccak256("")）都会让含 NOT/AND/OR/DELAY 的计划在 commitPlan
-  // 处 HooksHashMismatch 必然 revert。
-  const hooks = [
-    {
-      hookId: "0x0000000000000000000000000000000000000000000000000000000000001001",
-      stageId: "0x0000000000000000000000000000000000000000000000000000000000002001",
-      hookName: "0x0000000000000000000000000000000000000000000000000000000000003001",
-      kind: "receive",
-      flags: 5,
-      instructions: [
-        {
-          op: "SIGNAL",
-          sourceId: "0x0000000000000000000000000000000000000000000000000000000000004001",
-          signalId: "0x0000000000000000000000000000000000000000000000000000000000005001",
-          signalKey: "0x0000000000000000000000000000000000000000000000000000000000006001",
-        },
-        { op: "NOT" },
-        { op: "DELAY", delaySeconds: 30 },
-      ],
-      dependencyKeys: [
-        "0x0000000000000000000000000000000000000000000000000000000000006001",
-      ],
-    },
-    {
-      hookId: "0x0000000000000000000000000000000000000000000000000000000000001002",
-      stageId: "0x0000000000000000000000000000000000000000000000000000000000002002",
-      hookName: "0x0000000000000000000000000000000000000000000000000000000000003002",
-      kind: "receive",
-      flags: 0,
-      instructions: [
-        {
-          op: "SIGNAL",
-          sourceId: "0x0000000000000000000000000000000000000000000000000000000000004002",
-          signalId: "0x0000000000000000000000000000000000000000000000000000000000005002",
-          signalKey: "0x0000000000000000000000000000000000000000000000000000000000006002",
-        },
-        {
-          op: "SIGNAL",
-          sourceId: "0x0000000000000000000000000000000000000000000000000000000000004001",
-          signalId: "0x0000000000000000000000000000000000000000000000000000000000005001",
-          signalKey: "0x0000000000000000000000000000000000000000000000000000000000006001",
-        },
-        { op: "AND", arity: 2 },
-        { op: "OR", arity: 2 },
-      ],
-      dependencyKeys: [
-        "0x0000000000000000000000000000000000000000000000000000000000006002",
-        "0x0000000000000000000000000000000000000000000000000000000000006001",
-      ],
-    },
-  ];
+  // 与 Foundry CommitmentGoldenVectors.t.sol 消费同一份共享金向量（uvp-core
+  // fixtures/commitments）：非 SIGNAL 指令的 sourceId/signalId 填 Solidity
+  // 零字，arity/delaySeconds 未用位填 0。任何一方（TS compiler /
+  // uvp-deploy 驱动 / Foundry）在填充位引入别的字节（例如 keccak256("")）
+  // 都会让含 NOT/AND/OR/DELAY 的计划在 commitPlan 处 HooksHashMismatch
+  // 必然 revert。
+  const vector = commitmentRegisterHooksVector("register_hooks_zero_word_fill");
 
   assert.equal(
-    hashSolidityRegisterHooks(hooks as SolidityRegisterPlanArgs["hooks"]),
-    "0xe71cb5f3a4e16b4498c9d0ccd126cfcc63b6275039635cb94190bf5dcec486df",
+    hashSolidityRegisterHooks(commitmentRegisterHooksArgs(vector.input.hooks)),
+    vector.expected.hooksHash,
   );
+});
+
+test("commitment golden vectors pin uid/planHash/hooksHash from the shared fixture", () => {
+  // 共享金向量全量消费（uvp-core fixtures/commitments/golden-vectors.v1.json）：
+  // 输入由文件驱动现算，uid（Rust derive_definition_uid 同公式）、IR
+  // planHash、onchain 制品哈希、hooksHash、六域 runtime planHash 与四棵根
+  // 逐格钉死——Rust/Foundry 消费同一份文件，任何一侧漂移至少一侧失配。
+  const vectors = commitmentGoldenVectors();
+  assert.equal(vectors.uidVectors.length, 1);
+  assert.equal(vectors.cases.length, 10);
+  assert.equal(vectors.registerHooksVectors.length, 1);
+
+  for (const vector of vectors.uidVectors) {
+    assert.equal(
+      definitionUid(vector.input.definition),
+      vector.expected.uid,
+      `${vector.name}: uid`,
+    );
+  }
+
+  for (const golden of vectors.cases) {
+    const { definition, dockManifest, executorCandidates } = golden.input;
+    const plan = compileZhixuHookPlan(definition, dockManifest);
+    const onchain = compileZhixuOnchainHookPlan(
+      definition,
+      dockManifest,
+      executorCandidates,
+    );
+    const args = toSolidityRegisterPlanArgs(onchain);
+
+    assert.equal(plan.zhixuId, golden.expected.uid, `${golden.name}: uid`);
+    assert.equal(plan.planHash, golden.expected.hookPlanHash, `${golden.name}: IR planHash`);
+    assert.equal(onchain.planHash, golden.expected.onchainPlanHash, `${golden.name}: onchain planHash`);
+    assert.equal(args.planHash, golden.expected.runtimePlanHash, `${golden.name}: runtime planHash`);
+    assert.equal(args.hooksHash, golden.expected.hooksHash, `${golden.name}: hooksHash`);
+    assert.equal(args.capabilitiesRoot, golden.expected.capabilitiesRoot, `${golden.name}: capabilitiesRoot`);
+    assert.equal(onchain.dockRoutesRoot, golden.expected.dockRoutesRoot, `${golden.name}: dockRoutesRoot`);
+    assert.equal(onchain.dockInterfaceRoot, golden.expected.dockInterfaceRoot, `${golden.name}: dockInterfaceRoot`);
+    assert.equal(onchain.executorCandidatesRoot, golden.expected.executorCandidatesRoot, `${golden.name}: executorCandidatesRoot`);
+
+    // 计数镜像（forge 侧 vm.parseJson 不支持 .length 路径）与实际数组长
+    // 一致；文件钉住的 hooks 数组重建后重算 == 期望 hooksHash（forge 对
+    // 同一数组走合约公式，两侧同源）。
+    assert.equal(args.hooks.length, golden.counts.hooks, `${golden.name}: counts.hooks`);
+    assert.deepEqual(
+      args.hooks.map((hook) => hook.instructions.length),
+      golden.counts.instructions,
+      `${golden.name}: counts.instructions`,
+    );
+    assert.deepEqual(
+      args.hooks.map((hook) => hook.dependencyKeys.length),
+      golden.counts.dependencyKeys,
+      `${golden.name}: counts.dependencyKeys`,
+    );
+    assert.equal(
+      hashSolidityRegisterHooks(commitmentRegisterHooksArgs(golden.input.hooks)),
+      golden.expected.hooksHash,
+      `${golden.name}: pinned hooks array must rehash to the expected hooksHash`,
+    );
+  }
 });
 
 test("cross-stage dependency guard fires on deserialized artifacts and follows contract order", () => {

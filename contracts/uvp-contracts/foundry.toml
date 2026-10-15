@@ -17,8 +17,22 @@ ffi = false
 # The dock parity gate reads the canonical TS-generated manifest from the
 # packages/compiler fixtures in this repo; keep one fixture source instead of
 # a Solidity copy that can silently drift.
-allow_paths = ["../../packages/compiler"]
+allow_paths = ["../../packages/compiler", "../../../uvp-core/fixtures"]
 
 [[profile.default.fs_permissions]]
 access = "read"
 path = "../../packages/compiler"
+
+# 语义语料（uvp-core/fixtures/hook/semantics.v1.json）只读放行：与
+# capabilities-root 同一窄接口口径（vm.readFile + vm.parseJson），语料
+# 内容钉住在 uvp-core 仓，本仓不落副本防漂移。
+[[profile.default.fs_permissions]]
+access = "read"
+path = "../../../uvp-core/fixtures"
+
+# B12c invariant 线：小 runs/depth 保证 CI 可跑（Handler 全量复查每动作
+# 后执行，深度收益递减）。
+[profile.default.invariant]
+runs = 16
+depth = 32
+fail_on_revert = false

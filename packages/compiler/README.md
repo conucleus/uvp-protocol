@@ -36,6 +36,14 @@ args for the two-step `UVPStateMachine.commitPlan` + `finalizePlan` flow.
   authority; frozen word layout in `docs/dock-word-layout.md`), and the dock
   golden manifest regenerates via
   `pnpm --filter @uvp-eth/compiler generate:dock-fixtures`.
+- cross-language commitment golden vectors (`uid` / `planHash` / `hooksHash`)
+  live in the sibling `uvp-core` checkout at
+  `fixtures/commitments/golden-vectors.v1.json` and regenerate via
+  `pnpm --filter @uvp-eth/compiler generate:commitment-golden-vectors`
+  (or `make golden-vectors` from the `uvp-core` root). TS tests read them via
+  `test/commitment-golden.ts`; Rust `uvp-ir` (uid cells) and Foundry
+  `CommitmentGoldenVectors.t.sol` (hooksHash / runtime planHash cells) consume
+  the same file.
 
 ## MVP Constraint
 

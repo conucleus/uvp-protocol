@@ -28,7 +28,7 @@ under this folder; repository-level deployment scripts live under
 - `src/libraries/ECDSA.sol`: minimal signature recovery helper.
 - `src/libraries/UVPSignatures.sol`: shared signature struct used by relayed
   state-machine signal submission.
-- `fixtures/uvp-state-machine.v0.13.json` and module fixture JSON files:
+- `fixtures/uvp-state-machine.v0.14.json` and module fixture JSON files:
   pinned ABI/hash fixtures for the current core and module public interfaces.
 - `fixtures/uvp-identity-registry.v0.1.json`: pinned ABI/hash fixture for the
   identity registry public interface.
@@ -66,7 +66,7 @@ the TypeScript `statemachine` oracle.
 
 ## ABI Fixture
 
-`UVPStateMachine v0.13` treats these as public interfaces:
+`UVPStateMachine v0.14` treats these as public interfaces:
 
 - its no-argument constructor;
 - one-time module configuration followed by irreversible `freezeModules`;
@@ -253,7 +253,7 @@ second registration of the same `orderId` reverts with
 `planId` into their domain so derived order ids are plan-scoped by
 construction. Function signatures take a leading `planId` parameter, and the
 from-signal trigger request carries `originPlanId`. Event signatures are
-pinned in the v0.13 and module fixtures; indexers must consume the composite
+pinned in the v0.14 and module fixtures; indexers must consume the composite
 identity in every event and projection rather than treating `orderId` as
 globally unique.
 

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPDockingModule",
-  "abiVersion": "4.5",
+  "abiVersion": "4.6",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPDockingModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPDockingModule.sol/UVPDockingModule.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x9451df8e920a1c591211e82c2a43bbe739d5973e32e1db6327ca7f4f9bb83152",
-    "bytecodeHash": "0x33fee99e82f64f6f3e6768558f4045964b8f8cffcea690b25a00284cf35fad1e",
-    "deployedBytecodeHash": "0xeada646e043ff738ddd640197be78c5d341c76fb1e4c843574b7ae41196a7250",
-    "artifactHash": "0x80b2115961435471e78e45bd56e14c5a7f47f6f5f0124e8e694874b9f3a6bf86"
+    "abiHash": "0xa12f9df6d42afaf72e3ec8d3b3f454f2487c91f54d687076a3990b90d37b9c1b",
+    "bytecodeHash": "0xd7d62488c26fa7c8c0945feaf27871ddb6e52a978a0c9ca4aa94c83d4fb2f5c8",
+    "deployedBytecodeHash": "0xe2943bf5bc9c9142e4e565433c92648cb8d880398fd1a6ac74284a0e52fddd06",
+    "artifactHash": "0x46c69a4ad48b765aa09df36776838195a36e9b06ea72dce80d2f1a4e262dacb1"
   },
   "events": {
     "DockAttached": {
@@ -130,8 +130,8 @@
       "selector": "0xacd91e9d"
     },
     "submitDockedSignal": {
-      "signature": "submitDockedSignal(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[]),(bytes32,bytes32[]))",
-      "selector": "0x79a8f5d0"
+      "signature": "submitDockedSignal(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[]))",
+      "selector": "0xb4c01159"
     },
     "usedEntrancePermitNonce": {
       "signature": "usedEntrancePermitNonce(bytes32)",

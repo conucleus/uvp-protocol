@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
@@ -9,6 +10,10 @@ import {
 } from "../src/index.js";
 
 const corpusUrl = new URL("../../../../uvp-core/fixtures/hook/semantics.v1.json", import.meta.url);
+const corpusMetaUrl = new URL(
+  "../../../../uvp-core/fixtures/hook/semantics.v1.meta.json",
+  import.meta.url
+);
 
 interface MismatchDetail {
   readonly reason: string;
@@ -41,7 +46,21 @@ interface Corpus {
 }
 
 async function loadCorpus(): Promise<Corpus> {
-  return JSON.parse(await readFile(corpusUrl, "utf8")) as Corpus;
+  const raw = await readFile(corpusUrl, "utf8");
+  // 内容指纹门（Rust corpus_is_pinned_by_content_sha256 同款）：语料与同目录
+  // meta 声明的 sha256 不一致即响亮失败，防止就地改写语料而消费测试仍静默
+  // 按旧口径通过。本钉只实现 sha256；改算法须三线 harness 同批迁移。
+  const meta = JSON.parse(await readFile(corpusMetaUrl, "utf8")) as {
+    readonly algorithm: string;
+    readonly contentSha256: string;
+  };
+  assert.equal(meta.algorithm, "sha256", "corpus meta algorithm drifted; only sha256 is implemented");
+  assert.equal(
+    createHash("sha256").update(raw, "utf8").digest("hex"),
+    meta.contentSha256,
+    "semantic corpus content diverged from semantics.v1.meta.json contentSha256; recompute and update the meta in the same change"
+  );
+  return JSON.parse(raw) as Corpus;
 }
 
 /**

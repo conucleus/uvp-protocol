@@ -616,7 +616,15 @@ export function buildUnresolvedDockRoute(
     );
   }
   const candidates: UnresolvedDockRouteCandidate[] = [];
+  let selfTargetSkipped = false;
   for (const target of context.resolution.byUid.values()) {
+    // B7 编译期纵深：本地定义自身不进自己的动态候选集——自挂接在合约
+    // 侧被身份比较拒绝（DockSelfAttach），冻结进候选根只会制造一个
+    // 永久不可达（且镜像退化）的候选叶。
+    if (target.definitionRefHash === context.localDefinitionRefHash) {
+      selfTargetSkipped = true;
+      continue;
+    }
     const interfaceEntry = target.interfaces.find(
       (candidate) => candidate.name === neutral.interfaceName,
     );
@@ -641,9 +649,15 @@ export function buildUnresolvedDockRoute(
   }
   if (candidates.length === 0) {
     throw new RangeError(
-      `unresolved dock route ${stageIdentifier} has an empty candidate set: no manifest definition publishes interface ` +
-        `${JSON.stringify(neutral.interfaceName)} for order mode ${JSON.stringify(neutral.orderMode)} — ` +
-        "the frozen candidate root would make the route permanently un-attachable (attach only accepts membership in the frozen root)",
+      `unresolved dock route ${stageIdentifier} has an empty candidate set: ${
+        selfTargetSkipped
+          ? "the only manifest definition publishing interface " +
+            `${JSON.stringify(neutral.interfaceName)} for order mode ${JSON.stringify(neutral.orderMode)} is the local definition itself, ` +
+            "and a route cannot attach to its own order (self-attach is rejected on chain)"
+          : "no manifest definition publishes interface " +
+            `${JSON.stringify(neutral.interfaceName)} for order mode ${JSON.stringify(neutral.orderMode)} — ` +
+            "the frozen candidate root would make the route permanently un-attachable (attach only accepts membership in the frozen root)"
+      }`,
     );
   }
   candidates.sort((left, right) =>

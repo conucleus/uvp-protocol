@@ -47,8 +47,7 @@ contract BatchSubmitter {
             bytes32(uint256(0x9001)),
             UVPStateMachine.FactAttribution({
                 sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
-            }),
-            UVPStateMachine.SelectorBindingProof({selectorStageId: bytes32(0), proof: new bytes32[](0)})
+            })
         );
         machine.submitSignal(
             planId,
@@ -59,8 +58,7 @@ contract BatchSubmitter {
             bytes32(uint256(0x9002)),
             UVPStateMachine.FactAttribution({
                 sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
-            }),
-            UVPStateMachine.SelectorBindingProof({selectorStageId: bytes32(0), proof: new bytes32[](0)})
+            })
         );
     }
 }
@@ -97,7 +95,7 @@ contract UVPAdmissionTest {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.13");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.14");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
         "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,uint256 deadline)"
     );
@@ -332,8 +330,7 @@ contract UVPAdmissionTest {
             SIGNAL_ANCHOR,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         machine.submitSignal(
             PLAN_ID,
@@ -342,8 +339,7 @@ contract UVPAdmissionTest {
             SIGNAL_TRIGGER,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
 
         (bool exists,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
@@ -372,8 +368,7 @@ contract UVPAdmissionTest {
             SIGNAL_TRIGGER,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
 
         (bool exists,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
@@ -386,6 +381,54 @@ contract UVPAdmissionTest {
                 == 0,
             "rejected emission emitted events"
         );
+    }
+
+    /// B1a 真空臂排除（forge 求值钉）：`(A | ~X) + 5s` 的 OR 锚点竞争中，
+    /// 无锚 Ready 分支（~X，X 缺席）不参与竞争——结果锚定有锚分支 A 的
+    /// 到达时刻。若真空臂以 anchorAt=0 恒胜（旧缺陷：私造纪元初锚），
+    /// dueAt = 0 + 5s 恒在过去，A 到达后适格立即放行——103 时刻的拒绝钉
+    /// 死该形态（与 Rust 权威 branch_maturity 的无锚分支永不出线同口径）。
+    function testAdmissionOrVacuumArmLosesToAnchoredArm() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](5);
+        instructions[0] = _signal(SIGNAL_ANCHOR);
+        instructions[1] = _signal(SIGNAL_CANCEL);
+        instructions[2] = _not();
+        instructions[3] = _or(2);
+        instructions[4] = _delay(5);
+        UVPStateMachine.CompactHook[] memory base = _basePlan(false);
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](base.length + 1);
+        for (uint256 i = 0; i < base.length; i++) {
+            hooks[i] = base[i];
+        }
+        hooks[base.length] = _admissionHook(SIGNAL_TRIGGER, instructions);
+        _registerPlan(machine, hooks);
+        _submitTriggerOrderFromOutside(machine, address(0));
+
+        vm.warp(100);
+        machine.submitSignal(
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
+        );
+
+        // A@100 + 5s = 105：锚定 A 的延时未熟 → Wait → 整笔拒绝（X 缺席
+        // 产生的真空 Ready 臂不得把锚拉回 0）。
+        vm.warp(103);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPStateMachine.SignalAdmissionRejected.selector, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER
+            )
+        );
+        machine.submitSignal(
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
+        );
+
+        // 到期放行：X 仍缺席，真空臂在场不改变锚点。
+        vm.warp(105);
+        machine.submitSignal(
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
+        );
+        (bool exists,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
+        require(exists, "admitted emission missing at anchored maturity");
     }
 
     /// 窗口边界：恰到期（block.timestamp == dueAt）延时成熟 → NOT 翻转
@@ -401,8 +444,7 @@ contract UVPAdmissionTest {
             SIGNAL_ANCHOR,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         before.submitSignal(
             PLAN_ID,
@@ -411,8 +453,7 @@ contract UVPAdmissionTest {
             SIGNAL_CANCEL,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         vm.warp(104);
         before.submitSignal(
@@ -422,8 +463,7 @@ contract UVPAdmissionTest {
             SIGNAL_TRIGGER,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
 
         UVPStateMachine atExpiry = _gatedMachine(5);
@@ -435,8 +475,7 @@ contract UVPAdmissionTest {
             SIGNAL_ANCHOR,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         atExpiry.submitSignal(
             PLAN_ID,
@@ -445,8 +484,7 @@ contract UVPAdmissionTest {
             SIGNAL_CANCEL,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         vm.warp(105);
         vm.expectRevert(
@@ -461,8 +499,7 @@ contract UVPAdmissionTest {
             SIGNAL_TRIGGER,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
     }
 
@@ -479,8 +516,7 @@ contract UVPAdmissionTest {
             SIGNAL_ANCHOR,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         machine.submitSignal(
             PLAN_ID,
@@ -489,8 +525,7 @@ contract UVPAdmissionTest {
             SIGNAL_TRIGGER,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         machine.submitSignal(
             PLAN_ID,
@@ -499,8 +534,7 @@ contract UVPAdmissionTest {
             SIGNAL_CANCEL,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
 
         vm.warp(1000);
@@ -511,8 +545,7 @@ contract UVPAdmissionTest {
             SIGNAL_TRIGGER,
             bytes32(uint256(0x8004)),
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
 
         (, bytes32 payloadHash,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
@@ -534,8 +567,7 @@ contract UVPAdmissionTest {
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
             address(this),
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
 
         (bool exists,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
@@ -609,8 +641,7 @@ contract UVPAdmissionTest {
             SIGNAL_TRIGGER,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         uint256 spent = gasBefore - gasleft();
 
@@ -631,8 +662,7 @@ contract UVPAdmissionTest {
             SIGNAL_ANCHOR,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         uint256 gasBefore = gasleft();
         plain.submitSignal(
@@ -642,8 +672,7 @@ contract UVPAdmissionTest {
             SIGNAL_TRIGGER,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         uint256 plainSpent = gasBefore - gasleft();
 
@@ -656,8 +685,7 @@ contract UVPAdmissionTest {
             SIGNAL_ANCHOR,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         gasBefore = gasleft();
         machine.submitSignal(
@@ -667,8 +695,7 @@ contract UVPAdmissionTest {
             SIGNAL_TRIGGER,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         uint256 admissionSpent = gasBefore - gasleft();
 
@@ -681,8 +708,7 @@ contract UVPAdmissionTest {
             SIGNAL_ANCHOR,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         gasBefore = gasleft();
         machineHour.submitSignal(
@@ -692,8 +718,7 @@ contract UVPAdmissionTest {
             SIGNAL_TRIGGER,
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
-            _noAttribution(),
-            _noBinding()
+            _noAttribution()
         );
         uint256 hourSpent = gasBefore - gasleft();
 
@@ -1120,10 +1145,6 @@ contract UVPAdmissionTest {
         return UVPStateMachine.FactAttribution({
             sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
         });
-    }
-
-    function _noBinding() private pure returns (UVPStateMachine.SelectorBindingProof memory) {
-        return UVPStateMachine.SelectorBindingProof({selectorStageId: bytes32(0), proof: new bytes32[](0)});
     }
 
     function _countTopic(Vm.Log[] memory logs, bytes32 topic) private pure returns (uint256 count) {

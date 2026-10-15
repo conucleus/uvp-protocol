@@ -38,8 +38,6 @@ contract UVPDerivedSignalModule {
 
     IUVPStateMachineCore public immutable stateMachine;
 
-    uint8 public constant SIGNAL_TARGET_CURRENT_ORDER = 0;
-
     bytes32 private constant _EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _EIP712_NAME_HASH = keccak256("UVPDerivedSignalModule");
@@ -85,7 +83,6 @@ contract UVPDerivedSignalModule {
     struct DerivedSignalProofs {
         bytes32[] fromCapabilityProof;
         bytes32[] targetCapabilityProof;
-        IUVPStateMachineCore.SelectorBindingProof selectorBinding;
     }
 
     constructor(address stateMachineAddress) {
@@ -103,8 +100,8 @@ contract UVPDerivedSignalModule {
         if (msg.sender != submitter) {
             revert UnauthorizedSignalCaller(submitter, msg.sender);
         }
-        uint8 relation = _validateDerivedSignal(request, submitter, proofs);
-        _executeDerivedSignal(request, submitter, relation, proofs);
+        _validateDerivedSignal(request, submitter, proofs);
+        _executeDerivedSignal(request, submitter);
     }
 
     function submitDerivedSignalFor(
@@ -126,8 +123,8 @@ contract UVPDerivedSignalModule {
             revert InvalidSignalSignature(submitter, recoveredSigner);
         }
 
-        uint8 relation = _validateDerivedSignal(request, submitter, proofs);
-        _executeDerivedSignal(request, submitter, relation, proofs);
+        _validateDerivedSignal(request, submitter, proofs);
+        _executeDerivedSignal(request, submitter);
     }
 
     function DOMAIN_SEPARATOR() public view returns (bytes32) {
@@ -160,23 +157,18 @@ contract UVPDerivedSignalModule {
         return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
     }
 
-    function _executeDerivedSignal(
-        DerivedSignalRequest calldata request,
-        address submitter,
-        uint8 relation,
-        DerivedSignalProofs calldata proofs
-    ) private {
+    function _executeDerivedSignal(DerivedSignalRequest calldata request, address submitter) private {
         stateMachine.submitDerivedSignalFromModule(
             request.targetPlanId,
             request.targetOrderId,
+            request.fromPlanId,
+            request.fromOrderId,
             request.fromStageId,
             request.targetSourceId,
             request.signalId,
             request.payloadHash,
             request.idempotencyKey,
-            submitter,
-            relation == SIGNAL_TARGET_CURRENT_ORDER,
-            proofs.selectorBinding
+            submitter
         );
         emit DerivedSignalSubmitted(
             request.fromOrderId,

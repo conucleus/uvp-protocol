@@ -2034,6 +2034,16 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "bytes32"
       },
       {
+        "name": "fromPlanId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "fromOrderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
         "name": "stageId",
         "type": "bytes32",
         "internalType": "bytes32"
@@ -2062,28 +2072,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "submitter",
         "type": "address",
         "internalType": "address"
-      },
-      {
-        "name": "currentOrderFact",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "selectorBinding",
-        "type": "tuple",
-        "internalType": "struct UVPStateMachine.SelectorBindingProof",
-        "components": [
-          {
-            "name": "selectorStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "proof",
-            "type": "bytes32[]",
-            "internalType": "bytes32[]"
-          }
-        ]
       }
     ],
     "outputs": [],
@@ -2145,23 +2133,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
           },
           {
             "name": "capabilityProof",
-            "type": "bytes32[]",
-            "internalType": "bytes32[]"
-          }
-        ]
-      },
-      {
-        "name": "selectorBinding",
-        "type": "tuple",
-        "internalType": "struct UVPStateMachine.SelectorBindingProof",
-        "components": [
-          {
-            "name": "selectorStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "proof",
             "type": "bytes32[]",
             "internalType": "bytes32[]"
           }
@@ -2246,23 +2217,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             "internalType": "bytes32[]"
           }
         ]
-      },
-      {
-        "name": "selectorBinding",
-        "type": "tuple",
-        "internalType": "struct UVPStateMachine.SelectorBindingProof",
-        "components": [
-          {
-            "name": "selectorStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "proof",
-            "type": "bytes32[]",
-            "internalType": "bytes32[]"
-          }
-        ]
       }
     ],
     "outputs": [],
@@ -2329,23 +2283,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
           },
           {
             "name": "capabilityProof",
-            "type": "bytes32[]",
-            "internalType": "bytes32[]"
-          }
-        ]
-      },
-      {
-        "name": "selectorBinding",
-        "type": "tuple",
-        "internalType": "struct UVPStateMachine.SelectorBindingProof",
-        "components": [
-          {
-            "name": "selectorStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "proof",
             "type": "bytes32[]",
             "internalType": "bytes32[]"
           }

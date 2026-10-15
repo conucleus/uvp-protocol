@@ -85,6 +85,30 @@ function rejectUnknownFields(
   }
 }
 
+/**
+ * labels/annotations/params/receiveSignals 的值面：镜像 uvp_model 的
+ * BTreeMap<String, String> serde 形状面。非字符串值（YAML 裸标量 010/yes/.inf
+ * 的三轨分叉形态、合并键物化的对象）在装载边界确定性拒绝，不静默沿用各轨
+ * 解析器的标量归一。
+ */
+function assertStringValues(
+  value: unknown,
+  path: string,
+  sourceName: string
+): void {
+  if (value === undefined) {
+    return;
+  }
+  if (!isRecord(value)) {
+    throw new ZhixuLoadError(`${sourceName}.${path} must be an object of string values`);
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry !== "string") {
+      throw new ZhixuLoadError(`${sourceName}.${path}.${key} must be a string (quote the value)`);
+    }
+  }
+}
+
 function assertZhixuDefinitionShape(
   value: unknown,
   sourceName: string
@@ -110,6 +134,8 @@ function assertZhixuDefinitionShape(
     );
   }
   rejectUnknownFields(value.metadata, "metadata", "metadata", sourceName);
+  assertStringValues(value.metadata.labels, "metadata.labels", sourceName);
+  assertStringValues(value.metadata.annotations, "metadata.annotations", sourceName);
   const name = value.metadata.name;
   if (
     !NAME_SLUG_PATTERN.test(name) ||
@@ -130,6 +156,7 @@ function assertZhixuDefinitionShape(
       "spec.platform",
       sourceName,
     );
+    assertStringValues(value.spec.platform.params, "spec.platform.params", sourceName);
   }
   if (isRecord(value.spec.nucleation)) {
     rejectUnknownFields(
@@ -138,6 +165,7 @@ function assertZhixuDefinitionShape(
       "spec.nucleation",
       sourceName,
     );
+    assertStringValues(value.spec.nucleation.params, "spec.nucleation.params", sourceName);
   }
   // stages 形状在本层响亮拒绝：loader 的声明契约是镜像 uvp_model 的
   // serde 形状面（typed 反序列化对缺失/非数组的 stages、非 map 的
@@ -149,6 +177,11 @@ function assertZhixuDefinitionShape(
       throw new ZhixuLoadError(`${sourceName}.${stagePath} must be an object`);
     }
     rejectUnknownFields(stage, "stage", stagePath, sourceName);
+    assertStringValues(
+      stage.receiveSignals,
+      `${stagePath}.receiveSignals`,
+      sourceName,
+    );
     // sendSignals 条目形状在 loader 层响亮拒绝（镜像 serde 面的对象形
     // 态与键闭集）：残缺条目静默放行会让"已过 loader 校验"的假象离开
     // 本层，旧字符串形态等价迁移后不再有第二种合法形态。

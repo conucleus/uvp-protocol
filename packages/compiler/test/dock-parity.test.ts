@@ -52,6 +52,7 @@ import {
   type HexString,
   type ZhixuDefinition,
 } from "../src/types/index.js";
+import { commitmentUidVector } from "./commitment-golden.js";
 
 /**
  * M0 跨语言 golden vectors（dock v2）：本测试、Solidity Foundry 测试与
@@ -215,16 +216,13 @@ test("definition uid parity: TS derivation matches the Rust-computed identities"
   assert.equal(definitionUid(fixture.parentDefinition), fixture.identities.parentUid);
   assert.match(fixture.identities.targetUid, /^zx-[0-9a-f]{32}$/);
 
-  // 金向量（Rust 权威 uvp_ir::derive_definition_uid）：域
+  // 金向量（共享语料 uvp-core fixtures/commitments，Rust 权威
+  // uvp_ir::derive_definition_uid 逐格消费同一格）：域
   // uvp:definition-uid:v2，preimage 剔 metadata.name + metadata.annotations。
+  const uidVector = commitmentUidVector("minimal_cloud_definition");
   assert.equal(
-    definitionUid({
-      apiVersion: "uvp/v0",
-      kind: "Zhixu",
-      metadata: { name: "weaving_order" },
-      spec: { platform: { type: "cloud" } },
-    }),
-    "zx-e906ad47866918682d1e2ed2528682f5",
+    definitionUid(uidVector.input.definition),
+    uidVector.expected.uid,
   );
 
   // 展示字段永不参与身份：加 annotations / 改 name 派生不变，改内容即变

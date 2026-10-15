@@ -218,6 +218,97 @@ test("rejects unknown fields at every structural level", () => {
   }
 });
 
+test("rejects non-string values in labels/annotations/params/receiveSignals (serde BTreeMap<String,String> face)", () => {
+  // 值面镜像 uvp_model 的 BTreeMap<String, String>：YAML 裸标量的三轨分叉
+  // 形态（010→number、yes→string/go→boolean 等）不允许静默穿越装载边界。
+  const head = [
+    "apiVersion: uvp/v0",
+    "kind: Zhixu",
+    "metadata:",
+    "  name: probe",
+  ].join("\n");
+  const cases: readonly [string[], RegExp][] = [
+    [
+      [head, "  labels:", "    tier: 010", "spec:", "  stages: []"],
+      /metadata\.labels\.tier must be a string/,
+    ],
+    [
+      [head, "  annotations:", "    flag: true", "spec:", "  stages: []"],
+      /metadata\.annotations\.flag must be a string/,
+    ],
+    [
+      [
+        head,
+        "spec:",
+        "  platform:",
+        "    type: cloud",
+        "    params:",
+        "      replicas: 2",
+        "  stages: []",
+      ],
+      /spec\.platform\.params\.replicas must be a string/,
+    ],
+    [
+      [
+        head,
+        "spec:",
+        "  nucleation:",
+        "    id: core",
+        "    params:",
+        "      channel: 010",
+        "  stages: []",
+      ],
+      /spec\.nucleation\.params\.channel must be a string/,
+    ],
+    [
+      [
+        head,
+        "spec:",
+        "  stages:",
+        "    - name: work",
+        "      source: buyer",
+        "      receiveSignals:",
+        '        "work#RUN": 010',
+      ],
+      /spec\.stages\[0\]\.receiveSignals\.work#RUN must be a string/,
+    ],
+  ];
+  for (const [lines, anchor] of cases) {
+    assert.throws(
+      () => parseZhixuDefinition(lines.join("\n"), "inline.yaml"),
+      (error: unknown) => error instanceof ZhixuLoadError && anchor.test(error.message),
+      `非字符串值必须被拒绝：${lines.join("\n")}`,
+    );
+  }
+  // 引号包裹的字符串值照常通过五个值面。
+  assert.doesNotThrow(() =>
+    parseZhixuDefinition(
+      [
+        head,
+        "  labels:",
+        '    tier: "010"',
+        "  annotations:",
+        '    flag: "yes"',
+        "spec:",
+        "  platform:",
+        "    type: cloud",
+        "    params:",
+        '      replicas: "2"',
+        "  nucleation:",
+        "    id: core",
+        "    params:",
+        '      channel: "on"',
+        "  stages:",
+        "    - name: work",
+        "      source: buyer",
+        "      receiveSignals:",
+        '        "work#RUN": "order::registered"',
+      ].join("\n"),
+      "inline.yaml",
+    ),
+  );
+});
+
 test("rejects spec.stages that are missing or malformed (no silent pass-through)", () => {
   // 2609100328 疑点10：loader 声明契约 = 镜像 uvp_model 的 serde 形状面
   // （typed 反序列化对 stages 缺失/非数组、非 map 的 stage 条目响亮失败），

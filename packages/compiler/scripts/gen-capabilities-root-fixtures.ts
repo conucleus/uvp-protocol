@@ -179,9 +179,65 @@ const duplicateLeaves = buildSample(
   ],
 );
 
+// ---------------------------------------------------------------------
+// 样本 3：深树——33 叶奇数集，证明路径深至 6 层（奇数尾叶逐层提升）。
+// ---------------------------------------------------------------------
+const deepLeaves = buildSample(
+  "deep-tree-33-leaves",
+  "16 绑定 + 17 能力 = 33 叶奇数集，证明路径深至 6 层（奇数尾叶逐层提升）",
+  Array.from({ length: 16 }, (_, index) => ({
+    selectorStageId: word(`deep.selector-${index}`),
+    targetStageId: word(`deep.target-${index}`),
+  })),
+  Array.from({ length: 17 }, (_, index) => ({
+    stageId: word(`deep.stage-${index}`),
+    targetSourceId: word(`deep.source-${index % 5}`),
+    signalId: word(`deep.signal-${index}`),
+    targetOrderRelation: (index % 3 === 0 ? 1 : 0) as 0 | 1,
+  })),
+);
+
+// ---------------------------------------------------------------------
+// 样本 4：大规模——128 叶双满表（深叶抽验中部成员资格证明）。
+// ---------------------------------------------------------------------
+const largeTables = buildSample(
+  "large-tables-128-leaves",
+  "64 绑定 + 64 能力 = 128 叶大规模双满表，中部/首尾叶成员资格证明逐条钉住",
+  Array.from({ length: 64 }, (_, index) => ({
+    selectorStageId: word(`large.selector-${index}`),
+    targetStageId: word(`large.target-${index}`),
+  })),
+  Array.from({ length: 64 }, (_, index) => ({
+    stageId: word(`large.stage-${index}`),
+    targetSourceId: word(`large.source-${index % 8}`),
+    signalId: word(`large.signal-${index}`),
+    targetOrderRelation: (index % 2 === 0 ? 0 : 1) as 0 | 1,
+  })),
+);
+
+// ---------------------------------------------------------------------
+// 样本 5：重复 payload 重灾——8 条原始输入塌缩成 2 唯一叶（单对树）：
+// 去重语义在大比例重复下仍保持根 = 单对配对哈希。
+// ---------------------------------------------------------------------
+const duplicatePayloadHeavy = buildSample(
+  "duplicate-payload-heavy-collapse",
+  "重复 payload 重灾：4 绑定（1 唯一）+ 4 能力（1 唯一）→ 8 原始叶 → 2 唯一叶（单对树）",
+  [
+    { selectorStageId: stages.init, targetStageId: stages.audit },
+    { selectorStageId: stages.init, targetStageId: stages.audit },
+    { selectorStageId: stages.init, targetStageId: stages.audit },
+    { selectorStageId: stages.init, targetStageId: stages.audit },
+  ],
+  [
+    { stageId: stages.settle, targetSourceId: sources.evidence, signalId: signals.failed, targetOrderRelation: 1 },
+    { stageId: stages.settle, targetSourceId: sources.evidence, signalId: signals.failed, targetOrderRelation: 1 },
+    { stageId: stages.settle, targetSourceId: sources.evidence, signalId: signals.failed, targetOrderRelation: 1 },
+  ],
+);
+
 const fixture = {
   schemaVersion: "uvp.capabilities-root.golden.v1",
-  samples: [mixedTables, duplicateLeaves],
+  samples: [mixedTables, duplicateLeaves, deepLeaves, largeTables, duplicatePayloadHeavy],
 };
 
 const fixturePath = resolve(

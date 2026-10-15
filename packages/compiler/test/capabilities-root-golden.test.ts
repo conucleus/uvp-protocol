@@ -71,7 +71,7 @@ const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as {
 
 test("capabilities-root golden fixture keeps its schema version", () => {
   assert.equal(fixture.schemaVersion, "uvp.capabilities-root.golden.v1");
-  assert.equal(fixture.samples.length, 2);
+  assert.equal(fixture.samples.length, 5);
 });
 
 for (const sample of fixture.samples) {

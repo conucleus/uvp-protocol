@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStateMachine",
-  "abiVersion": "0.13",
+  "abiVersion": "0.14",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStateMachine.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStateMachine.sol/UVPStateMachine.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x25492ce0456ae4ba4d19551808b9ea04514c34c1882574d3085dfa9075d32091",
-    "bytecodeHash": "0x93c8d590db0971356571c23b0a74f96d2b698c3ab4b9e508e72cda012be145f8",
-    "deployedBytecodeHash": "0xa9e50fa803506b260779fd4b0247751601cc26cd0362152e36d94102d8564414",
-    "artifactHash": "0x3434df05eaaa51be139d4008520ed4e263bf899a737e0047aa804ecc18e57951"
+    "abiHash": "0x26ace4d54fef242fdb5b8ebb93da4b335ed23b2e05e05c116c6afb03d0d98896",
+    "bytecodeHash": "0xb66877213bf0bfde95ea33c9e623acb9303909d8c78884f468336b27ce171ba5",
+    "deployedBytecodeHash": "0xb52c322c876e36338e0afc032705390c9d28b882808ddf6d20607333ce29f036",
+    "artifactHash": "0xc3951d58ef599419bb74f97ae26c875035d2ff39fed9620445efe1039aed270d"
   },
   "events": {
     "HookReady": {
@@ -386,20 +386,20 @@
       "selector": "0x9bc685d3"
     },
     "submitDerivedSignalFromModule": {
-      "signature": "submitDerivedSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,bool,(bytes32,bytes32[]))",
-      "selector": "0x5d3a32c5"
+      "signature": "submitDerivedSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
+      "selector": "0x047c6fbf"
     },
     "submitSignal": {
-      "signature": "submitSignal(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[]),(bytes32,bytes32[]))",
-      "selector": "0xa452be0c"
+      "signature": "submitSignal(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[]))",
+      "selector": "0xbb027d3f"
     },
     "submitSignalFor": {
-      "signature": "submitSignalFor(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256,bytes,(bytes32,bytes32,bytes32,bytes32[]),(bytes32,bytes32[]))",
-      "selector": "0xdfa32ae8"
+      "signature": "submitSignalFor(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256,bytes,(bytes32,bytes32,bytes32,bytes32[]))",
+      "selector": "0xe36ba506"
     },
     "submitSignalFromModule": {
-      "signature": "submitSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,(bytes32,bytes32,bytes32,bytes32[]),(bytes32,bytes32[]))",
-      "selector": "0x89ac07fa"
+      "signature": "submitSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,(bytes32,bytes32,bytes32,bytes32[]))",
+      "selector": "0x1ef5afb6"
     },
     "transferOwnership": {
       "signature": "transferOwnership(address)",

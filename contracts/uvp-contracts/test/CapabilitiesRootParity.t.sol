@@ -43,7 +43,7 @@ contract CapabilitiesRootParityTest {
     /// forge 侧 vm.parseJson 不支持 .length 路径，样本数、每样本计数与每
     /// 条证明长度都从 fixture 的镜像字段读取（TS 测试断言计数与实际数组
     /// 长一致）。
-    uint256 private constant GOLDEN_SAMPLE_COUNT = 2;
+    uint256 private constant GOLDEN_SAMPLE_COUNT = 5;
 
     function testMixedTablesOddLeavesSampleMatches() public {
         _assertSampleMatches(0);
@@ -51,6 +51,18 @@ contract CapabilitiesRootParityTest {
 
     function testDuplicateLeavesDedupSampleMatches() public {
         _assertSampleMatches(1);
+    }
+
+    function testDeepTreeSampleMatches() public {
+        _assertSampleMatches(2);
+    }
+
+    function testLargeTablesSampleMatches() public {
+        _assertSampleMatches(3);
+    }
+
+    function testDuplicatePayloadHeavySampleMatches() public {
+        _assertSampleMatches(4);
     }
 
     /// 每个样本：叶公式（合约实现）重算 == pinned 叶；root（DockMerkle

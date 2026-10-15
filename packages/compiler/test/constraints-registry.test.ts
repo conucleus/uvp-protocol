@@ -5,8 +5,9 @@
  * 是跨语言接受面规则（zhixu / hook-dsl / dock / onchain-plan）的单一出处。
  * 本 harness：
  *   1. 钉住注册表 version，并把实际 sha256 与同目录 meta 文件声明的值比对
- *      （sha 声明点唯一在 uvp-protocol 仓，改表不同步声明会让三线
- *      TS/Rust/Go 测试同声报警）；
+ *      （sha 声明点唯一在与注册表同目录的 uvp-core/protocol/
+ *      uvp-constraints.v1.meta.json，两份 uvp-core 副本同批更新，改表不同步
+ *      声明会让三线 TS/Rust/Go 测试同声报警）；
  *   2. 对 applies 含 "ts" 的每条 rule 生成边界探针（满足/违反各一）打真 validator
  *      （zhixu-loader / onchain-hook-plan），断言真实错误文案锚点；
  *   3. ts 线没有探针 builder 的新 rule 会让本文件硬失败（防静默漏测）。
@@ -68,7 +69,7 @@ function loadConstraintsMeta(registryPath: string): ConstraintsMeta {
   } catch (error) {
     throw new Error(
       `[uvp-constraints] 读不到注册表 sha 声明文件（硬失败，不 skip）：${metaPath}\n` +
-        `  - 注册表内容 sha 只在 uvp-protocol 仓 protocol/uvp-constraints.v1.meta.json 声明；\n` +
+        `  - 注册表内容 sha 只在与注册表同目录的 uvp-core/protocol/uvp-constraints.v1.meta.json 声明（两份 uvp-core 副本同批更新）；\n` +
         `  原始错误：${error instanceof Error ? error.message : String(error)}`,
     );
   }
@@ -101,7 +102,7 @@ function loadConstraintsTable(): {
     throw new Error(
       `[uvp-constraints] 读不到跨语言约束注册表（硬失败，不 skip）：${path}\n` +
         `  - 设置 ${CONSTRAINTS_ENV_VAR}=<uvp-constraints.v1.json 绝对路径> 覆盖；\n` +
-        `  - 或在 uvp-protocol 仓 protocol/uvp-constraints.v1.json 确认文件存在。\n` +
+        `  - 或在与注册表同目录的 uvp-core/protocol/uvp-constraints.v1.json 确认文件存在（两份 uvp-core 副本）。\n` +
         `  原始错误：${error instanceof Error ? error.message : String(error)}`,
     );
   }
@@ -125,7 +126,7 @@ test("constraints registry is pinned (version + sha256)", () => {
     sha256Of(TABLE_RAW),
     META.contentSha256,
     "约束注册表内容与 meta 声明的 sha256 不一致：请逐条核对规则后，" +
-      "在 uvp-protocol 仓同一提交里更新 protocol/uvp-constraints.v1.meta.json 的 contentSha256",
+      "在与注册表同目录的 uvp-core/protocol/uvp-constraints.v1.meta.json 更新 contentSha256（两份 uvp-core 副本同批更新）",
   );
 });
 
