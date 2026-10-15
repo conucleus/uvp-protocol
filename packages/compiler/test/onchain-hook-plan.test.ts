@@ -191,7 +191,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   // executorCandidates/executorCandidatesRoot（空集恒在场）。
   assert.equal(
     onchain.planHash,
-    "0x697d855dea2391c8c8f41b8d38e3624e07d97fb3e8c4b2625cacb08cc55f5bc1",
+    "0x8261a65a85db85b70945fa8417ba9cafd81630f123a75535007c41b3bf5df511",
   );
   // 空候选集：root = EMPTY_MERKLE_ROOT（逐单 patch 恒拒的 fail-closed
   // 形态），与合约 DockMerkle.root([]) 同值。

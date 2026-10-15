@@ -45,7 +45,7 @@ const WALLET_A_EIP55 = "0xF39Fd6e51aad88F6F4ce6aB8827279cffFb92266" as `0x${stri
 const WALLET_B = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8" as `0x${string}`;
 const WALLET_C = "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc" as `0x${string}`;
 
-/** 双阶段 fixture：order_exec.main 与 market.deal 均为非出生阶段。 */
+/** 双阶段 fixture：main 与 deal 均为非出生阶段（拍平形态，单段命名）。 */
 const twoStageZhixu: ZhixuDefinition = {
   apiVersion: "uvp/v0",
   kind: "Zhixu",
@@ -53,46 +53,36 @@ const twoStageZhixu: ZhixuDefinition = {
   spec: {
     platform: { type: "blockchain", provider: "eth" },
     nucleation: { id: "core_org" },
-    taskPatterns: [
+    stages: [
       {
-        name: "order_exec",
-        stages: [
-          {
-            name: "main",
-            source: "buyer",
-            receiveSignals: {
-              START: "buyer::order_exec.main.kickoff",
-            },
-            sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "kickoff" }],
-            executor: {
-              supplierType: "organization",
-              supplierID: "patchable-org",
-            },
-          },
-        ],
+        name: "main",
+        source: "buyer",
+        receiveSignals: {
+          START: "buyer::main.kickoff",
+        },
+        sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "kickoff" }],
+        executor: {
+          supplierType: "organization",
+          supplierID: "patchable-org",
+        },
       },
       {
-        name: "market",
-        stages: [
-          {
-            name: "deal",
-            source: "trading",
-            receiveSignals: {
-              PLACE: "trading::market.deal.kickoff",
-            },
-            sendSignals: [{ name: "closed" }, { name: "kickoff" }],
-            executor: {
-              supplierType: "organization",
-              supplierID: "trading-org",
-            },
-          },
-        ],
+        name: "deal",
+        source: "trading",
+        receiveSignals: {
+          PLACE: "trading::deal.kickoff",
+        },
+        sendSignals: [{ name: "closed" }, { name: "kickoff" }],
+        executor: {
+          supplierType: "organization",
+          supplierID: "trading-org",
+        },
       },
     ],
   },
 };
 
-/** 出生（order-trigger）阶段 fixture：order_exec.main 带 mint 出生边。 */
+/** 出生（order-trigger）阶段 fixture：main 带 mint 出生边。 */
 const birthZhixu: ZhixuDefinition = {
   apiVersion: "uvp/v0",
   kind: "Zhixu",
@@ -100,33 +90,23 @@ const birthZhixu: ZhixuDefinition = {
   spec: {
     platform: { type: "blockchain", provider: "eth" },
     nucleation: { id: "core_org" },
-    taskPatterns: [
+    stages: [
       {
-        name: "order_exec",
-        stages: [
-          {
-            name: "main",
-            source: "buyer",
-            mint: "per-fact",
-            receiveSignals: {
-              ON_DEAL: "::ANCHOR(@trading::market.deal.closed)",
-            },
-            sendSignals: [{ name: "str" }, { name: "cmp" }],
-            executor: { supplierType: "organization", supplierID: "birth-org" },
-          },
-        ],
+        name: "main",
+        source: "buyer",
+        mint: "per-fact",
+        receiveSignals: {
+          ON_DEAL: "::ANCHOR(@trading::deal.closed)",
+        },
+        sendSignals: [{ name: "str" }, { name: "cmp" }],
+        executor: { supplierType: "organization", supplierID: "birth-org" },
       },
       {
-        name: "market",
-        stages: [
-          {
-            name: "deal",
-            source: "trading",
-            receiveSignals: { PLACE: "trading::market.deal.kickoff" },
-            sendSignals: [{ name: "closed" }, { name: "kickoff" }],
-            executor: { supplierType: "organization", supplierID: "trading-org" },
-          },
-        ],
+        name: "deal",
+        source: "trading",
+        receiveSignals: { PLACE: "trading::deal.kickoff" },
+        sendSignals: [{ name: "closed" }, { name: "kickoff" }],
+        executor: { supplierType: "organization", supplierID: "trading-org" },
       },
     ],
   },
@@ -186,7 +166,7 @@ test("compile gate: zero address candidate is rejected", () => {
   assert.throws(
     () =>
       compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-        candidateWith("order_exec.main", ("0x" + "0".repeat(40)) as `0x${string}`),
+        candidateWith("main", ("0x" + "0".repeat(40)) as `0x${string}`),
       ]),
     (error: unknown) => isGateRejection(error, "non-zero 20-byte address"),
   );
@@ -204,7 +184,7 @@ test("compile gate: malformed address shapes are rejected (39/41 hex, non-hex, n
       () =>
         compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
           candidateWith(
-            "order_exec.main",
+            "main",
             executor as unknown as `0x${string}`,
           ),
         ]),
@@ -221,10 +201,10 @@ test("compile gate: malformed address shapes are rejected (39/41 hex, non-hex, n
 
 test("compile normalizes a checksummed address into the canonical lowercase form", () => {
   const checksummed = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("order_exec.main", WALLET_A_EIP55),
+    candidateWith("main", WALLET_A_EIP55),
   ]);
   const lowercase = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("order_exec.main", WALLET_A),
+    candidateWith("main", WALLET_A),
   ]);
   assert.equal(checksummed.executorCandidates[0]?.executor, WALLET_A);
   // 大小写只是拼写差：整份制品必须逐字节一致（不是"近似"）。
@@ -233,11 +213,11 @@ test("compile normalizes a checksummed address into the canonical lowercase form
 
 test("compile dedupes case-variant duplicate entries into the single canonical artifact", () => {
   const duplicated = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("order_exec.main", WALLET_A),
-    candidateWith("order_exec.main", WALLET_A_EIP55),
+    candidateWith("main", WALLET_A),
+    candidateWith("main", WALLET_A_EIP55),
   ]);
   const single = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("order_exec.main", WALLET_A),
+    candidateWith("main", WALLET_A),
   ]);
   assert.equal(duplicated.executorCandidates.length, 1);
   assert.deepEqual(duplicated, single);
@@ -245,14 +225,14 @@ test("compile dedupes case-variant duplicate entries into the single canonical a
 
 test("candidate input order never leaks into the artifact", () => {
   const forward = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("order_exec.main", WALLET_A),
-    candidateWith("order_exec.main", WALLET_B),
-    candidateWith("market.deal", WALLET_C),
+    candidateWith("main", WALLET_A),
+    candidateWith("main", WALLET_B),
+    candidateWith("deal", WALLET_C),
   ]);
   const backward = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("market.deal", WALLET_C),
-    candidateWith("order_exec.main", WALLET_B),
-    candidateWith("order_exec.main", WALLET_A),
+    candidateWith("deal", WALLET_C),
+    candidateWith("main", WALLET_B),
+    candidateWith("main", WALLET_A),
   ]);
   assert.deepEqual(backward, forward);
   // 规范序：stageId 字节序在外，executor 字节序在内。
@@ -264,8 +244,8 @@ test("candidate input order never leaks into the artifact", () => {
 
 test("the same executor across two stages yields one entry per stage", () => {
   const artifact = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("order_exec.main", WALLET_A),
-    candidateWith("market.deal", WALLET_A),
+    candidateWith("main", WALLET_A),
+    candidateWith("deal", WALLET_A),
   ]);
   assert.equal(artifact.executorCandidates.length, 2);
   assert.deepEqual(
@@ -275,8 +255,8 @@ test("the same executor across two stages yields one entry per stage", () => {
   assert.equal(
     artifact.executorCandidatesRoot,
     executorCandidatesRootOf([
-      { stageId: keccak256Hex("order_exec.main"), executor: WALLET_A },
-      { stageId: keccak256Hex("market.deal"), executor: WALLET_A },
+      { stageId: keccak256Hex("main"), executor: WALLET_A },
+      { stageId: keccak256Hex("deal"), executor: WALLET_A },
     ]),
   );
   assert.deepEqual(validateOnchainHookPlanArtifact(artifact), []);
@@ -288,23 +268,23 @@ test("the same executor across two stages yields one entry per stage", () => {
 
 test("planHash forks on any candidate-set mutation: one byte, add one, drop one", () => {
   const baseline = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("order_exec.main", WALLET_A),
-    candidateWith("order_exec.main", WALLET_B),
+    candidateWith("main", WALLET_A),
+    candidateWith("main", WALLET_B),
   ]);
   const flippedLast = (WALLET_A.slice(0, -1) +
     (WALLET_A.endsWith("6") ? "7" : "6")) as `0x${string}`;
 
   const oneByte = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("order_exec.main", flippedLast),
-    candidateWith("order_exec.main", WALLET_B),
+    candidateWith("main", flippedLast),
+    candidateWith("main", WALLET_B),
   ]);
   const added = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("order_exec.main", WALLET_A),
-    candidateWith("order_exec.main", WALLET_B),
-    candidateWith("order_exec.main", WALLET_C),
+    candidateWith("main", WALLET_A),
+    candidateWith("main", WALLET_B),
+    candidateWith("main", WALLET_C),
   ]);
   const dropped = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("order_exec.main", WALLET_B),
+    candidateWith("main", WALLET_B),
   ]);
 
   for (const [label, mutant] of [
@@ -323,9 +303,9 @@ test("planHash forks on any candidate-set mutation: one byte, add one, drop one"
 
 test("candidates root is order-independent (merkle canonical form) while the artifact payload is order-sensitive", () => {
   const set = [
-    { stageId: keccak256Hex("order_exec.main"), executor: WALLET_A },
-    { stageId: keccak256Hex("order_exec.main"), executor: WALLET_B },
-    { stageId: keccak256Hex("market.deal"), executor: WALLET_C },
+    { stageId: keccak256Hex("main"), executor: WALLET_A },
+    { stageId: keccak256Hex("main"), executor: WALLET_B },
+    { stageId: keccak256Hex("deal"), executor: WALLET_C },
   ];
   const forward = executorCandidatesRootOf(set);
   const shuffled = executorCandidatesRootOf([...set].reverse());
@@ -334,9 +314,9 @@ test("candidates root is order-independent (merkle canonical form) while the art
   assert.equal(shuffled, forward);
 
   const artifact = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("order_exec.main", WALLET_A),
-    candidateWith("order_exec.main", WALLET_B),
-    candidateWith("market.deal", WALLET_C),
+    candidateWith("main", WALLET_A),
+    candidateWith("main", WALLET_B),
+    candidateWith("deal", WALLET_C),
   ]);
   const { planHash: _stale, ...payload } = artifact;
   const reorderedPayload = {
@@ -365,8 +345,8 @@ test("an explicitly empty candidate array compiles byte-identical to the omitted
 test("runtime planHash recomputes from the six-domain preimage and forks on any single domain", () => {
   const args = toSolidityRegisterPlanArgs(
     compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-      candidateWith("order_exec.main", WALLET_A),
-      candidateWith("market.deal", WALLET_B),
+      candidateWith("main", WALLET_A),
+      candidateWith("deal", WALLET_B),
     ]),
   );
   // 独立重算：v4 六域公式必须逐字节复现。
@@ -440,8 +420,8 @@ test("runtime planHash recomputes from the six-domain preimage and forks on any 
 
 test("register args carry candidates as bare {stageId, executor} pairs in canonical order", () => {
   const artifact = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("market.deal", WALLET_A),
-    candidateWith("order_exec.main", WALLET_B),
+    candidateWith("deal", WALLET_A),
+    candidateWith("main", WALLET_B),
   ]);
   const args = toSolidityRegisterPlanArgs(artifact);
   // calldata 条目只含链上面两个槽（stageIdentifier 是制品侧标注，不得进
@@ -468,8 +448,8 @@ test("register args carry candidates as bare {stageId, executor} pairs in canoni
 
 test("compileZhixuRegisterPlanArgs threads candidates end-to-end from the definition", () => {
   const candidates = [
-    candidateWith("order_exec.main", WALLET_A),
-    candidateWith("market.deal", WALLET_B),
+    candidateWith("main", WALLET_A),
+    candidateWith("deal", WALLET_B),
   ];
   const args = compileZhixuRegisterPlanArgs(twoStageZhixu, undefined, candidates);
   const artifact = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, candidates);
@@ -495,7 +475,7 @@ test("compileZhixuRegisterPlanArgs threads candidates end-to-end from the defini
 
 test("artifact boundary rejects unknown top-level fields", () => {
   const artifact = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("order_exec.main", WALLET_A),
+    candidateWith("main", WALLET_A),
   ]);
   const issues = validateOnchainHookPlanArtifact({
     ...artifact,
@@ -509,7 +489,7 @@ test("artifact boundary rejects unknown top-level fields", () => {
 
 test("artifact boundary: a missing executorCandidates array is an explicit issue and must not recompute planHash", () => {
   const artifact = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("order_exec.main", WALLET_A),
+    candidateWith("main", WALLET_A),
   ]);
   const { executorCandidates: _removed, ...stripped } = artifact;
   const issues = validateOnchainHookPlanArtifact(stripped);
@@ -527,7 +507,7 @@ test("artifact boundary: a missing executorCandidates array is an explicit issue
 
 test("artifact boundary rejects non-array executorCandidates", () => {
   const artifact = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("order_exec.main", WALLET_A),
+    candidateWith("main", WALLET_A),
   ]);
   for (const bogus of [null, { stageId: keccak256Hex("x") }, "[]", 7]) {
     const issues = validateOnchainHookPlanArtifact({
@@ -543,8 +523,8 @@ test("artifact boundary rejects non-array executorCandidates", () => {
 
 test("artifact boundary rejects malformed candidate entries (stageId / executor shapes)", () => {
   const artifact = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("order_exec.main", WALLET_A),
-    candidateWith("order_exec.main", WALLET_B),
+    candidateWith("main", WALLET_A),
+    candidateWith("main", WALLET_B),
   ]);
   const malformedCandidates: readonly unknown[][] = [
     // executor 少一位（39 位十六进制）。
@@ -594,9 +574,9 @@ test("artifact boundary rejects malformed candidate entries (stageId / executor 
 
 test("artifact boundary rejects out-of-canonical-order candidates even after re-pinning planHash", () => {
   const artifact = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("order_exec.main", WALLET_A),
-    candidateWith("order_exec.main", WALLET_B),
-    candidateWith("market.deal", WALLET_C),
+    candidateWith("main", WALLET_A),
+    candidateWith("main", WALLET_B),
+    candidateWith("deal", WALLET_C),
   ]);
   const reordered = repin({
     ...artifact,
@@ -619,7 +599,7 @@ test("artifact boundary rejects out-of-canonical-order candidates even after re-
 
 test("artifact boundary rejects a re-pinned artifact whose candidates root was tampered", () => {
   const artifact = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    candidateWith("order_exec.main", WALLET_A),
+    candidateWith("main", WALLET_A),
   ]);
   const tampered = repin({
     ...artifact,
@@ -637,15 +617,15 @@ test("artifact boundary rejects a re-pinned artifact whose candidates root was t
 
 test("artifact boundary mirrors the birth-stage immutability gate", () => {
   const base = compileZhixuOnchainHookPlan(birthZhixu, undefined, [
-    candidateWith("market.deal", WALLET_A),
+    candidateWith("deal", WALLET_A),
   ]);
   assert.deepEqual(validateOnchainHookPlanArtifact(base), []);
 
   // 把候选条目重定向到出生阶段（root/planHash 同步重签，让拦截者聚焦
   // 出生门本身）：出生阶段执行者终生不可变，制品边界必须拒绝。
-  const birthStageId = keccak256Hex("order_exec.main");
+  const birthStageId = keccak256Hex("main");
   const retargeted = [
-    { stageIdentifier: "order_exec.main", stageId: birthStageId, executor: WALLET_A },
+    { stageIdentifier: "main", stageId: birthStageId, executor: WALLET_A },
   ] satisfies OnchainExecutorCandidate[];
   const retargetedArtifact = repin({
     ...base,
@@ -664,7 +644,7 @@ test("non-string executor fails as a typed compilation issue, not a bare TypeErr
   // D1 回归：归一化在 preflight 之后，畸形输入走类型化错误门。
   try {
     compileOnchainHookPlan(compileZhixuHookPlan(twoStageZhixu), [
-      { stageIdentifier: "order_exec.main", executor: 42 as unknown as `0x${string}` },
+      { stageIdentifier: "main", executor: 42 as unknown as `0x${string}` },
     ]);
     assert.fail("expected HookPlanCompilationError");
   } catch (error) {
@@ -678,7 +658,7 @@ test("non-string executor fails as a typed compilation issue, not a bare TypeErr
 test("artifact boundary enforces the lowercase executor form in both directions", () => {
   // D2 回归：混合大小写条目显式拒绝（编译器恒产小写）。
   const withCandidates = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    { stageIdentifier: "order_exec.main", executor: WALLET_A_EIP55 },
+    { stageIdentifier: "main", executor: WALLET_A_EIP55 },
   ]);
   const mixedCase = {
     ...withCandidates,
@@ -698,7 +678,7 @@ test("artifact boundary enforces the lowercase executor form in both directions"
 test("candidate entries reject unknown fields (closed key set)", () => {
   // D3 回归：条目级封闭字段集，与 hooks/capabilities 条目同纪律。
   const withCandidates = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    { stageIdentifier: "order_exec.main", executor: WALLET_A },
+    { stageIdentifier: "main", executor: WALLET_A },
   ]);
   const smuggled = {
     ...withCandidates,
@@ -718,7 +698,7 @@ test("candidate entries reject unknown fields (closed key set)", () => {
 test("artifact boundary mirrors the declared-stage gate", () => {
   // D4 回归：候选 stageId 不在本计划已注册 hook 阶段集合内 → 制品边界拒绝。
   const withCandidates = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
-    { stageIdentifier: "order_exec.main", executor: WALLET_A },
+    { stageIdentifier: "main", executor: WALLET_A },
   ]);
   const ghostStageId = "0x" + "99".repeat(32);
   const ghost = {

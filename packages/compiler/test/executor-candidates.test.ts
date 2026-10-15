@@ -82,27 +82,22 @@ const candidateZhixu: ZhixuDefinition = {
   spec: {
     platform: { type: "blockchain", provider: "eth" },
     nucleation: { id: "core_org" },
-    taskPatterns: [
+    stages: [
       {
-        name: "order_exec",
-        stages: [
-          {
-            name: "main",
-            source: "buyer",
-            receiveSignals: {
-              START: "buyer::order_exec.main.kickoff",
-            },
-            sendSignals: [
-              { name: "str" },
-              { name: "cmp" },
-              { name: "kickoff" },
-            ],
-            executor: {
-              supplierType: "organization",
-              supplierID: "patchable-org",
-            },
-          },
+        name: "main",
+        source: "buyer",
+        receiveSignals: {
+          START: "buyer::main.kickoff",
+        },
+        sendSignals: [
+          { name: "str" },
+          { name: "cmp" },
+          { name: "kickoff" },
         ],
+        executor: {
+          supplierType: "organization",
+          supplierID: "patchable-org",
+        },
       },
     ],
   },
@@ -115,33 +110,23 @@ const birthZhixu: ZhixuDefinition = {
   spec: {
     platform: { type: "blockchain", provider: "eth" },
     nucleation: { id: "core_org" },
-    taskPatterns: [
+    stages: [
       {
-        name: "order_exec",
-        stages: [
-          {
-            name: "main",
-            source: "buyer",
-            mint: "per-fact",
-            receiveSignals: {
-              ON_DEAL: "::ANCHOR(@trading::market.deal.closed)",
-            },
-            sendSignals: [{ name: "str" }, { name: "cmp" }],
-            executor: { supplierType: "organization", supplierID: "birth-org" },
-          },
-        ],
+        name: "main",
+        source: "buyer",
+        mint: "per-fact",
+        receiveSignals: {
+          ON_DEAL: "::ANCHOR(@trading::deal.closed)",
+        },
+        sendSignals: [{ name: "str" }, { name: "cmp" }],
+        executor: { supplierType: "organization", supplierID: "birth-org" },
       },
       {
-        name: "market",
-        stages: [
-          {
-            name: "deal",
-            source: "trading",
-            receiveSignals: { PLACE: "trading::market.deal.kickoff" },
-            sendSignals: [{ name: "closed" }, { name: "kickoff" }],
-            executor: { supplierType: "organization", supplierID: "trading-org" },
-          },
-        ],
+        name: "deal",
+        source: "trading",
+        receiveSignals: { PLACE: "trading::deal.kickoff" },
+        sendSignals: [{ name: "closed" }, { name: "kickoff" }],
+        executor: { supplierType: "organization", supplierID: "trading-org" },
       },
     ],
   },
@@ -153,10 +138,10 @@ test("compile attaches normalized candidates and shifts the artifact commitment"
   assert.equal(bare.executorCandidatesRoot, EMPTY_MERKLE_ROOT);
 
   const withCandidates = compileZhixuOnchainHookPlan(candidateZhixu, undefined, [
-    { stageIdentifier: "order_exec.main", executor: WALLET_B },
-    { stageIdentifier: "order_exec.main", executor: WALLET_A },
+    { stageIdentifier: "main", executor: WALLET_B },
+    { stageIdentifier: "main", executor: WALLET_A },
     // EIP-55 checksummed 形态 + 同条目重复：归一去重后单条。
-    { stageIdentifier: "order_exec.main", executor: WALLET_A_CHECKSUMMED },
+    { stageIdentifier: "main", executor: WALLET_A_CHECKSUMMED },
   ]);
   assert.deepEqual(
     withCandidates.executorCandidates.map((candidate) => candidate.executor),
@@ -188,7 +173,7 @@ test("compile rejects candidates for undeclared stages, birth stages, and bad ad
   assert.throws(
     () =>
       compileOnchainHookPlan(ir, [
-        { stageIdentifier: "order_exec.main", executor: "0x1234" },
+        { stageIdentifier: "main", executor: "0x1234" },
       ]),
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
@@ -199,7 +184,7 @@ test("compile rejects candidates for undeclared stages, birth stages, and bad ad
   assert.throws(
     () =>
       compileOnchainHookPlan(birthIr, [
-        { stageIdentifier: "order_exec.main", executor: WALLET_A },
+        { stageIdentifier: "main", executor: WALLET_A },
       ]),
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
@@ -207,14 +192,14 @@ test("compile rejects candidates for undeclared stages, birth stages, and bad ad
   );
   // 非出生阶段（market.deal）在出生定义下合法入集。
   const birthWithCandidates = compileOnchainHookPlan(birthIr, [
-    { stageIdentifier: "market.deal", executor: WALLET_A },
+    { stageIdentifier: "deal", executor: WALLET_A },
   ]);
   assert.equal(birthWithCandidates.executorCandidates.length, 1);
 });
 
 test("artifact boundary rejects a tampered candidates root", () => {
   const withCandidates = compileZhixuOnchainHookPlan(candidateZhixu, undefined, [
-    { stageIdentifier: "order_exec.main", executor: WALLET_A },
+    { stageIdentifier: "main", executor: WALLET_A },
   ]);
   const tampered = {
     ...withCandidates,
