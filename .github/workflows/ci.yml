@@ -87,15 +87,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # 布局与 node job 同构（path: uvp-protocol + 姊妹 uvp-core 检出）：
+      # SemanticsReplayCorpus / CommitmentGoldenVectors 测试经
+      # projectRoot()/../../../uvp-core/fixtures 直读共享语料与金向量，
+      # 无 uvp-core 检出即 ENOENT（ref 用默认分支，与 node job 既有形态
+      # 一致；语料侧计数哨兵与 sha 钉承担漂移报警）。
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          path: uvp-protocol
+
+      - name: Checkout uvp-core (shared corpus & golden vectors)
+        uses: actions/checkout@v4
+        with:
+          repository: conucleus/uvp-core
+          path: uvp-core
+          fetch-depth: 1
+          token: ${{ secrets.CI_SUBMODULE_TOKEN || github.token }}
 
       - name: Setup Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
       - name: Foundry test
         run: forge test
-        working-directory: contracts/uvp-contracts
+        working-directory: uvp-protocol/contracts/uvp-contracts
         timeout-minutes: 8
 
       # EIP-170 阻断门禁：任一合约 runtime 超过 24,576B 即失败。步骤照搬
