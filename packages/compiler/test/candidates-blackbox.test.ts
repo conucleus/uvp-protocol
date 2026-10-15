@@ -700,7 +700,7 @@ test("artifact boundary mirrors the declared-stage gate", () => {
   const withCandidates = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
     { stageIdentifier: "main", executor: WALLET_A },
   ]);
-  const ghostStageId = "0x" + "99".repeat(32);
+  const ghostStageId = ("0x" + "99".repeat(32)) as `0x${string}`;
   const ghost = {
     ...withCandidates,
     executorCandidates: [
