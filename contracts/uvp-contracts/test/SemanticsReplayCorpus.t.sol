@@ -406,8 +406,7 @@ contract SemanticsReplayCorpusTest {
             // 可注册变体（同阶段补一枚永不出线的 EMIT_READY 物化钩）上钉
             // 同一求值语义。
             require(
-                rejectSelector == UVPStateMachine.StageNotMaterializable.selector,
-                "unexpected corpus commit rejection"
+                rejectSelector == UVPStateMachine.StageNotMaterializable.selector, "unexpected corpus commit rejection"
             );
             require(_caseObservedCount(caseIdx) == 0, "materialization-gated case must expect zero observations");
             machine = _newCaseMachine();
@@ -868,8 +867,11 @@ contract SemanticsReplayCorpusTest {
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _stateMachineDomainSeparator(), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PUBLISHER_PRIVATE_KEY, digest);
-        try machine.commitPlan(commit, hooks, new UVPStateMachine.ExecutorCandidate[](0), _packedSignature(v, r, s))
-        returns (bytes32 committed) {
+        try machine.commitPlan(
+            commit, hooks, new UVPStateMachine.ExecutorCandidate[](0), _packedSignature(v, r, s)
+        ) returns (
+            bytes32 committed
+        ) {
             machine.finalizePlan(committed);
             return (committed, 0);
         } catch (bytes memory reason) {
@@ -994,23 +996,24 @@ contract SemanticsReplayCorpusTest {
         require(origin.born, "order-link origin must be born first");
         RawPlan storage childPlan = _planByCorpusId(child.planId);
         bytes32 payload = keccak256(abi.encode(caseIdx, "link", orderIdx));
-        IUVPStateMachineCore.TriggerOrderFromSignalRequest memory trigger = IUVPStateMachineCore.TriggerOrderFromSignalRequest({
-            orderId: machine.orderLinkOrderIdFor(
-                child.chainPlanId, origin.chainPlanId, origin.chainOrderId, originSourceId, originSignalId, payload
-            ),
-            planId: child.chainPlanId,
-            creator: ORDER_CREATOR,
-            triggerOriginOrderId: origin.chainOrderId,
-            originPlanId: origin.chainPlanId,
-            triggerHookId: _mintHookOf(childPlan),
-            triggerStageId: _hookStage(childPlan, _mintHookOf(childPlan)),
-            originSourceId: originSourceId,
-            originSignalId: originSignalId,
-            payloadHash: payload,
-            idempotencyKey: keccak256(abi.encode(caseIdx, "link-idem", orderIdx)),
-            submitter: vm.addr(SUBMITTER_PRIVATE_KEY),
-            deadline: type(uint256).max
-        });
+        IUVPStateMachineCore.TriggerOrderFromSignalRequest memory trigger =
+            IUVPStateMachineCore.TriggerOrderFromSignalRequest({
+                orderId: machine.orderLinkOrderIdFor(
+                    child.chainPlanId, origin.chainPlanId, origin.chainOrderId, originSourceId, originSignalId, payload
+                ),
+                planId: child.chainPlanId,
+                creator: ORDER_CREATOR,
+                triggerOriginOrderId: origin.chainOrderId,
+                originPlanId: origin.chainPlanId,
+                triggerHookId: _mintHookOf(childPlan),
+                triggerStageId: _hookStage(childPlan, _mintHookOf(childPlan)),
+                originSourceId: originSourceId,
+                originSignalId: originSignalId,
+                payloadHash: payload,
+                idempotencyKey: keccak256(abi.encode(caseIdx, "link-idem", orderIdx)),
+                submitter: vm.addr(SUBMITTER_PRIVATE_KEY),
+                deadline: type(uint256).max
+            });
         IUVPStateMachineCore.SignalAuthorization[] memory noAuths = new IUVPStateMachineCore.SignalAuthorization[](0);
         bytes32 digest = orderLink.triggerOrderFromSignalDigest(trigger, orderLink.signalAuthorizationsHash(noAuths));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(SUBMITTER_PRIVATE_KEY, digest);
@@ -1284,33 +1287,43 @@ contract SemanticsReplayCorpusTest {
         UVPStateMachine.Instruction[] memory admissionInstrs;
         if (form == FILTER_FORM_A) {
             admissionInstrs = new UVPStateMachine.Instruction[](7);
-            admissionInstrs[0] =
-                _instruction(uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("execute.locked"), 0, 0);
-            admissionInstrs[1] =
-                _instruction(uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("execute.approved"), 0, 0);
+            admissionInstrs[0] = _instruction(
+                uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("execute.locked"), 0, 0
+            );
+            admissionInstrs[1] = _instruction(
+                uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("execute.approved"), 0, 0
+            );
             admissionInstrs[2] = _instruction(uint8(UVPStateMachine.InstructionOp.Delay), bytes32(0), bytes32(0), 0, 5);
             admissionInstrs[3] = _instruction(uint8(UVPStateMachine.InstructionOp.Not), bytes32(0), bytes32(0), 0, 0);
-            admissionInstrs[4] =
-                _instruction(uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("execute.confirm_transfer"), 0, 0);
+            admissionInstrs[4] = _instruction(
+                uint8(UVPStateMachine.InstructionOp.Signal),
+                _filterSource(),
+                _filterSignal("execute.confirm_transfer"),
+                0,
+                0
+            );
             admissionInstrs[5] = _instruction(uint8(UVPStateMachine.InstructionOp.Not), bytes32(0), bytes32(0), 0, 0);
             admissionInstrs[6] = _instruction(uint8(UVPStateMachine.InstructionOp.And), bytes32(0), bytes32(0), 3, 0);
         } else if (form == FILTER_FORM_B) {
             // 无锚延时：链轨注册闸即拒（求值侧永不放行的死代码）——语料期
             // 望 needs_more，链上先在 commit 边界拒绝。
             admissionInstrs = new UVPStateMachine.Instruction[](3);
-            admissionInstrs[0] =
-                _instruction(uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("a.cmp"), 0, 0);
+            admissionInstrs[0] = _instruction(
+                uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("a.cmp"), 0, 0
+            );
             admissionInstrs[1] = _instruction(uint8(UVPStateMachine.InstructionOp.Not), bytes32(0), bytes32(0), 0, 0);
             admissionInstrs[2] = _instruction(uint8(UVPStateMachine.InstructionOp.Delay), bytes32(0), bytes32(0), 0, 5);
             _expectAdmissionCommitRevert(admissionInstrs, birthSource, birthSignal, emitSource, emitSignal, birthStage);
             return;
         } else if (form == FILTER_FORM_C) {
             admissionInstrs = new UVPStateMachine.Instruction[](5);
-            admissionInstrs[0] =
-                _instruction(uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("a.cmp"), 0, 0);
+            admissionInstrs[0] = _instruction(
+                uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("a.cmp"), 0, 0
+            );
             admissionInstrs[1] = _instruction(uint8(UVPStateMachine.InstructionOp.Not), bytes32(0), bytes32(0), 0, 0);
-            admissionInstrs[2] =
-                _instruction(uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("b.cmp"), 0, 0);
+            admissionInstrs[2] = _instruction(
+                uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("b.cmp"), 0, 0
+            );
             admissionInstrs[3] = _instruction(uint8(UVPStateMachine.InstructionOp.Or), bytes32(0), bytes32(0), 2, 0);
             admissionInstrs[4] = _instruction(uint8(UVPStateMachine.InstructionOp.Delay), bytes32(0), bytes32(0), 0, 5);
         } else {
@@ -1384,7 +1397,9 @@ contract SemanticsReplayCorpusTest {
         vm.warp(nowSec);
         bytes32 emitPayload = keccak256(abi.encode(caseIdx, "emit"));
         if (stateHash == keccak256("ready")) {
-            machine.submitSignal(planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution());
+            machine.submitSignal(
+                planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution()
+            );
             (bool exists, bytes32 payloadHash,,,) = machine.getSignal(planId, orderId, emitSource, emitSignal);
             require(exists && payloadHash == emitPayload, "admitted emission missing");
         } else if (stateHash == keccak256("wait")) {
@@ -1394,12 +1409,16 @@ contract SemanticsReplayCorpusTest {
                     UVPStateMachine.SignalAdmissionRejected.selector, orderId, emitSource, emitSignal
                 )
             );
-            machine.submitSignal(planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution());
+            machine.submitSignal(
+                planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution()
+            );
             (bool hasReadyAt, string memory readyAtRaw) = _tryString(json, string.concat(base, ".expect.readyAt"));
             require(hasReadyAt, "wait-state corpus case must pin readyAt");
             (, uint64 readyAt) = _requireTimestamp(readyAtRaw);
             vm.warp(readyAt);
-            machine.submitSignal(planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution());
+            machine.submitSignal(
+                planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution()
+            );
             (bool exists,,,,) = machine.getSignal(planId, orderId, emitSource, emitSignal);
             require(exists, "emission must land at corpus readyAt");
         } else if (stateHash == keccak256("needs_more") || stateHash == keccak256("impossible")) {
@@ -1408,7 +1427,9 @@ contract SemanticsReplayCorpusTest {
                     UVPStateMachine.SignalAdmissionRejected.selector, orderId, emitSource, emitSignal
                 )
             );
-            machine.submitSignal(planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution());
+            machine.submitSignal(
+                planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution()
+            );
             (bool exists,,,,) = machine.getSignal(planId, orderId, emitSource, emitSignal);
             require(!exists, "rejected emission must not record a fact");
         } else {
@@ -1666,11 +1687,7 @@ contract SemanticsReplayCorpusTest {
         returns (UVPStateMachine.Instruction memory)
     {
         return UVPStateMachine.Instruction({
-            op: op,
-            sourceId: sourceId,
-            signalId: signalId,
-            arity: arity,
-            delaySeconds: delaySeconds
+            op: op, sourceId: sourceId, signalId: signalId, arity: arity, delaySeconds: delaySeconds
         });
     }
 
@@ -1788,7 +1805,11 @@ contract SemanticsReplayCorpusTest {
     function _stateMachineDomainSeparator() private view returns (bytes32) {
         return keccak256(
             abi.encode(
-                EIP712_DOMAIN_TYPEHASH, STATE_MACHINE_NAME_HASH, STATE_MACHINE_VERSION_HASH, block.chainid, address(machine)
+                EIP712_DOMAIN_TYPEHASH,
+                STATE_MACHINE_NAME_HASH,
+                STATE_MACHINE_VERSION_HASH,
+                block.chainid,
+                address(machine)
             )
         );
     }
@@ -1800,10 +1821,7 @@ contract SemanticsReplayCorpusTest {
 
     function _noAttribution() private pure returns (UVPStateMachine.FactAttribution memory) {
         return UVPStateMachine.FactAttribution({
-            sourceId: bytes32(0),
-            signalId: bytes32(0),
-            stageId: bytes32(0),
-            capabilityProof: new bytes32[](0)
+            sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
         });
     }
 
@@ -1863,7 +1881,10 @@ contract SemanticsReplayCorpusTest {
         SignalRow storage sig = signals[rowIdx];
         for (uint256 s = 0; s < rowIdx; s++) {
             SignalRow storage other = signals[s];
-            if (other.planId == sig.planId && _eq(other.orderId, sig.orderId) && other.sourceId == sig.sourceId && other.signalId == sig.signalId) {
+            if (
+                other.planId == sig.planId && _eq(other.orderId, sig.orderId) && other.sourceId == sig.sourceId
+                    && other.signalId == sig.signalId
+            ) {
                 return false;
             }
         }

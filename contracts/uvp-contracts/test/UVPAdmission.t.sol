@@ -324,22 +324,10 @@ contract UVPAdmissionTest {
         vm.warp(100);
 
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_ANCHOR,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         (bool exists,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
@@ -362,13 +350,7 @@ contract UVPAdmissionTest {
             )
         );
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         (bool exists,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
@@ -431,6 +413,94 @@ contract UVPAdmissionTest {
         require(exists, "admitted emission missing at anchored maturity");
     }
 
+    /// B1a OR 平票 (0,0) 格（双真空 Ready 竞选保左）：双方 value=true 且都
+    /// 无锚（anchorAt=0）时，胜者保持左支——镜像 Rust branch_maturity 的
+    /// incumbent=左、candidate=右仅在严格更好时替换（(None, None) => 不替换）。
+    /// 可观测性边界（钉格口径）：胜者的区分字段只有 dueAt，而适格裁决只读
+    /// value/wait/cancel（钩子档经注册闸的 OR 分支正锚硬闸不可达该格）——
+    /// 本测试钉住的是该格经真实提交路径稳定落 value-Ready 三元组（不误入
+    /// 中性/等待/取消），以及非对称 dueAt 载荷（103 vs 107）下折叠加倍执行
+    /// 该 disputed 分支时裁决仍按 Ready 放行；左保留本身由 _orValue 与
+    /// Rust 严格改写规则的逐格同表保证（四格注释见合约内）。
+    function testAdmissionOrDoubleVacuumTieKeepsLeftBranch() public {
+        // 腿 1：`(~A) | (~B)`，A/B 双缺席——双臂真空 Ready（anchor=0，
+        // due=0），(0,0) 平票折叠加倍执行，结果必须 value-Ready 放行。
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](5);
+        instructions[0] = _signal(SIGNAL_ANCHOR);
+        instructions[1] = _not();
+        instructions[2] = _signal(SIGNAL_CANCEL);
+        instructions[3] = _not();
+        instructions[4] = _or(2);
+        UVPStateMachine.CompactHook[] memory base = _basePlan(false);
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](base.length + 1);
+        for (uint256 i = 0; i < base.length; i++) {
+            hooks[i] = base[i];
+        }
+        hooks[base.length] = _admissionHook(SIGNAL_TRIGGER, instructions);
+        _registerPlan(machine, hooks);
+        _submitTriggerOrderFromOutside(machine, address(0));
+        machine.submitSignal(
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
+        );
+        (bool admitted,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
+        require(admitted, "double-vacuum tie must resolve value-Ready and admit");
+
+        // 腿 2：折叠加倍序交换（(~B) | (~A)）——放行结果与臂序无关。
+        UVPStateMachine swapped = _newMachine();
+        UVPStateMachine.Instruction[] memory swappedInstrs = new UVPStateMachine.Instruction[](5);
+        swappedInstrs[0] = _signal(SIGNAL_CANCEL);
+        swappedInstrs[1] = _not();
+        swappedInstrs[2] = _signal(SIGNAL_ANCHOR);
+        swappedInstrs[3] = _not();
+        swappedInstrs[4] = _or(2);
+        UVPStateMachine.CompactHook[] memory swappedHooks = new UVPStateMachine.CompactHook[](base.length + 1);
+        for (uint256 i = 0; i < base.length; i++) {
+            swappedHooks[i] = base[i];
+        }
+        swappedHooks[base.length] = _admissionHook(SIGNAL_TRIGGER, swappedInstrs);
+        _registerPlan(swapped, swappedHooks);
+        _submitTriggerOrderFromOutside(swapped, address(0));
+        swapped.submitSignal(
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
+        );
+        (bool admittedSwapped,,,,) = swapped.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
+        require(admittedSwapped, "double-vacuum tie outcome must be fold-order independent");
+
+        // 腿 3：非对称载荷的 (0,0) 折叠——`(~(A+3s)) | (~(B+7s))`，A/B 同在
+        // 100 到达且均未熟：双臂 Ready、anchor=0、dueAt 103 vs 107（胜者
+        // 载荷真实分歧的 disputed 格），101 拍裁决仍按 Ready 放行。
+        UVPStateMachine asymmetric = _newMachine();
+        UVPStateMachine.Instruction[] memory asymInstrs = new UVPStateMachine.Instruction[](7);
+        asymInstrs[0] = _signal(SIGNAL_ANCHOR);
+        asymInstrs[1] = _delay(3);
+        asymInstrs[2] = _not();
+        asymInstrs[3] = _signal(SIGNAL_CANCEL);
+        asymInstrs[4] = _delay(7);
+        asymInstrs[5] = _not();
+        asymInstrs[6] = _or(2);
+        UVPStateMachine.CompactHook[] memory asymHooks = new UVPStateMachine.CompactHook[](base.length + 1);
+        for (uint256 i = 0; i < base.length; i++) {
+            asymHooks[i] = base[i];
+        }
+        asymHooks[base.length] = _admissionHook(SIGNAL_TRIGGER, asymInstrs);
+        _registerPlan(asymmetric, asymHooks);
+        _submitTriggerOrderFromOutside(asymmetric, address(0));
+        vm.warp(100);
+        asymmetric.submitSignal(
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
+        );
+        asymmetric.submitSignal(
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
+        );
+        vm.warp(101);
+        asymmetric.submitSignal(
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
+        );
+        (bool admittedAsym,,,,) = asymmetric.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
+        require(admittedAsym, "asymmetric-payload (0,0) tie must stay value-Ready and admit");
+    }
+
     /// 窗口边界：恰到期（block.timestamp == dueAt）延时成熟 → NOT 翻转
     /// cancel → 拒绝；前一秒仍放行（严格 < 边界镜像 _delayValue）。两腿各
     /// 用独立订单——首腿放行即落库，重复提交会先进幂等吸收、测不到适格。
@@ -438,53 +508,23 @@ contract UVPAdmissionTest {
         UVPStateMachine before = _gatedMachine(5);
         vm.warp(100);
         before.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_ANCHOR,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         before.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_CANCEL,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         vm.warp(104);
         before.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         UVPStateMachine atExpiry = _gatedMachine(5);
         vm.warp(100);
         atExpiry.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_ANCHOR,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         atExpiry.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_CANCEL,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         vm.warp(105);
         vm.expectRevert(
@@ -493,13 +533,7 @@ contract UVPAdmissionTest {
             )
         );
         atExpiry.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
     }
 
@@ -510,31 +544,13 @@ contract UVPAdmissionTest {
         vm.warp(100);
 
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_ANCHOR,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_CANCEL,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         vm.warp(1000);
@@ -635,13 +651,7 @@ contract UVPAdmissionTest {
         vm.warp(100);
         uint256 gasBefore = gasleft();
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         uint256 spent = gasBefore - gasleft();
 
@@ -656,69 +666,33 @@ contract UVPAdmissionTest {
         UVPStateMachine plain = _plainMachine();
         vm.warp(100);
         plain.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_ANCHOR,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         uint256 gasBefore = gasleft();
         plain.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         uint256 plainSpent = gasBefore - gasleft();
 
         UVPStateMachine machine = _gatedTriggerMachine(5);
         vm.warp(100);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_ANCHOR,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         gasBefore = gasleft();
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         uint256 admissionSpent = gasBefore - gasleft();
 
         UVPStateMachine machineHour = _gatedTriggerMachine(1 hours);
         vm.warp(100);
         machineHour.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_ANCHOR,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         gasBefore = gasleft();
         machineHour.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         uint256 hourSpent = gasBefore - gasleft();
 

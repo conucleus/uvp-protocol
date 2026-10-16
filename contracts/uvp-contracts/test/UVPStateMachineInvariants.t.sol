@@ -210,7 +210,8 @@ contract Handler {
             keccak256(abi.encode("payload", seed)),
             keccak256(abi.encode("idem", seed)),
             _noAttribution()
-        ) {} catch {}
+        ) {}
+            catch {}
         _observe();
     }
 
@@ -496,10 +497,7 @@ contract Handler {
 
     function _noAttribution() private pure returns (UVPStateMachine.FactAttribution memory) {
         return UVPStateMachine.FactAttribution({
-            sourceId: bytes32(0),
-            signalId: bytes32(0),
-            stageId: bytes32(0),
-            capabilityProof: new bytes32[](0)
+            sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
         });
     }
 }

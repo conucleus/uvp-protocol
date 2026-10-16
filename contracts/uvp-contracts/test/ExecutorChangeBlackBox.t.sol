@@ -147,14 +147,10 @@ contract ExecutorChangeBlackBoxTest {
                 UVPStagePatchModule.StageExecutorNotCandidate.selector, PLAN_ID, ORDER_ID, STAGE_AUDIT, E1()
             )
         );
-        _stagePatch(machine).applyStageExecutorPatch(
-            PLAN_ID,
-            ORDER_ID,
-            patch,
-            _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT),
-            initStageProof,
-            auths
-        );
+        _stagePatch(machine)
+            .applyStageExecutorPatch(
+                PLAN_ID, ORDER_ID, patch, _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT), initStageProof, auths
+            );
     }
 
     /// 候选集内地址只对本 stage 生效：E1 是 STAGE_INIT 的候选、不是
@@ -171,14 +167,10 @@ contract ExecutorChangeBlackBoxTest {
                 UVPStagePatchModule.StageExecutorNotCandidate.selector, PLAN_ID, ORDER_ID, STAGE_AUDIT, E1()
             )
         );
-        _stagePatch(machine).applyStageExecutorPatch(
-            PLAN_ID,
-            ORDER_ID,
-            patch,
-            _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT),
-            new bytes32[](0),
-            auths
-        );
+        _stagePatch(machine)
+            .applyStageExecutorPatch(
+                PLAN_ID, ORDER_ID, patch, _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT), new bytes32[](0), auths
+            );
     }
 
     /// 重复条目去重后的 root 等价：commitPlan 携重复候选条目注册成功，
@@ -225,9 +217,7 @@ contract ExecutorChangeBlackBoxTest {
             PUBLISHER_PRIVATE_KEY,
             new UVPStateMachine.ExecutorCandidate[](0)
         );
-        require(
-            machine.planExecutorCandidatesRoot(PLAN_ID) == DockMerkle.EMPTY_ROOT, "empty set must yield EMPTY_ROOT"
-        );
+        require(machine.planExecutorCandidatesRoot(PLAN_ID) == DockMerkle.EMPTY_ROOT, "empty set must yield EMPTY_ROOT");
         _submitBirth(machine, CREATOR, _overlayAuthorizations());
         _materializeAuditStage(machine, ORDER_ID);
 
@@ -277,8 +267,7 @@ contract ExecutorChangeBlackBoxTest {
         IUVPStateMachineCore.SignalAuthorization[] memory auths =
             _executorAuthorizationsFor(machine, PLAN_ID, STAGE_AUDIT, E3);
         UVPStagePatchModule.StageExecutorPatch memory submittedPatch = _withAuthHash(_patch(1, E3, PATCH_HASH), auths);
-        UVPStagePatchModule.StageExecutorPatch memory signedPatch =
-            _withAuthHash(_patch(1, E2(), PATCH_HASH), auths);
+        UVPStagePatchModule.StageExecutorPatch memory signedPatch = _withAuthHash(_patch(1, E2(), PATCH_HASH), auths);
         uint256 deadline = block.timestamp + 1 hours;
         bytes32 signedDigest =
             _stagePatch(machine).stageExecutorPatchDigest(PLAN_ID, ORDER_ID, signedPatch, _selector(), deadline);
@@ -292,18 +281,19 @@ contract ExecutorChangeBlackBoxTest {
                 UVPStagePatchModule.InvalidStageExecutorPatchSignature.selector, _selector(), expectedRecovered
             )
         );
-        _stagePatch(machine).applyStageExecutorPatchFor(
-            PLAN_ID,
-            ORDER_ID,
-            submittedPatch,
-            _selector(),
-            deadline,
-            _packedSignature(v, r, s),
-            "",
-            _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT),
-            _candidateProofFor(machine, PLAN_ID, STAGE_AUDIT, E3),
-            auths
-        );
+        _stagePatch(machine)
+            .applyStageExecutorPatchFor(
+                PLAN_ID,
+                ORDER_ID,
+                submittedPatch,
+                _selector(),
+                deadline,
+                _packedSignature(v, r, s),
+                "",
+                _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT),
+                _candidateProofFor(machine, PLAN_ID, STAGE_AUDIT, E3),
+                auths
+            );
     }
 
     /// 第三方直接出面（无 EXECUTOR_PATCH 授权、非 creator）：即使目标在
@@ -335,14 +325,15 @@ contract ExecutorChangeBlackBoxTest {
                 UVPStagePatchModule.StageSelectorBindingNotFound.selector, PLAN_ID, STAGE_INIT, STAGE_AUDIT
             )
         );
-        _stagePatch(machine).applyStageExecutorPatch(
-            PLAN_ID,
-            ORDER_ID,
-            patch,
-            IUVPStateMachineCore.SelectorBindingProof({selectorStageId: STAGE_AUDIT, proof: new bytes32[](0)}),
-            _candidateProofFor(machine, PLAN_ID, STAGE_AUDIT, E1()),
-            auths
-        );
+        _stagePatch(machine)
+            .applyStageExecutorPatch(
+                PLAN_ID,
+                ORDER_ID,
+                patch,
+                IUVPStateMachineCore.SelectorBindingProof({selectorStageId: STAGE_AUDIT, proof: new bytes32[](0)}),
+                _candidateProofFor(machine, PLAN_ID, STAGE_AUDIT, E1()),
+                auths
+            );
 
         // selectorStageId 一致但不携 proof：成员资格验不过，同拒。
         vm.prank(CREATOR);
@@ -351,14 +342,15 @@ contract ExecutorChangeBlackBoxTest {
                 UVPStagePatchModule.StageSelectorBindingNotFound.selector, PLAN_ID, STAGE_INIT, STAGE_AUDIT
             )
         );
-        _stagePatch(machine).applyStageExecutorPatch(
-            PLAN_ID,
-            ORDER_ID,
-            patch,
-            IUVPStateMachineCore.SelectorBindingProof({selectorStageId: STAGE_INIT, proof: new bytes32[](0)}),
-            _candidateProofFor(machine, PLAN_ID, STAGE_AUDIT, E1()),
-            auths
-        );
+        _stagePatch(machine)
+            .applyStageExecutorPatch(
+                PLAN_ID,
+                ORDER_ID,
+                patch,
+                IUVPStateMachineCore.SelectorBindingProof({selectorStageId: STAGE_INIT, proof: new bytes32[](0)}),
+                _candidateProofFor(machine, PLAN_ID, STAGE_AUDIT, E1()),
+                auths
+            );
     }
 
     // ==================================================================
@@ -383,18 +375,19 @@ contract ExecutorChangeBlackBoxTest {
                 UVPStagePatchModule.InvalidStageExecutorPatchSignature.selector, _selector(), address(0)
             )
         );
-        _stagePatch(machine).applyStageExecutorPatchFor(
-            PLAN_ID,
-            ORDER_ID,
-            patch,
-            _selector(),
-            deadline,
-            _packedSignature(v, r, s),
-            "",
-            _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT),
-            _candidateProofFor(machine, PLAN_ID, STAGE_AUDIT, E3),
-            swappedAuths
-        );
+        _stagePatch(machine)
+            .applyStageExecutorPatchFor(
+                PLAN_ID,
+                ORDER_ID,
+                patch,
+                _selector(),
+                deadline,
+                _packedSignature(v, r, s),
+                "",
+                _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT),
+                _candidateProofFor(machine, PLAN_ID, STAGE_AUDIT, E3),
+                swappedAuths
+            );
     }
 
     /// 授权集内重复条目：哈希按原始列表折叠，模块写入侧同键幂等吸收，
@@ -440,11 +433,7 @@ contract ExecutorChangeBlackBoxTest {
         vm.prank(STRANGER);
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStateMachine.UnauthorizedSignalSubmitter.selector,
-                ORDER_ID,
-                STAGE_AUDIT,
-                SIGNAL_STAGE_DONE,
-                STRANGER
+                UVPStateMachine.UnauthorizedSignalSubmitter.selector, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, STRANGER
             )
         );
         machine.submitSignal(
@@ -539,12 +528,13 @@ contract ExecutorChangeBlackBoxTest {
     /// ——授权面与委任面分离的黑盒口径。
     function testPatchWithEmptyAuthorizationSetLeavesNoSubmitLane() public {
         UVPStateMachine machine = _patchMachineReady();
-        IUVPStateMachineCore.SignalAuthorization[] memory emptyAuths =
-            new IUVPStateMachineCore.SignalAuthorization[](0);
+        IUVPStateMachineCore.SignalAuthorization[] memory emptyAuths = new IUVPStateMachineCore.SignalAuthorization[](0);
 
         // E3 无出生授权——空授权集 patch 后不得凭空获得提交权。
         vm.prank(CREATOR);
-        _patchDirectWithAuths(machine, PLAN_ID, ORDER_ID, _withAuthHash(_patch(1, E3, PATCH_HASH), emptyAuths), emptyAuths);
+        _patchDirectWithAuths(
+            machine, PLAN_ID, ORDER_ID, _withAuthHash(_patch(1, E3, PATCH_HASH), emptyAuths), emptyAuths
+        );
         require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E3, "patch not applied");
         require(
             !machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, E3),
@@ -570,7 +560,6 @@ contract ExecutorChangeBlackBoxTest {
     // ==================================================================
     // 出生阶段守门 / 模式词表 / nonce / 零字段 / handoff 签名
     // =================================================================
-
 
     /// 出生（mint trigger）阶段终生不可变：候选集内执行者 + creator 出面
     /// 也拒；assign/handoff 两模式同拒。
@@ -605,9 +594,7 @@ contract ExecutorChangeBlackBoxTest {
         bytes32 foreignMode = bytes32("replace");
 
         vm.prank(CREATOR);
-        vm.expectRevert(
-            abi.encodeWithSelector(UVPStagePatchModule.InvalidStageExecutorPatchMode.selector, foreignMode)
-        );
+        vm.expectRevert(abi.encodeWithSelector(UVPStagePatchModule.InvalidStageExecutorPatchMode.selector, foreignMode));
         _patchDirect(machine, PLAN_ID, ORDER_ID, _patchWithMode(1, E1(), PATCH_HASH, foreignMode, address(0)));
 
         vm.prank(CREATOR);
@@ -650,7 +637,9 @@ contract ExecutorChangeBlackBoxTest {
             EXECUTOR2_PRIVATE_KEY
         );
         _sendRelayed(machine, PLAN_ID, ORDER_ID, handoff2);
-        require(_stagePatch(machine).orderStageExecutorPatchNonce(PLAN_ID, ORDER_ID, STAGE_AUDIT) == 3, "nonce not tracked");
+        require(
+            _stagePatch(machine).orderStageExecutorPatchNonce(PLAN_ID, ORDER_ID, STAGE_AUDIT) == 3, "nonce not tracked"
+        );
 
         // 同参重放（nonce 3 ≤ 3）拒绝——已生效 patch 不可重放。
         vm.expectRevert(
@@ -671,18 +660,19 @@ contract ExecutorChangeBlackBoxTest {
         UVPStagePatchModule.StageExecutorPatch memory patch = _withAuthHash(_patch(1, E1(), PATCH_HASH), auths);
 
         vm.expectRevert(UVPStagePatchModule.ZeroSelector.selector);
-        _stagePatch(machine).applyStageExecutorPatchFor(
-            PLAN_ID,
-            ORDER_ID,
-            patch,
-            address(0),
-            deadline,
-            new bytes(65),
-            "",
-            _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT),
-            _candidateProofFor(machine, PLAN_ID, STAGE_AUDIT, E1()),
-            auths
-        );
+        _stagePatch(machine)
+            .applyStageExecutorPatchFor(
+                PLAN_ID,
+                ORDER_ID,
+                patch,
+                address(0),
+                deadline,
+                new bytes(65),
+                "",
+                _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT),
+                _candidateProofFor(machine, PLAN_ID, STAGE_AUDIT, E1()),
+                auths
+            );
 
         vm.prank(CREATOR);
         vm.expectRevert(UVPStagePatchModule.ZeroTargetStageId.selector);
@@ -716,15 +706,10 @@ contract ExecutorChangeBlackBoxTest {
         // 直接路径无会签材料（previousExecutorSigner 恒为 0）。
         vm.prank(CREATOR);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStagePatchModule.InvalidStageExecutorPatchSignature.selector, E1(), address(0)
-            )
+            abi.encodeWithSelector(UVPStagePatchModule.InvalidStageExecutorPatchSignature.selector, E1(), address(0))
         );
         _patchDirect(
-            machine,
-            PLAN_ID,
-            ORDER_ID,
-            _patchWithMode(2, E2(), PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, E1())
+            machine, PLAN_ID, ORDER_ID, _patchWithMode(2, E2(), PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, E1())
         );
 
         // 会签私钥错误（E2 冒充 E1 签名）。
@@ -798,8 +783,12 @@ contract ExecutorChangeBlackBoxTest {
             STAGE_AUDIT,
             SIGNAL_STAGE_DONE,
             _twoFacts(
-                STAGE_AUDIT, SIGNAL_STAGE_DONE, bytes32(uint256(0x9110)),
-                STAGE_AUDIT, SIGNAL_STAGE_REVIEW, bytes32(uint256(0x9111))
+                STAGE_AUDIT,
+                SIGNAL_STAGE_DONE,
+                bytes32(uint256(0x9110)),
+                STAGE_AUDIT,
+                SIGNAL_STAGE_REVIEW,
+                bytes32(uint256(0x9111))
             ),
             _forkChildAuthorizations()
         );
@@ -855,8 +844,12 @@ contract ExecutorChangeBlackBoxTest {
             STAGE_AUDIT,
             SIGNAL_STAGE_DONE,
             _twoFacts(
-                STAGE_AUDIT, SIGNAL_STAGE_DONE, bytes32(uint256(0x9112)),
-                STAGE_AUDIT, SIGNAL_STAGE_REVIEW, bytes32(uint256(0x9113))
+                STAGE_AUDIT,
+                SIGNAL_STAGE_DONE,
+                bytes32(uint256(0x9112)),
+                STAGE_AUDIT,
+                SIGNAL_STAGE_REVIEW,
+                bytes32(uint256(0x9113))
             ),
             _forkChildAuthorizations()
         );
@@ -1107,21 +1100,23 @@ contract ExecutorChangeBlackBoxTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, ORDER_ID, STAGE_INIT)
         );
-        _stagePatch(machine).applyStageResourcePatch(
-            PLAN_ID,
-            ORDER_ID,
-            _resourcePatchToStage(1, STAGE_INIT, RESOURCE_KEY, PATCH_HASH),
-            _moduleBindingFor(machine, PLAN_ID, STAGE_INIT)
-        );
+        _stagePatch(machine)
+            .applyStageResourcePatch(
+                PLAN_ID,
+                ORDER_ID,
+                _resourcePatchToStage(1, STAGE_INIT, RESOURCE_KEY, PATCH_HASH),
+                _moduleBindingFor(machine, PLAN_ID, STAGE_INIT)
+            );
 
         // 目标阶段零信号：放行。
         vm.prank(_selector());
-        _stagePatch(machine).applyStageResourcePatch(
-            PLAN_ID,
-            ORDER_ID,
-            _resourcePatchToStage(1, STAGE_AUDIT, RESOURCE_KEY, PATCH_HASH),
-            _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT)
-        );
+        _stagePatch(machine)
+            .applyStageResourcePatch(
+                PLAN_ID,
+                ORDER_ID,
+                _resourcePatchToStage(1, STAGE_AUDIT, RESOURCE_KEY, PATCH_HASH),
+                _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT)
+            );
         (bool exists,,,,,) =
             _stagePatch(machine).getActiveStageResourcePatch(PLAN_ID, ORDER_ID, STAGE_AUDIT, RESOURCE_KEY);
         require(exists, "resource patch not applied");
@@ -1159,12 +1154,13 @@ contract ExecutorChangeBlackBoxTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, ORDER_ID, STAGE_AUDIT)
         );
-        _stagePatch(machine).applyStageResourcePatch(
-            PLAN_ID,
-            ORDER_ID,
-            _resourcePatchToStage(2, STAGE_AUDIT, RESOURCE_KEY, PATCH_HASH_2),
-            _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT)
-        );
+        _stagePatch(machine)
+            .applyStageResourcePatch(
+                PLAN_ID,
+                ORDER_ID,
+                _resourcePatchToStage(2, STAGE_AUDIT, RESOURCE_KEY, PATCH_HASH_2),
+                _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT)
+            );
     }
 
     // ==================================================================
@@ -1541,9 +1537,7 @@ contract ExecutorChangeBlackBoxTest {
 
         // assign 被重放计数顶死。
         vm.prank(CREATOR);
-        vm.expectRevert(
-            abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, child, STAGE_AUDIT)
-        );
+        vm.expectRevert(abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, child, STAGE_AUDIT));
         _patchDirect(machine, PLAN_ID, child, _patch(1, E2(), PATCH_HASH));
 
         // handoff：上一执行者 = 父单原始提交者 EXECUTOR1，其会签生效。
@@ -1733,10 +1727,7 @@ contract ExecutorChangeBlackBoxTest {
         });
         bytes memory signature = _triggerSignature(machine, trigger, authorizations);
         machine.triggerOrderFromOutsideFor(
-            trigger,
-            authorizations,
-            signature,
-            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START)
+            trigger, authorizations, signature, _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START)
         );
     }
 
@@ -1847,13 +1838,11 @@ contract ExecutorChangeBlackBoxTest {
         return _patchWithMode(nonce, targetStageId, executor, patchHash, EXECUTOR_PATCH_MODE_ASSIGN, address(0));
     }
 
-    function _patchWithMode(
-        uint256 nonce,
-        address executor,
-        bytes32 patchHash,
-        bytes32 mode,
-        address previousExecutor
-    ) private pure returns (UVPStagePatchModule.StageExecutorPatch memory) {
+    function _patchWithMode(uint256 nonce, address executor, bytes32 patchHash, bytes32 mode, address previousExecutor)
+        private
+        pure
+        returns (UVPStagePatchModule.StageExecutorPatch memory)
+    {
         return _patchWithMode(nonce, STAGE_AUDIT, executor, patchHash, mode, previousExecutor);
     }
 
@@ -1880,12 +1869,11 @@ contract ExecutorChangeBlackBoxTest {
         });
     }
 
-    function _resourcePatchToStage(
-        uint256 nonce,
-        bytes32 targetStageId,
-        bytes32 resourceKey,
-        bytes32 patchHash
-    ) private pure returns (UVPStagePatchModule.StageResourcePatch memory) {
+    function _resourcePatchToStage(uint256 nonce, bytes32 targetStageId, bytes32 resourceKey, bytes32 patchHash)
+        private
+        pure
+        returns (UVPStagePatchModule.StageResourcePatch memory)
+    {
         return UVPStagePatchModule.StageResourcePatch({
             selectorStageId: STAGE_INIT,
             targetStageId: targetStageId,
@@ -1926,14 +1914,15 @@ contract ExecutorChangeBlackBoxTest {
         UVPStagePatchModule.StageExecutorPatch memory patch,
         IUVPStateMachineCore.SignalAuthorization[] memory auths
     ) private {
-        _stagePatch(machine).applyStageExecutorPatch(
-            planId,
-            orderId,
-            patch,
-            _moduleBindingFor(machine, planId, patch.targetStageId),
-            _candidateProofFor(machine, planId, patch.targetStageId, patch.executor),
-            auths
-        );
+        _stagePatch(machine)
+            .applyStageExecutorPatch(
+                planId,
+                orderId,
+                patch,
+                _moduleBindingFor(machine, planId, patch.targetStageId),
+                _candidateProofFor(machine, planId, patch.targetStageId, patch.executor),
+                auths
+            );
     }
 
     /// relayed 路径预备材料（签名在 expectRevert 之前完成）。
@@ -1951,9 +1940,8 @@ contract ExecutorChangeBlackBoxTest {
         prepared.deadline = block.timestamp + 1 hours;
         prepared.authorizations = _executorAuthorizationsFor(machine, planId, patch.targetStageId, patch.executor);
         prepared.patch.authorizationsHash = _authsHashLocal(prepared.authorizations);
-        bytes32 digest = _stagePatch(machine).stageExecutorPatchDigest(
-            planId, orderId, prepared.patch, prepared.selector, prepared.deadline
-        );
+        bytes32 digest = _stagePatch(machine)
+            .stageExecutorPatchDigest(planId, orderId, prepared.patch, prepared.selector, prepared.deadline);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(selectorPrivateKey, digest);
         prepared.selectorSignature = _packedSignature(v, r, s);
         if (previousExecutorPrivateKey != 0) {
@@ -1967,18 +1955,19 @@ contract ExecutorChangeBlackBoxTest {
     function _sendRelayed(UVPStateMachine machine, bytes32 planId, bytes32 orderId, PreparedPatch memory prepared)
         private
     {
-        _stagePatch(machine).applyStageExecutorPatchFor(
-            planId,
-            orderId,
-            prepared.patch,
-            prepared.selector,
-            prepared.deadline,
-            prepared.selectorSignature,
-            prepared.previousExecutorSignature,
-            prepared.bindingProof,
-            prepared.candidateProof,
-            prepared.authorizations
-        );
+        _stagePatch(machine)
+            .applyStageExecutorPatchFor(
+                planId,
+                orderId,
+                prepared.patch,
+                prepared.selector,
+                prepared.deadline,
+                prepared.selectorSignature,
+                prepared.previousExecutorSignature,
+                prepared.bindingProof,
+                prepared.candidateProof,
+                prepared.authorizations
+            );
     }
 
     /// 出生授权集：patch/resource selector 车道 + INIT_CMP + 目标阶段双
@@ -2022,12 +2011,11 @@ contract ExecutorChangeBlackBoxTest {
     }
 
     /// patch 生效时写入的显式授权集：目标阶段全部 relation=0 能力键。
-    function _executorAuthorizationsFor(
-        UVPStateMachine machine,
-        bytes32 planId,
-        bytes32 stageId,
-        address executor
-    ) private view returns (IUVPStateMachineCore.SignalAuthorization[] memory authorizations) {
+    function _executorAuthorizationsFor(UVPStateMachine machine, bytes32 planId, bytes32 stageId, address executor)
+        private
+        view
+        returns (IUVPStateMachineCore.SignalAuthorization[] memory authorizations)
+    {
         CapabilityTables storage tables = _capabilityTables[address(machine)][planId];
         IUVPStateMachineCore.SignalAuthorization[] memory buffer =
             new IUVPStateMachineCore.SignalAuthorization[](tables.capabilities.length);
@@ -2345,11 +2333,7 @@ contract ExecutorChangeBlackBoxTest {
         _submitBirth(machine, CREATOR, _forkAuthorizations());
     }
 
-    function _forkAuthorizations()
-        private
-        view
-        returns (UVPStateMachine.SignalAuthorization[] memory authorizations)
-    {
+    function _forkAuthorizations() private view returns (UVPStateMachine.SignalAuthorization[] memory authorizations) {
         authorizations = new UVPStateMachine.SignalAuthorization[](2);
         authorizations[0] = _stageAuthorization(SOURCE_BOOTSTRAP, SIGNAL_STAGE_DONE, E1());
         authorizations[1] = _stageAuthorization(SOURCE_BOOTSTRAP, SIGNAL_STAGE_REVIEW, E2());
@@ -2381,33 +2365,21 @@ contract ExecutorChangeBlackBoxTest {
     {
         facts = new UVPStateMachine.ForkBirthFact[](1);
         facts[0] = UVPStateMachine.ForkBirthFact({
-            sourceId: sourceId,
-            signalId: signalId,
-            payloadHash: PAYLOAD_HASH,
-            idempotencyKey: idempotencyKey
+            sourceId: sourceId, signalId: signalId, payloadHash: PAYLOAD_HASH, idempotencyKey: idempotencyKey
         });
     }
 
-    function _twoFacts(
-        bytes32 sourceA,
-        bytes32 signalA,
-        bytes32 idemA,
-        bytes32 sourceB,
-        bytes32 signalB,
-        bytes32 idemB
-    ) private pure returns (UVPStateMachine.ForkBirthFact[] memory facts) {
+    function _twoFacts(bytes32 sourceA, bytes32 signalA, bytes32 idemA, bytes32 sourceB, bytes32 signalB, bytes32 idemB)
+        private
+        pure
+        returns (UVPStateMachine.ForkBirthFact[] memory facts)
+    {
         facts = new UVPStateMachine.ForkBirthFact[](2);
         facts[0] = UVPStateMachine.ForkBirthFact({
-            sourceId: sourceA,
-            signalId: signalA,
-            payloadHash: PAYLOAD_HASH,
-            idempotencyKey: idemA
+            sourceId: sourceA, signalId: signalA, payloadHash: PAYLOAD_HASH, idempotencyKey: idemA
         });
         facts[1] = UVPStateMachine.ForkBirthFact({
-            sourceId: sourceB,
-            signalId: signalB,
-            payloadHash: PAYLOAD_HASH,
-            idempotencyKey: idemB
+            sourceId: sourceB, signalId: signalB, payloadHash: PAYLOAD_HASH, idempotencyKey: idemB
         });
     }
 
@@ -2456,13 +2428,11 @@ contract ExecutorChangeBlackBoxTest {
 
     // ---------------- 杂项 ----------------
 
-    function _signalHook(
-        bytes32 hookId,
-        bytes32 stageId,
-        bytes32 hookName,
-        bool isTrigger,
-        bytes32 signalId
-    ) private pure returns (UVPStateMachine.CompactHook memory) {
+    function _signalHook(bytes32 hookId, bytes32 stageId, bytes32 hookName, bool isTrigger, bytes32 signalId)
+        private
+        pure
+        returns (UVPStateMachine.CompactHook memory)
+    {
         UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](1);
         instructions[0] = _signal(signalId);
         return UVPStateMachine.CompactHook({
@@ -2475,12 +2445,11 @@ contract ExecutorChangeBlackBoxTest {
         });
     }
 
-    function _emitReadyHook(
-        bytes32 hookId,
-        bytes32 stageId,
-        bytes32 hookName,
-        bytes32 signalId
-    ) private pure returns (UVPStateMachine.CompactHook memory) {
+    function _emitReadyHook(bytes32 hookId, bytes32 stageId, bytes32 hookName, bytes32 signalId)
+        private
+        pure
+        returns (UVPStateMachine.CompactHook memory)
+    {
         UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](1);
         instructions[0] = _signal(signalId);
         return UVPStateMachine.CompactHook({

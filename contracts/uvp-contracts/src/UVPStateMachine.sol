@@ -2142,11 +2142,12 @@ contract UVPStateMachine {
         // arrival, matching the core evaluator and replay oracle.
         if (left.value || right.value) {
             // Winner selection mirrors the Rust authority (uvp-hook-dsl
-            // evaluation/mod.rs Expr::Or + branch_maturity)：只有 READY 分支
-            // 参与锚点竞争；无锚分支（anchorAt=0，UB-1：如衰减否决位的
-            // value=true）永不出线——(None, _) => false；有锚对无锚
-            // (Some, None) => true 恒胜；双方有锚取早者，平局保持先到
-            //（左）分支，镜像 Rust 侧严格小于替换（candidate < incumbent）。
+            // evaluation/mod.rs Expr::Or + branch_maturity)：incumbent=左，
+            // candidate=右只在严格更好时替换（candidate < incumbent）。
+            // 右胜仅当「右有锚而左无锚」（(None, Some)）或「双方有锚且右
+            // 严格更早」；四格全表：(0,0) 双无锚保左（(None, None) => 不
+            // 替换）、(t,0) 保左（(None, _) => false）、(0,t) 右胜、(t,t)
+            // 取早者且平局保先到（左）分支。
             // 胜者载荷逐字透传（含衰减否决位有效期 dueAt）：胜者自身的
             // 有效性不随分支竞争收紧。
             bool leftWins;
@@ -2155,7 +2156,9 @@ contract UVPStateMachine {
             } else if (!left.value && right.value) {
                 leftWins = false;
             } else {
-                leftWins = left.anchorAt != 0 && (right.anchorAt == 0 || left.anchorAt <= right.anchorAt);
+                // 平票矩阵四格同表：右支仅在严格更早（或有锚对无锚）时
+                // 出线——含双无锚的 (0,0) 格在内，平局一律保持左支。
+                leftWins = !(right.anchorAt != 0 && (left.anchorAt == 0 || right.anchorAt < left.anchorAt));
             }
             return EvalValue({
                 value: true,

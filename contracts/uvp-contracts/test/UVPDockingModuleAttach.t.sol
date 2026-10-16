@@ -456,6 +456,188 @@ contract UVPDockingModuleAttachTest {
         _attachRaw(request);
     }
 
+    /// B7 跨 plan 同 uid（内容寻址声明的反证钉）：别名父 plan 的定义 uid
+    /// 与目标定义 uid 完全相同——localDefinitionRefHash == targetDefinitionRefHash，
+    /// uid 级身份两边重合；但 planId 是内容寻址的（runtimePlanHash 覆盖
+    /// dockRoutesRoot，别名单叶路由树 → 相异 planId），(planId, orderId)
+    /// 复合键相异。身份比较必须按复合键判定：若比较退化到 uid/defRef 级，
+    /// 本用例在身份检查处误报 DockSelfAttach 而失败；跨 plan 挂接照常
+    /// 建立——同 uid 在内容寻址下只能造出不同 planId 的兄弟定义，造不出
+    /// 同键自挂接（「target 必异」声明的机制性验证）。
+    function testAttachCrossPlanSameUidIsNotSelfAttach() public {
+        // 别名路由材料：defRef 槽取目标 uid 的 defRef（同 uid 声明）。
+        bytes32 aliasDefRef = targetDefinitionRef;
+        bytes32 aliasRouteId = keccak256(abi.encode(DOMAIN_ROUTE_ID, aliasDefRef, PARENT_EXEC_STAGE));
+        bytes32 aliasAmendBinding = keccak256(
+            abi.encode(
+                DOMAIN_INPUT_BINDING,
+                aliasRouteId,
+                INTERFACE_NAME_ID,
+                PARENT_EXEC_HOOK,
+                AMEND_PORT,
+                TARGET_INPUT_SOURCE,
+                TARGET_INPUT_SIGNAL
+            )
+        );
+        bytes32 aliasDoneBinding = keccak256(
+            abi.encode(
+                DOMAIN_OUTPUT_BINDING,
+                aliasRouteId,
+                INTERFACE_NAME_ID,
+                LOCAL_MAPPED_SOURCE,
+                LOCAL_MAPPED_SIGNAL,
+                DONE_PORT,
+                TARGET_SOURCE,
+                TARGET_SIGNAL
+            )
+        );
+        bytes32 aliasProgressBinding = keccak256(
+            abi.encode(
+                DOMAIN_OUTPUT_BINDING,
+                aliasRouteId,
+                INTERFACE_NAME_ID,
+                LOCAL_PROGRESS_SOURCE,
+                LOCAL_PROGRESS_SIGNAL,
+                PROGRESS_PORT,
+                TARGET_SOURCE,
+                TARGET_SIGNAL
+            )
+        );
+        bytes32[] memory aliasOutputBindings = new bytes32[](2);
+        aliasOutputBindings[0] = aliasDoneBinding;
+        aliasOutputBindings[1] = aliasProgressBinding;
+        // 静态 existing 路由：同 uid 下 defRef 槽与目标槽重合，仍是静态形态。
+        bytes32 aliasRouteHash = keccak256(
+            abi.encode(
+                DOMAIN_ROUTE,
+                aliasDefRef,
+                targetDefinitionRef,
+                INTERFACE_NAME_ID,
+                uint256(1),
+                DockMerkle.root(_single(aliasAmendBinding)),
+                DockMerkle.root(aliasOutputBindings)
+            )
+        );
+
+        // 别名 plan：与父 plan 同形钩子，路由树只含别名单叶。
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](3);
+        hooks[0] = _compactHook(
+            PARENT_START_HOOK, PARENT_STAGE, keccak256("START"), FLAG_MINT | FLAG_EMIT_READY, PARENT_STAGE, SIGNAL_START
+        );
+        hooks[1] = _compactHook(
+            PARENT_EXEC_HOOK, PARENT_EXEC_STAGE, keccak256("EXECUTE"), FLAG_EMIT_READY, PARENT_STAGE, SIGNAL_EXEC
+        );
+        hooks[2] = _compactHook(
+            PARENT_DYN_HOOK, PARENT_DYN_STAGE, keccak256("SELECT"), FLAG_EMIT_READY, PARENT_STAGE, SIGNAL_DYN
+        );
+        bytes32 aliasPlanId = _commitAndFinalize(
+            hooks,
+            DockMerkle.root(_single(aliasRouteHash)),
+            EMPTY_DOCK_ROOT,
+            PARENT_PUBLISHER_KEY,
+            new StageSelectorBinding[](0),
+            new SignalCapability[](0)
+        );
+        require(aliasPlanId != targetPlanId, "alias plan must not collide with the target plan");
+        require(aliasPlanId != parentPlanId, "alias plan must not collide with the parent plan");
+
+        // 别名父单：outside 出生（镜像 _spawnParentOrder，planId 换别名 plan）。
+        bytes32 payload = keccak256("alias-parent-order");
+        UVPStateMachine.SignalAuthorization[] memory auths = new UVPStateMachine.SignalAuthorization[](2);
+        auths[0] = _auth(PARENT_STAGE, SIGNAL_START, address(this));
+        auths[1] = _auth(PARENT_STAGE, SIGNAL_EXEC, address(this));
+        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = _outsideTrigger(SIGNAL_START);
+        trigger.planId = aliasPlanId;
+        trigger.payloadHash = payload;
+        trigger.idempotencyKey = keccak256(abi.encode("alias-birth", payload));
+        machine.triggerOrderFromOutsideFor(
+            trigger, auths, _sign(SUBMITTER_KEY, _outsideDigestFor(trigger, auths)), _noAttribution()
+        );
+        bytes32 aliasOrder = machine.triggerOrderIdFor(aliasPlanId, PARENT_STAGE, SIGNAL_START, payload);
+
+        bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
+
+        // 请求：local = (aliasPlanId, aliasOrder)、target = (targetPlanId,
+        // targetOrder)——uid/defRef 两边同字，复合键相异（既有实例身份的
+        // 10 word 形态，local 侧换别名 plan 的键与 defRef）。
+        bytes32 instance = keccak256(
+            abi.encode(
+                DOMAIN_DOCK_INSTANCE,
+                runtimeDomain,
+                aliasPlanId,
+                aliasDefRef,
+                aliasOrder,
+                aliasRouteId,
+                aliasRouteHash,
+                uint256(1),
+                INTERFACE_NAME_ID,
+                targetPlanId,
+                targetOrder
+            )
+        );
+        UVPDockingModule.AttachDockRequestV1 memory request = UVPDockingModule.AttachDockRequestV1({
+            dockInstanceId: instance,
+            localPlanId: aliasPlanId,
+            localOrderId: aliasOrder,
+            localStageId: PARENT_EXEC_STAGE,
+            localDefinitionRefHash: aliasDefRef,
+            routeId: aliasRouteId,
+            routeHash: aliasRouteHash,
+            interfaceNameId: INTERFACE_NAME_ID,
+            targetUidId: TARGET_UID_ID,
+            targetDefinitionRefHash: targetDefinitionRef,
+            targetPlanId: targetPlanId,
+            linkedOrderId: targetOrder,
+            targetStageId: TARGET_STAGE,
+            parentDepth: 0,
+            targetCandidatesRoot: bytes32(0)
+        });
+        UVPDockingModule.AttachInputBindingArg[] memory inputs = new UVPDockingModule.AttachInputBindingArg[](1);
+        inputs[0] = UVPDockingModule.AttachInputBindingArg({
+            localHookId: PARENT_EXEC_HOOK,
+            portKey: AMEND_PORT,
+            targetSourceId: TARGET_INPUT_SOURCE,
+            targetSignalId: TARGET_INPUT_SIGNAL,
+            bindingHash: aliasAmendBinding,
+            targetHookId: TARGET_RECEIVE_HOOK,
+            portProof: amendPortProof
+        });
+        UVPDockingModule.DockOutputBindingArg[] memory outputs = new UVPDockingModule.DockOutputBindingArg[](2);
+        outputs[0] = UVPDockingModule.DockOutputBindingArg({
+            localSourceId: LOCAL_MAPPED_SOURCE,
+            localSignalId: LOCAL_MAPPED_SIGNAL,
+            portKey: DONE_PORT,
+            targetSourceId: TARGET_SOURCE,
+            targetSignalId: TARGET_SIGNAL,
+            bindingHash: aliasDoneBinding,
+            portProof: donePortProof
+        });
+        outputs[1] = UVPDockingModule.DockOutputBindingArg({
+            localSourceId: LOCAL_PROGRESS_SOURCE,
+            localSignalId: LOCAL_PROGRESS_SIGNAL,
+            portKey: PROGRESS_PORT,
+            targetSourceId: TARGET_SOURCE,
+            targetSignalId: TARGET_SIGNAL,
+            bindingHash: aliasProgressBinding,
+            portProof: progressPortProof
+        });
+
+        assertTrue(
+            docking.attachDockedOrder(
+                request,
+                new bytes32[](0), // 单叶路由树：membership 证明为空
+                _attachInterfaceProof(),
+                inputs,
+                outputs,
+                _permitEmpty(),
+                _outputAttributionsFor(outputs)
+            )
+        );
+        (,,,,,, bytes32 linked,,, bool exists) = docking.getActiveDock(instance);
+        assertTrue(exists);
+        assertEq(linked, targetOrder);
+    }
+
     /// 重放在幂等检查之后：已成功的 dock 重放 return false，不因 nonce
     /// 已消费而回退（与 open 的 entrance permit 同口径）。
     function testAttachPermitReplayReturnsFalseAfterDockExists() public {
@@ -510,17 +692,13 @@ contract UVPDockingModuleAttachTest {
         vm.prank(KEEPER);
         assertTrue(
             docking.submitDockedSignal(
-                _attachInstanceId(parentA, attachRouteHash, targetOrder),
-                doneOutputBinding,
-                _coreNoAttribution()
+                _attachInstanceId(parentA, attachRouteHash, targetOrder), doneOutputBinding, _coreNoAttribution()
             )
         );
         vm.prank(KEEPER);
         assertTrue(
             docking.submitDockedSignal(
-                _attachInstanceId(parentB, attachRouteHash, targetOrder),
-                doneOutputBinding,
-                _coreNoAttribution()
+                _attachInstanceId(parentB, attachRouteHash, targetOrder), doneOutputBinding, _coreNoAttribution()
             )
         );
         (bool mappedA, bytes32 payloadA,,,) =
@@ -534,17 +712,13 @@ contract UVPDockingModuleAttachTest {
         vm.prank(KEEPER);
         assertTrue(
             docking.submitDockedSignal(
-                _attachInstanceId(parentA, attachRouteHash, targetOrder),
-                progressOutputBinding,
-                _coreNoAttribution()
+                _attachInstanceId(parentA, attachRouteHash, targetOrder), progressOutputBinding, _coreNoAttribution()
             )
         );
         vm.prank(KEEPER);
         assertFalse(
             docking.submitDockedSignal(
-                _attachInstanceId(parentA, attachRouteHash, targetOrder),
-                progressOutputBinding,
-                _coreNoAttribution()
+                _attachInstanceId(parentA, attachRouteHash, targetOrder), progressOutputBinding, _coreNoAttribution()
             )
         );
     }

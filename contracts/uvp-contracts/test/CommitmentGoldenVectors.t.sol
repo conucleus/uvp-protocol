@@ -25,8 +25,7 @@ interface CommitmentVm {
 ///         .planRuntimeHash 以四棵 pinned 根复算六域 runtime planHash。任何
 ///         一侧漂移都会在至少一侧响亮失配。
 contract CommitmentGoldenVectorsTest {
-    CommitmentVm private constant vm =
-        CommitmentVm(address(uint160(uint256(keccak256("hevm cheat code")))));
+    CommitmentVm private constant vm = CommitmentVm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
     /// forge 侧 vm.parseJson 不支持 .length 路径，段计数显式镜像（TS 测试
     /// 断言计数与实际数组长一致，防止镜像漂移）。
@@ -34,11 +33,10 @@ contract CommitmentGoldenVectorsTest {
     uint256 private constant REGISTER_HOOKS_VECTOR_COUNT = 1;
 
     function _fixture() private view returns (string memory) {
-        return vm.readFile(
-            string.concat(
-                vm.projectRoot(), "/../../../uvp-core/fixtures/commitments/golden-vectors.v1.json"
-            )
-        );
+        return
+            vm.readFile(
+                string.concat(vm.projectRoot(), "/../../../uvp-core/fixtures/commitments/golden-vectors.v1.json")
+            );
     }
 
     function testSchemaVersionMatches() public view {
@@ -70,9 +68,8 @@ contract CommitmentGoldenVectorsTest {
     /// testReplayCorpusCaseCountIsPinned）。
     function testCaseCountsArePinned() public {
         string memory fixture = _fixture();
-        (bool caseBeyond,) = _tryAddress(
-            fixture, string.concat(".cases[", toString(CASE_COUNT), "].expected.hooksHash")
-        );
+        (bool caseBeyond,) =
+            _tryAddress(fixture, string.concat(".cases[", toString(CASE_COUNT), "].expected.hooksHash"));
         require(!caseBeyond, "commitment golden cases grew; bump CASE_COUNT and add entrypoints");
         (bool vectorBeyond,) = _tryAddress(
             fixture,
@@ -155,19 +152,18 @@ contract CommitmentGoldenVectorsTest {
             vm.parseJsonBytes32(fixture, string.concat(base, ".expected.executorCandidatesRoot"))
         );
         require(
-            runtimePlanHash
-                == vm.parseJsonBytes32(fixture, string.concat(base, ".expected.runtimePlanHash")),
+            runtimePlanHash == vm.parseJsonBytes32(fixture, string.concat(base, ".expected.runtimePlanHash")),
             "commitment golden runtime planHash mismatch"
         );
     }
 
     /// 按格内数值化 hooks 逐字段重建 CompactHook[]（非 SIGNAL 指令的零字
     /// 填充由 fixture 钉住，重建后哈希与 TS 权威逐字节一致）。
-    function _readHooks(
-        string memory fixture,
-        string memory base,
-        uint256 hookCount
-    ) private view returns (UVPStateMachine.CompactHook[] memory) {
+    function _readHooks(string memory fixture, string memory base, uint256 hookCount)
+        private
+        view
+        returns (UVPStateMachine.CompactHook[] memory)
+    {
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](hookCount);
         for (uint256 i = 0; i < hookCount; i++) {
             string memory hookBase = string.concat(base, ".input.hooks[", toString(i), "]");
@@ -176,8 +172,7 @@ contract CommitmentGoldenVectorsTest {
             uint256 dependencyCount =
                 vm.parseJsonUint(fixture, string.concat(base, ".counts.dependencyKeys[", toString(i), "]"));
 
-            UVPStateMachine.Instruction[] memory instructions =
-                new UVPStateMachine.Instruction[](instructionCount);
+            UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](instructionCount);
             for (uint256 j = 0; j < instructionCount; j++) {
                 string memory instructionBase = string.concat(hookBase, ".instructions[", toString(j), "]");
                 instructions[j] = UVPStateMachine.Instruction({

@@ -353,13 +353,9 @@ contract UVPDockingModuleTest {
         assertFalse(docking.submitDockedSignal(dockInstanceId, outputBinding, _coreNoAttribution()));
         // 另一条输出绑定读同一远端事实、写不同本地事实：仍可交付。
         vm.prank(KEEPER);
-        assertTrue(
-            docking.submitDockedSignal(dockInstanceId, progressOutBinding, _coreNoAttribution())
-        );
+        assertTrue(docking.submitDockedSignal(dockInstanceId, progressOutBinding, _coreNoAttribution()));
         vm.prank(KEEPER);
-        assertFalse(
-            docking.submitDockedSignal(dockInstanceId, progressOutBinding, _coreNoAttribution())
-        );
+        assertFalse(docking.submitDockedSignal(dockInstanceId, progressOutBinding, _coreNoAttribution()));
         (bool mappedDone,,,,) =
             machine.getSignal(parentPlanId, PARENT_ORDER_ID, LOCAL_MAPPED_SOURCE, LOCAL_MAPPED_SIGNAL);
         (bool mappedProgress,,,,) =
@@ -439,9 +435,7 @@ contract UVPDockingModuleTest {
         );
 
         vm.prank(KEEPER);
-        assertTrue(
-            docking.submitDockedSignal(route.dockInstanceId, doneBinding, _coreNoAttribution())
-        );
+        assertTrue(docking.submitDockedSignal(route.dockInstanceId, doneBinding, _coreNoAttribution()));
         // 兄弟绑定镜像同一本地事实键、同一 payload：幂等吸收，不 revert——
         // 吸收即收敛为已交付（账本置位 + DockOutputSatisfied 事件），否则
         // 投影侧永远视其为未交付，keeper 每个重发窗口都会再提交一次。
@@ -461,16 +455,12 @@ contract UVPDockingModuleTest {
             targetPayload,
             targetFactSubmitter
         );
-        assertFalse(
-            docking.submitDockedSignal(route.dockInstanceId, progressBinding, _coreNoAttribution())
-        );
+        assertFalse(docking.submitDockedSignal(route.dockInstanceId, progressBinding, _coreNoAttribution()));
         assertTrue(docking.dockOutputDelivered(route.dockInstanceId, progressBinding));
         assertTrue(docking.dockOutputDelivered(route.dockInstanceId, doneBinding));
         // 账本置位后的重复提交走交付账本短路：不再发任何事件。
         vm.prank(KEEPER);
-        assertFalse(
-            docking.submitDockedSignal(route.dockInstanceId, progressBinding, _coreNoAttribution())
-        );
+        assertFalse(docking.submitDockedSignal(route.dockInstanceId, progressBinding, _coreNoAttribution()));
         (bool mapped,,,,) = machine.getSignal(route.planId, route.orderId, LOCAL_MAPPED_SOURCE, LOCAL_MAPPED_SIGNAL);
         assertTrue(mapped);
     }
@@ -1484,13 +1474,7 @@ contract UVPDockingModuleTest {
         );
         route.orderId = machine.triggerOrderIdFor(route.planId, PARENT_STAGE, SIGNAL_START, PAYLOAD);
         machine.submitSignal(
-            route.planId,
-            route.orderId,
-            PARENT_STAGE,
-            SIGNAL_EXEC,
-            PAYLOAD,
-            bytes32(uint256(0x78)),
-            _noAttribution()
+            route.planId, route.orderId, PARENT_STAGE, SIGNAL_EXEC, PAYLOAD, bytes32(uint256(0x78)), _noAttribution()
         );
 
         route.dockInstanceId = keccak256(
@@ -1585,13 +1569,7 @@ contract UVPDockingModuleTest {
             trigger, auths, _sign(SUBMITTER_KEY, _outsideDigestFor(trigger, auths)), _noAttribution()
         );
         machine.submitSignal(
-            parentPlanId,
-            PARENT_ORDER_ID,
-            PARENT_STAGE,
-            SIGNAL_EXEC,
-            PAYLOAD,
-            bytes32(uint256(0x77)),
-            _noAttribution()
+            parentPlanId, PARENT_ORDER_ID, PARENT_STAGE, SIGNAL_EXEC, PAYLOAD, bytes32(uint256(0x77)), _noAttribution()
         );
     }
 

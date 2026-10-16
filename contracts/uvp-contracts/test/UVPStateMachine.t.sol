@@ -276,13 +276,7 @@ contract UVPStateMachineTest {
         UVPStateMachine machine = _registeredMachine(_emitReadyPositiveHookPlan(HOOK_INIT));
 
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         (UVPStateMachine.HookStatus status,, bool readyEmitted) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_INIT);
@@ -474,13 +468,7 @@ contract UVPStateMachineTest {
         UVPStateMachine machine = _registeredMachine(_sequentialPlan());
 
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         vm.recordLogs();
@@ -678,13 +666,7 @@ contract UVPStateMachineTest {
             )
         );
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            PRODUCTION_SOURCE,
-            PRODUCTION_SIGNAL,
-            PAYLOAD_HASH,
-            bytes32(uint256(1)),
-            _noAttribution()
+            PLAN_ID, ORDER_ID, PRODUCTION_SOURCE, PRODUCTION_SIGNAL, PAYLOAD_HASH, bytes32(uint256(1)), _noAttribution()
         );
         require(
             !machine.hasSignal(PLAN_ID, ORDER_ID, PRODUCTION_SOURCE, PRODUCTION_SIGNAL),
@@ -711,13 +693,7 @@ contract UVPStateMachineTest {
             )
         );
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            PRODUCTION_SOURCE,
-            PRODUCTION_SIGNAL,
-            PAYLOAD_HASH,
-            bytes32(uint256(3)),
-            _noAttribution()
+            PLAN_ID, ORDER_ID, PRODUCTION_SOURCE, PRODUCTION_SIGNAL, PAYLOAD_HASH, bytes32(uint256(3)), _noAttribution()
         );
 
         // 携证同键提交放行。
@@ -2028,13 +2004,7 @@ contract UVPStateMachineTest {
 
         vm.recordLogs();
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         (UVPStateMachine.HookStatus status, uint64 dueAt, bool readyEmitted) =
@@ -2061,13 +2031,7 @@ contract UVPStateMachineTest {
 
         vm.recordLogs();
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         (UVPStateMachine.HookStatus triggerStatus,, bool triggerReadyEmitted) =
@@ -2251,13 +2215,7 @@ contract UVPStateMachineTest {
             )
         );
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         require(
@@ -2272,13 +2230,7 @@ contract UVPStateMachineTest {
 
         vm.prank(SUBMITTER_A);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         (UVPStateMachine.HookStatus status,, bool readyEmitted) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_INIT);
@@ -2420,25 +2372,13 @@ contract UVPStateMachineTest {
 
         vm.prank(SUBMITTER_B);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            bytes32(uint256(1)),
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, bytes32(uint256(1)), _noAttribution()
         );
 
         // 后到授权者的重复提交按 first-win 幂等吸收（不 revert、不覆写）。
         vm.prank(SUBMITTER_A);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            bytes32(uint256(2)),
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, bytes32(uint256(2)), _noAttribution()
         );
 
         (,,,, address submitter) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
@@ -2457,33 +2397,15 @@ contract UVPStateMachineTest {
 
         vm.prank(SUBMITTER_A);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            bytes32(uint256(1)),
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, bytes32(uint256(1)), _noAttribution()
         );
         vm.prank(SUBMITTER_A);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_INIT_CMP,
-            PAYLOAD_HASH,
-            bytes32(uint256(2)),
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, PAYLOAD_HASH, bytes32(uint256(2)), _noAttribution()
         );
         vm.prank(SUBMITTER_A);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_AUDIT_PASS,
-            PAYLOAD_HASH,
-            bytes32(uint256(3)),
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_AUDIT_PASS, PAYLOAD_HASH, bytes32(uint256(3)), _noAttribution()
         );
 
         (UVPStateMachine.HookStatus initStatus,,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_INIT);
@@ -2506,13 +2428,7 @@ contract UVPStateMachineTest {
 
         vm.prank(SUBMITTER_A);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            bytes32(uint256(1)),
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, bytes32(uint256(1)), _noAttribution()
         );
 
         vm.prank(SUBMITTER_A);
@@ -2526,24 +2442,12 @@ contract UVPStateMachineTest {
             )
         );
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_INIT_CMP,
-            PAYLOAD_HASH,
-            bytes32(uint256(2)),
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, PAYLOAD_HASH, bytes32(uint256(2)), _noAttribution()
         );
 
         vm.prank(SUBMITTER_B);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_INIT_CMP,
-            PAYLOAD_HASH,
-            bytes32(uint256(3)),
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, PAYLOAD_HASH, bytes32(uint256(3)), _noAttribution()
         );
 
         (UVPStateMachine.HookStatus initStatus,,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_INIT);
@@ -2557,31 +2461,13 @@ contract UVPStateMachineTest {
 
         vm.recordLogs();
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            bytes32(uint256(1)),
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, bytes32(uint256(1)), _noAttribution()
         );
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_INIT_CMP,
-            PAYLOAD_HASH,
-            bytes32(uint256(2)),
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, PAYLOAD_HASH, bytes32(uint256(2)), _noAttribution()
         );
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_AUDIT_PASS,
-            PAYLOAD_HASH,
-            bytes32(uint256(3)),
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_AUDIT_PASS, PAYLOAD_HASH, bytes32(uint256(3)), _noAttribution()
         );
 
         (UVPStateMachine.HookStatus initStatus,,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_INIT);
@@ -2598,13 +2484,7 @@ contract UVPStateMachineTest {
 
         vm.warp(100);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         (UVPStateMachine.HookStatus status, uint64 dueAt, bool readyEmitted) =
@@ -2633,13 +2513,7 @@ contract UVPStateMachineTest {
 
         vm.warp(100);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         (UVPStateMachine.HookStatus status, uint64 dueAt, bool readyEmitted) =
@@ -2663,13 +2537,7 @@ contract UVPStateMachineTest {
 
         vm.warp(100);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         (UVPStateMachine.HookStatus status,, bool readyEmitted) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
@@ -2688,13 +2556,7 @@ contract UVPStateMachineTest {
         UVPStateMachine machine = _registeredMachine(_negativeHookPlan(HOOK_TIMEOUT));
 
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_VERIFY_FAIL,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         (UVPStateMachine.HookStatus status, uint64 dueAt, bool readyEmitted) =
@@ -2711,13 +2573,7 @@ contract UVPStateMachineTest {
 
         vm.warp(100);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         (UVPStateMachine.HookStatus status, uint64 dueAt, bool readyEmitted) =
@@ -2736,13 +2592,7 @@ contract UVPStateMachineTest {
 
         vm.warp(100);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_VERIFY_FAIL,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         (UVPStateMachine.HookStatus status,,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
@@ -2769,13 +2619,7 @@ contract UVPStateMachineTest {
 
         vm.warp(100);
         machineLate.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_VERIFY_FAIL,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         vm.warp(105);
         machineLate.submitSignal(
@@ -2804,13 +2648,7 @@ contract UVPStateMachineTest {
 
         vm.warp(100);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         machine.submitSignal(
             PLAN_ID,
@@ -2975,13 +2813,7 @@ contract UVPStateMachineTest {
         vm.warp(100);
         uint256 gasBefore = gasleft();
         plainMachine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         uint256 plainSpent = gasBefore - gasleft();
 
@@ -2989,13 +2821,7 @@ contract UVPStateMachineTest {
         vm.warp(100);
         gasBefore = gasleft();
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         uint256 vetoSpent = gasBefore - gasleft();
 
@@ -3003,13 +2829,7 @@ contract UVPStateMachineTest {
         vm.warp(100);
         gasBefore = gasleft();
         machineHour.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         uint256 hourSpent = gasBefore - gasleft();
 
@@ -3026,13 +2846,7 @@ contract UVPStateMachineTest {
 
         vm.recordLogs();
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_VERIFY_FAIL,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         (UVPStateMachine.HookStatus status,, bool readyEmitted) =
@@ -3050,13 +2864,7 @@ contract UVPStateMachineTest {
         UVPStateMachine machine = _registeredMachine(_positiveHookPlan(HOOK_INIT, true));
 
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         machine.submitSignal(
@@ -4279,26 +4087,14 @@ contract UVPStateMachineTest {
         _submitTriggerOrderFromOutside(machine, PLAN_ID, ORDER_CREATOR, _defaultAuthorizations(address(this)));
 
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_VERIFY_FAIL,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         (UVPStateMachine.HookStatus status,, bool readyEmitted) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
         require(status == UVPStateMachine.HookStatus.Cancelled, "hook not cancelled");
 
         // 到达正向信号（原条件另一分支）不复活。
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         (status,, readyEmitted) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
         require(status == UVPStateMachine.HookStatus.Cancelled, "cancelled hook resurrected");
@@ -4910,13 +4706,7 @@ contract UVPStateMachineTest {
             )
         );
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
     }
 
@@ -6555,13 +6345,7 @@ contract UVPStateMachineTest {
 
         vm.warp(100);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         (UVPStateMachine.HookStatus status, uint64 dueAt,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
@@ -6625,13 +6409,7 @@ contract UVPStateMachineTest {
         // A（最早接收）先到：AND 分支未成熟（B 缺席），C 亦缺席——无锚点。
         vm.warp(10);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         (UVPStateMachine.HookStatus status, uint64 dueAt,) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_TIMEOUT);
         require(status == UVPStateMachine.HookStatus.Init, "no mature branch before C arrives");
@@ -7063,13 +6841,7 @@ contract UVPStateMachineTest {
         );
         vm.prank(triggerSubmitter);
         machine.submitSignal(
-            planId,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            planId, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         IUVPStateMachineCore.TriggerOrderFromSignalRequest memory request =
@@ -7216,13 +6988,7 @@ contract UVPStateMachineTest {
         );
         vm.prank(vm.addr(SUBMITTER_PRIVATE_KEY));
         manual.submitSignal(
-            manualPlanId,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            manualPlanId, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         IUVPStateMachineCore.TriggerOrderFromSignalRequest memory manualRequest =
             _signalTriggerRequest(manual, ORDER_ID, bytes32(uint256(2)));
@@ -7252,13 +7018,7 @@ contract UVPStateMachineTest {
         );
         vm.prank(triggerSubmitter);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         // 自报订单号与派生值不一致 → 拒绝。
@@ -7287,13 +7047,7 @@ contract UVPStateMachineTest {
         );
         vm.prank(triggerSubmitter);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
         // 受害者未来的 outside 派生单号（高位清零命名空间，尚未创建）——
@@ -7350,23 +7104,11 @@ contract UVPStateMachineTest {
         _submitTriggerOrderFromOutsideWithKey(machine, PLAN_ID, ORDER_CREATOR, outsideAuths, SUBMITTER_PRIVATE_KEY);
         vm.prank(vm.addr(SUBMITTER_PRIVATE_KEY));
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
         vm.prank(SUBMITTER_A);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_INIT_CMP,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x11)),
-            _noAttribution()
+            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, PAYLOAD_HASH, bytes32(uint256(0x11)), _noAttribution()
         );
 
         IUVPStateMachineCore.TriggerOrderFromSignalRequest memory request =

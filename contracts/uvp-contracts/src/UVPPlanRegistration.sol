@@ -1759,15 +1759,17 @@ library UVPPlanRegistration {
     {
         if (left.value || right.value) {
             // UB-1：无锚分支永不出线（Rust branch_maturity (None,_) => false；
-            // 有锚对无锚恒胜，双方有锚取早者，平局保持先到（左）分支——
-            // 镜像 Rust 侧严格小于替换）。
+            // 有锚对无锚恒胜，双方有锚取早者）。incumbent=左，candidate=右只在
+            // 严格更好时替换：右胜仅当右有锚而左无锚、或双有锚且右严格更早——
+            // 四格全表 (0,0)/(t,0) 保左、(0,t) 右胜、(t,t) 取早者且平局保先到
+            //（左）分支，与主合约 _orValue 逐格同表。
             bool leftWins;
             if (left.value && !right.value) {
                 leftWins = true;
             } else if (!left.value && right.value) {
                 leftWins = false;
             } else {
-                leftWins = left.anchorAt != 0 && (right.anchorAt == 0 || left.anchorAt <= right.anchorAt);
+                leftWins = !(right.anchorAt != 0 && (left.anchorAt == 0 || right.anchorAt < left.anchorAt));
             }
             return UVPStateMachine.EvalValue({
                 value: true,
