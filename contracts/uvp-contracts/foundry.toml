@@ -36,3 +36,14 @@ path = "../../../uvp-core/fixtures"
 runs = 16
 depth = 32
 fail_on_revert = false
+
+# 链轨 chaos Stage 1 夜间档（PRD-chain-chaos-stage123 §三.4）：固定种子
+# 的 256 跑深度随机面；PRD 车道跑 default 16。fuzz.seed 同时钉 fuzz 与
+# invariant 的采样序（同 profile 复现确定）。
+[profile.chaos.invariant]
+runs = 256
+depth = 32
+fail_on_revert = false
+
+[profile.chaos.fuzz]
+seed = "0x6368616f73"
