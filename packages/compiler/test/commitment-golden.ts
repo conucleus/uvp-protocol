@@ -46,6 +46,13 @@ export interface CommitmentGoldenCase {
     readonly instructions: readonly number[];
     readonly dependencyKeys: readonly number[];
   };
+  /** planHash 两格的 canonical 原像串：Rust/forge 消费方各以已侧公式
+   * （域分隔 + keccak256，Rust 另经自身 canonicalize 重排对拍）重算 ==
+   * pinned 哈希。 */
+  readonly preimages: {
+    readonly hookPlanCanonical: string;
+    readonly onchainPlanCanonical: string;
+  };
   readonly expected: {
     readonly uid: string;
     readonly hookPlanHash: string;

@@ -69,7 +69,7 @@ contract UVPDockingModuleTest {
     uint8 private constant FLAG_EMIT_READY = 4;
 
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
     );
     // 能力树叶域（与 UVPPlanMetadataModule / Rust·TS 编译器逐字节一致）。
     bytes32 private constant SIGNAL_CAPABILITY_LEAF_DOMAIN = keccak256("UVP_SIGNAL_CAPABILITY_V1");
@@ -1616,6 +1616,7 @@ contract UVPDockingModuleTest {
             dockRoutesRoot: dockRoutesRoot,
             dockInterfaceRoot: dockInterfaceRoot,
             executorCandidatesRoot: DockMerkle.EMPTY_ROOT,
+            birthAuthorizer: vm.addr(SUBMITTER_KEY),
             deadline: block.timestamp + 1 hours
         });
         bytes32 structHash = keccak256(
@@ -1627,6 +1628,7 @@ contract UVPDockingModuleTest {
                 commit.dockRoutesRoot,
                 commit.dockInterfaceRoot,
                 commit.executorCandidatesRoot,
+                commit.birthAuthorizer,
                 commit.deadline
             )
         );
@@ -2112,7 +2114,7 @@ contract UVPDockingModuleTest {
             abi.encode(
                 keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
                 keccak256("UVPStateMachine"),
-                keccak256("0.14"),
+                keccak256("0.15"),
                 block.chainid,
                 address(machine)
             )

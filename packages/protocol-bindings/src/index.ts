@@ -154,7 +154,7 @@ export const STATE_MACHINE_ABI = [
   "function setOrderLinkModule(address moduleAddress)",
   "function setLens(address moduleAddress)",
   "function freezeModules()",
-  "function commitPlan((address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,uint256 deadline) commit,(bytes32 hookId,bytes32 stageId,bytes32 hookName,uint8 flags,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks,(bytes32 stageId,address executor)[] executorCandidates,bytes signature) returns (bytes32 planId)",
+  "function commitPlan((address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline) commit,(bytes32 hookId,bytes32 stageId,bytes32 hookName,uint8 flags,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks,(bytes32 stageId,address executor)[] executorCandidates,bytes signature) returns (bytes32 planId)",
   "function finalizePlan(bytes32 planId)",
   "function planRuntimeHash(bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot) pure returns (bytes32)",
   "function planIdFor(address publisher,bytes32 planHash) pure returns (bytes32)",
@@ -169,6 +169,7 @@ export const STATE_MACHINE_ABI = [
   "function recordDockedInputFromModule((bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution) fact)",
   "function planHookFlags(bytes32 planId,bytes32 hookId) view returns (uint8)",
   "function planHookStageId(bytes32 planId,bytes32 hookId) view returns (bytes32)",
+  "function planBirthAuthorizer(bytes32 planId) view returns (address)",
   "function planDockRoots(bytes32 planId) view returns (bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot)",
   "function activateStageExecutorFromModule(bytes32 planId,bytes32 orderId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 patchHash,uint256 patchNonce,string metadataURI)",
   "function forkOrder(bytes32 planId,bytes32 parentOrderId,bytes32 forkPayloadHash,bytes32 approvalSourceId,bytes32 approvalSignalId,(bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey)[] birthFacts,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations) returns (bytes32 forkedOrderId)",
@@ -410,7 +411,7 @@ export const STATE_MACHINE_LENS_ABI = parseAbi([
 ]);
 
 export const PRODUCT_SUBMIT_DOMAIN_NAME = "UVPStateMachine";
-export const PRODUCT_SUBMIT_DOMAIN_VERSION = "0.14";
+export const PRODUCT_SUBMIT_DOMAIN_VERSION = "0.15";
 export const PRODUCT_SUBMIT_PRIMARY_TYPE = "UVPStateMachineSignal";
 export const PLAN_COMMIT_PRIMARY_TYPE = "UVPStateMachinePlanCommit";
 export const TRIGGER_ORDER_FROM_OUTSIDE_PRIMARY_TYPE =
@@ -512,6 +513,7 @@ export const PLAN_COMMIT_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField
     { name: "dockRoutesRoot", type: "bytes32" },
     { name: "dockInterfaceRoot", type: "bytes32" },
     { name: "executorCandidatesRoot", type: "bytes32" },
+    { name: "birthAuthorizer", type: "address" },
     { name: "deadline", type: "uint256" },
   ];
 
@@ -634,6 +636,12 @@ export interface PlanCommitPayload {
   readonly dockInterfaceRoot: Hex | string;
   /** 执行者候选集树根（UB-36②③）：空集归一化为 EMPTY_ROOT。 */
   readonly executorCandidatesRoot: Hex | string;
+  /**
+   * 出生授权者（0.15 承诺域）：outside 出生提交的唯一被授权 submitter，
+   * 只进 commit digest 与存储，不进 planRuntimeHash。零地址 = 关闭 outside
+   * 出生通道。
+   */
+  readonly birthAuthorizer: Address | string;
   readonly deadline: bigint | number | string;
 }
 
@@ -650,6 +658,7 @@ export interface PlanCommitTypedData {
     readonly dockRoutesRoot: Hex;
     readonly dockInterfaceRoot: Hex;
     readonly executorCandidatesRoot: Hex;
+    readonly birthAuthorizer: Address;
     readonly deadline: string;
   };
 }
@@ -1455,6 +1464,7 @@ export function buildPlanCommitTypedData(
       dockRoutesRoot: normalizeBytes32(input.dockRoutesRoot, "dockRoutesRoot"),
       dockInterfaceRoot: normalizeBytes32(input.dockInterfaceRoot, "dockInterfaceRoot"),
       executorCandidatesRoot: normalizeBytes32(input.executorCandidatesRoot, "executorCandidatesRoot"),
+      birthAuthorizer: normalizeAddress(input.birthAuthorizer, "birthAuthorizer"),
       deadline: normalizeUintString(input.deadline, "deadline"),
     },
   };

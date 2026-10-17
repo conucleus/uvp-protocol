@@ -106,12 +106,12 @@ contract ExecutorChangeBlackBoxTest {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.14");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.15");
     bytes32 private constant EXECUTOR_CANDIDATE_LEAF_DOMAIN = keccak256("UVP_EXECUTOR_CANDIDATE_V1");
     bytes32 private constant SIGNAL_CAPABILITY_LEAF_DOMAIN = keccak256("UVP_SIGNAL_CAPABILITY_V1");
     bytes32 private constant SELECTOR_BINDING_LEAF_DOMAIN = keccak256("UVP_SELECTOR_BINDING_V1");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
     );
     bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
@@ -1678,6 +1678,7 @@ contract ExecutorChangeBlackBoxTest {
             dockRoutesRoot: EMPTY_DOCK_ROOT,
             dockInterfaceRoot: EMPTY_DOCK_ROOT,
             executorCandidatesRoot: DockMerkle.root(candidateLeaves),
+            birthAuthorizer: vm.addr(SELECTOR_PRIVATE_KEY),
             deadline: block.timestamp + 1 hours
         });
         bytes32 structHash = keccak256(
@@ -1689,6 +1690,7 @@ contract ExecutorChangeBlackBoxTest {
                 commit.dockRoutesRoot,
                 commit.dockInterfaceRoot,
                 commit.executorCandidatesRoot,
+                commit.birthAuthorizer,
                 commit.deadline
             )
         );

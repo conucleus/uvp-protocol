@@ -82,6 +82,7 @@ library UVPPlanRegistration {
         plan.dockInterfaceRoot = dockInterfaceRoot;
         plan.executorCandidatesRoot = executorCandidatesRoot;
         plan.publisher = commit.publisher;
+        plan.birthAuthorizer = commit.birthAuthorizer;
         plan.committed = true;
         // 候选集阶段投影（B8a）：assign 前置闸的免证判定材料随建树数组
         // 落库——数组与 root 同源（planId 即由数组派生 root 键出），此处
@@ -758,6 +759,7 @@ library UVPPlanRegistration {
                 commit.dockRoutesRoot,
                 commit.dockInterfaceRoot,
                 commit.executorCandidatesRoot,
+                commit.birthAuthorizer,
                 commit.deadline
             )
         );
@@ -877,6 +879,18 @@ library UVPPlanRegistration {
             if (recoveredSigner != trigger.submitter) {
                 revert UVPStateMachine.InvalidTriggerOrderSignature(trigger.submitter, recoveredSigner);
             }
+        }
+        // 出生授权闸（10.4 复裁选 A）：outside 出生只认计划承诺的
+        // birthAuthorizer——持受害者签名请求的中继方自签竞争请求（换
+        // creator/authorizations 抢占订单号与下游授权面）在此被精确拒绝；
+        // 零地址 = 该计划关闭 outside 出生通道。fork/派生通道自有同意门，
+        // 不在本闸射程。未知 plan 先回 L_createOrder 家族的 PlanNotFinalized。
+        UVPStateMachine.Plan storage plan = _s.plans[trigger.planId];
+        if (!plan.committed) {
+            revert UVPStateMachine.PlanNotFinalized();
+        }
+        if (plan.birthAuthorizer != trigger.submitter) {
+            revert UVPStateMachine.UnauthorizedBirthSubmitter(trigger.submitter);
         }
 
         // 一事一单执行体：订单 id 由合约从事实纯函数派生（与主合约
@@ -1587,9 +1601,14 @@ library UVPPlanRegistration {
         }
 
         if (nextStatus == UVPStateMachine.HookStatus.Ready && !runtime.readyEmitted) {
-            runtime.readyEmitted = true;
-            L_materializeStage(_s, planId, orderId, hook.stageId, hookId, triggerSourceId, triggerSignalId);
-            emit UVPStateMachine.HookReady(planId, orderId, hookId, hook.stageId, hook.hookName);
+            // 发射面与主合约同构：仅 order-trigger / EMIT_READY 钩发
+            // HookReady 并物化——flags=0 纯 watcher 判 Ready 不发事件、不
+            // 物化（fork 重放路径不得产出顺序提交不会产生的幻影就绪）。
+            if (hook.flags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK | HOOK_FLAG_EMIT_READY) != 0) {
+                runtime.readyEmitted = true;
+                L_materializeStage(_s, planId, orderId, hook.stageId, hookId, triggerSourceId, triggerSignalId);
+                emit UVPStateMachine.HookReady(planId, orderId, hookId, hook.stageId, hook.hookName);
+            }
         }
     }
 
@@ -1884,10 +1903,9 @@ library UVPPlanRegistration {
     }
 
     /// UVP-08：trigger hook 的每一条 SIGNAL 指令读取的 origin 事实都必须
-    /// 独立通过同意门（主合约 _requireTriggerHookSignalConsent 同源副本：
-    /// 未发生的事实不是 origin 订单任何一方的发言，只约束"已被说出"的
-    /// 事实；每条事实的属主阶段从 originFactAttributions 携证解析，有词表
-    /// 的 origin plan 缺证事实响亮回滚）。
+    /// 独立通过同意门（未发生的事实不是 origin 订单任何一方的发言，
+    /// 只约束"已被说出"的事实；每条事实的属主阶段从 originFactAttributions
+    /// 携证解析，有词表的 origin plan 缺证事实响亮回滚）。
     function L_requireTriggerHookSignalConsent(
         UVPStateMachine.SMState storage _s,
         bytes32 originPlanId,
@@ -1940,6 +1958,13 @@ library UVPPlanRegistration {
         }
     }
 
+    /// order-link 派生单的 trigger hook 就绪落位（仅 order-link 出生路径
+    /// 使用）。与 outside/dock 不同，派生单在标记前没有事务内求值——
+    /// 子单事实集为空，多原子触发线在子单作用域内永不可达 Ready；其
+    /// 就绪裁决由 L_requireTriggerHookReadyForOrder 以 origin 订单的事实
+    /// 作用域预先断言（求值面 = origin 事实）。本入口保留链接路径的
+    /// 旧守卫：Cancelled（终态矛盾）拒绝，其余落 Ready——outside/dock
+    /// 的断言式守卫（非 Ready 即拒）只适用于"先求值后标记"的出生路径。
     function L_markTriggerHookReady(
         UVPStateMachine.SMState storage _s,
         bytes32 planId,
@@ -1950,29 +1975,11 @@ library UVPPlanRegistration {
         bytes32 triggerSignalId
     ) private {
         UVPStateMachine.StoredHook storage hook = L_validatedTriggerHook(_s, planId, triggerHookId, triggerStageId);
-        L_markOrderTriggerHookReady(
-            _s, planId, orderId, hook, triggerHookId, triggerStageId, triggerSourceId, triggerSignalId
-        );
-    }
-
-    function L_markOrderTriggerHookReady(
-        UVPStateMachine.SMState storage _s,
-        bytes32 planId,
-        bytes32 orderId,
-        UVPStateMachine.StoredHook storage hook,
-        bytes32 triggerHookId,
-        bytes32 triggerStageId,
-        bytes32 triggerSourceId,
-        bytes32 triggerSignalId
-    ) private {
         UVPStateMachine.Order storage order = _s.orders[planId][orderId];
         UVPStateMachine.HookRuntime storage runtime = order.hookRuntimes[triggerHookId];
         if (!runtime.exists) {
             L_initializeHookRuntime(order, triggerHookId);
         }
-        // 终态守卫：出生事务内求值已把矛盾条件推到 Cancelled——此处不得
-        // 覆写（镜像 outside 出生路径的断言而不是物化幻影阶段）。Ready 是
-        // 幂等终态：求值路径已发 HookReady 并物化，下方守卫天然无副作用。
         if (runtime.status == UVPStateMachine.HookStatus.Cancelled) {
             revert UVPStateMachine.InvalidTriggerHook(triggerHookId);
         }
@@ -1994,6 +2001,7 @@ library UVPPlanRegistration {
             emit UVPStateMachine.HookReady(planId, orderId, triggerHookId, hook.stageId, hook.hookName);
         }
     }
+
 
     /// order-link 派生订单号（主合约 orderLinkOrderIdFor 同公式副本）。
     function L_orderLinkOrderIdFor(

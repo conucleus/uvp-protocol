@@ -22,10 +22,17 @@ interface CommitmentVm {
 ///         CompactHook[]（counts 镜像逐层计数，vm.parseJson 无 .length 路径），
 ///         以合约冻结公式重算 hooksHash（keccak256(abi.encode(hooks))，即
 ///         commitPlan 对 calldata 的重算式），并经 UVPStateMachine
-///         .planRuntimeHash 以四棵 pinned 根复算六域 runtime planHash。任何
-///         一侧漂移都会在至少一侧响亮失配。
+///         .planRuntimeHash 以四棵 pinned 根复算六域 runtime planHash；
+///         planHash 两格按 preimages 的 canonical 原像串以域分隔 +
+///         keccak256 复算。任何一侧漂移都会在至少一侧响亮失配。
 contract CommitmentGoldenVectorsTest {
     CommitmentVm private constant vm = CommitmentVm(address(uint160(uint256(keccak256("hevm cheat code")))));
+
+    /// planHash 两格的域分隔符（与 TS compiler hash.ts / Rust uvp-ir 同
+    /// 常量）：preimages 携带的 canonical 原像串经 `domain:canonical` 前
+    /// 缀 keccak 重算 == pinned 哈希。
+    string private constant HOOK_PLAN_HASH_DOMAIN = "uvp:hook-plan-artifact:v1";
+    string private constant ONCHAIN_PLAN_HASH_DOMAIN = "uvp:onchain-hook-plan-artifact:v1";
 
     /// forge 侧 vm.parseJson 不支持 .length 路径，段计数显式镜像（TS 测试
     /// 断言计数与实际数组长一致，防止镜像漂移）。
@@ -154,6 +161,31 @@ contract CommitmentGoldenVectorsTest {
         require(
             runtimePlanHash == vm.parseJsonBytes32(fixture, string.concat(base, ".expected.runtimePlanHash")),
             "commitment golden runtime planHash mismatch"
+        );
+
+        require(
+            keccak256(
+                bytes(
+                    string.concat(
+                        HOOK_PLAN_HASH_DOMAIN,
+                        ":",
+                        vm.parseJsonString(fixture, string.concat(base, ".preimages.hookPlanCanonical"))
+                    )
+                )
+            ) == vm.parseJsonBytes32(fixture, string.concat(base, ".expected.hookPlanHash")),
+            "commitment golden hookPlanHash preimage mismatch"
+        );
+        require(
+            keccak256(
+                bytes(
+                    string.concat(
+                        ONCHAIN_PLAN_HASH_DOMAIN,
+                        ":",
+                        vm.parseJsonString(fixture, string.concat(base, ".preimages.onchainPlanCanonical"))
+                    )
+                )
+            ) == vm.parseJsonBytes32(fixture, string.concat(base, ".expected.onchainPlanHash")),
+            "commitment golden onchainPlanHash preimage mismatch"
         );
     }
 

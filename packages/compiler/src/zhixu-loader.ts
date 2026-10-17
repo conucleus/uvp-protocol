@@ -44,7 +44,7 @@ const NAME_SLUG_PATTERN = /^[a-z][a-z0-9_-]{0,99}$/;
  * zhixuExecutorConfig 的键、labels/annotations/params 的键）不在其中——
  * 它们是数据，不是结构字段。
  */
-const KNOWN_FIELDS = {
+export const KNOWN_FIELDS = {
   root: ["apiVersion", "kind", "metadata", "spec"],
   metadata: ["name", "labels", "annotations"],
   spec: ["platform", "nucleation", "stages", "dockInterface"],

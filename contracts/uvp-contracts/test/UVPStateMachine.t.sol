@@ -132,13 +132,13 @@ contract UVPStateMachineTest {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.14");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.15");
     bytes32 private constant EMPTY_DOCK_ROOT = keccak256("");
     uint8 private constant FLAG_ORDER_TRIGGER_MINT = 1;
     uint8 private constant FLAG_ORDER_TRIGGER_DOCK = 2;
     uint8 private constant FLAG_EMIT_READY = 4;
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
     );
     bytes32 private constant SIGNAL_CAPABILITY_LEAF_DOMAIN = keccak256("UVP_SIGNAL_CAPABILITY_V1");
     bytes32 private constant EXECUTOR_CANDIDATE_LEAF_DOMAIN = keccak256("UVP_EXECUTOR_CANDIDATE_V1");
@@ -3413,6 +3413,117 @@ contract UVPStateMachineTest {
         }
     }
 
+    /// fork 重放不产 flags=0 纯 watcher 的 HookReady（库发射面闸钉子）：
+    /// 计划携带一个纯 watcher（与 EMIT_READY 钩同阶段以满足物化闸），
+    /// 顺序提交面 watcher 判 Ready 但不发事件；fork 重放面同样静默——
+    /// 重放不得产出顺序提交不会产生的幻影就绪事件。
+    function testForkReplayEmitsNoHookReadyForPureWatcher() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](3);
+        UVPStateMachine.Instruction[] memory start = new UVPStateMachine.Instruction[](1);
+        start[0] = _signal(SIGNAL_ORDER_START);
+        hooks[0] = UVPStateMachine.CompactHook({
+            hookId: HOOK_ORDER_START,
+            stageId: STAGE_INIT,
+            hookName: HOOK_NAME_ORDER_START,
+            flags: FLAG_ORDER_TRIGGER_MINT | FLAG_EMIT_READY,
+            instructions: start,
+            dependencyKeys: _deps(SIGNAL_ORDER_START)
+        });
+        // (DONE & REVIEW) | VERIFY_FAIL：EMIT_READY 钩，物化 STAGE_AUDIT。
+        UVPStateMachine.Instruction[] memory combo = new UVPStateMachine.Instruction[](5);
+        combo[0] = _signal(SIGNAL_STAGE_DONE);
+        combo[1] = _signal(SIGNAL_STAGE_REVIEW);
+        combo[2] = _and(2);
+        combo[3] = _signal(SIGNAL_VERIFY_FAIL);
+        combo[4] = _or(2);
+        hooks[1] = UVPStateMachine.CompactHook({
+            hookId: HOOK_INIT,
+            stageId: STAGE_AUDIT,
+            hookName: HOOK_NAME_INIT_DONE,
+            flags: FLAG_EMIT_READY,
+            instructions: combo,
+            dependencyKeys: _deps3(SIGNAL_STAGE_DONE, SIGNAL_STAGE_REVIEW, SIGNAL_VERIFY_FAIL)
+        });
+        // 纯 flags=0 watcher：消费 VERIFY_FAIL，判 Ready 不发事件不物化。
+        hooks[2] = UVPStateMachine.CompactHook({
+            hookId: HOOK_NON_TRIGGER,
+            stageId: STAGE_AUDIT,
+            hookName: HOOK_NAME_TRIGGER,
+            flags: uint8(0),
+            instructions: _signalInstructions(SIGNAL_VERIFY_FAIL),
+            dependencyKeys: _deps(SIGNAL_VERIFY_FAIL)
+        });
+        _registerPlan(machine, hooks, new StageSelectorBinding[](0), new SignalCapability[](0));
+        _submitTriggerOrderFromOutside(machine, PLAN_ID, ORDER_CREATOR, _forkAuthorizations());
+        bytes32 parentOrderId = ORDER_ID;
+
+        // 顺序提交面：DONE+REVIEW 令 EMIT_READY 钩 Ready（物化 STAGE_AUDIT），
+        // 随后 VERIFY_FAIL 到达——watcher 判 Ready 但必须保持静默。
+        vm.prank(SUBMITTER_A);
+        machine.submitSignal(
+            PLAN_ID,
+            parentOrderId,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_STAGE_DONE,
+            PAYLOAD_HASH,
+            bytes32(uint256(0xF001)),
+            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_STAGE_DONE)
+        );
+        vm.prank(SUBMITTER_B);
+        machine.submitSignal(
+            PLAN_ID,
+            parentOrderId,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_STAGE_REVIEW,
+            PAYLOAD_HASH,
+            bytes32(uint256(0xF002)),
+            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_STAGE_REVIEW)
+        );
+        vm.recordLogs();
+        vm.prank(SUBMITTER_A);
+        machine.submitSignal(
+            PLAN_ID,
+            parentOrderId,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_VERIFY_FAIL,
+            PAYLOAD_HASH,
+            bytes32(uint256(0xF003)),
+            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL)
+        );
+        Vm.Log[] memory sequentialLogs = vm.getRecordedLogs();
+        require(!_hasHookReadyFor(sequentialLogs, HOOK_NON_TRIGGER), "sequential watcher must not emit HookReady");
+        (UVPStateMachine.HookStatus watcherStatus,, bool watcherEmitted) =
+            machine.getHookStatus(PLAN_ID, parentOrderId, HOOK_NON_TRIGGER);
+        require(watcherStatus == UVPStateMachine.HookStatus.Ready, "sequential watcher must judge Ready");
+        require(!watcherEmitted, "sequential watcher must not mark readyEmitted");
+
+        // fork 重放面：裁决信号 REVIEW（提交者 SUBMITTER_B），重放全部
+        // 事实——watcher 在重放中判 Ready，但不得产出顺序面不会有的
+        // HookReady 事件；MINT 出生线的 HookReady 照常（闸只针对 flags=0）。
+        vm.recordLogs();
+        vm.prank(SUBMITTER_B);
+        bytes32 forkedOrderId = machine.forkOrder(
+            PLAN_ID,
+            parentOrderId,
+            bytes32(uint256(0xF100)),
+            SOURCE_BOOTSTRAP,
+            SIGNAL_STAGE_REVIEW,
+            _forkBirthFactsWithTrigger(),
+            new UVPStateMachine.SignalAuthorization[](0)
+        );
+        Vm.Log[] memory forkLogs = vm.getRecordedLogs();
+        require(
+            _countTopic(forkLogs, keccak256("OrderForked(bytes32,bytes32,bytes32,bytes32,bytes32,address)")) == 1,
+            "fork lineage event"
+        );
+        require(_hasHookReadyFor(forkLogs, HOOK_ORDER_START), "fork must keep emitting HookReady for mint birth line");
+        require(!_hasHookReadyFor(forkLogs, HOOK_NON_TRIGGER), "fork replay must not emit phantom watcher HookReady");
+        (watcherStatus,, watcherEmitted) = machine.getHookStatus(PLAN_ID, forkedOrderId, HOOK_NON_TRIGGER);
+        require(watcherStatus == UVPStateMachine.HookStatus.Ready, "fork watcher must judge Ready");
+        require(!watcherEmitted, "fork watcher must not mark readyEmitted");
+    }
+
     /// 幂等重试同单号：同参 fork 恒定派生同一 id，按 OrderAlreadyRegistered
     /// 幂等吸收（对齐既有出生通道语义）。
     function testForkOrderIsIdempotentForSameParameters() public {
@@ -3900,6 +4011,47 @@ contract UVPStateMachineTest {
         require(!machine.orderExists(PLAN_ID, dockedOrderId), "birth must roll back atomically");
     }
 
+    /// Init 臂（断言式出生闸的另一条腿）：entrance 条件为 ≥2 正原子
+    /// 合取（K1 & K2），出生事实仅交付 K1——求值停在 Init（第二原子
+    /// 中性缺席，非 Cancelled 也非 Wait），dock 出生不得把未就绪覆写成
+    /// Ready 物化幻影阶段，整笔回滚不物化不留状态。
+    function testDockBirthDoesNotOverwriteUnreadyEntranceHook() public {
+        UVPStateMachine machine = _newMachine();
+        // entrance 条件：SIGNAL(K1);SIGNAL(K2);AND(2) —— 仅 K1 交付。
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](3);
+        instructions[0] = _signal(SIGNAL_TRIGGER);
+        instructions[1] = _signal(SIGNAL_AUDIT_PASS);
+        instructions[2] = _and(2);
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
+        hooks[0] = _signalHook(HOOK_ORDER_START, STAGE_INIT, HOOK_NAME_ORDER_START, true, SIGNAL_ORDER_START);
+        hooks[1] = _hookWithFlags(
+            HOOK_ALT_MINT,
+            STAGE_ALT,
+            HOOK_NAME_TRIGGER,
+            uint8(FLAG_ORDER_TRIGGER_DOCK | FLAG_EMIT_READY),
+            instructions,
+            _deps2(SIGNAL_TRIGGER, SIGNAL_AUDIT_PASS)
+        );
+        _registerPlan(machine, hooks, new StageSelectorBinding[](0), new SignalCapability[](0));
+
+        bytes32 dockedOrderId = bytes32(uint256(1) << 255 | uint256(0x0DD5));
+        vm.prank(address(_docking(machine)));
+        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.InvalidTriggerHook.selector, HOOK_ALT_MINT));
+        machine.createDockedOrderFromModule(
+            _dockEntranceRequest(
+                PLAN_ID,
+                dockedOrderId,
+                ORDER_CREATOR,
+                HOOK_ALT_MINT,
+                STAGE_ALT,
+                SOURCE_BOOTSTRAP,
+                SIGNAL_TRIGGER,
+                new UVPStateMachine.SignalAuthorization[](0)
+            )
+        );
+        require(!machine.orderExists(PLAN_ID, dockedOrderId), "partial delivery must roll back atomically");
+    }
+
     // ------------------------------------------------------------------
     // 生命周期负例
     // ------------------------------------------------------------------
@@ -3952,6 +4104,7 @@ contract UVPStateMachineTest {
             dockRoutesRoot: EMPTY_DOCK_ROOT,
             dockInterfaceRoot: EMPTY_DOCK_ROOT,
             executorCandidatesRoot: EMPTY_DOCK_ROOT,
+            birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: block.timestamp + 1 hours
         });
         bytes32 structHash = keccak256(
@@ -3963,6 +4116,7 @@ contract UVPStateMachineTest {
                 commit.dockRoutesRoot,
                 commit.dockInterfaceRoot,
                 commit.executorCandidatesRoot,
+                commit.birthAuthorizer,
                 commit.deadline
             )
         );
@@ -3989,6 +4143,7 @@ contract UVPStateMachineTest {
             dockRoutesRoot: EMPTY_DOCK_ROOT,
             dockInterfaceRoot: EMPTY_DOCK_ROOT,
             executorCandidatesRoot: EMPTY_DOCK_ROOT,
+            birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: deadline
         });
 
@@ -4009,6 +4164,7 @@ contract UVPStateMachineTest {
             dockRoutesRoot: EMPTY_DOCK_ROOT,
             dockInterfaceRoot: EMPTY_DOCK_ROOT,
             executorCandidatesRoot: EMPTY_DOCK_ROOT,
+            birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: block.timestamp + 1 hours
         });
         bytes32 structHash = keccak256(
@@ -4020,6 +4176,7 @@ contract UVPStateMachineTest {
                 commit.dockRoutesRoot,
                 commit.dockInterfaceRoot,
                 commit.executorCandidatesRoot,
+                commit.birthAuthorizer,
                 commit.deadline
             )
         );
@@ -4077,6 +4234,171 @@ contract UVPStateMachineTest {
             signature,
             _factAttribution(machine, trigger.planId, trigger.sourceId, trigger.signalId)
         );
+    }
+
+    /// 出生授权闸（10.4 复裁选 A）：签名有效但 submitter 不是计划承诺的
+    /// birthAuthorizer——中继方自签竞争请求（换 creator/authorizations 抢
+    /// 占订单号与下游授权面）在签名校验之后被精确拒绝，不铸单不留状态。
+    function testTriggerOrderFromOutsideRejectsUnauthorizedBirthSubmitter() public {
+        UVPStateMachine machine = _newMachine();
+        _registerPlan(machine, _withOrderStart(_positiveHookPlan(HOOK_INIT, true)));
+
+        UVPStateMachine.SignalAuthorization[] memory authorizations = _auths1(SIGNAL_TRIGGER, address(this));
+        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger =
+            _outsideTriggerRequest(HOOK_ORDER_START, SIGNAL_ORDER_START);
+        // 请求自洽：submitter 字段与签名者一致（签名校验通过），唯一矛盾
+        // 是该 submitter 不是 birthAuthorizer——闸必须打在这一层。
+        trigger.submitter = vm.addr(ATTACKER_SUBMITTER_PRIVATE_KEY);
+        bytes memory signature =
+            _triggerOrderFromOutsideSignature(machine, trigger, authorizations, ATTACKER_SUBMITTER_PRIVATE_KEY);
+
+        bytes32 expectedOrderId = machine.triggerOrderIdFor(
+            trigger.planId, trigger.sourceId, trigger.signalId, trigger.payloadHash
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPStateMachine.UnauthorizedBirthSubmitter.selector, vm.addr(ATTACKER_SUBMITTER_PRIVATE_KEY)
+            )
+        );
+        machine.triggerOrderFromOutsideFor(
+            trigger,
+            authorizations,
+            signature,
+            _factAttribution(machine, trigger.planId, trigger.sourceId, trigger.signalId)
+        );
+        require(!machine.orderExists(trigger.planId, expectedOrderId), "unauthorized birth must not mint order");
+    }
+
+    /// birthAuthorizer=零地址 = 该计划关闭 outside 出生通道（fail-closed）。
+    /// 本测试钉 dock / order-link 两条出生通道不受本闸射程（两通一拒）；
+    /// fork 通道的豁免不在本测试射程，由 src 注释与已知问题清单 10.4 记载。
+    function testZeroBirthAuthorizerClosesOnlyOutsideChannel() public {
+        UVPStateMachine machine = _newMachine();
+        // 计划形态：MINT 钩（order-link 出生线，消费 SIGNAL_ORDER_START）+
+        // DOCK entrance 钩（dock 出生线，消费 SIGNAL_TRIGGER）。
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
+        hooks[0] = _signalHook(HOOK_INIT, STAGE_INIT, HOOK_NAME_ORDER_START, true, SIGNAL_ORDER_START);
+        hooks[1] = _hookWithFlags(
+            HOOK_ALT_MINT,
+            STAGE_ALT,
+            HOOK_NAME_INIT_DONE,
+            uint8(FLAG_ORDER_TRIGGER_DOCK | FLAG_EMIT_READY),
+            _signalInstructions(SIGNAL_TRIGGER),
+            _deps(SIGNAL_TRIGGER)
+        );
+        // 手签 commit：birthAuthorizer 承诺为零地址。
+        address publisher = vm.addr(PUBLISHER_PRIVATE_KEY);
+        UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
+            publisher: publisher,
+            hooksHash: keccak256(abi.encode(hooks)),
+            capabilitiesRoot: DockMerkle.root(new bytes32[](0)),
+            dockRoutesRoot: EMPTY_DOCK_ROOT,
+            dockInterfaceRoot: EMPTY_DOCK_ROOT,
+            executorCandidatesRoot: EMPTY_DOCK_ROOT,
+            birthAuthorizer: address(0),
+            deadline: block.timestamp + 1 hours
+        });
+        bytes32 structHash = keccak256(
+            abi.encode(
+                PLAN_COMMIT_TYPEHASH,
+                commit.publisher,
+                commit.hooksHash,
+                commit.capabilitiesRoot,
+                commit.dockRoutesRoot,
+                commit.dockInterfaceRoot,
+                commit.executorCandidatesRoot,
+                commit.birthAuthorizer,
+                commit.deadline
+            )
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _stateMachineDomainSeparator(machine), structHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PUBLISHER_PRIVATE_KEY, digest);
+        bytes32 planId =
+            machine.commitPlan(commit, hooks, new UVPStateMachine.ExecutorCandidate[](0), _packedSignature(v, r, s));
+        machine.finalizePlan(planId);
+        PLAN_ID = planId;
+
+        // (1) outside 出生：即使请求由"若授权本应是谁"的 SUBMITTER 自签，
+        // 零地址承诺下同样被拒——通道整体关闭，不是换个提交者可绕。
+        UVPStateMachine.SignalAuthorization[] memory outsideAuths = _auths1(SIGNAL_ORDER_START, address(this));
+        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger =
+            _outsideTriggerRequest(HOOK_INIT, SIGNAL_ORDER_START);
+        trigger.planId = planId;
+        bytes memory outsideSignature =
+            _triggerOrderFromOutsideSignature(machine, trigger, outsideAuths, SUBMITTER_PRIVATE_KEY);
+        vm.expectRevert(
+            abi.encodeWithSelector(UVPStateMachine.UnauthorizedBirthSubmitter.selector, trigger.submitter)
+        );
+        machine.triggerOrderFromOutsideFor(
+            trigger,
+            outsideAuths,
+            outsideSignature,
+            _factAttribution(machine, trigger.planId, trigger.sourceId, trigger.signalId)
+        );
+        bytes32 outsideOrderId =
+            machine.triggerOrderIdFor(planId, trigger.sourceId, trigger.signalId, trigger.payloadHash);
+        require(!machine.orderExists(planId, outsideOrderId), "closed outside channel must not mint");
+
+        // (2) dock 出生不受影响：entrance 事实求值 → entrance hook Ready →
+        // 子单落地。creator 给 link 侧提交者（同意链走创建者）；授权集
+        // 同时覆盖 link 消费的 SIGNAL_ORDER_START 事实（origin 侧提交者）。
+        bytes32 dockedOrderId = bytes32(uint256(1) << 255 | uint256(0x0DD2));
+        UVPStateMachine.SignalAuthorization[] memory dockAuths =
+            new UVPStateMachine.SignalAuthorization[](2);
+        dockAuths[0] = _authorization(SIGNAL_TRIGGER, address(this));
+        dockAuths[1] = _authorization(SIGNAL_ORDER_START, vm.addr(SUBMITTER_PRIVATE_KEY));
+        vm.prank(address(_docking(machine)));
+        machine.createDockedOrderFromModule(
+            _dockEntranceRequest(
+                planId, dockedOrderId, vm.addr(SUBMITTER_PRIVATE_KEY), HOOK_ALT_MINT, STAGE_ALT, SOURCE_BOOTSTRAP,
+                SIGNAL_TRIGGER, dockAuths
+            )
+        );
+        require(machine.orderExists(planId, dockedOrderId), "dock birth must ignore birthAuthorizer gate");
+        (UVPStateMachine.HookStatus dockStatus,, bool dockReady) = machine.getHookStatus(planId, dockedOrderId, HOOK_ALT_MINT);
+        require(dockStatus == UVPStateMachine.HookStatus.Ready && dockReady, "dock entrance hook must be ready");
+
+        // (3) order-link 出生不受影响：以 dock 子单为 origin，消费其
+        // SIGNAL_ORDER_START 事实派生链接单。
+        vm.prank(vm.addr(SUBMITTER_PRIVATE_KEY));
+        machine.submitSignal(
+            planId,
+            dockedOrderId,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_ORDER_START,
+            PAYLOAD_HASH,
+            bytes32(uint256(0x0DD3)),
+            _noAttribution()
+        );
+        bytes32 linkedOrderId = machine.orderLinkOrderIdFor(
+            planId, planId, dockedOrderId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, PAYLOAD_HASH
+        );
+        IUVPStateMachineCore.TriggerOrderFromSignalRequest memory link = IUVPStateMachineCore.TriggerOrderFromSignalRequest({
+                orderId: linkedOrderId,
+                planId: planId,
+                creator: ORDER_CREATOR,
+                triggerOriginOrderId: dockedOrderId,
+                originPlanId: planId,
+                triggerHookId: HOOK_INIT,
+                triggerStageId: STAGE_INIT,
+                originSourceId: SOURCE_BOOTSTRAP,
+                originSignalId: SIGNAL_ORDER_START,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: bytes32(uint256(0x0DD4)),
+                submitter: vm.addr(SUBMITTER_PRIVATE_KEY),
+                deadline: block.timestamp + 1 hours
+            });
+        IUVPStateMachineCore.SignalAuthorization[] memory linkAuths =
+            _moduleAuthorizations(_auths1(SIGNAL_ORDER_START, address(this)));
+        bytes memory linkSignature =
+            _triggerOrderFromSignalSignature(machine, link, linkAuths, SUBMITTER_PRIVATE_KEY);
+        vm.prank(UNAUTHORIZED_SUBMITTER);
+        _orderLink(machine).triggerOrderFromSignalFor(
+            link, linkAuths, linkSignature, new IUVPStateMachineCore.FactAttribution[](0)
+        );
+        require(machine.orderExists(planId, linkedOrderId), "order-link birth must ignore birthAuthorizer gate");
+        (UVPStateMachine.HookStatus linkStatus,, bool linkReady) = machine.getHookStatus(planId, linkedOrderId, HOOK_INIT);
+        require(linkStatus == UVPStateMachine.HookStatus.Ready && linkReady, "link trigger hook must be ready");
     }
 
     /// Cancelled 是终态：后续事实到达与 timer 路径都不得复活 hook。
@@ -4794,6 +5116,12 @@ contract UVPStateMachineTest {
         UVPStateMachine.ExecutorCandidate[] memory executorCandidates
     ) private returns (bytes32 planId) {
         address publisher = vm.addr(publisherPrivateKey);
+        // 出生授权者随发布者侧选择镜像：跨 plan 攻击族的攻击者 plan 由
+        // ATTACKER_SUBMITTER 出生，其余计划默认 SUBMITTER——与各测试的
+        // outside 出生实际签名者保持一致。
+        address birthAuthorizer = publisherPrivateKey == ATTACKER_PUBLISHER_PRIVATE_KEY
+            ? vm.addr(ATTACKER_SUBMITTER_PRIVATE_KEY)
+            : vm.addr(SUBMITTER_PRIVATE_KEY);
         bytes32[] memory leaves = _capabilityLeaves(selectorBindings, signalCapabilities);
         bytes32[] memory candidateLeaves = _executorCandidateLeaves(executorCandidates);
         UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
@@ -4803,6 +5131,7 @@ contract UVPStateMachineTest {
             dockRoutesRoot: EMPTY_DOCK_ROOT,
             dockInterfaceRoot: EMPTY_DOCK_ROOT,
             executorCandidatesRoot: DockMerkle.root(candidateLeaves),
+            birthAuthorizer: birthAuthorizer,
             deadline: block.timestamp + 1 hours
         });
         bytes32 structHash = keccak256(
@@ -4814,6 +5143,7 @@ contract UVPStateMachineTest {
                 commit.dockRoutesRoot,
                 commit.dockInterfaceRoot,
                 commit.executorCandidatesRoot,
+                commit.birthAuthorizer,
                 commit.deadline
             )
         );
@@ -6310,6 +6640,18 @@ contract UVPStateMachineTest {
         }
     }
 
+    /// 指定 hookId 的 HookReady 是否在日志中出现（watcher 发射面闸的
+    /// 定点断言：topic0 匹配 + topics[3] 即 indexed hookId）。
+    function _hasHookReadyFor(Vm.Log[] memory logs, bytes32 hookId) private pure returns (bool) {
+        bytes32 topic = keccak256("HookReady(bytes32,bytes32,bytes32,bytes32,bytes32)");
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics.length >= 4 && logs[i].topics[0] == topic && logs[i].topics[3] == hookId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     function _countSignalSubmitterAuthorized(Vm.Log[] memory logs) private pure returns (uint256 count) {
         bytes32 topic = keccak256("SignalSubmitterAuthorized(bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32)");
         return _countTopic(logs, topic);
@@ -7653,7 +7995,7 @@ contract UVPStateMachineCapabilityTreeTest {
     bytes32 private constant EXECUTOR_CANDIDATE_LEAF_DOMAIN = keccak256("UVP_EXECUTOR_CANDIDATE_V1");
     bytes32 private constant EMPTY_DOCK_ROOT = keccak256("");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
     );
     uint256 private constant PUBLISHER_PRIVATE_KEY = 0xc0ffee;
     uint256 private constant SUBMITTER_PRIVATE_KEY = 0xa11ce;
@@ -7765,6 +8107,7 @@ contract UVPStateMachineCapabilityTreeTest {
             dockRoutesRoot: EMPTY_DOCK_ROOT,
             dockInterfaceRoot: EMPTY_DOCK_ROOT,
             executorCandidatesRoot: EMPTY_DOCK_ROOT,
+            birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: block.timestamp + 1 hours
         });
         bytes32 structHash = keccak256(
@@ -7776,6 +8119,7 @@ contract UVPStateMachineCapabilityTreeTest {
                 commit.dockRoutesRoot,
                 commit.dockInterfaceRoot,
                 commit.executorCandidatesRoot,
+                commit.birthAuthorizer,
                 commit.deadline
             )
         );
@@ -7786,7 +8130,7 @@ contract UVPStateMachineCapabilityTreeTest {
                     abi.encode(
                         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
                         keccak256("UVPStateMachine"),
-                        keccak256("0.14"),
+                        keccak256("0.15"),
                         block.chainid,
                         address(machine)
                     )

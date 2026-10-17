@@ -64,10 +64,11 @@ interface CorpusVm {
 ///   StageNotMaterializable）按语料期望断言拒绝，后者另在可注册变体（同
 ///   阶段补一枚永不出线的 EMIT_READY 物化钩）上钉同一求值语义（skip 不
 ///   brick、零观察）。
-/// - 发射适格面（filter 档 evalCases，6 格）单独消费：DSL 串钉住三形态
+/// - 发射适格面（filter 档 evalCases，7 格）单独消费：DSL 串钉住四形态
 ///   （漂移即响亮失败），信号集/时刻/期望态从语料读取。锚定格都在消费集
 ///   内：无锚延时 → 链轨注册闸拒绝（求值侧永不放行的死代码）；真空 OR
-///   臂让位 → now 拒绝 + readyAt 放行两腿。
+///   臂让位 → now 拒绝 + readyAt 放行两腿；双真空 OR 平票 → 注册闸同款
+///   拒绝（无锚分支永不出线，§5.4）。
 contract SemanticsReplayCorpusTest {
     CorpusVm private constant vm = CorpusVm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
@@ -84,7 +85,7 @@ contract SemanticsReplayCorpusTest {
     uint256 private constant MAX_SIGNALS = 8;
     uint256 private constant MAX_POKES = 2;
     uint256 private constant REPLAY_CASE_COUNT = 26;
-    uint256 private constant FILTER_CASE_COUNT = 6;
+    uint256 private constant FILTER_CASE_COUNT = 7;
 
     // ----------------------------------------------------------------------
     // 语料行（storage：via_ir 深栈 + 跨 helper 共享）
@@ -210,9 +211,9 @@ contract SemanticsReplayCorpusTest {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.14");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.15");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
     );
     bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
@@ -851,6 +852,7 @@ contract SemanticsReplayCorpusTest {
             dockRoutesRoot: EMPTY_DOCK_ROOT,
             dockInterfaceRoot: EMPTY_DOCK_ROOT,
             executorCandidatesRoot: EMPTY_DOCK_ROOT,
+            birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: type(uint256).max
         });
         bytes32 structHash = keccak256(
@@ -862,6 +864,7 @@ contract SemanticsReplayCorpusTest {
                 commit.dockRoutesRoot,
                 commit.dockInterfaceRoot,
                 commit.executorCandidatesRoot,
+                commit.birthAuthorizer,
                 commit.deadline
             )
         );
@@ -1230,6 +1233,7 @@ contract SemanticsReplayCorpusTest {
         keccak256("buyer::execute.locked & ~(execute.approved +5s) & ~execute.confirm_transfer");
     bytes32 private constant FILTER_FORM_B = keccak256("buyer::(~a.cmp)+5s");
     bytes32 private constant FILTER_FORM_C = keccak256("buyer::(~a.cmp | b.cmp)+5s");
+    bytes32 private constant FILTER_FORM_D = keccak256("buyer::(~a.cmp | ~b.cmp)+5s");
 
     /// filter 档 evalCases 全消费：DSL 串钉三形态（漂移即响亮失败），信
     /// 号集/时刻/期望态从语料读取。锚定格都在消费集内：无锚延时（33）→
@@ -1313,6 +1317,23 @@ contract SemanticsReplayCorpusTest {
             );
             admissionInstrs[1] = _instruction(uint8(UVPStateMachine.InstructionOp.Not), bytes32(0), bytes32(0), 0, 0);
             admissionInstrs[2] = _instruction(uint8(UVPStateMachine.InstructionOp.Delay), bytes32(0), bytes32(0), 0, 5);
+            _expectAdmissionCommitRevert(admissionInstrs, birthSource, birthSignal, emitSource, emitSignal, birthStage);
+            return;
+        } else if (form == FILTER_FORM_D) {
+            // 双真空 OR 平票（(0,0) 格）：两臂皆无锚 → OR 结果无正锚，外层
+            // 延时注册即拒（§5.4 无锚分支永不出线；求值侧期望 needs_more，
+            // 链上先在 commit 边界拒绝——与 FORM_B 同款死代码闸）。
+            admissionInstrs = new UVPStateMachine.Instruction[](6);
+            admissionInstrs[0] = _instruction(
+                uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("a.cmp"), 0, 0
+            );
+            admissionInstrs[1] = _instruction(uint8(UVPStateMachine.InstructionOp.Not), bytes32(0), bytes32(0), 0, 0);
+            admissionInstrs[2] = _instruction(
+                uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("b.cmp"), 0, 0
+            );
+            admissionInstrs[3] = _instruction(uint8(UVPStateMachine.InstructionOp.Not), bytes32(0), bytes32(0), 0, 0);
+            admissionInstrs[4] = _instruction(uint8(UVPStateMachine.InstructionOp.Or), bytes32(0), bytes32(0), 2, 0);
+            admissionInstrs[5] = _instruction(uint8(UVPStateMachine.InstructionOp.Delay), bytes32(0), bytes32(0), 0, 5);
             _expectAdmissionCommitRevert(admissionInstrs, birthSource, birthSignal, emitSource, emitSignal, birthStage);
             return;
         } else if (form == FILTER_FORM_C) {
@@ -1472,6 +1493,7 @@ contract SemanticsReplayCorpusTest {
             dockRoutesRoot: EMPTY_DOCK_ROOT,
             dockInterfaceRoot: EMPTY_DOCK_ROOT,
             executorCandidatesRoot: EMPTY_DOCK_ROOT,
+            birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: type(uint256).max
         });
         bytes32 structHash = keccak256(
@@ -1483,6 +1505,7 @@ contract SemanticsReplayCorpusTest {
                 commit.dockRoutesRoot,
                 commit.dockInterfaceRoot,
                 commit.executorCandidatesRoot,
+                commit.birthAuthorizer,
                 commit.deadline
             )
         );
@@ -1529,6 +1552,30 @@ contract SemanticsReplayCorpusTest {
             return;
         }
         corpusJson = vm.readFile(string.concat(vm.projectRoot(), "/../../../uvp-core/fixtures/hook/semantics.v1.json"));
+        // meta sha 钉（Rust/TS 同款三线钉）：语料内容与 uvp-core 声明的
+        // contentSha256 用 SHA256 预编译逐字节比对，不等即响亮失败——本仓
+        // 不落语料副本，钉住的是对岸文件内容本身。
+        string memory metaJson =
+            vm.readFile(string.concat(vm.projectRoot(), "/../../../uvp-core/fixtures/hook/semantics.v1.meta.json"));
+        require(
+            _eq(vm.parseJsonString(metaJson, ".algorithm"), "sha256"),
+            "corpus meta algorithm drifted; only sha256 is implemented"
+        );
+        bytes32 declared = _hexToBytes32(string.concat("0x", vm.parseJsonString(metaJson, ".contentSha256")));
+        require(
+            _sha256(bytes(corpusJson)) == declared,
+            "semantic corpus content diverged from semantics.v1.meta.json contentSha256; recompute and update the meta in the same change"
+        );
+    }
+
+    function _sha256(bytes memory input) private view returns (bytes32 digest) {
+        bool ok;
+        assembly {
+            let out := mload(0x40)
+            ok := staticcall(gas(), 2, add(input, 32), mload(input), out, 32)
+            digest := mload(out)
+        }
+        require(ok, "sha256 precompile failed");
     }
 
     function _resetCase() private {

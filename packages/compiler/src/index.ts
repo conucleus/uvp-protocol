@@ -7,6 +7,7 @@ export {
   validateHookPlanArtifact,
 } from "./hook-plan.js";
 export {
+  KNOWN_FIELDS,
   loadZhixuDefinition,
   parseZhixuDefinition,
   ZhixuLoadError,

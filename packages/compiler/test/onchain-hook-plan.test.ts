@@ -23,6 +23,7 @@ import {
 } from "viem";
 import {
   assertOnchainHookPlanArtifact,
+  canonicalStringify,
   compileZhixuOnchainHookPlan,
   hashSolidityRegisterHooks,
   keccak256Hex,
@@ -732,6 +733,30 @@ test("commitment golden vectors pin uid/planHash/hooksHash from the shared fixtu
       hashSolidityRegisterHooks(commitmentRegisterHooksArgs(golden.input.hooks)),
       golden.expected.hooksHash,
       `${golden.name}: pinned hooks array must rehash to the expected hooksHash`,
+    );
+
+    // planHash 原像钉（Rust/forge 对同一串复算）：域分隔前缀 keccak ==
+    // pinned 哈希；串本身必须是 canonicalStringify 的冻结形态（解析重排
+    // 不变形），防生成器漂移出非规范原像。
+    assert.equal(
+      keccak256Hex(`uvp:hook-plan-artifact:v1:${golden.preimages.hookPlanCanonical}`),
+      golden.expected.hookPlanHash,
+      `${golden.name}: hookPlanHash preimage rehash`,
+    );
+    assert.equal(
+      keccak256Hex(`uvp:onchain-hook-plan-artifact:v1:${golden.preimages.onchainPlanCanonical}`),
+      golden.expected.onchainPlanHash,
+      `${golden.name}: onchainPlanHash preimage rehash`,
+    );
+    assert.equal(
+      canonicalStringify(JSON.parse(golden.preimages.hookPlanCanonical)),
+      golden.preimages.hookPlanCanonical,
+      `${golden.name}: hookPlanCanonical must stay in canonical form`,
+    );
+    assert.equal(
+      canonicalStringify(JSON.parse(golden.preimages.onchainPlanCanonical)),
+      golden.preimages.onchainPlanCanonical,
+      `${golden.name}: onchainPlanCanonical must stay in canonical form`,
     );
   }
 });

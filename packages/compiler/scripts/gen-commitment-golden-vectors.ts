@@ -22,6 +22,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  canonicalStringify,
   compileZhixuHookPlan,
   compileZhixuOnchainHookPlan,
   definitionUid,
@@ -33,6 +34,7 @@ import {
   type SolidityRegisterPlanArgs,
   type ZhixuDefinition,
 } from "../src/index.js";
+import { hookPlanPayloadForHash } from "../src/dock-commitments.js";
 import type { DockResolutionManifest, HexString } from "../src/types/index.js";
 import {
   dockProductionTargetDefinition,
@@ -86,6 +88,13 @@ interface CommitmentGoldenCase {
     readonly hooks: number;
     readonly instructions: readonly number[];
     readonly dependencyKeys: readonly number[];
+  };
+  /** planHash 两格的 canonical 原像串（TS canonicalStringify 冻结形态）：
+   * Rust/forge 消费方各以已侧公式（域分隔符 + keccak256，Rust 另经自身
+   * canonicalize 重排对拍）重算 == pinned 哈希，锁死跨语言哈希公式。 */
+  readonly preimages: {
+    readonly hookPlanCanonical: string;
+    readonly onchainPlanCanonical: string;
   };
   readonly expected: {
     readonly uid: string;
@@ -172,11 +181,16 @@ function buildDefinitionCase(
   );
   const args: SolidityRegisterPlanArgs = toSolidityRegisterPlanArgs(onchain);
   const hooks = goldenHooks(args.hooks);
+  const { planHash: _onchainHash, ...onchainPayload } = onchain;
   return {
     name,
     note,
     input: { ...input, hooks },
     counts: countsOf(hooks),
+    preimages: {
+      hookPlanCanonical: canonicalStringify(hookPlanPayloadForHash(plan)),
+      onchainPlanCanonical: canonicalStringify(onchainPayload),
+    },
     expected: {
       uid: plan.zhixuId,
       hookPlanHash: plan.planHash,
@@ -544,7 +558,7 @@ const registerHooksVectors: readonly RegisterHooksVector[] = [
 
 const fixture = {
   schemaVersion: "uvp.commitmentGoldenVectors.v1",
-  note: "承诺面（uid/planHash/hooksHash）跨语言金向量：TS compiler（链轨权威，generate:commitment-golden-vectors 生成）、Rust uvp-ir（derive_definition_uid 逐格消费 uid）、Foundry CommitmentGoldenVectors.t.sol（按格重建 CompactHook[] 重算 hooksHash 并经 UVPStateMachine.planRuntimeHash 复算 runtimePlanHash）三方对同一份文件对拍。改本文件必须同跑三侧测试。",
+  note: "承诺面（uid/planHash/hooksHash）跨语言金向量：TS compiler（链轨权威，generate:commitment-golden-vectors 生成）、Rust uvp-ir（derive_definition_uid 逐格消费 uid，preimages 两格经自身 canonicalize + 域分隔 keccak 复算）、Foundry CommitmentGoldenVectors.t.sol（按格重建 CompactHook[] 重算 hooksHash 并经 UVPStateMachine.planRuntimeHash 复算 runtimePlanHash；preimages 两格按域分隔 + keccak 复算）三方对同一份文件对拍。改本文件必须同跑三侧测试。",
   uidVectors,
   cases,
   registerHooksVectors,

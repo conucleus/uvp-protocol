@@ -402,6 +402,11 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             "internalType": "bytes32"
           },
           {
+            "name": "birthAuthorizer",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
             "name": "deadline",
             "type": "uint256",
             "internalType": "uint256"
@@ -1380,6 +1385,25 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     "type": "function",
     "name": "owner",
     "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "planBirthAuthorizer",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
     "outputs": [
       {
         "name": "",
@@ -3798,6 +3822,17 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "count",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnauthorizedBirthSubmitter",
+    "inputs": [
+      {
+        "name": "submitter",
+        "type": "address",
+        "internalType": "address"
       }
     ]
   },

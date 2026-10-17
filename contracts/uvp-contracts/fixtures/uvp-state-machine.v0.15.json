@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStateMachine",
-  "abiVersion": "0.14",
+  "abiVersion": "0.15",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStateMachine.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStateMachine.sol/UVPStateMachine.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x26ace4d54fef242fdb5b8ebb93da4b335ed23b2e05e05c116c6afb03d0d98896",
-    "bytecodeHash": "0x57c322f8987fb048813a2cdbe658928ec1dcf7549b6f125ef6a288df4842d978",
-    "deployedBytecodeHash": "0x2f6af01517665a1a79a1abf0bfe1b31d4fdecca8c9c47679882005091853758b",
-    "artifactHash": "0x08cf082c790a27ba32ed3c1fac140c1294c9356bc18aedd9a5b78cad2a224fbc"
+    "abiHash": "0xa627b5e780ca772a635e6dc6c41303225f930a5a99f93f75faa62cf323e19a00",
+    "bytecodeHash": "0xf53a3733cb3c16ca6f1cf7b1705546cbfaabafc3f093802a682fd1ea7ba1e421",
+    "deployedBytecodeHash": "0x74cfb8b7431517492f89ed873c20878df45d18e27e33a916372038cc14962c8e",
+    "artifactHash": "0x926ba46b111a88e0242664eb83e989c394d4774242ae111661a622ef5c1297d6"
   },
   "events": {
     "HookReady": {
@@ -174,8 +174,8 @@
       "selector": "0x815980b1"
     },
     "commitPlan": {
-      "signature": "commitPlan((address,bytes32,bytes32,bytes32,bytes32,bytes32,uint256),(bytes32,bytes32,bytes32,uint8,(uint8,bytes32,bytes32,uint16,uint64)[],bytes32[])[],(bytes32,address)[],bytes)",
-      "selector": "0xa5fe1af8"
+      "signature": "commitPlan((address,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),(bytes32,bytes32,bytes32,uint8,(uint8,bytes32,bytes32,uint16,uint64)[],bytes32[])[],(bytes32,address)[],bytes)",
+      "selector": "0xabdcf2ef"
     },
     "createDockedOrderFromModule": {
       "signature": "createDockedOrderFromModule((bytes32,bytes32,address,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,(bytes32,bytes32,address,bytes32,bytes32)[],(bytes32,bytes32,bytes32,bytes32[])))",
@@ -280,6 +280,10 @@
     "owner": {
       "signature": "owner()",
       "selector": "0x8da5cb5b"
+    },
+    "planBirthAuthorizer": {
+      "signature": "planBirthAuthorizer(bytes32)",
+      "selector": "0x2a90f85f"
     },
     "planCommitted": {
       "signature": "planCommitted(bytes32)",

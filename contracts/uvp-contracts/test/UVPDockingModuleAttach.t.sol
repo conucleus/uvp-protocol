@@ -70,7 +70,7 @@ contract UVPDockingModuleAttachTest {
     uint8 private constant FLAG_EMIT_READY = 4;
 
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
     );
     bytes32 private constant SIGNAL_CAPABILITY_LEAF_DOMAIN = keccak256("UVP_SIGNAL_CAPABILITY_V1");
     bytes32 private constant SELECTOR_BINDING_LEAF_DOMAIN = keccak256("UVP_SELECTOR_BINDING_V1");
@@ -1670,6 +1670,7 @@ contract UVPDockingModuleAttachTest {
             dockRoutesRoot: dockRoutesRoot,
             dockInterfaceRoot: dockInterfaceRoot,
             executorCandidatesRoot: DockMerkle.root(candidateLeaves),
+            birthAuthorizer: vm.addr(SUBMITTER_KEY),
             deadline: block.timestamp + 1 hours
         });
         bytes32 structHash = keccak256(
@@ -1681,6 +1682,7 @@ contract UVPDockingModuleAttachTest {
                 commit.dockRoutesRoot,
                 commit.dockInterfaceRoot,
                 commit.executorCandidatesRoot,
+                commit.birthAuthorizer,
                 commit.deadline
             )
         );
@@ -2019,7 +2021,7 @@ contract UVPDockingModuleAttachTest {
             abi.encode(
                 keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
                 keccak256("UVPStateMachine"),
-                keccak256("0.14"),
+                keccak256("0.15"),
                 block.chainid,
                 address(machine)
             )

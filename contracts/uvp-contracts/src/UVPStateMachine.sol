@@ -197,6 +197,10 @@ contract UVPStateMachine {
         // 同款建树；空集 = DockMerkle.EMPTY_ROOT，该形态下逐单 executor
         // patch 恒拒（不开候选集的计划没有逐单换人面，fail-closed）。
         bytes32 executorCandidatesRoot;
+        // 出生授权者（10.4 复裁选 A）：outside 出生提交的唯一被授权
+        // submitter，随 publisher 签名进 PlanCommit 承诺。零地址 = 该计划
+        // 关闭 outside 出生通道（dock/order-link/fork 出生不受影响）。
+        address birthAuthorizer;
         uint256 deadline;
     }
 
@@ -245,6 +249,7 @@ contract UVPStateMachine {
         // patch 恒拒。
         bytes32 executorCandidatesRoot;
         address publisher;
+        address birthAuthorizer;
         bytes32[] hookIds;
         mapping(bytes32 hookId => StoredHook hook) hooks;
         mapping(bytes32 signalKey => bytes32[] hookIds) dependencyIndex;
@@ -311,10 +316,13 @@ contract UVPStateMachine {
     error CrossStageDependency(bytes32 signalKey);
     /// 出生通道键查重（U2）：同一出生键不得跨通道（mint∪dock）共用，也
     /// 不得被两条 dock entrance（按 route 钉死的键）共用——任一侧出生事务
-    /// 会把另一侧的出生线一并推 Ready 并物化幻影阶段。mint∪mint 扇出
-    /// （一事实多条 mint 出生线，customs 基准 plan 的现行形态）在同一出生
-    /// 上下文内物化，不在禁止之列。注册边界拒绝（编译器与 Rust 校验同
-    /// 口径，报错键即重复的 signalKey）。
+    /// 会把另一侧的出生线一并推 Ready 并物化幻影阶段。注册边界按臂分界：
+    /// mint∪dock / dock∪dock 与 Rust 校验同口径拒绝；mint∪mint 扇出
+    /// （一事实多条 mint 出生线 / 同 stage 双 mint 钩，customs 基准 plan
+    /// 的现行形态）本闸放行——Rust 编译期拒绝该臂（一事一单在编译期收
+    /// 口，严于链上），是登记在案的分叉现状（constraints 注册表
+    /// birth-channel-key-union-uniqueness 同 stage 臂；运行期单数云 N 单
+    /// /链 1 单）。报错键即重复的 signalKey。
     error DuplicateBirthChannelKey(bytes32 signalKey);
     /// dependencyKeys 必须与 hook 指令集的 SIGNAL 原子键逐点一致：
     /// 未声明的 SIGNAL 键不进 dependencyIndex，该事实到达永不触发求值，
@@ -411,6 +419,7 @@ contract UVPStateMachine {
     error ZeroPlanPublisher();
     error ZeroSignalId();
     error ZeroSourceId();
+    error UnauthorizedBirthSubmitter(address submitter);
     error ZeroStageExecutor();
     error ZeroSubmitter();
     error ZeroTargetStageId();
@@ -1076,8 +1085,9 @@ contract UVPStateMachine {
 
     /// 仅 docking module 可调用。创建独立 linkedOrderId 子订单、
     /// 授权子订单信号提交者、写入 entrance canonical fact（绕过源阶段
-    /// materialization 检查——该事实正是出生事实），再把 entrance hook
-    /// （ORDER_TRIGGER_DOCK）标记 Ready 并物化目标 stage。
+    /// materialization 检查——该事实正是出生事实），entrance hook
+    /// （ORDER_TRIGGER_DOCK）在出生事务内求值落 Ready 并物化目标
+    /// stage——求值未落 Ready 整笔回滚。
     /// entrance 事实的属主阶段由 keeper 携 proof 声明（UB-2：dock 出生
     /// 通道与提交/镜像通道同口径——有词表的 plan 词表内事实必须携有效
     /// attribution，省证事实无法落库绕过 per-stage 计数）。
@@ -1112,8 +1122,8 @@ contract UVPStateMachine {
         _createOrder(request.targetPlanId, request.linkedOrderId, request.creator, request.relayer);
         _authorizeSignalSubmitters(request.targetPlanId, request.linkedOrderId, request.authorizations);
         // dock entrance 出生事务写入：entrance hook（ORDER_TRIGGER_DOCK）的
-        // Ready/物化由出生通道驱动（求值 + _markDockTriggerHookReady 双保
-        // 险，事件口径与既有回放一致）。
+        // Ready/物化由出生事务内求值驱动，_requireDockTriggerHookReady 断言
+        // 求值已落 Ready——未落（Cancelled/Init/Wait）整笔回滚。
         _recordSignal(
             request.targetPlanId,
             request.linkedOrderId,
@@ -1125,14 +1135,7 @@ contract UVPStateMachine {
             true,
             entranceFactStageId
         );
-        _markDockTriggerHookReady(
-            request.targetPlanId,
-            request.linkedOrderId,
-            request.entranceHookId,
-            request.entranceStageId,
-            request.sourceId,
-            request.signalId
-        );
+        _requireDockTriggerHookReady(request.targetPlanId, request.linkedOrderId, request.entranceHookId, request.entranceStageId);
     }
 
     /// 非 entrance 的 dock input 事实写入（kind: signal 端口）。
@@ -1178,6 +1181,10 @@ contract UVPStateMachine {
     function planHookStageId(bytes32 planId, bytes32 hookId) external view returns (bytes32) {
         StoredHook storage hook = _s.plans[planId].hooks[hookId];
         return hook.stageId;
+    }
+
+    function planBirthAuthorizer(bytes32 planId) external view returns (address) {
+        return _s.plans[planId].birthAuthorizer;
     }
 
     /// @notice hook 是否声明依赖事实 (sourceId, signalId)——plan 的 receive
@@ -1796,8 +1803,8 @@ contract UVPStateMachine {
         // 出生锚订单归属（文法 §7.2：出生事实到达只应服务于铸造唯一订单）：
         // order-trigger（mint/dock）hook 的 Ready 与阶段物化只允许由出生
         // 通道驱动——outside 触发在出生事务内对出生事实求值（求值即出生
-        // 闸 _requireTriggerHookReady 的就绪来源），dock entrance 由
-        // _markDockTriggerHookReady 显式置位。普通信号提交（含 dock output
+        // 闸 _requireTriggerHookReady 的就绪来源），dock entrance 求值后由
+        // _requireDockTriggerHookReady 断言。普通信号提交（含 dock output
         // 回写、派生写回）不再求值 order-trigger hook：否则订单 Y（由事实
         // K2 铸出）内提交另一出生线事实 K1 会把 Y 的 K1-mint 钩子推 Ready
         // 并物化 Y 并未由此出生的阶段——每条出生线的阶段只在其自己铸出的
@@ -1851,58 +1858,20 @@ contract UVPStateMachine {
         hook = _validatedOrderTriggerHook(planId, triggerHookId, triggerStageId, HOOK_FLAG_ORDER_TRIGGER_DOCK);
     }
 
-    function _markDockTriggerHookReady(
-        bytes32 planId,
-        bytes32 orderId,
-        bytes32 triggerHookId,
-        bytes32 triggerStageId,
-        bytes32 triggerSourceId,
-        bytes32 triggerSignalId
-    ) private {
-        StoredHook storage hook = _validatedDockTriggerHook(planId, triggerHookId, triggerStageId);
-        _markOrderTriggerHookReady(
-            planId, orderId, hook, triggerHookId, triggerStageId, triggerSourceId, triggerSignalId
-        );
-    }
-
-    function _markOrderTriggerHookReady(
-        bytes32 planId,
-        bytes32 orderId,
-        StoredHook storage hook,
-        bytes32 triggerHookId,
-        bytes32 triggerStageId,
-        bytes32 triggerSourceId,
-        bytes32 triggerSignalId
-    ) private {
-        Order storage order = _s.orders[planId][orderId];
-        HookRuntime storage runtime = order.hookRuntimes[triggerHookId];
-        if (!runtime.exists) {
-            _initializeHookRuntime(order, triggerHookId);
-        }
-        // 终态守卫：出生事务内 _recordSignal 已先对 entrance hook
-        // 求值（evaluateOrderTriggerHooks=true），矛盾条件（如 K & ~K）会把
-        // runtime 推到 Cancelled——此处不得覆写。镜像 outside 出生路径的
-        // 断言（_requireTriggerHookReady：非 Ready 即 InvalidTriggerHook，
-        // 整笔出生回滚），而不是把 Cancelled 静默改成 Ready 物化幻影阶段。
-        // Ready 是幂等终态：求值路径已发 HookReady 并物化，下方守卫天然
-        // 无副作用。
-        if (runtime.status == HookStatus.Cancelled) {
+    /// 断言式出生闸（dock 路径；镜像库 L_requireTriggerHookReady）：出生
+    /// 事务内 _recordSignal 已先对 entrance hook 求值（evaluateOrderTriggerHooks
+    /// =true），order-trigger hook 落 Ready 必已 readyEmitted/物化——本函数
+    /// 只断言求值结果，不写任何状态。求值未落 Ready（矛盾条件推 Cancelled、
+    /// 多原子触发线部分交付停在 Init/Wait）一律整笔回滚，不把未就绪覆写
+    /// 成 Ready 物化幻影阶段；与 outside 出生路径同判。
+    function _requireDockTriggerHookReady(bytes32 planId, bytes32 orderId, bytes32 triggerHookId, bytes32 triggerStageId)
+        private
+        view
+    {
+        _validatedDockTriggerHook(planId, triggerHookId, triggerStageId);
+        HookRuntime storage runtime = _s.orders[planId][orderId].hookRuntimes[triggerHookId];
+        if (!runtime.exists || runtime.status != HookStatus.Ready || !runtime.readyEmitted) {
             revert InvalidTriggerHook(triggerHookId);
-        }
-
-        HookStatus previousStatus = runtime.status;
-        uint64 previousDueAt = runtime.dueAt;
-        runtime.status = HookStatus.Ready;
-        runtime.dueAt = 0;
-
-        if (previousStatus != HookStatus.Ready || previousDueAt != 0) {
-            emit HookStatusChanged(planId, orderId, triggerHookId, previousStatus, HookStatus.Ready, 0);
-        }
-
-        if (!runtime.readyEmitted) {
-            runtime.readyEmitted = true;
-            _materializeStage(planId, orderId, triggerStageId, triggerHookId, triggerSourceId, triggerSignalId);
-            emit HookReady(planId, orderId, triggerHookId, hook.stageId, hook.hookName);
         }
     }
 

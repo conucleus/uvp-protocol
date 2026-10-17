@@ -297,7 +297,7 @@ test("chain-mode keeps AND delayed branches waiting until the latest live timer"
 
 test("chain replay filters non-observable HookStatusChanged transitions (golden alignment)", async () => {
   // 合约在 HookReady 旁恒发 HookStatusChanged(→Ready)（_evaluateHook /
-  // _markOrderTriggerHookReady），oracle 的 observed 面只产生 wait/cxl +
+  // L_markTriggerHookReady），oracle 的 observed 面只产生 wait/cxl +
   // HookReady——喂进 →reg/→init 状态变化必然 missing-observed。normalize
   // 边界必须把它们滤掉；golden 流注入后回放仍须全绿。
   const events = await loadChainEvents();
@@ -450,8 +450,8 @@ test("chain replay derives order-link birth facts from HookReady", () => {
 });
 
 test("chain replay exposes duplicated birth HookReady as a mismatch", () => {
-  // 合约 HookReady 只在 !readyEmitted 时发出（_markOrderTriggerHookReady），
-  // 逐字重复的出生 HookReady 是流异常——native 推导只接受第一次断言，
+  // 合约 HookReady 只在 !readyEmitted 时发出（_evaluateHook /
+  // L_markTriggerHookReady），逐字重复的出生 HookReady 是流异常——native 推导只接受第一次断言，
   // 第二条必须以 missing-observed 暴露，不得静默吸收。
   const planId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000b011";
   const hookId: `0x${string}` = "0x000000000000000000000000000000000000000000000000000000000000b111";

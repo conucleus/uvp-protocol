@@ -329,7 +329,7 @@ describe("protocol bindings", () => {
     assert.deepEqual(typedData, {
       domain: {
         name: "UVPStateMachine",
-        version: "0.14",
+        version: "0.15",
         chainId: 31337,
         verifyingContract,
       },
@@ -395,6 +395,7 @@ describe("protocol bindings", () => {
       dockRoutesRoot: planId,
       executorCandidatesRoot: idempotencyKey,
       dockInterfaceRoot: originPlanId,
+      birthAuthorizer: submitter,
       deadline,
     });
     const signature = await account.signTypedData(
@@ -411,6 +412,7 @@ describe("protocol bindings", () => {
         "dockRoutesRoot",
         "dockInterfaceRoot",
         "executorCandidatesRoot",
+        "birthAuthorizer",
         "deadline",
       ],
     );
@@ -1817,7 +1819,7 @@ describe("handwritten ABI entries stay identical to the frozen fixtures", () => 
     "../../../contracts/uvp-contracts/fixtures",
   );
   const handwrittenToFixture: readonly [readonly unknown[], string][] = [
-    [STATE_MACHINE_ABI, "uvp-state-machine.v0.14.json"],
+    [STATE_MACHINE_ABI, "uvp-state-machine.v0.15.json"],
     [ORDER_LINK_MODULE_ABI, "uvp-order-link-module.v0.3.json"],
     [STAGE_PATCH_MODULE_ABI, "uvp-stage-patch-module.v0.5.json"],
     [DERIVED_SIGNAL_MODULE_ABI, "uvp-derived-signal-module.v0.4.json"],

@@ -26,12 +26,10 @@ uint256 constant _MAX_PLAN_DEPENDENCIES = 1024;
 bytes32 constant _EIP712_DOMAIN_TYPEHASH =
     keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 bytes32 constant _EIP712_NAME_HASH = keccak256("UVPStateMachine");
-// 0.13 → 0.14（Wave1 合约批）：submitSignal/submitSignalFor/
-// submitSignalFromModule/submitDockedSignal 摘参收敛、
-// submitDerivedSignalFromModule 换参、StageExecutorNotAssigned/
-// DockSelfAttach 新 error、executorCandidateStages 落库。EIP-712 域
-// 版本随公共签名面（submit digest 结构变化）同步升位。
-bytes32 constant _EIP712_VERSION_HASH = keccak256("0.14");
+// 0.14 → 0.15（出生授权闸批）：PlanCommit 增 birthAuthorizer 承诺域
+// （outside 出生只认计划授权的 submitter，10.4 复裁选 A），commit digest
+// 结构变化。EIP-712 域版本随公共签名面同步升位。
+bytes32 constant _EIP712_VERSION_HASH = keccak256("0.15");
 
 // runtime hash 覆盖全部六个承诺域：hooks、能力树、两条 dock 树、执行者
 // 候选集树——不留"产物有、commitment 无"的悬空状态。v3 → v4：编码追加了
@@ -39,7 +37,7 @@ bytes32 constant _EIP712_VERSION_HASH = keccak256("0.14");
 bytes32 constant _PLAN_RUNTIME_HASH_DOMAIN = keccak256("uvp.plan.runtime.v4");
 bytes32 constant _PLAN_ID_HASH_DOMAIN = keccak256("uvp.plan.id.v1");
 bytes32 constant _PLAN_COMMIT_TYPEHASH = keccak256(
-    "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,uint256 deadline)"
+    "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
 );
 // 执行者候选集叶域（UB-36②③）：叶 = keccak256(abi.encodePacked(
 // _EXECUTOR_CANDIDATE_LEAF_DOMAIN, stageId, executor))，DockMerkle 同款

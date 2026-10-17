@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   compileZhixuOnchainHookPlan,
   compileZhixuRegisterPlanArgs,
+  KNOWN_FIELDS,
   loadZhixuDefinition,
   parseZhixuDefinition,
   ZhixuLoadError
@@ -339,4 +341,41 @@ test("rejects spec.stages that are missing or malformed (no silent pass-through)
       ),
     /spec\.stages\[0\] must be an object/,
   );
+});
+
+/**
+ * 定义结构体字段闭集的跨语言钉死（TS 线）：与 uvp-core 仓
+ * `crates/uvp-model/tests/field_set_parity.rs`、miniprogram 仓
+ * `uvp-utils/api/core/v0` 的 json tag 反射测试对同一份
+ * `uvp-core/fixtures/closed-sets/fields.v1.json` 做逐元素相等比对——
+ * KNOWN_FIELDS 是装载边未知字段拒绝的唯一词表，任一侧增删字段都会让
+ * 至少一侧的测试报警。语料文件由 uvp-core 仓持有（跨仓相对 URL 消费，
+ * 与 semantics-corpus.test.ts 同范式）。
+ */
+test("KNOWN_FIELDS match the shared uvp-core field-set corpus", () => {
+  const fieldsUrl = new URL(
+    "../../../../uvp-core/fixtures/closed-sets/fields.v1.json",
+    import.meta.url,
+  );
+  const corpus = JSON.parse(readFileSync(fieldsUrl, "utf8")) as {
+    readonly schemaVersion: string;
+    readonly [group: string]: unknown;
+  };
+  assert.equal(corpus.schemaVersion, "uvp.fieldSets.v1");
+
+  const groups = Object.keys(KNOWN_FIELDS);
+  assert.deepEqual(
+    [...groups].sort(),
+    Object.keys(corpus).filter((key) => key !== "schemaVersion" && key !== "note").sort(),
+    "KNOWN_FIELDS 分组与语料分组分叉：增删结构体必须同改两侧",
+  );
+  for (const group of groups) {
+    assert.deepEqual(
+      [...KNOWN_FIELDS[group]],
+      corpus[group] as readonly string[],
+      `${group}: 字段闭集与钉死语料分叉`,
+    );
+    // 闭集是集合语义：重复成员会掩盖"集合同源"的比对。
+    assert.equal(new Set(KNOWN_FIELDS[group]).size, KNOWN_FIELDS[group].length, group);
+  }
 });
