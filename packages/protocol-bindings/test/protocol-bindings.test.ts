@@ -1819,11 +1819,11 @@ describe("handwritten ABI entries stay identical to the frozen fixtures", () => 
     "../../../contracts/uvp-contracts/fixtures",
   );
   const handwrittenToFixture: readonly [readonly unknown[], string][] = [
-    [STATE_MACHINE_ABI, "uvp-state-machine.v0.15.json"],
+    [STATE_MACHINE_ABI, "uvp-state-machine.v0.16.json"],
     [ORDER_LINK_MODULE_ABI, "uvp-order-link-module.v0.3.json"],
     [STAGE_PATCH_MODULE_ABI, "uvp-stage-patch-module.v0.5.json"],
-    [DERIVED_SIGNAL_MODULE_ABI, "uvp-derived-signal-module.v0.4.json"],
-    [DOCKING_MODULE_ABI, "uvp-docking-module.v4.6.json"],
+    [DERIVED_SIGNAL_MODULE_ABI, "uvp-derived-signal-module.v0.5.json"],
+    [DOCKING_MODULE_ABI, "uvp-docking-module.v4.7.json"],
   ];
   for (const [abi, fixtureName] of handwrittenToFixture) {
     it(`${fixtureName}: every handwritten entry matches the frozen signature`, () => {

@@ -2755,6 +2755,18 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "type": "address",
         "indexed": false,
         "internalType": "address"
+      },
+      {
+        "name": "forkPayloadHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "replayedFactKeys",
+        "type": "bytes32[]",
+        "indexed": false,
+        "internalType": "bytes32[]"
       }
     ],
     "anonymous": false
@@ -2959,6 +2971,12 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
+      },
+      {
+        "name": "birthAuthorizer",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -3077,6 +3095,12 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "type": "address",
         "indexed": false,
         "internalType": "address"
+      },
+      {
+        "name": "factStageId",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -3334,6 +3358,22 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     "type": "error",
     "name": "EmptyPlan",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ExecutorCandidatesRootMismatch",
+    "inputs": [
+      {
+        "name": "expectedRoot",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "actualRoot",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
   },
   {
     "type": "error",
@@ -3827,6 +3867,17 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
+    "name": "TooManyHooksPerDependencyKey",
+    "inputs": [
+      {
+        "name": "signalKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "UnauthorizedBirthSubmitter",
     "inputs": [
       {
@@ -4056,12 +4107,18 @@ export const SIGNAL_SUBMITTED_ABI = [
         "type": "address",
         "indexed": false,
         "internalType": "address"
+      },
+      {
+        "name": "factStageId",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
   }
 ] as const;
-export const SIGNAL_SUBMITTED_TOPIC = "0x41c82bf034d8a61d15b79fcac36c465b2655b5bb3f33fb4c16f01c174103acf3" as Hex;
+export const SIGNAL_SUBMITTED_TOPIC = "0x4a223dcfd5862d1c1c699ffb1525d1cbba6736d251b8d2c185f43797017d00e6" as Hex;
 
 export const HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
 export const HOOK_FLAG_ORDER_TRIGGER_DOCK = 2;

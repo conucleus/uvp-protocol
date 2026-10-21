@@ -7,6 +7,7 @@ import {UVPDockingModule} from "../src/UVPDockingModule.sol";
 import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
+import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
 
 /// 测试侧窄 Vm 接口（不 vendor forge-std）：本 forge 版本已移除
@@ -121,7 +122,7 @@ contract Handler {
         machine.setDockingModule(address(docking));
         machine.setPlanMetadataModule(address(planMetadata));
         machine.setOrderLinkModule(address(orderLink));
-        machine.setLens(address(0x1234));
+        machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.freezeModules();
 
         // 信号池：[0] 出生信号，[1..8] 事实信号（互不共享键：出生信号是

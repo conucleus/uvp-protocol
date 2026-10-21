@@ -329,6 +329,9 @@ contract UVPStateMachine {
     /// hook 永久 Init 且零告警；多声明的键只是死索引。注册边界拒绝。
     error HookDependencyKeyMismatch(bytes32 hookId);
     error TooManyDependencies();
+    /// 单依赖键挂靠 hook 数超过 _MAX_HOOKS_PER_DEPENDENCY_KEY：该键每次
+    /// 事实提交全量循环求值，扇出必须注册期封顶。
+    error TooManyHooksPerDependencyKey(bytes32 signalKey);
     error InvalidSignalSignature(address expectedSigner, address recoveredSigner);
     error InvalidSignalSignatureLength(uint256 length);
     error InvalidSignalCapability(bytes32 planId, bytes32 sourceId, bytes32 signalId);
@@ -362,6 +365,9 @@ contract UVPStateMachine {
     // relayer 无法区分"重复提交 hooks"与"重复 finalize 元数据"。
     error PlanAlreadyFinalized();
     error HooksHashMismatch(bytes32 expectedHash, bytes32 actualHash);
+    /// commitPlan 从 calldata 候选数组重算的 root 与签名承诺不一致：候选
+    /// 数组是被签名钉死的材料，不是可替换的提交参数。
+    error ExecutorCandidatesRootMismatch(bytes32 expectedRoot, bytes32 actualRoot);
     error PlanNotCommitted();
     error PlanNotFinalized();
     error SignalAlreadyExists();
@@ -551,7 +557,10 @@ contract UVPStateMachine {
         bytes32 dockInterfaceRoot,
         // 执行者候选集树根（UB-36②③）：第六承诺域随事件广播，索引器/回放
         // 方不必反查 plan 存储即可重建 patch 候选面。
-        bytes32 executorCandidatesRoot
+        bytes32 executorCandidatesRoot,
+        // 出生授权人（B-03）：outside 出生闸的授权地址随事件广播，授权面
+        // 全量重建不必反查 planBirthAuthorizer view。
+        address birthAuthorizer
     );
     event PlanFinalized(bytes32 indexed planId, bytes32 indexed planHash, bytes32 capabilitiesRoot);
     event PlanRegistered(bytes32 indexed planId, bytes32 planHash, uint256 hookCount);
@@ -575,7 +584,10 @@ contract UVPStateMachine {
         bytes32 signalId,
         bytes32 payloadHash,
         bytes32 idempotencyKey,
-        address submitter
+        address submitter,
+        // 事实归属阶段（B-03）：per-stage 归属（0 = 词表外事实）随事件广播，
+        // 索引器重建 per-stage 计数不必反查 stageSignalState view。
+        bytes32 factStageId
     );
     event StageMaterialized(
         bytes32 indexed planId,
@@ -630,7 +642,15 @@ contract UVPStateMachine {
         bytes32 indexed parentOrderId,
         bytes32 approvalSourceId,
         bytes32 approvalSignalId,
-        address initiator
+        address initiator,
+        // fork 单号派生载荷（B-03）：forkedOrderId =
+        // forkOrderIdFor(planId, parentOrderId, forkPayloadHash)，血缘链
+        // 重算/校验不必反查 view。
+        bytes32 forkPayloadHash,
+        // 重放事实键清单（B-03）：keccak256(abi.encode(sourceId, signalId))
+        //（与 _signalKey 同式），fork 重放事实与新生事实凭本清单区分——
+        // 清单内键的 SignalSubmitted 是父单事实重放，清单外是 fork 单新生。
+        bytes32[] replayedFactKeys
     );
 
     bytes32 public constant STAGE_PATCH_MODULE_ID = keccak256("uvp.module.stage_patch.v1");
@@ -713,6 +733,11 @@ contract UVPStateMachine {
             revert ModulesFrozen();
         }
         if (moduleAddress == address(0) || moduleAddress == address(this)) {
+            revert InvalidModuleAddress();
+        }
+        // 模块槽必须指向有代码的地址（extcodesize）：指 EOA 会让该模块面
+        // 永久哑火，freeze 前后都无对冲。
+        if (moduleAddress.code.length == 0) {
             revert InvalidModuleAddress();
         }
         emit StateMachineModuleSet(moduleId, previousModule, moduleAddress);
@@ -856,7 +881,7 @@ contract UVPStateMachine {
         SignalAuthorization[] calldata authorizations
     ) external returns (bytes32 forkedOrderId) {
         forkedOrderId = UVPPlanRegistration.forkOrderGate(
-            _s, planId, parentOrderId, forkPayloadHash, approvalSourceId, approvalSignalId, authorizations
+            _s, planId, parentOrderId, forkPayloadHash, approvalSourceId, approvalSignalId, birthFacts, authorizations
         );
         UVPPlanRegistration.forkOrderReplay(_s, planId, parentOrderId, forkedOrderId, birthFacts);
     }
@@ -1306,6 +1331,13 @@ contract UVPStateMachine {
         bool currentOrderFact = fromPlanId == planId && fromOrderId == orderId;
         bytes32 sourceStageId = currentOrderFact ? stageId : bytes32(0);
         _requireSourceStageReady(planId, orderId, sourceStageId);
+        // 幂等吸收（与普通 submitSignal 的 first-win 同口径）：已落库的重复
+        // 派生提交直接吸收返回，at-least-once 重试不得裸 revert
+        // SignalAlreadyExists。授权与阶段门保持在吸收之前（与普通提交的
+        // 闸序一致）。
+        if (_hasSignal(planId, orderId, sourceId, signalId)) {
+            return;
+        }
         _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false, sourceStageId);
     }
 
@@ -1434,7 +1466,9 @@ contract UVPStateMachine {
             _recordStageSignal(planId, orderId, factStageId, submitter);
         }
 
-        emit SignalSubmitted(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter);
+        emit SignalSubmitted(
+            planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, factStageId
+        );
         _evaluateAffectedHooks(planId, orderId, key, sourceId, signalId, evaluateOrderTriggerHooks);
     }
 

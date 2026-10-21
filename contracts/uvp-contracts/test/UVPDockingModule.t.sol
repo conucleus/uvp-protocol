@@ -5,6 +5,7 @@ import {UVPStateMachine} from "../src/UVPStateMachine.sol";
 import {UVPDockingModule} from "../src/UVPDockingModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
+import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
 import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {DockMerkle} from "../src/libraries/DockMerkle.sol";
@@ -86,7 +87,7 @@ contract UVPDockingModuleTest {
     bytes32 private constant DOMAIN_ROUTE_ID = keccak256("UVP_DOCK_ROUTE_ID_V1");
     bytes32 private constant DOMAIN_INPUT_BINDING = keccak256("UVP_DOCK_INPUT_BINDING_V2");
     bytes32 private constant DOMAIN_OUTPUT_BINDING = keccak256("UVP_DOCK_OUTPUT_BINDING_V2");
-    bytes32 private constant DOMAIN_ROUTE = keccak256("UVP_DOCK_ROUTE_V2");
+    bytes32 private constant DOMAIN_ROUTE = keccak256("UVP_DOCK_ROUTE_V3");
     bytes32 private constant DOMAIN_DOCK_INSTANCE = keccak256("UVP_DOCK_INSTANCE_V2");
     bytes32 private constant DOMAIN_DOCK_ORDER = keccak256("UVP_DOCK_ORDER_V1");
     bytes32 private constant DOCK_ORDER_NAMESPACE_MASK = bytes32(uint256(1) << 255);
@@ -190,7 +191,10 @@ contract UVPDockingModuleTest {
         docking = _docking();
         runtimeDomain = keccak256(abi.encode(DOMAIN_RUNTIME_EIP155, block.chainid, address(machine)));
         _computeStaticRouteParts();
+        // B-01：routeHash 承诺目标 planId——目标 plan 先注册，路由哈希按
+        // 注册身份计算，父 plan 再提交路由叶。
         targetPlanId = _registerTargetPlan();
+        _computeRouteHashes();
         // 父 plan 的 dockRoutesRoot 必须提交 routeHash（new + existing 两叶）。
         parentPlanId = _registerParentPlan();
         PARENT_ORDER_ID = machine.triggerOrderIdFor(parentPlanId, PARENT_STAGE, SIGNAL_START, PAYLOAD);
@@ -255,16 +259,129 @@ contract UVPDockingModuleTest {
         assertTrue(_open());
     }
 
-    /// 深度上限：父订单真实 dock 深度达 MAX_DOCK_DEPTH 后开仓拒绝。
-    /// 深度账本按存储布局推 slot（dockDepthOfOrder 是模块第 8 个存储变量，
-    /// slot 7）；若布局漂移写入落空，本测试会响亮地变成 DockDepthMismatch。
-    function testRejectsOpenAtMaxDockDepth() public {
-        uint8 maxDepth = docking.MAX_DOCK_DEPTH();
+    /// B-01 目标侧同意门：空同意且调用方非目标 plan publisher → 拒。
+    function testOpenRejectsMissingTargetConsent() public {
+        UVPDockingModule.OpenDockRequestV2 memory request = _openRequest(0);
+        _expect(
+            abi.encodeWithSelector(
+                UVPDockingModule.DockOpenConsentRequired.selector, request.dockInstanceId, address(this)
+            )
+        );
+        docking.openDockedOrder(
+            _openCall(
+                request,
+                _openRouteProof(),
+                _interfaceProof(),
+                _inputs(),
+                _outputs(),
+                _openAuth(_permitEmpty(), _consentEmpty()),
+                _outputAttributionsFor(targetPlanId, _outputs()),
+                _coreEntranceFactAttribution()
+            )
+        );
+    }
+
+    /// B-01 同意签名权威：非目标 plan publisher 的签名 → 拒。
+    function testOpenRejectsWrongConsentSigner() public {
+        UVPDockingModule.OpenDockRequestV2 memory request = _openRequest(0);
+        UVPDockingModule.DockTargetConsentV1 memory consent = _consentFor(request);
+        (uint8 v, bytes32 r, bytes32 sv) = vm.sign(PARENT_PUBLISHER_KEY, _consentDigestFor(request, consent));
+        consent.signature = abi.encodePacked(r, sv, v);
+        _expect(
+            abi.encodeWithSelector(
+                UVPDockingModule.DockPermitInvalidSigner.selector,
+                vm.addr(TARGET_PUBLISHER_KEY),
+                vm.addr(PARENT_PUBLISHER_KEY)
+            )
+        );
+        docking.openDockedOrder(
+            _openCall(
+                request,
+                _openRouteProof(),
+                _interfaceProof(),
+                _inputs(),
+                _outputs(),
+                _openAuth(_permitEmpty(), consent),
+                _outputAttributionsFor(targetPlanId, _outputs()),
+                _coreEntranceFactAttribution()
+            )
+        );
+    }
+
+    /// B-01 身份腿：调用方即目标 plan publisher（new 路由的子单 creator
+    /// 同源）时空同意放行。
+    function testOpenAllowsPublisherAsOpenerWithoutSignature() public {
+        vm.prank(vm.addr(TARGET_PUBLISHER_KEY));
+        assertTrue(
+            docking.openDockedOrder(
+                _openCall(
+                    _openRequest(0),
+                    _openRouteProof(),
+                    _interfaceProof(),
+                    _inputs(),
+                    _outputs(),
+                    _openAuth(_permitEmpty(), _consentEmpty()),
+                    _outputAttributionsFor(targetPlanId, _outputs()),
+                    _coreEntranceFactAttribution()
+                )
+            )
+        );
+    }
+
+    /// B-01 镜像计划不可抢注：路由叶承诺 targetPlanId——目标侧换成复制了
+    /// 同接口承诺的镜像 plan（variantPlan，同 publisher 注册）后，即便携
+    /// 该 plan publisher 的同意签名，routeHash 重算即失配拒绝。
+    function testOpenRejectsMirrorPlanDespiteConsent() public {
+        bytes32 variantPlan = _registerTargetPlanWithoutPendingCapability();
+        UVPDockingModule.DockOutputBindingArg[] memory outputs = _outputs();
+        RogueRoute memory route = _registerRogueRouteParentTo(
+            targetPlanId, PARENT_EXEC_HOOK, TARGET_SOURCE, TARGET_SIGNAL, outputs
+        );
+        UVPDockingModule.OpenDockRequestV2 memory request = _rogueOpenRequestTo(route, variantPlan);
+        bytes32[] memory outputLeaves = new bytes32[](outputs.length);
+        for (uint256 i = 0; i < outputs.length; i++) {
+            outputLeaves[i] = outputs[i].bindingHash;
+        }
+        bytes32 recomputed = keccak256(
+            abi.encode(
+                DOMAIN_ROUTE,
+                localDefinitionRef,
+                targetDefinitionRef,
+                variantPlan,
+                INTERFACE_NAME_ID,
+                uint256(0),
+                DockMerkle.root(_single(route.entranceBindingHash)),
+                DockMerkle.root(outputLeaves)
+            )
+        );
+        _expect(
+            abi.encodeWithSelector(UVPDockingModule.DockRouteLeafMismatch.selector, route.routeHash, recomputed)
+        );
+        docking.openDockedOrder(
+            _openCall(
+                request,
+                route.routeProof,
+                _interfaceProof(),
+                _rogueInputs(route),
+                outputs,
+                _openAuth(_permitEmpty(), _consentFor(request)),
+                _outputAttributionsFor(variantPlan, outputs),
+                _coreEntranceFactAttribution()
+            )
+        );
+    }
+
+    /// 边数上限（B-02）：父订单真实 dock 边数账本达 MAX_DOCK_EDGES 后
+    /// 开仓拒绝。账本按存储布局推 slot（dockEdgeCountOfOrder 是模块第 8
+    /// 个存储变量，slot 7）；若布局漂移写入落空，本测试会响亮地变成
+    /// DockDepthMismatch。
+    function testRejectsOpenAtMaxDockEdges() public {
+        uint8 maxEdges = docking.MAX_DOCK_EDGES();
         bytes32 innerSlot = keccak256(abi.encode(parentPlanId, uint256(7)));
-        bytes32 depthSlot = keccak256(abi.encode(PARENT_ORDER_ID, innerSlot));
-        vm.store(address(docking), depthSlot, bytes32(uint256(uint256(maxDepth))));
-        _expect(abi.encodeWithSelector(UVPDockingModule.DockDepthExceeded.selector, maxDepth, maxDepth));
-        _openRaw(_openRequest(maxDepth));
+        bytes32 edgeSlot = keccak256(abi.encode(PARENT_ORDER_ID, innerSlot));
+        vm.store(address(docking), edgeSlot, bytes32(uint256(uint256(maxEdges))));
+        _expect(abi.encodeWithSelector(UVPDockingModule.DockDepthExceeded.selector, maxEdges, maxEdges));
+        _openRaw(_openRequest(maxEdges));
     }
 
     /// A linkedOrderId is disclosed in the open calldata.  Outside trigger
@@ -373,7 +490,7 @@ contract UVPDockingModuleTest {
 
     /// 同一本地事实键的多条 output 绑定（不同端口 → 不同 bindingHash，链上
     /// 无去重）：首条交付后，兄弟绑定镜像同一本地事实键按 payload 幂等吸收
-    /// （return false），不再永久撞 SignalAlreadyExists；交付账本只记实际
+    /// （等价交付返回 true），不再永久撞 SignalAlreadyExists；交付账本只记实际
     /// 交付过的绑定。
     function testSiblingOutputBindingOnSameLocalKeyIsAbsorbed() public {
         UVPDockingModule.DockOutputBindingArg[] memory outputs = new UVPDockingModule.DockOutputBindingArg[](2);
@@ -423,14 +540,16 @@ contract UVPDockingModuleTest {
 
         assertTrue(
             docking.openDockedOrder(
-                _rogueOpenRequest(route),
-                route.routeProof,
-                _interfaceProof(),
-                _rogueInputs(route),
-                outputs,
-                _permitEmpty(),
-                _outputAttributionsFor(targetPlanId, outputs),
-                _coreEntranceFactAttribution()
+                _openCall(
+                    _rogueOpenRequest(route),
+                    route.routeProof,
+                    _interfaceProof(),
+                    _rogueInputs(route),
+                    outputs,
+                    _openAuth(_permitEmpty(), _consentFor(_rogueOpenRequest(route))),
+                    _outputAttributionsFor(targetPlanId, outputs),
+                    _coreEntranceFactAttribution()
+                )
             )
         );
 
@@ -455,7 +574,7 @@ contract UVPDockingModuleTest {
             targetPayload,
             targetFactSubmitter
         );
-        assertFalse(docking.submitDockedSignal(route.dockInstanceId, progressBinding, _coreNoAttribution()));
+        assertTrue(docking.submitDockedSignal(route.dockInstanceId, progressBinding, _coreNoAttribution()));
         assertTrue(docking.dockOutputDelivered(route.dockInstanceId, progressBinding));
         assertTrue(docking.dockOutputDelivered(route.dockInstanceId, doneBinding));
         // 账本置位后的重复提交走交付账本短路：不再发任何事件。
@@ -526,6 +645,7 @@ contract UVPDockingModuleTest {
                 DOMAIN_ROUTE,
                 localDefinitionRef,
                 targetDefinitionRef,
+                targetPlanId,
                 INTERFACE_NAME_ID,
                 uint256(0),
                 inputsRoot,
@@ -536,14 +656,16 @@ contract UVPDockingModuleTest {
             abi.encodeWithSelector(UVPDockingModule.DockRouteLeafMismatch.selector, openRouteHash, tamperedRouteHash)
         );
         docking.openDockedOrder(
-            _openRequest(0),
-            _openRouteProof(),
-            _interfaceProof(),
-            _inputs(),
-            outputs,
-            _permitEmpty(),
-            _outputAttributionsFor(targetPlanId, outputs),
-            _coreNoAttribution()
+            _openCall(
+                _openRequest(0),
+                _openRouteProof(),
+                _interfaceProof(),
+                _inputs(),
+                outputs,
+                _openAuth(_permitEmpty(), _consentFor(_openRequest(0))),
+                _outputAttributionsFor(targetPlanId, outputs),
+                _coreNoAttribution()
+            )
         );
     }
 
@@ -554,7 +676,9 @@ contract UVPDockingModuleTest {
         UVPDockingModule.OpenDockRequestV2 memory request = _openRequest(0);
         request.routeHash = existingRouteHash;
         _expect(
-            abi.encodeWithSelector(UVPDockingModule.DockRouteLeafMismatch.selector, existingRouteHash, openRouteHash)
+            abi.encodeWithSelector(UVPDockingModule.DockRouteLeafMismatch.selector,
+                existingRouteHash,
+                openRouteHash)
         );
         _openRawWithProof(request, _existingRouteProof());
     }
@@ -568,7 +692,9 @@ contract UVPDockingModuleTest {
         );
         _expect(
             abi.encodeWithSelector(
-                UVPDockingModule.DockRouteLeafMismatch.selector, bytes32(uint256(0xE711)), recomputedLinked
+                UVPDockingModule.DockRouteLeafMismatch.selector,
+                bytes32(uint256(0xE711)),
+                recomputedLinked
             )
         );
         _openRaw(request);
@@ -580,10 +706,13 @@ contract UVPDockingModuleTest {
         UVPDockingModule.OpenDockRequestV2 memory request = _openRequest(0);
         bytes32 rogueUid = keccak256("zx-0000000000000000000000000000dead");
         request.targetUidId = rogueUid;
-        bytes32 derivedFromRogue = keccak256(abi.encode(DOMAIN_DEFINITION_REF, rogueUid));
+        bytes32 derivedFromRogue = keccak256(abi.encode(DOMAIN_DEFINITION_REF,
+                rogueUid));
         _expect(
             abi.encodeWithSelector(
-                UVPDockingModule.DockTargetIdentityMismatch.selector, targetDefinitionRef, derivedFromRogue
+                UVPDockingModule.DockTargetIdentityMismatch.selector,
+                targetDefinitionRef,
+                derivedFromRogue
             )
         );
         _openRaw(request);
@@ -593,7 +722,8 @@ contract UVPDockingModuleTest {
     function testRejectsInterfaceWithoutNewMode() public {
         UVPDockingModule.DockInterfaceProofV2 memory proof = _interfaceProof();
         proof.commitment.orderModesWord = 2; // existing-only
-        _expect(abi.encodeWithSelector(UVPDockingModule.DockInterfaceModeUnsupported.selector, 2));
+        _expect(abi.encodeWithSelector(UVPDockingModule.DockInterfaceModeUnsupported.selector,
+                2));
         _openWith(_openRouteProof(), proof);
     }
 
@@ -602,16 +732,20 @@ contract UVPDockingModuleTest {
         UVPDockingModule.DockInputBindingArg[] memory inputs = new UVPDockingModule.DockInputBindingArg[](2);
         inputs[0] = _inputs()[0];
         inputs[1] = inputs[0];
-        _expect(abi.encodeWithSelector(UVPDockingModule.DockBindingCountInvalid.selector, 2, 1));
+        _expect(abi.encodeWithSelector(UVPDockingModule.DockBindingCountInvalid.selector,
+                2,
+                1));
         docking.openDockedOrder(
-            _openRequest(0),
-            _openRouteProof(),
-            _interfaceProof(),
-            inputs,
-            _outputs(),
-            _permitEmpty(),
-            _outputAttributionsFor(targetPlanId, _outputs()),
-            _coreEntranceFactAttribution()
+            _openCall(
+                _openRequest(0),
+                _openRouteProof(),
+                _interfaceProof(),
+                inputs,
+                _outputs(),
+                _openAuth(_permitEmpty(), _consentFor(_openRequest(0))),
+                _outputAttributionsFor(targetPlanId, _outputs()),
+                _coreEntranceFactAttribution()
+            )
         );
     }
 
@@ -625,7 +759,8 @@ contract UVPDockingModuleTest {
         );
         UVPDockingModule.DockInterfaceProofV2 memory proof = _interfaceProof();
         proof.entranceLeaf = leaf;
-        _openWith(_openRouteProof(), proof);
+        _openWith(_openRouteProof(),
+                proof);
     }
 
     function testRejectsDepthBeyondLimit() public {
@@ -675,17 +810,20 @@ contract UVPDockingModuleTest {
     /// 出生锚可绑兄弟 hook，冒名者借就绪 hook 提前开仓——恒等校验拒绝。
     function testOpenRejectsEntranceHookImpersonation() public {
         RogueRoute memory route =
-            _registerRogueRouteParent(PARENT_SIBLING_HOOK, TARGET_SOURCE, TARGET_SIGNAL, _outputs());
+            _registerRogueRouteParent(PARENT_SIBLING_HOOK,
+                TARGET_SOURCE,
+                TARGET_SIGNAL,
+                _outputs());
         UVPDockingModule.OpenDockRequestV2 memory request = _rogueOpenRequest(route);
         // 冒名：请求声明就绪的 EXEC hook，出生锚实际绑未就绪的兄弟 hook。
         request.localHookId = PARENT_EXEC_HOOK;
         UVPDockingModule.DockInputBindingArg[] memory inputs = new UVPDockingModule.DockInputBindingArg[](1);
         inputs[0] = UVPDockingModule.DockInputBindingArg({
             localHookId: PARENT_SIBLING_HOOK,
-            portKey: ENTRANCE_PORT,
-            targetSourceId: TARGET_SOURCE,
-            targetSignalId: TARGET_SIGNAL,
-            bindingHash: route.entranceBindingHash
+                portKey: ENTRANCE_PORT,
+                targetSourceId: TARGET_SOURCE,
+                targetSignalId: TARGET_SIGNAL,
+                bindingHash: route.entranceBindingHash
         });
         _expect(
             abi.encodeWithSelector(
@@ -693,14 +831,16 @@ contract UVPDockingModuleTest {
             )
         );
         docking.openDockedOrder(
-            request,
-            route.routeProof,
-            _interfaceProof(),
-            inputs,
-            _outputs(),
-            _permitEmpty(),
-            _outputAttributionsFor(targetPlanId, _outputs()),
-            _coreEntranceFactAttribution()
+            _openCall(
+                request,
+                route.routeProof,
+                _interfaceProof(),
+                inputs,
+                _outputs(),
+                _openAuth(_permitEmpty(), _consentFor(request)),
+                _outputAttributionsFor(targetPlanId, _outputs()),
+                _coreEntranceFactAttribution()
+            )
         );
     }
 
@@ -728,14 +868,16 @@ contract UVPDockingModuleTest {
             )
         );
         docking.openDockedOrder(
-            request,
-            route.routeProof,
-            _interfaceProof(),
-            inputs,
-            _outputs(),
-            _permitEmpty(),
-            _outputAttributionsFor(targetPlanId, _outputs()),
-            _coreEntranceFactAttribution()
+            _openCall(
+                request,
+                route.routeProof,
+                _interfaceProof(),
+                inputs,
+                _outputs(),
+                _openAuth(_permitEmpty(), _consentFor(request)),
+                _outputAttributionsFor(targetPlanId, _outputs()),
+                _coreEntranceFactAttribution()
+            )
         );
     }
 
@@ -765,14 +907,16 @@ contract UVPDockingModuleTest {
             )
         );
         docking.openDockedOrder(
-            _rogueOpenRequest(route),
-            route.routeProof,
-            _interfaceProof(),
-            _rogueInputs(route),
-            outputs,
-            _permitEmpty(),
-            _outputAttributionsFor(targetPlanId, outputs),
-            _coreNoAttribution()
+            _openCall(
+                _rogueOpenRequest(route),
+                route.routeProof,
+                _interfaceProof(),
+                _rogueInputs(route),
+                outputs,
+                _openAuth(_permitEmpty(), _consentFor(_rogueOpenRequest(route))),
+                _outputAttributionsFor(targetPlanId, outputs),
+                _coreNoAttribution()
+            )
         );
     }
 
@@ -791,16 +935,18 @@ contract UVPDockingModuleTest {
             )
         );
         docking.openDockedOrder(
-            _rogueOpenRequestTo(route, variantPlan),
-            route.routeProof,
-            _interfaceProof(),
-            _rogueInputs(route),
-            outputs,
-            _permitEmpty(),
-            // 词表剔除 TARGET_PENDING_SIGNAL：outputs[2] 的属主查询返回零
-            // 声明，词表闸按该项事实键拒绝（本用例的可达性构造）。
-            _outputAttributionsFor(variantPlan, outputs),
-            _coreNoAttribution()
+            _openCall(
+                _rogueOpenRequestTo(route, variantPlan),
+                route.routeProof,
+                _interfaceProof(),
+                _rogueInputs(route),
+                outputs,
+                _openAuth(_permitEmpty(), _consentFor(_rogueOpenRequestTo(route, variantPlan))),
+                // 词表剔除 TARGET_PENDING_SIGNAL：outputs[2] 的属主查询返回零
+                // 声明，词表闸按该项事实键拒绝（本用例的可达性构造）。
+                _outputAttributionsFor(variantPlan, outputs),
+                _coreNoAttribution()
+            )
         );
     }
 
@@ -834,14 +980,16 @@ contract UVPDockingModuleTest {
             )
         );
         docking.openDockedOrder(
-            _rogueOpenRequest(route),
-            route.routeProof,
-            _interfaceProof(),
-            _rogueInputs(route),
-            outputs,
-            _permitEmpty(),
-            _outputAttributionsFor(targetPlanId, outputs),
-            _coreNoAttribution()
+            _openCall(
+                _rogueOpenRequest(route),
+                route.routeProof,
+                _interfaceProof(),
+                _rogueInputs(route),
+                outputs,
+                _openAuth(_permitEmpty(), _consentFor(_rogueOpenRequest(route))),
+                _outputAttributionsFor(targetPlanId, outputs),
+                _coreNoAttribution()
+            )
         );
     }
 
@@ -1028,7 +1176,7 @@ contract UVPDockingModuleTest {
         sm.setDockingModule(address(dock));
         sm.setPlanMetadataModule(address(metadata));
         sm.setOrderLinkModule(address(orderLink));
-        sm.setLens(address(0x1234));
+        sm.setLens(address(new UVPStateMachineLens(address(sm))));
         sm.freezeModules();
         _dockingModule = dock;
         _metadataModule = metadata;
@@ -1099,28 +1247,7 @@ contract UVPDockingModuleTest {
         outputLeaves[2] = settleBinding;
         outputsRoot = DockMerkle.root(outputLeaves);
 
-        openRouteHash = keccak256(
-            abi.encode(
-                DOMAIN_ROUTE,
-                localDefinitionRef,
-                targetDefinitionRef,
-                INTERFACE_NAME_ID,
-                uint256(0), // modeWord new
-                inputsRoot,
-                outputsRoot
-            )
-        );
-        existingRouteHash = keccak256(
-            abi.encode(
-                DOMAIN_ROUTE,
-                localDefinitionRef,
-                targetDefinitionRef,
-                INTERFACE_NAME_ID,
-                uint256(1), // existing：链轨不支持，仅作为已提交叶参与拒绝用例
-                inputsRoot,
-                outputsRoot
-            )
-        );
+
 
         // entrance 端口叶 → 接口 inputsRoot（单叶）→ interfaceLeaf → 目标
         // plan 的 dockInterfaceRoot（单叶）。
@@ -1142,6 +1269,34 @@ contract UVPDockingModuleTest {
         interfaceLeaf = keccak256(
             abi.encode(
                 DOMAIN_INTERFACE, TARGET_UID_ID, INTERFACE_NAME_ID, uint256(1), openPortLeaf, interfaceOutputsRoot
+            )
+        );
+    }
+
+    /// B-01：routeHash（域 V3）承诺目标 planId——须在目标 plan 注册后计算。
+    function _computeRouteHashes() private {
+        openRouteHash = keccak256(
+            abi.encode(
+                DOMAIN_ROUTE,
+                localDefinitionRef,
+                targetDefinitionRef,
+                targetPlanId,
+                INTERFACE_NAME_ID,
+                uint256(0), // modeWord new
+                inputsRoot,
+                outputsRoot
+            )
+        );
+        existingRouteHash = keccak256(
+            abi.encode(
+                DOMAIN_ROUTE,
+                localDefinitionRef,
+                targetDefinitionRef,
+                targetPlanId,
+                INTERFACE_NAME_ID,
+                uint256(1), // existing：链轨不支持，仅作为已提交叶参与拒绝用例
+                inputsRoot,
+                outputsRoot
             )
         );
     }
@@ -1436,6 +1591,7 @@ contract UVPDockingModuleTest {
                 DOMAIN_ROUTE,
                 localDefinitionRef,
                 targetDefinitionRef,
+                targetPlan,
                 INTERFACE_NAME_ID,
                 uint256(0), // modeWord new
                 DockMerkle.root(inputLeaves),
@@ -1876,14 +2032,16 @@ contract UVPDockingModuleTest {
         returns (bool)
     {
         return docking.openDockedOrder(
-            _openRequest(0),
-            routeProof,
-            interfaceProof,
-            _inputs(),
-            _outputs(),
-            _permitEmpty(),
-            _outputAttributionsFor(targetPlanId, _outputs()),
-            _coreEntranceFactAttribution()
+            _openCall(
+                _openRequest(0),
+                routeProof,
+                interfaceProof,
+                _inputs(),
+                _outputs(),
+                _openAuth(_permitEmpty(), _consentFor(_openRequest(0))),
+                _outputAttributionsFor(targetPlanId, _outputs()),
+                _coreEntranceFactAttribution()
+            )
         );
     }
 
@@ -1892,14 +2050,16 @@ contract UVPDockingModuleTest {
         UVPDockingModule.EntrancePermitV2 memory permit
     ) private returns (bool) {
         return docking.openDockedOrder(
-            _openRequest(0),
-            _openRouteProof(),
-            interfaceProof,
-            _inputs(),
-            _outputs(),
-            permit,
-            _outputAttributionsFor(targetPlanId, _outputs()),
-            _coreEntranceFactAttribution()
+            _openCall(
+                _openRequest(0),
+                _openRouteProof(),
+                interfaceProof,
+                _inputs(),
+                _outputs(),
+                _openAuth(permit, _consentFor(_openRequest(0))),
+                _outputAttributionsFor(targetPlanId, _outputs()),
+                _coreEntranceFactAttribution()
+            )
         );
     }
 
@@ -1912,14 +2072,16 @@ contract UVPDockingModuleTest {
         returns (bool)
     {
         return docking.openDockedOrder(
-            request,
-            routeProof,
-            _interfaceProof(),
-            _inputs(),
-            _outputs(),
-            _permitEmpty(),
-            _outputAttributionsFor(request.targetPlanId, _outputs()),
-            _coreNoAttribution()
+            _openCall(
+                request,
+                routeProof,
+                _interfaceProof(),
+                _inputs(),
+                _outputs(),
+                _openAuth(_permitEmpty(), _consentFor(request)),
+                _outputAttributionsFor(request.targetPlanId, _outputs()),
+                _coreNoAttribution()
+            )
         );
     }
 
@@ -2023,6 +2185,125 @@ contract UVPDockingModuleTest {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(TARGET_PUBLISHER_KEY, digest);
         permit.signature = abi.encodePacked(r, s, v);
         return permit;
+    }
+
+    bytes32 private constant OPEN_CONSENT_TYPEHASH = keccak256(
+        "UVPDockOpenConsentV1(bytes32 targetPlanId,bytes32 interfaceNameId,bytes32 localPlanId,bytes32 localOrderId,bytes32 routeId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,uint256 nonce,uint256 deadline)"
+    );
+
+    /// B-01 目标侧同意：目标 plan publisher（TARGET_PUBLISHER_KEY，同时是
+    /// 子单 creator 权威）对本次 open 的 EIP-712 同意签名。digest 本地重算
+    ///（不调模块 view）：本 helper 在 open 调用实参处求值，模块 view 调用
+    /// 会吃掉测试先行设置的 expectRevert。
+    function _consentFor(UVPDockingModule.OpenDockRequestV2 memory request)
+        private
+        returns (UVPDockingModule.DockTargetConsentV1 memory)
+    {
+        UVPDockingModule.DockTargetConsentV1 memory consent;
+        consent.nonce = 1;
+        consent.deadline = block.timestamp + 1 hours;
+        bytes32 structHash = keccak256(
+            abi.encode(
+                OPEN_CONSENT_TYPEHASH,
+                request.targetPlanId,
+                request.interfaceNameId,
+                request.localPlanId,
+                request.localOrderId,
+                request.routeId,
+                request.routeHash,
+                request.dockInstanceId,
+                request.linkedOrderId,
+                consent.nonce,
+                consent.deadline
+            )
+        );
+        bytes32 digest = keccak256(
+            abi.encodePacked(
+                "\x19\x01",
+                keccak256(
+                    abi.encode(
+                        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                        keccak256("UVPDockingModule"),
+                        keccak256("4"),
+                        block.chainid,
+                        address(docking)
+                    )
+                ),
+                structHash
+            )
+        );
+        (uint8 v, bytes32 r, bytes32 sv) = vm.sign(TARGET_PUBLISHER_KEY, digest);
+        consent.signature = abi.encodePacked(r, sv, v);
+        return consent;
+    }
+
+    function _openAuth(
+        UVPDockingModule.EntrancePermitV2 memory permit,
+        UVPDockingModule.DockTargetConsentV1 memory consent
+    ) private pure returns (UVPDockingModule.OpenAuthorizationV2 memory) {
+        return UVPDockingModule.OpenAuthorizationV2({permit: permit, consent: consent});
+    }
+
+    function _openCall(
+        UVPDockingModule.OpenDockRequestV2 memory request,
+        bytes32[] memory routeProof,
+        UVPDockingModule.DockInterfaceProofV2 memory interfaceProof,
+        UVPDockingModule.DockInputBindingArg[] memory inputs,
+        UVPDockingModule.DockOutputBindingArg[] memory outputs,
+        UVPDockingModule.OpenAuthorizationV2 memory authorization,
+        IUVPStateMachineCore.FactAttribution[] memory outputAttributions,
+        IUVPStateMachineCore.FactAttribution memory entranceAttribution
+    ) private pure returns (UVPDockingModule.OpenDockCallV1 memory) {
+        return UVPDockingModule.OpenDockCallV1({
+            request: request,
+            routeProof: routeProof,
+            interfaceProof: interfaceProof,
+            inputs: inputs,
+            outputs: outputs,
+            authorization: authorization,
+            outputAttributions: outputAttributions,
+            entranceAttribution: entranceAttribution
+        });
+    }
+
+    function _consentDigestFor(
+        UVPDockingModule.OpenDockRequestV2 memory request,
+        UVPDockingModule.DockTargetConsentV1 memory consent
+    ) private view returns (bytes32) {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                OPEN_CONSENT_TYPEHASH,
+                request.targetPlanId,
+                request.interfaceNameId,
+                request.localPlanId,
+                request.localOrderId,
+                request.routeId,
+                request.routeHash,
+                request.dockInstanceId,
+                request.linkedOrderId,
+                consent.nonce,
+                consent.deadline
+            )
+        );
+        return keccak256(
+            abi.encodePacked(
+                "\x19\x01",
+                keccak256(
+                    abi.encode(
+                        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                        keccak256("UVPDockingModule"),
+                        keccak256("4"),
+                        block.chainid,
+                        address(docking)
+                    )
+                ),
+                structHash
+            )
+        );
+    }
+
+    function _consentEmpty() private pure returns (UVPDockingModule.DockTargetConsentV1 memory) {
+        return UVPDockingModule.DockTargetConsentV1({nonce: 0, deadline: 0, signature: ""});
     }
 
     function _permitDigestOnModule(UVPDockingModule.EntrancePermitV2 memory permit) private view returns (bytes32) {

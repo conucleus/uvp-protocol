@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPDockingModule",
-  "abiVersion": "4.6",
+  "abiVersion": "4.7",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPDockingModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPDockingModule.sol/UVPDockingModule.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xa12f9df6d42afaf72e3ec8d3b3f454f2487c91f54d687076a3990b90d37b9c1b",
-    "bytecodeHash": "0xd7d62488c26fa7c8c0945feaf27871ddb6e52a978a0c9ca4aa94c83d4fb2f5c8",
-    "deployedBytecodeHash": "0xe2943bf5bc9c9142e4e565433c92648cb8d880398fd1a6ac74284a0e52fddd06",
-    "artifactHash": "0x46c69a4ad48b765aa09df36776838195a36e9b06ea72dce80d2f1a4e262dacb1"
+    "abiHash": "0x45a833743c1e0d7b8594c77e0a672d46ab881dd19b300e9841315bb5d201076c",
+    "bytecodeHash": "0x88958d63801b36b248ff1f60b87b46f67f76a8e31788f8885ab0a2f98e92af9e",
+    "deployedBytecodeHash": "0x5a15aa480f4936858adbea227f2263307473ed1086ed4460d88b89000c389fbf",
+    "artifactHash": "0x294ae4df2ad4f5f3eb160b2ca4683c82af41918f3c24ae39e68f0b53de2e0237"
   },
   "events": {
     "DockAttached": {
@@ -57,9 +57,9 @@
       "signature": "DOMAIN_SEPARATOR()",
       "selector": "0x3644e515"
     },
-    "MAX_DOCK_DEPTH": {
-      "signature": "MAX_DOCK_DEPTH()",
-      "selector": "0x362ec4ea"
+    "MAX_DOCK_EDGES": {
+      "signature": "MAX_DOCK_EDGES()",
+      "selector": "0xa41deb09"
     },
     "MAX_DOCK_OUTPUTS": {
       "signature": "MAX_DOCK_OUTPUTS()",
@@ -85,9 +85,9 @@
       "signature": "dockByTargetOrder(bytes32)",
       "selector": "0xe463a130"
     },
-    "dockDepthOfOrder": {
-      "signature": "dockDepthOfOrder(bytes32,bytes32)",
-      "selector": "0x6648143a"
+    "dockEdgeCountOfOrder": {
+      "signature": "dockEdgeCountOfOrder(bytes32,bytes32)",
+      "selector": "0x920786ee"
     },
     "dockInputDelivered": {
       "signature": "dockInputDelivered(bytes32,bytes32)",
@@ -96,6 +96,10 @@
     "dockOutputDelivered": {
       "signature": "dockOutputDelivered(bytes32,bytes32)",
       "selector": "0x04919a6e"
+    },
+    "dockParentOfOrder": {
+      "signature": "dockParentOfOrder(bytes32,bytes32)",
+      "selector": "0x2746e974"
     },
     "entrancePermitDigest": {
       "signature": "entrancePermitDigest(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,uint256)",
@@ -113,9 +117,13 @@
       "signature": "getDockOutputBinding(bytes32,bytes32)",
       "selector": "0xdd6e63ce"
     },
+    "openConsentDigest": {
+      "signature": "openConsentDigest(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,uint256)",
+      "selector": "0x3c5ab80e"
+    },
     "openDockedOrder": {
-      "signature": "openDockedOrder((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint8),bytes32[],((bytes32,bytes32,bytes32),bytes32[],(uint8,bytes32,bytes32),bytes32[]),(bytes32,bytes32,bytes32,bytes32,bytes32)[],(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32[])[],(uint256,uint256,bytes),(bytes32,bytes32,bytes32,bytes32[])[],(bytes32,bytes32,bytes32,bytes32[]))",
-      "selector": "0xa4f14a8e"
+      "signature": "openDockedOrder(((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint8),bytes32[],((bytes32,bytes32,bytes32),bytes32[],(uint8,bytes32,bytes32),bytes32[]),(bytes32,bytes32,bytes32,bytes32,bytes32)[],(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32[])[],((uint256,uint256,bytes),(uint256,uint256,bytes)),(bytes32,bytes32,bytes32,bytes32[])[],(bytes32,bytes32,bytes32,bytes32[])))",
+      "selector": "0xb407634b"
     },
     "planMetadataModule": {
       "signature": "planMetadataModule()",
@@ -136,6 +144,10 @@
     "usedEntrancePermitNonce": {
       "signature": "usedEntrancePermitNonce(bytes32)",
       "selector": "0x30cc966c"
+    },
+    "usedOpenConsentNonce": {
+      "signature": "usedOpenConsentNonce(bytes32)",
+      "selector": "0x4b18b54e"
     }
   }
 }

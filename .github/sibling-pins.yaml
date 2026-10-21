@@ -1,0 +1,5 @@
+# 本仓 PR/push CI 的源依赖钉（自治组合声明）；按需自行 bump。
+# uvp-core：packages/hook-core 的 @conucleus/uvp-core-node workspace 依赖、
+# contracts 语料与金向量的姊妹检出锚点——CI 检出必须带本 pin，防同一
+# uvp-protocol SHA 的结论随 uvp-core 默认分支漂移（审计 A-24）。
+uvp-core: 2f96d4a484013f8c3fb2e582e05dbcac0b496cda

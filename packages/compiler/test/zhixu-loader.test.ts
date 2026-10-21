@@ -363,7 +363,9 @@ test("KNOWN_FIELDS match the shared uvp-core field-set corpus", () => {
   };
   assert.equal(corpus.schemaVersion, "uvp.fieldSets.v1");
 
-  const groups = Object.keys(KNOWN_FIELDS);
+  // 键集钉死在 KNOWN_FIELDS 的字面类型上：group 以 keyof 索引，闭集
+  // 分组漂移（增删结构体）继续由 deepEqual 报警，类型面不再依赖 string 索引。
+  const groups = Object.keys(KNOWN_FIELDS) as (keyof typeof KNOWN_FIELDS)[];
   assert.deepEqual(
     [...groups].sort(),
     Object.keys(corpus).filter((key) => key !== "schemaVersion" && key !== "note").sort(),

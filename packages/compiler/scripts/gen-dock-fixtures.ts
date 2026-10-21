@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { compileZhixuHookPlan } from "../src/hook-plan.js";
 import {
   canonicalSignalHash,
+  keccakWord,
   cloudRuntimeDomain,
   definitionRefHash,
   dockCandidateLeaf,
@@ -55,7 +56,8 @@ import {
   DOMAIN_RUNTIME_EIP155,
   DOMAIN_SOURCE_FACT_SET,
   EMPTY_MERKLE_ROOT,
-  MAX_DOCK_DEPTH,
+  MAX_DOCK_EDGES,
+  ZERO_WORD,
   MAX_DOCK_INPUTS,
   MAX_DOCK_OUTPUTS,
   MAX_PORT_NAME_BYTES,
@@ -214,6 +216,9 @@ function buildManifest(
         published: true,
         interfaces: interfaceArtifact.interfaces,
         evmPlanId: targetPlan.planId,
+        // B-01 route 身份 word：golden 向量把发布面 plan id word 直接作
+        // 链上注册 planId 使用（向量只钉公式，不模拟注册流程）。
+        chainPlanId: targetPlan.planId,
         cloudArtifactId: `artifact://${targetPlan.planHash}`,
       },
     ],
@@ -313,20 +318,23 @@ async function main(): Promise<void> {
     targetOrderRef: existingEvmTargetOrderRef,
   });
 
-  // ---- target:null 动态选择（UVPDockingModule 4.4 attach 的候选集承诺）----
-  // 候选叶公式：src/dock.ts dockCandidateLeaf（合约 _DOMAIN_DOCK_CANDIDATE
-  // 的 TS 权威实现，链上 preimage 逐字节一致）。第二候选是显式合成的
-  // （manifest 只发布一个定义）——两叶候选集用于钉死排序配对与 proof。
+  // ---- target:null 动态选择（UVPDockingModule 4.7 attach 的候选集承诺）----
+  // 候选叶公式：src/dock.ts dockCandidateLeaf V2（合约 _DOMAIN_DOCK_CANDIDATE
+  // 的 TS 权威实现，链上 preimage 逐字节一致；叶承诺候选链上注册 planId）。
+  // 第二候选是显式合成的（manifest 只发布一个定义）——两叶候选集用于钉死
+  // 排序配对与 proof。
   const candidateLeaf = dockCandidateLeaf({
     routeId: evidenceRoute.routeId,
     targetDefinitionRefHash:
       targetPlan.dockInterface!.definition.definitionRefHash,
+    targetPlanId: targetPlan.planId,
     interfaceName: "production_evidence",
   });
   const otherCandidateUid = "zx-ffffffffffffffffffffffffffffff";
   const otherCandidateLeaf = dockCandidateLeaf({
     routeId: evidenceRoute.routeId,
     targetDefinitionRefHash: definitionRefHash(otherCandidateUid),
+    targetPlanId: keccakWord(`chain-plan:${otherCandidateUid}`),
     interfaceName: "production_evidence",
   });
   const candidateLeaves = [candidateLeaf, otherCandidateLeaf];
@@ -334,12 +342,13 @@ async function main(): Promise<void> {
   const candidateProof = merkleProof(candidateLeaves, candidateLeaf)!;
   // 动态路由叶 = 冻结形态（与 buildUnresolvedDockRoute / 合约 attach 以空
   // 绑定数组重算的 preimage 同一）：目标槽被候选集 root 占据（随
-  // dockRoutesRoot 在 finalize 冻结），两绑定根恒 EMPTY——bindingHash 的
-  // preimage 含目标端口寻址 word，选定前不可计算，绑定在 attach 时按接口
-  // 承诺面验证。静态叶的目标槽则是具体 targetDefinitionRefHash。
+  // dockRoutesRoot 在 finalize 冻结），planId 槽恒零字（选定目标 planId 在
+  // 候选叶 V2 内），两绑定根恒 EMPTY——bindingHash 的 preimage 含目标端口
+  // 寻址 word，选定前不可计算，绑定在 attach 时按接口承诺面验证。
   const dynamicRouteHash = routeHash({
     localDefinitionRefHash: evidenceRoute.local.definitionRefHash,
     targetDefinitionRefHash: candidatesRoot,
+    targetPlanId: ZERO_WORD,
     interfaceName: "production_evidence",
     orderMode: "existing",
     inputBindingsRoot: EMPTY_MERKLE_ROOT,
@@ -450,7 +459,7 @@ async function main(): Promise<void> {
       limits: {
         maxDockInputs: MAX_DOCK_INPUTS,
         maxDockOutputs: MAX_DOCK_OUTPUTS,
-        maxDockDepth: MAX_DOCK_DEPTH,
+        maxDockEdges: MAX_DOCK_EDGES,
         maxPortNameBytes: MAX_PORT_NAME_BYTES,
       },
       merkle: {

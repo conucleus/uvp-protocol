@@ -236,6 +236,40 @@ test("filter-profile mirror keeps the 30d delay cap", () => {
   assert.match(issues.join("; "), /must not exceed 2592000/);
 });
 
+test("filter-profile mirror rejects anchorless delay operands (UB-1)", () => {
+  // `(~work.cmp_err)+5s`：纯否定操作数直接喂延时——合约 _validateAdmission
+  // 的 hasPosAnchor 闸在 commitPlan revert，此前 TS 镜像缺失（A-08）。
+  const issues = admissionIssuesOf((admission) => ({
+    ...admission,
+    instructions: [
+      seedInstruction("work.cmp_err"),
+      { op: "NOT" },
+      { op: "DELAY", delaySeconds: 5 },
+    ],
+  }));
+  assert.match(
+    issues.join("; "),
+    /DELAY requires an operand with a positive signal anchor/,
+  );
+});
+
+test("filter-profile mirror rejects nested delay operands", () => {
+  // delayInside 闸（reject_nested_delay 镜像）：DELAY 操作数子树内已含
+  // DELAY 即拒——此前 TS 镜像缺失（A-08）。
+  const issues = admissionIssuesOf((admission) => ({
+    ...admission,
+    instructions: [
+      seedInstruction("work.cmp_err"),
+      { op: "DELAY", delaySeconds: 5 },
+      { op: "DELAY", delaySeconds: 10 },
+    ],
+  }));
+  assert.match(
+    issues.join("; "),
+    /DELAY cannot consume an operand containing another DELAY/,
+  );
+});
+
 test("filter-profile mirror rejects roots that do not leave a single stack item", () => {
   const issues = admissionIssuesOf((admission) => ({
     ...admission,

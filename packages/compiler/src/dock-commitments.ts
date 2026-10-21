@@ -17,6 +17,7 @@ import {
   splitCanonicalSignal,
   stageKey,
   stripAnnotations,
+  ZERO_WORD,
 } from "./dock.js";
 import { canonicalize } from "./canonical.js";
 import { validateDockCommitments } from "./dock-validation.js";
@@ -106,6 +107,8 @@ export interface PreparedTarget {
   readonly dockInterfaceRoot: HexString;
   readonly cloudArtifactId?: string;
   readonly evmPlanId?: HexString;
+  /** 链上注册 planId（B-01 route 身份 word；路由组装的必需面）。 */
+  readonly chainPlanId?: HexString;
 }
 
 /**
@@ -264,6 +267,7 @@ function prepareTargetEntry(
       ? {}
       : { cloudArtifactId: entry.cloudArtifactId }),
     ...(entry.evmPlanId === undefined ? {} : { evmPlanId: entry.evmPlanId }),
+    ...(entry.chainPlanId === undefined ? {} : { chainPlanId: entry.chainPlanId }),
   };
 }
 
@@ -406,6 +410,14 @@ export function buildDockRoute(
   if (interfaceEntry === undefined) {
     throw new RangeError(
       `dock route ${stageIdentifier} targets interface ${JSON.stringify(neutral.target.interfaceName)} which target ${neutral.target.uid} does not publish`,
+    );
+  }
+  // B-01 route 身份：routeHash 承诺目标计划的链上注册 planId——manifest
+  // 必须携带该发布面字段（与 evmPlanId 分域），缺失即响亮拒绝。
+  if (target.chainPlanId === undefined) {
+    throw new RangeError(
+      `dock route ${stageIdentifier} targets ${JSON.stringify(neutral.target.uid)} whose resolution manifest entry lacks chainPlanId — `
+        + "the route hash commits to the target plan's on-chain registered plan id, so the manifest must publish it",
     );
   }
 
@@ -561,6 +573,7 @@ export function buildDockRoute(
         ? {}
         : { cloudArtifactId: target.cloudArtifactId }),
       ...(target.evmPlanId === undefined ? {} : { evmPlanId: target.evmPlanId }),
+      chainPlanId: target.chainPlanId,
     },
     orderMode: neutral.orderMode,
     sourceSeam: [...seams][0] as string,
@@ -571,6 +584,7 @@ export function buildDockRoute(
     routeHash: routeHashOf({
       localDefinitionRefHash: context.localDefinitionRefHash,
       targetDefinitionRefHash: target.definitionRefHash,
+      targetPlanId: target.chainPlanId,
       interfaceName: neutral.target.interfaceName,
       orderMode: neutral.orderMode,
       inputBindingsRoot,
@@ -634,6 +648,15 @@ export function buildUnresolvedDockRoute(
     ) {
       continue;
     }
+    // 候选叶 V2（B-01）承诺候选计划的链上注册 planId——manifest 未发布
+    // 该字段的目标不进候选集（其叶不可计算，静默跳过会让候选集无声缩窄，
+    // 直接拒绝让发布面缺口显式暴露）。
+    if (target.chainPlanId === undefined) {
+      throw new RangeError(
+        `unresolved dock route ${stageIdentifier}: manifest definition ${JSON.stringify(target.uid)} is a candidate but lacks chainPlanId — `
+          + "the candidate leaf commits to the candidate plan's on-chain registered plan id, so the manifest must publish it",
+      );
+    }
     candidates.push({
       zhixuUid: target.uid,
       zhixuName: target.name,
@@ -645,6 +668,7 @@ export function buildUnresolvedDockRoute(
       ...(target.evmPlanId === undefined
         ? {}
         : { evmPlanId: target.evmPlanId }),
+      chainPlanId: target.chainPlanId,
     });
   }
   if (candidates.length === 0) {
@@ -672,6 +696,7 @@ export function buildUnresolvedDockRoute(
       dockCandidateLeaf({
         routeId,
         targetDefinitionRefHash: candidate.definitionRefHash,
+        targetPlanId: candidate.chainPlanId,
         interfaceName: neutral.interfaceName,
       }),
     ),
@@ -690,9 +715,12 @@ export function buildUnresolvedDockRoute(
     routeId,
     candidates,
     candidatesRoot,
+    // 动态路由的 targetPlanId 槽 = 零字（冻结期无选定目标；选定目标的
+    // planId 经候选叶 V2 进 candidatesRoot）。
     routeHash: routeHashOf({
       localDefinitionRefHash: context.localDefinitionRefHash,
       targetDefinitionRefHash: candidatesRoot,
+      targetPlanId: ZERO_WORD,
       interfaceName: neutral.interfaceName,
       orderMode: neutral.orderMode,
       inputBindingsRoot: EMPTY_MERKLE_ROOT,

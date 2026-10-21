@@ -3,7 +3,7 @@
   "constants": {
     "schemaVersions": {
       "dockInterfaceArtifact": "uvp.dockInterfaceArtifact.v2",
-      "dockRoute": "uvp.dockRoute.v3",
+      "dockRoute": "uvp.dockRoute.v4",
       "resolution": "uvp.dock.resolution.v2"
     },
     "domains": {
@@ -15,8 +15,8 @@
       "routeId": "UVP_DOCK_ROUTE_ID_V1",
       "inputBinding": "UVP_DOCK_INPUT_BINDING_V2",
       "outputBinding": "UVP_DOCK_OUTPUT_BINDING_V2",
-      "route": "UVP_DOCK_ROUTE_V2",
-      "dockCandidate": "UVP_DOCK_CANDIDATE_V1",
+      "route": "UVP_DOCK_ROUTE_V3",
+      "dockCandidate": "UVP_DOCK_CANDIDATE_V2",
       "dockInstance": "UVP_DOCK_INSTANCE_V2",
       "dockOrder": "UVP_DOCK_ORDER_V1",
       "runtimeEip155": "UVP_RUNTIME_EIP155_V1",
@@ -29,7 +29,7 @@
     "limits": {
       "maxDockInputs": 8,
       "maxDockOutputs": 16,
-      "maxDockDepth": 8,
+      "maxDockEdges": 8,
       "maxPortNameBytes": 32
     },
     "merkle": {
@@ -424,6 +424,7 @@
           }
         ],
         "evmPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3",
+        "chainPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3",
         "cloudArtifactId": "artifact://0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4"
       }
     ]
@@ -525,7 +526,7 @@
     },
     "dockRoutes": [
       {
-        "schemaVersion": "uvp.dockRoute.v3",
+        "schemaVersion": "uvp.dockRoute.v4",
         "routeId": "0xdefa5ca5fe4c10fd1b1f39be44b909794b09d110d161b7f74587263a1ecd7e44",
         "local": {
           "definitionRefHash": "0x545ce758fb306fdc45bc708504bba0a35dca37b486ad75021cbee4be75ae9fe0",
@@ -542,7 +543,8 @@
           "dockInterfaceRoot": "0xd6be0319e52c855c043b914d5b24cbb5ebda5f852ffe7ce1dd9c578b4a89a024",
           "artifactHash": "0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4",
           "cloudArtifactId": "artifact://0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4",
-          "evmPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3"
+          "evmPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3",
+          "chainPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3"
         },
         "orderMode": "new",
         "sourceSeam": "factory",
@@ -584,10 +586,10 @@
         ],
         "inputBindingsRoot": "0xb8d8de6f5005081507abb15fc4c843a733721a4167f9165851ea446668e33bfc",
         "outputBindingsRoot": "0xdbc5910d0dae415fe8e117fb19d21e437f4a4c4c188423baa51fed7fa60f4d52",
-        "routeHash": "0xe9d114b07a154b45c59a2e07628e66330bd6bc8cd38a57f33b9682620060344e"
+        "routeHash": "0x5c190aabcffdcc7c381c91f67ada5c13d6904443e4a4cafc1a49f37b1ae4f3d7"
       },
       {
-        "schemaVersion": "uvp.dockRoute.v3",
+        "schemaVersion": "uvp.dockRoute.v4",
         "routeId": "0x951792df8c1f23c587854ab2ea77212ac787b3634933ff4c2c01294c3b8cd90e",
         "local": {
           "definitionRefHash": "0x545ce758fb306fdc45bc708504bba0a35dca37b486ad75021cbee4be75ae9fe0",
@@ -604,7 +606,8 @@
           "dockInterfaceRoot": "0xd6be0319e52c855c043b914d5b24cbb5ebda5f852ffe7ce1dd9c578b4a89a024",
           "artifactHash": "0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4",
           "cloudArtifactId": "artifact://0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4",
-          "evmPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3"
+          "evmPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3",
+          "chainPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3"
         },
         "orderMode": "existing",
         "sourceSeam": "factory",
@@ -624,36 +627,36 @@
         ],
         "inputBindingsRoot": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
         "outputBindingsRoot": "0x95fe3d33fa8c4fc4fbf1e6d5f59324f87e442db38b62c2be5fd4b83e1d428057",
-        "routeHash": "0x23d86a58eae90a68701c9201a8c0342a8ce68e88400809c8be7c6492b1120354"
+        "routeHash": "0x454bdc1bfc927d3df2df503047e502e5804332501b05daed3d63efeb733e7abb"
       }
     ],
-    "dockRoutesRoot": "0xe28c2d63a37004b9fa6e7591755ba338ba6acf98d757d648d4820074b1624562",
+    "dockRoutesRoot": "0xa34ff447c23c2f7a27b69733ad5d43208b8b2020c9821455b598984e1c85e78c",
     "dockInterfaceRoot": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
     "evmRuntimeDomain": "0xa94a0dfb7ca902548259fc0032f6f1cbf654f1f291c31b748af22732e6c7001e",
     "cloudRuntimeDomain": "0xf9747a82566e7d832a4c9f925a41141970614a89f796997fde9e2796a4f0d820",
     "localOrderKey": "0x49235cda0289508fe38e33fd2d40e8ad56e1d7474121432e28e9fefc5e6f4740",
-    "dockInstanceId": "0x5e618b2c11d2db0c8ff395fc50e710e9d1e6e667a2a6ed79c194888c56cc3b62",
-    "linkedOrderId": "0xaf7cf473f84aca868855aed43cc6a088e7d8a7439bdb1b9c92be16c3f46548fe",
-    "existingDockInstanceId": "0x942ccc01102a592be91b42a9941da941d390e6633012f4f2ffd351a5cb9226d3",
-    "existingEvmDockInstanceId": "0xf46bfe8de335e88ad7f1e04127863ebac2df5e82ab41069934952a57c1cf5d41",
+    "dockInstanceId": "0x0be440612ed758d97e924fe84ae92f1a93b18359b4cdc06b7e2827b402dcffa4",
+    "linkedOrderId": "0xc9301f9b3acf3f0a7421932a7c4a35b83b0b2d15943b365d9f20b094e8300a62",
+    "existingDockInstanceId": "0xa9fddffc8882a4dc35c71d49abde54467ad9e895846aea5393f879d0f36e5967",
+    "existingEvmDockInstanceId": "0x196b23623eb9b50b7ba3c7c429e12021d9cbbe3a54eb635f8c363d99a21c2f95",
     "dynamicSelection": {
       "routeId": "0x951792df8c1f23c587854ab2ea77212ac787b3634933ff4c2c01294c3b8cd90e",
-      "candidateLeaf": "0x03e83ddf8a75d62d5e53167ee739f30616347bf89235aecb506870cf39e669fa",
-      "otherCandidateLeaf": "0xb57b6427af63f50a5feaad50e3fd99b7124e4e9ebb7b8bb20b517051e5aa7a0b",
-      "candidatesRoot": "0xb88c6db433678e67fa126d5d985cc16677bc0bd23e000c91f1326a55b1dd36e0",
+      "candidateLeaf": "0xc6225fe2e7d983bd5a43bae603ef88c3a5aaa313377eb6d299250e45015bc92d",
+      "otherCandidateLeaf": "0x7256267beec73ac0c5405bc6ca689d739ebf59f10476347257b0bef80787bac9",
+      "candidatesRoot": "0xb174e2e42c29307b13d278b3ac71b1c135f251f1c08872351487c7223ca0c6e1",
       "candidateProof": [
-        "0xb57b6427af63f50a5feaad50e3fd99b7124e4e9ebb7b8bb20b517051e5aa7a0b"
+        "0x7256267beec73ac0c5405bc6ca689d739ebf59f10476347257b0bef80787bac9"
       ],
       "candidateProofLength": 1,
-      "dynamicRouteHash": "0x34135a279cf2ec33154f326bc37a3aadca09729343180be2af4166ad0e01acde"
+      "dynamicRouteHash": "0x31842e3b2914106c05d7e1abb9597711ad376dce351b29102968f802518ce408"
     },
     "sourceFactSetHash": "0x4184669d78f2389ce940e285c81ba315f3802dd7744ebfc32d26123ed5d980f3",
-    "inputPayloadHash": "0x215f8d8930bc24f49e0d64ba20ca3c01459e6abf18411e47033e9960ddeb9a8a",
-    "inputIdempotencyKey": "0x868a1e9cfcda447d42002f4f812087d6b896033298d8360039c9bf6d2d1ba951",
-    "outputIdempotencyKey": "0x7556eaa94bf0e05ee59487f3691cffd33980f8917f6ccbdeea70f64c9f0eee67",
-    "permitDigest": "0x3649d060d8ef27ee0eeed318753d8304d9c852a7c4dd2466138bf4d44b394796",
+    "inputPayloadHash": "0xd17fc2185536289d42f5559d1dead0b9b3ce002d35b266fafc3226da9c79b5dd",
+    "inputIdempotencyKey": "0x9d70da718f6df475252f22c20ac61da64454b7a43aa5fa330f5b3d78e058edd8",
+    "outputIdempotencyKey": "0x6df8e033db23d10ce55b65612a710fe84a9af55237c3945fe2d31ad0cf8e5d3f",
+    "permitDigest": "0x9f3ccba2cee36019e24fd47361d32db1f0a24874478b5cd6a20b3e7fb9c19bb5",
     "routeLeafProof": [
-      "0x23d86a58eae90a68701c9201a8c0342a8ce68e88400809c8be7c6492b1120354"
+      "0x454bdc1bfc927d3df2df503047e502e5804332501b05daed3d63efeb733e7abb"
     ],
     "interfaceLeafProof": [
       "0x0cef6a00b2457b36211fdd7fc9d35e494f42d7f2f6af87b2f209b8dd823e6f75"

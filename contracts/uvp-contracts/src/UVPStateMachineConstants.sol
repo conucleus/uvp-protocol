@@ -23,6 +23,14 @@ uint64 constant _MAX_HOOK_DELAY_SECONDS = 30 days;
 // 使用方携 Merkle proof 逐叶验证），注册成本与表规模脱钩。
 uint256 constant _MAX_PLAN_DEPENDENCIES = 1024;
 
+// 单依赖键（signalKey）可挂 hook 数上限：求值侧对该键的 dependencyIndex
+// 全量循环，扇出无上界即单键 OOG 面（1024 全局闸只数唯一键）。
+uint256 constant _MAX_HOOKS_PER_DEPENDENCY_KEY = 16;
+
+// 适格指令嵌套深度上限：与 uvp-core replay 注册闸 MAX_INSTRUCTION_DEPTH
+// 同值同口径（SIGNAL=0，NOT/DELAY=操作数+1，AND/OR=最深子项+1）。
+uint256 constant _MAX_INSTRUCTION_DEPTH = 120;
+
 bytes32 constant _EIP712_DOMAIN_TYPEHASH =
     keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 bytes32 constant _EIP712_NAME_HASH = keccak256("UVPStateMachine");

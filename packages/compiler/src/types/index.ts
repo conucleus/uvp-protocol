@@ -5,7 +5,8 @@ export const ONCHAIN_HOOK_PLAN_SCHEMA_VERSION =
   "uvp.onchainHookPlan.v3" as const;
 export const DOCK_INTERFACE_ARTIFACT_SCHEMA_VERSION =
   "uvp.dockInterfaceArtifact.v2" as const;
-export const DOCK_ROUTE_SCHEMA_VERSION = "uvp.dockRoute.v3" as const;
+/** v4（B-01，UVPDockingModule 4.7）：routeHash 承诺目标 planId，target 块新增 chainPlanId。 */
+export const DOCK_ROUTE_SCHEMA_VERSION = "uvp.dockRoute.v4" as const;
 /** 未解析 route（target:null 动态选择）的声明面形态（设计文档 §8.8）。 */
 export const DOCK_ROUTE_UNRESOLVED_SCHEMA_VERSION =
   "uvp.dockRoute.unresolved.v1" as const;
@@ -143,6 +144,13 @@ export interface DockResolutionTarget {
   readonly interfaces: readonly DockInterfaceArtifactInterface[];
   readonly cloudArtifactId?: string;
   readonly evmPlanId?: HexString;
+  /**
+   * 目标计划在链上已注册（或将按既定 publisher/roots 注册）的 EVM planId
+   * （B-01 route 身份承诺 word）。与 evmPlanId（编译器级内容身份）分属两
+   * 域；静态路由/动态候选的 routeHash 计算以本字段为权威——缺失时路由
+   * 组装响亮拒绝。
+   */
+  readonly chainPlanId?: HexString;
   /** 该定义声明的静态 dock 出边（目标定义 uid），供 D015 启动图检测。 */
   readonly dockEdges?: readonly { readonly target: string }[];
 }
@@ -274,6 +282,11 @@ export interface DockRouteV2 {
     readonly artifactHash: HexString;
     readonly cloudArtifactId?: string;
     readonly evmPlanId?: HexString;
+    /**
+     * 目标计划的链上注册 planId（B-01 route 身份 word，v4 起必在）：与
+     * local.planId 同域（合约 planIdFor 派生的注册身份）。
+     */
+    readonly chainPlanId: HexString;
   };
   readonly orderMode: DockOrderMode;
   readonly sourceSeam: string;
@@ -324,6 +337,8 @@ export interface UnresolvedDockRouteCandidate {
   readonly artifactHash: HexString;
   readonly cloudArtifactId?: string;
   readonly evmPlanId?: HexString;
+  /** 候选计划的链上注册 planId（候选叶 V2 word，B-01 起必在）。 */
+  readonly chainPlanId: HexString;
 }
 
 /**

@@ -176,6 +176,10 @@ export function resolutionManifestFor(
         published: true,
         interfaces: target.dockInterface.interfaces,
         evmPlanId: target.planId,
+        // B-01 route 身份 word：测试/demo 场景把目标编译产物的 planId
+        // word 直接充当链上注册 planId（无真实注册流程时 routeHash 的
+        // 承诺槽需要一个确定的 plan id word）。
+        chainPlanId: target.planId,
         cloudArtifactId: `artifact://${target.planHash}`,
       },
     ],

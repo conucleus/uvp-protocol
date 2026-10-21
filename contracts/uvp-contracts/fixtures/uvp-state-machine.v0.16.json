@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStateMachine",
-  "abiVersion": "0.15",
+  "abiVersion": "0.16",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStateMachine.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStateMachine.sol/UVPStateMachine.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xa627b5e780ca772a635e6dc6c41303225f930a5a99f93f75faa62cf323e19a00",
-    "bytecodeHash": "0xf53a3733cb3c16ca6f1cf7b1705546cbfaabafc3f093802a682fd1ea7ba1e421",
-    "deployedBytecodeHash": "0x74cfb8b7431517492f89ed873c20878df45d18e27e33a916372038cc14962c8e",
-    "artifactHash": "0x926ba46b111a88e0242664eb83e989c394d4774242ae111661a622ef5c1297d6"
+    "abiHash": "0x4a148af96b2e1605773437553aa61ee3a4aedee64d97c37ad402b3f190220aff",
+    "bytecodeHash": "0x113b58562f31b465d31606c641baffad49f5926a71e9f32f648016582e2ca14d",
+    "deployedBytecodeHash": "0x0672e96996e06caf73045478ce763f63376b18f6fa32c7096dc1334a92737267",
+    "artifactHash": "0xfd71e132ea7a3591c37f60e1ea74944b3d168d4253f918f9353652edd8db2151"
   },
   "events": {
     "HookReady": {
@@ -24,8 +24,8 @@
       "topic": "0xa0c688f78d307bee6d38b69ad4c19b02d9e1be8c6772327015b60fd21ec38fd2"
     },
     "OrderForked": {
-      "signature": "OrderForked(bytes32,bytes32,bytes32,bytes32,bytes32,address)",
-      "topic": "0x210047bff6e55996070825cc33ce48ae44be44730cac0d7e3f47d18b4616211d"
+      "signature": "OrderForked(bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32[])",
+      "topic": "0x09edcd0132bacd612b1fbd252537cdcf65e43540b8701d7018f35896b41d7ef1"
     },
     "OrderMaterialized": {
       "signature": "OrderMaterialized(bytes32,bytes32,bytes32)",
@@ -48,8 +48,8 @@
       "topic": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
     },
     "PlanCommitted": {
-      "signature": "PlanCommitted(bytes32,bytes32,address,bytes32,bytes32,uint256,bytes32,bytes32,bytes32)",
-      "topic": "0x93b498932fe5f75d209807721697050ec95fab3061a414a96022f58cc0f84c8b"
+      "signature": "PlanCommitted(bytes32,bytes32,address,bytes32,bytes32,uint256,bytes32,bytes32,bytes32,address)",
+      "topic": "0x4002548f74e0ebc352c3ef2211bbdefaef0e3de3d9bdf877bdec5c0f9bc18370"
     },
     "PlanFinalized": {
       "signature": "PlanFinalized(bytes32,bytes32,bytes32)",
@@ -64,8 +64,8 @@
       "topic": "0x979e3b71a04f8380bc947d476d6c9bb27aa40ad81a622686d37e5d6b88512bfd"
     },
     "SignalSubmitted": {
-      "signature": "SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
-      "topic": "0x41c82bf034d8a61d15b79fcac36c465b2655b5bb3f33fb4c16f01c174103acf3"
+      "signature": "SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32)",
+      "topic": "0x4a223dcfd5862d1c1c699ffb1525d1cbba6736d251b8d2c185f43797017d00e6"
     },
     "SignalSubmitterAuthorized": {
       "signature": "SignalSubmitterAuthorized(bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32)",

@@ -7,12 +7,15 @@ import {DockMerkle} from "./libraries/DockMerkle.sol";
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
 import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 
-/// @title UVPDockingModule — 统一 Zhixu DockRoute（abiVersion 4.6）
+/// @title UVPDockingModule — 统一 Zhixu DockRoute（abiVersion 4.7）
 /// @notice 所有 Zhixu dock 来自 committed route，两种 order mode：
 ///          - new（openDockedOrder）：一笔交易内原子完成 child 创建、link
 ///            登记、entrance fact 写入，并同步置位 entrance 交付账本。恰一条
 ///            input 绑定且开仓即被消费为出生锚——submitDockedInput 对 new
 ///            dock 是纯幂等重放面（恒 return false），不是活的交付路径。
+///            routeHash 承诺目标 planId（B-01），open 必过目标侧同意门
+///            （目标 plan publisher 身份腿或 EIP-712 同意签名腿）——镜像
+///            计划既无法满足 route 身份，也拿不到同意签名。
 ///          - existing（attachDockedOrder）：对等挂接既有目标单，不铸子单
 ///            （O(1) 效果集，与存量 dock 数无关）。建立须过同意门：目标单
 ///            creator / 目标单在任执行者 / 目标 plan publisher 的 EIP-712
@@ -27,10 +30,14 @@ import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 ///          DockAttached 事件（indexed linkedOrderId）承载。
 ///          target:null 动态选择：未解析路由以候选集 root 占据 routeHash
 ///          的目标槽（随 dockRoutesRoot 在 finalize 冻结），attach 携
-///          (候选叶, membership proof) 选定；选定目标进 dockInstanceId
+///          (候选叶, membership proof) 选定；候选叶 V2 承诺选定目标的
+///          planId，选定目标进 dockInstanceId
 ///          preimage（existing 第 10 word = 目标单键），叠加父 route
 ///          instance 唯一键即终身钉住。链下的退避重试/预算/死信归 keeper，
 ///          链上只做确定性验证与幂等。
+///          B-02 边数预算：每单总挂接边数（父链账本）上限 MAX_DOCK_EDGES，
+///          open 建 dock 单计边、attach 计边；attach 前做有界祖先检查防
+///          跨单环。最长路径不由链上维护——索引器从 dock 事件图派生。
 ///          哈希域公式的唯一权威规格见
 ///          packages/compiler/docs/dock-word-layout.md（三线对拍钉死）；
 ///          出生原子性/同意门/keeper 信任模型的设计叙事见
@@ -162,6 +169,35 @@ contract UVPDockingModule {
         bytes signature;
     }
 
+    /// B-01 open 的目标侧同意（EIP-712）：签名权威 = 目标 plan publisher
+    ///（new 路由子单 creator 与之同源，两腿合一）。与 entrance permit 分属
+    /// 不同 digest/nonce 账本——permit 是可选的交付预授权，同意是 open 的
+    /// 建立前提。
+    struct DockTargetConsentV1 {
+        uint256 nonce;
+        uint256 deadline;
+        bytes signature;
+    }
+
+    /// open 的授权聚合（permit 与同意分属不同 digest/nonce 账本）。
+    struct OpenAuthorizationV2 {
+        EntrancePermitV2 permit;
+        DockTargetConsentV1 consent;
+    }
+
+    /// open 的单一入口参数（EVM 栈深上限约束下，校验链无法在多参数
+    /// 外部帧上展开——全部 calldata 聚合为一个 word 对）。
+    struct OpenDockCallV1 {
+        OpenDockRequestV2 request;
+        bytes32[] routeProof;
+        DockInterfaceProofV2 interfaceProof;
+        DockInputBindingArg[] inputs;
+        DockOutputBindingArg[] outputs;
+        OpenAuthorizationV2 authorization;
+        IUVPStateMachineCore.FactAttribution[] outputAttributions;
+        IUVPStateMachineCore.FactAttribution entranceAttribution;
+    }
+
     struct ActiveDockV2 {
         bytes32 localPlanId;
         bytes32 localOrderId;
@@ -208,6 +244,8 @@ contract UVPDockingModule {
     error DockRouteLeafMismatch(bytes32 expected, bytes32 actual);
     error DockInterfaceLeafMismatch(bytes32 expected, bytes32 actual);
     error DockInterfaceModeUnsupported(uint8 orderModesWord);
+    /// B-02：语义 = 每单总挂接边数（父链账本）超过 MAX_DOCK_EDGES。错误
+    /// 符号沿旧名保留（不破 ABI 解码面），语义随 4.7 账本改为总边数。
     error DockDepthExceeded(uint8 parentDepth, uint8 maxDepth);
     error DockDepthMismatch(uint8 claimed, uint8 actual);
     error DockEntranceLeafMismatch(bytes32 field);
@@ -234,6 +272,12 @@ contract UVPDockingModule {
     error DockAttachConsentRequired(bytes32 dockInstanceId, address caller);
     /// 动态选择：选定目标的候选叶不在路由承诺的候选集 root 内。
     error DockCandidateLeafMismatch(bytes32 leaf, bytes32 root);
+    /// B-01 open 目标侧同意门：调用方既不是目标 plan publisher（new 路由
+    /// 的子单 creator 与之同源），又不携目标侧 EIP-712 同意签名。
+    error DockOpenConsentRequired(bytes32 dockInstanceId, address caller);
+    /// B-02 有界祖先检查：attach 目标出现在父单的父链祖先内（挂接即成
+    /// 跨单环）。
+    error DockAncestorCycle(bytes32 planId, bytes32 orderId);
 
     // ------------------------------------------------------------------
     // 事件（全部端点 plan/order + dockInstanceId 可恢复）
@@ -312,7 +356,10 @@ contract UVPDockingModule {
     // ------------------------------------------------------------------
 
     uint8 public constant MAX_DOCK_OUTPUTS = 16;
-    uint8 public constant MAX_DOCK_DEPTH = 8;
+    /// B-02：每单总挂接边数上限（父链账本，open 建 dock 单计边、attach 计
+    /// 边；原 MAX_DOCK_DEPTH 的"路径深度"语义退役——最长路径由索引器从
+    /// DockOpened/DockAttached 事件图计算，不进合约）。
+    uint8 public constant MAX_DOCK_EDGES = 8;
     /// route modeWord：new=0、existing=1。open 路由钉 new，attach 路由钉
     /// existing——modeWord 进 routeHash 与 dockInstanceId 双 preimage，
     /// 两模式身份不可互冒。
@@ -336,13 +383,17 @@ contract UVPDockingModule {
     bytes32 private constant _DOMAIN_SOURCE_FACT_SET_ZERO = bytes32(0);
     bytes32 private constant _DOMAIN_INPUT_BINDING = keccak256("UVP_DOCK_INPUT_BINDING_V2");
     bytes32 private constant _DOMAIN_OUTPUT_BINDING = keccak256("UVP_DOCK_OUTPUT_BINDING_V2");
-    bytes32 private constant _DOMAIN_ROUTE = keccak256("UVP_DOCK_ROUTE_V2");
+    // route 域 V3（B-01，abiVersion 4.7）：preimage 追加 targetPlanId word——
+    // 接口承诺 word 可被第三方复制进自建镜像 plan，不绑 planId 时 new 路由
+    // 实例可被镜像计划抢注/替换。静态路由该槽 = 目标 planId；动态路由
+    // 冻结期为 0（选定目标的 planId 经候选叶 V2 进 candidatesRoot）。
+    bytes32 private constant _DOMAIN_ROUTE = keccak256("UVP_DOCK_ROUTE_V3");
     bytes32 private constant _DOMAIN_DOCK_INSTANCE = keccak256("UVP_DOCK_INSTANCE_V2");
-    // target:null 动态选择的候选叶域：leaf = H(domain, routeId,
-    // targetDefinitionRefHash, interfaceNameId)。routeId 绑定（父定义,
-    // 父阶段），跨路由/跨父复用候选叶在 membership 处失配；候选集 root
-    // 本身经 routeHash 目标槽进 dockRoutesRoot（finalize 冻结）。
-    bytes32 private constant _DOMAIN_DOCK_CANDIDATE = keccak256("UVP_DOCK_CANDIDATE_V1");
+    // target:null 动态选择的候选叶域 V2（B-01，abiVersion 4.7）：leaf =
+    // H(domain, routeId, targetDefinitionRefHash, targetPlanId,
+    // interfaceNameId)。候选叶绑 planId 后，镜像计划无法以同 defRef 占据
+    // 候选叶——选定目标的运行期身份由此钉进候选集 root。
+    bytes32 private constant _DOMAIN_DOCK_CANDIDATE = keccak256("UVP_DOCK_CANDIDATE_V2");
     bytes32 private constant _DOMAIN_DOCK_ORDER = keccak256("UVP_DOCK_ORDER_V1");
     // Highest bit is reserved for deterministically-derived dock child
     // orders.  Public MINT/trigger-origin order creation rejects this
@@ -368,6 +419,14 @@ contract UVPDockingModule {
     bytes32 private constant _ATTACH_PERMIT_TYPEHASH = keccak256(
         "UVPDockAttachPermitV1(bytes32 targetPlanId,bytes32 targetOrderId,bytes32 interfaceNameId,bytes32 localPlanId,bytes32 routeHash,bytes32 dockInstanceId,uint256 feeLimit,uint256 nonce,uint256 deadline)"
     );
+    // B-01 open 目标侧同意 typehash：digest 绑定全部 open 端点身份——
+    // targetPlanId/interfaceNameId（目标侧）、localPlanId/localOrderId（父单）、
+    // routeId/routeHash/dockInstanceId/linkedOrderId（路由实例与子单身份，
+    // dockInstanceId 已含 runtimeDomain=chainId+状态机地址，天然防跨链重放）
+    // 加 nonce/deadline 防重放。签名权威 = 目标 plan publisher。
+    bytes32 private constant _OPEN_CONSENT_TYPEHASH = keccak256(
+        "UVPDockOpenConsentV1(bytes32 targetPlanId,bytes32 interfaceNameId,bytes32 localPlanId,bytes32 localOrderId,bytes32 routeId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,uint256 nonce,uint256 deadline)"
+    );
 
     IUVPStateMachineCore public immutable stateMachine;
     IUVPPlanMetadataModule public immutable planMetadataModule;
@@ -389,8 +448,18 @@ contract UVPDockingModule {
     // 的端点唯一不变量）；目标侧"谁挂了我"的投影由 DockAttached 事件
     // （indexed linkedOrderId）承载。
     mapping(bytes32 targetEndpointKey => bytes32 dockInstanceId) public dockByTargetOrder;
-    mapping(bytes32 planId => mapping(bytes32 orderId => uint8 depth)) public dockDepthOfOrder;
+    /// B-02 每单总挂接边数账本（父链口径）：值 = 该单父链上的 dock 边数
+    /// （open 子单 = 父账本+1；attach 目标 = max(自身, 父账本+1)）。上限
+    /// MAX_DOCK_EDGES；最长路径不由链上维护（索引器派生）。
+    mapping(bytes32 planId => mapping(bytes32 orderId => uint8 edgeCount)) public dockEdgeCountOfOrder;
+    /// B-02 父链指针：订单的父链首边（抬升其边数账本的 dock 实例）。
+    /// 有界祖先检查沿本指针上溯（≤ MAX_DOCK_EDGES 跳）；N:1 拼批中未
+    /// 抬升账本的边不在父链内（其环路由索引器图计算兜底观测）。
+    mapping(bytes32 planId => mapping(bytes32 orderId => bytes32 dockInstanceId)) public dockParentOfOrder;
     mapping(bytes32 dockInstanceId => uint256 usedPermitNonce) public usedEntrancePermitNonce;
+    /// open 目标侧同意的 nonce 账本（与 entrance permit 分账本，按
+    /// dockInstanceId 寻址，序列从 1 起）。
+    mapping(bytes32 dockInstanceId => uint256 usedNonce) public usedOpenConsentNonce;
 
     constructor(address stateMachineAddress, address planMetadataModuleAddress) {
         stateMachine = IUVPStateMachineCore(stateMachineAddress);
@@ -401,19 +470,34 @@ contract UVPDockingModule {
     // openDockedOrder
     // ------------------------------------------------------------------
 
-    function openDockedOrder(
+    function openDockedOrder(OpenDockCallV1 calldata call) external returns (bool opened) {
+        // 校验链拆为两个内部帧（外部帧只持单一参数，栈深上限约束下校验
+        // 链无法在多参数外部帧上展开）：承诺校验（步骤 1-8.6）→ 身份/
+        // 同意/边数/唯一性闸（步骤 9-12）。
+        bytes32 entranceBindingHash = _verifyOpenCommitments(
+            call.request, call.routeProof, call.interfaceProof, call.inputs, call.outputs, call.outputAttributions
+        );
+        (bool alreadyOpen, uint8 parentDepth) = _requireOpenGates(call.request, call.inputs, call.authorization);
+        if (alreadyOpen) {
+            return false;
+        }
+        // ---- 原子效果：任一步 revert 全部回滚 ----
+        return _applyOpenEffects(
+            call.request, call.inputs, call.outputs, entranceBindingHash, parentDepth, call.entranceAttribution
+        );
+    }
+
+    /// open 承诺校验链（步骤 1-8.6）：父单/entrance hook/routeId/目标定义
+    /// 闭环/出生锚/端口叶 membership/routeHash（含 targetPlanId，B-01）/
+    /// 目标 plan 接口承诺/出生锚词表/output 词表。返回 entrance 绑定哈希。
+    function _verifyOpenCommitments(
         OpenDockRequestV2 calldata request,
         bytes32[] calldata routeProof,
         DockInterfaceProofV2 calldata interfaceProof,
         DockInputBindingArg[] calldata inputs,
         DockOutputBindingArg[] calldata outputs,
-        EntrancePermitV2 calldata permit,
-        IUVPStateMachineCore.FactAttribution[] calldata outputAttributions,
-        // entrance 事实的属主声明（UB-2 词表闸同口径）：有词表的目标 plan
-        // 必须携有效 attribution（能力叶 relation=0 membership proof），省证
-        // 出生事实无法落库绕过 per-stage 计数。
-        IUVPStateMachineCore.FactAttribution calldata entranceAttribution
-    ) external returns (bool opened) {
+        IUVPStateMachineCore.FactAttribution[] calldata outputAttributions
+    ) private view returns (bytes32 entranceBindingHash) {
         // 1. 父订单存在。
         if (!stateMachine.orderExists(request.localPlanId, request.localOrderId)) {
             revert DockUnknownLocalOrder();
@@ -462,7 +546,7 @@ contract UVPDockingModule {
         if (outputs.length > MAX_DOCK_OUTPUTS) {
             revert DockBindingLimitExceeded(outputs.length, MAX_DOCK_OUTPUTS);
         }
-        bytes32 entranceBindingHash = _recomputeInputBinding(request.routeId, request.interfaceNameId, inputs[0]);
+        entranceBindingHash = _recomputeInputBinding(request.routeId, request.interfaceNameId, inputs[0]);
         bytes32 recomputedInputsRoot = _inputsRoot(inputs);
         bytes32 recomputedOutputsRoot = _outputsRoot(outputs);
 
@@ -492,9 +576,12 @@ contract UVPDockingModule {
 
         // 7. routeHash 重算：open 路由 modeWord 钉 new(0)——existing 路由的
         //    哈希在此失配（existing 走 attachDockedOrder，各自钉死模式）。
+        //    目标槽之后追加 targetPlanId word（B-01）：镜像计划复制接口
+        //    承诺也无法满足已提交 route 的身份承诺。
         bytes32 recomputedRouteHash = _routeHash(
             request.localDefinitionRefHash,
             request.targetDefinitionRefHash,
+            request.targetPlanId,
             request.interfaceNameId,
             DOCK_MODE_NEW,
             recomputedInputsRoot,
@@ -536,7 +623,17 @@ contract UVPDockingModule {
         //    由承诺输入重算，调用方不得自报叶值）；无任何 capability 声明
         //    的手工目标 plan 与 mint/output 词表闸同口径放行。
         _verifyOutputVocabulary(request.targetPlanId, outputs, outputAttributions);
+    }
 
+    /// open 身份/同意/边数/唯一性闸（步骤 9-12）。返回 (是否幂等重放,
+    /// 父单边数账本值)。
+    function _requireOpenGates(
+        OpenDockRequestV2 calldata request,
+        DockInputBindingArg[] calldata inputs,
+        OpenAuthorizationV2 calldata authorization
+    ) private returns (bool alreadyOpen, uint8 parentDepth) {
+        EntrancePermitV2 calldata permit = authorization.permit;
+        DockTargetConsentV1 calldata consent = authorization.consent;
         // 9. 身份推导重算（keeper 不可自报 ID）。localOrderKey 为 bytes32
         //    order id 本身（EVM 轨订单键即 word）。modeWord/interfaceNameId
         //    槽位钉 new 路由的实例身份。
@@ -553,7 +650,7 @@ contract UVPDockingModule {
             revert DockRouteLeafMismatch(request.linkedOrderId, recomputedLinkedOrder);
         }
         if (_docks[request.dockInstanceId].exists) {
-            return false; // 幂等重放：同一 dock 重复 open 无副作用
+            return (true, 0); // 幂等重放：同一 dock 重复 open 无副作用
         }
 
         // 10. entrance permit（可选）：非空签名 = 目标 plan publisher 对本次
@@ -562,14 +659,19 @@ contract UVPDockingModule {
         if (permit.signature.length != 0) {
             _verifyEntrancePermit(request, inputs[0].portKey, permit);
         }
+        // 10.5 目标侧同意门（B-01，必过）：调用方即目标 plan publisher 时
+        //      以身份腿放行；否则必须携 publisher 的 EIP-712 同意签名。
+        //      位于幂等检查之后（成功 open 的重放对任何人 return false）。
+        _requireOpenConsent(request, consent);
 
-        // 11. 深度（父订单真实 dock 深度为权威，不信任请求自报值）。
-        uint8 parentDepth = dockDepthOfOrder[request.localPlanId][request.localOrderId];
+        // 11. 边数预算（B-02：父订单真实 dock 边数账本为权威，不信任请求
+        //     自报值；上界 MAX_DOCK_EDGES，链上不维护最长路径）。
+        uint8 parentDepth = dockEdgeCountOfOrder[request.localPlanId][request.localOrderId];
         if (parentDepth != request.parentDepth) {
             revert DockDepthMismatch(request.parentDepth, parentDepth);
         }
-        if (parentDepth >= MAX_DOCK_DEPTH) {
-            revert DockDepthExceeded(parentDepth, MAX_DOCK_DEPTH);
+        if (parentDepth >= MAX_DOCK_EDGES) {
+            revert DockDepthExceeded(parentDepth, MAX_DOCK_EDGES);
         }
 
         // 12. 唯一性：本 route instance 未绑定 child；目标 endpoint 未占用。
@@ -582,8 +684,22 @@ contract UVPDockingModule {
         if (dockByTargetOrder[targetEndpointKey] != bytes32(0)) {
             revert DockEndpointOccupied(targetEndpointKey);
         }
+        return (false, parentDepth);
+    }
 
-        // ---- 原子效果：任一步 revert 全部回滚 ----
+    /// open 的原子效果段（独立函数：openDockedOrder 的九参数校验链已贴
+    /// EVM 栈深上限，效果集收敛到本帧后外部帧不再持有中间变量）。
+    function _applyOpenEffects(
+        OpenDockRequestV2 calldata request,
+        DockInputBindingArg[] calldata inputs,
+        DockOutputBindingArg[] calldata outputs,
+        bytes32 entranceBindingHash,
+        uint8 parentDepth,
+        IUVPStateMachineCore.FactAttribution calldata entranceAttribution
+    ) private returns (bool) {
+        bytes32 localRouteInstanceKey =
+            keccak256(abi.encode(request.localPlanId, request.localOrderId, request.localStageId, request.routeId));
+        bytes32 targetEndpointKey = keccak256(abi.encode(request.targetPlanId, request.linkedOrderId));
         _docks[request.dockInstanceId] = ActiveDockV2({
             localPlanId: request.localPlanId,
             localOrderId: request.localOrderId,
@@ -615,7 +731,10 @@ contract UVPDockingModule {
         }
         dockByLocalRoute[localRouteInstanceKey] = request.dockInstanceId;
         dockByTargetOrder[targetEndpointKey] = request.dockInstanceId;
-        dockDepthOfOrder[request.targetPlanId][request.linkedOrderId] = parentDepth + 1;
+        // B-02 边数账本 + 父链指针：open 建 dock 单计边（子单账本 = 父账本
+        // +1），出生边即子单父链首边。
+        dockEdgeCountOfOrder[request.targetPlanId][request.linkedOrderId] = parentDepth + 1;
+        dockParentOfOrder[request.targetPlanId][request.linkedOrderId] = request.dockInstanceId;
 
         bytes32 entrancePayloadHash = _inputPayloadHash(
             request.dockInstanceId,
@@ -749,6 +868,9 @@ contract UVPDockingModule {
         //    没有出生锚在建立时被消费，输入逐端口由 submitDockedInput 在
         //    就绪后交付）+ 端口叶 membership + 目标侧 receive 词表钉死。
         bytes32[] memory inputLeaves = new bytes32[](inputs.length);
+        // 同一 attach 的 input 绑定不得重复指向同一目标事实键（见
+        // _requireUniqueInputTargets）——否则兄弟绑定永久撞 DockInputConflict。
+        _requireUniqueInputTargets(request.dockInstanceId, inputs);
         for (uint256 i = 0; i < inputs.length; i++) {
             AttachInputBindingArg calldata binding = inputs[i];
             bytes32 recomputed = _inputBindingHash(
@@ -810,9 +932,12 @@ contract UVPDockingModule {
         //    候选集 root——重算匹配后，选定目标必须携候选叶 membership
         //    proof。两种形态的槽 word 都在已提交 route 叶内（调用方无法
         //    自造：换槽 word 即换叶，dockRoutesRoot membership 失配）。
+        //    静态路由的 targetPlanId word 直入 preimage（B-01）；动态路由
+        //    该槽为 0（选定目标 planId 经候选叶 V2 进 candidatesRoot）。
         bytes32 recomputedRouteHash = _routeHash(
             request.localDefinitionRefHash,
             request.targetDefinitionRefHash,
+            request.targetPlanId,
             request.interfaceNameId,
             DOCK_MODE_EXISTING,
             recomputedInputsRoot,
@@ -822,6 +947,7 @@ contract UVPDockingModule {
             bytes32 dynamicRouteHash = _routeHash(
                 request.localDefinitionRefHash,
                 request.targetCandidatesRoot,
+                bytes32(0),
                 request.interfaceNameId,
                 DOCK_MODE_EXISTING,
                 recomputedInputsRoot,
@@ -830,9 +956,15 @@ contract UVPDockingModule {
             if (dynamicRouteHash != request.routeHash) {
                 revert DockRouteLeafMismatch(request.routeHash, dynamicRouteHash);
             }
+            // 候选叶 V2（B-01）：选定目标的 planId 入叶——镜像计划复制接口
+            // 承诺/defRef 也无法占据候选叶。
             bytes32 candidateLeaf = keccak256(
                 abi.encode(
-                    _DOMAIN_DOCK_CANDIDATE, request.routeId, request.targetDefinitionRefHash, request.interfaceNameId
+                    _DOMAIN_DOCK_CANDIDATE,
+                    request.routeId,
+                    request.targetDefinitionRefHash,
+                    request.targetPlanId,
+                    request.interfaceNameId
                 )
             );
             if (!DockMerkle.verify(request.targetCandidatesRoot, candidateLeaf, attachProof.candidateProof)) {
@@ -875,16 +1007,18 @@ contract UVPDockingModule {
         // 10. 同意门（creator / 在任执行者 / publisher 预授权，三者之一）。
         _requireAttachConsent(request, permit);
 
-        // 11. 深度：父订单真实 dock 深度为权威；目标单深度取 max——attach
-        //     不建单但计入 dock 链长，不抬升会让深度账本对"经由 attach
-        //     延长的链"失明，MAX_DOCK_DEPTH 的环路/长链防护被绕过。
-        uint8 parentDepth = dockDepthOfOrder[request.localPlanId][request.localOrderId];
+        // 11. 边数预算 + 有界祖先检查（B-02）：父订单真实边数账本为权威；
+        //     目标单账本取 max——attach 不建单但计边，不抬升会让账本对
+        //     "经由 attach 延长的链"失明。防跨单环：目标出现在父单父链
+        //     （≤ MAX_DOCK_EDGES 跳）即拒。最长路径不在链上维护。
+        uint8 parentDepth = dockEdgeCountOfOrder[request.localPlanId][request.localOrderId];
         if (parentDepth != request.parentDepth) {
             revert DockDepthMismatch(request.parentDepth, parentDepth);
         }
-        if (parentDepth >= MAX_DOCK_DEPTH) {
-            revert DockDepthExceeded(parentDepth, MAX_DOCK_DEPTH);
+        if (parentDepth >= MAX_DOCK_EDGES) {
+            revert DockDepthExceeded(parentDepth, MAX_DOCK_EDGES);
         }
+        _requireNotDockAncestor(request);
 
         // 12. 唯一性：父 route instance 一次性（选定后钉住的执行面）。
         //     目标端点不设唯一键——N:1 拼批，多父可挂同一目标单。
@@ -927,8 +1061,11 @@ contract UVPDockingModule {
             });
         }
         dockByLocalRoute[localRouteInstanceKey] = request.dockInstanceId;
-        if (dockDepthOfOrder[request.targetPlanId][request.linkedOrderId] < parentDepth + 1) {
-            dockDepthOfOrder[request.targetPlanId][request.linkedOrderId] = parentDepth + 1;
+        // B-02 边数账本 max 合并 + 父链指针：仅当账本被抬升时更新指针，
+        // 保持"账本值 = 父链边数"不变量（祖先检查沿父链上溯的跳数上界）。
+        if (dockEdgeCountOfOrder[request.targetPlanId][request.linkedOrderId] < parentDepth + 1) {
+            dockEdgeCountOfOrder[request.targetPlanId][request.linkedOrderId] = parentDepth + 1;
+            dockParentOfOrder[request.targetPlanId][request.linkedOrderId] = request.dockInstanceId;
         }
 
         emit DockAttached(
@@ -1095,7 +1232,9 @@ contract UVPDockingModule {
                     payloadHash,
                     originalSubmitter
                 );
-                return false;
+                // 等价交付即本绑定的生效交付（账本已置位、事件已发），
+                // 返回值与事件/账本口径一致。
+                return true;
             }
         }
         bytes32 targetFactId = keccak256(abi.encode(binding.targetSourceId, binding.targetSignalId));
@@ -1277,6 +1416,38 @@ contract UVPDockingModule {
         );
     }
 
+    /// B-01 open 目标侧同意 digest（签名权威 = 目标 plan publisher）。字段
+    /// 集与 _OPEN_CONSENT_TYPEHASH 一致；keeper/测试用本视图对拍签名。
+    function openConsentDigest(
+        bytes32 targetPlanId,
+        bytes32 interfaceNameId,
+        bytes32 localPlanId,
+        bytes32 localOrderId,
+        bytes32 routeId,
+        bytes32 routeHash,
+        bytes32 dockInstanceId,
+        bytes32 linkedOrderId,
+        uint256 nonce,
+        uint256 deadline
+    ) external view returns (bytes32) {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                _OPEN_CONSENT_TYPEHASH,
+                targetPlanId,
+                interfaceNameId,
+                localPlanId,
+                localOrderId,
+                routeId,
+                routeHash,
+                dockInstanceId,
+                linkedOrderId,
+                nonce,
+                deadline
+            )
+        );
+        return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
+    }
+
     // ------------------------------------------------------------------
     // 内部
     // ------------------------------------------------------------------
@@ -1318,7 +1489,9 @@ contract UVPDockingModule {
         bytes32 r;
         bytes32 sigS;
         uint8 v;
-        assembly {
+        // 只读 mload 的签名拆分：memory-safe 标注放行 via-IR 的栈压缩
+        //（open 校验链九参数已贴栈深上限，未标注的 assembly 块是压缩屏障）。
+        assembly ("memory-safe") {
             r := mload(add(signature, 0x20))
             sigS := mload(add(signature, 0x40))
             v := byte(0, mload(add(signature, 0x60)))
@@ -1384,7 +1557,9 @@ contract UVPDockingModule {
         bytes32 r;
         bytes32 sigS;
         uint8 v;
-        assembly {
+        // 只读 mload 的签名拆分：memory-safe 标注放行 via-IR 的栈压缩
+        //（open 校验链九参数已贴栈深上限，未标注的 assembly 块是压缩屏障）。
+        assembly ("memory-safe") {
             r := mload(add(signature, 0x20))
             sigS := mload(add(signature, 0x40))
             v := byte(0, mload(add(signature, 0x60)))
@@ -1396,6 +1571,84 @@ contract UVPDockingModule {
         usedEntrancePermitNonce[request.dockInstanceId] = permit.nonce;
     }
 
+    /// B-01 open 目标侧同意门：身份腿（调用方 = 目标 plan publisher，即
+    /// new 路由子单 creator 的同源权威——"creator 或 publisher"两腿在 open
+    /// 路径合一）或签名腿，二者之一。空签名且非 publisher 即拒。
+    function _requireOpenConsent(OpenDockRequestV2 calldata request, DockTargetConsentV1 calldata consent) private {
+        address authority = stateMachine.planPublisher(request.targetPlanId);
+        if (msg.sender == authority) {
+            return;
+        }
+        if (consent.signature.length == 0) {
+            revert DockOpenConsentRequired(request.dockInstanceId, msg.sender);
+        }
+        if (block.timestamp > consent.deadline) {
+            revert DockPermitExpired(consent.deadline);
+        }
+        // nonce 序列从 1 起（与 permit 账本同口径的 storage 下界）；与
+        // entrance permit 分账本，互不挤占。
+        if (usedOpenConsentNonce[request.dockInstanceId] >= consent.nonce) {
+            revert DockPermitNonceAlreadyUsed(request.dockInstanceId, consent.nonce);
+        }
+        bytes32 structHash = keccak256(
+            abi.encode(
+                _OPEN_CONSENT_TYPEHASH,
+                request.targetPlanId,
+                request.interfaceNameId,
+                request.localPlanId,
+                request.localOrderId,
+                request.routeId,
+                request.routeHash,
+                request.dockInstanceId,
+                request.linkedOrderId,
+                consent.nonce,
+                consent.deadline
+            )
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
+        if (consent.signature.length != 65) {
+            revert DockPermitInvalidSigner(authority, address(0));
+        }
+        bytes memory signature = consent.signature;
+        bytes32 r;
+        bytes32 sigS;
+        uint8 v;
+        assembly ("memory-safe") {
+            r := mload(add(signature, 0x20))
+            sigS := mload(add(signature, 0x40))
+            v := byte(0, mload(add(signature, 0x60)))
+        }
+        address recovered = ECDSA.recover(digest, UVPSignatures.Signature({v: v, r: r, s: sigS}));
+        if (recovered != authority) {
+            revert DockPermitInvalidSigner(authority, recovered);
+        }
+        usedOpenConsentNonce[request.dockInstanceId] = consent.nonce;
+    }
+
+    /// B-02 有界祖先检查（attach 前置）：沿父单的父链指针上溯至多
+    /// MAX_DOCK_EDGES 跳（账本值 = 父链边数的不变量给出跳数上界），
+    /// 目标单出现在祖先链即拒——挂接即成跨单环。指针记录抬升账本的那条
+    /// 边；N:1 拼批中未抬升账本的边不在父链内（其环路形态由索引器图
+    /// 计算兜底观测，链上只做有界闸）。
+    function _requireNotDockAncestor(AttachDockRequestV1 calldata request) private view {
+        bytes32 cursorPlan = request.localPlanId;
+        bytes32 cursorOrder = request.localOrderId;
+        for (uint256 hop = 0; hop < MAX_DOCK_EDGES; hop++) {
+            bytes32 parentDockId = dockParentOfOrder[cursorPlan][cursorOrder];
+            if (parentDockId == bytes32(0)) {
+                return;
+            }
+            ActiveDockV2 storage parentDock = _docks[parentDockId];
+            if (!parentDock.exists) {
+                return;
+            }
+            if (parentDock.localPlanId == request.targetPlanId && parentDock.localOrderId == request.linkedOrderId) {
+                revert DockAncestorCycle(request.targetPlanId, request.linkedOrderId);
+            }
+            cursorPlan = parentDock.localPlanId;
+            cursorOrder = parentDock.localOrderId;
+        }
+    }
     /// entrance 端口叶重算 + 与唯一 input 绑定/mailbox hook 的一致性。
     function _verifyEntrancePortLeaf(
         OpenDockRequestV2 calldata request,
@@ -1577,6 +1830,27 @@ contract UVPDockingModule {
     }
 
     /// 重算单条 input 绑定哈希；失配即 revert（调用方不得自报 bindingHash）。
+    /// 同一 attach 的两条 input 绑定不得指向同一目标事实键：首条交付后
+    /// 兄弟绑定在 submitDockedInput 恒撞 DockInputConflict（不置交付位），
+    /// keeper 每个重发窗口烧 gas 且永不收敛——注册边界拒绝。
+    function _requireUniqueInputTargets(bytes32 dockInstanceId, AttachInputBindingArg[] calldata inputs)
+        private
+        pure
+    {
+        bytes32[] memory seenTargetFacts = new bytes32[](inputs.length);
+        uint256 seenTargetFactCount;
+        for (uint256 i = 0; i < inputs.length; i++) {
+            bytes32 targetFactKey = keccak256(abi.encode(inputs[i].targetSourceId, inputs[i].targetSignalId));
+            for (uint256 j = 0; j < seenTargetFactCount; j++) {
+                if (seenTargetFacts[j] == targetFactKey) {
+                    revert DockInputConflict(dockInstanceId, inputs[i].bindingHash);
+                }
+            }
+            seenTargetFacts[seenTargetFactCount] = targetFactKey;
+            seenTargetFactCount += 1;
+        }
+    }
+
     function _recomputeInputBinding(bytes32 routeId, bytes32 interfaceNameId, DockInputBindingArg calldata binding)
         private
         pure
@@ -1655,6 +1929,7 @@ contract UVPDockingModule {
     function _routeHash(
         bytes32 localDefinitionRefHash,
         bytes32 targetSlotWord,
+        bytes32 targetPlanIdWord,
         bytes32 interfaceNameId,
         uint256 modeWord,
         bytes32 inputsRoot,
@@ -1664,11 +1939,15 @@ contract UVPDockingModule {
         // 是路由的目标承诺槽——静态路由为 targetDefinitionRefHash，
         // target:null 动态路由为候选集 root（目标运行期身份由 resolution
         // manifest 与 route JSON 携带，不进 routeHash preimage）。
+        // targetPlanIdWord（B-01，域 V3）：静态路由 = 目标 planId（镜像计划
+        // 无法满足已提交 route 身份）；动态路由冻结期为 0，选定目标 planId
+        // 经候选叶 V2 进候选集 root。
         return keccak256(
             abi.encode(
                 _DOMAIN_ROUTE,
                 localDefinitionRefHash,
                 targetSlotWord,
+                targetPlanIdWord,
                 interfaceNameId,
                 modeWord,
                 inputsRoot,

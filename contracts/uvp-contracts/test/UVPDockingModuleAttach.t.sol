@@ -5,6 +5,7 @@ import {UVPStateMachine} from "../src/UVPStateMachine.sol";
 import {UVPDockingModule} from "../src/UVPDockingModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
+import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
 import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {DockMerkle} from "../src/libraries/DockMerkle.sol";
@@ -90,11 +91,13 @@ contract UVPDockingModuleAttachTest {
     bytes32 private constant DOMAIN_ROUTE_ID = keccak256("UVP_DOCK_ROUTE_ID_V1");
     bytes32 private constant DOMAIN_INPUT_BINDING = keccak256("UVP_DOCK_INPUT_BINDING_V2");
     bytes32 private constant DOMAIN_OUTPUT_BINDING = keccak256("UVP_DOCK_OUTPUT_BINDING_V2");
-    bytes32 private constant DOMAIN_ROUTE = keccak256("UVP_DOCK_ROUTE_V2");
+    bytes32 private constant DOMAIN_ROUTE = keccak256("UVP_DOCK_ROUTE_V3");
     bytes32 private constant DOMAIN_DOCK_INSTANCE = keccak256("UVP_DOCK_INSTANCE_V2");
     bytes32 private constant DOMAIN_RUNTIME_EIP155 = keccak256("UVP_RUNTIME_EIP155_V1");
-    bytes32 private constant DOMAIN_DOCK_CANDIDATE = keccak256("UVP_DOCK_CANDIDATE_V1");
+    bytes32 private constant DOMAIN_DOCK_CANDIDATE = keccak256("UVP_DOCK_CANDIDATE_V2");
     bytes32 private constant EMPTY_DOCK_ROOT = keccak256("");
+    /// 第二候选的链上 planId word（镜像计划占位，B-01 候选叶 V2 槽）。
+    bytes32 private constant OTHER_CANDIDATE_PLAN_ID = keccak256("other-candidate-plan");
     // 与 UVPStagePatchModule 同值的镜像常量（既有测试文件的惯例）。
     bytes32 private constant EXECUTOR_PATCH_MODE_ASSIGN = bytes32("assign");
 
@@ -191,7 +194,9 @@ contract UVPDockingModuleAttachTest {
         stagePatch = _stagePatchModule;
         runtimeDomain = keccak256(abi.encode(DOMAIN_RUNTIME_EIP155, block.chainid, address(machine)));
         _computeRouteParts();
+        // B-01：routeHash/候选叶承诺目标 planId——目标 plan 先注册。
         targetPlanId = _registerTargetPlan();
+        _computeRouteHashes();
         parentPlanId = _registerParentPlan();
     }
 
@@ -512,6 +517,7 @@ contract UVPDockingModuleAttachTest {
                 DOMAIN_ROUTE,
                 aliasDefRef,
                 targetDefinitionRef,
+                targetPlanId,
                 INTERFACE_NAME_ID,
                 uint256(1),
                 DockMerkle.root(_single(aliasAmendBinding)),
@@ -769,6 +775,32 @@ contract UVPDockingModuleAttachTest {
         assertFalse(docking.dockInputDelivered(instance, amendInputBinding));
     }
 
+    /// A-09b：同一 attach 的两条 input 绑定指向同一目标事实键即拒绝——
+    /// 否则首条交付后兄弟绑定在 submitDockedInput 永久撞 DockInputConflict
+    /// （不置交付位），keeper 每个重发窗口烧 gas 且永不收敛。
+    function testAttachRejectsDuplicateTargetFactKeyInputs() public {
+        bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
+        bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
+        UVPDockingModule.AttachDockRequestV1 memory request = _execRequest(parentOrder, targetOrder);
+        UVPDockingModule.AttachInputBindingArg[] memory inputs = _attachInputs(PARENT_EXEC_HOOK);
+        UVPDockingModule.AttachInputBindingArg[] memory duplicated = new UVPDockingModule.AttachInputBindingArg[](2);
+        duplicated[0] = inputs[0];
+        duplicated[1] = inputs[0];
+        UVPDockingModule.DockOutputBindingArg[] memory outputs = _attachOutputs();
+        _expect(
+            abi.encodeWithSelector(UVPDockingModule.DockInputConflict.selector, request.dockInstanceId, amendInputBinding)
+        );
+        docking.attachDockedOrder(
+            request,
+            _routeProofFor(request.routeHash),
+            _attachInterfaceProof(),
+            duplicated,
+            outputs,
+            _permitEmpty(),
+            _outputAttributionsFor(outputs)
+        );
+    }
+
     // ------------------------------------------------------------------
     // target:null 动态选择
     // ------------------------------------------------------------------
@@ -821,7 +853,7 @@ contract UVPDockingModuleAttachTest {
         UVPDockingModule.AttachDockRequestV1 memory request = _dynRequest(parentOrder, targetOrder);
         bytes32 foreignRoot = DockMerkle.root(_single(targetCandidateLeaf));
         request.targetCandidatesRoot = foreignRoot;
-        bytes32 recomputed = _routeHash(foreignRoot, EMPTY_DOCK_ROOT, EMPTY_DOCK_ROOT);
+        bytes32 recomputed = _routeHash(foreignRoot, bytes32(0), EMPTY_DOCK_ROOT, EMPTY_DOCK_ROOT);
         _expect(abi.encodeWithSelector(UVPDockingModule.DockRouteLeafMismatch.selector, dynRouteHash, recomputed));
         _attachRaw(request);
     }
@@ -876,7 +908,7 @@ contract UVPDockingModuleAttachTest {
             targetHookId: TARGET_RECEIVE_HOOK,
             portProof: amendPortProof
         });
-        bytes32 withInputs = _routeHash(candidatesRoot, dynAmendBinding, EMPTY_DOCK_ROOT);
+        bytes32 withInputs = _routeHash(candidatesRoot, bytes32(0), dynAmendBinding, EMPTY_DOCK_ROOT);
         _expect(abi.encodeWithSelector(UVPDockingModule.DockRouteLeafMismatch.selector, dynRouteHash, withInputs));
         docking.attachDockedOrder(
             request,
@@ -911,7 +943,7 @@ contract UVPDockingModuleAttachTest {
             bindingHash: dynDoneBinding,
             portProof: donePortProof
         });
-        bytes32 withOutputs = _routeHash(candidatesRoot, EMPTY_DOCK_ROOT, dynDoneBinding);
+        bytes32 withOutputs = _routeHash(candidatesRoot, bytes32(0), EMPTY_DOCK_ROOT, dynDoneBinding);
         _expect(abi.encodeWithSelector(UVPDockingModule.DockRouteLeafMismatch.selector, dynRouteHash, withOutputs));
         docking.attachDockedOrder(
             request,
@@ -960,6 +992,7 @@ contract UVPDockingModuleAttachTest {
                 DOMAIN_ROUTE,
                 localDefinitionRef,
                 targetDefinitionRef,
+                targetPlanId,
                 INTERFACE_NAME_ID,
                 uint256(0), // modeWord new
                 DockMerkle.root(_single(amendInputBinding)),
@@ -967,8 +1000,8 @@ contract UVPDockingModuleAttachTest {
             )
         );
         // 重算先按静态目标槽（existing modeWord）→ 失配；再按候选集根
-        // （=0 word）→ 仍失配，以第二次重算值回退。
-        bytes32 recomputed = _routeHash(bytes32(0), DockMerkle.root(_single(amendInputBinding)), _outputsRootOf());
+        // （=0 word，planId 槽随动态形态恒零）→ 仍失配，以第二次重算值回退。
+        bytes32 recomputed = _routeHash(bytes32(0), bytes32(0), DockMerkle.root(_single(amendInputBinding)), _outputsRootOf());
         _expect(abi.encodeWithSelector(UVPDockingModule.DockRouteLeafMismatch.selector, request.routeHash, recomputed));
         _attachRaw(request);
     }
@@ -982,9 +1015,71 @@ contract UVPDockingModuleAttachTest {
         _attachRaw(request);
     }
 
-    /// 深度账本 max 更新：attach 计入 dock 链长——父深 3 挂接后目标单
-    /// 深度抬到 4；父深 8 的挂接被 MAX 拒绝（长链/环路防护不被 attach
-    /// 绕过）。dockDepthOfOrder 是模块第 8 个存储变量（slot 7）。
+    /// B-02 有界祖先检查：目标出现在父单的父链（沿 dockParentOfOrder
+    /// 上溯）即拒。B-01 后计划级路由承诺是注册期 DAG，合法路由面造不出
+    /// 环——本用例按既有账本模拟惯例 vm.store 植入父链指针与祖先 dock
+    ///（local=(targetPlan,B)、exists=true），钉祖先闸本身的行为边界：
+    /// 父单账本未达上限，拒绝只能来自祖先检查而非边数闸。
+    function testAttachRejectsAncestorCycle() public {
+        bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
+        bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
+        bytes32 ancestorDockId = keccak256("ancestor-dock");
+        _plantDock(ancestorDockId, targetPlanId, targetOrder);
+        // dockParentOfOrder 是模块第 9 个存储变量（slot 8）。
+        bytes32 fatherSlot =
+            keccak256(abi.encode(parentOrder, keccak256(abi.encode(parentPlanId, uint256(8)))));
+        vm.store(address(docking), fatherSlot, ancestorDockId);
+
+        UVPDockingModule.AttachDockRequestV1 memory request = _execRequest(parentOrder, targetOrder);
+        _expect(abi.encodeWithSelector(UVPDockingModule.DockAncestorCycle.selector, targetPlanId, targetOrder));
+        _attachRaw(request);
+    }
+
+    /// B-02 祖先链传递：父链隔代表先（两跳命中）与单跳同口径拒绝。
+    function testAttachRejectsTransitiveAncestorCycle() public {
+        bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
+        bytes32 midOrder = keccak256("ancestor-mid");
+        bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
+        bytes32 midDockId = keccak256("ancestor-mid-dock");
+        bytes32 targetDockId = keccak256("ancestor-target-dock");
+        // mid dock：local=(parentPlan, midOrder)——把父链再延一跳。
+        _plantDock(midDockId, parentPlanId, midOrder);
+        // target dock：local=(targetPlan, targetOrder)。
+        _plantDock(targetDockId, targetPlanId, targetOrder);
+        // 父链：parentOrder → midDock(local=mid) → midOrder 的父 = targetDock。
+        vm.store(
+            address(docking),
+            keccak256(abi.encode(parentOrder, keccak256(abi.encode(parentPlanId, uint256(8))))),
+            midDockId
+        );
+        vm.store(
+            address(docking),
+            keccak256(abi.encode(midOrder, keccak256(abi.encode(parentPlanId, uint256(8))))),
+            targetDockId
+        );
+
+        UVPDockingModule.AttachDockRequestV1 memory request = _execRequest(parentOrder, targetOrder);
+        _expect(abi.encodeWithSelector(UVPDockingModule.DockAncestorCycle.selector, targetPlanId, targetOrder));
+        _attachRaw(request);
+    }
+
+    /// vm.store 植入一条 _docks 记录（祖先闸消费的最小面：local 复合键 +
+    /// exists）。_docks 是模块第 1 个存储变量（slot 0）：struct 槽序
+    /// localPlanId (base+0) / localOrderId (base+1) / (depth, exists) 同槽
+    /// 打包 (base+8)。成员寻址 = keccak(dockId, 0) + 字段序偏移（mapping
+    /// 值是 struct 时槽序连续，不是再哈希的 mapping 槽公式）；打包槽内
+    /// depth（uint8）取最低字节、exists（bool）取次低字节——置 exists 的
+    /// word 是 0x0100（depth=0）。
+    function _plantDock(bytes32 dockId, bytes32 localPlanId, bytes32 localOrderId) private {
+        bytes32 dockBase = keccak256(abi.encode(dockId, uint256(0)));
+        vm.store(address(docking), dockBase, localPlanId);
+        vm.store(address(docking), bytes32(uint256(dockBase) + 1), localOrderId);
+        vm.store(address(docking), bytes32(uint256(dockBase) + 8), bytes32(uint256(1) << 8)); // depth=0, exists=true
+    }
+
+    /// 边数账本 max 更新（B-02）：attach 计边——父 3 边挂接后目标单
+    /// 账本抬到 4；父 8 边的挂接被 MAX 拒绝。dockEdgeCountOfOrder 是模块
+    /// 第 8 个存储变量（slot 7）。
     function testAttachRaisesTargetDepthAndEnforcesMax() public {
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
@@ -993,7 +1088,7 @@ contract UVPDockingModuleAttachTest {
         UVPDockingModule.AttachDockRequestV1 memory request = _execRequest(parentOrder, targetOrder);
         request.parentDepth = 3;
         assertTrue(_attachWithArgs(request, _attachInterfaceProof(), _permitEmpty()));
-        assertEq(docking.dockDepthOfOrder(targetPlanId, targetOrder), 4);
+        assertEq(docking.dockEdgeCountOfOrder(targetPlanId, targetOrder), 4);
 
         bytes32 deepParent = _spawnParentOrder(SIGNAL_EXEC);
         bytes32 deepSlot = keccak256(abi.encode(deepParent, keccak256(abi.encode(parentPlanId, uint256(7)))));
@@ -1004,15 +1099,15 @@ contract UVPDockingModuleAttachTest {
         _attachWithArgs(deepRequest, _attachInterfaceProof(), _permitEmpty());
     }
 
-    /// 深度账本 max 的不降方向：目标单已更深时浅父挂接不覆盖——抬升只走
-    /// max(现值, 父深+1)，既有深链账本（此前挂接积累）对后来者只读。
+    /// 边数账本 max 的不降方向：目标单已更深时浅父挂接不覆盖——抬升只走
+    /// max(现值, 父账本+1)，既有深链账本（此前挂接积累）对后来者只读。
     function testAttachKeepsDeeperTargetDepth() public {
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
         bytes32 targetDepthSlot = keccak256(abi.encode(targetOrder, keccak256(abi.encode(targetPlanId, uint256(7)))));
         vm.store(address(docking), targetDepthSlot, bytes32(uint256(5)));
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
         assertTrue(_attach(execRoute(), parentOrder, targetOrder));
-        assertEq(docking.dockDepthOfOrder(targetPlanId, targetOrder), 5);
+        assertEq(docking.dockEdgeCountOfOrder(targetPlanId, targetOrder), 5);
     }
 
     // ------------------------------------------------------------------
@@ -1034,7 +1129,7 @@ contract UVPDockingModuleAttachTest {
         sm.setDockingModule(address(dock));
         sm.setPlanMetadataModule(address(metadata));
         sm.setOrderLinkModule(address(orderLink));
-        sm.setLens(address(0x1234));
+        sm.setLens(address(new UVPStateMachineLens(address(sm))));
         sm.freezeModules();
         _dockingModule = dock;
         _stagePatchModule = patch;
@@ -1082,19 +1177,6 @@ contract UVPDockingModuleAttachTest {
                 TARGET_SIGNAL
             )
         );
-        attachRouteHash = _routeHash(targetDefinitionRef, DockMerkle.root(_single(amendInputBinding)), _outputsRootOf());
-
-        dynRouteId = keccak256(abi.encode(DOMAIN_ROUTE_ID, localDefinitionRef, PARENT_DYN_STAGE));
-        targetCandidateLeaf =
-            keccak256(abi.encode(DOMAIN_DOCK_CANDIDATE, dynRouteId, targetDefinitionRef, INTERFACE_NAME_ID));
-        otherCandidateLeaf =
-            keccak256(abi.encode(DOMAIN_DOCK_CANDIDATE, dynRouteId, OTHER_CANDIDATE_DEF_REF, INTERFACE_NAME_ID));
-        bytes32[] memory candidateLeaves = new bytes32[](2);
-        candidateLeaves[0] = targetCandidateLeaf;
-        candidateLeaves[1] = otherCandidateLeaf;
-        candidatesRoot = DockMerkle.root(candidateLeaves);
-        dynRouteHash = _routeHash(candidatesRoot, EMPTY_DOCK_ROOT, EMPTY_DOCK_ROOT);
-
         amendPortLeaf = keccak256(
             abi.encode(DOMAIN_INTERFACE_INPUT, TARGET_UID_ID, INTERFACE_NAME_ID, AMEND_PORT, TARGET_RECEIVE_HOOK)
         );
@@ -1114,6 +1196,27 @@ contract UVPDockingModuleAttachTest {
         );
     }
 
+    /// B-01：静态路由/动态候选的承诺按目标注册 planId 计算（目标注册后）。
+    function _computeRouteHashes() private {
+        attachRouteHash =
+            _routeHash(targetDefinitionRef, targetPlanId, DockMerkle.root(_single(amendInputBinding)), _outputsRootOf());
+
+        dynRouteId = keccak256(abi.encode(DOMAIN_ROUTE_ID, localDefinitionRef, PARENT_DYN_STAGE));
+        targetCandidateLeaf = keccak256(
+            abi.encode(DOMAIN_DOCK_CANDIDATE, dynRouteId, targetDefinitionRef, targetPlanId, INTERFACE_NAME_ID)
+        );
+        otherCandidateLeaf = keccak256(
+            abi.encode(
+                DOMAIN_DOCK_CANDIDATE, dynRouteId, OTHER_CANDIDATE_DEF_REF, OTHER_CANDIDATE_PLAN_ID, INTERFACE_NAME_ID
+            )
+        );
+        bytes32[] memory candidateLeaves = new bytes32[](2);
+        candidateLeaves[0] = targetCandidateLeaf;
+        candidateLeaves[1] = otherCandidateLeaf;
+        candidatesRoot = DockMerkle.root(candidateLeaves);
+        dynRouteHash = _routeHash(candidatesRoot, bytes32(0), EMPTY_DOCK_ROOT, EMPTY_DOCK_ROOT);
+    }
+
     function _outputPortLeaf(bytes32 portKey, bytes32 sourceId, bytes32 signalId) private pure returns (bytes32) {
         return
             keccak256(
@@ -1121,10 +1224,21 @@ contract UVPDockingModuleAttachTest {
             );
     }
 
-    function _routeHash(bytes32 targetSlot, bytes32 inputsRoot, bytes32 outputsRoot) private view returns (bytes32) {
+    function _routeHash(bytes32 targetSlot, bytes32 targetPlanIdWord, bytes32 inputsRoot, bytes32 outputsRoot)
+        private
+        view
+        returns (bytes32)
+    {
         return keccak256(
             abi.encode(
-                DOMAIN_ROUTE, localDefinitionRef, targetSlot, INTERFACE_NAME_ID, uint256(1), inputsRoot, outputsRoot
+                DOMAIN_ROUTE,
+                localDefinitionRef,
+                targetSlot,
+                targetPlanIdWord,
+                INTERFACE_NAME_ID,
+                uint256(1),
+                inputsRoot,
+                outputsRoot
             )
         );
     }

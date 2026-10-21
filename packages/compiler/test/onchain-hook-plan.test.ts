@@ -13,6 +13,7 @@ import {
   merkleRoot,
   routeHash,
   stageKey,
+  ZERO_WORD,
 } from "../src/dock.js";
 import test from "node:test";
 import {
@@ -1653,6 +1654,7 @@ test("carries existing-mode dock routes on the on-chain track (UVPDockingModule 
     routeHash({
       localDefinitionRefHash: route.local.definitionRefHash,
       targetDefinitionRefHash: route.target.definitionRefHash,
+      targetPlanId: route.target.chainPlanId,
       interfaceName: route.target.interfaceName,
       orderMode: "new",
       inputBindingsRoot: route.inputBindingsRoot,
@@ -1726,6 +1728,7 @@ test("carries dynamic-selection (target:null) routes as unresolvedDockRoutes wit
     dockCandidateLeaf({
       routeId: expectedRouteId,
       targetDefinitionRefHash: manifestEntry.definitionRefHash,
+      targetPlanId: manifestEntry.chainPlanId!,
       interfaceName: "production_evidence",
     }),
   ]);
@@ -1735,6 +1738,7 @@ test("carries dynamic-selection (target:null) routes as unresolvedDockRoutes wit
     routeHash({
       localDefinitionRefHash: route.localDefinitionRefHash,
       targetDefinitionRefHash: expectedCandidatesRoot,
+      targetPlanId: ZERO_WORD,
       interfaceName: "production_evidence",
       orderMode: "existing",
       inputBindingsRoot: EMPTY_MERKLE_ROOT,
@@ -1780,6 +1784,7 @@ test("rejects dynamic-selection routes declaring order mode new (chain terminal 
   const forgedRouteHash = routeHash({
     localDefinitionRefHash: entry.localDefinitionRefHash,
     targetDefinitionRefHash: entry.candidatesRoot,
+    targetPlanId: ZERO_WORD,
     interfaceName: entry.interfaceName,
     orderMode: "new",
     inputBindingsRoot: EMPTY_MERKLE_ROOT,

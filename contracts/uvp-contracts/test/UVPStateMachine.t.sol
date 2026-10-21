@@ -7,6 +7,7 @@ import {UVPDockingModule} from "../src/UVPDockingModule.sol";
 import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
+import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 import {IUVPPlanMetadataModule} from "../src/interfaces/IUVPPlanMetadataModule.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
@@ -99,6 +100,10 @@ contract UVPStateMachineTest {
     bytes32 private constant HOOK_NON_TRIGGER = bytes32(uint256(0x6005));
     /// 另一条出生线的 mint 钩子（§7.2 出生锚订单归属测试用）。
     bytes32 private constant HOOK_ALT_MINT = bytes32(uint256(0x6006));
+    /// 深度闸测试用适格槽 hookId（被发射事实的 signalKey 槽，测试任意非零）。
+    bytes32 private constant HOOK_ADMISSION_DEPTH = bytes32(uint256(0x6b00));
+    /// 深度闸测试用普通 watcher 槽 hookId（EMIT_READY 档，走 _validateHook）。
+    bytes32 private constant HOOK_WATCHER_DEPTH = bytes32(uint256(0x6b01));
     bytes32 private constant HOOK_NAME_TRIGGER = bytes32(uint256(0x7001));
     bytes32 private constant HOOK_NAME_INIT_DONE = bytes32(uint256(0x7002));
     bytes32 private constant HOOK_NAME_TIMEOUT = bytes32(uint256(0x7003));
@@ -137,6 +142,7 @@ contract UVPStateMachineTest {
     uint8 private constant FLAG_ORDER_TRIGGER_MINT = 1;
     uint8 private constant FLAG_ORDER_TRIGGER_DOCK = 2;
     uint8 private constant FLAG_EMIT_READY = 4;
+    uint8 private constant FLAG_ADMISSION = 8;
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
         "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
     );
@@ -552,7 +558,7 @@ contract UVPStateMachineTest {
             _countTopic(
                 logs,
                 keccak256(
-                    "DerivedSignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)"
+                    "DerivedSignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint8)"
                 )
             ) == 1,
             "derived signal event count"
@@ -3383,7 +3389,7 @@ contract UVPStateMachineTest {
         );
         Vm.Log[] memory logs = vm.getRecordedLogs();
         require(
-            _countTopic(logs, keccak256("OrderForked(bytes32,bytes32,bytes32,bytes32,bytes32,address)")) == 1,
+            _countTopic(logs, keccak256("OrderForked(bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32[])")) == 1,
             "fork lineage event"
         );
         require(machine.orderParent(PLAN_ID, forkedOrderId) == parentOrderId, "fork parent lineage");
@@ -3411,6 +3417,100 @@ contract UVPStateMachineTest {
             require(forkDue == controlDue, "fork hook due parity");
             require(forkReady == controlReady, "fork hook ready parity");
         }
+    }
+
+    /// B-03 事件自包含最小断言：PlanCommitted.birthAuthorizer、
+    /// SignalSubmitted.factStageId（词表外事实 = 0）、OrderForked.forkPayloadHash
+    /// 与 replayedFactKeys（重放/新生可区分的链上锚点）随事件广播。
+    function testB03EventSelfContainmentFields() public {
+        vm.recordLogs();
+        UVPStateMachine machine = _forkPlanMachine();
+        Vm.Log[] memory commitLogs = vm.getRecordedLogs();
+        bytes32 parentOrderId = ORDER_ID;
+
+        // PlanCommitted 尾参 = 出生授权人（默认镜像 SUBMITTER）。
+        Vm.Log memory commitLog = _firstLogWithTopic(
+            commitLogs,
+            keccak256(
+                "PlanCommitted(bytes32,bytes32,address,bytes32,bytes32,uint256,bytes32,bytes32,bytes32,address)"
+            )
+        );
+        (,,,,, bytes32 commitCandidatesRoot, address commitBirthAuthorizer) =
+            abi.decode(commitLog.data, (bytes32, bytes32, uint256, bytes32, bytes32, bytes32, address));
+        require(commitCandidatesRoot != bytes32(0), "candidates root");
+        require(commitBirthAuthorizer == vm.addr(SUBMITTER_PRIVATE_KEY), "birth authorizer tail field");
+
+        vm.prank(SUBMITTER_A);
+        machine.submitSignal(
+            PLAN_ID,
+            parentOrderId,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_STAGE_DONE,
+            PAYLOAD_HASH,
+            bytes32(uint256(0xF001)),
+            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_STAGE_DONE)
+        );
+        vm.prank(SUBMITTER_B);
+        machine.submitSignal(
+            PLAN_ID,
+            parentOrderId,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_STAGE_REVIEW,
+            PAYLOAD_HASH,
+            bytes32(uint256(0xF002)),
+            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_STAGE_REVIEW)
+        );
+        vm.prank(SUBMITTER_A);
+        machine.submitSignal(
+            PLAN_ID,
+            parentOrderId,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_VERIFY_FAIL,
+            PAYLOAD_HASH,
+            bytes32(uint256(0xF003)),
+            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_VERIFY_FAIL)
+        );
+
+        vm.recordLogs();
+        vm.prank(SUBMITTER_B);
+        machine.forkOrder(
+            PLAN_ID,
+            parentOrderId,
+            bytes32(uint256(0xF100)),
+            SOURCE_BOOTSTRAP,
+            SIGNAL_STAGE_REVIEW,
+            _forkBirthFactsWithTrigger(),
+            new UVPStateMachine.SignalAuthorization[](0)
+        );
+        Vm.Log[] memory forkLogs = vm.getRecordedLogs();
+
+        // OrderForked 尾参：fork 单号派生载荷 + 重放事实键清单（_signalKey 同式）。
+        Vm.Log memory forkLog = _firstLogWithTopic(
+            forkLogs,
+            keccak256("OrderForked(bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32[])")
+        );
+        (bytes32 forkApprovalSourceId, bytes32 forkApprovalSignalId, address forkInitiator, bytes32 forkPayload, bytes32[] memory replayedKeys)
+            = abi.decode(forkLog.data, (bytes32, bytes32, address, bytes32, bytes32[]));
+        require(forkApprovalSourceId == SOURCE_BOOTSTRAP && forkApprovalSignalId == SIGNAL_STAGE_REVIEW, "fork approval");
+        require(forkInitiator == SUBMITTER_B, "fork initiator");
+        require(forkPayload == bytes32(uint256(0xF100)), "fork payload hash tail field");
+        require(replayedKeys.length == 4, "replayed fact key count");
+        require(
+            replayedKeys[0] == keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_ORDER_START)),
+            "replayed fact key = signalKey"
+        );
+
+        // SignalSubmitted 尾参：factStageId 随事件广播（词表外事实 = 0）。
+        Vm.Log memory signalLog = _firstLogWithTopic(
+            forkLogs,
+            keccak256("SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32)")
+        );
+        (bytes32 signalIdArg, bytes32 signalPayload, bytes32 signalIdem, address signalSubmitter, bytes32 signalFactStage)
+            = abi.decode(signalLog.data, (bytes32, bytes32, bytes32, address, bytes32));
+        require(signalPayload == PAYLOAD_HASH && signalIdem == IDEMPOTENCY_KEY, "signal payload");
+        require(signalSubmitter == vm.addr(SUBMITTER_PRIVATE_KEY), "replayed fact submitter inherits parent");
+        require(signalIdArg == SIGNAL_ORDER_START, "replayed birth fact key");
+        require(signalFactStage == bytes32(0), "fact stage tail field (off-vocabulary fact)");
     }
 
     /// fork 重放不产 flags=0 纯 watcher 的 HookReady（库发射面闸钉子）：
@@ -3514,7 +3614,7 @@ contract UVPStateMachineTest {
         );
         Vm.Log[] memory forkLogs = vm.getRecordedLogs();
         require(
-            _countTopic(forkLogs, keccak256("OrderForked(bytes32,bytes32,bytes32,bytes32,bytes32,address)")) == 1,
+            _countTopic(forkLogs, keccak256("OrderForked(bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32[])")) == 1,
             "fork lineage event"
         );
         require(_hasHookReadyFor(forkLogs, HOOK_ORDER_START), "fork must keep emitting HookReady for mint birth line");
@@ -4736,6 +4836,112 @@ contract UVPStateMachineTest {
             machine.hasSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_STAGE_DONE),
             "relation-0 derived signal missing after assign"
         );
+        // B-04：派生通道与普通 submitSignal 同口径 first-win 吸收——同请求
+        // 重试直接吸收，不得裸 revert SignalAlreadyExists。
+        vm.prank(SUBMITTER_A);
+        _derivedSignal(machine).submitDerivedSignal(derivedRequest8, SUBMITTER_A, derivedProofs8);
+    }
+
+    /// A-01：签名承诺的 executorCandidatesRoot 与 calldata 候选数组对拍——
+    /// 持 publisher 有效签名换候选数组注册兄弟计划被响亮拒绝。
+    function testCommitPlanRejectsSwappedExecutorCandidates() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.CompactHook[] memory hooks = _withOrderStart(_positiveHookPlan(HOOK_INIT, true));
+        UVPStateMachine.ExecutorCandidate[] memory candidates = _defaultExecutorCandidates(hooks);
+        bytes32[] memory leaves = _executorCandidateLeaves(candidates);
+        UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
+            publisher: vm.addr(PUBLISHER_PRIVATE_KEY),
+            hooksHash: keccak256(abi.encode(hooks)),
+            capabilitiesRoot: DockMerkle.root(new bytes32[](0)),
+            dockRoutesRoot: EMPTY_DOCK_ROOT,
+            dockInterfaceRoot: EMPTY_DOCK_ROOT,
+            executorCandidatesRoot: DockMerkle.root(leaves),
+            birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
+            deadline: block.timestamp + 1 hours
+        });
+        bytes32 structHash = keccak256(
+            abi.encode(
+                PLAN_COMMIT_TYPEHASH,
+                commit.publisher,
+                commit.hooksHash,
+                commit.capabilitiesRoot,
+                commit.dockRoutesRoot,
+                commit.dockInterfaceRoot,
+                commit.executorCandidatesRoot,
+                commit.birthAuthorizer,
+                commit.deadline
+            )
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _stateMachineDomainSeparator(machine), structHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PUBLISHER_PRIVATE_KEY, digest);
+
+        // 提交侧追加一个候选集外叶（数组 root 与签名承诺不一致）。
+        UVPStateMachine.ExecutorCandidate[] memory swapped =
+            new UVPStateMachine.ExecutorCandidate[](candidates.length + 1);
+        for (uint256 i = 0; i < candidates.length; i++) {
+            swapped[i] = candidates[i];
+        }
+        swapped[candidates.length] = UVPStateMachine.ExecutorCandidate({stageId: STAGE_INIT, executor: address(0xbeef)});
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPStateMachine.ExecutorCandidatesRootMismatch.selector,
+                DockMerkle.root(leaves),
+                DockMerkle.root(_executorCandidateLeaves(swapped))
+            )
+        );
+        machine.commitPlan(commit, hooks, swapped, _packedSignature(v, r, s));
+    }
+
+    /// A-08：适格指令嵌套深度与 uvp-core replay 注册闸同值封顶（120）——
+    /// 121 层拒绝，恰 120 层放行。
+    function testAdmissionInstructionDepthCap() public {
+        UVPStateMachine machine = _newMachine();
+        _registerPlan(machine, _withOrderStart(_deepAdmissionHookArray(120)));
+        UVPStateMachine machine2 = _newMachine();
+        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
+        _commitPlan(
+            machine2, _withOrderStart(_deepAdmissionHookArray(121)), new StageSelectorBinding[](0), new SignalCapability[](0)
+        );
+    }
+
+    /// A-08 镜像（hook 档）：钩子指令嵌套深度与适格面/uvp-core replay 注册
+    /// 闸同值封顶（120）——121 层拒绝，恰 120 层放行。手工 plan 的深嵌套
+    /// watcher 不再能注册出 replay 拒收的 hook。
+    function testHookInstructionDepthCap() public {
+        UVPStateMachine machine = _newMachine();
+        _registerPlan(machine, _withOrderStart(_deepWatcherHookArray(120)));
+        UVPStateMachine machine2 = _newMachine();
+        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
+        _commitPlan(
+            machine2, _withOrderStart(_deepWatcherHookArray(121)), new StageSelectorBinding[](0), new SignalCapability[](0)
+        );
+    }
+
+    /// A-09a：单依赖键 hook 扇出上限——16 个同键 watcher 在界内，第 17 个
+    /// 挂键即 TooManyHooksPerDependencyKey。
+    function testDependencyKeyHookFanoutCap() public {
+        UVPStateMachine machine = _newMachine();
+        _registerPlan(machine, _withOrderStart(_watchersOnSharedTriggerKey(16)));
+        UVPStateMachine machine2 = _newMachine();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPStateMachine.TooManyHooksPerDependencyKey.selector,
+                keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_TRIGGER))
+            )
+        );
+        _commitPlan(
+            machine2, _withOrderStart(_watchersOnSharedTriggerKey(17)), new StageSelectorBinding[](0), new SignalCapability[](0)
+        );
+    }
+
+    /// B-06：模块槽必须指向有代码的地址——指 EOA 即 InvalidModuleAddress，
+    /// 合约目标照常放行。
+    function testSetModuleRejectsEOATarget() public {
+        UVPStateMachine machine = _newUnfrozenMachine();
+        vm.expectRevert(UVPStateMachine.InvalidModuleAddress.selector);
+        machine.setLens(address(0x9999));
+        machine.setLens(address(new UVPStateMachineLens(address(machine))));
+        machine.freezeModules();
     }
 
     /// dock output 通道（submitSignalFromModule 的 docking 分支）镜像
@@ -4794,12 +5000,12 @@ contract UVPStateMachineTest {
     function testFinalizePlanReentrantCallSeesFinalized() public {
         UVPStateMachine machine = new UVPStateMachine();
         ReenteringMetadataModule attacker = new ReenteringMetadataModule(machine);
-        machine.setStagePatchModule(address(0xE1));
-        machine.setDerivedSignalModule(address(0xE2));
-        machine.setDockingModule(address(0xE3));
+        machine.setStagePatchModule(address(new UVPStagePatchModule(address(machine))));
+        machine.setDerivedSignalModule(address(new UVPDerivedSignalModule(address(machine))));
+        machine.setDockingModule(address(new UVPDockingModule(address(machine), address(attacker))));
         machine.setPlanMetadataModule(address(attacker));
-        machine.setOrderLinkModule(address(0xE5));
-        machine.setLens(address(0xE6));
+        machine.setOrderLinkModule(address(new UVPOrderLinkModule(address(machine))));
+        machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.freezeModules();
 
         StageSelectorBinding[] memory bindings = new StageSelectorBinding[](0);
@@ -5666,7 +5872,7 @@ contract UVPStateMachineTest {
         machine.setDockingModule(address(docking));
         machine.setPlanMetadataModule(address(planMetadata));
         machine.setOrderLinkModule(address(orderLink));
-        machine.setLens(address(0x1234));
+        machine.setLens(address(new UVPStateMachineLens(address(machine))));
         return machine;
     }
 
@@ -6426,6 +6632,70 @@ contract UVPStateMachineTest {
         return _hookWithFlags(hookId, stageId, hookName, FLAG_EMIT_READY, instructions, _deps(signalId));
     }
 
+    /// A-08 深度闸测试：depth_+1 个同键 SIGNAL 左折叠 depth_ 层 AND——
+    /// 嵌套深度恰为 depth_（SIGNAL=0，AND=最深子项+1）。
+    function _deepAdmissionHookArray(uint256 depth_)
+        private
+        pure
+        returns (UVPStateMachine.CompactHook[] memory hooks)
+    {
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](2 * depth_ + 1);
+        for (uint256 i = 0; i <= depth_; i++) {
+            instructions[i] = _signal(SIGNAL_STAGE_DONE);
+        }
+        for (uint256 i = 0; i < depth_; i++) {
+            instructions[depth_ + 1 + i] = _and(2);
+        }
+        hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hookWithFlags(
+            HOOK_ADMISSION_DEPTH,
+            STAGE_INIT,
+            HOOK_NAME_INIT_DONE,
+            FLAG_ADMISSION,
+            instructions,
+            _deps(SIGNAL_STAGE_DONE)
+        );
+    }
+
+    /// A-08 深度闸测试（hook 档镜像）：depth_+1 个同键 SIGNAL 左折叠
+    /// depth_ 层 AND——嵌套深度恰为 depth_（SIGNAL=0，AND=最深子项+1），
+    /// EMIT_READY watcher 槽位（走 _validateHook 校验路径）。
+    function _deepWatcherHookArray(uint256 depth_)
+        private
+        pure
+        returns (UVPStateMachine.CompactHook[] memory hooks)
+    {
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](2 * depth_ + 1);
+        for (uint256 i = 0; i <= depth_; i++) {
+            instructions[i] = _signal(SIGNAL_STAGE_DONE);
+        }
+        for (uint256 i = 0; i < depth_; i++) {
+            instructions[depth_ + 1 + i] = _and(2);
+        }
+        hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = _hookWithFlags(
+            HOOK_WATCHER_DEPTH,
+            STAGE_INIT,
+            HOOK_NAME_INIT_DONE,
+            FLAG_EMIT_READY,
+            instructions,
+            _deps(SIGNAL_STAGE_DONE)
+        );
+    }
+
+    /// A-09a 扇出闸测试：count 个同阶段 EMIT_READY watcher 共享同一依赖键。
+    function _watchersOnSharedTriggerKey(uint256 count)
+        private
+        pure
+        returns (UVPStateMachine.CompactHook[] memory hooks)
+    {
+        hooks = new UVPStateMachine.CompactHook[](count);
+        for (uint256 i = 0; i < count; i++) {
+            hooks[i] =
+                _emitReadySignalHook(bytes32(uint256(0x6100) + i), STAGE_INIT, HOOK_NAME_INIT_DONE, SIGNAL_TRIGGER);
+        }
+    }
+
     function _selectorBindings() private pure returns (StageSelectorBinding[] memory selectorBindings) {
         selectorBindings = new StageSelectorBinding[](1);
         selectorBindings[0] = StageSelectorBinding({selectorStageId: STAGE_INIT, targetStageId: STAGE_AUDIT});
@@ -6663,6 +6933,16 @@ contract UVPStateMachineTest {
                 count++;
             }
         }
+    }
+
+    /// B-03 事件自包含断言用：按 topic0 取首条日志（缺则 revert）。
+    function _firstLogWithTopic(Vm.Log[] memory logs, bytes32 topic) private pure returns (Vm.Log memory found) {
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics.length > 0 && logs[i].topics[0] == topic) {
+                return logs[i];
+            }
+        }
+        revert("log topic not found");
     }
 
     function testOrDelayAnchorsOnEarliestReceivedSignal() public {
@@ -8159,7 +8439,7 @@ contract UVPStateMachineCapabilityTreeTest {
         machine.setDockingModule(address(docking));
         machine.setPlanMetadataModule(address(planMetadata));
         machine.setOrderLinkModule(address(orderLink));
-        machine.setLens(address(0x1234));
+        machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.freezeModules();
         metadata = address(planMetadata);
         _lastMetadata = metadata;

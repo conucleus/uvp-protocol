@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPDerivedSignalModule",
-  "abiVersion": "0.4",
+  "abiVersion": "0.5",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPDerivedSignalModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPDerivedSignalModule.sol/UVPDerivedSignalModule.json",
   "compiler": {
@@ -9,15 +9,15 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xec84e56e26294d28582132819e0d1a2c55888db29764b02bfc026b163cc47a2c",
-    "bytecodeHash": "0xaaf4775b6ae656a1d9c3192a740a2de6de3de75446150f7297c35d387a3af525",
-    "deployedBytecodeHash": "0xfa6cc90d534fe8e7013e73472dbf51bb461faa7a8620156ce0b803ebc24380ab",
-    "artifactHash": "0x29aaadf24dbb687bf63d4c196065b7317216d77f9929ce28065c27d3c581f23b"
+    "abiHash": "0x2bfd982afd2880278a43a9eae290d5557ed261eb329edc06b885ce12347b9308",
+    "bytecodeHash": "0x5a6955cc03c49200d6b4518779c090efad580470941a887b6c646f527e5f51c9",
+    "deployedBytecodeHash": "0xc984c4ac87392f634716a593c07c68646b5e70ccaf7c3a5756687e8bd6cd5436",
+    "artifactHash": "0xbea30bef8807de067f72fdb03d23b903ca8f9fa3c02268ba90030faec46394aa"
   },
   "events": {
     "DerivedSignalSubmitted": {
-      "signature": "DerivedSignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
-      "topic": "0x3fb6f4b6fb691a28317c1063e0e380e9995238a96e44f2de6183105d88ff0b91"
+      "signature": "DerivedSignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint8)",
+      "topic": "0xdd42d42c5d8456705cb3ab343340852b0827917308499176d1f1a3e361897869"
     }
   },
   "functions": {

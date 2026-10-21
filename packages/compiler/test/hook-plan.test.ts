@@ -43,6 +43,7 @@ import {
   outputPortLeaf,
   routeHash,
   stageKey,
+  ZERO_WORD,
 } from "../src/dock.js";
 
 const demoManifest = dockDemoResolutionManifest();
@@ -1572,6 +1573,7 @@ test("carries null (dynamic-selection) targets as unresolved routes (§8.8)", ()
     dockCandidateLeaf({
       routeId: expectedRouteId,
       targetDefinitionRefHash: manifestEntry.definitionRefHash,
+      targetPlanId: manifestEntry.chainPlanId!,
       interfaceName: "production_service",
     }),
   ]);
@@ -1581,6 +1583,7 @@ test("carries null (dynamic-selection) targets as unresolved routes (§8.8)", ()
     routeHash({
       localDefinitionRefHash: route.localDefinitionRefHash,
       targetDefinitionRefHash: expectedCandidatesRoot,
+      targetPlanId: ZERO_WORD,
       interfaceName: "production_service",
       orderMode: "new",
       inputBindingsRoot: EMPTY_MERKLE_ROOT,
@@ -1711,7 +1714,7 @@ test("rejects output bindings mapping one local fact key onto multiple ports", (
   // 表达不了该形态，可达面是手工/第三方中性壳，直接打 buildDockRoute。
   const resolution = prepareDockResolution(demoManifest);
   const neutral = {
-    schemaVersion: "uvp.dockRoute.v3" as const,
+    schemaVersion: "uvp.dockRoute.v4" as const,
     local: { stageIdentifier: "manufacture" },
     target: { uid: demoTargetUid, interfaceName: "production_service" },
     orderMode: "new" as const,
@@ -1896,7 +1899,7 @@ test("dock commitment validation fails closed on incomplete shapes", () => {
   const missingBindings = validateDockCommitments({
     dockRoutes: [
       {
-        schemaVersion: "uvp.dockRoute.v3",
+        schemaVersion: "uvp.dockRoute.v4",
         routeId,
         local,
         target: { interfaceName: "svc" },
@@ -1923,7 +1926,7 @@ test("dock commitment validation fails closed on incomplete shapes", () => {
   const malformedBinding = validateDockCommitments({
     dockRoutes: [
       {
-        schemaVersion: "uvp.dockRoute.v3",
+        schemaVersion: "uvp.dockRoute.v4",
         routeId,
         local,
         target: { interfaceName: "svc" },

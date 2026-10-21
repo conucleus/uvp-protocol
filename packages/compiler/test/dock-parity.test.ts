@@ -40,6 +40,7 @@ import {
   stageKey,
   targetOrderRefKey,
   verifyMerkleProof,
+  ZERO_WORD,
 } from "../src/dock.js";
 import {
   DOCK_INTERFACE_ARTIFACT_SCHEMA_VERSION,
@@ -48,6 +49,7 @@ import {
   type DockInterfaceArtifactV2,
   type DockOrderMode,
   type DockResolutionManifest,
+  type DockRouteInputBinding,
   type DockRouteV2,
   type HexString,
   type ZhixuDefinition,
@@ -186,7 +188,7 @@ test("frozen constants match the golden manifest", () => {
     fixture.constants.domains.outputBinding,
     "UVP_DOCK_OUTPUT_BINDING_V2",
   );
-  assert.equal(fixture.constants.domains.route, "UVP_DOCK_ROUTE_V2");
+  assert.equal(fixture.constants.domains.route, "UVP_DOCK_ROUTE_V3");
   assert.equal(fixture.constants.domains.routeId, "UVP_DOCK_ROUTE_ID_V1");
 
   // 枚举 word：modeWord new=0/existing=1；orderModes 位掩码 bit0/bit1。
@@ -380,6 +382,7 @@ test("golden fixture compiles to identical interfaces, routes, roots, and hashes
       routeHash({
         localDefinitionRefHash: expected.parentDefinitionRefHash,
         targetDefinitionRefHash: route.target.definitionRefHash,
+        targetPlanId: route.target.chainPlanId,
         interfaceName: route.target.interfaceName,
         orderMode: route.orderMode,
         inputBindingsRoot: route.inputBindingsRoot,
@@ -515,11 +518,12 @@ test("existing evm instance and dynamic-selection vectors match the golden", () 
   );
 
   // 候选叶公式（合约 _DOMAIN_DOCK_CANDIDATE 权威）：正式实现
-  // src/dock.ts dockCandidateLeaf——H("UVP_DOCK_CANDIDATE_V1", routeId,
-  // targetDefinitionRefHash, keccak(interfaceName))。
+  // src/dock.ts dockCandidateLeaf——H("UVP_DOCK_CANDIDATE_V2", routeId,
+  // targetDefinitionRefHash, targetPlanId, keccak(interfaceName))。
   const candidateLeaf = dockCandidateLeaf({
     routeId: dynamic.routeId,
     targetDefinitionRefHash: expected.targetDefinitionRefHash,
+    targetPlanId: expected.targetPlanId,
     interfaceName: "production_evidence",
   });
   assert.equal(candidateLeaf, dynamic.candidateLeaf);
@@ -536,6 +540,7 @@ test("existing evm instance and dynamic-selection vectors match the golden", () 
     routeHash({
       localDefinitionRefHash: expected.parentDefinitionRefHash,
       targetDefinitionRefHash: dynamic.candidatesRoot,
+      targetPlanId: ZERO_WORD,
       interfaceName: "production_evidence",
       orderMode: "existing",
       inputBindingsRoot: EMPTY_MERKLE_ROOT,
@@ -791,6 +796,45 @@ test("golden routes satisfy the TS commitment recomputation", () => {
       /interfaceRoot must match the recomputed interface-leaf preimage/.test(issue),
     ),
     interfaceIssues.join("; "),
+  );
+});
+
+test("an attach cannot bind two inputs to the same target fact key", () => {
+  // A-09 编译面闸：同一 attach 的两条 input 绑定指向同一目标事实键
+  // (targetSourceId, targetSignalId) 时，submitDockedInput 对第二端口恒
+  // revert DockInputConflict 且不置 _inputDelivered——keeper 持续烧 gas，
+  // 制品边界必须拒绝（合约 attach 同批同口径）。
+  const route = structuredClone(findRoute("production_service")) as DockRouteV2;
+  const first = route.inputBindings[0] as DockRouteInputBinding;
+  assert.ok(first, "production_service route has an input binding");
+  const duplicatePort = first.targetPort === "evidence_pkg" ? "evidence_alt" : "evidence_pkg";
+  const duplicate = {
+    ...first,
+    targetPort: duplicatePort,
+    bindingHash: inputBindingHash({
+      routeId: route.routeId,
+      interfaceName: route.target.interfaceName,
+      localHookId: `${route.local.stageIdentifier}#${first.localHookName}`,
+      portName: duplicatePort,
+      targetSourceId: first.targetSourceId,
+      targetSignalId: first.targetSignalId,
+    }),
+  };
+  const tampered = {
+    ...route,
+    inputBindings: [...route.inputBindings, duplicate],
+  } as unknown as DockRouteV2;
+  const issues = validateDockCommitments({
+    dockRoutes: [tampered],
+    dockRoutesRoot: merkleRoot([route.routeHash]),
+    dockInterface: null,
+    dockInterfaceRoot: EMPTY_MERKLE_ROOT,
+  });
+  assert.ok(
+    issues.some((issue) =>
+      /targets fact key .* already bound by an earlier input of the same attach/.test(issue),
+    ),
+    issues.join("; "),
   );
 });
 

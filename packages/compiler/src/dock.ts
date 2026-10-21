@@ -38,11 +38,12 @@ export const DOMAIN_INTERFACE_OUTPUT = "UVP_DOCK_INTERFACE_OUTPUT_V3";
 export const DOMAIN_ROUTE_ID = "UVP_DOCK_ROUTE_ID_V1";
 export const DOMAIN_INPUT_BINDING = "UVP_DOCK_INPUT_BINDING_V2";
 export const DOMAIN_OUTPUT_BINDING = "UVP_DOCK_OUTPUT_BINDING_V2";
-export const DOMAIN_ROUTE = "UVP_DOCK_ROUTE_V2";
+/** route 域 V3（B-01，UVPDockingModule abiVersion 4.7）：preimage 追加 targetPlanId word。 */
+export const DOMAIN_ROUTE = "UVP_DOCK_ROUTE_V3";
 export const DOMAIN_DOCK_INSTANCE = "UVP_DOCK_INSTANCE_V2";
 export const DOMAIN_DOCK_ORDER = "UVP_DOCK_ORDER_V1";
-/** target:null 动态选择的候选叶域（abiVersion 4.4，合约 _DOMAIN_DOCK_CANDIDATE 同字面量）。 */
-export const DOMAIN_DOCK_CANDIDATE = "UVP_DOCK_CANDIDATE_V1";
+/** 动态选择候选叶域 V2（B-01，abiVersion 4.7）：叶追加 targetPlanId word。 */
+export const DOMAIN_DOCK_CANDIDATE = "UVP_DOCK_CANDIDATE_V2";
 /** Highest bit marks a derived dock child-order namespace. */
 export const DOCK_ORDER_NAMESPACE_MASK = 1n << 255n;
 export const DOMAIN_RUNTIME_EIP155 = "UVP_RUNTIME_EIP155_V1";
@@ -62,7 +63,12 @@ export const DOMAIN_SOURCE_FACT_SET = "UVP_DOCK_SOURCE_FACT_SET_V1";
  */
 export const MAX_DOCK_INPUTS = 8;
 export const MAX_DOCK_OUTPUTS = 16;
-export const MAX_DOCK_DEPTH = 8;
+/**
+ * B-02：每单总挂接边数上限（父链账本口径，合约 MAX_DOCK_EDGES 同值）。
+ * 原路径深度语义退役——链上只维护边数预算 + 有界祖先检查，最长路径由
+ * 索引器从 dock 事件图派生。
+ */
+export const MAX_DOCK_EDGES = 8;
 /** `^[a-z][a-z0-9_]{0,31}$`：端口名与接口名同规则。 */
 export const MAX_PORT_NAME_BYTES = 32;
 
@@ -642,14 +648,18 @@ export function outputBindingHash(input: {
 }
 
 /**
- * `routeHash_v2 = H(UVP_DOCK_ROUTE_V2; localDefinitionRefHash,
- * targetDefinitionRefHash, keccak(interfaceName), modeWord,
- * inputBindingsRoot, outputBindingsRoot)`（6 word；目标运行期身份由
- * resolution manifest 与 route JSON 携带，不进 preimage）。
+ * `routeHash_v3 = H(UVP_DOCK_ROUTE_V3; localDefinitionRefHash,
+ * targetDefinitionRefHash, targetPlanId, keccak(interfaceName), modeWord,
+ * inputBindingsRoot, outputBindingsRoot)`（7 word；B-01 起目标 planId 入
+ * 身份——接口承诺可被第三方复制进自建镜像 plan，不绑 planId 时路由实例
+ * 可被镜像计划抢注。动态路由 targetPlanId 槽 = 零字，选定目标的 planId
+ * 经候选叶 V2 进候选集 root）。
  */
 export function routeHash(input: {
   readonly localDefinitionRefHash: HexString;
   readonly targetDefinitionRefHash: HexString;
+  /** 目标计划在链上注册的 planId（静态路由必填；动态路由传 ZERO_WORD）。 */
+  readonly targetPlanId: HexString;
   readonly interfaceName: string;
   readonly orderMode: DockOrderMode;
   readonly inputBindingsRoot: HexString;
@@ -658,6 +668,7 @@ export function routeHash(input: {
   return keccakWords(DOMAIN_ROUTE, [
     input.localDefinitionRefHash,
     input.targetDefinitionRefHash,
+    input.targetPlanId,
     interfaceNameKey(input.interfaceName),
     modeWord(input.orderMode),
     input.inputBindingsRoot,
@@ -666,22 +677,22 @@ export function routeHash(input: {
 }
 
 /**
- * target:null 动态选择（§8.8 / UVPDockingModule 4.4）的候选叶：
- * `H(UVP_DOCK_CANDIDATE_V1; routeId, targetDefinitionRefHash,
- * keccak(interfaceName))`。routeId 绑定（父定义, 父阶段）——跨路由/跨父
- * 复用候选叶在 attach 的 membership 处失配。候选集 root 经 routeHash 的
- * 目标槽随 dockRoutesRoot 在 finalize 冻结，不扩 PlanCommit/PlanMetadata
- * ABI；attach 按候选集根重算 routeHash 后要求选定目标的候选叶 membership
- * proof（合约 _DOMAIN_DOCK_CANDIDATE 权威，本函数逐字节镜像）。
+ * target:null 动态选择（§8.8 / UVPDockingModule 4.7）的候选叶 V2：
+ * `H(UVP_DOCK_CANDIDATE_V2; routeId, targetDefinitionRefHash, targetPlanId,
+ * keccak(interfaceName))`。routeId 绑定（父定义, 父阶段）；planId 入叶后
+ * 镜像计划（同 defRef、复制接口承诺）无法占据候选叶——选定目标的运行期
+ * 身份由此钉进候选集 root。
  */
 export function dockCandidateLeaf(input: {
   readonly routeId: HexString;
   readonly targetDefinitionRefHash: HexString;
+  readonly targetPlanId: HexString;
   readonly interfaceName: string;
 }): HexString {
   return keccakWords(DOMAIN_DOCK_CANDIDATE, [
     input.routeId,
     input.targetDefinitionRefHash,
+    input.targetPlanId,
     interfaceNameKey(input.interfaceName),
   ]);
 }
@@ -862,6 +873,75 @@ export function eip712PermitDigest(input: {
   }
   const domainSeparator = eip712PermitDomainSeparator(input);
   const structHash = eip712PermitStructHash(input);
+  const prefix = new Uint8Array([0x19, 0x01]);
+  const body = concatWords([domainSeparator, structHash]);
+  const buf = new Uint8Array(prefix.length + body.length);
+  buf.set(prefix, 0);
+  buf.set(body, prefix.length);
+  return keccak256Hex(buf);
+}
+
+// ---------------------------------------------------------------------------
+// EIP-712 open 目标侧同意（B-01，UVPDockingModule abiVersion 4.7）
+// ---------------------------------------------------------------------------
+
+/** open 同意 typehash（合约 _OPEN_CONSENT_TYPEHASH 逐字一致）。 */
+export const OPEN_CONSENT_TYPEHASH =
+  "UVPDockOpenConsentV1(bytes32 targetPlanId,bytes32 interfaceNameId,bytes32 localPlanId,bytes32 localOrderId,bytes32 routeId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,uint256 nonce,uint256 deadline)";
+
+export function eip712OpenConsentStructHash(input: {
+  readonly targetPlanId: HexString;
+  readonly interfaceNameId: HexString;
+  readonly localPlanId: HexString;
+  readonly localOrderId: HexString;
+  readonly routeId: HexString;
+  readonly routeHash: HexString;
+  readonly dockInstanceId: HexString;
+  readonly linkedOrderId: HexString;
+  readonly nonce: bigint | number | string;
+  readonly deadline: bigint | number | string;
+}): HexString {
+  return keccak256(
+    concatWords([
+      keccakWord(OPEN_CONSENT_TYPEHASH),
+      input.targetPlanId,
+      input.interfaceNameId,
+      input.localPlanId,
+      input.localOrderId,
+      input.routeId,
+      input.routeHash,
+      input.dockInstanceId,
+      input.linkedOrderId,
+      u256Word(requireUintWord(input.nonce, "consent nonce")),
+      u256Word(requireUintWord(input.deadline, "consent deadline")),
+    ]),
+  );
+}
+
+export function eip712OpenConsentDigest(input: {
+  readonly chainId: bigint | number;
+  readonly verifyingContract: HexString;
+  readonly version?: string;
+  readonly targetPlanId: HexString;
+  readonly interfaceNameId: HexString;
+  readonly localPlanId: HexString;
+  readonly localOrderId: HexString;
+  readonly routeId: HexString;
+  readonly routeHash: HexString;
+  readonly dockInstanceId: HexString;
+  readonly linkedOrderId: HexString;
+  readonly nonce: bigint | number | string;
+  readonly deadline: bigint | number | string;
+}): HexString {
+  // nonce 序列从 1 起（合约 usedOpenConsentNonce 的 storage 缺省 0 即单调
+  // 下界）：nonce=0 的同意链上恒拒，在此响亮拒绝。
+  if (requireUintWord(input.nonce, "consent nonce") < 1n) {
+    throw new RangeError(
+      "open consent nonce sequence starts at 1 (the contract's usedOpenConsentNonce storage defaults to 0, so nonce=0 always reverts)",
+    );
+  }
+  const domainSeparator = eip712PermitDomainSeparator(input);
+  const structHash = eip712OpenConsentStructHash(input);
   const prefix = new Uint8Array([0x19, 0x01]);
   const body = concatWords([domainSeparator, structHash]);
   const buf = new Uint8Array(prefix.length + body.length);

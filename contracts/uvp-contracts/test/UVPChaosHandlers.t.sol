@@ -7,6 +7,7 @@ import {UVPDockingModule} from "../src/UVPDockingModule.sol";
 import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
+import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {DockMerkle} from "../src/libraries/DockMerkle.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 
@@ -55,7 +56,8 @@ interface ChaosVm {
 ///    单调不减；
 /// 4. 接纳计数与 SignalSubmitted 事件严格一致（recordLogs 观察）；
 /// 5. revert 动作零状态变更（前后世界 digest 全等）且不落事实事件；
-/// 6. dock 深度恒 ≤ MAX_DOCK_DEPTH（按边数计，链式形态下 depth=2+）。
+/// 6. dock 每单总挂接边数恒 ≤ MAX_DOCK_EDGES（父链账本口径，链式
+///    形态下边数=2+；最长路径不进合约）。
 contract UVPChaosInvariantTest {
     ChaosHandler private handler;
 
@@ -89,7 +91,7 @@ contract UVPChaosInvariantTest {
     }
 
     function invariant_DockDepthWithinBound() external view {
-        require(handler.dockDepthViolationCount() == 0, "chaos: dock depth exceeded MAX_DOCK_DEPTH");
+        require(handler.dockDepthViolationCount() == 0, "chaos: dock edges exceeded MAX_DOCK_EDGES");
     }
 }
 
@@ -124,7 +126,7 @@ contract ChaosHandler {
     bytes32 private constant DOMAIN_ROUTE_ID = keccak256("UVP_DOCK_ROUTE_ID_V1");
     bytes32 private constant DOMAIN_INPUT_BINDING = keccak256("UVP_DOCK_INPUT_BINDING_V2");
     bytes32 private constant DOMAIN_OUTPUT_BINDING = keccak256("UVP_DOCK_OUTPUT_BINDING_V2");
-    bytes32 private constant DOMAIN_ROUTE = keccak256("UVP_DOCK_ROUTE_V2");
+    bytes32 private constant DOMAIN_ROUTE = keccak256("UVP_DOCK_ROUTE_V3");
     bytes32 private constant DOMAIN_DOCK_INSTANCE = keccak256("UVP_DOCK_INSTANCE_V2");
     bytes32 private constant DOMAIN_DOCK_ORDER = keccak256("UVP_DOCK_ORDER_V1");
     bytes32 private constant DOMAIN_RUNTIME_EIP155 = keccak256("UVP_RUNTIME_EIP155_V1");
@@ -205,6 +207,9 @@ contract ChaosHandler {
     uint256 private constant PUBLISHER_PRIVATE_KEY = 0xc0ffee;
     uint256 private constant MILL_PUBLISHER_PRIVATE_KEY = 0xB0B;
     uint256 private constant PLANT_PUBLISHER_PRIVATE_KEY = 0xB0C;
+    // 链式对接的 echo 计划发布者（B-01：路由承诺目标 planId，计划不能
+    // 自指——同接口承诺的 echo 计划承接链式路由的目标侧）。
+    uint256 private constant ECHO_PUBLISHER_PRIVATE_KEY = 0xB0D;
     uint256 private constant SUBMITTER_PRIVATE_KEY = 0xa11ce;
     uint256 private constant FINISHER_A_PRIVATE_KEY = 0xB1;
     uint256 private constant FINISHER_B_PRIVATE_KEY = 0xB2;
@@ -278,6 +283,8 @@ contract ChaosHandler {
     bytes32 private chainEntranceBinding;
     bytes32 private chainAttachInputBinding;
     bytes32[MILL_ORDER_COUNT] private chainInstanceIds;
+    bytes32 private echoPlanId;
+    bytes32[PLANT_TARGET_COUNT] private echoTargets;
     bytes32[MILL_ORDER_COUNT] private grandchildIds;
     bool[MILL_ORDER_COUNT] private grandchildLive;
     bytes32[MILL_ORDER_COUNT * PLANT_TARGET_COUNT] private chainAttachInstanceIds;
@@ -327,7 +334,7 @@ contract ChaosHandler {
     uint256 public dockDepthViolationCount;
 
     bytes32 private constant SIGNAL_SUBMITTED_TOPIC0 =
-        keccak256("SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)");
+        keccak256("SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32)");
     bytes32 private constant SIGNAL_SUBMITTER_AUTHORIZED_TOPIC0 =
         keccak256("SignalSubmitterAuthorized(bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32)");
     bytes32 private constant HOOK_STATUS_CHANGED_TOPIC0 =
@@ -376,13 +383,21 @@ contract ChaosHandler {
         machine.setDockingModule(address(docking));
         machine.setPlanMetadataModule(address(metadata));
         machine.setOrderLinkModule(address(orderLink));
-        machine.setLens(address(0x1234));
+        machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.freezeModules();
 
         submitterAddr = vm.addr(SUBMITTER_PRIVATE_KEY);
         runtimeDomain = keccak256(abi.encode(DOMAIN_RUNTIME_EIP155, block.chainid, address(machine)));
 
+        _computeDockStaticParts();
+        // B-01 注册顺序：routeHash 承诺目标链上 planId——echo（链式对接的
+        // 目标侧）先注册，plant 的链式路由叶按 echoPlanId 计算，mill 的
+        // 路由叶按 plantPlanId 计算（计划间 dock 目标图必须是注册期 DAG，
+        // 自指路由在身份上不可构造）。
+        echoPlanId = _registerEchoPlantPlan();
+        _computeChainRouteHashes();
         plantPlanId = _registerPlantPlan();
+        _computeMillRouteHashes();
         millPlanId = _registerMillPlan();
         basePlanId = _registerBasePlan();
 
@@ -392,6 +407,7 @@ contract ChaosHandler {
         // plant 目标单先出生：mill 出生时绑定 attach 实例 id 需要它们。
         for (uint256 i = 0; i < PLANT_TARGET_COUNT; i++) {
             plantTargets[i] = _birthPlantTarget(i);
+            echoTargets[i] = _birthEchoTarget(i);
         }
         for (uint256 i = 0; i < MILL_ORDER_COUNT; i++) {
             millOrders[i] = _birthMillOrder(i);
@@ -1010,6 +1026,9 @@ contract ChaosHandler {
         );
         bytes32[] memory plantOrderList = _plantOrderList();
         _observePlan(plantPlanId, _plantHookIds(), plantOrderList, _plantSignalSources(), _plantSignalIds());
+        // echo 计划（链式对接目标侧）同口径观察：echo 目标单 + 链式子单。
+        bytes32[] memory echoOrderList = _echoOrderList();
+        _observePlan(echoPlanId, _plantHookIds(), echoOrderList, _plantSignalSources(), _plantSignalIds());
         for (uint256 v = 0; v < ALT_PLAN_COUNT; v++) {
             if (!altOrderLive[v]) {
                 continue;
@@ -1088,22 +1107,25 @@ contract ChaosHandler {
     }
 
     function _observeDockDepth() private {
-        uint8 maxDepth = docking.MAX_DOCK_DEPTH();
+        uint8 maxEdges = docking.MAX_DOCK_EDGES();
         for (uint256 i = 0; i < MILL_ORDER_COUNT; i++) {
-            if (docking.dockDepthOfOrder(plantPlanId, dockChildIds[i]) > maxDepth) {
+            if (docking.dockEdgeCountOfOrder(plantPlanId, dockChildIds[i]) > maxEdges) {
                 dockDepthViolationCount += 1;
             }
-            if (docking.dockDepthOfOrder(plantPlanId, grandchildIds[i]) > maxDepth) {
+            if (docking.dockEdgeCountOfOrder(echoPlanId, grandchildIds[i]) > maxEdges) {
                 dockDepthViolationCount += 1;
             }
         }
         for (uint256 j = 0; j < PLANT_TARGET_COUNT; j++) {
-            if (docking.dockDepthOfOrder(plantPlanId, plantTargets[j]) > maxDepth) {
+            if (docking.dockEdgeCountOfOrder(plantPlanId, plantTargets[j]) > maxEdges) {
+                dockDepthViolationCount += 1;
+            }
+            if (docking.dockEdgeCountOfOrder(echoPlanId, echoTargets[j]) > maxEdges) {
                 dockDepthViolationCount += 1;
             }
         }
         for (uint256 i = 0; i < MILL_ORDER_COUNT; i++) {
-            if (docking.dockDepthOfOrder(millPlanId, millOrders[i]) > maxDepth) {
+            if (docking.dockEdgeCountOfOrder(millPlanId, millOrders[i]) > maxEdges) {
                 dockDepthViolationCount += 1;
             }
         }
@@ -1264,12 +1286,12 @@ contract ChaosHandler {
 
     function _foldDockLedger(bytes32 digest) private view returns (bytes32) {
         for (uint256 i = 0; i < MILL_ORDER_COUNT; i++) {
-            digest = keccak256(abi.encode(digest, "mill-depth", docking.dockDepthOfOrder(millPlanId, millOrders[i])));
+            digest = keccak256(abi.encode(digest, "mill-depth", docking.dockEdgeCountOfOrder(millPlanId, millOrders[i])));
         }
         bytes32[] memory plantOrderList = _plantOrderList();
         for (uint256 o = 0; o < plantOrderList.length; o++) {
             digest = keccak256(
-                abi.encode(digest, "plant-depth", docking.dockDepthOfOrder(plantPlanId, plantOrderList[o]))
+                abi.encode(digest, "plant-depth", docking.dockEdgeCountOfOrder(plantPlanId, plantOrderList[o]))
             );
         }
         for (uint256 i = 0; i < MILL_ORDER_COUNT; i++) {
@@ -1382,6 +1404,19 @@ contract ChaosHandler {
             }
         }
         return false;
+    }
+
+    function _echoOrderList() private view returns (bytes32[] memory orders) {
+        orders = new bytes32[](PLANT_TARGET_COUNT + _livePlantDockOrders());
+        for (uint256 i = 0; i < PLANT_TARGET_COUNT; i++) {
+            orders[i] = echoTargets[i];
+        }
+        uint256 cursor = PLANT_TARGET_COUNT;
+        for (uint256 i = 0; i < MILL_ORDER_COUNT; i++) {
+            if (grandchildLive[i]) {
+                orders[cursor++] = grandchildIds[i];
+            }
+        }
     }
 
     function _baseOrderList() private view returns (bytes32[] memory orders) {
@@ -1682,7 +1717,6 @@ contract ChaosHandler {
     }
 
     function _registerPlantPlan() private returns (bytes32) {
-        _computeDockStaticParts();
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](3);
         hooks[0] =
             _signalHook(HOOK_DOCK_ENTRANCE, STAGE_WORKSHOP, FLAG_DOCK | FLAG_EMIT_READY, SOURCE_DYE, SIG_LOT_ARRIVED);
@@ -1700,6 +1734,31 @@ contract ChaosHandler {
             PLANT_PUBLISHER_PRIVATE_KEY,
             DockMerkle.root(_single(plantInterfaceLeaf)),
             DockMerkle.root(routeChainTreeLeaves)
+        );
+    }
+
+    /// echo 计划：plant 接口承诺的镜像承载者（同 hooks/词表/接口根，独立
+    /// publisher）——B-01 后计划不能把路由承诺给自己，链式对接的目标侧由
+    /// echo 计划承接（接口叶仍按 PLANT_UID_ID 寻址：commitPlan 不校验叶与
+    /// 定义的自洽，发布面自证在编译轨）。
+    function _registerEchoPlantPlan() private returns (bytes32) {
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](3);
+        hooks[0] =
+            _signalHook(HOOK_DOCK_ENTRANCE, STAGE_WORKSHOP, FLAG_DOCK | FLAG_EMIT_READY, SOURCE_DYE, SIG_LOT_ARRIVED);
+        hooks[1] = _signalHook(HOOK_PLANT_MINT, STAGE_WORKSHOP, FLAG_MINT | FLAG_EMIT_READY, SOURCE_BRAND, SIG_PLANT_ORDERED);
+        hooks[2] = _signalHook(HOOK_PLANT_RECEIVE, STAGE_WORKSHOP, FLAG_EMIT_READY, SOURCE_AUDIT, SIG_PLANT_AMENDED);
+
+        SignalCapability[] memory capabilities = new SignalCapability[](3);
+        capabilities[0] = SignalCapability(STAGE_WORKSHOP, SOURCE_BRAND, SIG_PLANT_ORDERED, 0);
+        capabilities[1] = SignalCapability(STAGE_WORKSHOP, SOURCE_DYE, SIG_LOT_ARRIVED, 0);
+        capabilities[2] = SignalCapability(STAGE_WORKSHOP, SOURCE_AUDIT, SIG_PLANT_AMENDED, 0);
+
+        return _commitAndFinalizeWithRoots(
+            hooks,
+            capabilities,
+            ECHO_PUBLISHER_PRIVATE_KEY,
+            DockMerkle.root(_single(plantInterfaceLeaf)),
+            DockMerkle.EMPTY_ROOT
         );
     }
 
@@ -1778,29 +1837,6 @@ contract ChaosHandler {
                 SIG_LOT_ARRIVED
             )
         );
-        bytes32 inputsRoot = DockMerkle.root(_single(openEntranceBinding));
-        bytes32 attachInputsRoot = DockMerkle.root(_single(attachInputBinding));
-        bytes32 outputsRoot = DockMerkle.root(_two(garmentOutBinding, progressOutBinding));
-        bytes32 attachOutputsRoot = DockMerkle.root(_two(attachGarmentOutBinding, attachProgressOutBinding));
-
-        openRouteHash = keccak256(
-            abi.encode(
-                DOMAIN_ROUTE, millDefinitionRef, plantDefinitionRef, INTERFACE_NAME_ID, uint256(0), inputsRoot, outputsRoot
-            )
-        );
-        attachRouteHash = keccak256(
-            abi.encode(
-                DOMAIN_ROUTE,
-                millDefinitionRef,
-                plantDefinitionRef,
-                INTERFACE_NAME_ID,
-                uint256(1),
-                attachInputsRoot,
-                attachOutputsRoot
-            )
-        );
-        routeTreeLeaves = _two(openRouteHash, attachRouteHash);
-
         fabricInLeaf =
             keccak256(abi.encode(DOMAIN_INTERFACE_INPUT, PLANT_UID_ID, INTERFACE_NAME_ID, PORT_FABRIC_IN, HOOK_DOCK_ENTRANCE));
         auditInLeaf =
@@ -1819,7 +1855,42 @@ contract ChaosHandler {
             abi.encode(DOMAIN_INTERFACE, PLANT_UID_ID, INTERFACE_NAME_ID, uint256(3), plantInputsRoot, plantOutputsRoot)
         );
 
-        // 链式对接路由（车间阶段，plant 自指）：dock 子单作为父再向外一层。
+    }
+
+    /// mill→plant 路由哈希（域 V3，B-01）：目标 planId 入 preimage——plant
+    /// 注册后计算，mill plan 提交路由叶。
+    function _computeMillRouteHashes() private {
+        openRouteHash = keccak256(
+            abi.encode(
+                DOMAIN_ROUTE,
+                millDefinitionRef,
+                plantDefinitionRef,
+                plantPlanId,
+                INTERFACE_NAME_ID,
+                uint256(0),
+                DockMerkle.root(_single(openEntranceBinding)),
+                DockMerkle.root(_two(garmentOutBinding, progressOutBinding))
+            )
+        );
+        attachRouteHash = keccak256(
+            abi.encode(
+                DOMAIN_ROUTE,
+                millDefinitionRef,
+                plantDefinitionRef,
+                plantPlanId,
+                INTERFACE_NAME_ID,
+                uint256(1),
+                DockMerkle.root(_single(attachInputBinding)),
+                DockMerkle.root(_two(attachGarmentOutBinding, attachProgressOutBinding))
+            )
+        );
+        routeTreeLeaves = _two(openRouteHash, attachRouteHash);
+    }
+
+    /// 链式对接路由（车间阶段，plant 子单 → echo 计划）：dock 子单作为父
+    /// 再向外一层。B-01 起目标 planId（echoPlanId）入 preimage——echo 注册
+    /// 后计算，plant plan 提交路由叶（计划不能自指）。
+    function _computeChainRouteHashes() private {
         chainRouteId = keccak256(abi.encode(DOMAIN_ROUTE_ID, plantDefinitionRef, STAGE_WORKSHOP));
         chainEntranceBinding = keccak256(
             abi.encode(
@@ -1848,6 +1919,7 @@ contract ChaosHandler {
                 DOMAIN_ROUTE,
                 plantDefinitionRef,
                 plantDefinitionRef,
+                echoPlanId,
                 INTERFACE_NAME_ID,
                 uint256(0),
                 DockMerkle.root(_single(chainEntranceBinding)),
@@ -1859,6 +1931,7 @@ contract ChaosHandler {
                 DOMAIN_ROUTE,
                 plantDefinitionRef,
                 plantDefinitionRef,
+                echoPlanId,
                 INTERFACE_NAME_ID,
                 uint256(1),
                 DockMerkle.root(_single(chainAttachInputBinding)),
@@ -1936,6 +2009,30 @@ contract ChaosHandler {
         return machine.triggerOrderIdFor(plantPlanId, SOURCE_BRAND, SIG_PLANT_ORDERED, payload);
     }
 
+    function _birthEchoTarget(uint256 idx) private returns (bytes32) {
+        bytes32 payload = keccak256(abi.encode("chaos.echo.birth", idx));
+        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = UVPStateMachine.TriggerOrderFromOutsideRequest({
+            planId: echoPlanId,
+            creator: address(this),
+            triggerHookId: HOOK_PLANT_MINT,
+            triggerStageId: STAGE_WORKSHOP,
+            sourceId: SOURCE_BRAND,
+            signalId: SIG_PLANT_ORDERED,
+            payloadHash: payload,
+            idempotencyKey: keccak256(abi.encode("chaos.echo.idem", idx)),
+            submitter: vm.addr(SUBMITTER_PRIVATE_KEY),
+            deadline: type(uint256).max
+        });
+        UVPStateMachine.SignalAuthorization[] memory auths = new UVPStateMachine.SignalAuthorization[](3);
+        auths[0] = _auth(SOURCE_BRAND, SIG_PLANT_ORDERED, address(this));
+        auths[1] = _auth(SOURCE_DYE, SIG_LOT_ARRIVED, address(this));
+        auths[2] = _auth(SOURCE_AUDIT, SIG_PLANT_AMENDED, address(this));
+        machine.triggerOrderFromOutsideFor(
+            trigger, auths, _triggerSignature(trigger, auths), _attributionFor(echoPlanId, SOURCE_BRAND, SIG_PLANT_ORDERED)
+        );
+        return machine.triggerOrderIdFor(echoPlanId, SOURCE_BRAND, SIG_PLANT_ORDERED, payload);
+    }
+
     function _bindDockDerivedIds(uint256 millIdx, bytes32 millOrderId) private {
         openInstanceIds[millIdx] = keccak256(
             abi.encode(
@@ -1983,7 +2080,7 @@ contract ChaosHandler {
                 chainOpenRouteHash,
                 uint256(0),
                 INTERFACE_NAME_ID,
-                plantPlanId
+                echoPlanId
             )
         );
         grandchildIds[millIdx] = bytes32(
@@ -2002,8 +2099,8 @@ contract ChaosHandler {
                     chainAttachRouteHash,
                     uint256(1),
                     INTERFACE_NAME_ID,
-                    plantPlanId,
-                    plantTargets[j]
+                    echoPlanId,
+                    echoTargets[j]
                 )
             );
         }
@@ -2048,17 +2145,73 @@ contract ChaosHandler {
             abi.encodeCall(
                 docking.openDockedOrder,
                 (
-                    request,
-                    _routeProof(openRouteHash),
-                    _openInterfaceProof(),
-                    inputs,
-                    outputs,
-                    _permitEmpty(),
-                    outputAttributions,
-                    _coreAttribution(_attributionFor(plantPlanId, SOURCE_DYE, SIG_LOT_ARRIVED))
+                    _openCall(
+                        request,
+                        _routeProof(openRouteHash),
+                        _openInterfaceProof(),
+                        inputs,
+                        outputs,
+                        _openAuth(_permitEmpty(), _openConsent(request, PLANT_PUBLISHER_PRIVATE_KEY)),
+                        outputAttributions,
+                        _coreAttribution(_attributionFor(plantPlanId, SOURCE_DYE, SIG_LOT_ARRIVED))
+                    )
                 )
             )
         );
+    }
+
+    /// B-01 open 目标侧同意（chaos 线：handler ≠ publisher，必携签名）。
+    function _openConsent(
+        UVPDockingModule.OpenDockRequestV2 memory request,
+        uint256 publisherKey
+    ) private returns (UVPDockingModule.DockTargetConsentV1 memory) {
+        UVPDockingModule.DockTargetConsentV1 memory consent;
+        consent.nonce = 1;
+        consent.deadline = type(uint256).max;
+        bytes32 digest = docking.openConsentDigest(
+            request.targetPlanId,
+            request.interfaceNameId,
+            request.localPlanId,
+            request.localOrderId,
+            request.routeId,
+            request.routeHash,
+            request.dockInstanceId,
+            request.linkedOrderId,
+            consent.nonce,
+            consent.deadline
+        );
+        (uint8 v, bytes32 r, bytes32 sv) = vm.sign(publisherKey, digest);
+        consent.signature = abi.encodePacked(r, sv, v);
+        return consent;
+    }
+
+    function _openAuth(
+        UVPDockingModule.EntrancePermitV2 memory permit,
+        UVPDockingModule.DockTargetConsentV1 memory consent
+    ) private pure returns (UVPDockingModule.OpenAuthorizationV2 memory) {
+        return UVPDockingModule.OpenAuthorizationV2({permit: permit, consent: consent});
+    }
+
+    function _openCall(
+        UVPDockingModule.OpenDockRequestV2 memory request,
+        bytes32[] memory routeProof,
+        UVPDockingModule.DockInterfaceProofV2 memory interfaceProof,
+        UVPDockingModule.DockInputBindingArg[] memory inputs,
+        UVPDockingModule.DockOutputBindingArg[] memory outputs,
+        UVPDockingModule.OpenAuthorizationV2 memory authorization,
+        IUVPStateMachineCore.FactAttribution[] memory outputAttributions,
+        IUVPStateMachineCore.FactAttribution memory entranceAttribution
+    ) private pure returns (UVPDockingModule.OpenDockCallV1 memory) {
+        return UVPDockingModule.OpenDockCallV1({
+            request: request,
+            routeProof: routeProof,
+            interfaceProof: interfaceProof,
+            inputs: inputs,
+            outputs: outputs,
+            authorization: authorization,
+            outputAttributions: outputAttributions,
+            entranceAttribution: entranceAttribution
+        });
     }
 
     function _tryAttach(uint256 i, uint256 j) private returns (bool success, bytes memory returnData) {
@@ -2184,11 +2337,11 @@ contract ChaosHandler {
             interfaceNameId: INTERFACE_NAME_ID,
             targetUidId: PLANT_UID_ID,
             targetDefinitionRefHash: plantDefinitionRef,
-            targetPlanId: plantPlanId,
+            targetPlanId: echoPlanId,
             linkedOrderId: grandchildIds[i],
             targetStageId: STAGE_WORKSHOP,
             targetHookId: HOOK_DOCK_ENTRANCE,
-            parentDepth: docking.dockDepthOfOrder(plantPlanId, dockChildIds[i])
+            parentDepth: docking.dockEdgeCountOfOrder(plantPlanId, dockChildIds[i])
         });
         UVPDockingModule.DockInputBindingArg[] memory inputs = new UVPDockingModule.DockInputBindingArg[](1);
         inputs[0] = UVPDockingModule.DockInputBindingArg({
@@ -2202,14 +2355,16 @@ contract ChaosHandler {
             abi.encodeCall(
                 docking.openDockedOrder,
                 (
-                    request,
-                    _routeProof(chainOpenRouteHash),
-                    _openInterfaceProof(),
-                    inputs,
-                    new UVPDockingModule.DockOutputBindingArg[](0),
-                    _permitEmpty(),
-                    new IUVPStateMachineCore.FactAttribution[](0),
-                    _coreAttribution(_attributionFor(plantPlanId, SOURCE_DYE, SIG_LOT_ARRIVED))
+                    _openCall(
+                        request,
+                        _routeProof(chainOpenRouteHash),
+                        _openInterfaceProof(),
+                        inputs,
+                        new UVPDockingModule.DockOutputBindingArg[](0),
+                        _openAuth(_permitEmpty(), _openConsent(request, ECHO_PUBLISHER_PRIVATE_KEY)),
+                        new IUVPStateMachineCore.FactAttribution[](0),
+                        _coreAttribution(_attributionFor(echoPlanId, SOURCE_DYE, SIG_LOT_ARRIVED))
+                    )
                 )
             )
         );
@@ -2236,10 +2391,10 @@ contract ChaosHandler {
             interfaceNameId: INTERFACE_NAME_ID,
             targetUidId: PLANT_UID_ID,
             targetDefinitionRefHash: plantDefinitionRef,
-            targetPlanId: plantPlanId,
-            linkedOrderId: plantTargets[j],
+            targetPlanId: echoPlanId,
+            linkedOrderId: echoTargets[j],
             targetStageId: STAGE_WORKSHOP,
-            parentDepth: docking.dockDepthOfOrder(plantPlanId, dockChildIds[i]),
+            parentDepth: docking.dockEdgeCountOfOrder(plantPlanId, dockChildIds[i]),
             targetCandidatesRoot: bytes32(0)
         });
         UVPDockingModule.AttachInputBindingArg[] memory inputs = new UVPDockingModule.AttachInputBindingArg[](1);

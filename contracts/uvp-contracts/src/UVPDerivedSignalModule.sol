@@ -59,7 +59,11 @@ contract UVPDerivedSignalModule {
         bytes32 targetSourceId,
         bytes32 payloadHash,
         bytes32 idempotencyKey,
-        address submitter
+        address submitter,
+        // 目标单关系（B-03）：0 = from==target 本单生产，1 = triggerOrigin
+        //（order-link 词序）。随事件广播，索引器重建派生通道授权面不必
+        // 反查 orderLinkModule.targetOrderRelation view。
+        uint8 relation
     );
 
     // 公开入参收敛为 request 结构体——
@@ -100,8 +104,8 @@ contract UVPDerivedSignalModule {
         if (msg.sender != submitter) {
             revert UnauthorizedSignalCaller(submitter, msg.sender);
         }
-        _validateDerivedSignal(request, submitter, proofs);
-        _executeDerivedSignal(request, submitter);
+        uint8 relation = _validateDerivedSignal(request, submitter, proofs);
+        _executeDerivedSignal(request, submitter, relation);
     }
 
     function submitDerivedSignalFor(
@@ -123,8 +127,8 @@ contract UVPDerivedSignalModule {
             revert InvalidSignalSignature(submitter, recoveredSigner);
         }
 
-        _validateDerivedSignal(request, submitter, proofs);
-        _executeDerivedSignal(request, submitter);
+        uint8 relation = _validateDerivedSignal(request, submitter, proofs);
+        _executeDerivedSignal(request, submitter, relation);
     }
 
     function DOMAIN_SEPARATOR() public view returns (bytes32) {
@@ -157,7 +161,7 @@ contract UVPDerivedSignalModule {
         return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
     }
 
-    function _executeDerivedSignal(DerivedSignalRequest calldata request, address submitter) private {
+    function _executeDerivedSignal(DerivedSignalRequest calldata request, address submitter, uint8 relation) private {
         stateMachine.submitDerivedSignalFromModule(
             request.targetPlanId,
             request.targetOrderId,
@@ -180,7 +184,8 @@ contract UVPDerivedSignalModule {
             request.targetSourceId,
             request.payloadHash,
             request.idempotencyKey,
-            submitter
+            submitter,
+            relation
         );
     }
 

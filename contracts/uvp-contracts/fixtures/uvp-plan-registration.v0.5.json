@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPPlanRegistration",
-  "abiVersion": "0.4",
+  "abiVersion": "0.5",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPPlanRegistration.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPPlanRegistration.sol/UVPPlanRegistration.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x8e206b2e53edf1d1bd6b58c73d6b63c2ba63b8281eaff43e44950815accd6726",
-    "bytecodeHash": "0xccd501410e37b2d810d0d36492f4e0c5dfc93c468f76b4efe62ce9c7d5a962f7",
-    "deployedBytecodeHash": "0x89b83ea7e452a3ee23496948c953ff9fd4c61ad76d8f9a029b078e9c04a72050",
-    "artifactHash": "0x6535fffa3c5f785cfd01967ac4fd0bec89927559f219de976ed35123f784cfd7"
+    "abiHash": "0x70d7db1c5275314e7ee8049dd5cb771d2ade8023f044180531ab86aed1c6adab",
+    "bytecodeHash": "0xe3e3881feeca69ff9144e6aad1ade9cd32faec94707433e203894d817e1c7009",
+    "deployedBytecodeHash": "0x3f51b43a7e685225dad7143a11a85012017b63b3370694d21e33e2364b61b7ce",
+    "artifactHash": "0x39c400ac1ce840ee470c348ae5d33fe89d71c3d66cfa06edb26927e761789c75"
   },
   "events": {
     "HookReady": {
@@ -24,8 +24,8 @@
       "topic": "0xa0c688f78d307bee6d38b69ad4c19b02d9e1be8c6772327015b60fd21ec38fd2"
     },
     "OrderForked": {
-      "signature": "OrderForked(bytes32,bytes32,bytes32,bytes32,bytes32,address)",
-      "topic": "0x210047bff6e55996070825cc33ce48ae44be44730cac0d7e3f47d18b4616211d"
+      "signature": "OrderForked(bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32[])",
+      "topic": "0x09edcd0132bacd612b1fbd252537cdcf65e43540b8701d7018f35896b41d7ef1"
     },
     "OrderMaterialized": {
       "signature": "OrderMaterialized(bytes32,bytes32,bytes32)",
@@ -44,8 +44,8 @@
       "topic": "0xbe2b637c10170dd6e7fc69ecdbc27e81ae35e6307328e493694d61c9c32a693b"
     },
     "PlanCommitted": {
-      "signature": "PlanCommitted(bytes32,bytes32,address,bytes32,bytes32,uint256,bytes32,bytes32,bytes32)",
-      "topic": "0x93b498932fe5f75d209807721697050ec95fab3061a414a96022f58cc0f84c8b"
+      "signature": "PlanCommitted(bytes32,bytes32,address,bytes32,bytes32,uint256,bytes32,bytes32,bytes32,address)",
+      "topic": "0x4002548f74e0ebc352c3ef2211bbdefaef0e3de3d9bdf877bdec5c0f9bc18370"
     },
     "PlanFinalized": {
       "signature": "PlanFinalized(bytes32,bytes32,bytes32)",
@@ -60,8 +60,8 @@
       "topic": "0x979e3b71a04f8380bc947d476d6c9bb27aa40ad81a622686d37e5d6b88512bfd"
     },
     "SignalSubmitted": {
-      "signature": "SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
-      "topic": "0x41c82bf034d8a61d15b79fcac36c465b2655b5bb3f33fb4c16f01c174103acf3"
+      "signature": "SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32)",
+      "topic": "0x4a223dcfd5862d1c1c699ffb1525d1cbba6736d251b8d2c185f43797017d00e6"
     },
     "SignalSubmitterAuthorized": {
       "signature": "SignalSubmitterAuthorized(bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32)",

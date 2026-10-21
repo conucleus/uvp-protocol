@@ -12,6 +12,7 @@ import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
 import {UVPDockingModule} from "../src/UVPDockingModule.sol";
 import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
+import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
 import {DockMerkle} from "../src/libraries/DockMerkle.sol";
@@ -1416,7 +1417,7 @@ contract ExecutorChangeBlackBoxTest {
         require(machine.orderRelayer(PLAN_ID, child) == E1(), "initiator must be recorded as relayer");
         require(child == machine.forkOrderIdFor(PLAN_ID, parentOrderId, bytes32(uint256(0xF700))), "id derivation");
         require(
-            _countTopic(logs, keccak256("OrderForked(bytes32,bytes32,bytes32,bytes32,bytes32,address)")) == 1,
+            _countTopic(logs, keccak256("OrderForked(bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32[])")) == 1,
             "OrderForked event count"
         );
     }
@@ -1603,7 +1604,7 @@ contract ExecutorChangeBlackBoxTest {
         machine.setDockingModule(address(docking));
         machine.setPlanMetadataModule(address(planMetadata));
         machine.setOrderLinkModule(address(orderLink));
-        machine.setLens(address(0x1234));
+        machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.freezeModules();
     }
 

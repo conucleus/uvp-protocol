@@ -32,7 +32,8 @@ contract DockManifestParityTest {
     bytes32 private constant DOMAIN_ROUTE_ID = keccak256("UVP_DOCK_ROUTE_ID_V1");
     bytes32 private constant DOMAIN_INPUT_BINDING = keccak256("UVP_DOCK_INPUT_BINDING_V2");
     bytes32 private constant DOMAIN_OUTPUT_BINDING = keccak256("UVP_DOCK_OUTPUT_BINDING_V2");
-    bytes32 private constant DOMAIN_ROUTE = keccak256("UVP_DOCK_ROUTE_V2");
+    bytes32 private constant DOMAIN_ROUTE = keccak256("UVP_DOCK_ROUTE_V3");
+    bytes32 private constant DOMAIN_DOCK_CANDIDATE = keccak256("UVP_DOCK_CANDIDATE_V2");
     bytes32 private constant DOMAIN_DOCK_INSTANCE = keccak256("UVP_DOCK_INSTANCE_V2");
     bytes32 private constant DOMAIN_DOCK_ORDER = keccak256("UVP_DOCK_ORDER_V1");
     bytes32 private constant DOCK_ORDER_NAMESPACE_MASK = bytes32(uint256(1) << 255);
@@ -161,6 +162,7 @@ contract DockManifestParityTest {
                     DOMAIN_ROUTE,
                     parentDefinitionRef,
                     targetDefinitionRef,
+                    _word(manifest, ".expected.targetPlanId"), // B-01 起静态路由目标 planId 入叶
                     serviceNameId,
                     uint256(0), // modeWord new
                     inputBindingsRoot,
@@ -191,6 +193,7 @@ contract DockManifestParityTest {
                     DOMAIN_ROUTE,
                     _word(manifest, ".expected.parentDefinitionRefHash"),
                     _word(manifest, ".expected.targetDefinitionRefHash"),
+                    _word(manifest, ".expected.targetPlanId"), // B-01 起静态路由目标 planId 入叶
                     evidenceNameId,
                     uint256(1), // modeWord existing
                     DockMerkle.EMPTY_ROOT,
@@ -464,18 +467,24 @@ contract DockManifestParityTest {
     /// candidatesRoot 占据的动态路由叶——与 TS golden 逐字节对拍。
     function testDynamicSelectionCandidateVectorsMatch() public {
         string memory manifest = _manifest();
-        bytes32 domainCandidate = keccak256("UVP_DOCK_CANDIDATE_V1");
         bytes32 routeIdWord = _word(manifest, ".expected.dynamicSelection.routeId");
         bytes32 evidenceNameId = _word(manifest, ".expected.interfaceNameIds.production_evidence");
         bytes32 targetDefRef = _word(manifest, ".expected.targetDefinitionRefHash");
+        bytes32 targetPlanId = _word(manifest, ".expected.targetPlanId");
 
-        bytes32 candidateLeaf = keccak256(abi.encode(domainCandidate, routeIdWord, targetDefRef, evidenceNameId));
+        // 候选叶 V2（B-01）：planId 入叶——镜像计划（同 defRef、复制接口
+        // 承诺）无法占据候选叶，选定目标的运行期身份钉进候选集 root。
+        bytes32 candidateLeaf =
+            keccak256(abi.encode(DOMAIN_DOCK_CANDIDATE, routeIdWord, targetDefRef, targetPlanId, evidenceNameId));
         assertEq(candidateLeaf, _word(manifest, ".expected.dynamicSelection.candidateLeaf"));
+        // 第二候选是显式合成的（manifest 只发布一个定义）：defRef 与 planId
+        // 均取镜像计划占位（chain-plan:<uid> 派生 planId word）。
         bytes32 otherLeaf = keccak256(
             abi.encode(
-                domainCandidate,
+                DOMAIN_DOCK_CANDIDATE,
                 routeIdWord,
                 keccak256(abi.encode(DOMAIN_DEFINITION_REF, keccak256("zx-ffffffffffffffffffffffffffffff"))),
+                keccak256("chain-plan:zx-ffffffffffffffffffffffffffffff"),
                 evidenceNameId
             )
         );
@@ -494,15 +503,17 @@ contract DockManifestParityTest {
 
         // 动态路由叶 = 冻结形态（attachDockedOrder 对动态路由以空绑定数组
         // 重算的同一 preimage）：目标槽 = candidatesRoot（随 dockRoutesRoot
-        // 在 finalize 冻结），modeWord=existing、两绑定根恒 EMPTY——
-        // bindingHash 的 preimage 含目标端口寻址 word，选定前不可计算，绑定
-        // 在 attach 时按接口承诺面验证。
+        // 在 finalize 冻结），planId 槽恒零字（选定目标 planId 在候选叶
+        // V2 内），modeWord=existing、两绑定根恒 EMPTY——bindingHash 的
+        // preimage 含目标端口寻址 word，选定前不可计算，绑定在 attach 时
+        // 按接口承诺面验证。
         assertEq(
             keccak256(
                 abi.encode(
                     DOMAIN_ROUTE,
                     _word(manifest, ".expected.parentDefinitionRefHash"),
                     candidatesRoot,
+                    bytes32(uint256(0)), // 动态路由 planId 槽恒零字
                     evidenceNameId,
                     uint256(1), // modeWord existing
                     DockMerkle.EMPTY_ROOT,

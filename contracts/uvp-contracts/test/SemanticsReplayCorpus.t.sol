@@ -7,6 +7,7 @@ import {UVPDockingModule} from "../src/UVPDockingModule.sol";
 import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
+import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 
@@ -64,11 +65,12 @@ interface CorpusVm {
 ///   StageNotMaterializable）按语料期望断言拒绝，后者另在可注册变体（同
 ///   阶段补一枚永不出线的 EMIT_READY 物化钩）上钉同一求值语义（skip 不
 ///   brick、零观察）。
-/// - 发射适格面（filter 档 evalCases，7 格）单独消费：DSL 串钉住四形态
+/// - 发射适格面（filter 档 evalCases，8 格）单独消费：DSL 串钉住五形态
 ///   （漂移即响亮失败），信号集/时刻/期望态从语料读取。锚定格都在消费集
 ///   内：无锚延时 → 链轨注册闸拒绝（求值侧永不放行的死代码）；真空 OR
 ///   臂让位 → now 拒绝 + readyAt 放行两腿；双真空 OR 平票 → 注册闸同款
-///   拒绝（无锚分支永不出线，§5.4）。
+///   拒绝（无锚分支永不出线，§5.4）；双活否决最紧期 → 语料 expiresAt
+///   拍拒绝 + now 拍放行两腿。
 contract SemanticsReplayCorpusTest {
     CorpusVm private constant vm = CorpusVm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
@@ -85,7 +87,7 @@ contract SemanticsReplayCorpusTest {
     uint256 private constant MAX_SIGNALS = 8;
     uint256 private constant MAX_POKES = 2;
     uint256 private constant REPLAY_CASE_COUNT = 26;
-    uint256 private constant FILTER_CASE_COUNT = 7;
+    uint256 private constant FILTER_CASE_COUNT = 8;
 
     // ----------------------------------------------------------------------
     // 语料行（storage：via_ir 深栈 + 跨 helper 共享）
@@ -219,7 +221,7 @@ contract SemanticsReplayCorpusTest {
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
     );
     bytes32 private constant TOPIC_SIGNAL_SUBMITTED =
-        keccak256("SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)");
+        keccak256("SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32)");
     bytes32 private constant TOPIC_HOOK_STATUS_CHANGED =
         keccak256("HookStatusChanged(bytes32,bytes32,bytes32,uint8,uint8,uint64)");
     bytes32 private constant TOPIC_HOOK_READY = keccak256("HookReady(bytes32,bytes32,bytes32,bytes32,bytes32)");
@@ -1234,11 +1236,16 @@ contract SemanticsReplayCorpusTest {
     bytes32 private constant FILTER_FORM_B = keccak256("buyer::(~a.cmp)+5s");
     bytes32 private constant FILTER_FORM_C = keccak256("buyer::(~a.cmp | b.cmp)+5s");
     bytes32 private constant FILTER_FORM_D = keccak256("buyer::(~a.cmp | ~b.cmp)+5s");
+    /// 双活否决最紧期族：两个负延时臂（approved+5s / reviewed+10s）同时
+    /// 在线，放行窗口由更早成熟的否决臂封顶（语料 expiresAt = min 两臂）。
+    bytes32 private constant FILTER_FORM_E =
+        keccak256("buyer::execute.locked & ~(execute.approved +5s) & ~(execute.reviewed +10s)");
 
-    /// filter 档 evalCases 全消费：DSL 串钉三形态（漂移即响亮失败），信
+    /// filter 档 evalCases 全消费：DSL 串钉五形态（漂移即响亮失败），信
     /// 号集/时刻/期望态从语料读取。锚定格都在消费集内：无锚延时（33）→
-    /// 链轨注册闸拒绝；真空 OR 臂让位（34）→ now 拒绝 + readyAt 放行两腿。
-    /// DSL→指令的三形态镜像是静态的（链轨无 DSL 解析器；编译器在 TS 侧）。
+    /// 链轨注册闸拒绝；真空 OR 臂让位（34）→ now 拒绝 + readyAt 放行两腿；
+    /// 双活否决最紧期（39）→ expiresAt 拍拒绝 + now 拍放行两腿。
+    /// DSL→指令的形态镜像是静态的（链轨无 DSL 解析器；编译器在 TS 侧）。
     function testFilterAdmissionEvalCorpus() public {
         _loadCorpus();
         string memory json = corpusJson;
@@ -1347,6 +1354,25 @@ contract SemanticsReplayCorpusTest {
             );
             admissionInstrs[3] = _instruction(uint8(UVPStateMachine.InstructionOp.Or), bytes32(0), bytes32(0), 2, 0);
             admissionInstrs[4] = _instruction(uint8(UVPStateMachine.InstructionOp.Delay), bytes32(0), bytes32(0), 0, 5);
+        } else if (form == FILTER_FORM_E) {
+            // 双活否决最紧期：FORM_A 的第二裸否决臂换成 reviewed+10s 延时
+            // 否决臂——AND 的放行窗口由更早成熟的 approved+5s 封顶（语料
+            // expiresAt = 05s 拍，见 ready 腿的到期探针）。
+            admissionInstrs = new UVPStateMachine.Instruction[](8);
+            admissionInstrs[0] = _instruction(
+                uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("execute.locked"), 0, 0
+            );
+            admissionInstrs[1] = _instruction(
+                uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("execute.approved"), 0, 0
+            );
+            admissionInstrs[2] = _instruction(uint8(UVPStateMachine.InstructionOp.Delay), bytes32(0), bytes32(0), 0, 5);
+            admissionInstrs[3] = _instruction(uint8(UVPStateMachine.InstructionOp.Not), bytes32(0), bytes32(0), 0, 0);
+            admissionInstrs[4] = _instruction(
+                uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("execute.reviewed"), 0, 0
+            );
+            admissionInstrs[5] = _instruction(uint8(UVPStateMachine.InstructionOp.Delay), bytes32(0), bytes32(0), 0, 10);
+            admissionInstrs[6] = _instruction(uint8(UVPStateMachine.InstructionOp.Not), bytes32(0), bytes32(0), 0, 0);
+            admissionInstrs[7] = _instruction(uint8(UVPStateMachine.InstructionOp.And), bytes32(0), bytes32(0), 3, 0);
         } else {
             revert("unknown filter corpus form");
         }
@@ -1418,6 +1444,27 @@ contract SemanticsReplayCorpusTest {
         vm.warp(nowSec);
         bytes32 emitPayload = keccak256(abi.encode(caseIdx, "emit"));
         if (stateHash == keccak256("ready")) {
+            // 否决窗口到期拍探针（语料 expiresAt 非空时）：Rust 语义在窗口
+            // 关闭拍判 negated condition exists → 发射必须响亮拒绝；双活
+            // 否决形态（FORM_E）由此钉住"窗口由更早成熟的否决臂封顶"——
+            // 若实现错误锚定在更晚成熟的臂上，到期拍发射会错误落地。先探
+            // 后放：first-win 吸收在适格门之前，成功发射后的重复提交会被
+            // 吸收而非拒绝，到期拍必须在成功发射前探测。
+            (bool hasExpiresAt, string memory expiresAtRaw) =
+                _tryString(json, string.concat(base, ".expect.expiresAt"));
+            if (hasExpiresAt && keccak256(bytes(expiresAtRaw)) != keccak256("null")) {
+                (, uint64 expiresAt) = _requireTimestamp(expiresAtRaw);
+                vm.warp(expiresAt);
+                vm.expectRevert(
+                    abi.encodeWithSelector(
+                        UVPStateMachine.SignalAdmissionRejected.selector, orderId, emitSource, emitSignal
+                    )
+                );
+                machine.submitSignal(
+                    planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution()
+                );
+                vm.warp(nowSec);
+            }
             machine.submitSignal(
                 planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution()
             );
@@ -1539,7 +1586,7 @@ contract SemanticsReplayCorpusTest {
         newMachine.setDockingModule(address(docking));
         newMachine.setPlanMetadataModule(address(planMetadata));
         newMachine.setOrderLinkModule(address(orderLink));
-        newMachine.setLens(address(0x1234));
+        newMachine.setLens(address(new UVPStateMachineLens(address(newMachine))));
         newMachine.freezeModules();
     }
 

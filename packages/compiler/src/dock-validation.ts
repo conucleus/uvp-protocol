@@ -11,6 +11,7 @@ import {
   outputPortLeaf,
   routeHash as routeHashOf,
   stageKey,
+  ZERO_WORD,
 } from "./dock.js";
 import { DOCK_ROUTE_UNRESOLVED_SCHEMA_VERSION } from "./types/index.js";
 
@@ -285,6 +286,12 @@ function validateDockRouteCommitments(
   const inputHashes: string[] = [];
   const outputHashes: string[] = [];
   let bindingsComputable = true;
+  // 同一 attach 的 input 绑定不得重复指向同一目标事实键：两条绑定同指
+  // 一个 (targetSourceId, targetSignalId) 时，submitDockedInput 在事实已
+  // 存在的情况下返回 DockInputConflict 且不置 _inputDelivered——第二个
+  // 端口每次重试都 revert，keeper 持续烧 gas（A-09 编译面闸，合约 attach
+  // 同批同口径）。
+  const seenTargetFactKeys = new Set<string>();
   for (const [index, binding] of (inputBindings ?? []).entries()) {
     if (
       !isRecord(binding) ||
@@ -300,6 +307,15 @@ function validateDockRouteCommitments(
       );
       bindingsComputable = false;
       continue;
+    }
+    const targetFactKey = `${binding.targetSourceId}:${binding.targetSignalId}`;
+    if (seenTargetFactKeys.has(targetFactKey)) {
+      issues.push(
+        `${path}.inputBindings[${index}] targets fact key ${binding.targetSourceId}/${binding.targetSignalId} already bound by an earlier input of the same attach `
+          + "(submitDockedInput reverts DockInputConflict forever on the second port when the target fact exists; one attach input must map to one target fact)",
+      );
+    } else {
+      seenTargetFactKeys.add(targetFactKey);
     }
     const recomputed = inputBindingHash({
       routeId: route.routeId,
@@ -380,18 +396,25 @@ function validateDockRouteCommitments(
       `${path}.target.definitionRefHash`,
       issues,
     );
-    // routeHash 重算以三个 word 全部在场为前提；字段缺失/畸形时上面的
+    expectHexHashCommitment(
+      target?.chainPlanId,
+      `${path}.target.chainPlanId`,
+      issues,
+    );
+    // routeHash 重算以四个 word 全部在场为前提；字段缺失/畸形时上面的
     // issue 已把该 route 判废，重算本身无意义（臆造占位 word 只会产出
     // 必然不匹配的二次噪声），在此跳过重算而不是静默放过整条 route。
     if (
       target !== undefined &&
       isHexHash(target.definitionRefHash) &&
+      isHexHash(target.chainPlanId) &&
       isHexHash(route.inputBindingsRoot) &&
       isHexHash(route.outputBindingsRoot)
     ) {
       const recomputedRouteHash = routeHashOf({
         localDefinitionRefHash: local.definitionRefHash,
         targetDefinitionRefHash: target.definitionRefHash,
+        targetPlanId: target.chainPlanId,
         interfaceName,
         orderMode,
         inputBindingsRoot: route.inputBindingsRoot,
@@ -409,9 +432,11 @@ function validateDockRouteCommitments(
 
 /**
  * 单条未解析（target:null 动态选择）route 的承诺重算（UVPDockingModule
- * 4.4）：routeId、candidatesRoot（候选叶 merkle）与 routeHash（目标槽 =
- * 候选集 root、两绑定根恒 EMPTY）全部从携带字段独立重推导——候选清单
- * 伪造/换叶/换根在此暴露，制品不得携带与声明面分叉的承诺。
+ * 4.7）：routeId、candidatesRoot（候选叶 V2 = H(UVP_DOCK_CANDIDATE_V2;
+ * routeId, defRefHash, chainPlanId, keccak(interfaceName)) 的 merkle）与
+ * routeHash（目标槽 = 候选集 root、planId 槽 = 零字、两绑定根恒 EMPTY）
+ * 全部从携带字段独立重推导——候选清单伪造/换叶/换根在此暴露，制品不得
+ * 携带与声明面分叉的承诺。
  */
 function validateUnresolvedRouteCommitments(
   route: Record<string, unknown>,
@@ -462,35 +487,40 @@ function validateUnresolvedRouteCommitments(
     );
     return issues;
   }
-  const candidateRefHashes: `0x${string}`[] = [];
   for (const [index, candidate] of candidates.entries()) {
-    if (!isRecord(candidate) || !isHexHash(candidate.definitionRefHash)) {
+    if (
+      !isRecord(candidate) ||
+      !isHexHash(candidate.definitionRefHash) ||
+      !isHexHash(candidate.chainPlanId)
+    ) {
       issues.push(
-        `${path}.candidates[${index}].definitionRefHash must be a lowercase 32-byte hex hash`,
+        `${path}.candidates[${index}] must carry lowercase 32-byte hex definitionRefHash and chainPlanId`,
       );
       return issues;
     }
-    candidateRefHashes.push(candidate.definitionRefHash);
   }
   expectHexHashCommitment(route.candidatesRoot, `${path}.candidatesRoot`, issues);
   const recomputedCandidatesRoot = merkleRoot(
-    candidateRefHashes.map((definitionRefHash) =>
+    candidates.map((candidate) =>
       dockCandidateLeaf({
         routeId: route.routeId as `0x${string}`,
-        targetDefinitionRefHash: definitionRefHash,
+        targetDefinitionRefHash: (candidate as Record<string, unknown>).definitionRefHash as `0x${string}`,
+        targetPlanId: (candidate as Record<string, unknown>).chainPlanId as `0x${string}`,
         interfaceName,
       }),
     ),
   );
   if (route.candidatesRoot !== recomputedCandidatesRoot) {
     issues.push(
-      `${path}.candidatesRoot must match the recomputed merkle root over candidate leaves H(UVP_DOCK_CANDIDATE_V1, routeId, candidateDefinitionRefHash, keccak(interfaceName))`,
+      `${path}.candidatesRoot must match the recomputed merkle root over candidate leaves H(UVP_DOCK_CANDIDATE_V2, routeId, candidateDefinitionRefHash, candidateChainPlanId, keccak(interfaceName))`,
     );
   }
   if (isHexHash(route.candidatesRoot)) {
     const recomputedRouteHash = routeHashOf({
       localDefinitionRefHash,
       targetDefinitionRefHash: route.candidatesRoot,
+      // 动态路由的 targetPlanId 槽 = 零字（选定目标 planId 在候选叶 V2 内）。
+      targetPlanId: ZERO_WORD,
       interfaceName,
       orderMode,
       inputBindingsRoot: EMPTY_MERKLE_ROOT,
@@ -498,7 +528,7 @@ function validateUnresolvedRouteCommitments(
     });
     if (recomputedRouteHash !== route.routeHash) {
       issues.push(
-        `${path}.routeHash must match the recomputed dynamic-route preimage (target slot = candidatesRoot, empty binding roots)`,
+        `${path}.routeHash must match the recomputed dynamic-route preimage (target slot = candidatesRoot, planId slot = zero, empty binding roots)`,
       );
     }
   }
@@ -621,6 +651,7 @@ export function validateUnresolvedDockRouteDeclarations(
         expectNonEmptyStringValue(candidate.zhixuName, `${candidatePath}.zhixuName`, issues);
         expectHexHashValue(candidate.definitionRefHash, `${candidatePath}.definitionRefHash`, issues);
         expectHexHashValue(candidate.artifactHash, `${candidatePath}.artifactHash`, issues);
+        expectHexHashValue(candidate.chainPlanId, `${candidatePath}.chainPlanId`, issues);
         if (candidate.cloudArtifactId !== undefined && typeof candidate.cloudArtifactId !== "string") {
           issues.push(`${candidatePath}.cloudArtifactId must be a string when present`);
         }

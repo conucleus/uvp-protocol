@@ -7,6 +7,7 @@ import {UVPDockingModule} from "../src/UVPDockingModule.sol";
 import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
+import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
 
 interface Vm {
@@ -359,7 +360,7 @@ contract UVPAdmissionTest {
         require(status == UVPStateMachine.HookStatus.Init, "rejected emission must not advance hooks");
         Vm.Log[] memory logs = vm.getRecordedLogs();
         require(
-            _countTopic(logs, keccak256("SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)"))
+            _countTopic(logs, keccak256("SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32)"))
                 == 0,
             "rejected emission emitted events"
         );
@@ -721,7 +722,7 @@ contract UVPAdmissionTest {
         machine.setDockingModule(address(docking));
         machine.setPlanMetadataModule(address(planMetadata));
         machine.setOrderLinkModule(address(orderLink));
-        machine.setLens(address(0x1234));
+        machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.freezeModules();
     }
 

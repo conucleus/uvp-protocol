@@ -511,10 +511,12 @@ function validateInstructions(
 /**
  * 镜像 UVPPlanRegistration._validateAdmission 的过滤档栈机（_validateHook
  * 的过滤档兄弟）：适格面只在到达一拍对 pre-state 求值、不参与任何调度——
- * 无正锚要求（根/OR 分支/延时操作数均不要求），衰减否决位 ~(A+duration)
- * 位置全放开（任何位置的瞬时值都良定义）。与钩子档同源的保留闸：NOT
- * 操作数词表（裸 SIGNAL 或 DELAY 产出）、duration ∈ (0, 30d]、AND/OR
- * arity ≥ 2、栈深、结束恰一值。自引用/出生锚/订阅原子是编译期拒绝
+ * 无根位/OR 分支正锚要求，衰减否决位 ~(A+duration) 位置全放开（任何位置
+ * 的瞬时值都良定义）。与钩子档同源的保留闸：NOT 操作数词表（裸 SIGNAL
+ * 或 DELAY 产出）、duration ∈ (0, 30d]、AND/OR arity ≥ 2、栈深、结束恰
+ * 一值、DELAY 操作数必须有正向锚点（UB-1 无锚延时闸：无锚延时在求值侧
+ * 恒 NeedsMore，注册即拒）与嵌套延时闸（uvp-hook-dsl validate_filter_hook
+ * 的 reject_nested_delay 同口径）。自引用/出生锚/订阅原子是编译期拒绝
  * （core D028-D030），注册门看到的只有指令形态。
  */
 function validateAdmissionInstructions(
@@ -523,10 +525,16 @@ function validateAdmissionInstructions(
 ): readonly string[] {
   const issues: string[] = [];
   let stackDepth = 0;
-  // 裸 SIGNAL 栈标志与 DELAY 产出标志：NOT 操作数词表的判定面（过滤档
-  // 不需要锚点/否决位位置轨）。
+  // 裸 SIGNAL 栈标志与 DELAY 产出标志：NOT 操作数词表的判定面。
   const bareSignal: boolean[] = [];
   const delayResult: boolean[] = [];
+  // 正向锚点标志（_validateAdmission 镜像）：Signal 贡献，Not 归零，
+  // Delay 承袭操作数，And/Or 取任一（过滤档无 OR 分支硬闸）——DELAY
+  // 操作数闸的判定材料。
+  const hasPosAnchor: boolean[] = [];
+  // 子树含 DELAY 标志（UB-1 嵌套延时闸，reject_nested_delay 镜像）：
+  // Delay 置位，Not 透传，And/Or 取任一，Delay 操作数已在场即拒。
+  const delayInside: boolean[] = [];
 
   for (const [index, instruction] of instructions.entries()) {
     if (!isRecord(instruction)) {
@@ -577,6 +585,8 @@ function validateAdmissionInstructions(
         }
         bareSignal[stackDepth] = true;
         delayResult[stackDepth] = false;
+        hasPosAnchor[stackDepth] = true;
+        delayInside[stackDepth] = false;
         stackDepth += 1;
         break;
       case "NOT": {
@@ -595,6 +605,8 @@ function validateAdmissionInstructions(
         }
         bareSignal[stackDepth - 1] = false;
         delayResult[stackDepth - 1] = false;
+        hasPosAnchor[stackDepth - 1] = false;
+        // delayInside 经 NOT 透传（否决位内层仍是延时操作数）。
         break;
       }
       case "AND":
@@ -611,9 +623,19 @@ function validateAdmissionInstructions(
           issues.push(`${prefix}.op requires ${arity} stack items`);
           break;
         }
+        // delayInside 与 hasPosAnchor 都取任一（_validateAdmission 镜像）：
+        // 过滤档无 OR 分支正锚硬闸，And/Or 同口径。
+        const delayInsideResult = delayInside
+          .slice(stackDepth - arity, stackDepth)
+          .some(Boolean);
+        const anchored = hasPosAnchor
+          .slice(stackDepth - arity, stackDepth)
+          .some(Boolean);
         stackDepth = stackDepth - arity + 1;
         bareSignal[stackDepth - 1] = false;
         delayResult[stackDepth - 1] = false;
+        delayInside[stackDepth - 1] = delayInsideResult;
+        hasPosAnchor[stackDepth - 1] = anchored;
         break;
       }
       case "DELAY":
@@ -634,10 +656,29 @@ function validateAdmissionInstructions(
           issues.push(`${prefix}.op requires one stack item`);
           break;
         }
-        // 过滤档无锚点闸、无否决位位置闸：延时操作数可以纯否定/含否决位
-        // （一拍求值下瞬时值良定义，无外层调度可被过期锚静默放行）。
+        // UB-1 无锚延时闸（_validateAdmission 镜像）：过滤档允许纯否定
+        // 操作数存在（瞬时值良定义），但禁止它直接喂延时——无锚延时在
+        // 求值侧是恒未决死代码（Rust 权威 eval_expr 的 Delay 臂对无锚
+        // Ready 操作数返回 NeedsMore）。hasPosAnchor 承袭操作数。
+        if (!hasPosAnchor[stackDepth - 1]) {
+          issues.push(
+            `${prefix}.op DELAY requires an operand with a positive signal anchor `
+              + "(contract _validateAdmission reverts InvalidInstruction for delay over anchorless operands "
+              + "(UB-1: an anchorless delay never matures on the evaluation side))",
+          );
+        }
+        // 嵌套延时闸（reject_nested_delay 镜像）：DELAY 的操作数子树内
+        // 已含 DELAY 即拒——外层延时锚在内层延时成熟时刻上，两层调度的
+        // 组合语义与编译器产物形态分叉。
+        if (delayInside[stackDepth - 1]) {
+          issues.push(
+            `${prefix}.op DELAY cannot consume an operand containing another DELAY `
+              + "(contract _validateAdmission reverts InvalidInstruction for nested delay operands)",
+          );
+        }
         bareSignal[stackDepth - 1] = false;
         delayResult[stackDepth - 1] = true;
+        delayInside[stackDepth - 1] = true;
         break;
       default:
         issues.push(`${prefix}.op must be one of SIGNAL, NOT, AND, OR, DELAY`);
