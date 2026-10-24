@@ -31,6 +31,12 @@ export interface PrepareProductTaskSubmitInput {
   readonly evidenceIds: readonly string[];
   readonly walletAddress: string;
   readonly intent: ProductSubmitIntent;
+  /**
+   * 多发射阶段（如 inspection.passed/failed、delivery.accepted/rejected）
+   * 必须显式指定要提交的信号名；单发射阶段可省略。服务端不按哈希序/
+   * 业务词猜成败。
+   */
+  readonly signalName?: string;
 }
 
 /** POST /product/tasks/:id/submit 请求体。 */

@@ -703,6 +703,12 @@ export function validateTaskEvidenceSpec(
   return issues;
 }
 
+export interface ProductTaskSubmitSignalDTO {
+  readonly signalName: string;
+  readonly sourceId: string;
+  readonly signalId: string;
+}
+
 export interface ProductTaskDTO {
   readonly taskId: string;
   readonly orderId: string;
@@ -743,6 +749,7 @@ export interface ProductTaskDTO {
   readonly participantRoleLabel?: string;
   readonly participantWallet?: string;
   readonly canSubmit?: boolean;
+  readonly submitSignals?: readonly ProductTaskSubmitSignalDTO[];
   readonly proofSummary?: ParticipantProofSummaryDTO;
   readonly responsibilityStatements: readonly ProductResponsibilityStatementDTO[];
   readonly proofRows: readonly ChainProofRowDTO[];
