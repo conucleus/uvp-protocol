@@ -116,6 +116,10 @@ contract UVPDockingModuleTest {
     bytes32 private constant TARGET_HOOK_NAME = keccak256("DOCK_EXECUTE");
     bytes32 private constant TARGET_SOURCE = keccak256("payment");
     bytes32 private constant TARGET_SIGNAL = keccak256("init.execute");
+    // dock 子单内部阶段推进的授权面（B2）：open 后由 target plan publisher
+    // 显式授权给 executor 提交的目标词表内事实键。
+    bytes32 private constant TARGET_INTAKE_SOURCE = keccak256("supply");
+    bytes32 private constant TARGET_INTAKE_SIGNAL = keccak256("intake.demand_accepted");
     // outside 触发出生事实（MINT 词表用，与 entrance 事实分离）。
     bytes32 private constant TARGET_OUT_SOURCE = keccak256("payment");
     bytes32 private constant TARGET_OUT_SIGNAL = keccak256("init.done");
@@ -225,6 +229,77 @@ contract UVPDockingModuleTest {
         (status,, readyEmitted) = machine.getHookStatus(targetPlanId, linkedOrderId, TARGET_ENTRANCE_HOOK);
         assertEq(uint256(status), uint256(UVPStateMachine.HookStatus.Ready));
         assertTrue(readyEmitted);
+    }
+
+    /// B2：open 后 target plan publisher 对 dock 子单显式授权信号提交者；
+    /// 被授权的 executor 可在子单内部阶段提交事实，重复授权按出生通道
+    /// 语义（SignalSubmitterAlreadyAuthorized）拒绝。
+    function testTargetPublisherAuthorizesDockedOrderSignals() public {
+        assertTrue(_open());
+        address publisher = vm.addr(TARGET_PUBLISHER_KEY);
+        address executor = address(0xE7EC);
+        UVPStateMachine.SignalAuthorization[] memory machineAuths = new UVPStateMachine.SignalAuthorization[](1);
+        machineAuths[0] = _auth(TARGET_INTAKE_SOURCE, TARGET_INTAKE_SIGNAL, executor);
+        IUVPStateMachineCore.SignalAuthorization[] memory authorizations =
+            new IUVPStateMachineCore.SignalAuthorization[](1);
+        authorizations[0] = _coreAuth(TARGET_INTAKE_SOURCE, TARGET_INTAKE_SIGNAL, executor);
+        bytes32 authorizationHash = machine.signalAuthorizationsHash(machineAuths);
+
+        vm.expectEmit(true, true, true, true, address(docking));
+        emit UVPDockingModule.DockOrderSignalsAuthorized(
+            dockInstanceId, targetPlanId, linkedOrderId, 1, authorizationHash
+        );
+        vm.prank(publisher);
+        docking.authorizeDockedOrderSignals(dockInstanceId, authorizations);
+
+        assertTrue(
+            machine.hasExplicitSignalAuthorization(
+                targetPlanId, linkedOrderId, TARGET_INTAKE_SOURCE, TARGET_INTAKE_SIGNAL, executor
+            )
+        );
+        // 被授权的 executor 提交目标词表内事实（属主阶段已由 dock entrance
+        // 物化）。
+        vm.prank(executor);
+        machine.submitSignal(
+            targetPlanId,
+            linkedOrderId,
+            TARGET_INTAKE_SOURCE,
+            TARGET_INTAKE_SIGNAL,
+            PAYLOAD,
+            keccak256("intake.demand_accepted"),
+            _factAttributionFor(targetPlanId, TARGET_INTAKE_SOURCE, TARGET_INTAKE_SIGNAL)
+        );
+        (bool exists,,,,) = machine.getSignal(targetPlanId, linkedOrderId, TARGET_INTAKE_SOURCE, TARGET_INTAKE_SIGNAL);
+        assertTrue(exists);
+
+        _expect(
+            abi.encodeWithSelector(
+                UVPStateMachine.SignalSubmitterAlreadyAuthorized.selector,
+                linkedOrderId,
+                TARGET_INTAKE_SOURCE,
+                TARGET_INTAKE_SIGNAL,
+                executor
+            )
+        );
+        vm.prank(publisher);
+        docking.authorizeDockedOrderSignals(dockInstanceId, authorizations);
+    }
+
+    /// 授权门：非目标 plan publisher 不能对 dock 子单写入信号授权。
+    function testAuthorizeDockedOrderSignalsRejectsNonPublisher() public {
+        assertTrue(_open());
+        IUVPStateMachineCore.SignalAuthorization[] memory authorizations =
+            new IUVPStateMachineCore.SignalAuthorization[](1);
+        authorizations[0] = _coreAuth(TARGET_INTAKE_SOURCE, TARGET_INTAKE_SIGNAL, address(0xE7EC));
+        _expect(
+            abi.encodeWithSelector(
+                UVPDockingModule.UnauthorizedDockSignalsAuthorizer.selector,
+                KEEPER,
+                vm.addr(TARGET_PUBLISHER_KEY)
+            )
+        );
+        vm.prank(KEEPER);
+        docking.authorizeDockedOrderSignals(dockInstanceId, authorizations);
     }
 
     /// DockOpened/DockInputSubmitted 事件口径：open 原子发出开仓
@@ -1402,7 +1477,7 @@ contract UVPDockingModuleTest {
         // 词表（编译器产物同口径）：出生事实 + 两个 output 绑定镜像的事实
         // 都按 relation=0 capability 声明——open 的 output 事实键词表闸
         // （DockOutputFactNotDeclared）以此为产出词表。
-        SignalCapability[] memory capabilities = new SignalCapability[](3);
+        SignalCapability[] memory capabilities = new SignalCapability[](4);
         capabilities[0] = SignalCapability({
             stageId: TARGET_STAGE,
             targetSourceId: TARGET_OUT_SOURCE,
@@ -1416,6 +1491,14 @@ contract UVPDockingModuleTest {
             stageId: TARGET_STAGE,
             targetSourceId: TARGET_SOURCE,
             signalId: TARGET_PENDING_SIGNAL,
+            targetOrderRelation: 0
+        });
+        // dock 子单内部阶段推进事实（B2）：与模板 supply::intake.demand_accepted
+        // 同形，属主是 dock entrance 物化的 target stage。
+        capabilities[3] = SignalCapability({
+            stageId: TARGET_STAGE,
+            targetSourceId: TARGET_INTAKE_SOURCE,
+            signalId: TARGET_INTAKE_SIGNAL,
             targetOrderRelation: 0
         });
         return _commitAndFinalize(
@@ -2326,6 +2409,20 @@ contract UVPDockingModuleTest {
         returns (UVPStateMachine.SignalAuthorization memory)
     {
         return UVPStateMachine.SignalAuthorization({
+            sourceId: sourceId,
+            signalId: signalId,
+            submitter: submitter,
+            role: keccak256("bootstrap"),
+            metadataHash: bytes32(0)
+        });
+    }
+
+    function _coreAuth(bytes32 sourceId, bytes32 signalId, address submitter)
+        private
+        pure
+        returns (IUVPStateMachineCore.SignalAuthorization memory)
+    {
+        return IUVPStateMachineCore.SignalAuthorization({
             sourceId: sourceId,
             signalId: signalId,
             submitter: submitter,

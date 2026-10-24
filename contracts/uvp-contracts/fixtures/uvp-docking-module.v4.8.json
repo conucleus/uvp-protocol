@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPDockingModule",
-  "abiVersion": "4.7",
+  "abiVersion": "4.8",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPDockingModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPDockingModule.sol/UVPDockingModule.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x45a833743c1e0d7b8594c77e0a672d46ab881dd19b300e9841315bb5d201076c",
-    "bytecodeHash": "0x88958d63801b36b248ff1f60b87b46f67f76a8e31788f8885ab0a2f98e92af9e",
-    "deployedBytecodeHash": "0x5a15aa480f4936858adbea227f2263307473ed1086ed4460d88b89000c389fbf",
-    "artifactHash": "0x294ae4df2ad4f5f3eb160b2ca4683c82af41918f3c24ae39e68f0b53de2e0237"
+    "abiHash": "0x95413d06a25966de89634506b648c457bd1ec666936947bf6c40d5bb65ae7c98",
+    "bytecodeHash": "0x72d41f06d980aab41e988a8efdbdc7a61fa544f2cc5c562972a3f7e540bf8de8",
+    "deployedBytecodeHash": "0xbad8dfdf6caefcf5ca4a9267437e74f7f16c461c824aa2952a87ed3b7da77dc0",
+    "artifactHash": "0x9bd87270f5d8b384c432c0d91c18c71c64c70f73e70f9ba98c37a83fd205b502"
   },
   "events": {
     "DockAttached": {
@@ -26,6 +26,10 @@
     "DockOpened": {
       "signature": "DockOpened(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint8,address)",
       "topic": "0x4b27ba44044fdef1dc850cd0701c52eb8da60938277e7612046af358f7f366b6"
+    },
+    "DockOrderSignalsAuthorized": {
+      "signature": "DockOrderSignalsAuthorized(bytes32,bytes32,bytes32,uint256,bytes32)",
+      "topic": "0x6b0a912fc738733d202080df9edb8284ff621793076f0bc6343777898f11b779"
     },
     "DockOutputSatisfied": {
       "signature": "DockOutputSatisfied(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
@@ -76,6 +80,10 @@
     "attachPermitDigest": {
       "signature": "attachPermitDigest(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,uint256)",
       "selector": "0x20af885a"
+    },
+    "authorizeDockedOrderSignals": {
+      "signature": "authorizeDockedOrderSignals(bytes32,(bytes32,bytes32,address,bytes32,bytes32)[])",
+      "selector": "0x53b36af2"
     },
     "dockByLocalRoute": {
       "signature": "dockByLocalRoute(bytes32)",

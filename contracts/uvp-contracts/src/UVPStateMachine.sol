@@ -1108,6 +1108,24 @@ contract UVPStateMachine {
         }
     }
 
+    /// 仅 docking module 可调用。target plan publisher 对 dock 子单的显式
+    /// 订单级信号授权入口（publisher 身份门在 docking module 的授权腿）：
+    /// 写入经 _authorizeSignalSubmitters 与出生通道同口径校验/同事件广播。
+    function authorizeDockedSignalsFromModule(
+        bytes32 planId,
+        bytes32 orderId,
+        SignalAuthorization[] calldata authorizations
+    ) external {
+        if (msg.sender != dockingModule) {
+            revert UnauthorizedStateMachineModule(msg.sender);
+        }
+        Order storage order = _s.orders[planId][orderId];
+        if (!order.exists) {
+            revert UnknownOrder();
+        }
+        _authorizeSignalSubmitters(planId, orderId, authorizations);
+    }
+
     /// 仅 docking module 可调用。创建独立 linkedOrderId 子订单、
     /// 授权子订单信号提交者、写入 entrance canonical fact（绕过源阶段
     /// materialization 检查——该事实正是出生事实），entrance hook

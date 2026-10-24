@@ -77,6 +77,14 @@ interface IUVPStateMachineCore {
         bytes32 orderId,
         SignalAuthorization[] calldata authorizations
     ) external;
+    /// dock 子单授权面（B2）：target plan publisher 经 docking module 对
+    /// dock 子单写入显式订单级授权集（仅 docking module 可调用，写入与
+    /// 出生通道同口径）。
+    function authorizeDockedSignalsFromModule(
+        bytes32 planId,
+        bytes32 orderId,
+        SignalAuthorization[] calldata authorizations
+    ) external;
     /// 授权集哈希公式（trigger 出生与 executor patch 摘要的公共折叠公式）。
     function signalAuthorizationsHash(SignalAuthorization[] calldata authorizations) external pure returns (bytes32);
     /// 合约原生 per-stage 信号计数真源（UB-2）：ASSIGN/HANDOFF 时序闸的

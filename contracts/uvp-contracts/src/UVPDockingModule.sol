@@ -278,6 +278,9 @@ contract UVPDockingModule {
     /// B-02 有界祖先检查：attach 目标出现在父单的父链祖先内（挂接即成
     /// 跨单环）。
     error DockAncestorCycle(bytes32 planId, bytes32 orderId);
+    /// dock 子单授权门：调用方不是目标 plan publisher（授权身份腿与
+    /// open consent / 子单 creator 同源）。
+    error UnauthorizedDockSignalsAuthorizer(address caller, address publisher);
 
     // ------------------------------------------------------------------
     // 事件（全部端点 plan/order + dockInstanceId 可恢复）
@@ -349,6 +352,16 @@ contract UVPDockingModule {
         bytes32 localSignalId,
         bytes32 payloadHash,
         address submitter
+    );
+    /// dock 子单显式订单级信号授权记录：authorizationHash 与
+    /// StateMachine.signalAuthorizationsHash 同公式；逐条明细由
+    /// SignalSubmitterAuthorized 承载，本事件只钉授权集身份。
+    event DockOrderSignalsAuthorized(
+        bytes32 indexed dockInstanceId,
+        bytes32 indexed targetPlanId,
+        bytes32 indexed linkedOrderId,
+        uint256 count,
+        bytes32 authorizationHash
     );
 
     // ------------------------------------------------------------------
@@ -808,6 +821,37 @@ contract UVPDockingModule {
             creator
         );
         return true;
+    }
+
+    // ------------------------------------------------------------------
+    // authorizeDockedOrderSignals
+    // ------------------------------------------------------------------
+
+    /// @notice target plan publisher 对已建立 dock 的目标单写入显式订单级
+    ///          信号授权（授权来源 = publisher 身份腿，与 open consent /
+    ///          子单 creator 同源）。dock 子单出生授权集为空、出生阶段又
+    ///          禁止 executor patch，本入口是子单内部阶段推进的显式授权面；
+    ///          键/提交者校验与事件由 StateMachine 按出生通道同口径完成。
+    function authorizeDockedOrderSignals(
+        bytes32 dockInstanceId,
+        IUVPStateMachineCore.SignalAuthorization[] calldata authorizations
+    ) external {
+        ActiveDockV2 storage dock = _docks[dockInstanceId];
+        if (!dock.exists) {
+            revert DockNotOpened(dockInstanceId);
+        }
+        address publisher = stateMachine.planPublisher(dock.targetPlanId);
+        if (msg.sender != publisher) {
+            revert UnauthorizedDockSignalsAuthorizer(msg.sender, publisher);
+        }
+        stateMachine.authorizeDockedSignalsFromModule(dock.targetPlanId, dock.linkedOrderId, authorizations);
+        emit DockOrderSignalsAuthorized(
+            dockInstanceId,
+            dock.targetPlanId,
+            dock.linkedOrderId,
+            authorizations.length,
+            stateMachine.signalAuthorizationsHash(authorizations)
+        );
     }
 
     // ------------------------------------------------------------------
