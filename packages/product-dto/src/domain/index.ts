@@ -69,7 +69,13 @@ export type ProductResourceType =
   | "metadata"
   | "uri"
   | "other";
-export type ProductResourceVisibility = "public" | "protected" | "private";
+export const PRODUCT_RESOURCE_VISIBILITIES = [
+  "public",
+  "protected",
+  "private",
+] as const;
+export type ProductResourceVisibility =
+  (typeof PRODUCT_RESOURCE_VISIBILITIES)[number];
 export type ProductResourcePolicyPrincipalKind =
   | "wallet"
   | "role"
@@ -1763,3 +1769,5 @@ export function summarizeZhixu(zhixu: ZhixuDetailDTO): ZhixuSummaryDTO {
 // 形状对齐 uvp-chain-services 服务端真身。
 export * from "./write-side.js";
 export * from "./submit-intent.js";
+// V1 订单要求包与 fileResource 句柄契约（服务端算 requirementsHash）。
+export * from "./order-requirements.js";
