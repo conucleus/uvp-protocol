@@ -1,7 +1,8 @@
 // V1 订单要求包与 fileResource 句柄 DTO 单源：只描述“要什么、文件在哪里”，
 // 正文/密钥/凭据/解析都在引擎外；requirementsHash 由服务端按 canonical JSON
-// 对 declaration 计算，客户端与前端不得自算或自报。句柄类型闭集与 DSL
-// fileResources 的 fileType 同集（local/http/txcloud/plain_text），V1 不加新类型。
+// 对 declaration 计算，客户端与前端不得自算或自报。相对方合意消息也在本
+// 模块单源导出。句柄类型闭集与 DSL fileResources 的 fileType 同集
+// （local/http/txcloud/plain_text），V1 不加新类型。
 
 import type { ProductResourceVisibility } from "./index.js";
 
@@ -108,6 +109,21 @@ export interface OrderRequirementsDeclarationDTO {
   readonly schemaVersion: OrderRequirementsSchemaVersion;
   readonly requirements: readonly OrderRequirementDTO[];
   readonly presets: readonly OrderRequirementPresetRefDTO[];
+}
+
+/**
+ * 相对方合意消息（单源）：签名覆盖 draftId + requirementsHash，服务端校验
+ * 与客户端签名必须逐字一致，客户端不得自行拼接消息格式。
+ */
+export function orderRequirementsConsentMessage(
+  draftId: string,
+  requirementsHash: string,
+): string {
+  return [
+    "UVP order requirements consent v1",
+    `Draft: ${draftId}`,
+    `Requirements Hash: ${requirementsHash}`,
+  ].join("\n");
 }
 
 /** 相对方合意：对同一 requirementsHash 的签名证明（服务端校验后落审计）。 */
