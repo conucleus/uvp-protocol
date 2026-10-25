@@ -24,33 +24,24 @@ const ALL_PLUGIN_KINDS: readonly FulfillmentPluginKind[] = [
   "evidence_submission",
   "delivery_update",
   "validation_confirm",
-  "dispute_material",
 ];
 
 const ALL_SUBMIT_INTENTS: readonly ProductSubmitIntent[] = [
   "confirm_stage",
   "reject_stage",
-  "raise_dispute",
-  "resolve_dispute",
 ];
 
 describe("写侧词表对齐服务端", () => {
   it("ProductSubmitIntent 与 TaskSubmitIntent 值域恒等（提交契约面与任务推导面同一联合）", () => {
     const asTask: readonly TaskSubmitIntent[] = ALL_SUBMIT_INTENTS;
     const asProduct: readonly ProductSubmitIntent[] = asTask;
-    assert.equal(asProduct.length, 4);
+    assert.equal(asProduct.length, 2);
     assert.deepEqual(new Set(asProduct), new Set(ALL_SUBMIT_INTENTS));
   });
 
-  it("submitIntentByPluginKind 覆盖全部插件类型且争议任务不得 confirm_stage", () => {
+  it("submitIntentByPluginKind 覆盖全部插件类型", () => {
     for (const kind of ALL_PLUGIN_KINDS) {
-      assert.ok(kind in submitIntentByPluginKind, `missing ${kind}`);
-    }
-    assert.equal(submitIntentByPluginKind.dispute_material, "raise_dispute");
-    for (const kind of ALL_PLUGIN_KINDS) {
-      if (kind !== "dispute_material") {
-        assert.equal(submitIntentByPluginKind[kind], "confirm_stage");
-      }
+      assert.equal(submitIntentByPluginKind[kind], "confirm_stage");
     }
   });
 });
@@ -103,12 +94,12 @@ describe("taskSubmitIntent 推导（manifest 优先，两端镜像收敛）", ()
           actionId: "a1",
           actionKind: "submit_signal",
           label: "解决",
-          intent: "resolve_dispute",
+          intent: "confirm_stage",
           inputBindings: {},
         },
       ]),
     };
-    assert.equal(taskSubmitIntent(task), "resolve_dispute");
+    assert.equal(taskSubmitIntent(task), "confirm_stage");
   });
 
 

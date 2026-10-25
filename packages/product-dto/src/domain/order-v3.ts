@@ -16,7 +16,6 @@ export interface ConfigSlotVisibilityV3 {
   readonly amounts?: boolean;
   readonly files?: readonly string[];
   readonly participants?: readonly string[];
-  readonly escrow?: readonly string[];
 }
 
 export interface ConfigSlotV3 {
@@ -65,12 +64,6 @@ export interface ConfigTimeDefaultV3 {
   readonly description?: string;
 }
 
-export type ConfigAcceptanceModeV3 = "self" | "third_party" | "mutual" | "none";
-
-export interface ConfigAcceptanceV3 {
-  readonly mode: ConfigAcceptanceModeV3;
-}
-
 /** 文件资源引用只存句柄/元数据，正文与凭据在配置包之外。 */
 export interface ConfigFileResourceRefV3 {
   readonly name?: string;
@@ -93,7 +86,6 @@ export interface ConfigStageV3 {
   readonly receiveSignals?: readonly ConfigStageSignalV3[];
   readonly hooks?: readonly ConfigHookV3[];
   readonly time?: readonly ConfigTimeV3[];
-  readonly acceptance?: ConfigAcceptanceV3;
   readonly fileResources?: readonly (ConfigFileResourceRefV3 | string)[];
   readonly amount?: Readonly<Record<string, unknown>>;
   readonly linkSignal?: string;
@@ -102,7 +94,6 @@ export interface ConfigStageV3 {
 
 export interface ConfigDefaultsV3 {
   readonly timeExpressions?: Readonly<Record<string, string>>;
-  readonly acceptance?: ConfigAcceptanceV3;
 }
 
 export interface ConfigBundleV3 {
@@ -264,12 +255,7 @@ export interface StageBindingV3 {
   readonly acceptedAt?: string;
 }
 
-export type StageTaskKindV3 =
-  | "accept_invite"
-  | "fund_stage"
-  | "perform_stage"
-  | "verify_stage"
-  | "settle_stage";
+export type StageTaskKindV3 = "accept_invite" | "perform_stage";
 
 export type StageTaskStatusV3 = "open" | "blocked" | "done";
 

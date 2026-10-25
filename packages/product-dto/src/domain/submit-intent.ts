@@ -11,16 +11,8 @@ import type {
  * 工作台按 manifest 与插件类型推导意图，ProductSubmitIntent 锚定服务端
  * 提交契约（PrepareProductTaskSubmitInput.intent）的受理词表。
  */
-export type TaskSubmitIntent =
-  | "confirm_stage"
-  | "reject_stage"
-  | "raise_dispute"
-  | "resolve_dispute";
+export type TaskSubmitIntent = "confirm_stage" | "reject_stage";
 
-/**
- * 无 manifest 声明时的兜底映射：争议任务（dispute_material）不得以
- * confirm_stage 提交。映射单源于此，任务侧消费方不自持副本。
- */
 export const submitIntentByPluginKind: Readonly<
   Record<FulfillmentPluginKind, TaskSubmitIntent>
 > = {
@@ -28,7 +20,6 @@ export const submitIntentByPluginKind: Readonly<
   evidence_submission: "confirm_stage",
   delivery_update: "confirm_stage",
   validation_confirm: "confirm_stage",
-  dispute_material: "raise_dispute",
 };
 
 /**

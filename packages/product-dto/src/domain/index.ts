@@ -28,8 +28,7 @@ export type FulfillmentPluginKind =
   | "payment_placeholder"
   | "evidence_submission"
   | "delivery_update"
-  | "validation_confirm"
-  | "dispute_material";
+  | "validation_confirm";
 export type ProductStageKind = "control" | "business";
 export type ProductStageExecutorAssignment = "static" | "selected";
 export type ParticipantAddOnManifestSchemaVersion =
@@ -40,11 +39,7 @@ export type StageExecutorActionKind =
   | "stage_resource_patch";
 export type ParticipantAddOnManifestActionKind = StageExecutorActionKind;
 export type ParticipantAddOnKind = StageExecutorActionKind;
-export type ParticipantAddOnManifestSignalIntent =
-  | "confirm_stage"
-  | "reject_stage"
-  | "raise_dispute"
-  | "resolve_dispute";
+export type ParticipantAddOnManifestSignalIntent = "confirm_stage" | "reject_stage";
 export type ParticipantAddOnManifestComponentKind =
   | "text"
   | "textarea"
@@ -96,7 +91,7 @@ export type ProductDockedZhixuRuntimeStatus =
   | "blocked"
   | "not_modeled";
 export type CapabilityPluginSource = "explicit" | "inferred" | "missing";
-export type StoreCapabilityReviewStatus = "explicit" | "inferred" | "missing";
+export type StoreSchemaValidationStatus = "explicit" | "inferred" | "missing";
 export type StoreProductSchemaVersion = "store-product-schema.v1";
 export type StoreSearchType = "all" | "zhixu" | "order" | "supplier";
 export type StoreSearchResultType = "zhixu" | "order" | "supplier";
@@ -576,7 +571,6 @@ export interface ProductTaskDTO {
   readonly primaryActionLabel?: string;
   readonly requiredInputs?: readonly FulfillmentRequiredInputDTO[];
   readonly blockedReason?: string;
-  readonly settlementPreview?: SettlementPreviewDTO;
   readonly participantRoleLabel?: string;
   readonly participantWallet?: string;
   readonly canSubmit?: boolean;
@@ -608,7 +602,7 @@ export interface StoreProductSchemaValidationIssueDTO {
 
 export interface StoreProductSchemaValidationDTO {
   readonly ok: boolean;
-  readonly status: StoreCapabilityReviewStatus;
+  readonly status: StoreSchemaValidationStatus;
   readonly issues: readonly StoreProductSchemaValidationIssueDTO[];
   readonly checkedAt?: string;
 }
@@ -660,12 +654,6 @@ export interface FulfillmentRequiredInputDTO {
   readonly completed: boolean;
 }
 
-export interface SettlementPreviewDTO {
-  readonly label: string;
-  readonly statusLabel: string;
-  readonly adapterStatus: "placeholder" | "planned" | "unavailable";
-  readonly disclaimer: string;
-}
 
 export interface ParticipantProofSummaryDTO {
   readonly label: string;

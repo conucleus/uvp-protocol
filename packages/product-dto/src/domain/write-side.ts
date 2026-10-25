@@ -20,11 +20,7 @@ export type ProductWriteAddress = `0x${string}`;
  * 值域恒等、各表其义：本名锚定提交契约负载，TaskSubmitIntent 供任务
  * 模型/工作台按 manifest 与插件类型推导意图。
  */
-export type ProductSubmitIntent =
-  | "confirm_stage"
-  | "reject_stage"
-  | "raise_dispute"
-  | "resolve_dispute";
+export type ProductSubmitIntent = "confirm_stage" | "reject_stage";
 
 /** POST /product/tasks/:id/prepare-submit 请求体。 */
 export interface PrepareProductTaskSubmitInput {
