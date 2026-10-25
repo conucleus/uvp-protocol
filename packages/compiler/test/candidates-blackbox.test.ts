@@ -30,27 +30,11 @@ import {
 } from "./commitment-golden.js";
 import { hashSolidityRegisterHooks } from "../src/onchain/solidity/registration.js";
 
-/**
- * 执行者候选集黑盒对抗测试：只依据行为规格（候选集承诺面）自由探索，
- * 不重复 executor-candidates.test.ts 已钉住的断言（叶公式金标、空集根、
- * proof 往返、编译三道门的正例、篡改 root 的基础形态）。覆盖面：
- * - 编译入口门：零地址 / 39·41 位 / 非十六进制 / 缺 0x 前缀 / 非字符串；
- * - 归一化：大小写单条、混合大小写重复去重、输入顺序无关、跨阶段同地址；
- * - planHash 敏感性：改一字节 / 加一条 / 删一条 / 换序（根的规范序语义
- *   与制品 payload 的顺序敏感性分开钉）；
- * - runtime 六域哈希：独立重算、任一域分叉、domain 串 v3 分叉；
- * - calldata 形态：executorCandidates 只含 {stageId, executor} 且规范序；
- * - 反序列化边界：未知顶层字段、缺 executorCandidates（不重算 planHash）、
- *   非数组、条目畸形（stageId/executor 形态）、乱序（重签后仍拒）、
- *   重签后的 root 篡改、出生阶段不可变门的制品边界镜像。
- */
-
 const WALLET_A = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266" as `0x${string}`;
 const WALLET_A_EIP55 = "0xF39Fd6e51aad88F6F4ce6aB8827279cffFb92266" as `0x${string}`;
 const WALLET_B = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8" as `0x${string}`;
 const WALLET_C = "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc" as `0x${string}`;
 
-/** 双阶段 fixture：main 与 deal 均为非出生阶段（拍平形态，单段命名）。 */
 const twoStageZhixu: ZhixuDefinition = {
   apiVersion: "uvp/v0",
   kind: "Zhixu",
@@ -87,7 +71,6 @@ const twoStageZhixu: ZhixuDefinition = {
   },
 };
 
-/** 出生（order-trigger）阶段 fixture：main 带 mint 出生边。 */
 const birthZhixu: ZhixuDefinition = {
   apiVersion: "uvp/v0",
   kind: "Zhixu",
@@ -117,7 +100,6 @@ const birthZhixu: ZhixuDefinition = {
   },
 };
 
-/** 篡改制品载荷后按生产公式重签 planHash（让拦截者聚焦被测门本身）。 */
 function repin(artifact: OnchainHookPlanArtifact): OnchainHookPlanArtifact {
   const { planHash: _stale, ...payload } = artifact;
   return { ...payload, planHash: hashOnchainPlanPayload(payload) };
@@ -130,7 +112,6 @@ function isGateRejection(error: unknown, message: string): boolean {
   );
 }
 
-/** 六域 runtime preimage 的独立实现（与规格公式逐字对应）。 */
 function runtimePlanHash(
   domain: string,
   hooksHash: string,
@@ -163,12 +144,6 @@ function candidateWith(
   return { stageIdentifier, executor };
 }
 
-// ---------------------------------------------------------------------------
-// 共享金向量（uvp-core fixtures/commitments）：本文件的双阶段/出生 fixture
-// 的基线承诺值由共享文件钉死（Foundry 侧对同一 hooks 数组重算 hooksHash/
-// runtimePlanHash），黑盒变异测试在此基础上fork。
-// ---------------------------------------------------------------------------
-
 test("baseline commitments are pinned by the shared golden vectors", () => {
   for (const name of [
     "candidates_blackbox_two_stage",
@@ -198,10 +173,6 @@ test("baseline commitments are pinned by the shared golden vectors", () => {
   }
 });
 
-// ---------------------------------------------------------------------------
-// 编译入口门（规格 3）：地址形态
-// ---------------------------------------------------------------------------
-
 test("compile gate: zero address candidate is rejected", () => {
   assert.throws(
     () =>
@@ -214,10 +185,10 @@ test("compile gate: zero address candidate is rejected", () => {
 
 test("compile gate: malformed address shapes are rejected (39/41 hex, non-hex, no 0x)", () => {
   const malformed = [
-    "0x" + "a".repeat(39), // 39 位：不足 20 字节
-    "0x" + "a".repeat(41), // 41 位：超出 20 字节
-    "0x" + "g".repeat(40), // 非十六进制字符
-    "f39fd6e51aad88f6f4ce6ab8827279cfffb92266", // 缺 0x 前缀
+    "0x" + "a".repeat(39),
+    "0x" + "a".repeat(41),
+    "0x" + "g".repeat(40),
+    "f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
   ];
   for (const executor of malformed) {
     assert.throws(
@@ -235,10 +206,6 @@ test("compile gate: malformed address shapes are rejected (39/41 hex, non-hex, n
   }
 });
 
-// ---------------------------------------------------------------------------
-// 归一化（规格 5）
-// ---------------------------------------------------------------------------
-
 test("compile normalizes a checksummed address into the canonical lowercase form", () => {
   const checksummed = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
     candidateWith("main", WALLET_A_EIP55),
@@ -247,7 +214,6 @@ test("compile normalizes a checksummed address into the canonical lowercase form
     candidateWith("main", WALLET_A),
   ]);
   assert.equal(checksummed.executorCandidates[0]?.executor, WALLET_A);
-  // 大小写只是拼写差：整份制品必须逐字节一致（不是"近似"）。
   assert.deepEqual(checksummed, lowercase);
 });
 
@@ -275,7 +241,6 @@ test("candidate input order never leaks into the artifact", () => {
     candidateWith("main", WALLET_A),
   ]);
   assert.deepEqual(backward, forward);
-  // 规范序：stageId 字节序在外，executor 字节序在内。
   const order = forward.executorCandidates.map(
     (candidate) => `${candidate.stageId}:${candidate.executor}`,
   );
@@ -301,10 +266,6 @@ test("the same executor across two stages yields one entry per stage", () => {
   );
   assert.deepEqual(validateOnchainHookPlanArtifact(artifact), []);
 });
-
-// ---------------------------------------------------------------------------
-// planHash 敏感性（规格 2/5）
-// ---------------------------------------------------------------------------
 
 test("planHash forks on any candidate-set mutation: one byte, add one, drop one", () => {
   const baseline = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
@@ -349,8 +310,6 @@ test("candidates root is order-independent (merkle canonical form) while the art
   ];
   const forward = executorCandidatesRootOf(set);
   const shuffled = executorCandidatesRootOf([...set].reverse());
-  // 规范序的意义：同一集合换序后"承诺根"不变（成员资格与顺序解耦），
-  // 但制品数组是 planHash 的一部分，乱序即另一份 payload。
   assert.equal(shuffled, forward);
 
   const artifact = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
@@ -378,10 +337,6 @@ test("an explicitly empty candidate array compiles byte-identical to the omitted
   assert.equal(explicitEmpty.executorCandidatesRoot, EMPTY_MERKLE_ROOT);
 });
 
-// ---------------------------------------------------------------------------
-// runtime 六域哈希（规格 2）
-// ---------------------------------------------------------------------------
-
 test("runtime planHash recomputes from the six-domain preimage and forks on any single domain", () => {
   const args = toSolidityRegisterPlanArgs(
     compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
@@ -389,7 +344,6 @@ test("runtime planHash recomputes from the six-domain preimage and forks on any 
       candidateWith("deal", WALLET_B),
     ]),
   );
-  // 独立重算：v4 六域公式必须逐字节复现。
   assert.equal(
     args.planHash,
     runtimePlanHash(
@@ -401,7 +355,6 @@ test("runtime planHash recomputes from the six-domain preimage and forks on any 
       args.executorCandidatesRoot,
     ),
   );
-  // domain 串版本分叉：v3 ≠ v4（域字进 preimage）。
   assert.notEqual(
     args.planHash,
     runtimePlanHash(
@@ -413,7 +366,6 @@ test("runtime planHash recomputes from the six-domain preimage and forks on any 
       args.executorCandidatesRoot,
     ),
   );
-  // 任一域变动必须分叉 runtime planHash。
   const domains = [
     args.hooksHash,
     args.capabilitiesRoot,
@@ -440,7 +392,6 @@ test("runtime planHash recomputes from the six-domain preimage and forks on any 
       `mutating domain slot ${index} must fork the runtime planHash`,
     );
   }
-  // domain 串本身变动同样分叉。
   assert.notEqual(
     args.planHash,
     runtimePlanHash(
@@ -454,18 +405,12 @@ test("runtime planHash recomputes from the six-domain preimage and forks on any 
   );
 });
 
-// ---------------------------------------------------------------------------
-// calldata 形态（规格 2）
-// ---------------------------------------------------------------------------
-
 test("register args carry candidates as bare {stageId, executor} pairs in canonical order", () => {
   const artifact = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
     candidateWith("deal", WALLET_A),
     candidateWith("main", WALLET_B),
   ]);
   const args = toSolidityRegisterPlanArgs(artifact);
-  // calldata 条目只含链上面两个槽（stageIdentifier 是制品侧标注，不得进
-  // commitPlan 第三入参）。
   assert.deepEqual(args.executorCandidates, [
     { stageId: artifact.executorCandidates[0]?.stageId, executor: artifact.executorCandidates[0]?.executor },
     { stageId: artifact.executorCandidates[1]?.stageId, executor: artifact.executorCandidates[1]?.executor },
@@ -475,7 +420,6 @@ test("register args carry candidates as bare {stageId, executor} pairs in canoni
     assert.match(candidate.executor, /^0x[0-9a-f]{40}$/);
     assert.match(candidate.stageId, /^0x[0-9a-f]{64}$/);
   }
-  // 制品承诺、重算根、calldata 清单三方一致。
   assert.equal(
     args.executorCandidatesRoot,
     artifact.executorCandidatesRoot,
@@ -501,17 +445,11 @@ test("compileZhixuRegisterPlanArgs threads candidates end-to-end from the defini
     })),
   );
   assert.equal(args.artifactHash, artifact.planHash);
-  // 同一定义带/不带候选集：runtime planHash 必须分叉（候选集树根随
-  // PlanCommit 签名进链）。
   const bareArgs = compileZhixuRegisterPlanArgs(twoStageZhixu);
   assert.equal(bareArgs.executorCandidates.length, 0);
   assert.equal(bareArgs.executorCandidatesRoot, EMPTY_MERKLE_ROOT);
   assert.notEqual(args.planHash, bareArgs.planHash);
 });
-
-// ---------------------------------------------------------------------------
-// 反序列化边界（规格 4）
-// ---------------------------------------------------------------------------
 
 test("artifact boundary rejects unknown top-level fields", () => {
   const artifact = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
@@ -537,8 +475,6 @@ test("artifact boundary: a missing executorCandidates array is an explicit issue
     issues.includes("executorCandidates must be an array"),
     `expected missing-array issue, got: ${issues.join("; ")}`,
   );
-  // fail-open 镜像：缺失字段折成空集后哈希照常通过是禁止形态——planHash
-  // 不得在字段缺失时被重算对拍。
   assert.ok(
     !issues.includes("planHash must match the canonical on-chain HookPlan payload"),
     "planHash must not be recomputed while executorCandidates is missing",
@@ -567,24 +503,19 @@ test("artifact boundary rejects malformed candidate entries (stageId / executor 
     candidateWith("main", WALLET_B),
   ]);
   const malformedCandidates: readonly unknown[][] = [
-    // executor 少一位（39 位十六进制）。
     [
       { stageId: artifact.executorCandidates[0]?.stageId, executor: "0x" + "a".repeat(39) },
       artifact.executorCandidates[1],
     ],
-    // executor 全零（20 字节零地址）。
     [
       { stageId: artifact.executorCandidates[0]?.stageId, executor: "0x" + "0".repeat(40) },
       artifact.executorCandidates[1],
     ],
-    // stageId 非小写 32 字节词（大写十六进制）。
     [
       { stageId: (artifact.executorCandidates[0]?.stageId ?? "").toUpperCase().replace("0X", "0x"), executor: WALLET_A },
       artifact.executorCandidates[1],
     ],
-    // stageId 31 字节（62 位）。
     [{ stageId: "0x" + "a".repeat(62), executor: WALLET_A }, artifact.executorCandidates[1]],
-    // stageId 缺失。
     [{ executor: WALLET_A }, artifact.executorCandidates[1]],
   ];
   for (const candidates of malformedCandidates) {
@@ -601,7 +532,6 @@ test("artifact boundary rejects malformed candidate entries (stageId / executor 
       `expected entry shape issue for ${JSON.stringify(candidates[0])}, got: ${issues.join("; ")}`,
     );
   }
-  // 登记边界同样响亮拒绝（不得静默带病进 commitPlan calldata）。
   assert.throws(
     () =>
       toSolidityRegisterPlanArgs({
@@ -621,14 +551,12 @@ test("artifact boundary rejects out-of-canonical-order candidates even after re-
   const reordered = repin({
     ...artifact,
     executorCandidates: [...artifact.executorCandidates].reverse(),
-    // root 不变（merkle 规范序换序不变），只有数组序与 planHash 变。
   } as OnchainHookPlanArtifact);
   const issues = validateOnchainHookPlanArtifact(reordered);
   assert.ok(
     issues.some((issue) => /executorCandidates\[1\] breaks the canonical order/.test(issue)),
     `expected canonical-order issue, got: ${issues.join("; ")}`,
   );
-  // 登记边界拒绝乱序清单：不得静默重排成规范序后放行。
   assert.throws(
     () => toSolidityRegisterPlanArgs(reordered),
     (error: unknown) =>
@@ -661,8 +589,6 @@ test("artifact boundary mirrors the birth-stage immutability gate", () => {
   ]);
   assert.deepEqual(validateOnchainHookPlanArtifact(base), []);
 
-  // 把候选条目重定向到出生阶段（root/planHash 同步重签，让拦截者聚焦
-  // 出生门本身）：出生阶段执行者终生不可变，制品边界必须拒绝。
   const birthStageId = keccak256Hex("main");
   const retargeted = [
     { stageIdentifier: "main", stageId: birthStageId, executor: WALLET_A },
@@ -679,9 +605,7 @@ test("artifact boundary mirrors the birth-stage immutability gate", () => {
   );
 });
 
-
 test("non-string executor fails as a typed compilation issue, not a bare TypeError", () => {
-  // D1 回归：归一化在 preflight 之后，畸形输入走类型化错误门。
   try {
     compileOnchainHookPlan(compileZhixuHookPlan(twoStageZhixu), [
       { stageIdentifier: "main", executor: 42 as unknown as `0x${string}` },
@@ -696,7 +620,6 @@ test("non-string executor fails as a typed compilation issue, not a bare TypeErr
 });
 
 test("artifact boundary enforces the lowercase executor form in both directions", () => {
-  // D2 回归：混合大小写条目显式拒绝（编译器恒产小写）。
   const withCandidates = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
     { stageIdentifier: "main", executor: WALLET_A_EIP55 },
   ]);
@@ -716,7 +639,6 @@ test("artifact boundary enforces the lowercase executor form in both directions"
 });
 
 test("candidate entries reject unknown fields (closed key set)", () => {
-  // D3 回归：条目级封闭字段集，与 hooks/capabilities 条目同纪律。
   const withCandidates = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
     { stageIdentifier: "main", executor: WALLET_A },
   ]);
@@ -736,7 +658,6 @@ test("candidate entries reject unknown fields (closed key set)", () => {
 });
 
 test("artifact boundary mirrors the declared-stage gate", () => {
-  // D4 回归：候选 stageId 不在本计划已注册 hook 阶段集合内 → 制品边界拒绝。
   const withCandidates = compileZhixuOnchainHookPlan(twoStageZhixu, undefined, [
     { stageIdentifier: "main", executor: WALLET_A },
   ]);

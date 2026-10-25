@@ -38,25 +38,11 @@ export class HookPlanArtifactValidationError extends Error {
   }
 }
 
-/**
- * Deterministic ordering aligned with Rust str Ord (= UTF-8 byte order, equals
- * code-point order). localeCompare is ICU/locale dependent and must never
- * participate in canonical artifact construction; raw UTF-16 code-unit
- * comparison (<) is equally forbidden — it orders astral-plane characters
- * (surrogate pairs) before high-BMP keys like U+E000..U+FFFF, diverging from
- * the Rust authority on identifiers outside the ASCII grammar.
- */
 export function compareCanonicalKey(left: string, right: string): number {
   const order = compareByCodePoint(left, right);
   return order < 0 ? -1 : order > 0 ? 1 : 0;
 }
 
-/**
- * 编译入口：core 产出中性 plan 壳（hooks/依赖索引/中性 dock 声明），
- * 链轨承诺（uid/planId/roots/routeHash/planHash）由 TS 在壳上计算组装
- * （TS 权威实现）。resolution manifest 是链轨发布面：TS 先做内容寻址
- * 校验并派生 core linker 消费的中性 uid 注册表。
- */
 export function compileZhixuHookPlan(
   definition: ZhixuDefinition,
   resolutionManifest?: DockResolutionManifest,
@@ -90,9 +76,6 @@ export function compileZhixuHookPlan(
     ]);
   }
 
-  // 组装阶段（承诺重算/接口对应性/D012 seam 等）的语义拒绝同样是编译输入
-  // 问题：不包一层会让裸 RangeError 逃出编译入口，破坏"编译期拒绝一律
-  // HookPlanCompilationError"的调用方契约。
   let artifact: HookPlanArtifact;
   try {
     artifact = assembleChainTrackHookPlan(
@@ -113,12 +96,6 @@ export function compileZhixuHookPlan(
   return artifact;
 }
 
-/**
- * HookPlanArtifact 的封闭字段集（与 types/index.ts 声明同步）：planHash 只
- * 覆盖这些字段（unresolvedDockRoutes 仅非空时入哈希与制品）——未声明额外
- * 字段不进哈希，放行会让"同一 plan 唯一字节数组形态"承诺失效（两个仅
- * 多余字段不同的制品共享 planHash）。
- */
 const HOOK_PLAN_ARTIFACT_FIELDS: readonly string[] = [
   "schemaVersion",
   "planId",
@@ -163,13 +140,6 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
   }
   expectHexHash(value.planHash, "planHash", issues);
 
-  // 承诺重算（对齐 onchain 侧 hashOnchainPlanPayload 的边界口径）：planId
-  // 与 planHash 都从携带字段独立重推导——篡改 compiledHooks/source 后保留
-  // 旧 planHash 的毒制品在此拒绝，不等到链上。重算抛错（负载携带非 JSON
-  // 值）同样按 issue 报告，校验器的契约是返回 issues 而非抛出。
-  // planId 重算经 planIdOf 单点做空 params 归一（Rust 权威口径）：制品
-  // platform 携带 params:{} 而 planId 是归一口径推导时，按原文重算会把
-  // 合法制品误判为 planId 分叉。
   if (isPlatform(value.platform) && typeof value.zhixuId === "string" && typeof value.zhixuName === "string") {
     try {
       const recomputedPlanId = planIdOf(
@@ -223,9 +193,6 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
     issues.push("dockRoutes must be an array");
   }
   if (value.unresolvedDockRoutes !== undefined) {
-    // 声明面形状（含候选清单）共用 dock-validation 的单点实现；本地承诺
-    // （routeId/candidatesRoot/routeHash 与 dockRoutesRoot 合树重算）由
-    // validateDockCommitments 承担。
     issues.push(
       ...validateUnresolvedDockRouteDeclarations(
         value.unresolvedDockRoutes,
@@ -278,19 +245,12 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
   if (Array.isArray(value.signalCapabilities)) {
     issues.push(...validateSignalCapabilities(value.signalCapabilities));
   }
-  // 发射适格面（core 恒产数组，含空集）：条目形状/去重/阶段引用与
-  // compiledHooks 同纪律。语义拒绝（自引用/出生锚/订阅原子）由 core 编译
-  // 期收口，这里不重复。
   if (Array.isArray(value.admissions)) {
     issues.push(...validateAdmissions(value.admissions));
   } else {
     issues.push("admissions must be an array");
   }
 
-  // 元数据表的阶段引用必须落在 hooks 阶段集内：hooks 侧对元数据表不可见，
-  // 悬空引用不会在注册路径暴露——链上 stageExists 只由 hook 注册置位，
-  // 指向不存在阶段的能力叶/绑定叶永远无法物化或携证。非数组/非字符串项
-  // 由上方形状校验报错，这里静默跳过。
   if (compiledHooks) {
     issues.push(
       ...danglingMetadataStageIssues(
@@ -311,9 +271,6 @@ export function assertHookPlanArtifact(value: unknown): asserts value is HookPla
     throw new HookPlanArtifactValidationError(issues);
   }
 }
-
-// 端口名形态校验与未解析 route 声明面校验已收敛到 dock-validation.ts
-// （hook plan IR 与 onchain 产物共用同一实现）。
 
 function validateCompiledHooks(hooks: readonly unknown[]): readonly string[] {
   const issues: string[] = [];
@@ -381,8 +338,6 @@ function validateDependencies(dependencies: readonly unknown[], path: string): r
     expectString(dependency.source, `${path}[${index}].source`, issues);
     expectNonEmptyString(dependency.signalName, `${path}[${index}].signalName`, issues);
     if (dependency.delaySeconds !== undefined) {
-      // E12：delaySeconds 只要在场就必须是正安全整数（非数值/NaN 拒绝），
-      // 不按 kind 静默放行。
       if (!Number.isSafeInteger(dependency.delaySeconds) || Number(dependency.delaySeconds) <= 0) {
         issues.push(`${path}[${index}].delaySeconds must be a positive safe integer when present`);
       }
@@ -434,11 +389,6 @@ function validateSignalCapabilities(capabilities: readonly unknown[]): readonly 
   return issues;
 }
 
-/**
- * admissions 条目形状门（IR 边界）：(stageIdentifier, signalName) 去重镜像
- * core D031 的产物面；阶段引用必须落在 compiledHooks 阶段集内——适格存储
- * 以阶段的物化为前提，悬空阶段的适格面是永不可达的死承诺。
- */
 function validateAdmissions(admissions: readonly unknown[]): readonly string[] {
   const issues: string[] = [];
   const seen = new Set<string>();
@@ -482,14 +432,6 @@ function validateAdmissions(admissions: readonly unknown[]): readonly string[] {
   return issues;
 }
 
-/**
- * 阶段存在性镜像：selectedStageBindings 与 signalCapabilities 引用的
- * 阶段必须 ∈ compiledHooks 的阶段集——链上 stageExists 只由 hook 注册置
- * 位，阶段的存在即其物化载体的存在。悬空引用的能力叶/绑定叶指向
- * 永不存在的阶段：携证解析与阶段物化/executor 门都无从谈起，制品在
- * 校验边界即拒绝，不送到链上变成不可消费的承诺。admissions 同纪律：
- * 适格面挂在永不物化的阶段上是死承诺。
- */
 function danglingMetadataStageIssues(
   hooks: readonly unknown[],
   selectedStageBindings: readonly unknown[],
@@ -576,9 +518,6 @@ function validateDependencyIndex(
 
   const expected = Object.fromEntries(
     [...recomputed.entries()]
-      // Rust 权威是 BTreeMap<String, BTreeSet<String>>（字节序 = 码点序）；
-      // 默认 .sort() 按 UTF-16 码元比较，会把星面字符（代理对）排到
-      // U+E000..U+FFFF 的高 BMP 键之前，误拒合法 Rust 产物。
       .sort(([left], [right]) => compareByCodePoint(left, right))
       .map(([key, hookIds]) => [
         key,

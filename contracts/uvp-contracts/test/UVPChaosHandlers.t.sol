@@ -11,13 +11,6 @@ import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {DockMerkle} from "../src/libraries/DockMerkle.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 
-/// chaos invariant 线的窄 Vm 接口（不 vendor forge-std，与
-/// UVPStateMachineInvariants.t.sol 同惯例；本线额外需要 recordLogs 族——
-/// 事件计数 ghost 的观察原语）。
-///
-/// 工具链依赖：getRecordedLogs 按 drain 语义工作（返回并清空自上次调用
-/// 以来的增量）；本文件 foundry 1.7.1 验证，升级后若改回全量返回，事件
-/// 计数 ghost 会双计。
 interface ChaosVm {
     struct Log {
         bytes32[] topics;
@@ -33,31 +26,6 @@ interface ChaosVm {
     function warp(uint256 newTimestamp) external;
 }
 
-/// 链轨 chaos Stage 1：forge invariant 扩面（成衣行业世界）。
-///
-/// 世界 = 成衣工坊主计划（裁剪→缝纫→后整理，含延时质检、否决位、发射
-/// 适格窗、执行者候选集换人面、治理分叉）＋ 染厂→成衣工厂的委托 dock
-/// 对接（new 铸子单 / existing 挂接，双模各占独立路由）＋ dock 子单向外
-/// 的链式对接（depth=2+ 可达）＋ 备选计划（OR / AND×delay 混合钩）出生
-/// 混入面。
-///
-/// 随机面（自动收集集）覆盖动作全集：submitSignal / submitSignalFor（含
-/// 错签者与过期签名攻击变体）/ followGarmentProcess / pokeTimer /
-/// warpTime / openDock / attachDock / chainDock / submitDockedInput /
-/// submitDockedSignal / applyStageExecutorPatch（assign/handoff）/
-/// forkOrder / commitPlan / birthAltOrder / submitAltSignal。
-///
-/// ghost 扩面（每动作后全量复查 + 计数器）：
-///
-/// 1. 终态不可改写（Ready/Cancelled 之后永不再变）；
-/// 2. first-win：每信号槽首写 payloadHash 之后永不再变，且 once-exists
-///    的事实槽永续存在（吸收稳定性）；
-/// 3. 等待期限单调：锚点推导形态族（延时 / OR / AND×delay）上 dueAt
-///    单调不减；
-/// 4. 接纳计数与 SignalSubmitted 事件严格一致（recordLogs 观察）；
-/// 5. revert 动作零状态变更（前后世界 digest 全等）且不落事实事件；
-/// 6. dock 每单总挂接边数恒 ≤ MAX_DOCK_EDGES（父链账本口径，链式
-///    形态下边数=2+；最长路径不进合约）。
 contract UVPChaosInvariantTest {
     ChaosHandler private handler;
 
@@ -98,10 +66,6 @@ contract UVPChaosInvariantTest {
 contract ChaosHandler {
     ChaosVm private constant vm = ChaosVm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
-    // ------------------------------------------------------------------
-    // 常量：域、typehash、flags
-    // ------------------------------------------------------------------
-
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
@@ -118,7 +82,6 @@ contract ChaosHandler {
     bytes32 private constant EXECUTOR_PATCH_SIGNAL_ID =
         0xbbb1770c9313f4029a89e03f4719037cdad52864ab4da5f623bc7c8a0c489e97;
 
-    // preimage v2 域（与 packages/compiler/docs/dock-word-layout.md 逐字节一致）。
     bytes32 private constant DOMAIN_DEFINITION_REF = keccak256("UVP_DEFINITION_REF_V1");
     bytes32 private constant DOMAIN_INTERFACE = keccak256("UVP_DOCK_INTERFACE_V2");
     bytes32 private constant DOMAIN_INTERFACE_INPUT = keccak256("UVP_DOCK_INTERFACE_INPUT_V2");
@@ -141,11 +104,6 @@ contract ChaosHandler {
     uint8 private constant FLAG_EMIT_READY = 4;
     uint8 private constant FLAG_ADMISSION = 8;
 
-    // ------------------------------------------------------------------
-    // 常量：成衣世界词表
-    // ------------------------------------------------------------------
-
-    // 主计划（成衣工坊）：裁剪 → 缝纫 → 后整理。
     bytes32 private constant SOURCE_BRAND = keccak256("brand");
     bytes32 private constant SOURCE_SHOP = keccak256("shop");
     bytes32 private constant SIG_ORDER_PLACED = keccak256("order.placed");
@@ -168,7 +126,6 @@ contract ChaosHandler {
     bytes32 private constant HOOK_SEW_CLOSED = keccak256("finishing#SEW_CLOSED");
     bytes32 private constant HOOK_IRON_DONE = keccak256("finishing#IRON_DONE");
 
-    // 染厂（dock 父侧）：染色 → 出货。
     bytes32 private constant SOURCE_MILL = keccak256("mill");
     bytes32 private constant SIG_LOT_STARTED = keccak256("lot.started");
     bytes32 private constant SIG_LOT_SHIPPED = keccak256("lot.shipped");
@@ -177,7 +134,6 @@ contract ChaosHandler {
     bytes32 private constant HOOK_LOT_BIRTH = keccak256("dyeing#LOT_BIRTH");
     bytes32 private constant HOOK_SHIPPED = keccak256("dispatch#SHIPPED");
 
-    // 成衣工厂（dock 目标侧）：车间单阶段三钩。
     bytes32 private constant SOURCE_DYE = keccak256("dye");
     bytes32 private constant SOURCE_AUDIT = keccak256("audit");
     bytes32 private constant SIG_PLANT_ORDERED = keccak256("plant.ordered");
@@ -194,7 +150,6 @@ contract ChaosHandler {
     bytes32 private constant PORT_AUDIT_IN = keccak256("auditIn");
     bytes32 private constant PORT_GARMENT_OUT = keccak256("garmentOut");
     bytes32 private constant PORT_PROGRESS_OUT = keccak256("progressOut");
-    // 输出镜像的本地（染厂侧）事实键。
     bytes32 private constant SIG_MILL_RECEIVED = keccak256("garment.received");
     bytes32 private constant SIG_MILL_PROGRESS = keccak256("garment.progress");
 
@@ -207,8 +162,6 @@ contract ChaosHandler {
     uint256 private constant PUBLISHER_PRIVATE_KEY = 0xc0ffee;
     uint256 private constant MILL_PUBLISHER_PRIVATE_KEY = 0xB0B;
     uint256 private constant PLANT_PUBLISHER_PRIVATE_KEY = 0xB0C;
-    // 链式对接的 echo 计划发布者（B-01：路由承诺目标 planId，计划不能
-    // 自指——同接口承诺的 echo 计划承接链式路由的目标侧）。
     uint256 private constant ECHO_PUBLISHER_PRIVATE_KEY = 0xB0D;
     uint256 private constant SUBMITTER_PRIVATE_KEY = 0xa11ce;
     uint256 private constant FINISHER_A_PRIVATE_KEY = 0xB1;
@@ -230,10 +183,6 @@ contract ChaosHandler {
     uint256 private constant PLANT_HOOK_COUNT = 3;
     uint256 private constant ALT_HOOK_COUNT = 5;
 
-    // ------------------------------------------------------------------
-    // 世界状态
-    // ------------------------------------------------------------------
-
     UVPStateMachine private machine;
     UVPDockingModule private docking;
     UVPStagePatchModule private stagePatch;
@@ -251,7 +200,6 @@ contract ChaosHandler {
     bytes32[] private forkChildren;
     bytes32[FORK_PAYLOAD_COUNT] private forkPayloads;
 
-    // dock 派生量（bootstrap 一次性算定）。
     bytes32 private openRouteId;
     bytes32 private openRouteHash;
     bytes32 private attachRouteId;
@@ -276,7 +224,6 @@ contract ChaosHandler {
     bytes32[] private routeTreeLeaves;
     bytes32[] private routeChainTreeLeaves;
 
-    // 链式对接派生量（dock 子单作为父再向外一层）。
     bytes32 private chainRouteId;
     bytes32 private chainOpenRouteHash;
     bytes32 private chainAttachRouteHash;
@@ -295,7 +242,6 @@ contract ChaosHandler {
     bool[ALT_PLAN_COUNT] private altOrderLive;
     address private submitterAddr;
 
-    // 能力表镜像（造 proof 用；与 UVPDockingModule.t.sol 同款测试镜像）。
     struct StageSelectorBinding {
         bytes32 selectorStageId;
         bytes32 targetStageId;
@@ -315,10 +261,6 @@ contract ChaosHandler {
     }
 
     mapping(bytes32 planId => CapabilityTables tables) private capabilityTables;
-
-    // ------------------------------------------------------------------
-    // ghost 观察态
-    // ------------------------------------------------------------------
 
     mapping(bytes32 planId => mapping(bytes32 orderId => mapping(bytes32 hookId => uint8))) private ghostTerminal;
     mapping(bytes32 planId => mapping(bytes32 orderId => mapping(bytes32 hookId => uint64))) private ghostMaxWaitDueAt;
@@ -362,10 +304,6 @@ contract ChaosHandler {
     bool private bootstrapped;
     bool private baselineMode;
 
-    // ------------------------------------------------------------------
-    // bootstrap：装配世界
-    // ------------------------------------------------------------------
-
     function bootstrap() external {
         require(!bootstrapped, "chaos: already bootstrapped");
         bootstrapped = true;
@@ -390,10 +328,6 @@ contract ChaosHandler {
         runtimeDomain = keccak256(abi.encode(DOMAIN_RUNTIME_EIP155, block.chainid, address(machine)));
 
         _computeDockStaticParts();
-        // B-01 注册顺序：routeHash 承诺目标链上 planId——echo（链式对接的
-        // 目标侧）先注册，plant 的链式路由叶按 echoPlanId 计算，mill 的
-        // 路由叶按 plantPlanId 计算（计划间 dock 目标图必须是注册期 DAG，
-        // 自指路由在身份上不可构造）。
         echoPlanId = _registerEchoPlantPlan();
         _computeChainRouteHashes();
         plantPlanId = _registerPlantPlan();
@@ -404,7 +338,6 @@ contract ChaosHandler {
         for (uint256 i = 0; i < BASE_ORDER_COUNT; i++) {
             baseOrders[i] = _birthBaseOrder(i);
         }
-        // plant 目标单先出生：mill 出生时绑定 attach 实例 id 需要它们。
         for (uint256 i = 0; i < PLANT_TARGET_COUNT; i++) {
             plantTargets[i] = _birthPlantTarget(i);
             echoTargets[i] = _birthEchoTarget(i);
@@ -425,22 +358,12 @@ contract ChaosHandler {
             forkPayloads[i] = keccak256(abi.encode("chaos.fork.payload", i));
         }
 
-        // 基线观察先建立 ghost 初值（不计数）；recordLogs 随后武装——
-        // 事件计数与槽转移计数同一起点起跳。
         _observe();
         baselineMode = false;
         vm.recordLogs();
         vm.getRecordedLogs();
     }
 
-    // ------------------------------------------------------------------
-    // 随机面：动作全集（公共非 view 函数进自动收集集）
-    // ------------------------------------------------------------------
-
-    /// 直接事实提交：三计划全订单池 × 各自信号池。dock 子单与输出镜像槽
-    /// 不在成功面——dock 出生通道不落显式授权，公共提交面恒
-    /// UnauthorizedSignalSubmitter；对 dock 子单 entrance 事实的重放走下方
-    /// 显式 revert 断言腿（受控验证 fail-closed，而非盲 _guarded）。
     function submitSignal(uint256 seed) external {
         require(bootstrapped, "chaos: not bootstrapped");
         bytes32 planId;
@@ -496,7 +419,6 @@ contract ChaosHandler {
         _afterAction();
     }
 
-    /// 转发提交（EIP-712）：含错签者与过期签名两个攻击变体。
     function submitSignalFor(uint256 seed) external {
         require(bootstrapped, "chaos: not bootstrapped");
         bytes32 orderId = _basePool(seed % (BASE_ORDER_COUNT + forkChildren.length));
@@ -536,10 +458,6 @@ contract ChaosHandler {
         _afterAction();
     }
 
-
-    /// 工序追随者：按成衣工序阶梯（裁剪完成→质检→缝纫完成→批次封口）
-    /// 推进随机订单的下一个缺口；随机注入返工/裁决信号。现实执行者按
-    /// 工序行动，这条 handler 把深阶梯形态拉进随机面的可达集。
     function followGarmentProcess(uint256 seed) external {
         require(bootstrapped, "chaos: not bootstrapped");
         bytes32 orderId = _basePool(seed % (BASE_ORDER_COUNT + forkChildren.length));
@@ -633,31 +551,24 @@ contract ChaosHandler {
         _afterAction();
     }
 
-    /// 时间轴混沌：有界跳时（+1s..+3d）。
     function warpTime(uint256 seed) external {
         require(bootstrapped, "chaos: not bootstrapped");
         vm.warp(block.timestamp + 1 + (seed % 259200));
         _afterAction();
     }
 
-    /// new 模式开仓（铸成衣工厂子单）：首次成功，重放幂等 return false。
     function openDock(uint256 seed) external {
         require(bootstrapped, "chaos: not bootstrapped");
         _guardedOpen(seed % MILL_ORDER_COUNT);
         _afterAction();
     }
 
-    /// existing 模式挂接（不铸子单，同意门走目标单 creator 腿）。attach 走
-    /// 染色阶段的独立路由（routeId ≠ openRouteId），与 open 对同一 mill 单
-    /// 的 dockByLocalRoute 槽不争用——双模可并存。
     function attachDock(uint256 seed) external {
         require(bootstrapped, "chaos: not bootstrapped");
         _guardedAttach(seed % MILL_ORDER_COUNT, (seed >> 4) % PLANT_TARGET_COUNT);
         _afterAction();
     }
 
-    /// 链式对接：live dock 子单作为父再向外一层（open 铸孙单 / attach 挂
-    /// 既有目标单），depth=2+ 进入可达集；同父子路由一次性，先到先钉。
     function chainDock(uint256 seed) external {
         require(bootstrapped, "chaos: not bootstrapped");
         uint256 liveCount = _liveDockChildren();
@@ -685,8 +596,6 @@ contract ChaosHandler {
         _afterAction();
     }
 
-    /// 挂接后的 input 交付（permissionless，幂等）。attach 路由的父侧
-    /// hook 是出生钩（染色阶段），出生即 Ready。
     function submitDockedInput(uint256 seed) external {
         require(bootstrapped, "chaos: not bootstrapped");
         uint256 idx = seed % (MILL_ORDER_COUNT * PLANT_TARGET_COUNT);
@@ -705,7 +614,6 @@ contract ChaosHandler {
         _afterAction();
     }
 
-    /// 输出镜像回写（目标事实已成立时首投 true，重放幂等）。
     function submitDockedSignal(uint256 seed) external {
         require(bootstrapped, "chaos: not bootstrapped");
         uint256 i = seed % MILL_ORDER_COUNT;
@@ -720,8 +628,6 @@ contract ChaosHandler {
         _afterAction();
     }
 
-    /// 执行者变更（assign/handoff 自适应；handoff 携上一执行者会签）。
-    /// selector 恒为 SUBMITTER（出生授权池带 EXECUTOR_PATCH 信号授权）。
     function applyStageExecutorPatch(uint256 seed) external {
         require(bootstrapped, "chaos: not bootstrapped");
         bytes32 orderId = _basePool(seed % (BASE_ORDER_COUNT + forkChildren.length));
@@ -786,8 +692,6 @@ contract ChaosHandler {
         _afterAction();
     }
 
-    /// 治理分叉：裁决信号存在即分叉，同载荷重放幂等拒绝。fork 子单全量
-    /// 入池（线性去重，无上限）。
     function forkOrder(uint256 seed) external {
         require(bootstrapped, "chaos: not bootstrapped");
         bytes32 parent = _basePool(seed % (BASE_ORDER_COUNT + forkChildren.length));
@@ -816,7 +720,6 @@ contract ChaosHandler {
         _afterAction();
     }
 
-    /// 新计划混入：成衣工坊变体（不同质检延时），重放幂等拒绝。
     function commitAltPlan(uint256 seed) external {
         require(bootstrapped, "chaos: not bootstrapped");
         uint256 variant = seed % ALT_PLAN_COUNT;
@@ -846,8 +749,6 @@ contract ChaosHandler {
                 altPlanCommitted[variant] = true;
             }
         } else {
-            // 已注册变体的重放：仍走真通道（PlanAlreadyRegistered 被吸收，
-            // revert-digest ghost 顺带复查零状态变更）。
             _guarded(
                 abi.encodeCall(
                     machine.commitPlan, (commit, hooks, new UVPStateMachine.ExecutorCandidate[](0), signature)
@@ -858,8 +759,6 @@ contract ChaosHandler {
         _afterAction();
     }
 
-    /// 备选计划出生：已注册的 alt 计划铸首单，计划运行态（延时 / OR /
-    /// AND×delay 钩）自此可达；未注册变体的出生 revert 由 _guarded 吸收。
     function birthAltOrder(uint256 seed) external {
         require(bootstrapped, "chaos: not bootstrapped");
         uint256 variant = seed % ALT_PLAN_COUNT;
@@ -895,8 +794,6 @@ contract ChaosHandler {
         _afterAction();
     }
 
-    /// 备选计划信号面：对 live alt 单投 qc.passed / 变体 sew.finished，
-    /// 驱动延时、OR、AND×delay 钩进入 Wait（dueAt 单调性的真实防线）。
     function submitAltSignal(uint256 seed) external {
         require(bootstrapped, "chaos: not bootstrapped");
         uint256 liveCount;
@@ -939,11 +836,6 @@ contract ChaosHandler {
         );
         _afterAction();
     }
-
-
-    // ------------------------------------------------------------------
-    // 动作执行外壳：digest 前后断言 + revert 事件零落断言
-    // ------------------------------------------------------------------
 
     function _guarded(bytes memory callData, address target) private {
         bytes32 before = _worldDigest();
@@ -997,8 +889,6 @@ contract ChaosHandler {
         }
     }
 
-    /// 动作后统一：吃掉 recordLogs 增量并计数 SignalSubmitted，然后全量
-    /// ghost 复查。
     function _afterAction() private {
         ChaosVm.Log[] memory logs = vm.getRecordedLogs();
         for (uint256 i = 0; i < logs.length; i++) {
@@ -1008,10 +898,6 @@ contract ChaosHandler {
         }
         _observe();
     }
-
-    // ------------------------------------------------------------------
-    // ghost 观察：每动作后全量复查（fail-fast + 计数器）
-    // ------------------------------------------------------------------
 
     function _observe() private {
         bytes32[] memory baseOrderList = _baseOrderList();
@@ -1026,7 +912,6 @@ contract ChaosHandler {
         );
         bytes32[] memory plantOrderList = _plantOrderList();
         _observePlan(plantPlanId, _plantHookIds(), plantOrderList, _plantSignalSources(), _plantSignalIds());
-        // echo 计划（链式对接目标侧）同口径观察：echo 目标单 + 链式子单。
         bytes32[] memory echoOrderList = _echoOrderList();
         _observePlan(echoPlanId, _plantHookIds(), echoOrderList, _plantSignalSources(), _plantSignalIds());
         for (uint256 v = 0; v < ALT_PLAN_COUNT; v++) {
@@ -1088,7 +973,6 @@ contract ChaosHandler {
                     bytes32 first = ghostFirstPayload[planId][orderId][key];
                     if (!exists) {
                         if (first != bytes32(0)) {
-                            // once-exists 的事实槽消失：吸收稳定性违例。
                             firstWriteViolationCount += 1;
                         }
                         continue;
@@ -1140,15 +1024,7 @@ contract ChaosHandler {
             || topic0 == DOCK_OUTPUT_SUBMITTED_TOPIC0 || topic0 == DOCK_OUTPUT_SATISFIED_TOPIC0;
     }
 
-    // ------------------------------------------------------------------
-    // 世界 digest（revert 零状态变更断言的真值源）
-    // ------------------------------------------------------------------
-
     function _worldDigest() private view returns (bytes32 digest) {
-        // 滚动折叠：三计划 + live alt 计划全部钩子运行态（status/dueAt/
-        // readyEmitted）与信号槽（exists/payload/submitter）、订单级显式
-        // 信号授权位、执行者 patch 账本（缝纫/后整理双槽）、dock 账本
-        //（实例存在性/深度/交付位）。
         bytes32[] memory baseOrderList = _baseOrderList();
         bytes32[] memory baseHooks = _baseHookIds();
         bytes32[] memory baseSources = _baseSignalSources();
@@ -1336,10 +1212,6 @@ contract ChaosHandler {
         return keccak256(abi.encode(digest, "dock-instance", dockInstanceId, exists, depth));
     }
 
-    // ------------------------------------------------------------------
-    // 池 helper
-    // ------------------------------------------------------------------
-
     function _basePool(uint256 idx) private view returns (bytes32) {
         if (idx < BASE_ORDER_COUNT) {
             return baseOrders[idx];
@@ -1473,7 +1345,6 @@ contract ChaosHandler {
     function _millSignalAt(uint256 idx) private pure returns (bytes32 sourceId, bytes32 signalId) {
         if (idx == 0) return (SOURCE_MILL, SIG_LOT_STARTED);
         if (idx == 1) return (SOURCE_MILL, SIG_LOT_SHIPPED);
-        // dock 输出镜像的本地落点：submitDockedSignal 的模块写路径槽位。
         if (idx == 2) return (SOURCE_MILL, SIG_MILL_RECEIVED);
         return (SOURCE_MILL, SIG_MILL_PROGRESS);
     }
@@ -1626,10 +1497,6 @@ contract ChaosHandler {
         }
     }
 
-    // ------------------------------------------------------------------
-    // 装配 helper：计划注册与出生
-    // ------------------------------------------------------------------
-
     function _registerBasePlan() private returns (bytes32) {
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](7);
 
@@ -1642,7 +1509,6 @@ contract ChaosHandler {
         qcInstrs[1] = _delay(300);
         hooks[2] = _hookWithFlags(HOOK_QC_TIMER, STAGE_SEWING, FLAG_EMIT_READY, qcInstrs, _deps(SOURCE_SHOP, SIG_QC_PASSED));
 
-        // 否决位：缝纫完成 & ~返工（栈序：负臂先压再 NOT）。
         UVPStateMachine.Instruction[] memory vetoInstrs = new UVPStateMachine.Instruction[](4);
         vetoInstrs[0] = _sig(SOURCE_SHOP, SIG_SEW_REWORK);
         vetoInstrs[1] = _not();
@@ -1656,15 +1522,10 @@ contract ChaosHandler {
             _deps2(SOURCE_SHOP, SIG_SEW_FINISHED, SOURCE_SHOP, SIG_SEW_REWORK)
         );
 
-        // 后整理物化 primer：观测缝纫批次封口（缝纫阶段能力，观察者唯一）。
         hooks[4] =
             _signalHook(HOOK_SEW_CLOSED, STAGE_FINISHING, FLAG_EMIT_READY, SOURCE_SHOP, SIG_SEW_BATCH_CLOSED);
         hooks[5] = _signalHook(HOOK_IRON_DONE, STAGE_FINISHING, FLAG_EMIT_READY, SOURCE_SHOP, SIG_FINISH_IRONED);
 
-        // 发射适格窗（flag=8 槽位）：窗口内 ¬(rework+60) 求值 value=true
-        // 携衰减 dueAt——_requireSignalAdmission 只判 value/wait/cancel，
-        // 窗口内同样放行（本钩不构成窗口排除）；decay 边界由 TS 侧
-        // admission-window 场景负责。
         UVPStateMachine.Instruction[] memory admInstrs = new UVPStateMachine.Instruction[](5);
         admInstrs[0] = _sig(SOURCE_SHOP, SIG_QC_PASSED);
         admInstrs[1] = _sig(SOURCE_SHOP, SIG_SEW_REWORK);
@@ -1680,8 +1541,6 @@ contract ChaosHandler {
             dependencyKeys: _deps2(SOURCE_SHOP, SIG_QC_PASSED, SOURCE_SHOP, SIG_SEW_REWORK)
         });
 
-        // 能力阶梯：cut.completed 属裁剪（物化 bootstrap），缝纫信号属缝纫，
-        // finish.ironed 属后整理。
         SignalCapability[] memory capabilities = new SignalCapability[](8);
         capabilities[0] = SignalCapability(STAGE_CUTTING, SOURCE_BRAND, SIG_ORDER_PLACED, 0);
         capabilities[1] = SignalCapability(STAGE_CUTTING, SOURCE_SHOP, SIG_CUT_COMPLETED, 0);
@@ -1737,10 +1596,6 @@ contract ChaosHandler {
         );
     }
 
-    /// echo 计划：plant 接口承诺的镜像承载者（同 hooks/词表/接口根，独立
-    /// publisher）——B-01 后计划不能把路由承诺给自己，链式对接的目标侧由
-    /// echo 计划承接（接口叶仍按 PLANT_UID_ID 寻址：commitPlan 不校验叶与
-    /// 定义的自洽，发布面自证在编译轨）。
     function _registerEchoPlantPlan() private returns (bytes32) {
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](3);
         hooks[0] =
@@ -1764,8 +1619,6 @@ contract ChaosHandler {
 
     function _computeDockStaticParts() private {
         openRouteId = keccak256(abi.encode(DOMAIN_ROUTE_ID, millDefinitionRef, STAGE_DISPATCH));
-        // attach 独立路由（染色阶段）：与 open 的 dispatch 路由不同 routeId，
-        // dockByLocalRoute 槽不争用，双模对同一 mill 单可并存。
         attachRouteId = keccak256(abi.encode(DOMAIN_ROUTE_ID, millDefinitionRef, STAGE_DYEING));
         openEntranceBinding = keccak256(
             abi.encode(
@@ -1857,8 +1710,6 @@ contract ChaosHandler {
 
     }
 
-    /// mill→plant 路由哈希（域 V3，B-01）：目标 planId 入 preimage——plant
-    /// 注册后计算，mill plan 提交路由叶。
     function _computeMillRouteHashes() private {
         openRouteHash = keccak256(
             abi.encode(
@@ -1887,9 +1738,6 @@ contract ChaosHandler {
         routeTreeLeaves = _two(openRouteHash, attachRouteHash);
     }
 
-    /// 链式对接路由（车间阶段，plant 子单 → echo 计划）：dock 子单作为父
-    /// 再向外一层。B-01 起目标 planId（echoPlanId）入 preimage——echo 注册
-    /// 后计算，plant plan 提交路由叶（计划不能自指）。
     function _computeChainRouteHashes() private {
         chainRouteId = keccak256(abi.encode(DOMAIN_ROUTE_ID, plantDefinitionRef, STAGE_WORKSHOP));
         chainEntranceBinding = keccak256(
@@ -2106,10 +1954,6 @@ contract ChaosHandler {
         }
     }
 
-    // ------------------------------------------------------------------
-    // dock 动作构造
-    // ------------------------------------------------------------------
-
     function _tryOpen(uint256 i) private returns (bool success, bytes memory returnData) {
         UVPDockingModule.OpenDockRequestV2 memory request = UVPDockingModule.OpenDockRequestV2({
             dockInstanceId: openInstanceIds[i],
@@ -2160,7 +2004,6 @@ contract ChaosHandler {
         );
     }
 
-    /// B-01 open 目标侧同意（chaos 线：handler ≠ publisher，必携签名）。
     function _openConsent(
         UVPDockingModule.OpenDockRequestV2 memory request,
         uint256 publisherKey
@@ -2440,10 +2283,6 @@ contract ChaosHandler {
         return UVPDockingModule.EntrancePermitV2({nonce: 0, deadline: 0, signature: ""});
     }
 
-    // ------------------------------------------------------------------
-    // fork / patch 构造
-    // ------------------------------------------------------------------
-
     function _forkBirthFacts(bytes32 parent)
         private
         view
@@ -2487,7 +2326,6 @@ contract ChaosHandler {
         auths[13] = _auth(SOURCE_SHOP, SIG_DISPUTE_RULED, signer);
         auths[14] = _auth(SOURCE_SHOP, SIG_FINISH_IRONED, signer);
         auths[15] = _auth(SOURCE_SHOP, SIG_FINISH_IRONED, vm.addr(FINISHER_A_PRIVATE_KEY));
-        // patch selector 腿：SUBMITTER 对 EXECUTOR_PATCH 信号的显式授权。
         auths[16] = _auth(STAGE_SEWING, EXECUTOR_PATCH_SIGNAL_ID, signer);
     }
 
@@ -2535,7 +2373,6 @@ contract ChaosHandler {
         return _merkleProofFor(capabilityTables[basePlanId].candidateLeaves, leaf);
     }
 
-    /// 已知私钥地址 → 私钥；其余（如 handler 合约自身）不可签名，返回 0。
     function _signableKey(address account) private returns (uint256) {
         if (account == vm.addr(FINISHER_A_PRIVATE_KEY)) {
             return FINISHER_A_PRIVATE_KEY;
@@ -2571,7 +2408,6 @@ contract ChaosHandler {
         hooks[1] = _hookWithFlags(
             keccak256(abi.encode(salt, "qc")), sewingStageId, FLAG_EMIT_READY, delayInstrs, _deps(SOURCE_SHOP, SIG_QC_PASSED)
         );
-        // OR 形态：qc.passed ∨ 变体 sew.finished——等待期限取最早就绪成员。
         UVPStateMachine.Instruction[] memory orInstrs = new UVPStateMachine.Instruction[](3);
         orInstrs[0] = _sig(SOURCE_SHOP, SIG_QC_PASSED);
         orInstrs[1] = _sig(SOURCE_SHOP, sewSignalId);
@@ -2583,7 +2419,6 @@ contract ChaosHandler {
             orInstrs,
             _deps2(SOURCE_SHOP, SIG_QC_PASSED, SOURCE_SHOP, sewSignalId)
         );
-        // AND×delay 混合形态：双臂各自延时后合取——等待期限取最晚成员。
         UVPStateMachine.Instruction[] memory andInstrs = new UVPStateMachine.Instruction[](5);
         andInstrs[0] = _sig(SOURCE_SHOP, SIG_QC_PASSED);
         andInstrs[1] = _delay(variant == 0 ? 9 : (variant == 1 ? 45 : 280));
@@ -2616,10 +2451,6 @@ contract ChaosHandler {
         auths[4] = _auth(SOURCE_SHOP, sewSignalId, address(this));
         auths[5] = _auth(SOURCE_SHOP, sewSignalId, submitterAddr);
     }
-
-    // ------------------------------------------------------------------
-    // 注册与签名 helper
-    // ------------------------------------------------------------------
 
     function _commitAndFinalize(
         UVPStateMachine.CompactHook[] memory hooks,
@@ -2922,10 +2753,6 @@ contract ChaosHandler {
         deps[0] = keccak256(abi.encode(s1, id1));
         deps[1] = keccak256(abi.encode(s2, id2));
     }
-
-    // ------------------------------------------------------------------
-    // merkle 镜像（与 DockMerkle.sortUnique/root 同口径）
-    // ------------------------------------------------------------------
 
     function _capabilityLeaves(
         StageSelectorBinding[] memory bindings,

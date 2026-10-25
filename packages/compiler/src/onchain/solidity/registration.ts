@@ -22,18 +22,15 @@ import type {
 } from "../../types/index.js";
 
 /**
- * Solidity 注册边界：commitPlan + finalizePlan 两步注册流的 calldata 组装、
- * CompactHook flags、hooksHash / capabilitiesRoot / PlanCommit runtime hash
- * 的 ABI 编码冻结口径。
+ * Solidity 注册边界：commitPlan + finalizePlan 注册流的 calldata 组装、
+ * CompactHook flags 与各哈希的 ABI 编码冻结口径。
  */
 
 const PLAN_RUNTIME_HASH_DOMAIN = "uvp.plan.runtime.v4";
 
-/** CompactHook flags 位定义。 */
 export const HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
 export const HOOK_FLAG_ORDER_TRIGGER_DOCK = 2;
 export const HOOK_FLAG_EMIT_READY = 4;
-/** 发射适格面条目（admission）：hookId 槽 = signalKey，hookName 槽 = signalId。 */
 export const HOOK_FLAG_ADMISSION = 8;
 
 export function solidityHookFlags(
@@ -53,9 +50,6 @@ export function solidityHookFlags(
   return flags;
 }
 
-// Solidity boundary builder: returns args for the two-step
-// commitPlan + finalizePlan registration flow. compileZhixuRegisterPlanArgs
-// wraps this for direct Zhixu definitions.
 export function toSolidityRegisterPlanArgs(
   artifact: OnchainHookPlanArtifact,
 ): SolidityRegisterPlanArgs {
@@ -67,8 +61,6 @@ export function toSolidityRegisterPlanArgs(
         hook.dependencies.map((dependency) => dependency.signalKey),
       );
       if (dependencyKeys.length === 0) {
-        // Fail-closed mirror of UVPStateMachine._validateHook, which reverts
-        // InvalidHook when hook.dependencyKeys is empty.
         throw new OnchainHookPlanArtifactValidationError([
           `compiledHooks ${hook.hookId} dependencyKeys must not be empty `
           + "(contract reverts InvalidHook for empty dependencyKeys)",
@@ -85,10 +77,6 @@ export function toSolidityRegisterPlanArgs(
       };
       return hook.routeRef ? { ...base, routeId: hook.routeRef.routeId } : base;
     }),
-    // 适格面复用 hook 槽形状进 hooksHash 承诺（不留未签名面）：flags=8、
-    // hookId 槽 = admissionId（事实键 signalKey）、hookName 槽 = signalId。
-    // 排序先 hooks 后 admissions（各自内部规范序）——同一 plan 的 calldata
-    // 保持唯一数组形态即可，两类槽位不共享存储人口。
     ...artifact.admissions.map((admission) => {
       const dependencyKeys = uniqueSorted(
         admission.dependencies.map((dependency) => dependency.signalKey),
@@ -122,8 +110,6 @@ export function toSolidityRegisterPlanArgs(
   }));
   const hooksHash = hashSolidityHooks(hooks);
   const capabilitiesRoot = capabilitiesRootOf(selectorBindings, signalCapabilities);
-  // PlanCommit runtime hash 覆盖能力树、dock roots 与候选集树根（v4 六域，
-  // 与合约 _PLAN_RUNTIME_HASH_DOMAIN=uvp.plan.runtime.v4 同公式）。
   const planHash = keccak256(
     encodeAbiParameters(
       parseAbiParameters(
@@ -167,8 +153,6 @@ export function toSolidityRegisterPlanArgs(
       resourcesHash: route.resourcesHash,
       routeHash: route.routeHash,
     })),
-    // commitPlan 第三入参（UVPStateMachine.ExecutorCandidate[]）：候选集
-    // 清单以制品承诺为源（root 随 PlanCommit 签名进链）。
     executorCandidates: artifact.executorCandidates.map((candidate) => ({
       stageId: candidate.stageId,
       executor: candidate.executor,
@@ -190,21 +174,6 @@ export function planIdForPublisher(
   ) as HexString;
 }
 
-/**
- * hooksHash 的唯一权威公式（冻结口径，三方逐字节一致）：
- *
- *   hooksHash = keccak256(abi.encode(CompactHook[]))
- *
- * 其中每条指令 tuple (uint8 op, bytes32 sourceId, bytes32 signalId,
- * uint16 arity, uint64 delaySeconds) 中，非 SIGNAL 指令的 sourceId/signalId
- * 一律填 Solidity 零字（0x00…00，共 32 字节），arity/delaySeconds 未用位填
- * 0——合约 commitPlan 对提交的 calldata 本身重算（fill-agnostic），因此
- * TS compiler、uvp-deploy 驱动与任何链下预计算方必须用同一填充字节。
- * keccak256("")（0xc5d2…470）只作为 DockMerkle.EMPTY_ROOT 出现，与指令
- * 填充无关——任何一方在填充位改用它都会让含 NOT/AND/OR/DELAY 的计划在
- * commitPlan 处 HooksHashMismatch 必然 revert。导出以便跨语言冻结
- * 向量与 deploy 侧复用同一实现。
- */
 export function hashSolidityRegisterHooks(
   hooks: SolidityRegisterPlanArgs["hooks"],
 ): HexString {

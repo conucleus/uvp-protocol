@@ -36,8 +36,6 @@ export {
   onchainStageId,
 } from "./onchain/hash/route.js";
 export { hashCanonical, keccak256Hex } from "./hash.js";
-// 制品 canonical payload hash 的唯一权威公式（夹具维护者按生产公式重钉
-// artifactHash 用，与 hash/plan.ts 的导出注释同承诺）。
 export { hashOnchainPlanPayload } from "./onchain/hash/plan.js";
 export {
   canonicalSignalHash,
@@ -91,8 +89,6 @@ export {
   u64Word,
   verifyMerkleProof,
 } from "./dock.js";
-// dock hash 域常量族（UVP_DOCK_*_V2 + 沿用的 V1 域）：兼容矩阵冻结的
-// 版本族断言消费（golden fixtures/dock/v1/manifest.json constants.domains）。
 export {
   DEFINITION_UID_DOMAIN,
   DOCK_ORDER_NAMESPACE_MASK,
@@ -116,8 +112,6 @@ export {
   HOOK_FLAG_ORDER_TRIGGER_MINT,
   solidityHookFlags,
 } from "./onchain/solidity/registration.js";
-// 能力树（capabilitiesRoot）权威实现：域分隔叶、树根、成员资格证明与
-// 事实属主自证材料。链上叶子公式与 UVPPlanMetadataModule 逐字节一致。
 export {
   artifactCapabilitiesRoot,
   capabilityLeaves,
@@ -131,9 +125,6 @@ export {
   signalCapabilityLeaf,
   signalCapabilityProof,
 } from "./onchain/capabilities-root.js";
-// 执行者候选集树（executorCandidatesRoot）权威实现（UB-36②③）：叶公式
-// 与 UVPPlanRegistration._executorCandidatesRoot 逐字节一致，成员资格
-// 由使用方按"重算叶 + 携 proof"验证（逐单 executor patch 的候选门）。
 export {
   EXECUTOR_CANDIDATE_LEAF_DOMAIN,
   executorCandidateLeaf,

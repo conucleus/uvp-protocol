@@ -1,12 +1,3 @@
-/**
- * MAX_DOCK 上限的双轨对拍（TS 线）：TS 常量（packages/compiler/src/dock.ts
- * 的 MAX_DOCK_INPUTS/MAX_DOCK_OUTPUTS）与 Rust 权威（uvp-core 仓
- * crates/uvp-compiler/src/dock.rs 的同名常量）此前没有任何对拍断言——任一侧
- * 单独调整上限，两轨对同一 Zhixu 定义的接受面即分叉（TS 编译放行 / Rust
- * 编译拒绝，或反之）。本测试按 closed-set-parity 同范式（相对路径直读
- * uvp-core 侧权威）+ 字面量钉死数值：Rust 侧动上限而不更新本测试时，
- * uvp-protocol 侧这道门报警，强制两轨同批落地（工作区 AGENTS 的同批规则）。
- */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -17,7 +8,6 @@ const rustSourceUrl = new URL(
   import.meta.url,
 );
 
-/** Rust 权威字面量：uvp-core/crates/uvp-compiler/src/dock.rs:11-12。 */
 const RUST_MAX_DOCK_INPUTS = 8;
 const RUST_MAX_DOCK_OUTPUTS = 16;
 
@@ -47,17 +37,12 @@ function rustConst(name: string): number {
 }
 
 test("MAX_DOCK_INPUTS/MAX_DOCK_OUTPUTS match the Rust authority in uvp-core dock.rs", () => {
-  // 第一层：字面量钉死（数值变化必须改这里，出处行号同步维护——
-  // uvp-core/crates/uvp-compiler/src/dock.rs:11-12）。
   assert.equal(MAX_DOCK_INPUTS, RUST_MAX_DOCK_INPUTS);
   assert.equal(MAX_DOCK_OUTPUTS, RUST_MAX_DOCK_OUTPUTS);
 
-  // 第二层：直读 Rust 源码对拍，防字面量与权威一起漂移——Rust 侧单独动
-  // 上限时本门在 uvp-protocol 侧报警。
   assert.equal(rustConst("MAX_DOCK_INPUTS"), RUST_MAX_DOCK_INPUTS);
   assert.equal(rustConst("MAX_DOCK_OUTPUTS"), RUST_MAX_DOCK_OUTPUTS);
 
-  // 形态自证：上限必须是正的安全整数，对拍才有意义。
   assert.equal(Number.isSafeInteger(MAX_DOCK_INPUTS) && MAX_DOCK_INPUTS > 0, true);
   assert.equal(Number.isSafeInteger(MAX_DOCK_OUTPUTS) && MAX_DOCK_OUTPUTS > 0, true);
 });

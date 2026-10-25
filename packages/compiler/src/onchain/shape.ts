@@ -1,9 +1,8 @@
 import type { HexString, ZhixuPlatform } from "../types/index.js";
 
 /**
- * onchain 各阶段共享的形状/词表微助手（自 onchain-hook-plan.ts 原样迁入，
- * 单一归属，不在 validate/instructions/canonical/hash/solidity 间复制定义）。
- * isHexArrayRecord / isPlatform 仅 validate/artifact 消费，保持该文件私有。
+ * onchain 各阶段共享的形状/词表微助手（单一归属，不在
+ * validate/instructions/canonical/hash/solidity 间复制定义）。
  */
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -76,12 +75,6 @@ export function expectOneOf(
   }
 }
 
-/**
- * 深层对象的键集闭包（与顶层 ONCHAIN_ARTIFACT_FIELDS 同款响亮拒绝）：
- * 制品 schema 是封闭字段集，深层对象携带未声明额外键时同样破坏"同一
- * plan 唯一字节数组形态"承诺——放行会让仅多余字段不同的制品各自通过
- * 校验。allowed 含可选键（routeRef/delaySeconds 等在场键位的全集）。
- */
 export function expectClosedKeySet(
   value: Record<string, unknown>,
   allowed: readonly string[],

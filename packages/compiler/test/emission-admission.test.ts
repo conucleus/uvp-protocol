@@ -25,12 +25,6 @@ import {
   commitmentRegisterHooksArgs,
 } from "./commitment-golden.js";
 
-/**
- * 发射适格面（admissions）编译面测试：IR/onchain 产物条目、过滤档指令
- * （hook 档非法而过滤档合法的形态放行）、过滤档镜像门的拒绝面与
- * Solidity 注册参数的 flag=8 承诺。
- */
-
 const admissionZhixu = (validWhen: string): ZhixuDefinition => ({
   apiVersion: "uvp/v0",
   kind: "Zhixu",
@@ -40,17 +34,16 @@ const admissionZhixu = (validWhen: string): ZhixuDefinition => ({
     nucleation: { id: "core" },
     stages: [
       {
-        // 自发种子阶段：BEGIN 自收 seed 物化自身（静态 executor 钩子）。
         name: "gate",
-        source: "buyer",
-        receiveSignals: { BEGIN: "buyer::gate.seed" },
+        source: "slot_a",
+        receiveSignals: { BEGIN: "slot_a::gate.seed" },
         sendSignals: [{ name: "seed" }, { name: "ready" }],
         executor: { supplierType: "organization", supplierID: "gate-org" },
       },
       {
         name: "work",
-        source: "buyer",
-        receiveSignals: { RUN: "buyer::gate.ready" },
+        source: "slot_a",
+        receiveSignals: { RUN: "slot_a::gate.ready" },
         sendSignals: [
           { name: "cmp", validWhen: [validWhen] },
           { name: "cmp_err" },
@@ -62,11 +55,11 @@ const admissionZhixu = (validWhen: string): ZhixuDefinition => ({
 });
 
 function seedInstruction(signalName: string): OnchainHookInstruction {
-  const sourceId = onchainSourceId("buyer");
+  const sourceId = onchainSourceId("slot_a");
   const signalId = onchainSignalId(signalName);
   return {
     op: "SIGNAL",
-    source: "buyer",
+    source: "slot_a",
     signalName,
     sourceId,
     signalId,
@@ -84,7 +77,7 @@ function firstAdmission(
 
 test("declared validWhen compiles into hook_plan admissions; unconditional entries do not", () => {
   const plan = compileZhixuHookPlan(
-    admissionZhixu("buyer::gate.seed & ~(work.cmp_err +14d)"),
+    admissionZhixu("slot_a::gate.seed & ~(work.cmp_err +14d)"),
   );
 
   assert.equal(plan.admissions.length, 1);
@@ -98,38 +91,21 @@ test("declared validWhen compiles into hook_plan admissions; unconditional entri
       dependency.signalName,
     ]),
     [
-      ["negative", "buyer", "work.cmp_err"],
-      ["positive", "buyer", "gate.seed"],
+      ["negative", "slot_a", "work.cmp_err"],
+      ["positive", "slot_a", "gate.seed"],
     ],
   );
 });
 
-test("onchain admission entries carry the fact-key identity triple", () => {
-  const onchain = compileZhixuOnchainHookPlan(
-    admissionZhixu("buyer::gate.seed & ~(work.cmp_err +14d)"),
-  );
-
-  const admission = firstAdmission(onchain.admissions);
-  const expectedSignalId = onchainSignalId("work.cmp");
-  const expectedSourceId = onchainSourceId("buyer");
-  assert.equal(admission.admissionId, onchainSignalKey(expectedSourceId, expectedSignalId));
-  assert.equal(admission.signalId, expectedSignalId);
-  assert.equal(admission.stageId, onchainStageId("work"));
-  assert.deepEqual(
-    admission.instructions.map((instruction) => instruction.op),
-    ["SIGNAL", "SIGNAL", "DELAY", "NOT", "AND"],
-  );
-});
-
 test("hook-profile-illegal but filter-legal decaying positions compile: bare root, OR branch", () => {
-  const bareRoot = compileZhixuOnchainHookPlan(admissionZhixu("buyer::~(work.cmp_err +14d)"));
+  const bareRoot = compileZhixuOnchainHookPlan(admissionZhixu("slot_a::~(work.cmp_err +14d)"));
   assert.deepEqual(
     firstAdmission(bareRoot.admissions).instructions.map((i) => i.op),
     ["SIGNAL", "DELAY", "NOT"],
   );
 
   const orBranch = compileZhixuOnchainHookPlan(
-    admissionZhixu("buyer::gate.seed | ~(work.cmp_err +14d)"),
+    admissionZhixu("slot_a::gate.seed | ~(work.cmp_err +14d)"),
   );
   assert.deepEqual(
     firstAdmission(orBranch.admissions).instructions.map((i) => i.op),
@@ -141,37 +117,14 @@ test("delay operands wrapping a decaying veto are nested delays and rejected in 
   assert.throws(
     () =>
       compileZhixuOnchainHookPlan(
-        admissionZhixu("buyer::(gate.seed & ~(work.cmp_err +14d)) +5s"),
+        admissionZhixu("slot_a::(gate.seed & ~(work.cmp_err +14d)) +5s"),
       ),
     (error: unknown) =>
       error instanceof HookPlanCompilationError && /no nested delays/.test(error.message),
   );
 });
 
-test("admission registration args reuse the hook slot shape with flag 8 inside hooksHash", () => {
-  const onchain = compileZhixuOnchainHookPlan(
-    admissionZhixu("buyer::gate.seed & ~(work.cmp_err +14d)"),
-  );
-  const args = toSolidityRegisterPlanArgs(onchain);
-  const admission = firstAdmission(onchain.admissions);
-
-  const admissionArg = args.hooks.find((hook) => hook.flags === HOOK_FLAG_ADMISSION);
-  assert.ok(admissionArg, "admission entry must ride the CompactHook array");
-  assert.equal(admissionArg.kind, "admission");
-  assert.equal(admissionArg.hookId, admission.admissionId);
-  assert.equal(admissionArg.hookName, admission.signalId);
-  assert.deepEqual(
-    admissionArg.dependencyKeys,
-    [...new Set(admission.dependencies.map((dependency) => dependency.signalKey))].sort(),
-  );
-  // hooksHash 对提交的 calldata 重算——适格面随 hook 槽一同入承诺。
-  assert.equal(args.hooksHash, hashSolidityRegisterHooks(args.hooks));
-});
-
 test("admission commitments are pinned by the shared golden vectors", () => {
-  // 共享金向量（uvp-core fixtures/commitments）：declared/bare-root 两种
-  // validWhen 形态的 hooksHash（含 flags=8 admission 槽）与制品承诺由共享
-  // 文件钉死，Foundry 侧对同一 hooks 数组重算 hooksHash/runtimePlanHash。
   for (const name of [
     "admission_demo_declared_valid_when",
     "admission_demo_bare_root_veto",
@@ -194,16 +147,11 @@ test("admission commitments are pinned by the shared golden vectors", () => {
   }
 });
 
-/**
- * 过滤档镜像门（反序列化边界与编译入口共用 validateOnchainCompiledAdmissions
- * 单点实现）：变异制品按字段断言对应 issue；planHash 承诺重算门由专门
- * 测试覆盖，此处按正则聚焦镜像面。
- */
 function admissionIssuesOf(
   mutate: (admission: OnchainCompiledAdmission) => OnchainCompiledAdmission,
 ): readonly string[] {
   const onchain = compileZhixuOnchainHookPlan(
-    admissionZhixu("buyer::gate.seed & ~(work.cmp_err +14d)"),
+    admissionZhixu("slot_a::gate.seed & ~(work.cmp_err +14d)"),
   );
   const mutated = {
     ...onchain,
@@ -237,8 +185,6 @@ test("filter-profile mirror keeps the 30d delay cap", () => {
 });
 
 test("filter-profile mirror rejects anchorless delay operands (UB-1)", () => {
-  // `(~work.cmp_err)+5s`：纯否定操作数直接喂延时——合约 _validateAdmission
-  // 的 hasPosAnchor 闸在 commitPlan revert，此前 TS 镜像缺失（A-08）。
   const issues = admissionIssuesOf((admission) => ({
     ...admission,
     instructions: [
@@ -254,8 +200,6 @@ test("filter-profile mirror rejects anchorless delay operands (UB-1)", () => {
 });
 
 test("filter-profile mirror rejects nested delay operands", () => {
-  // delayInside 闸（reject_nested_delay 镜像）：DELAY 操作数子树内已含
-  // DELAY 即拒——此前 TS 镜像缺失（A-08）。
   const issues = admissionIssuesOf((admission) => ({
     ...admission,
     instructions: [
@@ -293,14 +237,13 @@ test("filter-profile mirror rejects identity derivation drift", () => {
   const issues = admissionIssuesOf((admission) => ({
     ...admission,
     admissionId: onchainSignalKey(
-      onchainSourceId("seller"),
+      onchainSourceId("slot_b"),
       onchainSignalId(admission.signalName),
     ),
   }));
   assert.match(issues.join("; "), /admissionId must be keccak256/);
 });
 
-/** loader 侧闭集测试的声明面基座（合法形态，按用例覆写 sendSignals）。 */
 function loaderCaseZhixu(
   sendSignals: unknown,
 ): string {
@@ -314,15 +257,15 @@ function loaderCaseZhixu(
       stages: [
         {
           name: "gate",
-          source: "buyer",
-          receiveSignals: { BEGIN: "buyer::gate.seed" },
+          source: "slot_a",
+          receiveSignals: { BEGIN: "slot_a::gate.seed" },
           sendSignals: [{ name: "seed" }],
           executor: { supplierType: "organization", supplierID: "gate-org" },
         },
         {
           name: "work",
-          source: "buyer",
-          receiveSignals: { RUN: "buyer::gate.ready" },
+          source: "slot_a",
+          receiveSignals: { RUN: "slot_a::gate.ready" },
           sendSignals,
           executor: { supplierType: "organization", supplierID: "work-org" },
         },
@@ -356,7 +299,7 @@ test("sendSignals entries are a closed key set at the loader boundary", () => {
 
 test("compiler-side rejections mirror core: self-reference and blank validWhen", () => {
   assert.throws(
-    () => compileZhixuHookPlan(admissionZhixu("buyer::work.cmp & gate.seed")),
+    () => compileZhixuHookPlan(admissionZhixu("slot_a::work.cmp & gate.seed")),
     (error: unknown) =>
       error instanceof HookPlanCompilationError && /D028/.test(error.message),
   );

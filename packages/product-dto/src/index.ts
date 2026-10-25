@@ -1,2 +1,2 @@
 export * from "./domain/index.js";
-export * from "./domain/order-v3.js";
+export * from "./domain/order-kernel.js";

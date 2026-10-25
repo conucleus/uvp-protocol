@@ -11,8 +11,6 @@ import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 
-/// 测试侧窄 Vm 接口（不 vendor forge-std，与 CapabilitiesRootParity 同口径）
-/// 外加语料回放需要的 cheatcode：warp/recordLogs/prank/sign/addr。
 interface CorpusVm {
     struct Log {
         bytes32[] topics;
@@ -36,47 +34,8 @@ interface CorpusVm {
     function warp(uint256 newTimestamp) external;
 }
 
-/// 共享语义语料（uvp-core/fixtures/hook/semantics.v1.json）的 forge 消费线：
-/// replayCases（26 例链指令形态）逐例在 UVPStateMachine 上按语料时间线
-/// 重演——plan 注册（含发射适格面 flag=8 槽位）、订单出生（outside 出生 /
-/// order-link 派生 / dock entrance）、信号提交与 pokeTimer——再把钩子观察
-/// 面（wait/cxl 的 HookStatusChanged + HookReady）与语料期望
-/// （observedEvents/observedCount/finalHookStatuses/waitDueAt/stateOrderKeys）
-/// 逐点对拍。TS 线（packages/statemachine semantics-corpus.test.ts）喂
-/// native 回放 oracle；本线喂真实合约求值器：同一份语料，两条消费路径。
-///
-/// 链轨适配（消费即断言，不做兼容垫层）：
-/// - 语料 signalKey 是抽象路由身份（native 按字符串路由，链上按
-///   keccak(sourceId, signalId) 重算）。SIGNAL 指令身份解析：同例内存在同
-///   signalKey 的 SignalSubmitted 事件 → 用事件 (sourceId, signalId)；否则
-///   保留指令自带对；再否则（适格面指令只携带 signalKey）用
-///   (signalKey, signalKey) 合成对。cases 6/7/8 的 BIRTH/ENTER 钩子由此
-///   路由到出生事实的真实身份。
-/// - 无 mint/dock 钩子的 plan 补一枚合成 order-start 出生钩（独立合成阶
-///   段），出生事实 = 该订单首个语料信号（镜像 native birth_channel 规
-///   则）；合成钩事件按语料 hookId 过滤出观察面。
-/// - 毒流形态（伪造 ready / 声错 dueAt / 缺 pokedAt / 无出生事实的 dock
-///   ready）链上按构造不可产生，消费为链自己的闸门断言：missing-observed
-///   断 entrance 事实与 HookReady 同事务原子；缺时钟 poke 断未到期
-///   TimerNotDue 响亮 + 到期拍放行；声错 dueAt 对照 expect.waitDueAt（native
-///   侧裁掉毒值所用的同一推导值）。
-/// - 出生闸挡住的形态（出生拍求值判 cxl → InvalidTriggerHook 整笔回滚，
-///   订单不可存在）与注册闸挡住的形态（纯 flags=0 watcher 阶段不可物化 →
-///   StageNotMaterializable）按语料期望断言拒绝，后者另在可注册变体（同
-///   阶段补一枚永不出线的 EMIT_READY 物化钩）上钉同一求值语义（skip 不
-///   brick、零观察）。
-/// - 发射适格面（filter 档 evalCases，8 格）单独消费：DSL 串钉住五形态
-///   （漂移即响亮失败），信号集/时刻/期望态从语料读取。锚定格都在消费集
-///   内：无锚延时 → 链轨注册闸拒绝（求值侧永不放行的死代码）；真空 OR
-///   臂让位 → now 拒绝 + readyAt 放行两腿；双真空 OR 平票 → 注册闸同款
-///   拒绝（无锚分支永不出线，§5.4）；双活否决最紧期 → 语料 expiresAt
-///   拍拒绝 + now 拍放行两腿。
 contract SemanticsReplayCorpusTest {
     CorpusVm private constant vm = CorpusVm(address(uint160(uint256(keccak256("hevm cheat code")))));
-
-    // ----------------------------------------------------------------------
-    // 容量上限（语料漂移哨兵：超限响亮失败而不是静默截断）
-    // ----------------------------------------------------------------------
 
     uint256 private constant MAX_EVENTS = 12;
     uint256 private constant MAX_PLANS = 2;
@@ -89,12 +48,8 @@ contract SemanticsReplayCorpusTest {
     uint256 private constant REPLAY_CASE_COUNT = 26;
     uint256 private constant FILTER_CASE_COUNT = 8;
 
-    // ----------------------------------------------------------------------
-    // 语料行（storage：via_ir 深栈 + 跨 helper 共享）
-    // ----------------------------------------------------------------------
-
     struct RawInstr {
-        uint8 op; // 链上 InstructionOp 编码：0 SIGNAL,1 NOT,2 AND,3 OR,4 DELAY
+        uint8 op;
         bytes32 sourceId;
         bytes32 signalId;
         bytes32 signalKey;
@@ -107,7 +62,7 @@ contract SemanticsReplayCorpusTest {
         bytes32 stageId;
         bytes32 hookNameWord;
         string hookIdHex;
-        uint8 flags; // 链上 flags（mint=1/dock=2/emit=4）
+        uint8 flags;
         RawInstr[] instrs;
         bool exists;
     }
@@ -120,7 +75,7 @@ contract SemanticsReplayCorpusTest {
         bool hasMint;
         bool hasDock;
         bytes32 chainPlanId;
-        bytes32 birthHookId; // 合成 order-start 出生钩（无 mint/dock 钩时）
+        bytes32 birthHookId;
         bytes32 birthStageId;
         bool exists;
     }
@@ -182,7 +137,6 @@ contract SemanticsReplayCorpusTest {
     uint256 private orderCount;
     PokeRow[MAX_POKES] private pokes;
     uint256 private pokeCount;
-    // OrderTriggered 行（order-link 派生单）：(planId, orderId, 源事实)。
     bytes32[MAX_ORDERS] private triggeredPlanIds;
     string[MAX_ORDERS] private triggeredOrderIds;
     bytes32[MAX_ORDERS] private triggeredSourceIds;
@@ -195,10 +149,6 @@ contract SemanticsReplayCorpusTest {
     uint256 private markedHookCount;
 
     mapping(bytes32 hookId => bool) private corpusHookIds;
-
-    // ----------------------------------------------------------------------
-    // 常量
-    // ----------------------------------------------------------------------
 
     uint256 private constant PUBLISHER_PRIVATE_KEY = 0xc0ffee;
     uint256 private constant SUBMITTER_PRIVATE_KEY = 0xa11ce;
@@ -229,10 +179,6 @@ contract SemanticsReplayCorpusTest {
     bytes32 private constant NAME_SIGNAL_SUBMITTED = keccak256("SignalSubmitted");
     bytes32 private constant NAME_TIMER_POKED = keccak256("TimerPoked");
     bytes32 private constant NAME_ORDER_TRIGGERED = keccak256("OrderTriggered");
-
-    // ======================================================================
-    // 测试入口：26 例逐例独立测试函数（失败定位到例；解析成本每例独立）
-    // ======================================================================
 
     function testReplayCase00() public {
         _runReplayCase(0);
@@ -338,8 +284,6 @@ contract SemanticsReplayCorpusTest {
         _runReplayCase(25);
     }
 
-    /// 消费覆盖哨兵：语料 replayCases 恰为 26 例（索引 0..25）——新增/删除
-    /// 语料例时这里先响亮失败，入口函数集必须同批增删。
     function testReplayCorpusCaseCountIsPinned() public {
         _loadCorpus();
         for (uint256 i = 0; i < REPLAY_CASE_COUNT; i++) {
@@ -350,17 +294,11 @@ contract SemanticsReplayCorpusTest {
         require(!beyond, "replay corpus grew; extend the per-case entrypoints");
     }
 
-    // ======================================================================
-    // 主驱动
-    // ======================================================================
-
     function _runReplayCase(uint256 caseIdx) private {
         _loadCorpus();
         _resetCase();
         string memory json = corpusJson;
 
-        // ---- 阶段 1：逐事件读排序键与名称，按 (blockNumber, logIndex) 排成
-        // 规范序（镜像 native replay 的排序键；case 9 的乱序流由此归位）。
         for (uint256 i = 0; i < MAX_EVENTS; i++) {
             (bool ok, string memory name) =
                 _tryString(json, _casePath(caseIdx, string.concat(".events[", _toString(i), "].eventName")));
@@ -381,7 +319,6 @@ contract SemanticsReplayCorpusTest {
         require(eventCount > 0, "corpus case has no events");
         _sortEventsByCanonicalOrder();
 
-        // ---- 阶段 2：按规范序收集类型化行。 ----
         for (uint256 i = 0; i < eventCount; i++) {
             _absorbEvent(caseIdx, i);
         }
@@ -392,7 +329,6 @@ contract SemanticsReplayCorpusTest {
             mismatchReasonHash = keccak256(bytes(mismatchReason));
         }
 
-        // ---- 阶段 3：装配机器 + 注册 plan（含注册闸适配）。 ----
         machine = _newCaseMachine();
         bool commitRejected = false;
         bytes4 rejectSelector;
@@ -404,10 +340,6 @@ contract SemanticsReplayCorpusTest {
         }
         bool gateBlocked = false;
         if (commitRejected) {
-            // 注册闸挡住的形态：纯 flags=0 watcher 的阶段不可物化 → 链轨注
-            // 册边界拒绝（语料求值侧结论 = 该钩子被跳过、零观察）。随后在
-            // 可注册变体（同阶段补一枚永不出线的 EMIT_READY 物化钩）上钉
-            // 同一求值语义。
             require(
                 rejectSelector == UVPStateMachine.StageNotMaterializable.selector, "unexpected corpus commit rejection"
             );
@@ -421,10 +353,6 @@ contract SemanticsReplayCorpusTest {
 
         vm.recordLogs();
 
-        // ---- 阶段 4：按规范序惰性重演——OrderRegistered 拍出生该单（出生
-        // 事实可能尚未在流内到达：outside 出生的事实与创建同事务，warp 直
-        // 接跳到事实时刻），SignalSubmitted 拍落库（出生事实已写则吸收），
-        // TimerPoked 拍 poke。 ----
         uint256 signalCursor;
         uint256 pokeCursor;
         uint256 orderCursor;
@@ -441,17 +369,12 @@ contract SemanticsReplayCorpusTest {
                 order.chainPlanId = plan.chainPlanId;
                 uint256 firstSignal = _firstSignalOf(order.planId, order.orderId);
                 if (_orderHasTriggeredRow(order.planId, order.orderId) && firstSignal == type(uint256).max) {
-                    // order-link 派生单：子单无自身信号，readiness 由链接
-                    // 事务从 origin 事实派生（case 6）。
                     _birthOrderLink(caseIdx, orderIdx);
                     order.born = true;
                 } else if (plan.hasDock) {
                     _birthDockOrder(caseIdx, orderIdx, firstSignal);
                     order.born = true;
                 } else if (!_birthOutside(caseIdx, orderIdx)) {
-                    // 出生闸挡住的形态：出生拍求值判 cxl → InvalidTriggerHook
-                    // 整笔回滚，订单不可存在（native oracle 对同一求值产生
-                    // cxl 观察；链上出生通道 fail-closed，该时间线不可产生）。
                     gateBlocked = true;
                     require(
                         !machine.orderExists(order.chainPlanId, order.chainOrderId),
@@ -466,7 +389,7 @@ contract SemanticsReplayCorpusTest {
                 signalCursor += 1;
                 SignalRow storage sig = signals[signalIdx];
                 if (sig.written) {
-                    continue; // 出生事实已随出生事务落库
+                    continue;
                 }
                 OrderRow storage order = _orderByCorpus(sig.planId, sig.orderId);
                 vm.warp(sig.submittedAt);
@@ -486,20 +409,14 @@ contract SemanticsReplayCorpusTest {
             }
         }
 
-        // ---- 阶段 5：对拍语料期望。 ----
         CorpusVm.Log[] memory logs = vm.getRecordedLogs();
         if (gateBlocked) {
-            // 出生闸消费：语料的 cxl 观察在链上表现为订单不可出生。
             require(mismatchReasonHash == 0, "gate-blocked corpus case is not a poison-stream case");
         } else if (mismatchReasonHash == keccak256("missing-observed")) {
-            // 毒格（dock ready 无出生事实）：链上该流不可产生——断言诚实
-            // dock 出生中 entrance 事实与 HookReady 同事务原子出现。
             _assertDockBirthAtomic(logs);
         } else {
             (bool hasErrorContains,) = _tryString(json, _casePath(caseIdx, ".expect.errorContains"));
             if (!hasErrorContains) {
-                // 毒格（整场响亮失败）只钉链上的响亮闸（_replayPoke 的
-                // TimerNotDue 腿），不比对观察面。
                 _assertObservableFace(caseIdx, logs);
             }
             _assertWaitDueAt(caseIdx, logs);
@@ -508,10 +425,6 @@ contract SemanticsReplayCorpusTest {
         }
         _assertFirstWriteStays();
     }
-
-    // ======================================================================
-    // 事件收集
-    // ======================================================================
 
     function _absorbEvent(uint256 caseIdx, uint256 sortedIdx) private {
         string memory json = corpusJson;
@@ -640,8 +553,6 @@ contract SemanticsReplayCorpusTest {
         hook.exists = true;
     }
 
-    /// 适格面条目：指令只携带 signalKey（被发射事实的寻址在 flag=8 槽位
-    /// 之外，由调用侧决定——本驱动挂到订单首个信号的真实发射面上）。
     function _collectAdmission(string memory json, string memory admBase, RawHook storage admission) private {
         _collectInstrs(json, admBase, admission.instrs, false);
         admission.exists = true;
@@ -687,13 +598,6 @@ contract SemanticsReplayCorpusTest {
         }
     }
 
-    // ======================================================================
-    // plan 装配与注册
-    // ======================================================================
-
-    /// 链上 CompactHook 数组 = 语料钩子（指令身份按 signalKey 解析）+
-    /// 适格面（flag=8）+（无 mint/dock 钩且有订单时）合成 order-start 出生
-    /// 钩。变体模式追加同阶段 EMIT_READY 物化钩（永不出线信号）。
     function _commitCorpusPlan(uint256 caseIdx, uint256 planIdx, bool variant)
         private
         returns (bool rejected, bytes4 selector)
@@ -716,13 +620,9 @@ contract SemanticsReplayCorpusTest {
             plan.birthHookId = keccak256(abi.encode("corpus.birth.hook", caseIdx, planIdx));
             plan.birthStageId = keccak256(abi.encode("corpus.birth.stage", caseIdx, planIdx));
             hooks[cursor] = _syntheticBirthHook(plan, caseIdx, planIdx);
-            // 合成出生钩不进观察面过滤集（链轨出生机器，非语料语义）。
             cursor += 1;
         }
         if (variant) {
-            // 注册闸变体：首个语料钩子所在阶段补一枚 EMIT_READY 物化钩，
-            // 信号为永不提交的合成键——阶段可物化，语料钩子的 skip 语义
-            // （未物化阶段 flags=0 watcher 不求值）保持原样。
             RawHook storage target = plan.hooks[0];
             UVPStateMachine.Instruction[] memory instrs = new UVPStateMachine.Instruction[](1);
             instrs[0] = _instruction(
@@ -750,9 +650,6 @@ contract SemanticsReplayCorpusTest {
         return (false, 0);
     }
 
-    /// SIGNAL 指令身份解析：优先同例同 signalKey 的 SignalSubmitted 事件对
-    /// （cases 6/7/8 的出生钩由此路由到真实出生事实），否则保留指令对，
-    /// 再否则以 (signalKey, signalKey) 合成（适格面指令无事件对）。
     function _resolveHook(RawHook storage hook) private returns (UVPStateMachine.CompactHook memory) {
         UVPStateMachine.Instruction[] memory instrs = new UVPStateMachine.Instruction[](hook.instrs.length);
         for (uint256 i = 0; i < hook.instrs.length; i++) {
@@ -781,9 +678,6 @@ contract SemanticsReplayCorpusTest {
         });
     }
 
-    /// 适格面 flag=8 槽位：hookId = 被发射事实的 signalKey（挂订单首个信
-    /// 号——适格面在真实发射面上即刻可观测），hookName 槽 = 信号身份位，
-    /// stageId 取首钩子阶段（可物化，过注册扫描）。
     function _resolveAdmissionHook(RawHook storage admission, uint256 planIdx, uint256 caseIdx)
         private
         returns (UVPStateMachine.CompactHook memory)
@@ -816,9 +710,6 @@ contract SemanticsReplayCorpusTest {
         });
     }
 
-    /// 合成 order-start 出生钩：独立合成阶段 + 合成出生信号（与语料钩子
-    /// 无共享依赖键、无跨阶段依赖；语料钩子的阶段/求值路径不被出生事务
-    /// 触碰）。
     function _syntheticBirthHook(RawPlan storage plan, uint256 caseIdx, uint256 planIdx)
         private
         view
@@ -885,19 +776,11 @@ contract SemanticsReplayCorpusTest {
         }
     }
 
-    // ======================================================================
-    // 出生通道
-    // ======================================================================
-
     function _birthOutside(uint256 caseIdx, uint256 orderIdx) private returns (bool) {
         OrderRow storage order = orders[orderIdx];
         RawPlan storage plan = _planByCorpusId(order.planId);
         bytes32 triggerHookId = plan.hasMint ? _mintHookOf(plan) : plan.birthHookId;
         bytes32 triggerStageId = plan.hasMint ? _hookStage(plan, _mintHookOf(plan)) : plan.birthStageId;
-        // 出生事实：有语料 mint 钩的 plan 用订单首个语料信号（出生即求值
-        // mint 钩，cases 0/2/7）；无 mint/dock 钩的 plan 用合成出生信号
-        // （独立键：与语料钩子不共享依赖键，避免跨阶段依赖闸，且语料首信
-        // 号保持普通提交路径——观察面语义与语料流逐点一致）。
         bytes32 sourceId;
         bytes32 signalId;
         bytes32 payload;
@@ -943,8 +826,6 @@ contract SemanticsReplayCorpusTest {
         }
     }
 
-    /// dock 出生：出生事实 = 订单首个语料信号（case 8 的 entrance 事实）；
-    /// 无信号订单（case 17 毒格）用 entrance 钩子指令自带身份对。
     function _birthDockOrder(uint256 caseIdx, uint256 orderIdx, uint256 signalIdx) private {
         OrderRow storage order = orders[orderIdx];
         RawPlan storage plan = _planByCorpusId(order.planId);
@@ -987,8 +868,6 @@ contract SemanticsReplayCorpusTest {
         }
     }
 
-    /// order-link 派生出生（case 6）：origin 订单持有被消费事实，子单出生
-    /// 不写子单信号——派生 readiness 由链接事务直接落 HookReady + 物化。
     function _birthOrderLink(uint256 caseIdx, uint256 orderIdx) private {
         OrderRow storage child = orders[orderIdx];
         uint256 triggeredIdx = _triggeredRowOf(child.planId, child.orderId);
@@ -1029,10 +908,6 @@ contract SemanticsReplayCorpusTest {
         child.chainOrderId = trigger.orderId;
     }
 
-    // ======================================================================
-    // 信号 / poke 重演
-    // ======================================================================
-
     function _replayPoke(uint256 pokeIdx) private {
         PokeRow storage poke = pokes[pokeIdx];
         OrderRow storage order = _orderByCorpus(poke.planId, poke.orderId);
@@ -1041,9 +916,6 @@ contract SemanticsReplayCorpusTest {
             machine.pokeTimer(order.chainPlanId, order.chainOrderId, poke.hookId);
             return;
         }
-        // 毒格（poke 缺求值时钟）：链上时钟恒在（block.timestamp），不可能
-        // 产生无时钟 poke——消费为链自己的响亮闸：未到期 poke TimerNotDue，
-        // 到期拍正常放行。
         require(hasDeclaredWaitDueAt, "clock-less poke case must declare a wait dueAt");
         vm.warp(declaredWaitDueAt - 1);
         vm.expectRevert(UVPStateMachine.TimerNotDue.selector);
@@ -1055,14 +927,10 @@ contract SemanticsReplayCorpusTest {
     function _markWritten(uint256 signalIdx) private {
         SignalRow storage sig = signals[signalIdx];
         if (sig.written) {
-            return; // 首写已定（first-win：后续重复提交不得改写）
+            return;
         }
         sig.written = true;
     }
-
-    // ======================================================================
-    // 对拍断言
-    // ======================================================================
 
     function _assertObservableFace(uint256 caseIdx, CorpusVm.Log[] memory logs) private {
         string memory json = corpusJson;
@@ -1086,8 +954,6 @@ contract SemanticsReplayCorpusTest {
         }
     }
 
-    /// 收集观察面（镜像 oracle 的 observable face）：语料钩子范围内
-    /// wait/cxl 的 HookStatusChanged + HookReady，按日志序。
     function _collectObservable(CorpusVm.Log[] memory logs, bytes32[MAX_EVENTS] memory out)
         private
         view
@@ -1185,8 +1051,6 @@ contract SemanticsReplayCorpusTest {
         }
     }
 
-    /// first-win：同一订单同一信号槽，链上落库载荷必须保持首写值（重复
-    /// 提交被吸收；语料 senderId/eventId 的链上对应物即首写身份）。
     function _assertFirstWriteStays() private {
         for (uint256 s = 0; s < signalCount; s++) {
             SignalRow storage sig = signals[s];
@@ -1194,7 +1058,7 @@ contract SemanticsReplayCorpusTest {
                 continue;
             }
             if (!_isEarliestRowOfKey(s)) {
-                continue; // 重复行：以首行为准
+                continue;
             }
             OrderRow storage order = _orderByCorpus(sig.planId, sig.orderId);
             if (!order.born) {
@@ -1208,8 +1072,6 @@ contract SemanticsReplayCorpusTest {
     }
 
     function _assertDockBirthAtomic(CorpusVm.Log[] memory logs) private {
-        // missing-observed 毒格：dock ready 无出生事实在链上不可产生——诚实
-        // dock 出生中 SignalSubmitted(entrance) 与 HookReady 同事务出现。
         bool sawSubmitted;
         bool sawReady;
         for (uint256 i = 0; i < logs.length; i++) {
@@ -1227,25 +1089,14 @@ contract SemanticsReplayCorpusTest {
         require(sawSubmitted && sawReady, "dock entrance fact and HookReady must be atomic");
     }
 
-    // ======================================================================
-    // 发射适格面（filter 档 evalCases）消费
-    // ======================================================================
-
     bytes32 private constant FILTER_FORM_A =
         keccak256("buyer::execute.locked & ~(execute.approved +5s) & ~execute.confirm_transfer");
     bytes32 private constant FILTER_FORM_B = keccak256("buyer::(~a.cmp)+5s");
     bytes32 private constant FILTER_FORM_C = keccak256("buyer::(~a.cmp | b.cmp)+5s");
     bytes32 private constant FILTER_FORM_D = keccak256("buyer::(~a.cmp | ~b.cmp)+5s");
-    /// 双活否决最紧期族：两个负延时臂（approved+5s / reviewed+10s）同时
-    /// 在线，放行窗口由更早成熟的否决臂封顶（语料 expiresAt = min 两臂）。
     bytes32 private constant FILTER_FORM_E =
         keccak256("buyer::execute.locked & ~(execute.approved +5s) & ~(execute.reviewed +10s)");
 
-    /// filter 档 evalCases 全消费：DSL 串钉五形态（漂移即响亮失败），信
-    /// 号集/时刻/期望态从语料读取。锚定格都在消费集内：无锚延时（33）→
-    /// 链轨注册闸拒绝；真空 OR 臂让位（34）→ now 拒绝 + readyAt 放行两腿；
-    /// 双活否决最紧期（39）→ expiresAt 拍拒绝 + now 拍放行两腿。
-    /// DSL→指令的形态镜像是静态的（链轨无 DSL 解析器；编译器在 TS 侧）。
     function testFilterAdmissionEvalCorpus() public {
         _loadCorpus();
         string memory json = corpusJson;
@@ -1280,7 +1131,6 @@ contract SemanticsReplayCorpusTest {
         bytes32 birthSignal = keccak256("corpus.filter.birth.signal");
         bytes32 birthStage = keccak256(abi.encode("corpus.filter.stage", caseIdx));
 
-        // 前置信号名集（先读后用：授权面需要覆盖它们）。
         string[MAX_SIGNALS] memory signalNames;
         uint256 signalNameCount;
         for (uint256 i = 0; i < MAX_SIGNALS; i++) {
@@ -1316,8 +1166,6 @@ contract SemanticsReplayCorpusTest {
             admissionInstrs[5] = _instruction(uint8(UVPStateMachine.InstructionOp.Not), bytes32(0), bytes32(0), 0, 0);
             admissionInstrs[6] = _instruction(uint8(UVPStateMachine.InstructionOp.And), bytes32(0), bytes32(0), 3, 0);
         } else if (form == FILTER_FORM_B) {
-            // 无锚延时：链轨注册闸即拒（求值侧永不放行的死代码）——语料期
-            // 望 needs_more，链上先在 commit 边界拒绝。
             admissionInstrs = new UVPStateMachine.Instruction[](3);
             admissionInstrs[0] = _instruction(
                 uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("a.cmp"), 0, 0
@@ -1327,9 +1175,6 @@ contract SemanticsReplayCorpusTest {
             _expectAdmissionCommitRevert(admissionInstrs, birthSource, birthSignal, emitSource, emitSignal, birthStage);
             return;
         } else if (form == FILTER_FORM_D) {
-            // 双真空 OR 平票（(0,0) 格）：两臂皆无锚 → OR 结果无正锚，外层
-            // 延时注册即拒（§5.4 无锚分支永不出线；求值侧期望 needs_more，
-            // 链上先在 commit 边界拒绝——与 FORM_B 同款死代码闸）。
             admissionInstrs = new UVPStateMachine.Instruction[](6);
             admissionInstrs[0] = _instruction(
                 uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("a.cmp"), 0, 0
@@ -1355,9 +1200,6 @@ contract SemanticsReplayCorpusTest {
             admissionInstrs[3] = _instruction(uint8(UVPStateMachine.InstructionOp.Or), bytes32(0), bytes32(0), 2, 0);
             admissionInstrs[4] = _instruction(uint8(UVPStateMachine.InstructionOp.Delay), bytes32(0), bytes32(0), 0, 5);
         } else if (form == FILTER_FORM_E) {
-            // 双活否决最紧期：FORM_A 的第二裸否决臂换成 reviewed+10s 延时
-            // 否决臂——AND 的放行窗口由更早成熟的 approved+5s 封顶（语料
-            // expiresAt = 05s 拍，见 ready 腿的到期探针）。
             admissionInstrs = new UVPStateMachine.Instruction[](8);
             admissionInstrs[0] = _instruction(
                 uint8(UVPStateMachine.InstructionOp.Signal), _filterSource(), _filterSignal("execute.locked"), 0, 0
@@ -1377,8 +1219,6 @@ contract SemanticsReplayCorpusTest {
             revert("unknown filter corpus form");
         }
 
-        // 机器：合成出生钩 + 适格面（挂被发射事实），订单出生后按语料时刻
-        // 落前置信号，再在 now 拍尝试发射。
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
         UVPStateMachine.Instruction[] memory birthInstrs = new UVPStateMachine.Instruction[](1);
         birthInstrs[0] = _instruction(uint8(UVPStateMachine.InstructionOp.Signal), birthSource, birthSignal, 0, 0);
@@ -1424,7 +1264,6 @@ contract SemanticsReplayCorpusTest {
         machine.triggerOrderFromOutsideFor(trigger, authorizations, signature, _noAttribution());
         bytes32 orderId = machine.triggerOrderIdFor(planId, birthSource, birthSignal, trigger.payloadHash);
 
-        // 前置信号按语料时刻落库。
         for (uint256 i = 0; i < signalNameCount; i++) {
             (, uint64 receivedAt) = _requireTimestamp(
                 vm.parseJsonString(json, string.concat(base, ".signals[", _toString(i), "].receivedAt"))
@@ -1444,12 +1283,6 @@ contract SemanticsReplayCorpusTest {
         vm.warp(nowSec);
         bytes32 emitPayload = keccak256(abi.encode(caseIdx, "emit"));
         if (stateHash == keccak256("ready")) {
-            // 否决窗口到期拍探针（语料 expiresAt 非空时）：Rust 语义在窗口
-            // 关闭拍判 negated condition exists → 发射必须响亮拒绝；双活
-            // 否决形态（FORM_E）由此钉住"窗口由更早成熟的否决臂封顶"——
-            // 若实现错误锚定在更晚成熟的臂上，到期拍发射会错误落地。先探
-            // 后放：first-win 吸收在适格门之前，成功发射后的重复提交会被
-            // 吸收而非拒绝，到期拍必须在成功发射前探测。
             (bool hasExpiresAt, string memory expiresAtRaw) =
                 _tryString(json, string.concat(base, ".expect.expiresAt"));
             if (hasExpiresAt && keccak256(bytes(expiresAtRaw)) != keccak256("null")) {
@@ -1471,7 +1304,6 @@ contract SemanticsReplayCorpusTest {
             (bool exists, bytes32 payloadHash,,,) = machine.getSignal(planId, orderId, emitSource, emitSignal);
             require(exists && payloadHash == emitPayload, "admitted emission missing");
         } else if (stateHash == keccak256("wait")) {
-            // 真空 OR 臂让位：now 拍延时未熟 → 拒绝；readyAt 拍放行。
             vm.expectRevert(
                 abi.encodeWithSelector(
                     UVPStateMachine.SignalAdmissionRejected.selector, orderId, emitSource, emitSignal
@@ -1570,10 +1402,6 @@ contract SemanticsReplayCorpusTest {
         return keccak256(bytes(signalName));
     }
 
-    // ======================================================================
-    // 机器装配
-    // ======================================================================
-
     function _newCaseMachine() private returns (UVPStateMachine newMachine) {
         newMachine = new UVPStateMachine();
         UVPStagePatchModule stagePatch = new UVPStagePatchModule(address(newMachine));
@@ -1590,18 +1418,11 @@ contract SemanticsReplayCorpusTest {
         newMachine.freezeModules();
     }
 
-    // ======================================================================
-    // 基建 helper
-    // ======================================================================
-
     function _loadCorpus() private {
         if (bytes(corpusJson).length != 0) {
             return;
         }
         corpusJson = vm.readFile(string.concat(vm.projectRoot(), "/../../../uvp-core/fixtures/hook/semantics.v1.json"));
-        // meta sha 钉（Rust/TS 同款三线钉）：语料内容与 uvp-core 声明的
-        // contentSha256 用 SHA256 预编译逐字节比对，不等即响亮失败——本仓
-        // 不落语料副本，钉住的是对岸文件内容本身。
         string memory metaJson =
             vm.readFile(string.concat(vm.projectRoot(), "/../../../uvp-core/fixtures/hook/semantics.v1.meta.json"));
         require(
@@ -1718,8 +1539,6 @@ contract SemanticsReplayCorpusTest {
         }
     }
 
-    /// 语料时间戳形态（chrono 严格 RFC3339 的实际使用子集）：
-    /// YYYY-MM-DDTHH:MM:SS.mmmZ——亚秒丢弃（native timestamp() 只取整秒）。
     function _requireTimestamp(string memory raw) private pure returns (bool, uint64) {
         bytes memory b = bytes(raw);
         require(b.length == 24, "corpus timestamp shape");
@@ -1763,8 +1582,6 @@ contract SemanticsReplayCorpusTest {
         return 31;
     }
 
-    /// proleptic Gregorian civil 日期 → epoch 天数（chrono NaiveDate 同历
-    /// 法；packages/statemachine chain.ts 的整数实现同款移植）。
     function _daysFromCivil(uint256 year, uint256 month, uint256 day) private pure returns (uint256) {
         uint256 shiftedYear = year - (month <= 2 ? 1 : 0);
         uint256 era = shiftedYear / 400;
@@ -1918,10 +1735,6 @@ contract SemanticsReplayCorpusTest {
             sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
         });
     }
-
-    // ----------------------------------------------------------------------
-    // 行查找
-    // ----------------------------------------------------------------------
 
     function _planIndexByCorpusId(bytes32 planId) private view returns (uint256) {
         for (uint256 p = 0; p < planCount; p++) {

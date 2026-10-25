@@ -1,25 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @title Zhixu Dock Merkle 原语
-/// @dev 与链轨 TS 权威 `packages/compiler/src/dock.ts` 逐字节一致（规格
-///      见 packages/compiler/docs/dock-word-layout.md；golden 向量由 TS
-///      编译器 generate:dock-fixtures 产出，Foundry
-///      DockManifestParity.t.sol 对拍钉死）：
-///      叶子列表先按字节升序去重排序；配对合并
-///      `keccak256(min(a,b) ‖ max(a,b))`；奇数尾叶直接提升；
-///      空集合 root = `keccak256("")`。
 library DockMerkle {
     bytes32 public constant EMPTY_ROOT = keccak256("");
 
-    /// @notice 排序（去重）后逐层建树，排序去重在函数内拷贝上执行，不
-    ///         修改调用方数组（就地缩长度会让调用方持有的
-    ///         calldata/memory 数组在 root 调用后被静默截断）。不设叶数
-    ///         数值上限：生产调用方的有效叶集由承诺面自 bound（root 结果
-    ///         必须复现 committed route 叶内的绑定根——去重叶集被碰撞
-    ///         阻抗钉死为 finalize 时的承诺集，动态路由恒空集），数组中的
-    ///         重复项不改变根也不放大效果集，只让调用方自付 sortUnique
-    ///         O(n²) 的 gas；数值上限反而会拒绝比上限更大的合法承诺集。
     function root(bytes32[] memory leaves) internal pure returns (bytes32) {
         if (leaves.length == 0) {
             return EMPTY_ROOT;
@@ -56,7 +40,6 @@ library DockMerkle {
         return current == rootValue;
     }
 
-    /// @dev 返回排序去重后的新数组；调用方数组保持原样。
     function sortUnique(bytes32[] memory input) private pure returns (bytes32[] memory leaves) {
         leaves = new bytes32[](input.length);
         for (uint256 i = 0; i < input.length; i++) {
@@ -70,8 +53,6 @@ library DockMerkle {
                     leaves[i] = leaves[j];
                     leaves[j] = tmp;
                 } else if (leaves[j] == leaves[i]) {
-                    // 去重：把重复项交换到尾部并收缩有效长度（仅作用于
-                    // 函数内拷贝）。
                     leaves[j] = leaves[length - 1];
                     length -= 1;
                     j -= 1;

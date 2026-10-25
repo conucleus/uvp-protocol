@@ -16,13 +16,8 @@ export type ParticipantStatus =
   | "not_started";
 export type RoleSlotStatus = "required" | "connected" | "optional";
 export type DockableModuleStatus = "connected" | "available" | "planned";
-/** dock 接口开放的下单模式（{new, existing} 子集）。 */
 export type ProductDockOrderMode = "new" | "existing";
 export type OrderStatus = "registered";
-/**
- * 服务端任务词表只有这三种态：链上确认不回流为新的任务态（由提交回执
- * 与链投影承载），"done" 是服务端永不产出的死词，不进词表。
- */
 export type TaskStatus = "open" | "submitted" | "blocked";
 export type FulfillmentPluginKind =
   | "payment_placeholder"
@@ -432,19 +427,12 @@ export interface RoleSlotDTO {
 export interface DockableZhixuModulePortDTO {
   readonly portName: string;
   readonly label: string;
-  /** input 端口的目标侧 hook 引用（`<stage>#<channel>`）。 */
   readonly hook?: string;
-  /** output 端口的目标侧 canonical signal（`<source>::<stage>.<signal>`）。 */
   readonly signal?: string;
 }
 
-/**
- * 目标定义发布的具名 dock 接口（uvp.dockInterfaceArtifact.v2 的展示面）。
- * 接口名/端口名遵循协议命名规则（`^[a-z][a-z0-9_]{0,31}$`）。
- */
 export interface DockableZhixuModuleDTO {
   readonly interfaceName: string;
-  /** 接口开放的下单模式（{new, existing} 非空子集）。 */
   readonly orderModes: readonly ProductDockOrderMode[];
   readonly title: string;
   readonly desc: string;
@@ -552,11 +540,6 @@ export interface ProductTaskDTO {
   readonly stageName: string;
   readonly deadline: string;
   readonly fundingImpact: string;
-  /**
-   * Optional publisher-configured structured evidence requirements; the sole
-   * authority for task evidence slots. When absent the task has no evidence
-   * slots — consumers must not synthesize generic slots nor reject.
-   */
   readonly status: TaskStatus;
   readonly addOnKind?: ParticipantAddOnKind;
   readonly selectableTargets?: readonly ProductSelectableTargetDTO[];
@@ -654,7 +637,6 @@ export interface FulfillmentRequiredInputDTO {
   readonly completed: boolean;
 }
 
-
 export interface ParticipantProofSummaryDTO {
   readonly label: string;
   readonly txHash?: string;
@@ -692,11 +674,6 @@ export interface StoreZhixuConsoleDTO {
   readonly orderCount: number;
   readonly openTaskCount: number;
   readonly supplierCount: number;
-  /**
-   * Explicit availability marker for the metric fields above and for
-   * versionLabel: "unknown" means they were not supplied by the caller and
-   * must be displayed as unknown, never read as real observations.
-   */
   readonly metricsStatus: StoreConsoleMetricsStatus;
   readonly planId: string;
   readonly planHash: string;
@@ -1011,12 +988,6 @@ export function toStoreZhixuConsoleDTO(
     metrics.lifecycleStatus ?? lifecycleStatusForZhixu(zhixu);
   const planId = zhixu.planPublication.planId;
   const planHash = zhixu.planPublication.planHash;
-  // Metrics are either fully observed or explicitly unknown: a partial
-  // supply must not silently substitute zeros / "当前版本" for the missing
-  // fields while claiming the rest are real observations — versionLabel is
-  // part of that observed surface (the DTO documents metricsStatus as the
-  // availability marker for the metric fields AND versionLabel), so a supply
-  // without it stays "unknown" instead of pinning a synthesized label.
   const metricsStatus: StoreConsoleMetricsStatus =
     metrics.orderCount !== undefined &&
     metrics.openTaskCount !== undefined &&
@@ -1075,8 +1046,6 @@ export function storeConsoleSummary(
     ).length,
     runningOrders: zhixus.reduce((sum, zhixu) => sum + zhixu.orderCount, 0),
     openTasks: zhixus.reduce((sum, zhixu) => sum + zhixu.openTaskCount, 0),
-    // 各行 supplierCount 的合计：Math.max 只是"最大单行"，不是任何总量
-    // 口径——与订单/待办同按行求和。
     registeredSuppliers: zhixus.reduce(
       (sum, zhixu) => sum + zhixu.supplierCount,
       0,
@@ -1464,9 +1433,6 @@ export function summarizeZhixu(zhixu: ZhixuDetailDTO): ZhixuSummaryDTO {
   return summary;
 }
 
-// 写侧契约：提交意图/输入/回执/证据证明的权威形状与任务提交意图推导，
-// 形状对齐 uvp-chain-services 服务端真身。
 export * from "./write-side.js";
 export * from "./submit-intent.js";
-// V1 订单要求包与 fileResource 句柄契约（服务端算 requirementsHash）。
 export * from "./order-requirements.js";

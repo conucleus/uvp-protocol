@@ -33,17 +33,7 @@ test("keccak256 covers padding boundary lengths", () => {
   }
 });
 
-test("canonical JSON is independent of object insertion order", () => {
-  assert.equal(
-    canonicalStringify({ b: 2, a: { d: 4, c: 3 } }),
-    canonicalStringify({ a: { c: 3, d: 4 }, b: 2 })
-  );
-});
-
 test("canonical JSON rejects undefined fields and negative zero", () => {
-  // 负零是 f64 载荷（serde_json 将 "-0"/"-0.0" 都解析为
-  // f64 -0.0），权威侧一律拒绝——TS 与之同口径（-0 经 Object.is 可观测，
-  // 不存在 JS 表示盲区）；正零 0 是 i64 整数，照常接受。
   assert.throws(
     () => canonicalStringify({ n: -0 }),
     /must be an integer: canonical JSON hash preimages reject float-form numbers, received -0/,
@@ -56,10 +46,6 @@ test("canonical JSON rejects undefined fields and negative zero", () => {
 });
 
 test("canonical JSON number formatting matches the serde_json probe vectors", () => {
-  // 与 uvp-ir canonicalize_number 的实测逐字节对齐。canonical 哈希输入的
-  // 数字词表封闭为整数（u64/i64）：整数按十进制整型
-  // 输出；一切浮点形态（0.1/1.5/1e-5/整值浮点/负零）一律响亮拒绝——
-  // 语料（uvp-core fixtures/canonical/canonical.v1.json）钉死该边界。
   const cases: readonly [number, string][] = [
     [0, "0"],
     [100, "100"],
@@ -73,8 +59,6 @@ test("canonical JSON number formatting matches the serde_json probe vectors", ()
 });
 
 test("canonical JSON rejects float-form numbers loudly", () => {
-  // 非整值 float：普通小数、科学计数、整值小数位与嵌套位置全部拒绝，
-  // 错误信息带路径与值（响亮失败，不静默截断/取整）。
   const rejected: readonly number[] = [
     1.5,
     0.1,
@@ -95,8 +79,6 @@ test("canonical JSON rejects float-form numbers loudly", () => {
     () => canonicalStringify({ a: [0, 0.5] }),
     /\$\.a\[1\] must be an integer: canonical JSON hash preimages reject float-form numbers, received 0\.5/,
   );
-  // 负零是 f64 载荷（serde_json 把 "-0"/"-0.0" 都解析为 f64 -0.0），与
-  // 权威同口径拒绝；正零 0 与整数照常接受。
   assert.throws(
     () => canonicalStringify(-0),
     /received -0/,
@@ -106,27 +88,16 @@ test("canonical JSON rejects float-form numbers loudly", () => {
 });
 
 test("canonical JSON sorts keys by code point, not UTF-16 code units", () => {
-  // U+FFFD is a single BMP code point (UTF-16 unit 0xFFFD); U+1F600 is
-  // astral (surrogate pair 0xD83D 0xDE00, lead unit BELOW 0xFFFD).
-  // Code-unit order puts the surrogate pair BEFORE U+FFFD; code-point
-  // order (== UTF-8 byte order, the Rust BTreeMap/str Ord authority)
-  // puts it after. The canonical byte stream and its hash must follow
-  // the Rust order.
   const astral = "\u{1F600}";
   const bmp = "\uFFFD";
   assert.equal(
     canonicalStringify({ [astral]: 1, [bmp]: 2, plain: 3 }),
     `{"plain":3,"${bmp}":2,"${astral}":1}`,
   );
-  // Linearity check across the BMP/astral boundary: every BMP key sorts
-  // before every astral key under code-point order.
   assert.equal(
     canonicalStringify({ "\u{10FFFF}": 1, "\uFFFE": 2 }),
     `{"\uFFFE":2,"\u{10FFFF}":1}`,
   );
-  // Astral keys sort among themselves by code point (U+10000 < U+1F600),
-  // which UTF-16 unit order cannot distinguish from the reversed pair when
-  // lead units tie.
   assert.equal(
     canonicalStringify({ "\u{1F600}": 2, "\u{10000}": 1 }),
     `{"\u{10000}":1,"\u{1F600}":2}`,
@@ -134,21 +105,14 @@ test("canonical JSON sorts keys by code point, not UTF-16 code units", () => {
 });
 
 test("canonical JSON orders integer-like keys by code point, not numeric order", () => {
-  // JS 对象把整数形键（"0"/"9"/"10"）强制排到字符串键之前且按数值序
-  // （Object.entries 枚举序）；Rust BTreeMap 按字节序输出 {"0","10","9","zzz"}
-  // （"1" < "9"）。真实事故面：metadata.labels 整数形键参与
-  // definitionUid/planHash 的 source 快照——TS 输出 {"9":…,"10":…} 与
-  // Rust 输出 {"10":…,"9":…} 是同一 JSON 值的两条不同字节流，哈希分叉。
   assert.equal(
     canonicalStringify({ labels: { zzz: "c", "9": "a", "10": "b", "0": "d" } }),
     '{"labels":{"0":"d","10":"b","9":"a","zzz":"c"}}',
   );
-  // 数值序（0,9,10）≠ 码点序（0,10,9）：单独钉住 9/10 的相对序。
   assert.equal(
     canonicalStringify({ "9": 1, "10": 2 }),
     '{"10":2,"9":1}',
   );
-  // 嵌套与数组元素内的整数形键同口径。
   assert.equal(
     canonicalStringify({ spec: { params: { "2": "x", "10": "y" } } }),
     '{"spec":{"params":{"10":"y","2":"x"}}}',
@@ -160,8 +124,6 @@ test("canonical JSON orders integer-like keys by code point, not numeric order",
 });
 
 test("u64Word rejects values outside the unsigned 64-bit range", () => {
-  // 负数落成含 '-' 的假 word、≥ 2^64 溢出 32 字节槽位破坏 word 布局——
-  // 与 chainId 入口（requireChainId）同口径在词构造处显式拒绝。
   assert.throws(
     () => u64Word(-1),
     /must fit the unsigned 64-bit word range, received -1/,

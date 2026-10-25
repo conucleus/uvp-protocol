@@ -12,12 +12,6 @@ import {DockMerkle} from "../src/libraries/DockMerkle.sol";
 import {ECDSA} from "../src/libraries/ECDSA.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 
-/// @title Zhixu Dock committed-route 测试（preimage v2，open/new 模式）
-/// @dev 覆盖：happy path（open→callback）、身份确定性、错误 proof 拒绝、
-///      原子性/幂等、碰撞隔离、permissionless liveness、深度上限、
-///      permit V2 签名/错签者拒绝、existing 模式哈希拒绝、接口 new 位拒绝、
-///      terminal 移除后的输出交付账本（A14）。existing 模式（attach）的
-///      语义覆盖见 UVPDockingModuleAttach.t.sol。
 interface DockVm {
     struct NoArgs {
         uint256 placeholder;
@@ -60,8 +54,6 @@ contract UVPDockingModuleTest {
         }
     }
 
-    // 该 forge 版本的 expectRevert(bytes4) 不匹配带参 custom error，
-    // 统一走完整编码数据。
     function _expect(bytes memory data) internal {
         vm.expectRevert(data);
     }
@@ -72,14 +64,12 @@ contract UVPDockingModuleTest {
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
         "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
     );
-    // 能力树叶域（与 UVPPlanMetadataModule / Rust·TS 编译器逐字节一致）。
     bytes32 private constant SIGNAL_CAPABILITY_LEAF_DOMAIN = keccak256("UVP_SIGNAL_CAPABILITY_V1");
     bytes32 private constant SELECTOR_BINDING_LEAF_DOMAIN = keccak256("UVP_SELECTOR_BINDING_V1");
     bytes32 private constant TRIGGER_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
     );
 
-    // preimage v2 域（与 packages/compiler/docs/dock-word-layout.md / Rust dock.rs 逐字节一致）。
     bytes32 private constant DOMAIN_DEFINITION_REF = keccak256("UVP_DEFINITION_REF_V1");
     bytes32 private constant DOMAIN_INTERFACE = keccak256("UVP_DOCK_INTERFACE_V2");
     bytes32 private constant DOMAIN_INTERFACE_INPUT = keccak256("UVP_DOCK_INTERFACE_INPUT_V2");
@@ -103,10 +93,8 @@ contract UVPDockingModuleTest {
     bytes32 private constant PARENT_EXEC_STAGE = keccak256("exec");
     bytes32 private constant SIGNAL_START = keccak256("start");
     bytes32 private constant SIGNAL_EXEC = keccak256("exec");
-    // 兄弟 hook 监听、测试内永不喂入的信号（保持兄弟 hook 未就绪）。
     bytes32 private constant SIGNAL_SIBLING = keccak256("sibling");
 
-    // 目标定义身份：uidId = keccak("zx-<32hex>")，definitionRefHash 由其派生。
     bytes32 private constant TARGET_UID_ID = keccak256("zx-a11ce00c0ffee0ddba5e5eed1c0deb0a");
     bytes32 private constant INTERFACE_NAME_ID = keccak256("production");
 
@@ -116,34 +104,24 @@ contract UVPDockingModuleTest {
     bytes32 private constant TARGET_HOOK_NAME = keccak256("DOCK_EXECUTE");
     bytes32 private constant TARGET_SOURCE = keccak256("payment");
     bytes32 private constant TARGET_SIGNAL = keccak256("init.execute");
-    // dock 子单内部阶段推进的授权面（B2）：open 后由 target plan publisher
-    // 显式授权给 executor 提交的目标词表内事实键。
     bytes32 private constant TARGET_INTAKE_SOURCE = keccak256("supply");
     bytes32 private constant TARGET_INTAKE_SIGNAL = keccak256("intake.demand_accepted");
-    // outside 触发出生事实（MINT 词表用，与 entrance 事实分离）。
     bytes32 private constant TARGET_OUT_SOURCE = keccak256("payment");
     bytes32 private constant TARGET_OUT_SIGNAL = keccak256("init.done");
     bytes32 private constant TARGET_OUT_STAGE = keccak256("out");
-    // 输出绑定回调的本地映射事实。
     bytes32 private constant LOCAL_MAPPED_SOURCE = keccak256("buyer");
     bytes32 private constant LOCAL_MAPPED_SIGNAL = keccak256("exec.str");
     bytes32 private constant LOCAL_PROGRESS_SOURCE = keccak256("buyer");
     bytes32 private constant LOCAL_PROGRESS_SIGNAL = keccak256("exec.progress");
-    // 尚未成立的远端事实（DockOutputNotReady 拒绝路径）。
     bytes32 private constant TARGET_PENDING_SIGNAL = keccak256("control.settle");
 
     bytes32 private constant ENTRANCE_PORT = keccak256("execute");
     bytes32 private constant DONE_PORT = keccak256("done");
     bytes32 private constant PROGRESS_OUT_PORT = keccak256("progress");
     bytes32 private constant SETTLE_PORT = keccak256("settle");
-    // 接口 output 端口叶的 canonical 信号 word（叶内容只经 outputsRoot
-    // membership 背书；与绑定侧事实键分属不同派生域）。
-    // 目标接口从未宣告的端口/信号 word（拒绝路径）。
     bytes32 private constant ROGUE_PORT = keccak256("rogue_port");
-    // 词表外事实键（端口已宣告但绑定内容错配的拒绝路径）。
     bytes32 private constant ROGUE_FACT_SOURCE = keccak256("source");
     bytes32 private constant ROGUE_FACT_SIGNAL = keccak256("signal");
-    // 同阶段的兄弟 hook（EMIT_READY，但从未就绪）——冒名开仓路径。
     bytes32 private constant PARENT_SIBLING_HOOK = keccak256("exec#SIBLING");
     bytes32 private constant PAYLOAD = bytes32(uint256(0xBEEF));
 
@@ -152,8 +130,6 @@ contract UVPDockingModuleTest {
     uint256 private constant TARGET_PUBLISHER_KEY = 0xB0B;
     address private constant ORDER_CREATOR = address(0xC0C0);
     address private constant KEEPER = address(0x5EED1);
-    // 一事一单：outside 触发订单 id 由合约按出生事实派生；父 plan 注册后
-    // 在 setUp 里镜像同一公式（dockInstanceId preimage 依赖父订单 id）。
     bytes32 private PARENT_ORDER_ID;
 
     UVPStateMachine private machine;
@@ -165,7 +141,6 @@ contract UVPDockingModuleTest {
     bytes32 private targetPlanId;
     bytes32 private runtimeDomain;
 
-    // open 路由派生量
     bytes32 private routeId;
     bytes32 private entranceBinding;
     bytes32 private outputBinding;
@@ -174,14 +149,11 @@ contract UVPDockingModuleTest {
     bytes32 private inputsRoot;
     bytes32 private outputsRoot;
     bytes32 private openRouteHash;
-    // existing 模式哈希（同绑定、modeWord=1）：作为第二片 route 叶提交，
-    // 供"open 拒绝 existing 路由"用例锚定。
     bytes32 private existingRouteHash;
     bytes32 private dockInstanceId;
     bytes32 private linkedOrderId;
     bytes32 private openPortLeaf;
     bytes32 private interfaceLeaf;
-    // 目标接口宣告的 output 端口叶（三叶树）与各绑定的 membership proof。
     bytes32 private interfaceOutputsRoot;
     bytes32 private donePortLeaf;
     bytes32 private progressPortLeaf;
@@ -195,22 +167,13 @@ contract UVPDockingModuleTest {
         docking = _docking();
         runtimeDomain = keccak256(abi.encode(DOMAIN_RUNTIME_EIP155, block.chainid, address(machine)));
         _computeStaticRouteParts();
-        // B-01：routeHash 承诺目标 planId——目标 plan 先注册，路由哈希按
-        // 注册身份计算，父 plan 再提交路由叶。
         targetPlanId = _registerTargetPlan();
         _computeRouteHashes();
-        // 父 plan 的 dockRoutesRoot 必须提交 routeHash（new + existing 两叶）。
         parentPlanId = _registerParentPlan();
         PARENT_ORDER_ID = machine.triggerOrderIdFor(parentPlanId, PARENT_STAGE, SIGNAL_START, PAYLOAD);
-        // dockInstanceId 的身份域包含 localPlanId，只有父 plan 注册后才能
-        // 计算最终的实例 ID。
         _rebindDockInstanceId();
         _spawnParentOrder();
     }
-
-    // ------------------------------------------------------------------
-    // happy path
-    // ------------------------------------------------------------------
 
     function testOpenCreatesIndependentChildAtomically() public {
         assertTrue(_open());
@@ -219,9 +182,7 @@ contract UVPDockingModuleTest {
         assertEq(localOrder, PARENT_ORDER_ID);
         assertEq(viewedInterfaceName, INTERFACE_NAME_ID);
         assertTrue(machine.orderExists(targetPlanId, linkedOrderId));
-        // 独立子订单身份。
         assertFalse(linkedOrderId == PARENT_ORDER_ID);
-        // entrance fact 写入 + 目标 dock 出生 hook Ready。
         (bool signalExists,,,,) = machine.getSignal(targetPlanId, linkedOrderId, TARGET_SOURCE, TARGET_SIGNAL);
         assertTrue(signalExists);
         UVPStateMachine.HookStatus status;
@@ -231,9 +192,6 @@ contract UVPDockingModuleTest {
         assertTrue(readyEmitted);
     }
 
-    /// B2：open 后 target plan publisher 对 dock 子单显式授权信号提交者；
-    /// 被授权的 executor 可在子单内部阶段提交事实，重复授权按出生通道
-    /// 语义（SignalSubmitterAlreadyAuthorized）拒绝。
     function testTargetPublisherAuthorizesDockedOrderSignals() public {
         assertTrue(_open());
         address publisher = vm.addr(TARGET_PUBLISHER_KEY);
@@ -257,8 +215,6 @@ contract UVPDockingModuleTest {
                 targetPlanId, linkedOrderId, TARGET_INTAKE_SOURCE, TARGET_INTAKE_SIGNAL, executor
             )
         );
-        // 被授权的 executor 提交目标词表内事实（属主阶段已由 dock entrance
-        // 物化）。
         vm.prank(executor);
         machine.submitSignal(
             targetPlanId,
@@ -285,7 +241,6 @@ contract UVPDockingModuleTest {
         docking.authorizeDockedOrderSignals(dockInstanceId, authorizations);
     }
 
-    /// 授权门：非目标 plan publisher 不能对 dock 子单写入信号授权。
     function testAuthorizeDockedOrderSignalsRejectsNonPublisher() public {
         assertTrue(_open());
         IUVPStateMachineCore.SignalAuthorization[] memory authorizations =
@@ -302,9 +257,6 @@ contract UVPDockingModuleTest {
         docking.authorizeDockedOrderSignals(dockInstanceId, authorizations);
     }
 
-    /// DockOpened/DockInputSubmitted 事件口径：open 原子发出开仓
-    /// 事件与 entrance 交付事件——DockInputSubmitted 的 payloadHash 由
-    /// committed 状态重算，只钉身份 topic。
     function testOpenEmitsDockOpenedAndEntranceInputSubmitted() public {
         vm.expectEmit(true, true, true, true, address(docking));
         emit UVPDockingModule.DockOpened(
@@ -334,7 +286,6 @@ contract UVPDockingModuleTest {
         assertTrue(_open());
     }
 
-    /// B-01 目标侧同意门：空同意且调用方非目标 plan publisher → 拒。
     function testOpenRejectsMissingTargetConsent() public {
         UVPDockingModule.OpenDockRequestV2 memory request = _openRequest(0);
         _expect(
@@ -356,7 +307,6 @@ contract UVPDockingModuleTest {
         );
     }
 
-    /// B-01 同意签名权威：非目标 plan publisher 的签名 → 拒。
     function testOpenRejectsWrongConsentSigner() public {
         UVPDockingModule.OpenDockRequestV2 memory request = _openRequest(0);
         UVPDockingModule.DockTargetConsentV1 memory consent = _consentFor(request);
@@ -383,8 +333,6 @@ contract UVPDockingModuleTest {
         );
     }
 
-    /// B-01 身份腿：调用方即目标 plan publisher（new 路由的子单 creator
-    /// 同源）时空同意放行。
     function testOpenAllowsPublisherAsOpenerWithoutSignature() public {
         vm.prank(vm.addr(TARGET_PUBLISHER_KEY));
         assertTrue(
@@ -403,9 +351,6 @@ contract UVPDockingModuleTest {
         );
     }
 
-    /// B-01 镜像计划不可抢注：路由叶承诺 targetPlanId——目标侧换成复制了
-    /// 同接口承诺的镜像 plan（variantPlan，同 publisher 注册）后，即便携
-    /// 该 plan publisher 的同意签名，routeHash 重算即失配拒绝。
     function testOpenRejectsMirrorPlanDespiteConsent() public {
         bytes32 variantPlan = _registerTargetPlanWithoutPendingCapability();
         UVPDockingModule.DockOutputBindingArg[] memory outputs = _outputs();
@@ -446,10 +391,6 @@ contract UVPDockingModuleTest {
         );
     }
 
-    /// 边数上限（B-02）：父订单真实 dock 边数账本达 MAX_DOCK_EDGES 后
-    /// 开仓拒绝。账本按存储布局推 slot（dockEdgeCountOfOrder 是模块第 8
-    /// 个存储变量，slot 7）；若布局漂移写入落空，本测试会响亮地变成
-    /// DockDepthMismatch。
     function testRejectsOpenAtMaxDockEdges() public {
         uint8 maxEdges = docking.MAX_DOCK_EDGES();
         bytes32 innerSlot = keccak256(abi.encode(parentPlanId, uint256(7)));
@@ -459,10 +400,6 @@ contract UVPDockingModuleTest {
         _openRaw(_openRequest(maxEdges));
     }
 
-    /// A linkedOrderId is disclosed in the open calldata.  Outside trigger
-    /// order ids are contract-derived from the fact (one-fact-one-order), so a
-    /// permissionless MINT trigger physically cannot select the disclosed dock
-    /// child id: squatting by id choice is closed at the derivation boundary.
     function testLinkedOrderNamespaceCannotBeSquatted() public {
         UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = _outsideTrigger(TARGET_OUT_SIGNAL);
         trigger.planId = targetPlanId;
@@ -472,29 +409,23 @@ contract UVPDockingModuleTest {
         trigger.sourceId = TARGET_OUT_SOURCE;
         trigger.idempotencyKey = keccak256("squat-attempt");
 
-        // 派生 id 与披露的 dock 子单号不同——调用方没有任何字段能影响它。
         bytes32 mintedOrderId =
             machine.triggerOrderIdFor(targetPlanId, TARGET_OUT_SOURCE, TARGET_OUT_SIGNAL, trigger.payloadHash);
         assertFalse(mintedOrderId == linkedOrderId);
 
         UVPStateMachine.SignalAuthorization[] memory auths = new UVPStateMachine.SignalAuthorization[](1);
         auths[0] = _auth(TARGET_OUT_SOURCE, TARGET_OUT_SIGNAL, trigger.submitter);
-        // 出生事实必须在目标 plan 能力词表内（relation=0 携证自证）：
-        // 目标 plan 有词表，按其树造 proof。
         machine.triggerOrderFromOutsideFor(
             trigger, auths, _sign(SUBMITTER_KEY, _outsideDigestFor(trigger, auths)), _birthAttribution(trigger)
         );
         assertTrue(machine.orderExists(targetPlanId, mintedOrderId));
         assertFalse(machine.orderExists(targetPlanId, linkedOrderId));
 
-        // Same fact replayed derives the same id and is idempotently rejected.
         _expect(abi.encodeWithSelector(UVPStateMachine.OrderAlreadyRegistered.selector));
         machine.triggerOrderFromOutsideFor(
             trigger, auths, _sign(SUBMITTER_KEY, _outsideDigestFor(trigger, auths)), _birthAttribution(trigger)
         );
 
-        // The legitimate module path remains the only creator of a dock
-        // namespace order and succeeds after the rejected front-run attempt.
         assertTrue(_open());
         assertTrue(machine.orderExists(targetPlanId, linkedOrderId));
     }
@@ -507,9 +438,6 @@ contract UVPDockingModuleTest {
     }
 
     function testOpenMarksEntranceInputDelivered() public {
-        // UVP-08：open 即 entrance input 的一次交付——投递账本必须与链上
-        // 事实一致（否则事后重放 submitDockedInput(entrance) 只会撞
-        // mailbox 既有事实 DockInputConflict，账本却显示未交付）。
         assertTrue(_open());
         assertTrue(docking.dockInputDelivered(dockInstanceId, entranceBinding));
         assertFalse(
@@ -535,15 +463,12 @@ contract UVPDockingModuleTest {
         assertFalse(docking.submitDockedSignal(dockInstanceId, outputBinding, _coreNoAttribution()));
     }
 
-    /// terminal 语义移除后没有跨输出终态闸：任意两条输出绑定各自按
-    /// 交付账本独立幂等（A14：一条绑定一个事实槽位，不得复用/覆盖）。
     function testOutputDeliveriesArePerBindingIdempotentWithoutTerminalGate() public {
         assertTrue(_open());
         vm.prank(KEEPER);
         assertTrue(docking.submitDockedSignal(dockInstanceId, outputBinding, _coreNoAttribution()));
         vm.prank(KEEPER);
         assertFalse(docking.submitDockedSignal(dockInstanceId, outputBinding, _coreNoAttribution()));
-        // 另一条输出绑定读同一远端事实、写不同本地事实：仍可交付。
         vm.prank(KEEPER);
         assertTrue(docking.submitDockedSignal(dockInstanceId, progressOutBinding, _coreNoAttribution()));
         vm.prank(KEEPER);
@@ -563,10 +488,6 @@ contract UVPDockingModuleTest {
         docking.submitDockedSignal(dockInstanceId, settleBinding, _coreNoAttribution());
     }
 
-    /// 同一本地事实键的多条 output 绑定（不同端口 → 不同 bindingHash，链上
-    /// 无去重）：首条交付后，兄弟绑定镜像同一本地事实键按 payload 幂等吸收
-    /// （等价交付返回 true），不再永久撞 SignalAlreadyExists；交付账本只记实际
-    /// 交付过的绑定。
     function testSiblingOutputBindingOnSameLocalKeyIsAbsorbed() public {
         UVPDockingModule.DockOutputBindingArg[] memory outputs = new UVPDockingModule.DockOutputBindingArg[](2);
         bytes32 doneBinding = keccak256(
@@ -630,9 +551,6 @@ contract UVPDockingModuleTest {
 
         vm.prank(KEEPER);
         assertTrue(docking.submitDockedSignal(route.dockInstanceId, doneBinding, _coreNoAttribution()));
-        // 兄弟绑定镜像同一本地事实键、同一 payload：幂等吸收，不 revert——
-        // 吸收即收敛为已交付（账本置位 + DockOutputSatisfied 事件），否则
-        // 投影侧永远视其为未交付，keeper 每个重发窗口都会再提交一次。
         (, bytes32 targetPayload,,, address targetFactSubmitter) =
             machine.getSignal(targetPlanId, route.linkedOrderId, TARGET_SOURCE, TARGET_SIGNAL);
         vm.prank(KEEPER);
@@ -652,16 +570,11 @@ contract UVPDockingModuleTest {
         assertTrue(docking.submitDockedSignal(route.dockInstanceId, progressBinding, _coreNoAttribution()));
         assertTrue(docking.dockOutputDelivered(route.dockInstanceId, progressBinding));
         assertTrue(docking.dockOutputDelivered(route.dockInstanceId, doneBinding));
-        // 账本置位后的重复提交走交付账本短路：不再发任何事件。
         vm.prank(KEEPER);
         assertFalse(docking.submitDockedSignal(route.dockInstanceId, progressBinding, _coreNoAttribution()));
         (bool mapped,,,,) = machine.getSignal(route.planId, route.orderId, LOCAL_MAPPED_SOURCE, LOCAL_MAPPED_SIGNAL);
         assertTrue(mapped);
     }
-
-    // ------------------------------------------------------------------
-    // 拒绝路径
-    // ------------------------------------------------------------------
 
     function testRejectsWrongRouteProof() public {
         bytes32[] memory badProof = new bytes32[](1);
@@ -670,7 +583,6 @@ contract UVPDockingModuleTest {
         _openWith(badProof, _interfaceProof());
     }
 
-    /// preimage word 篡改在绑定重算处即失配（接口名进每条绑定哈希）。
     function testRejectsTamperedInterfaceNameInBindings() public {
         UVPDockingModule.OpenDockRequestV2 memory request = _openRequest(0);
         request.interfaceNameId = keccak256("other_interface");
@@ -691,13 +603,8 @@ contract UVPDockingModuleTest {
         _openRaw(request);
     }
 
-    /// 自洽重哈希的输出篡改也会换掉 outputsRoot——routeHash 重算失配。
     function testRejectsSelfHashedOutputTamper() public {
         UVPDockingModule.DockOutputBindingArg[] memory outputs = _outputs();
-        // 篡改 local 侧（端口叶不含 localSourceId/localSignalId）：membership
-        // 照过，路由哈希被自哈希重算——本用例专测"未提交的 route 不构成
-        // 开仓授权"；target 侧篡改由叶 V3 的 membership 先行拒绝（见
-        // testOpenRejectsOutputBoundToDifferentDeclaredFact）。
         outputs[0].localSignalId = TARGET_PENDING_SIGNAL;
         outputs[0].bindingHash = keccak256(
             abi.encode(
@@ -744,9 +651,6 @@ contract UVPDockingModuleTest {
         );
     }
 
-    /// open 路由钉 new：existing 模式（modeWord=1）的 routeHash 无法通过
-    /// open 的重算（重算钉 modeWord=0），显式失配拒绝（A05）——existing
-    /// 走 attachDockedOrder（见 UVPDockingModuleAttachTest）。
     function testRejectsExistingModeRoute() public {
         UVPDockingModule.OpenDockRequestV2 memory request = _openRequest(0);
         request.routeHash = existingRouteHash;
@@ -775,8 +679,6 @@ contract UVPDockingModuleTest {
         _openRaw(request);
     }
 
-    /// 接口承诺按 keccak(uid) 寻址、route 按 definitionRefHash 寻址——
-    /// 两者必须同源：uid 换绑会让 child 开进另一身份的接口树。
     function testRejectsTargetIdentityMismatch() public {
         UVPDockingModule.OpenDockRequestV2 memory request = _openRequest(0);
         bytes32 rogueUid = keccak256("zx-0000000000000000000000000000dead");
@@ -793,16 +695,14 @@ contract UVPDockingModuleTest {
         _openRaw(request);
     }
 
-    /// new 路由要求目标接口宣告 new（orderModesWord bit0）。
     function testRejectsInterfaceWithoutNewMode() public {
         UVPDockingModule.DockInterfaceProofV2 memory proof = _interfaceProof();
-        proof.commitment.orderModesWord = 2; // existing-only
+        proof.commitment.orderModesWord = 2;
         _expect(abi.encodeWithSelector(UVPDockingModule.DockInterfaceModeUnsupported.selector,
                 2));
         _openWith(_openRouteProof(), proof);
     }
 
-    /// new 模式恰一条 input 绑定（出生锚）：两条即拒绝。
     function testRejectsMultipleInputBindings() public {
         UVPDockingModule.DockInputBindingArg[] memory inputs = new UVPDockingModule.DockInputBindingArg[](2);
         inputs[0] = _inputs()[0];
@@ -850,7 +750,6 @@ contract UVPDockingModuleTest {
 
     function testRejectsSecondChildForSameRouteInstance() public {
         assertTrue(_open());
-        // 篡改 child ID 尝试开第二单：身份推导先失败。
         UVPDockingModule.OpenDockRequestV2 memory request = _openRequest(0);
         request.dockInstanceId = bytes32(uint256(0x0DD0));
         bytes32 runtimeDomainLocal = keccak256(abi.encode(DOMAIN_RUNTIME_EIP155, block.chainid, address(machine)));
@@ -876,13 +775,6 @@ contract UVPDockingModuleTest {
         _openRaw(request);
     }
 
-    // ------------------------------------------------------------------
-    // 开仓门与实例身份回归：恒等校验 / 出生锚依赖 / 端口词表 /
-    // preimage 绑定 / permit 验签 / 事实署名
-    // ------------------------------------------------------------------
-
-    /// 就绪门只看调用方自报 request.localHookId 时，已提交 route 的
-    /// 出生锚可绑兄弟 hook，冒名者借就绪 hook 提前开仓——恒等校验拒绝。
     function testOpenRejectsEntranceHookImpersonation() public {
         RogueRoute memory route =
             _registerRogueRouteParent(PARENT_SIBLING_HOOK,
@@ -890,7 +782,6 @@ contract UVPDockingModuleTest {
                 TARGET_SIGNAL,
                 _outputs());
         UVPDockingModule.OpenDockRequestV2 memory request = _rogueOpenRequest(route);
-        // 冒名：请求声明就绪的 EXEC hook，出生锚实际绑未就绪的兄弟 hook。
         request.localHookId = PARENT_EXEC_HOOK;
         UVPDockingModule.DockInputBindingArg[] memory inputs = new UVPDockingModule.DockInputBindingArg[](1);
         inputs[0] = UVPDockingModule.DockInputBindingArg({
@@ -919,10 +810,7 @@ contract UVPDockingModuleTest {
         );
     }
 
-    /// 出生锚事实键不在目标 mailbox hook 的 SIGNAL 依赖声明内（首事实
-    /// 键先到先得注入）——一致性闸拒绝。
     function testOpenRejectsEntranceFactNotDeclaredByTargetHook() public {
-        // TARGET_PENDING_SIGNAL 不是目标 plan 任何 hook 的依赖原子。
         RogueRoute memory route =
             _registerRogueRouteParent(PARENT_EXEC_HOOK, TARGET_SOURCE, TARGET_PENDING_SIGNAL, _outputs());
         UVPDockingModule.OpenDockRequestV2 memory request = _rogueOpenRequest(route);
@@ -956,8 +844,6 @@ contract UVPDockingModuleTest {
         );
     }
 
-    /// output 绑定指向目标接口从未宣告的端口——outputsRoot membership
-    /// 拒绝（重算绑定哈希只入 routeHash，不构成目标侧承诺）。
     function testOpenRejectsUndeclaredOutputPort() public {
         UVPDockingModule.DockOutputBindingArg[] memory outputs = _outputs();
         outputs[2].portKey = ROGUE_PORT;
@@ -995,10 +881,6 @@ contract UVPDockingModuleTest {
         );
     }
 
-    /// 端口已宣告且绑定即宣告事实（membership 通过），但该事实不在目标
-    /// plan 的产出词表（relation=0 capability）——接口与词表自相矛盾的
-    /// 注册在词表闸被拒：镜像目标接口"宣告了却不产出"的事实不允许开仓。
-    /// 用变体目标 plan 构造（接口承诺原样、词表剔除 TARGET_PENDING_SIGNAL）。
     function testOpenRejectsOutputFactNotDeclaredByTargetPlan() public {
         bytes32 variantPlan = _registerTargetPlanWithoutPendingCapability();
         UVPDockingModule.DockOutputBindingArg[] memory outputs = _outputs();
@@ -1017,20 +899,12 @@ contract UVPDockingModuleTest {
                 _rogueInputs(route),
                 outputs,
                 _openAuth(_permitEmpty(), _consentFor(_rogueOpenRequestTo(route, variantPlan))),
-                // 词表剔除 TARGET_PENDING_SIGNAL：outputs[2] 的属主查询返回零
-                // 声明，词表闸按该项事实键拒绝（本用例的可达性构造）。
                 _outputAttributionsFor(variantPlan, outputs),
                 _coreNoAttribution()
             )
         );
     }
 
-    /// 词表内错配：DONE 端口宣告的事实是 (TARGET_SOURCE, TARGET_SIGNAL)，
-    /// 绑定改指向词表内的另一条事实 (TARGET_SOURCE, TARGET_PENDING_SIGNAL)
-    /// （SETTLE 端口的宣告事实）。端口叶 V3 直接钉事实键分量，错配绑定
-    /// 在 outputsRoot membership 处失配——目标方对"该端口暴露哪条事实"
-    /// 的承诺由此闭合，不再依赖词表闸兜底（词表只证明可产出，不证明
-    /// 经此端口暴露）。
     function testOpenRejectsOutputBoundToDifferentDeclaredFact() public {
         UVPDockingModule.DockOutputBindingArg[] memory outputs = _outputs();
         outputs[0].targetSignalId = TARGET_PENDING_SIGNAL;
@@ -1068,11 +942,6 @@ contract UVPDockingModuleTest {
         );
     }
 
-    /// dock output 镜像事实的记账提交者取父单 creator（与 open/entrance 的
-    /// "dock 通道事实提交者记 creator"同口径），不取子单事实的
-    /// originalSubmitter——外部 plan 参与方地址不得钉进父单
-    /// lastSignalSubmitter（HANDOFF 无 active patch 时的"上一执行者"
-    /// 回退链）。子侧归因由 DockOutputSubmitted 携带 originalSubmitter。
     function testSubmitDockedSignalRecordsParentCreatorAsParentFactSubmitter() public {
         assertTrue(_open());
         vm.prank(KEEPER);
@@ -1090,46 +959,18 @@ contract UVPDockingModuleTest {
         );
     }
 
-    /// targetPlanId 进 dockInstanceId preimage——换目标 plan 即换实例
-    /// 身份；接口承诺 word 可被复制，plan 身份不可冒名。
-    function testDockInstancePreimageBindsTargetPlan() public {
-        bytes32 otherPlanInstance = keccak256(
-            abi.encode(
-                DOMAIN_DOCK_INSTANCE,
-                runtimeDomain,
-                parentPlanId,
-                localDefinitionRef,
-                PARENT_ORDER_ID,
-                routeId,
-                openRouteHash,
-                uint256(0),
-                INTERFACE_NAME_ID,
-                keccak256("other-target-plan")
-            )
-        );
-        assertFalse(otherPlanInstance == dockInstanceId);
-    }
-
-    /// dock 事实提交者记目标 plan publisher（creator），keeper 只落
-    /// relayer/opener——基础设施地址不进业务归因。
     function testOpenRecordsPublisherAsEntranceFactSubmitter() public {
         assertTrue(_open());
         (,,,, address entranceSubmitter) = machine.getSignal(targetPlanId, linkedOrderId, TARGET_SOURCE, TARGET_SIGNAL);
         assertTrue(entranceSubmitter == vm.addr(TARGET_PUBLISHER_KEY));
     }
 
-    /// permit 验签 v 值严格 {27,28}（与其余 EIP-712 入口同口径），
-    /// 原始 0/1 不做归一化。
     function testPermitRejectsRawVValue() public {
         UVPDockingModule.EntrancePermitV2 memory permit = _permitSigned(1);
         permit.signature[64] = bytes1(uint8(0));
         _expect(abi.encodeWithSelector(ECDSA.InvalidSignatureV.selector, uint8(0)));
         _openWithPermit(_interfaceProof(), permit);
     }
-
-    // ------------------------------------------------------------------
-    // permit V2
-    // ------------------------------------------------------------------
 
     function testPermitHappyPath() public {
         UVPDockingModule.EntrancePermitV2 memory permit = _permitSigned(1);
@@ -1139,8 +980,6 @@ contract UVPDockingModuleTest {
     }
 
     function testPermitDigestMatchesEip712Formula() public {
-        // 合约 digest 与 EIP-712 规范公式（version "4"、typehash V2 含
-        // interfaceNameId）逐字一致；数值 golden 对拍在 DockManifestParity。
         bytes32 digest = docking.entrancePermitDigest(
             targetPlanId,
             ENTRANCE_PORT,
@@ -1183,9 +1022,6 @@ contract UVPDockingModuleTest {
         UVPDockingModule.EntrancePermitV2 memory permit = _permitSigned(1);
         assertTrue(_openWithPermit(_interfaceProof(), permit));
 
-        // The idempotent path is checked before permit nonce validation. A
-        // replay therefore returns false instead of reverting on the consumed
-        // nonce.
         assertFalse(_openWithPermit(_interfaceProof(), permit));
         assertEq(docking.usedEntrancePermitNonce(dockInstanceId), 1);
     }
@@ -1210,10 +1046,6 @@ contract UVPDockingModuleTest {
         _openWithPermit(_interfaceProof(), permit);
     }
 
-    // ------------------------------------------------------------------
-    // 碰撞隔离 + gas
-    // ------------------------------------------------------------------
-
     function testCrossPlanBareOrderIdCollisionIsolated() public {
         assertTrue(_open());
         assertTrue(machine.orderExists(parentPlanId, PARENT_ORDER_ID));
@@ -1230,10 +1062,6 @@ contract UVPDockingModuleTest {
         vm.prank(KEEPER);
         docking.submitDockedSignal(dockInstanceId, outputBinding, _coreNoAttribution());
     }
-
-    // ------------------------------------------------------------------
-    // setup
-    // ------------------------------------------------------------------
 
     UVPDockingModule private _dockingModule;
     UVPPlanMetadataModule private _metadataModule;
@@ -1265,7 +1093,6 @@ contract UVPDockingModuleTest {
 
     function _computeStaticRouteParts() private {
         routeId = keccak256(abi.encode(DOMAIN_ROUTE_ID, localDefinitionRef, PARENT_EXEC_STAGE));
-        // new 模式恰一条 input 绑定：entrance 即出生锚。
         entranceBinding = keccak256(
             abi.encode(
                 DOMAIN_INPUT_BINDING,
@@ -1322,15 +1149,9 @@ contract UVPDockingModuleTest {
         outputLeaves[2] = settleBinding;
         outputsRoot = DockMerkle.root(outputLeaves);
 
-
-
-        // entrance 端口叶 → 接口 inputsRoot（单叶）→ interfaceLeaf → 目标
-        // plan 的 dockInterfaceRoot（单叶）。
         openPortLeaf = keccak256(
             abi.encode(DOMAIN_INTERFACE_INPUT, TARGET_UID_ID, INTERFACE_NAME_ID, ENTRANCE_PORT, TARGET_ENTRANCE_HOOK)
         );
-        // output 端口叶（三叶）：全部宣告进接口 outputsRoot——每条 output
-        // 绑定在 open 时必须给出各自端口的 membership proof。
         donePortLeaf = _outputPortLeaf(DONE_PORT, TARGET_SOURCE, TARGET_SIGNAL);
         progressPortLeaf = _outputPortLeaf(PROGRESS_OUT_PORT, TARGET_SOURCE, TARGET_SIGNAL);
         settlePortLeaf = _outputPortLeaf(SETTLE_PORT, TARGET_SOURCE, TARGET_PENDING_SIGNAL);
@@ -1348,7 +1169,6 @@ contract UVPDockingModuleTest {
         );
     }
 
-    /// B-01：routeHash（域 V3）承诺目标 planId——须在目标 plan 注册后计算。
     function _computeRouteHashes() private {
         openRouteHash = keccak256(
             abi.encode(
@@ -1357,7 +1177,7 @@ contract UVPDockingModuleTest {
                 targetDefinitionRef,
                 targetPlanId,
                 INTERFACE_NAME_ID,
-                uint256(0), // modeWord new
+                uint256(0),
                 inputsRoot,
                 outputsRoot
             )
@@ -1369,7 +1189,7 @@ contract UVPDockingModuleTest {
                 targetDefinitionRef,
                 targetPlanId,
                 INTERFACE_NAME_ID,
-                uint256(1), // existing：链轨不支持，仅作为已提交叶参与拒绝用例
+                uint256(1),
                 inputsRoot,
                 outputsRoot
             )
@@ -1383,9 +1203,6 @@ contract UVPDockingModuleTest {
             );
     }
 
-    /// 三叶树（排序去重后 [p0,p1,p2]：上层 = [H(p0,p1), p2]）的三个
-    /// membership proof——按叶在排序后的位置给兄弟节点，DockMerkle.pair
-    /// 内部自排序。
     function _threeLeafProofs(bytes32 la, bytes32 lb, bytes32 lc)
         private
         pure
@@ -1450,10 +1267,6 @@ contract UVPDockingModuleTest {
             instructions: instructions,
             dependencyKeys: deps
         });
-        // Keep a MINT trigger in the target plan so the namespace regression
-        // test exercises the real permissionless front-run surface.
-        // 词表内事实（TARGET_OUT_SOURCE::TARGET_OUT_SIGNAL，relation 0）：
-        // outside 触发的出生事实必须在 plan capability 词表内。
         UVPStateMachine.Instruction[] memory mintInstructions = new UVPStateMachine.Instruction[](1);
         mintInstructions[0] = UVPStateMachine.Instruction({
             op: uint8(UVPStateMachine.InstructionOp.Signal),
@@ -1474,15 +1287,12 @@ contract UVPDockingModuleTest {
         });
         StageSelectorBinding[] memory bindings = new StageSelectorBinding[](1);
         bindings[0] = StageSelectorBinding({selectorStageId: TARGET_STAGE, targetStageId: TARGET_STAGE});
-        // 词表（编译器产物同口径）：出生事实 + 两个 output 绑定镜像的事实
-        // 都按 relation=0 capability 声明——open 的 output 事实键词表闸
-        // （DockOutputFactNotDeclared）以此为产出词表。
         SignalCapability[] memory capabilities = new SignalCapability[](4);
         capabilities[0] = SignalCapability({
             stageId: TARGET_STAGE,
             targetSourceId: TARGET_OUT_SOURCE,
             signalId: TARGET_OUT_SIGNAL,
-            targetOrderRelation: 0 // SIGNAL_TARGET_CURRENT_ORDER
+            targetOrderRelation: 0
         });
         capabilities[1] = SignalCapability({
             stageId: TARGET_STAGE, targetSourceId: TARGET_SOURCE, signalId: TARGET_SIGNAL, targetOrderRelation: 0
@@ -1493,8 +1303,6 @@ contract UVPDockingModuleTest {
             signalId: TARGET_PENDING_SIGNAL,
             targetOrderRelation: 0
         });
-        // dock 子单内部阶段推进事实（B2）：与模板 supply::intake.demand_accepted
-        // 同形，属主是 dock entrance 物化的 target stage。
         capabilities[3] = SignalCapability({
             stageId: TARGET_STAGE,
             targetSourceId: TARGET_INTAKE_SOURCE,
@@ -1511,9 +1319,6 @@ contract UVPDockingModuleTest {
         );
     }
 
-    /// 词表剔除 TARGET_PENDING_SIGNAL 的变体目标 plan：接口承诺原样
-    ///（SETTLE 端口叶仍宣告该事实）——用于构造"接口与词表自相矛盾"的
-    /// 注册，词表闸（DockOutputFactNotDeclared）的可达性测试。
     function _registerTargetPlanWithoutPendingCapability() private returns (bytes32) {
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
         UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](1);
@@ -1623,9 +1428,6 @@ contract UVPDockingModuleTest {
         });
     }
 
-    // 自建第二份父 plan（route 叶全由调用方给定）。EXEC hook 就绪、同阶段
-    // 兄弟 hook（监听 SIGNAL_SIBLING，永不喂入）保持未就绪——恒等校验 /
-    // 出生锚 / 端口词表三条拒绝路径共用。
     struct RogueRoute {
         bytes32 planId;
         bytes32 orderId;
@@ -1676,7 +1478,7 @@ contract UVPDockingModuleTest {
                 targetDefinitionRef,
                 targetPlan,
                 INTERFACE_NAME_ID,
-                uint256(0), // modeWord new
+                uint256(0),
                 DockMerkle.root(inputLeaves),
                 DockMerkle.root(outputLeaves)
             )
@@ -1725,7 +1527,7 @@ contract UVPDockingModuleTest {
                 route.orderId,
                 routeId,
                 route.routeHash,
-                uint256(0), // modeWord new
+                uint256(0),
                 INTERFACE_NAME_ID,
                 targetPlan
             )
@@ -1734,7 +1536,7 @@ contract UVPDockingModuleTest {
             uint256(keccak256(abi.encode(DOMAIN_DOCK_ORDER, route.dockInstanceId, targetDefinitionRef)))
                 | uint256(DOCK_ORDER_NAMESPACE_MASK)
         );
-        route.routeProof = new bytes32[](0); // 单叶树
+        route.routeProof = new bytes32[](0);
         return route;
     }
 
@@ -1787,7 +1589,7 @@ contract UVPDockingModuleTest {
                 PARENT_ORDER_ID,
                 routeId,
                 openRouteHash,
-                uint256(0), // modeWord new
+                uint256(0),
                 INTERFACE_NAME_ID,
                 targetPlanId
             )
@@ -1811,12 +1613,6 @@ contract UVPDockingModuleTest {
             parentPlanId, PARENT_ORDER_ID, PARENT_STAGE, SIGNAL_EXEC, PAYLOAD, bytes32(uint256(0x77)), _noAttribution()
         );
     }
-
-    // ------------------------------------------------------------------
-    // 能力表测试基建：链上只存 capabilitiesRoot，测试镜像
-    // DockMerkle / UVPPlanMetadataModule 的叶子公式建树并留档排序去重
-    // 叶子表，供 open 的 outputAttributions / 出生事实属主自证造 proof。
-    // ------------------------------------------------------------------
 
     struct StageSelectorBinding {
         bytes32 selectorStageId;
@@ -1908,8 +1704,6 @@ contract UVPDockingModuleTest {
         }
     }
 
-    /// 排序去重（字节升序）——与 DockMerkle.sortUnique 同口径的测试镜像，
-    /// 供 _merkleProofFor 按索引定位叶子。
     function _sortedUnique(bytes32[] memory raw) private pure returns (bytes32[] memory sorted) {
         sorted = new bytes32[](raw.length);
         uint256 count;
@@ -1945,8 +1739,6 @@ contract UVPDockingModuleTest {
         return left <= right ? keccak256(abi.encodePacked(left, right)) : keccak256(abi.encodePacked(right, left));
     }
 
-    /// 排序去重叶表上的 membership proof：奇数尾叶直接提升（与
-    /// DockMerkle.root 逐层配对一致）。
     function _merkleProofFor(bytes32[] memory sorted, bytes32 leaf) private pure returns (bytes32[] memory proof) {
         uint256 index = type(uint256).max;
         for (uint256 i = 0; i < sorted.length; i++) {
@@ -1982,17 +1774,12 @@ contract UVPDockingModuleTest {
         }
     }
 
-    // 零声明（词表外/不声明口径）：machine 入口用 UVPStateMachine 自有
-    // 结构类型，docking 入口用 IUVPStateMachineCore 类型——跨类型结构体
-    // 不能隐式转换，两族各备一份。
     function _noAttribution() private pure returns (UVPStateMachine.FactAttribution memory) {
         return UVPStateMachine.FactAttribution({
             sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
         });
     }
 
-    /// 按测试留档能力表构造 core 类型属主自证（openDockedOrder 的
-    /// entranceAttribution / submitDockedInput 的 attribution 用）。
     function _coreFactAttributionFor(bytes32 planId, bytes32 sourceId, bytes32 signalId)
         private
         view
@@ -2007,8 +1794,6 @@ contract UVPDockingModuleTest {
         });
     }
 
-    /// dock 通道标准事实的属主自证：目标 plan 词表内的 TARGET_SOURCE/
-    /// TARGET_SIGNAL（无词表 plan 返回零声明——词表闸放行口径）。
     function _coreEntranceFactAttribution() private view returns (IUVPStateMachineCore.FactAttribution memory) {
         return _coreFactAttributionFor(targetPlanId, TARGET_SOURCE, TARGET_SIGNAL);
     }
@@ -2023,8 +1808,6 @@ contract UVPDockingModuleTest {
         return IUVPStateMachineCore.SelectorBindingProof({selectorStageId: bytes32(0), proof: new bytes32[](0)});
     }
 
-    /// 按测试留档的能力表构造 (sourceId, signalId) 的 relation=0 属主
-    /// 自证（machine 侧类型）；词表内无该键时返回零声明（词表外口径）。
     function _factAttributionFor(bytes32 planId, bytes32 sourceId, bytes32 signalId)
         private
         view
@@ -2051,8 +1834,6 @@ contract UVPDockingModuleTest {
         return _noAttribution();
     }
 
-    /// 出生事实属主自证：按 trigger 自己的 plan 词表造证（无词表 plan
-    /// 返回零声明——词表闸放行口径）。
     function _birthAttribution(UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger)
         private
         view
@@ -2061,10 +1842,6 @@ contract UVPDockingModuleTest {
         return _factAttributionFor(trigger.planId, trigger.sourceId, trigger.signalId);
     }
 
-    /// open 的 outputAttributions：与 outputs 对齐的逐项属主证明（docking
-    /// 侧类型），键取 outputs[i] 的 targetSourceId/targetSignalId；词表内
-    /// 无该键的项返回零声明——有词表目标 plan 会在词表闸处按该项键拒绝
-    /// （DockOutputFactNotDeclared），正是拒绝路径用例的构造材料。
     function _outputAttributionsFor(bytes32 planId, UVPDockingModule.DockOutputBindingArg[] memory outputs)
         private
         view
@@ -2101,10 +1878,6 @@ contract UVPDockingModuleTest {
             attributions[i] = attribution;
         }
     }
-
-    // ------------------------------------------------------------------
-    // calldata builders
-    // ------------------------------------------------------------------
 
     function _open() private returns (bool) {
         return _openWith(_openRouteProof(), _interfaceProof());
@@ -2206,8 +1979,8 @@ contract UVPDockingModuleTest {
 
     function _openInterfaceCommitment() private view returns (UVPDockingModule.DockInterfaceCommitmentV2 memory) {
         return UVPDockingModule.DockInterfaceCommitmentV2({
-            orderModesWord: 1, // [new]
-            inputsRoot: openPortLeaf, // 单端口叶树
+            orderModesWord: 1,
+            inputsRoot: openPortLeaf,
             outputsRoot: interfaceOutputsRoot
         });
     }
@@ -2274,10 +2047,6 @@ contract UVPDockingModuleTest {
         "UVPDockOpenConsentV1(bytes32 targetPlanId,bytes32 interfaceNameId,bytes32 localPlanId,bytes32 localOrderId,bytes32 routeId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,uint256 nonce,uint256 deadline)"
     );
 
-    /// B-01 目标侧同意：目标 plan publisher（TARGET_PUBLISHER_KEY，同时是
-    /// 子单 creator 权威）对本次 open 的 EIP-712 同意签名。digest 本地重算
-    ///（不调模块 view）：本 helper 在 open 调用实参处求值，模块 view 调用
-    /// 会吃掉测试先行设置的 expectRevert。
     function _consentFor(UVPDockingModule.OpenDockRequestV2 memory request)
         private
         returns (UVPDockingModule.DockTargetConsentV1 memory)
@@ -2433,7 +2202,7 @@ contract UVPDockingModuleTest {
 
     function _outsideTrigger(bytes32 signalId) private returns (UVPStateMachine.TriggerOrderFromOutsideRequest memory) {
         return UVPStateMachine.TriggerOrderFromOutsideRequest({
-            planId: bytes32(0), // 由调用方覆盖
+            planId: bytes32(0),
             creator: ORDER_CREATOR,
             triggerHookId: PARENT_START_HOOK,
             triggerStageId: PARENT_STAGE,
@@ -2513,11 +2282,11 @@ contract UVPDockingModuleTest {
     }
 
     function _openPortProof() private pure returns (bytes32[] memory) {
-        return new bytes32[](0); // 单叶树
+        return new bytes32[](0);
     }
 
     function _openInterfaceProof() private pure returns (bytes32[] memory) {
-        return new bytes32[](0); // 单叶树
+        return new bytes32[](0);
     }
 
     function _siblingProof(bytes32 sibling) private pure returns (bytes32[] memory) {

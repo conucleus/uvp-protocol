@@ -40,10 +40,8 @@ import type {
 } from "../../types/index.js";
 
 /**
- * hook 编译转换（自 onchain-hook-plan.ts 原样迁入）：条件 AST → 栈机指令、
- * hook 周边声明（executor route / selector binding / signal capability）→
- * 链轨形态。闭集词表与去重键复用 validate/capabilities，承诺派生复用
- * hash/route，排序比较子复用 canonical/ordering。
+ * hook 编译转换：条件 AST → 栈机指令，hook 周边声明（executor route /
+ * selector binding / signal capability）→ 链轨形态。
  */
 
 function compileHookInstructions(
@@ -64,18 +62,6 @@ function compileConditionInstructions(
     case "signal":
       return [signalInstruction(source, condition.signalName)];
     case "subscription":
-      // 出生订阅上链的现行三线口径（只描述现状，行为不动）：
-      // - outside 出生（triggerOrderFromOutsideFor）：出生事实记录在【新
-      //   订单】上，mint hook 在新订单内求值并物化新订单的阶段；
-      // - order-link 出生（triggerOrderFromSignalFromModule）：新单 plan 的
-      //   trigger hook 定义只用来【预检】origin 订单的信号状态
-      //   （_requireTriggerHookReadyForOrder），随后直接标记 Ready 并物化
-      //   【新订单】的阶段——源订单只被读取，绝不被链接路径求值或物化；
-      // - dock 出生（openDockedOrder）：entrance 事实由模块写入新订单后
-      //   标记 Ready。
-      // 编译为一条 SIGNAL 指令即可，链上不存在独立的订阅投递子系统。非出
-      // 生阶段（route=fanin 按类扇入 / 按单路由）的订阅是云侧运行时投递语
-      // 义，仍不上链。
       if (options.orderTriggerKind === "none") {
         throw new HookPlanCompilationError([
           `on-chain HookPlan only supports subscription entries on order-trigger hooks `
@@ -105,9 +91,6 @@ function compileConditionInstructions(
         { op: "OR", arity: condition.terms.length },
       ];
     case "delay":
-      // order-trigger hook 内禁止 DELAY（_validateHook 镜像，产出侧第一
-      // 道）：出生事实与订单创建同笔交易，Delay(SIGNAL) 必得 Wait，出生
-      // 路径永久 InvalidTriggerHook。
       if (options.orderTriggerKind !== "none") {
         throw new HookPlanCompilationError([
           `on-chain order-trigger hook (${options.orderTriggerKind}) must not contain DELAY `
@@ -143,8 +126,6 @@ function signalInstruction(
 function compileExecutorRoute(
   route: HookPlanExecutorRoute,
 ): OnchainExecutorRoute {
-  // 与 Rust 编译入口同口径：supplierID 拒空白（不只是空串）——空白 id 是
-  // "有值"的假形态，烧进 executorHash 后消费侧无法寻址执行者。
   if (
     route.executor.supplierID === undefined ||
     route.executor.supplierID.trim().length === 0
@@ -153,23 +134,12 @@ function compileExecutorRoute(
       `executor route "${route.stageIdentifier}" (supplierType=${String(route.executor.supplierType)}) is missing a non-empty executor.supplierID`,
     ]);
   }
-  // supplierType 闭集（rule executor-supplier-type-closed-enum 的链轨编译
-  // 入口镜像）：executor 路由只进制品承诺（executorHash → planHash），
-  // 不进链上 PlanCommit（实参只有 hooksHash/capabilitiesRoot/dock
-  // roots），链上没有闭集守卫——闭集外字符串只存在编译边界这一道拦截。
-  // 精确匹配、不 trim：executorHash 哈希的是 executor 原文，trim 后匹配
-  // 会放行 " organization " 这类原文——匹配面放行、承诺面按原文分叉，
-  // 同一值既被宽容又被严格。
   const supplierType = String(route.executor.supplierType);
   if (!SUPPLIER_TYPES.includes(supplierType)) {
     throw new HookPlanCompilationError([
       `executor route "${route.stageIdentifier}" supplierType must be one of ${SUPPLIER_TYPES.join("|")} (case-sensitive), received ${JSON.stringify(supplierType)}`,
     ]);
   }
-  // fileType 闭集（与云侧编译入口同集）：fileResources 进 resourcesHash
-  // 承诺，executor.selectableResource 进 executorHash 承诺——拼错的
-  // fileType 是确定性输入缺陷，不静默成承诺内容；同样精确匹配不 trim
-  // （哈希输入与匹配输入必须是同一字符串）。
   const assertFileResources = (
     resources: unknown,
     label: string,
@@ -177,10 +147,6 @@ function compileExecutorRoute(
     if (resources === undefined) {
       return;
     }
-    // 形状门（与 Rust validate 的 "must be a map of file resources" 同口径）：
-    // 非 map 形态（字符串/数字/数组/null）会让下面的闭集检查整体短路、
-    // 原文照烧进承诺，且 Object.entries(null) 会把裸 TypeError 逃出编译
-    // 入口——承诺面拒绝一律 HookPlanCompilationError，形状同样不例外。
     if (!isRecord(resources)) {
       throw new HookPlanCompilationError([
         `executor route "${route.stageIdentifier}" ${label} must be a map of file resources`,
@@ -198,8 +164,6 @@ function compileExecutorRoute(
       }
     }
   };
-  // selectableResource 的 null 与缺失同为缺席（Rust Option<Value> 的 serde
-  // 口径：JSON null 解成 None，不进承诺也不报错）；其余非 map 形态拒绝。
   const selectable = route.executor.selectableResource;
   if (selectable !== undefined && selectable !== null) {
     assertFileResources(selectable, "executor.selectableResource");

@@ -16,25 +16,8 @@ import {
 import { DOCK_ROUTE_UNRESOLVED_SCHEMA_VERSION } from "./types/index.js";
 
 /**
- * Validate the Merkle commitments carried by a HookPlan artifact (dock v2).
- *
- * The chain-track TS assembly (dock-commitments.ts) computes every
- * leaf/root/route hash while producing the artifact.  The artifact boundary
- * must repeat the same word-level recomputation when it receives a
- * serialized artifact, otherwise a caller could repin `planHash` around a
- * stale or hand-crafted route/interface commitment and still pass local
- * validation.
- *
- * Dynamic (target:null) routes join the same recomputation: each
- * unresolvedDockRoutes entry's routeId/candidatesRoot/routeHash is
- * re-derived from its carried fields, and dockRoutesRoot is compared against
- * the combined leaf set (static route hashes ∪ dynamic route hashes) — the
- * root finalize freezes.
- *
- * This helper deliberately only checks the commitment surface.  The regular
- * HookPlan/on-chain validators own the rest of the schema and append their
- * detailed field diagnostics independently (declaration-face shape lives in
- * validateUnresolvedDockRouteDeclarations).
+ * HookPlan 制品（dock v2）携带 Merkle 承诺的边界重算校验：叶/root/routeHash
+ * 全部从携带字段独立重推导；组装侧单源在 dock-commitments.ts。
  */
 export function validateDockCommitments(
   value: unknown,
@@ -50,8 +33,6 @@ export function validateDockCommitments(
   const unresolvedRoutes = Array.isArray(value.unresolvedDockRoutes)
     ? value.unresolvedDockRoutes
     : undefined;
-  // dockRoutes/unresolvedDockRoutes 的数组形状由各制品校验器报告（层属
-  // 职责），此处只在数组在场时重算承诺——与既有 dockRoutes 口径一致。
   if (Array.isArray(routes)) {
     const routeHashes: string[] = [];
     let allRouteHashesValid = true;
@@ -73,9 +54,6 @@ export function validateDockCommitments(
         ...validateDockRouteCommitments(route, `${path}.dockRoutes[${index}]`),
       );
     }
-    // 动态（target:null）route 的叶与静态叶同树：dockRoutesRoot 是
-    // finalize 冻结的最终根（静态叶 ∪ 动态叶），两个制品边界按同一口径
-    // 重算。任一动态叶 routeHash 非法则整树对拍失效（fail-closed）。
     if (unresolvedRoutes !== undefined) {
       for (const [index, route] of unresolvedRoutes.entries()) {
         if (
@@ -117,8 +95,6 @@ export function validateDockCommitments(
     return issues;
   }
   if (dockInterface === undefined) {
-    // fail-closed：undefined 与非对象同口径拒绝——null 是唯一的"无 dock 接口"
-    // 合法表达，字段缺失不得静默跳过承诺校验。
     issues.push(`${path}.dockInterface must be an object or null`);
     return issues;
   }
@@ -171,13 +147,9 @@ export function validateDockCommitments(
   let allInterfaceRootsValid = true;
   for (const [index, entry] of interfaces.entries()) {
     if (!isRecord(entry)) {
-      // 形状 issue 已由上方逐 entry 承诺重算产出（interfaces[i] must be an
-      // object），此处只标记聚合不可继续，不重复报。
       allInterfaceRootsValid = false;
       continue;
     }
-    // fail-closed：单接口 root 非 hex 是显式 issue——静默 continue 会让
-    // 定义级 dockInterfaceRoot/interfaceRoot 对拍整段失效（垃圾值即绕过）。
     if (!isHexHash(entry.interfaceRoot)) {
       issues.push(
         `${path}.dockInterface.interfaces[${index}].interfaceRoot must be a lowercase 32-byte hex hash`,
@@ -187,8 +159,6 @@ export function validateDockCommitments(
     }
     interfaceRoots.push(entry.interfaceRoot as string);
   }
-  // 定义级 interfaceRoot 非 hex 同样显式报 issue：它是 root 对拍的被检值，
-  // 垃圾值不得静默解除比对义务。
   expectHexHashCommitment(
     dockInterface.interfaceRoot,
     `${path}.dockInterface.interfaceRoot`,
@@ -201,7 +171,6 @@ export function validateDockCommitments(
         `${path}.dockInterface.interfaceRoot must match the recomputed root over interface leaves`,
       );
     }
-    // 定义级 root（PlanCommit 的接口根承诺）与接口叶重算结果必须一致。
     if (isHexHash(value.dockInterfaceRoot) && value.dockInterfaceRoot !== expectedRoot) {
       issues.push(
         `${path}.dockInterfaceRoot must match the recomputed root over interface leaves`,
@@ -211,10 +180,6 @@ export function validateDockCommitments(
   return issues;
 }
 
-/**
- * 单条 route 的承诺重算（对 TS 组装层的逐 word 自校验，防实现漂移）：
- * routeId、每条 bindingHash、两 root、routeHash 全部从携带字段独立重推导。
- */
 function validateDockRouteCommitments(
   route: Record<string, unknown>,
   path: string,
@@ -232,9 +197,6 @@ function validateDockRouteCommitments(
     target !== undefined && typeof target.interfaceName === "string"
       ? target.interfaceName
       : undefined;
-  // fail-closed：承诺重算的输入字段缺失即显式拒绝——静默跳过会让一条
-  // local/routeId/interfaceName 残缺的 route 绕过全部重算（含 dockRoutesRoot
-  // 对拍，root 对拍依赖每条 routeHash 有效）。
   if (local === undefined) {
     issues.push(`${path}.local must be an object`);
     return issues;
@@ -269,8 +231,6 @@ function validateDockRouteCommitments(
     );
   }
 
-  // fail-closed：绑定数组缺失/非数组是形状问题，不是"空绑定"——静默按 []
-  // 重算会让携带 EMPTY root 的残缺 route 通过全部承诺对拍。
   const inputBindings = Array.isArray(route.inputBindings)
     ? route.inputBindings
     : undefined;
@@ -286,11 +246,6 @@ function validateDockRouteCommitments(
   const inputHashes: string[] = [];
   const outputHashes: string[] = [];
   let bindingsComputable = true;
-  // 同一 attach 的 input 绑定不得重复指向同一目标事实键：两条绑定同指
-  // 一个 (targetSourceId, targetSignalId) 时，submitDockedInput 在事实已
-  // 存在的情况下返回 DockInputConflict 且不置 _inputDelivered——第二个
-  // 端口每次重试都 revert，keeper 持续烧 gas（A-09 编译面闸，合约 attach
-  // 同批同口径）。
   const seenTargetFactKeys = new Set<string>();
   for (const [index, binding] of (inputBindings ?? []).entries()) {
     if (
@@ -301,7 +256,6 @@ function validateDockRouteCommitments(
       !isHexHash(binding.targetSourceId) ||
       !isHexHash(binding.targetSignalId)
     ) {
-      // 形状坏项显式报 issue：只跳过该条的重算，不静默吞掉。
       issues.push(
         `${path}.inputBindings[${index}] must carry bindingHash, localHookName, targetPort, targetSourceId and targetSignalId`,
       );
@@ -368,9 +322,6 @@ function validateDockRouteCommitments(
   if (bindingsComputable) {
     const inputsRoot = merkleRoot(inputHashes as `0x${string}`[]);
     const outputsRoot = merkleRoot(outputHashes as `0x${string}`[]);
-    // fail-closed：承诺字段非 hex/缺失一律显式报 issue，再按重算结果比对。
-    // 非字面量（含垃圾值 0xzz…/number/undefined）与重算 root 恒不等，
-    // 比对义务不因字段形状坏而豁免。
     expectHexHashCommitment(
       route.inputBindingsRoot,
       `${path}.inputBindingsRoot`,
@@ -401,9 +352,6 @@ function validateDockRouteCommitments(
       `${path}.target.chainPlanId`,
       issues,
     );
-    // routeHash 重算以四个 word 全部在场为前提；字段缺失/畸形时上面的
-    // issue 已把该 route 判废，重算本身无意义（臆造占位 word 只会产出
-    // 必然不匹配的二次噪声），在此跳过重算而不是静默放过整条 route。
     if (
       target !== undefined &&
       isHexHash(target.definitionRefHash) &&
@@ -430,14 +378,6 @@ function validateDockRouteCommitments(
   return issues;
 }
 
-/**
- * 单条未解析（target:null 动态选择）route 的承诺重算（UVPDockingModule
- * 4.7）：routeId、candidatesRoot（候选叶 V2 = H(UVP_DOCK_CANDIDATE_V2;
- * routeId, defRefHash, chainPlanId, keccak(interfaceName)) 的 merkle）与
- * routeHash（目标槽 = 候选集 root、planId 槽 = 零字、两绑定根恒 EMPTY）
- * 全部从携带字段独立重推导——候选清单伪造/换叶/换根在此暴露，制品不得
- * 携带与声明面分叉的承诺。
- */
 function validateUnresolvedRouteCommitments(
   route: Record<string, unknown>,
   path: string,
@@ -519,7 +459,6 @@ function validateUnresolvedRouteCommitments(
     const recomputedRouteHash = routeHashOf({
       localDefinitionRefHash,
       targetDefinitionRefHash: route.candidatesRoot,
-      // 动态路由的 targetPlanId 槽 = 零字（选定目标 planId 在候选叶 V2 内）。
       targetPlanId: ZERO_WORD,
       interfaceName,
       orderMode,
@@ -535,12 +474,6 @@ function validateUnresolvedRouteCommitments(
   return issues;
 }
 
-/**
- * 未解析 route 声明面（§8.8，target:null 动态选择）逐元素形状校验：
- * mode 枚举、端口名形态、至少一条映射（D019 镜像）、基础身份字段与候选
- * 清单（manifest 派生的候选身份）。`target`/`sourceSeam` 不得在场——它们
- * 只能在运行期选定目标后计算（hook plan IR 与 onchain 产物共用本面）。
- */
 export function validateUnresolvedDockRouteDeclarations(
   routes: unknown,
   path = "artifact.unresolvedDockRoutes",
@@ -549,11 +482,6 @@ export function validateUnresolvedDockRouteDeclarations(
   if (!Array.isArray(routes)) {
     return [`${path} must be an array when present`];
   }
-  // 显式空数组不得与缺键共享同一 planHash：封闭字段集承诺 plan 的唯一
-  // 字节形态，而两个制品的哈希 preimage 装配对"空数组/缺键"做同一归一
-  // （hookPlanPayloadForHash 及链轨同口径）——放行空数组会让两种序列化
-  // 形态落到同一哈希上。编译器自身对空集只落缺键（dock-commitments 的
-  // 装配分支），空数组只能是手改制品。
   if (routes.length === 0) {
     return [
       `${path} must not be an empty array — omit the key instead; the closed field set pins one byte form per plan and the compiler never emits an empty list`,
@@ -625,7 +553,6 @@ export function validateUnresolvedDockRouteDeclarations(
         }
       }
     }
-    // D019 镜像：route 至少声明一项输入或输出映射。
     if (inputs !== undefined && outputs !== undefined && inputs.length + outputs.length === 0) {
       issues.push(
         `${prefix} must declare at least one input or output binding (a route maps an input or an output)`,
@@ -675,7 +602,6 @@ export function validateUnresolvedDockRouteDeclarations(
   return issues;
 }
 
-/** 端口名形态（与 Rust valid_port_name 同规则）：^[a-z][a-z0-9_]{0,31}$。 */
 function isPortName(value: unknown): value is string {
   return (
     typeof value === "string" &&
@@ -725,7 +651,6 @@ function expectOneOfValue(
   }
 }
 
-/** 单个具名接口的承诺重算：端口叶 → 两 root → interfaceLeaf_v2。 */
 function validateInterfaceCommitments(
   entry: Record<string, unknown>,
   uid: string,
@@ -734,8 +659,6 @@ function validateInterfaceCommitments(
   const issues: string[] = [];
   const name = entry.name;
   if (typeof name !== "string" || name.length === 0) {
-    // 无名接口不得静默跳过承诺重算：它的叶仍参与定义级 root，跳过即绕过
-    // interfaceRoot 对拍。
     issues.push(`${path}.name must be a non-empty string`);
     return issues;
   }
@@ -765,9 +688,6 @@ function validateInterfaceCommitments(
       inputsComputable = false;
       continue;
     }
-    // input 端口必须携带所属 stage 的 source 类（非空字符串）
-    // ——中性 resolution manifest 与 linker 的双侧单源校验都依赖该字段，
-    // 缺失/空白在制品边界响亮拒绝（source 不入叶哈希，独立成 issue）。
     if (
       typeof port.source !== "string" ||
       (port.source as string).trim().length === 0
@@ -823,8 +743,6 @@ function validateInterfaceCommitments(
   }
   const inputsRoot = merkleRoot(inputLeaves as `0x${string}`[]);
   const outputsRoot = merkleRoot(outputLeaves as `0x${string}`[]);
-  // fail-closed：root/interfaceRoot 非 hex/缺失一律显式报 issue，且比对
-  // 不豁免——非字面量与重算 root 恒不等，形状坏项不得静默跳过对拍。
   expectHexHashCommitment(entry.inputsRoot, `${path}.inputsRoot`, issues);
   expectHexHashCommitment(entry.outputsRoot, `${path}.outputsRoot`, issues);
   expectHexHashCommitment(entry.interfaceRoot, `${path}.interfaceRoot`, issues);
@@ -873,11 +791,6 @@ function isHexHash(value: unknown): value is `0x${string}` {
   return typeof value === "string" && /^0x[0-9a-f]{64}$/.test(value);
 }
 
-/**
- * 承诺字段的 fail-closed 形状门：非 lowercase 32-byte hex（含缺失/垃圾值
- * 如 0xzz…）一律产出显式 issue。比对义务不因形状坏而解除——调用方在
- * issue 在场时继续/停止重算都判定制品无效，静默跳过才是漏洞。
- */
 function expectHexHashCommitment(
   value: unknown,
   path: string,

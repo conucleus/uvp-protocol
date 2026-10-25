@@ -9,14 +9,8 @@ import type {
 } from "../../types/index.js";
 
 /**
- * 规范排序（自 onchain-hook-plan.ts 原样迁入）：
- * - compareOnchainHooks / compareExecutorRoutes / compareSelectorBindings /
- *   compareSignalCapabilities 是编译产物的确定性排序口径（同一 plan 只有
- *   唯一数组形态）；
- * - canonicalOrderIssues 是制品边界的规范序检查，键列与编译侧排序比较子
- *   同源，相邻逆序即报 issue。
- * 比较器全部复用根 hook-plan.ts 的 compareCanonicalKey（码点序 = Rust
- * str Ord），本文件不复制排序实现。
+ * 编译产物的确定性排序口径（同一 plan 唯一数组形态）与制品边界的规范序
+ * 检查；比较器复用根 hook-plan.ts 的 compareCanonicalKey（码点序 = Rust str Ord）。
  */
 
 function compareOnchainHooks(
@@ -83,11 +77,6 @@ export {
   compareAdmissions,
 };
 
-/**
- * 制品边界的规范序检查：键列与编译侧排序比较子同源（compareOnchainHooks
- * 等），相邻逆序即报 issue——重排数组后重签 planHash 的制品不再被放行，
- * 同一 plan 保持唯一数组形态（内容寻址前提）。
- */
 function canonicalOrderIssues(
   items: readonly unknown[],
   keyOf: (item: Record<string, unknown>) => readonly string[],

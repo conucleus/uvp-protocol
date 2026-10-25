@@ -56,13 +56,6 @@ import {
 } from "../src/types/index.js";
 import { commitmentUidVector } from "./commitment-golden.js";
 
-/**
- * M0 跨语言 golden vectors（dock v2）：本测试、Solidity Foundry 测试与
- * uvp-deploy verify-stack 消费同一份 TS 权威生成器产出的
- * `packages/compiler/fixtures/dock/v1/manifest.json`；任何一侧的
- * 哈/ID/编码分叉都会在这里失败。word 布局权威 =
- * packages/compiler/docs/dock-word-layout.md（冻结于 abiVersion 4.2）。
- */
 const manifestPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../fixtures/dock/v1/manifest.json",
@@ -191,7 +184,6 @@ test("frozen constants match the golden manifest", () => {
   assert.equal(fixture.constants.domains.route, "UVP_DOCK_ROUTE_V3");
   assert.equal(fixture.constants.domains.routeId, "UVP_DOCK_ROUTE_ID_V1");
 
-  // 枚举 word：modeWord new=0/existing=1；orderModes 位掩码 bit0/bit1。
   assert.equal(modeWord("new"), `0x${"0".repeat(63)}0`);
   assert.equal(modeWord("existing"), `0x${"0".repeat(63)}1`);
   assert.equal(fixture.constants.enumWords.orderMode.new, 0);
@@ -211,24 +203,16 @@ test("frozen constants match the golden manifest", () => {
 });
 
 test("definition uid parity: TS derivation matches the Rust-computed identities", () => {
-  // TS 对拍函数（仅测试/工具用）：canonical 剔展示字段（name + annotations）
-  // + 域前缀哈希，必须与 Rust derive_definition_uid 在 golden 样本上逐字符
-  // 一致。
   assert.equal(definitionUid(fixture.targetDefinition), fixture.identities.targetUid);
   assert.equal(definitionUid(fixture.parentDefinition), fixture.identities.parentUid);
   assert.match(fixture.identities.targetUid, /^zx-[0-9a-f]{32}$/);
 
-  // 金向量（共享语料 uvp-core fixtures/commitments，Rust 权威
-  // uvp_ir::derive_definition_uid 逐格消费同一格）：域
-  // uvp:definition-uid:v2，preimage 剔 metadata.name + metadata.annotations。
   const uidVector = commitmentUidVector("minimal_cloud_definition");
   assert.equal(
     definitionUid(uidVector.input.definition),
     uidVector.expected.uid,
   );
 
-  // 展示字段永不参与身份：加 annotations / 改 name 派生不变，改内容即变
-  // （同名不同内容=不同 uid；同内容不同名=同 uid）。
   const displayOnly = structuredClone(fixture.targetDefinition) as ZhixuDefinition & {
     metadata: {
       name: string;
@@ -240,20 +224,15 @@ test("definition uid parity: TS derivation matches the Rust-computed identities"
   assert.equal(definitionUid(displayOnly), fixture.identities.targetUid);
   displayOnly.metadata.name = "renamed_target";
   assert.equal(definitionUid(displayOnly), fixture.identities.targetUid);
-  // 同内容不同名=同 uid（改名不换身份；链侧清单按 uid 键，同 uid 多
-  // planId 的形态在清单层 fail-closed，见 prepareDockResolution 测试）。
   const renamedOnly = {
     ...structuredClone(fixture.targetDefinition),
     metadata: { ...fixture.targetDefinition.metadata, name: "renamed_target" },
   };
   assert.equal(definitionUid(renamedOnly), definitionUid(fixture.targetDefinition));
-  // 改名 + 加注解两路展示字段变体同 uid（都被 preimage 剔除）。
   assert.equal(definitionUid(displayOnly), definitionUid(renamedOnly));
-  // 内容变化（labels 进 canonical preimage）：不同 uid。
   displayOnly.metadata.labels = { site: "factory-a" };
   assert.notEqual(definitionUid(displayOnly), fixture.identities.targetUid);
 
-  // definitionRefHash 公式不变（吃派生 uid）。
   assert.equal(
     definitionRefHash(fixture.identities.targetUid),
     expected.targetDefinitionRefHash,
@@ -265,7 +244,6 @@ test("definition uid parity: TS derivation matches the Rust-computed identities"
 });
 
 test("golden fixture compiles to identical interfaces, routes, roots, and hashes", () => {
-  // 目标身份/产物与 manifest 声明逐项一致（stale planId/planHash 无处可藏）。
   const targetResolution = fixture.resolutionManifest.definitions.find(
     (definition) => definition.zhixu === fixture.identities.targetUid,
   );
@@ -283,7 +261,6 @@ test("golden fixture compiles to identical interfaces, routes, roots, and hashes
   assert.deepEqual(targetPlan.dockInterface, expected.interfaceArtifact);
   assert.equal(targetPlan.dockInterfaceRoot, expected.interfaceArtifact.interfaceRoot);
 
-  // ---- 接口承诺：端口叶 → 两 root → interfaceLeaf_v2 → 定义级 root ----
   for (const entry of targetInterface.interfaces) {
     const name = entry.name;
     for (const port of entry.inputs) {
@@ -328,16 +305,13 @@ test("golden fixture compiles to identical interfaces, routes, roots, and hashes
     expected.interfaceArtifact.interfaceRoot,
   );
 
-  // ---- 父定义 route 集：与 Rust 输出一致 ----
   assert.equal(parentPlan.zhixuId, fixture.identities.parentUid);
   assert.deepEqual(parentPlan.dockRoutes, expected.dockRoutes);
   assert.equal(parentPlan.dockRoutesRoot, expected.dockRoutesRoot);
-  // 父定义无 dockInterface → 定义级 root 是 EMPTY root。
   assert.equal(parentPlan.dockInterface, null);
   assert.equal(parentPlan.dockInterfaceRoot, EMPTY_MERKLE_ROOT);
 
   for (const route of parentPlan.dockRoutes) {
-    // TS 独立重算（不读 Rust 产物的哈希字段）
     const recomputedRouteId = dockRouteId(
       expected.parentDefinitionRefHash,
       stageKey(route.local.stageIdentifier),
@@ -411,7 +385,6 @@ test("runtime domains and derived identities match the golden vectors", () => {
 
   const serviceRoute = findRoute("production_service");
   const evidenceRoute = findRoute("production_evidence");
-  // 接口名 word：keccak(interfaceName)。
   assert.equal(
     interfaceNameKey("production_service"),
     expected.interfaceNameIds.production_service,
@@ -421,8 +394,6 @@ test("runtime domains and derived identities match the golden vectors", () => {
     expected.interfaceNameIds.production_evidence,
   );
 
-  // new 模式 dockInstanceId：恰 9 word（route 身份 + 本地单幂等建单锚 +
-  // targetPlanId——实例身份绑定对接目标 plan）。
   const instance = dockInstanceId({
     runtimeDomain: expected.evmRuntimeDomain,
     localPlanId: inputs.parentPlanIdWord,
@@ -439,7 +410,6 @@ test("runtime domains and derived identities match the golden vectors", () => {
     linkedOrderId(instance, expected.targetDefinitionRefHash),
     expected.linkedOrderId,
   );
-  // 换 targetPlanId 即换实例（preimage 绑定对接目标 plan）。
   assert.notEqual(
     dockInstanceId({
       runtimeDomain: expected.evmRuntimeDomain,
@@ -455,7 +425,6 @@ test("runtime domains and derived identities match the golden vectors", () => {
     expected.dockInstanceId,
   );
 
-  // existing 模式：尾部追加第 10 word = target order 引用（A07）。
   assert.equal(
     dockInstanceId({
       runtimeDomain: expected.cloudRuntimeDomain,
@@ -471,7 +440,6 @@ test("runtime domains and derived identities match the golden vectors", () => {
     }),
     expected.existingDockInstanceId,
   );
-  // 引用不同即不同实例（targetOrderRefKey 参与派生）。
   assert.notEqual(
     dockInstanceId({
       runtimeDomain: expected.cloudRuntimeDomain,
@@ -498,8 +466,6 @@ test("existing evm instance and dynamic-selection vectors match the golden", () 
   const dynamic = expected.dynamicSelection;
   const evidenceRoute = findRoute("production_evidence");
 
-  // 链轨 existing 形态：EVM 轨订单键是 word，原字进第 10 word
-  // （UVPDockingModule.attachDockedOrder 的实例重算口径）。
   assert.equal(inputs.existingEvmTargetOrderRef.length, 66);
   assert.equal(
     dockInstanceId({
@@ -517,9 +483,6 @@ test("existing evm instance and dynamic-selection vectors match the golden", () 
     expected.existingEvmDockInstanceId,
   );
 
-  // 候选叶公式（合约 _DOMAIN_DOCK_CANDIDATE 权威）：正式实现
-  // src/dock.ts dockCandidateLeaf——H("UVP_DOCK_CANDIDATE_V2", routeId,
-  // targetDefinitionRefHash, targetPlanId, keccak(interfaceName))。
   const candidateLeaf = dockCandidateLeaf({
     routeId: dynamic.routeId,
     targetDefinitionRefHash: expected.targetDefinitionRefHash,
@@ -531,11 +494,6 @@ test("existing evm instance and dynamic-selection vectors match the golden", () 
     verifyMerkleProof(dynamic.candidatesRoot, dynamic.candidateLeaf, dynamic.candidateProof),
     true,
   );
-  // 动态路由叶 = 冻结形态（buildUnresolvedDockRoute / 合约 attach 以空
-  // 绑定数组重算的同一 preimage）：目标槽被候选集 root 占据（随
-  // dockRoutesRoot 在 finalize 冻结），两绑定根恒 EMPTY——bindingHash 的
-  // preimage 含目标端口寻址 word，选定前不可计算，绑定在 attach 时按接口
-  // 承诺面验证。静态叶的目标槽则是具体 targetDefinitionRefHash。
   assert.equal(
     routeHash({
       localDefinitionRefHash: expected.parentDefinitionRefHash,
@@ -623,7 +581,6 @@ test("merkle proofs from the golden fixture verify against the roots", () => {
       expected.routeLeafProof,
     ),
   );
-  // TS 侧重建的 proof 与 Rust 提供的 proof 逐字相同。
   assert.deepEqual(
     merkleProof(
       parentPlan.dockRoutes.map((route) => route.routeHash),
@@ -696,11 +653,9 @@ test("EIP-712 entrance permit digest matches the golden vector (V2 typehash, ver
 
 test("chainId overflow guard rejects >=2^64, negative, and fractional chain ids", () => {
   const inputs = fixture.inputs;
-  // 上界内（含 u64 最大值 2^64-1）仍可推导——FFI 域保持 64 位，边界值合法。
   assert.doesNotThrow(() =>
     evmRuntimeDomain(0xffffffffffffffffn, inputs.stateMachineAddress),
   );
-  // ≥ 2^64：显式拒绝（不放宽到 u256、不截断）。
   assert.throws(
     () => evmRuntimeDomain(1n << 64n, inputs.stateMachineAddress),
     /chainId must fit the 64-bit range \(< 2\^64\)/,
@@ -709,7 +664,6 @@ test("chainId overflow guard rejects >=2^64, negative, and fractional chain ids"
     () => evmRuntimeDomain(2n ** 128n, inputs.stateMachineAddress),
     /chainId must fit the 64-bit range \(< 2\^64\)/,
   );
-  // 负数 / 非整数 / 超精度 number 同样拒绝。
   assert.throws(
     () => evmRuntimeDomain(-1n, inputs.stateMachineAddress),
     /chainId must be a non-negative chain id/,
@@ -722,7 +676,6 @@ test("chainId overflow guard rejects >=2^64, negative, and fractional chain ids"
     () => evmRuntimeDomain(1e19, inputs.stateMachineAddress),
     /chainId must be a safe integer chain id/,
   );
-  // EIP-712 permit 域同口径（nonce 从 1 起的既有门在前，链 id 校验在域组装）。
   const permitInput = {
     verifyingContract: inputs.dockingModuleAddress,
     targetPlanId: expected.targetPlanId,
@@ -751,7 +704,6 @@ test("chainId overflow guard rejects >=2^64, negative, and fractional chain ids"
 });
 
 test("golden routes satisfy the TS commitment recomputation", () => {
-  // dock-validation 的逐 word 重算对 golden 产物零 issue（fail-closed 镜像）。
   assert.deepEqual(
     validateDockCommitments({
       dockRoutes: parentPlan.dockRoutes,
@@ -761,7 +713,6 @@ test("golden routes satisfy the TS commitment recomputation", () => {
     }),
     [],
   );
-  // 篡改任一 leafHash/bindingHash/routeHash 必须被重算路径捕获。
   const tamperedRoute = structuredClone(findRoute("production_service")) as DockRouteV2;
   const tamperedBinding = tamperedRoute.outputBindings[0] as unknown as
     | Record<string, unknown>
@@ -800,10 +751,6 @@ test("golden routes satisfy the TS commitment recomputation", () => {
 });
 
 test("an attach cannot bind two inputs to the same target fact key", () => {
-  // A-09 编译面闸：同一 attach 的两条 input 绑定指向同一目标事实键
-  // (targetSourceId, targetSignalId) 时，submitDockedInput 对第二端口恒
-  // revert DockInputConflict 且不置 _inputDelivered——keeper 持续烧 gas，
-  // 制品边界必须拒绝（合约 attach 同批同口径）。
   const route = structuredClone(findRoute("production_service")) as DockRouteV2;
   const first = route.inputBindings[0] as DockRouteInputBinding;
   assert.ok(first, "production_service route has an input binding");
@@ -839,20 +786,14 @@ test("an attach cannot bind two inputs to the same target fact key", () => {
 });
 
 test("localOrderKey and targetOrderRefKey keep EVM word ids verbatim", () => {
-  // 合约 preimage 对 bytes32 订单号本字入槽——word 形态输入必须
-  // 原样通过，二次哈希会让 TS 预测的实例身份与合约恒不等。
   const word = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" as `0x${string}`;
   assert.equal(localOrderKey(word), word);
   assert.equal(targetOrderRefKey(word), word);
-  // 云轨字符串订单号仍走 keccak word 化。
   assert.notEqual(localOrderKey("order-fixture-001"), "order-fixture-001");
   assert.match(localOrderKey("order-fixture-001"), /^0x[0-9a-f]{64}$/u);
 });
 
 test("permit nonce/deadline reject non-canonical string and unsafe number forms (L10)", () => {
-  // 2609100741 L10：BigInt("0x10") 静默按 16 进制解析，两个哈希线对同一
-  // 字符串得到不同 word——与 protocol-bindings normalizeUint* 同口径：
-  // 只收 bigint/安全 number/规范十进制字符串。
   const permitInput = {
     chainId: 31337,
     verifyingContract: fixture.inputs.dockingModuleAddress,
@@ -864,7 +805,6 @@ test("permit nonce/deadline reject non-canonical string and unsafe number forms 
     dockInstanceId: expected.dockInstanceId,
     linkedOrderId: expected.linkedOrderId,
   };
-  // 0x 前缀形态：拒绝（不是静默的进制换算）。
   assert.throws(
     () =>
       eip712PermitDigest({
@@ -883,7 +823,6 @@ test("permit nonce/deadline reject non-canonical string and unsafe number forms 
       }),
     /permit deadline must be an integer \(bigint, safe number, or canonical base-10 string/,
   );
-  // 前导零 / 小数 / 负数字符串同样拒绝。
   for (const bad of ["01", "1.0", "-1", "1e3", ""]) {
     assert.throws(
       () =>
@@ -896,7 +835,6 @@ test("permit nonce/deadline reject non-canonical string and unsafe number forms 
       `nonce=${JSON.stringify(bad)} must be rejected`,
     );
   }
-  // 超精度 number：拒绝（2^53 以上已丢精度）。
   assert.throws(
     () =>
       eip712PermitDigest({
@@ -906,7 +844,6 @@ test("permit nonce/deadline reject non-canonical string and unsafe number forms 
       }),
     /permit nonce must be a safe integer/,
   );
-  // 规范十进制字符串照常可推导（与 bindings normalizeUintString 同口径）。
   assert.doesNotThrow(() =>
     eip712PermitDigest({
       ...permitInput,

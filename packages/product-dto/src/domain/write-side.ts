@@ -1,59 +1,32 @@
-// 写侧契约单源（手写多份写侧契约会漂移冲突）。
-// 形状以 uvp-chain-services 服务端真身为权威（submissions/types.ts、
-// evidence/types.ts、evidence/service.ts 的 getProof 产出、reconcile/
-// status.ts），本包不引入 protocol-bindings 依赖，hex/address 用自持别名。
-// 前端与客户端一律从本包 import，不自持副本。
-//
-// 权威裁决落点：ProductSubmissionDTO.statusLabel 定为必填 string——服务端
-// 类型标注可选，但 withSubmissionReconcileDefaults（submissions/service.ts）
-// 对每次读取恒兜底产出；必填口径让各端免于自选判空分支。
-// EvidenceProofDTO 的 evidenceId/payloadRef 同理：getProof 恒产出，定为必填。
+/**
+ * 写侧契约单源：形状以 uvp-chain-services 服务端真身为权威，前端与客户端
+ * 一律从本包 import，不自持副本；hex/address 用自持别名。
+ */
 
-/** EVM 十六进制标量（自持别名）。 */
 export type ProductWriteHex = `0x${string}`;
-/** EVM 地址（自持别名）。 */
 export type ProductWriteAddress = `0x${string}`;
 
-/**
- * 产品任务提交意图（提交契约面）：服务端 PrepareProductTaskSubmitInput.intent
- * 的权威词表，服务端受理集与产品 API 层按此名消费。与 TaskSubmitIntent
- * 值域恒等、各表其义：本名锚定提交契约负载，TaskSubmitIntent 供任务
- * 模型/工作台按 manifest 与插件类型推导意图。
- */
 export type ProductSubmitIntent = "confirm_stage" | "reject_stage";
 
-/** POST /product/tasks/:id/prepare-submit 请求体。 */
 export interface PrepareProductTaskSubmitInput {
   readonly evidenceIds: readonly string[];
   readonly walletAddress: string;
   readonly intent: ProductSubmitIntent;
-  /**
-   * 多发射阶段（如 inspection.passed/failed、delivery.accepted/rejected）
-   * 必须显式指定要提交的信号名；单发射阶段可省略。服务端不按哈希序/
-   * 业务词猜成败。
-   */
   readonly signalName?: string;
 }
 
-/** POST /product/tasks/:id/submit 请求体。 */
 export interface SubmitProductTaskInput {
   readonly prepareId: string;
   readonly signature: string;
   readonly walletAddress: string;
 }
 
-/** 证据核验状态（服务端 evidence/types.ts 权威词表）。 */
 export type EvidenceVerificationStatus =
   | "unbound"
   | "matched"
   | "mismatch"
   | "missing_file";
 
-/**
- * GET /product/evidence/:id/proof 响应 proof 字段的权威字段集：evidenceId/
- * payloadRef/storageURI 为服务端 getProof 恒产出（必填），绑定定位五件套
- * 与 blockNumber/submitter 按记录现状可选。
- */
 export interface EvidenceProofDTO {
   readonly evidenceId: string;
   readonly payloadHash: ProductWriteHex;
@@ -72,7 +45,6 @@ export interface EvidenceProofDTO {
   readonly verificationStatus: EvidenceVerificationStatus;
 }
 
-/** 提交生命周期状态（服务端 submissions/types.ts 权威词表）。 */
 export type ProductSubmissionStatus =
   | "prepared"
   | "signature_received"
@@ -132,7 +104,6 @@ export interface ProductSubmissionAttemptDTO {
   readonly updatedAt: string;
 }
 
-// 事务对账投影（服务端 reconcile/status.ts TxReconcileFields 的自持镜像）。
 export type TxReconcileStatus =
   | "broadcasting"
   | "submitted"
@@ -158,18 +129,12 @@ export interface TxReconcileFields {
   readonly projectionStatus?: TxProjectionStatus;
 }
 
-/**
- * 提交回执（POST /product/tasks/:id/submit 响应与 GET
- * /product/submissions/:id 的同形 DTO）：逐字段对齐服务端
- * ProductSubmissionDTO；statusLabel 必填（服务端读取兜底恒产出）。
- */
 export interface ProductSubmissionDTO extends TxReconcileFields {
   readonly submissionId: string;
   readonly prepareId: string;
   readonly taskId: string;
   readonly orderId: string;
   readonly onchainOrderId: ProductWriteHex;
-  /** The plan-scoped identity committed by the prepared EIP-712 signature. */
   readonly planId: ProductWriteHex;
   readonly stageIdentifier: string;
   readonly signalName: string;
@@ -183,7 +148,6 @@ export interface ProductSubmissionDTO extends TxReconcileFields {
   readonly nonce: string;
   readonly deadline: string;
   readonly status: ProductSubmissionStatus;
-  /** 展示标签：服务端 withSubmissionReconcileDefaults 恒兜底产出——必填。 */
   readonly statusLabel: string;
   readonly signatureStatus: "not_verified" | "signature_verified";
   readonly signatureHash?: ProductWriteHex;
@@ -201,10 +165,6 @@ export interface ProductSubmissionDTO extends TxReconcileFields {
   readonly attempts: readonly ProductSubmissionAttemptDTO[];
   readonly attemptCount: number;
   readonly proofRows: readonly ProductSubmissionProofRowDTO[];
-  /**
-   * 随提交落库的证据引用（绑定载荷）：reconcile 清扫对"链上提交已成功
-   * 但绑定缺失"的记录重试绑定时，唯一的持久化依据。
-   */
   readonly evidenceIds?: readonly string[];
   readonly createdAt: string;
   readonly updatedAt: string;

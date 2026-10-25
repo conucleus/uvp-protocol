@@ -10,9 +10,7 @@ import type { DockResolutionManifest, HexString } from "../src/types/index.js";
 
 /**
  * 承诺面金向量（uvp-core/fixtures/commitments/golden-vectors.v1.json）的
- * TS 侧读取口：文件由本包 generate:commitment-golden-vectors 生成（链轨
- * 权威），Rust uvp-ir 与 Foundry CommitmentGoldenVectors.t.sol 消费同一份
- * ——测试经本模块直读，不保留同值内联副本。
+ * TS 侧读取口：Rust/Foundry 消费同一份；测试直读，不保留内联副本。
  */
 
 export interface CommitmentGoldenInstruction {
@@ -46,9 +44,6 @@ export interface CommitmentGoldenCase {
     readonly instructions: readonly number[];
     readonly dependencyKeys: readonly number[];
   };
-  /** planHash 两格的 canonical 原像串：Rust/forge 消费方各以已侧公式
-   * （域分隔 + keccak256，Rust 另经自身 canonicalize 重排对拍）重算 ==
-   * pinned 哈希。 */
   readonly preimages: {
     readonly hookPlanCanonical: string;
     readonly onchainPlanCanonical: string;
@@ -69,7 +64,6 @@ export interface CommitmentGoldenCase {
 export interface CommitmentUidVector {
   readonly name: string;
   readonly note: string;
-  /** uid 格定义不要求可编译（如最小云侧定义只参与身份派生对拍）。 */
   readonly input: { readonly definition: unknown };
   readonly expected: { readonly uid: string };
 }
@@ -150,9 +144,6 @@ export function commitmentRegisterHooksVector(
 
 const ZERO_HASH = `0x${"0".repeat(64)}` as const;
 
-/** 金向量数值化 hooks → SolidityRegisterPlanArgs["hooks"]（生成脚本与测试
- * 共用同一重建：SIGNAL 携 sourceId/signalId，其余指令槽由
- * hashSolidityRegisterHooks 按冻结口径填零字）。 */
 export function commitmentRegisterHooksArgs(
   hooks: readonly CommitmentGoldenHook[],
 ): SolidityRegisterPlanArgs["hooks"] {

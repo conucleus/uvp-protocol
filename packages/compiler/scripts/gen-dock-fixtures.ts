@@ -1,17 +1,4 @@
 #!/usr/bin/env tsx
-/**
- * 生成 dock v2 兼容性 golden（链轨 TS 权威实现）：
- * - `fixtures/dock/v1/manifest.json`：冻结常量、目标/父定义、resolution
- *   manifest（链轨发布面）、全部 leaf/root/hash/ID/envelope/permit golden
- *   向量；
- * - 样本定义/向量形状移植自 uvp-core gen_dock_fixtures.rs（父定义
- *   target.zhixu 为目标内容派生 uid 引用——引用一律 uid、name 纯展示），
- *   期望值由 `@uvp-eth/compiler`（TS 权威承诺层）计算。
- *
- * 运行：`pnpm --filter @uvp-eth/compiler generate:dock-fixtures`（幂等重生成）。
- * TS parity/freeze、Foundry DockManifestParity、uvp-deploy verify-stack 都
- * 从同一份 manifest 消费。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,7 +61,6 @@ import {
   type ZhixuDefinition,
 } from "../src/types/index.js";
 
-/** 目标定义：两个具名接口——production_service[new]（建单型服务）与 production_evidence[existing]（只读既有事实）。 */
 function targetProductionDefinition(): ZhixuDefinition {
   return {
     apiVersion: "uvp/v0",
@@ -135,7 +121,6 @@ function targetProductionDefinition(): ZhixuDefinition {
   };
 }
 
-/** 调用方定义：new 模式生产委托（建单型委托）+ existing 模式既有事实引用（只读引用）。目标按内容派生 uid 引用（引用一律 uid，name 纯展示）。 */
 function parentSourcingDefinition(targetUid: string): ZhixuDefinition {
   return {
     apiVersion: "uvp/v0",
@@ -148,8 +133,6 @@ function parentSourcingDefinition(targetUid: string): ZhixuDefinition {
         {
           name: "confirm",
           source: "purchaser",
-          // 物化门：零 hook 阶段在链上永不可物化、信号没有
-          // 钩子可挂；seed 是执行者自发入口信号。
           receiveSignals: { ORDER: "purchaser::confirm.seed" },
           sendSignals: [{ name: "cmp" }, { name: "seed" }],
           executor: {
@@ -216,8 +199,6 @@ function buildManifest(
         published: true,
         interfaces: interfaceArtifact.interfaces,
         evmPlanId: targetPlan.planId,
-        // B-01 route 身份 word：golden 向量把发布面 plan id word 直接作
-        // 链上注册 planId 使用（向量只钉公式，不模拟注册流程）。
         chainPlanId: targetPlan.planId,
         cloudArtifactId: `artifact://${targetPlan.planHash}`,
       },
@@ -240,8 +221,6 @@ function findRoute(
 
 async function main(): Promise<void> {
   const target = targetProductionDefinition();
-  // 目标先编译、取内容派生 uid，再以 uid 组装父定义引用（发布同序：
-  // 引用一律 uid，name 纯展示）。
   const targetPlan = compileZhixuHookPlan(target);
   const parent = parentSourcingDefinition(targetPlan.zhixuId);
 
@@ -259,7 +238,6 @@ async function main(): Promise<void> {
   )!;
   void serviceInterface;
 
-  // ---- runtime domains & identity vectors ----
   const chainId = 31337;
   const stateMachine = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
   const dockingModule = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
@@ -270,9 +248,6 @@ async function main(): Promise<void> {
     "uvp-cloud-security-fixture",
   );
   const parentOrderKey = localOrderKey("order-fixture-001");
-  // new 模式：route 身份 + 本地单（幂等建单锚，A06）+ targetPlanId（实例
-  // 身份绑定对接目标 plan）。合成向量必须与产物 route.local.planId 同源，
-  // 否则消费方会在生产推导里得到不同实例。
   const dockInstance = dockInstanceId({
     runtimeDomain: evmDomain,
     localPlanId: parentPlan.planId,
@@ -288,7 +263,6 @@ async function main(): Promise<void> {
     dockInstance,
     serviceRoute.target.definitionRefHash,
   );
-  // existing 模式：派生加入 target order 引用（A07；云轨运行时语义）。
   const existingDockInstance = dockInstanceId({
     runtimeDomain: cloudDomain,
     localPlanId: parentPlan.planId,
@@ -301,9 +275,6 @@ async function main(): Promise<void> {
     targetPlanId: targetPlan.planId,
     targetOrderRef: "factory-a/P001",
   });
-  // existing 模式（链轨 EVM 形态）：目标单键是 bytes32 word，原字入槽
-  // （targetOrderRefKey 的 word-literal 分支）——UVPDockingModule 4.4
-  // attachDockedOrder 的实例重算与该形态对拍。
   const existingEvmTargetOrderRef = `0x${"ab".repeat(32)}` as const;
   const existingEvmDockInstance = dockInstanceId({
     runtimeDomain: evmDomain,
@@ -318,11 +289,6 @@ async function main(): Promise<void> {
     targetOrderRef: existingEvmTargetOrderRef,
   });
 
-  // ---- target:null 动态选择（UVPDockingModule 4.7 attach 的候选集承诺）----
-  // 候选叶公式：src/dock.ts dockCandidateLeaf V2（合约 _DOMAIN_DOCK_CANDIDATE
-  // 的 TS 权威实现，链上 preimage 逐字节一致；叶承诺候选链上注册 planId）。
-  // 第二候选是显式合成的（manifest 只发布一个定义）——两叶候选集用于钉死
-  // 排序配对与 proof。
   const candidateLeaf = dockCandidateLeaf({
     routeId: evidenceRoute.routeId,
     targetDefinitionRefHash:
@@ -340,11 +306,6 @@ async function main(): Promise<void> {
   const candidateLeaves = [candidateLeaf, otherCandidateLeaf];
   const candidatesRoot = merkleRoot(candidateLeaves);
   const candidateProof = merkleProof(candidateLeaves, candidateLeaf)!;
-  // 动态路由叶 = 冻结形态（与 buildUnresolvedDockRoute / 合约 attach 以空
-  // 绑定数组重算的 preimage 同一）：目标槽被候选集 root 占据（随
-  // dockRoutesRoot 在 finalize 冻结），planId 槽恒零字（选定目标 planId 在
-  // 候选叶 V2 内），两绑定根恒 EMPTY——bindingHash 的 preimage 含目标端口
-  // 寻址 word，选定前不可计算，绑定在 attach 时按接口承诺面验证。
   const dynamicRouteHash = routeHash({
     localDefinitionRefHash: evidenceRoute.local.definitionRefHash,
     targetDefinitionRefHash: candidatesRoot,
@@ -355,7 +316,6 @@ async function main(): Promise<void> {
     outputBindingsRoot: EMPTY_MERKLE_ROOT,
   });
 
-  // ---- input envelope（new 模式：唯一 input 绑定即出生锚）----
   const birthBinding = serviceRoute.inputBindings.find(
     (binding) => binding.targetPort === "execute",
   )!;
@@ -381,7 +341,6 @@ async function main(): Promise<void> {
     localHookReadyOccurrence: 0n,
   });
 
-  // ---- output envelope ----
   const completedOutput = serviceRoute.outputBindings.find(
     (binding) => binding.localSignalName === "cmp",
   )!;
@@ -395,7 +354,6 @@ async function main(): Promise<void> {
     targetFactId,
   });
 
-  // ---- entrance permit digest ----
   const permitDigest = eip712PermitDigest({
     chainId,
     verifyingContract: dockingModule,
@@ -411,7 +369,6 @@ async function main(): Promise<void> {
     deadline: 2000000000,
   });
 
-  // ---- merkle proofs（供 Foundry/TS 测试对齐）----
   const routeLeafProof = merkleProof(
     routes.map((route) => route.routeHash),
     serviceRoute.routeHash,
@@ -511,8 +468,6 @@ async function main(): Promise<void> {
       dockInstanceId: dockInstance,
       linkedOrderId: linkedOrder,
       existingDockInstanceId: existingDockInstance,
-      // 链轨 existing 形态（word 目标单键）与动态选择候选集 golden：
-      // DockManifestParity.t.sol 与 dock-parity.test.ts 同源消费。
       existingEvmDockInstanceId: existingEvmDockInstance,
       dynamicSelection: {
         routeId: evidenceRoute.routeId,

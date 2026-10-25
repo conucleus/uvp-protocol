@@ -10,39 +10,16 @@ import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
 
-/// 测试侧窄 Vm 接口（不 vendor forge-std）：本 forge 版本已移除
-/// targetContract/targetSelector 族 cheatcode——随机面靠 setUp 期间部署
-/// 的 Handler 进入自动收集集（state-diff collection）；机器与模块也在
-/// 收集集内，随机直调在授权/寻址闸上全部 revert（fail_on_revert=false
-/// 吸收），等效于额外的对抗面。
 interface InvariantVm {
     function addr(uint256 privateKey) external returns (address keyAddr);
     function sign(uint256 privateKey, bytes32 digest) external returns (uint8 v, bytes32 r, bytes32 s);
     function warp(uint256 newTimestamp) external;
 }
 
-/// B12c：UVPStateMachine 的 forge invariant 线。受限随机调用面 = 三类
-/// 动作（参数化 submitSignal / pokeTimer / 时间推进），ghost 追踪观察态，
-/// 三个裁决指定的 invariant：
-///
-/// 1. 终态不可改写：hook 一旦到达 Ready/Cancelled（ghost 终态集），后续
-///    任何调用不得再改变该 hook 状态（链上 _evaluateHook 对终态早退；
-///    本线是行为面机器闸）。
-/// 2. first-win：同一订单同一信号槽，首写 payloadHash 之后永不再变（第
-///    二次提交要么被幂等吸收要么整笔回滚；ghost 记录首写值）。
-/// 3. 锚点单调：同一 hook 处于 Wait 态时观测到的 dueAt 单调不减（等待
-///    期限由事实提交锚点推导，时间前向不可回卷）。
-///
-/// 钩子池刻意避开「两条独立延时臂的纯 OR」形态：其等待期限取各臂最早
-/// 成熟时刻（min 语义），后到的更短延时臂会合法缩短 dueAt——那是求值语
-/// 义（OR 等在最早成熟分支，语料 case 13/24 同口径），不是不变量违例；
-/// 单调性断言因此限定在等待期限由锚点单调推导的形态族（裸延时 / 延时
-/// 合取 / 合取上的否决位 / 延时套 OR-of-signals）。
 contract UVPStateMachineInvariantsTest {
     Handler private handler;
 
     function setUp() public {
-        // Handler 在 setUp 内部署：进入本版 forge 的自动收集集（随机面）。
         handler = new Handler();
         handler.bootstrap();
     }
@@ -60,9 +37,6 @@ contract UVPStateMachineInvariantsTest {
     }
 }
 
-/// 受限随机面 handler：ghost 观察态在每次动作后全量复查（fail-fast，
-/// violation 计数器供 invariant 函数断言）。bootstrap 仅测试 setUp 调用
-/// （随机直调被一次性哨兵拒绝）。
 contract Handler {
     InvariantVm private constant vm = InvariantVm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
@@ -96,11 +70,8 @@ contract Handler {
     bytes32[SIGNAL_COUNT] private signalIds;
     bytes32 private constant SOURCE = bytes32(uint256(0x3001));
 
-    // ghost：终态集（0=未终态，2=Ready，3=Cancelled，镜像链上枚编码）。
     mapping(bytes32 orderId => mapping(bytes32 hookId => uint8 terminalStatus)) private ghostTerminal;
-    // ghost：每 hook 观测到的最大 Wait dueAt。
     mapping(bytes32 orderId => mapping(bytes32 hookId => uint64 maxWaitDueAt)) private ghostMaxWaitDueAt;
-    // ghost：每信号槽首写 payloadHash（非零即已写）。
     mapping(bytes32 orderId => mapping(bytes32 signalKey => bytes32 firstPayload)) private ghostFirstPayload;
 
     uint256 public terminalViolationCount;
@@ -125,14 +96,10 @@ contract Handler {
         machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.freezeModules();
 
-        // 信号池：[0] 出生信号，[1..8] 事实信号（互不共享键：出生信号是
-        // 出生钩的独占依赖，watcher 键两两独立，避免跨阶段依赖闸）。
         signalIds[0] = bytes32(uint256(0x4000));
         for (uint256 i = 1; i < SIGNAL_COUNT; i++) {
             signalIds[i] = keccak256(abi.encode("invariant.signal", i));
         }
-
-        // 钩子池：覆盖等待期限由锚点单调推导的形态族。
         bytes32 stage0 = keccak256("invariant.stage.0");
         bytes32 stage1 = keccak256("invariant.stage.1");
         bytes32 stage2 = keccak256("invariant.stage.2");
@@ -144,7 +111,6 @@ contract Handler {
         hookIds[1] = keccak256("invariant.hook.watch");
         hooks[1] = _signalHook(hookIds[1], stage1, FLAG_EMIT_READY, signalIds[1]);
 
-        // 裸延时 watcher：B + 5s。
         hookIds[2] = keccak256("invariant.hook.timer");
         {
             UVPStateMachine.Instruction[] memory instrs = new UVPStateMachine.Instruction[](2);
@@ -153,7 +119,6 @@ contract Handler {
             hooks[2] = _hookWithFlags(hookIds[2], stage1, FLAG_EMIT_READY, instrs, _deps(signalIds[2]));
         }
 
-        // 否定取消 watcher：D & ~C。
         hookIds[3] = keccak256("invariant.hook.negative");
         {
             UVPStateMachine.Instruction[] memory instrs = new UVPStateMachine.Instruction[](4);
@@ -164,7 +129,6 @@ contract Handler {
             hooks[3] = _hookWithFlags(hookIds[3], stage1, FLAG_EMIT_READY, instrs, _deps(signalIds[3], signalIds[4]));
         }
 
-        // 延时合取：(E+5)&(F+10)——全臂到齐后才 Wait，期限稳定。
         hookIds[4] = keccak256("invariant.hook.andDelays");
         {
             UVPStateMachine.Instruction[] memory instrs = new UVPStateMachine.Instruction[](5);
@@ -176,7 +140,6 @@ contract Handler {
             hooks[4] = _hookWithFlags(hookIds[4], stage2, FLAG_EMIT_READY, instrs, _deps(signalIds[5], signalIds[6]));
         }
 
-        // 延时套 OR-of-signals：(G|H)+5——期限 = 最早到达锚点 + 5。
         hookIds[5] = keccak256("invariant.hook.orDelay");
         {
             UVPStateMachine.Instruction[] memory instrs = new UVPStateMachine.Instruction[](4);
@@ -194,10 +157,6 @@ contract Handler {
         }
         _observe();
     }
-
-    // ------------------------------------------------------------------
-    // 随机面（公共非 view 函数进自动收集集；bootstrap 由一次性哨兵封死）
-    // ------------------------------------------------------------------
 
     function submitSignal(uint256 seed) external {
         require(bootstrapped, "not bootstrapped");
@@ -229,10 +188,6 @@ contract Handler {
         vm.warp(block.timestamp + 1 + (seed % 96));
         _observe();
     }
-
-    // ------------------------------------------------------------------
-    // ghost 观察：每动作后全量复查（fail-fast + 计数器）
-    // ------------------------------------------------------------------
 
     function _observe() private {
         for (uint256 o = 0; o < ORDER_COUNT; o++) {
@@ -276,10 +231,6 @@ contract Handler {
             }
         }
     }
-
-    // ------------------------------------------------------------------
-    // 装配 helper
-    // ------------------------------------------------------------------
 
     function _birthOrder(uint256 orderIdx) private returns (bytes32 orderId) {
         UVPStateMachine.SignalAuthorization[] memory authorizations =

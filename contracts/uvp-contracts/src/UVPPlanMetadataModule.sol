@@ -5,9 +5,6 @@ import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
 import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 import {DockMerkle} from "./libraries/DockMerkle.sol";
 
-/// 计划能力表/绑定表的链上形态：一棵 capabilitiesRoot 承诺全部叶子
-/// （signal capability 叶与 selector binding 叶域分隔混编），建树在链下
-/// （TS/Rust 编译器），使用方按"字段当场重算叶 + 携 proof"验证 membership。
 contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     struct PlanMetadata {
         bytes32 capabilitiesRoot;
@@ -101,9 +98,6 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
         bytes32[] calldata proof
     ) external view returns (bool) {
         _requireKnownPlan(planId);
-        // 具名接口叶由承诺输入重算（调用方不得自报叶值）：
-        // H("UVP_DOCK_INTERFACE_V2", uidId, interfaceNameId, orderModesWord,
-        //   inputsRoot, outputsRoot)，与 Rust/TS 逐字节一致。
         bytes32 interfaceLeaf = keccak256(
             abi.encode(
                 _DOMAIN_DOCK_INTERFACE,

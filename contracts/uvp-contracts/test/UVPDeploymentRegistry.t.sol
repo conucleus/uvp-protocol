@@ -103,9 +103,6 @@ contract UVPDeploymentRegistryTest {
         registry.activateDeployment(DEPLOYMENT_ID_V1, EVIDENCE_HASH, "ipfs://evidence/v1");
         registry.markCanary(DEPLOYMENT_ID_V2, EVIDENCE_HASH_2, "ipfs://evidence/v2");
 
-        // 取证口径：自动废弃事件携带【被废弃】部署自身的
-        // evidence（v1 的 canary/激活存证哈希与登记 URI），不是新部署
-        // v2 的激活证据。
         vm.expectEmit(true, true, true, true);
         emit DeploymentDeprecated(DEPLOYMENT_ID_V1, EVIDENCE_HASH, "ipfs://deployment");
         registry.activateDeployment(DEPLOYMENT_ID_V2, EVIDENCE_HASH_2, "ipfs://evidence/v2");

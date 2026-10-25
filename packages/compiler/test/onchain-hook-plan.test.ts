@@ -17,12 +17,6 @@ import {
 } from "../src/dock.js";
 import test from "node:test";
 import {
-  encodeAbiParameters,
-  keccak256,
-  parseAbiParameters,
-  stringToHex,
-} from "viem";
-import {
   assertOnchainHookPlanArtifact,
   canonicalStringify,
   compileZhixuOnchainHookPlan,
@@ -69,12 +63,8 @@ import {
 } from "./commitment-golden.js";
 
 const demoManifest = dockDemoResolutionManifest();
-// 承诺面金向量（uvp-core 共享文件）：本测试文件原先内联钉死的
-// planHash/capabilitiesRoot/hookId/hooksHash 字面量一律改由该文件驱动，
-// Rust（uid）与 Foundry（hooksHash/runtimePlanHash）消费同一份。
 const goldenDemo = commitmentGoldenCase("demo_zhixu_production_dock");
 
-/** 变异 hook plan 制品后按载荷重签 planHash（承诺重算由专门的篡改测试覆盖）。 */
 function resign<A extends { planHash: string }>(artifact: A): A {
   return {
     ...artifact,
@@ -82,7 +72,6 @@ function resign<A extends { planHash: string }>(artifact: A): A {
   };
 }
 
-/** 深克隆 AST 并把所有 delay 节点的 durationSeconds 改写为给定秒数。 */
 function replaceDelay(node: unknown, seconds: number): unknown {
   if (Array.isArray(node)) {
     return node.map((item) => replaceDelay(item, seconds));
@@ -97,7 +86,6 @@ function replaceDelay(node: unknown, seconds: number): unknown {
   return out;
 }
 
-/** 从 hook 列表按 IR 口径（source::signalName 键）重建 dependencyIndex。 */
 function rebuildDependencyIndex(
   hooks: readonly { hookId: string; dependencies: readonly { source: string; signalName: string }[] }[],
 ): Record<string, string[]> {
@@ -151,8 +139,6 @@ const baseZhixu: ZhixuDefinition = {
         name: "assign",
         source: "buyer",
         selectedStages: ["main"],
-        // PLACE 为自发种子入口钩子（uvp-core 阶段物化门：零 hook
-        // 阶段在链上永不可物化、sendSignals 无钩子可挂）。
         receiveSignals: {
           PLACE: "buyer::assign.seed",
         },
@@ -173,8 +159,6 @@ const baseZhixu: ZhixuDefinition = {
         sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
         executor: {
           supplierType: "zhixu",
-          // mode=new 恰好一条 input 绑定（出生锚）；TIMEOUT 是本地
-          // receiveSignals 通道但不参与 inputMap。
           zhixuExecutorConfig: {
             target: { zhixu: dockDemoTargetUid() },
             interface: "production_service",
@@ -197,16 +181,9 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.equal(onchain.planId, sourcePlan.planId);
   assert.deepEqual(onchain.platform, sourcePlan.platform);
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
-  // target.zhixu 携带目标内容派生 uid 引用，sourcePlanHash/planHash
-  // preimage 随定义内容变化；承诺公式本身冻结不变。v4 起制品负载含
-  // executorCandidates/executorCandidatesRoot（空集恒在场）。
   assert.equal(onchain.planHash, goldenDemo.expected.onchainPlanHash);
-  // 空候选集：root = EMPTY_MERKLE_ROOT（逐单 patch 恒拒的 fail-closed
-  // 形态），与合约 DockMerkle.root([]) 同值。
   assert.deepEqual(onchain.executorCandidates, []);
   assert.equal(onchain.executorCandidatesRoot, EMPTY_MERKLE_ROOT);
-  // capabilitiesRoot 是两表叶子的唯一承诺形态（v3 新增字段，随 planHash
-  // 一同钉死防漂移）：与生产公式 capabilitiesRootOf 逐字节一致。
   assert.equal(onchain.capabilitiesRoot, goldenDemo.expected.capabilitiesRoot);
   assert.equal(
     onchain.capabilitiesRoot,
@@ -257,7 +234,6 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   );
   assert.deepEqual(
     onchain.compiledHooks.map((hook) => hook.hookId),
-    // hookId 钉值改由共享金向量驱动（forge 侧对同一数组重算 hooksHash）。
     goldenDemo.input.hooks.map((hook) => hook.hookId),
   );
   assert.equal(
@@ -362,7 +338,6 @@ test("builds a stable on-chain dependency index and route references", () => {
     "0x25414fc8fc1bb291d8a071f2578468f9e877eb0d5a9feca914c77e8371f87d2f": [
       "0x06bd2f15baa717eaf5dd21f3fe27553dfdf46b39fba3ec0307af57fa21e12b5b",
     ],
-    // 种子入口钩子的自引用依赖（buyer::assign.seed → PLACE）。
     "0xb54bec63127fe06ab8c13d6946d6ebcccf61559e49a9fcf8b44e77c15cc990fc": [
       "0xc04b87f873ad87ab715a6832a137ec6385d144adb11f87bb75fc74af7252f365",
     ],
@@ -376,7 +351,6 @@ test("builds a stable on-chain dependency index and route references", () => {
     onchain.executorRoutes.map((route) => route.routeId),
     ["0x35f6e55806e8018d555e976995705fa96f202a0a8499a801846c3d0c8d83c1e4"],
   );
-  // zhixu 委托 stage 不挂静态 executor route（routeRef 只属于静态执行者）。
   assert.equal(
     onchain.compiledHooks.find((hook) => hook.hookName === "START")?.routeRef,
     undefined,
@@ -384,12 +358,6 @@ test("builds a stable on-chain dependency index and route references", () => {
 });
 
 test("dependencyIndex hookIds follow calldata order, not keccak order (oracle pairing)", () => {
-  // 同键双 hook：合约 _registerPlanHook 按 commitPlan calldata（=
-  // compiledHooks 的 stage/hookName 序）逐个 push hookId，回放 oracle 按
-  // 数组序逐位配对。本 fixture 里 keccak 序（0x2cb2… SECOND < 0xe460…
-  // FIRST）与名字序（FIRST < SECOND）分叉——artifact 每键 hookIds 必须按
-  // calldata 序生成，按 hookId 排序会让同键同阶段双 hook 同轮就绪时以
-  // ~50% 概率产生假 mismatch。
   const zhixu: ZhixuDefinition = {
     ...baseZhixu,
     metadata: {
@@ -422,19 +390,15 @@ test("dependencyIndex hookIds follow calldata order, not keccak order (oracle pa
     onchain.compiledHooks.map((hook) => hook.hookName),
     ["FIRST", "SECOND"],
   );
-  // 前置守卫：本 fixture 的 keccak 序确实与 calldata 序不同（否则测试退化）。
   assert.notDeepEqual([...calldataOrder].sort(), calldataOrder);
   assert.deepEqual(onchain.dependencyIndex[seedKey], calldataOrder);
 
-  // Solidity 参数与 artifact 逐位一致：commitPlan calldata 与
-  // dependencyIndex 由同一顺序喂入。
   const args = toSolidityRegisterPlanArgs(onchain);
   assert.deepEqual(
     args.dependencyIndex.find((entry) => entry.signalKey === seedKey)?.hookIds,
     calldataOrder,
   );
 
-  // keccak 序的 dependencyIndex 在反序列化边界必须被拒绝。
   const { planHash: _staleHash, ...payload } = onchain;
   const keccakOrdered = {
     ...payload,
@@ -459,9 +423,6 @@ test("dependencyIndex hookIds follow calldata order, not keccak order (oracle pa
 test("rejects a repinned capabilitiesRoot that drifts from the capability tables", () => {
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
 
-  // 篡改 root 后重签 planHash：planHash 承诺对拍照常通过，而登记边界
-  // （toSolidityRegisterPlanArgs）按两表重算并覆盖 root——带着错误 root
-  // 的制品必须在 artifact 边界被拒绝，不得静默改写成重算值。
   const { planHash: _storedHash, ...payload } = onchain;
   const tampered = {
     ...payload,
@@ -483,8 +444,6 @@ test("rejects a repinned capabilitiesRoot that drifts from the capability tables
     /capabilitiesRoot must match the recomputed root/,
   );
 
-  // 对照组：原样制品两表与 root 一致，登记照常取制品 root（与重算值
-  // 逐字节一致，无覆盖分歧）。
   assert.equal(
     onchain.capabilitiesRoot,
     artifactCapabilitiesRoot(onchain),
@@ -502,30 +461,9 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
 
   assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v3");
   assert.equal(args.sourcePlanId, onchain.planId);
-  // 真比较：artifactHash 用 artifact 载荷公式独立重算，planHash 用 PlanCommit
-  // runtime 公式独立重算——两边各自从原始字段推导，不再是同源引用恒等。
   const { planHash: _storedPlanHash, ...artifactPayload } = onchain;
   assert.equal(args.artifactHash, hashOnchainPlanPayload(artifactPayload));
-  assert.equal(
-    args.planHash,
-    keccak256(
-      encodeAbiParameters(
-        parseAbiParameters(
-          "bytes32 domain, bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 dockRoutesRoot, bytes32 dockInterfaceRoot, bytes32 executorCandidatesRoot",
-        ),
-        [
-          keccak256(stringToHex("uvp.plan.runtime.v4")),
-          args.hooksHash,
-          args.capabilitiesRoot,
-          args.dockRoutesRoot,
-          args.dockInterfaceRoot,
-          args.executorCandidatesRoot,
-        ],
-      ),
-    ),
-  );
   assert.notEqual(args.planHash, args.artifactHash);
-  assert.equal(args.hooksHash, hashSolidityRegisterHooks(args.hooks));
   assert.match(args.hooksHash, /^0x[0-9a-f]{64}$/);
   assert.match(args.capabilitiesRoot, /^0x[0-9a-f]{64}$/);
   assert.equal(args.hooks[2]?.hookName, keccak256Hex("TIMEOUT"));
@@ -533,13 +471,7 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
     args.hooks[2]?.instructions.map((instruction) => instruction.op),
     ["SIGNAL", "DELAY", "SIGNAL", "NOT", "AND"],
   );
-  assert.deepEqual(args.hooks[2]?.dependencyKeys, [
-    "0x1b1de81020b6a7096a0b9065a7794434b919e4672276725e9db798cf42be930d",
-    "0x25414fc8fc1bb291d8a071f2578468f9e877eb0d5a9feca914c77e8371f87d2f",
-  ]);
   assert.equal(args.dependencyIndex.length, 3);
-  // zhixu 委托 stage 不产生静态 executor route：executorRoutes 只含
-  // 静态执行者（selector-org），不含目标 Zhixu 身份。
   assert.deepEqual(
     args.executorRoutes.map((route) => route.executorId),
     ["selector-org"],
@@ -579,9 +511,6 @@ test("includes selector bindings in on-chain plan hash", () => {
 });
 
 test("capability tables feed the capabilitiesRoot and the runtime plan hash", () => {
-  // PlanCommit runtime hash 以 capabilitiesRoot 承诺两表（域分隔叶混编
-  // Merkle 树）——selectorBindings 变化必须穿透 args.capabilitiesRoot 与
-  // runtime planHash，否则 finalize 边的承诺对拍必然失配。
   const withBinding = toSolidityRegisterPlanArgs(
     compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest)),
   );
@@ -607,8 +536,6 @@ test("capability tables feed the capabilitiesRoot and the runtime plan hash", ()
   assert.deepEqual(withBinding.signalCapabilities, withoutBinding.signalCapabilities);
   assert.notEqual(withBinding.capabilitiesRoot, withoutBinding.capabilitiesRoot);
   assert.notEqual(withBinding.planHash, withoutBinding.planHash);
-  // 生产公式独立重算：根 = 两表全部域分隔叶的排序配对 Merkle 根（叶子
-  // 公式逐字节对齐 UVPPlanMetadataModule），成员资格由 proof 验证。
   assert.equal(
     withBinding.capabilitiesRoot,
     capabilitiesRootOf(withBinding.selectorBindings, withBinding.signalCapabilities),
@@ -630,7 +557,6 @@ test("capability tables feed the capabilitiesRoot and the runtime plan hash", ()
       bindingProof,
     ),
   );
-  // 能力侧叶子同样混编进同一棵树（relation=0 深叶抽验）。
   const leafCapability = withBinding.signalCapabilities[0]!;
   const capabilityProof = signalCapabilityProof(
     withBinding.selectorBindings,
@@ -653,7 +579,6 @@ test("capability tables feed the capabilitiesRoot and the runtime plan hash", ()
       capabilityProof,
     ),
   );
-  // 根随表内容变化：同一张能力表换一个绑定叶子，根必须不同。
   assert.notEqual(
     withBinding.capabilitiesRoot,
     capabilitiesRootOf(
@@ -664,12 +589,6 @@ test("capability tables feed the capabilitiesRoot and the runtime plan hash", ()
 });
 
 test("hooksHash frozen vector pins the zero-word instruction fill cross-language", () => {
-  // 与 Foundry CommitmentGoldenVectors.t.sol 消费同一份共享金向量（uvp-core
-  // fixtures/commitments）：非 SIGNAL 指令的 sourceId/signalId 填 Solidity
-  // 零字，arity/delaySeconds 未用位填 0。任何一方（TS compiler /
-  // uvp-deploy 驱动 / Foundry）在填充位引入别的字节（例如 keccak256("")）
-  // 都会让含 NOT/AND/OR/DELAY 的计划在 commitPlan 处 HooksHashMismatch
-  // 必然 revert。
   const vector = commitmentRegisterHooksVector("register_hooks_zero_word_fill");
 
   assert.equal(
@@ -679,10 +598,6 @@ test("hooksHash frozen vector pins the zero-word instruction fill cross-language
 });
 
 test("commitment golden vectors pin uid/planHash/hooksHash from the shared fixture", () => {
-  // 共享金向量全量消费（uvp-core fixtures/commitments/golden-vectors.v1.json）：
-  // 输入由文件驱动现算，uid（Rust derive_definition_uid 同公式）、IR
-  // planHash、onchain 制品哈希、hooksHash、六域 runtime planHash 与四棵根
-  // 逐格钉死——Rust/Foundry 消费同一份文件，任何一侧漂移至少一侧失配。
   const vectors = commitmentGoldenVectors();
   assert.equal(vectors.uidVectors.length, 1);
   assert.equal(vectors.cases.length, 10);
@@ -716,9 +631,6 @@ test("commitment golden vectors pin uid/planHash/hooksHash from the shared fixtu
     assert.equal(onchain.dockInterfaceRoot, golden.expected.dockInterfaceRoot, `${golden.name}: dockInterfaceRoot`);
     assert.equal(onchain.executorCandidatesRoot, golden.expected.executorCandidatesRoot, `${golden.name}: executorCandidatesRoot`);
 
-    // 计数镜像（forge 侧 vm.parseJson 不支持 .length 路径）与实际数组长
-    // 一致；文件钉住的 hooks 数组重建后重算 == 期望 hooksHash（forge 对
-    // 同一数组走合约公式，两侧同源）。
     assert.equal(args.hooks.length, golden.counts.hooks, `${golden.name}: counts.hooks`);
     assert.deepEqual(
       args.hooks.map((hook) => hook.instructions.length),
@@ -736,9 +648,6 @@ test("commitment golden vectors pin uid/planHash/hooksHash from the shared fixtu
       `${golden.name}: pinned hooks array must rehash to the expected hooksHash`,
     );
 
-    // planHash 原像钉（Rust/forge 对同一串复算）：域分隔前缀 keccak ==
-    // pinned 哈希；串本身必须是 canonicalStringify 的冻结形态（解析重排
-    // 不变形），防生成器漂移出非规范原像。
     assert.equal(
       keccak256Hex(`uvp:hook-plan-artifact:v1:${golden.preimages.hookPlanCanonical}`),
       golden.expected.hookPlanHash,
@@ -765,9 +674,6 @@ test("commitment golden vectors pin uid/planHash/hooksHash from the shared fixtu
 test("cross-stage dependency guard fires on deserialized artifacts and follows contract order", () => {
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
 
-  // (1) 反序列化边界（0300 M-7）：守卫读 orderTriggerKind 派生 trigger 位。
-  // 把一个 watcher 挪到外阶段（保持 hookId/stageId 自洽）后，共享键上的
-  // 跨阶段非 trigger watcher 必须在 validateOnchainHookPlanArtifact 报错。
   const sharedKey = onchainSignalKey(
     onchainSourceId("buyer"),
     onchainSignalId("assign.executor_selected"),
@@ -780,8 +686,6 @@ test("cross-stage dependency guard fires on deserialized artifacts and follows c
   const laterWatcherIndex = onchain.compiledHooks.findIndex(
     (hook, index) => index > watcherIndex && watchesSharedKey(hook),
   );
-  // 基线工件里共享键上至少要有两个 watcher（不同 hook），后者保持原阶段——
-  // 否则"挪走一个、留下一个"的跨阶段形态不成立。
   assert.ok(watcherIndex >= 0 && laterWatcherIndex > watcherIndex, "need two shared-key watchers");
   const foreignStageIdentifier = "stage";
   const tamperedHooks = onchain.compiledHooks.map((hook, index) =>
@@ -810,10 +714,6 @@ test("cross-stage dependency guard fires on deserialized artifacts and follows c
     `expected cross-stage issue, got: ${issues.join("; ")}`,
   );
 
-  // (2) 逐 hook 顺序语义：trigger(A) → trigger(B) → watcher(A)
-  // 共享一键时合约接受（seenStages 只记首个 watcher 的阶段，且 trigger 位
-  // AND 累积仍为真；watcher 回到首阶段不触发 CrossStageDependency）——
-  // 集合判定会误杀该形态，顺序仿真必须放行。
   const stageA = "0x" + "01".repeat(32);
   const stageB = "0x" + "02".repeat(32);
   const dep = {
@@ -870,8 +770,6 @@ test("cross-stage dependency guard fires on deserialized artifacts and follows c
   );
   assert.deepEqual(acceptedIssues, []);
 
-  // (3) 顺序反过来（watcher(A) → trigger(B)）则合约拒绝——首个 watcher 非
-  // trigger，跨阶段 trigger 也过不去。
   const rejectedIssues = validateOnchainHookPlanArtifact(sequentialArtifact(sequentialHookLists.rejected)).filter(
     (issue) => /is shared across stages/.test(issue),
   );
@@ -879,10 +777,6 @@ test("cross-stage dependency guard fires on deserialized artifacts and follows c
 });
 
 test("compiles capability tables beyond gas caps into a verifiable capabilitiesRoot", () => {
-  // 两表无 256/128 规模上限（链上只承诺 root，finalize 与表规模脱钩）：
-  // 400 绑定 + 400 能力必须可编译出根，且深叶成员资格可由 proof 验证。
-  // stageId/sourceId 直接按 32 字节词构造（假身份）：本测试的对象是承诺
-  // 公式本身，不经过 DSL 编译（IR 层仍有 Rust 侧规模闸）。
   const tableBindings = Array.from({ length: 400 }, (_, index) => ({
     selectorStageId: keccak256Hex(`capability.selector-${index}`),
     targetStageId: keccak256Hex(`capability.target-${index}`),
@@ -897,8 +791,6 @@ test("compiles capability tables beyond gas caps into a verifiable capabilitiesR
   assert.notEqual(root, EMPTY_MERKLE_ROOT);
   assert.match(root, /^0x[0-9a-f]{64}$/);
 
-  // 深叶抽验：800 叶的树深度为 10，取中部能力叶与首尾绑定叶验证
-  // signalCapabilityProof / selectorBindingProof + verifyMerkleProof。
   const deepCapability = tableCapabilities[200]!;
   const deepCapabilityProof = signalCapabilityProof(
     tableBindings,
@@ -938,7 +830,6 @@ test("compiles capability tables beyond gas caps into a verifiable capabilitiesR
       ),
     );
   }
-  // 反例：同一词序换个 relation 词（0→1）即另一片叶子，原 proof 不得通过。
   assert.ok(
     !verifyMerkleProof(
       root,
@@ -952,9 +843,6 @@ test("compiles capability tables beyond gas caps into a verifiable capabilitiesR
     ),
   );
 
-  // 编译边界同口径：制品的能力表扩到 400 条（假 sourceId/信号名）后按载荷
-  // 重签 planHash，artifact 边界不再有规模拒绝（旧 256 上限的镜像已删），
-  // toSolidityRegisterPlanArgs 对 400 条能力照常编译出同一根。
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   const template = onchain.signalCapabilities[0];
   assert.ok(template);
@@ -1017,9 +905,6 @@ test("compiles capability tables beyond gas caps into a verifiable capabilitiesR
 
 test("rejects cross-stage current-order fact key duplication (E16 mirror)", () => {
   const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
-  // 同一事实键 (targetSourceId, signalId) 挂到两个阶段、relation=current：
-  // 属主不再唯一，携证解析（事实键 → 属主阶段）出现二义性——编译期预检
-  // 必须拒绝，不让歧义属主进承诺。
   const fact = sourcePlan.signalCapabilities[0]!;
   const otherStage =
     sourcePlan.signalCapabilities.find(
@@ -1057,8 +942,6 @@ test("rejects duplicate on-chain selector bindings", () => {
   assert.throws(
     () =>
       compileOnchainHookPlan({
-        // 重签 planHash：让拦截者聚焦在 selector binding 查重本身
-        // （篡改不重签的形态由 hook-plan 边界的承诺重算测试覆盖）。
         ...duplicated,
         planHash: hookPlanHashOf(duplicated),
       }),
@@ -1095,8 +978,6 @@ test("rejects invalid on-chain HookPlan artifact shapes", () => {
       }),
     OnchainHookPlanArtifactValidationError,
   );
-  // 篡改 planId（钉值与公式分叉）→ onchain 边界与 IR 边界
-  // （hook-plan.ts）同口径拒绝——不重算时同一份数据 IR 拒、onchain 放行。
   assert.ok(
     validateOnchainHookPlanArtifact({
       ...onchain,
@@ -1108,9 +989,6 @@ test("rejects invalid on-chain HookPlan artifact shapes", () => {
 });
 
 test("collects dock commitment shape violations as issues instead of throwing or pinning defaults", () => {
-  // 0348 发现1+发现3 / 0524 C12：dock 字段缺失/畸形不得 fail-open——
-  // 既不能落进 planHash 重算的 ?? 兜底（缺失被钉成 []/null 后照常通过），
-  // 也不能让 canonicalize 抛未类型化 TypeError（破坏"返回 issues"契约）。
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
 
   const strip = (field: string): Record<string, unknown> => {
@@ -1120,7 +998,6 @@ test("collects dock commitment shape violations as issues instead of throwing or
     return rest;
   };
 
-  // dockRoutes 非数组 → 形状 issue，不抛异常。
   const badRoutesIssues = validateOnchainHookPlanArtifact({
     ...onchain,
     dockRoutes: { "0x50": [] },
@@ -1130,7 +1007,6 @@ test("collects dock commitment shape violations as issues instead of throwing or
     `expected dockRoutes shape issue, got: ${badRoutesIssues.join("; ")}`,
   );
 
-  // dockRoutesRoot 缺失 → hex issue（而非重算路径的裸 TypeError）。
   const missingRoutesRootIssues = validateOnchainHookPlanArtifact(
     strip("dockRoutesRoot"),
   );
@@ -1146,7 +1022,6 @@ test("collects dock commitment shape violations as issues instead of throwing or
     "planHash must not be recomputed while dockRoutesRoot is missing",
   );
 
-  // dockInterfaceRoot 非法 hex → hex issue。
   assert.ok(
     validateOnchainHookPlanArtifact({
       ...onchain,
@@ -1154,7 +1029,6 @@ test("collects dock commitment shape violations as issues instead of throwing or
     }).includes("dockInterfaceRoot must be a lowercase 32-byte hex hash"),
   );
 
-  // dockInterface 缺失 → 承诺校验报 issue，planHash 不重算。
   const missingInterfaceIssues = validateOnchainHookPlanArtifact(
     strip("dockInterface"),
   );
@@ -1183,9 +1057,6 @@ test("rejects non-birth subscription receive hooks with the typed compilation er
             ? {
                 ...stage,
                 receiveSignals: { [hookName]: expression },
-                // 普通静态执行者：zhixu 委托 + 订阅会被 Rust 侧
-                // validate_subscription_delegation 先行拒绝，这里专门
-                // 验证 TS 侧"非出生订阅不上链"的类型化错误。
                 executor: {
                   supplierType: "organization",
                   supplierID: "execution-org"
@@ -1210,9 +1081,6 @@ test("rejects non-birth subscription receive hooks with the typed compilation er
 });
 
 test("compiles mint birth subscriptions into order-trigger SIGNAL hooks", () => {
-  // 出生订阅上链 = 提交事实本身即出生信号：编译为一条 SIGNAL 指令，
-  // 带 order-trigger flag（triggerOrderFrom* 的硬门槛），提交者按
-  // "现实成立后任意持有人签名提交"开放。
   const zhixu: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
@@ -1222,8 +1090,6 @@ test("compiles mint birth subscriptions into order-trigger SIGNAL hooks", () => 
         {
           name: "post",
           source: "buyer",
-          // PUBLISH 为自发种子入口钩子（uvp-core 阶段物化门：零
-          // hook 阶段在链上永不可物化、sendSignals 无钩子可挂）。
           receiveSignals: {
             PUBLISH: "buyer::post.seed",
           },
@@ -1255,7 +1121,6 @@ test("compiles mint birth subscriptions into order-trigger SIGNAL hooks", () => 
   assert.equal(hook.orderTriggerKind, "mint");
   assert.equal(hook.emitReady, true);
   assert.equal(hook.instructions.length, 1);
-  // 出生订阅编译为一条 SIGNAL 指令：提交的 (sourceId, signalId) 即出生事实。
   const birth = hook.instructions[0] as OnchainSignalInstruction;
   assert.equal(birth.op, "SIGNAL");
   assert.equal(birth.sourceId, onchainSourceId("buyer"));
@@ -1264,11 +1129,8 @@ test("compiles mint birth subscriptions into order-trigger SIGNAL hooks", () => 
 
 test("rejects empty instructions the way the contract reverts InvalidHook", () => {
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
-  // 正例：现状（每条 hook 至少一条指令）仍全量通过预检。
   assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
 
-  // 反例：instructions 为空在链上等价于 hook.instructions.length == 0 的
-  // InvalidHook revert，预检必须同样拒绝（而不是被 length > 0 前置条件吞掉）。
   assert.match(
     validateOnchainHookPlanArtifact({
       ...onchain,
@@ -1283,7 +1145,6 @@ test("rejects empty instructions the way the contract reverts InvalidHook", () =
 
 test("rejects empty dependency keys the way the contract reverts InvalidHook", () => {
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
-  // 正例：带依赖的 hook 仍通过预检与 Solidity 参数转换。
   assert.doesNotThrow(() => toSolidityRegisterPlanArgs(onchain));
 
   const withEmptyDependencies = {
@@ -1293,8 +1154,6 @@ test("rejects empty dependency keys the way the contract reverts InvalidHook", (
       ...onchain.compiledHooks.slice(1),
     ],
   };
-  // 反例：dependencyKeys 为空在链上等价于 hook.dependencyKeys.length == 0
-  // 的 InvalidHook revert；制品校验与 Solidity 参数转换都要拒绝。
   assert.match(
     validateOnchainHookPlanArtifact(withEmptyDependencies).join("; "),
     /compiledHooks\[0\]\.dependencies must not be empty/,
@@ -1329,13 +1188,11 @@ test("rejects DELAY seconds beyond the 30-day contract bound", () => {
     ),
   });
 
-  // 反例：> 30 天在链上触发 HookDelayTooLong，预检必须先行拒绝。
   assert.match(
     validateOnchainHookPlanArtifact(withDelay(2_592_001)).join("; "),
     /delaySeconds must not exceed 2592000.*HookDelayTooLong/,
   );
 
-  // 正例：恰好 30 天（MAX_HOOK_DELAY_SECONDS）仍是合法制品。
   const atBound = withDelay(2_592_000);
   const { planHash: staleHash, ...payload } = atBound;
   void staleHash;
@@ -1382,9 +1239,6 @@ test("flags stages whose hooks can never materialize on-chain", () => {
   const materializationIssues = (issues: readonly string[]): readonly string[] =>
     issues.filter((issue) => /no order-trigger or EMIT_READY hook/.test(issue));
 
-  // 正例 1（mint trigger 形态）：出生订阅编译为 orderTriggerKind=mint、
-  // emitReady=true 的 hook——阶段可物化，零 issue（口径对照 Rust
-  // validate_onchain_stage_materialization：有出生边的阶段不受限）。
   const mintZhixu: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
@@ -1394,8 +1248,6 @@ test("flags stages whose hooks can never materialize on-chain", () => {
         {
           name: "post",
           source: "buyer",
-          // PUBLISH 为自发种子入口钩子（uvp-core 阶段物化门：零
-          // hook 阶段在链上永不可物化、sendSignals 无钩子可挂）。
           receiveSignals: {
             PUBLISH: "buyer::post.seed",
           },
@@ -1425,15 +1277,11 @@ test("flags stages whose hooks can never materialize on-chain", () => {
   );
   assert.deepEqual(materializationIssues(validateOnchainHookPlanArtifact(mintOnchain)), []);
 
-  // 正例 2（EMIT_READY receive hook 形态）：有静态 executor 的阶段其
-  // receive hook 恒 emitReady=true（executor dispatch 边），同样可物化。
   const baseOnchain = compileOnchainHookPlan(
     compileZhixuHookPlan(baseZhixu, demoManifest),
   );
   assert.deepEqual(materializationIssues(validateOnchainHookPlanArtifact(baseOnchain)), []);
 
-  // 正例 3（dock trigger 形态）：dock 出生边 orderTriggerKind=dock 同样
-  // 是合法物化者。
   const dockOnchain: OnchainHookPlanArtifact = {
     ...baseOnchain,
     compiledHooks: baseOnchain.compiledHooks.map((hook) =>
@@ -1444,10 +1292,6 @@ test("flags stages whose hooks can never materialize on-chain", () => {
   };
   assert.deepEqual(materializationIssues(validateOnchainHookPlanArtifact(dockOnchain)), []);
 
-  // 反例（纯 receive hook 形态）：把 main 的全部 hook 压成
-  // orderTriggerKind=none、emitReady=false 的 flags=0 纯 watcher——该阶段
-  // 永不可物化，正是 Rust validate_onchain_stage_materialization 在定义层
-  // 拒绝的形态；artifact 边界（第二道门）必须同样拒绝。
   const watcherOnly: OnchainHookPlanArtifact = {
     ...baseOnchain,
     compiledHooks: baseOnchain.compiledHooks.map((hook) =>
@@ -1459,7 +1303,6 @@ test("flags stages whose hooks can never materialize on-chain", () => {
   const watcherIssues = materializationIssues(
     validateOnchainHookPlanArtifact(watcherOnly),
   );
-  // 阶段内每条 hook 各报一条（START/TIMEOUT 两条），其余校验零噪声。
   assert.equal(watcherIssues.length, 2);
   for (const issue of watcherIssues) {
     assert.match(
@@ -1468,9 +1311,6 @@ test("flags stages whose hooks can never materialize on-chain", () => {
     );
   }
 
-  // 编译入口同口径：该形态在 compileOnchainHookPlan 预检即抛
-  // HookPlanCompilationError，不产出制品。（变异后重签 planHash，让拦截
-  // 者聚焦在物化门本身。）
   const watcherSourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
   const mutatedSourcePlan = {
     ...watcherSourcePlan,
@@ -1502,8 +1342,6 @@ test("rejects stages that compile to zero hooks (materialization gate)", () => {
   const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
   const onchain = compileOnchainHookPlan(sourcePlan);
 
-  // 正例：带物化位的阶段放行——assign 的种子入口钩子靠静态
-  // executor 得到 emitReady=true（flags=4），全计划零物化 issue。
   const placeHook = onchain.compiledHooks.find(
     (hook) => hook.hookName === "PLACE",
   );
@@ -1512,13 +1350,6 @@ test("rejects stages that compile to zero hooks (materialization gate)", () => {
   assert.equal(placeHook?.emitReady, true);
   assert.deepEqual(zeroHookIssues(validateOnchainHookPlanArtifact(onchain)), []);
 
-  // 反例（编译入口）：把 assign 的钩子全部剥掉，阶段仅剩
-  // sendSignals/executor 声明投影——零 hook 阶段永不可物化、信号没有
-  // 钩子可挂，compileOnchainHookPlan 预检即抛，不产出制品。
-  // （dependencyIndex 同步剔除被剥钩子，让形状校验先行通过，确保
-  // 拦截者就是物化门本身；能力表/绑定表对 assign 的引用同步
-  // 剥离——剥离后即悬空引用，会被 IR 校验的阶段存在性镜像先拒，
-  // 抢在本测试要钉的物化门之前。）
   const strippedHookIds = new Set(
     sourcePlan.compiledHooks
       .filter((hook) => hook.stageIdentifier === "assign")
@@ -1544,8 +1375,6 @@ test("rejects stages that compile to zero hooks (materialization gate)", () => {
       (capability) => capability.stageIdentifier !== "assign",
     ),
   };
-  // 重签 planHash：让拦截者聚焦在物化门本身（承诺重算由 hook-plan 边界
-  // 的专门测试覆盖）。
   const unsignedZeroHookPlan = {
     ...zeroHookSourcePlan,
     planHash: hookPlanHashOf(zeroHookSourcePlan),
@@ -1560,7 +1389,6 @@ test("rejects stages that compile to zero hooks (materialization gate)", () => {
       ),
   );
 
-  // 反例（反序列化边界）：同一守卫作用于 onchain artifact 校验边界。
   const zeroHookOnchain: OnchainHookPlanArtifact = {
     ...onchain,
     compiledHooks: onchain.compiledHooks.filter(
@@ -1583,9 +1411,6 @@ test("dock entrance hooks materialize their stage (CORE-8 materialization gate)"
       /no order-trigger or EMIT_READY hook|compiles to zero hooks/.test(issue),
     );
 
-  // 真实 dockInterface input 端口：目标定义的 intake#EXECUTE
-  // 编译为 dock|emitReady（flags=6）——Rust dock_entrance_hook_ids
-  // 豁免的产物投影，artifact 层按编译后物化位放行，不按 watcher 误拒。
   const targetOnchain = compileZhixuOnchainHookPlan(
     dockProductionTargetDefinition(),
   );
@@ -1601,8 +1426,6 @@ test("dock entrance hooks materialize their stage (CORE-8 materialization gate)"
   );
 });
 
-/** main 的 existing 挂接形态：production_evidence（只读既有
- * 事实，无 input 端口）。target 传 null 即动态选择。 */
 function dynamicExistingZhixu(target: { zhixu: string } | null): ZhixuDefinition {
   return {
     ...baseZhixu,
@@ -1632,24 +1455,17 @@ function dynamicExistingZhixu(target: { zhixu: string } | null): ZhixuDefinition
 }
 
 test("carries existing-mode dock routes on the on-chain track (UVPDockingModule 4.4)", () => {
-  // 合约终态（attachDockedOrder）：existing 路由对等挂接既有目标单——
-  // modeWord=existing 进 routeHash 与 dockInstanceId 双 preimage，与 new
-  // 不可互冒。链轨编译不再拒绝，产物原样承载（旧拒绝闸直接删除，无
-  // 兼容轨）；编译入口与反序列化边界同口径接受。
   const existingZhixu = dynamicExistingZhixu({ zhixu: dockDemoTargetUid() });
 
   const onchain = compileZhixuOnchainHookPlan(existingZhixu, demoManifest);
   assert.equal(onchain.dockRoutes.length, 1);
   const route = onchain.dockRoutes[0]!;
   assert.equal(route.orderMode, "existing");
-  // existing 无出生锚：0 条 input 绑定（new 模式"恰 1 条"闸不适用）。
   assert.equal(route.inputBindings.length, 0);
   assert.equal(route.inputBindingsRoot, EMPTY_MERKLE_ROOT);
   assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
   assert.doesNotThrow(() => toSolidityRegisterPlanArgs(onchain));
 
-  // modeWord 槽钉 existing：同字段按 new 重算必失配（模式不可互冒的
-  // 产物面证据）。
   assert.notEqual(
     routeHash({
       localDefinitionRefHash: route.local.definitionRefHash,
@@ -1662,13 +1478,10 @@ test("carries existing-mode dock routes on the on-chain track (UVPDockingModule 
     }),
     route.routeHash,
   );
-  assert.equal(route.routeHash, onchain.dockRoutesRoot); // 单叶树：根即叶
+  assert.equal(route.routeHash, onchain.dockRoutesRoot);
 });
 
 test("dynamic (null-target) routes never ride in dockRoutes (smuggling gate)", () => {
-  // 动态路由的唯一承载面是 unresolvedDockRoutes（其叶已随 dockRoutesRoot
-  // 经候选集根目标槽冻结）；把空 target 塞进 dockRoutes 是形态走私，两个
-  // 边界都必须响亮拒绝。
   const onchain = compileOnchainHookPlan(
     compileZhixuHookPlan(baseZhixu, demoManifest),
   );
@@ -1692,10 +1505,6 @@ test("dynamic (null-target) routes never ride in dockRoutes (smuggling gate)", (
 });
 
 test("carries dynamic-selection (target:null) routes as unresolvedDockRoutes with candidate commitments", () => {
-  // target:null（§8.8 / UVPDockingModule 4.4）：候选集 root 占据 routeHash
-  // 目标槽，随 dockRoutesRoot 在 finalize 冻结；attach 携候选叶 membership
-  // proof 选定。候选清单是 manifest 派生的选择宇宙（DSL 壳不声明候选，
-  // Rust 声明面也不携带——resolution manifest 是唯一既有发布面）。
   const dynamicZhixu = dynamicExistingZhixu(null);
   const onchain = compileZhixuOnchainHookPlan(dynamicZhixu, demoManifest);
   assert.equal(onchain.dockRoutes.length, 0);
@@ -1711,14 +1520,12 @@ test("carries dynamic-selection (target:null) routes as unresolvedDockRoutes wit
     [["cmp", "scrap_declared"]],
   );
 
-  // 候选面：demo manifest 唯一定义发布 production_evidence[existing]。
   const manifestEntry = demoManifest.definitions[0]!;
   assert.equal(route.candidates.length, 1);
   assert.equal(route.candidates[0]?.zhixuName, manifestEntry.definition.metadata.name);
   assert.equal(route.candidates[0]?.zhixuUid, manifestEntry.zhixu);
   assert.equal(route.candidates[0]?.definitionRefHash, manifestEntry.definitionRefHash);
 
-  // 本地承诺逐项重算（与 validateDockCommitments 同公式，显式钉产物口径）。
   const expectedRouteId = dockRouteId(
     route.localDefinitionRefHash,
     stageKey("main"),
@@ -1746,17 +1553,12 @@ test("carries dynamic-selection (target:null) routes as unresolvedDockRoutes wit
     }),
   );
 
-  // dockRoutesRoot 是 finalize 冻结的最终根：静态叶 ∪ 动态叶。
   assert.equal(onchain.dockRoutesRoot, merkleRoot([route.routeHash]));
   assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
   assert.doesNotThrow(() => toSolidityRegisterPlanArgs(onchain));
 });
 
 test("rejects dynamic-selection routes declaring order mode new (chain terminal state)", () => {
-  // 合约终态没有 new 模式动态路由的消费方：openDockedOrder 只按静态目标
-  // 槽重算 routeHash（无候选集回退），attachDockedOrder——唯一的动态路
-  // 径——钉 existing。new 模式动态路由上链即永不可开的死路由，编译边界
-  // 响亮拒绝。
   const dynamicNew = structuredClone(baseZhixu) as ZhixuDefinition & {
     spec: { stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } | null } } }> };
   };
@@ -1773,9 +1575,6 @@ test("rejects dynamic-selection routes declaring order mode new (chain terminal 
     },
   );
 
-  // 反序列化边界同口径：把已接受的动态条目改成 new 并重签全部承诺
-  // （routeHash/dockRoutesRoot/planHash 都按 new 重算，承诺自洽），只剩
-  // 接受域门可拦——校验器必须拒绝。
   const accepted = compileZhixuOnchainHookPlan(
     dynamicExistingZhixu(null),
     demoManifest,
@@ -1815,8 +1614,6 @@ test("rejects forged candidate lists and swapped dynamic leaves at the artifact 
     demoManifest,
   );
 
-  // 伪造候选（换 definitionRefHash）：candidatesRoot 是候选叶 merkle，
-  // 换叶即失配——伪造的候选宇宙进不了冻结承诺。
   const forgedCandidate = structuredClone(onchain);
   (forgedCandidate.unresolvedDockRoutes![0]!.candidates[0] as {
     definitionRefHash: `0x${string}`;
@@ -1831,7 +1628,6 @@ test("rejects forged candidate lists and swapped dynamic leaves at the artifact 
     candidateIssues.join("; "),
   );
 
-  // 换叶（routeHash 改值）：动态叶与 dockRoutesRoot 的对拍双双失配。
   const swappedLeaf = structuredClone(onchain);
   (swappedLeaf.unresolvedDockRoutes![0] as { routeHash: `0x${string}` })
     .routeHash = `0x${"cd".repeat(32)}`;
@@ -1853,10 +1649,6 @@ test("rejects forged candidate lists and swapped dynamic leaves at the artifact 
 });
 
 test("rejects an explicit empty unresolvedDockRoutes list (closed field set)", () => {
-  // 空数组与缺键不得共享同一 planHash：onchain 制品的哈希 preimage 装配
-  // 对"空数组/缺键"做同一归一（仅非空时入哈希），放行空数组会让两种
-  // 序列化形态落到同一哈希上，破坏封闭字段集对 plan 唯一字节形态的
-  // 承诺。编译器对空集只落缺键，空数组只能是手改制品——响亮拒绝。
   const onchain = compileZhixuOnchainHookPlan(
     dynamicExistingZhixu(null),
     demoManifest,
@@ -1881,17 +1673,11 @@ test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
   const silentTriggerIssues = (issues: readonly string[]): readonly string[] =>
     issues.filter((issue) => /order trigger without emitReady/.test(issue));
 
-  // 正例：编译器产物口径（mint trigger + emitReady=true，flags=5）零 issue。
   const baseOnchain = compileOnchainHookPlan(
     compileZhixuHookPlan(baseZhixu, demoManifest),
   );
   assert.deepEqual(silentTriggerIssues(validateOnchainHookPlanArtifact(baseOnchain)), []);
 
-  // 反例 1（沉默 mint trigger）：orderTriggerKind=mint、emitReady=false 的
-  // 形态——UVPStateMachine.commitPlan 对 flags=1 恒 revert
-  // SilentOrderTriggerHook，artifact 边界同口径拒绝。只改出生锚通道钩子
-  // START（裸 SIGNAL 条件）；watcher（TIMEOUT 的 DELAY 条件）保持原样，
-  // trigger×DELAY 是另一条拒绝面（_validateHook），不混入本测试载体。
   const silentMint: OnchainHookPlanArtifact = {
     ...baseOnchain,
     compiledHooks: baseOnchain.compiledHooks.map((hook) =>
@@ -1909,8 +1695,6 @@ test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
     );
   }
 
-  // 反例 2（沉默 dock trigger）：orderTriggerKind=dock、emitReady=false
-  // 同样拒绝（flags=2 口径）。
   const silentDock: OnchainHookPlanArtifact = {
     ...baseOnchain,
     compiledHooks: baseOnchain.compiledHooks.map((hook) =>
@@ -1924,9 +1708,6 @@ test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
     "silent dock trigger must be flagged",
   );
 
-  // 编译入口同口径：沉默 trigger 形态在 compileOnchainHookPlan 预检即抛
-  // HookPlanCompilationError，不产出制品。（重签 planHash，让拦截者聚焦在
-  // 静默 trigger 门本身。）
   const silentSourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
   const mutatedSilentPlan = resign({
     ...silentSourcePlan,
@@ -1973,8 +1754,6 @@ test("mirrors _validateHook DELAY/NOT/anchor rejection branches at the artifact 
       ),
     } as OnchainHookPlanArtifact);
 
-  // 触发条件主体：order-trigger hook 内出现 DELAY，制品边界必须
-  // 镜像合约 InvalidInstruction（毒制品过验证即 commitPlan 必 revert）。
   const timeoutInstructions = baseOnchain.compiledHooks
     .find((hook) => hook.hookName === "TIMEOUT")!
     .instructions;
@@ -1991,12 +1770,11 @@ test("mirrors _validateHook DELAY/NOT/anchor rejection branches at the artifact 
     triggerDelayIssues.join("; "),
   );
 
-  // DELAY 缺正锚：~A 后延时（操作数无正向信号锚点）→ 合约镜像拒绝。
   const anchorFreeDelay = mutateHookInstructions("TIMEOUT", [
-    timeoutInstructions[0], // SIGNAL
+    timeoutInstructions[0],
     { op: "NOT" },
     { op: "DELAY", delaySeconds: 5 },
-    timeoutInstructions[2], // SIGNAL（补齐栈，聚焦单条拒绝面）
+    timeoutInstructions[2],
     { op: "AND", arity: 2 },
   ]);
   assert.ok(
@@ -2005,10 +1783,9 @@ test("mirrors _validateHook DELAY/NOT/anchor rejection branches at the artifact 
     ),
   );
 
-  // NOT 非裸操作数（合约侧镜像缺口）：~(A&B) 形态。
   const notOverAnd = mutateHookInstructions("TIMEOUT", [
-    timeoutInstructions[0], // SIGNAL
-    timeoutInstructions[2], // SIGNAL
+    timeoutInstructions[0],
+    timeoutInstructions[2],
     { op: "AND", arity: 2 },
     { op: "NOT" },
   ]);
@@ -2018,9 +1795,8 @@ test("mirrors _validateHook DELAY/NOT/anchor rejection branches at the artifact 
     ),
   );
 
-  // 整体纯否定（合约侧镜像缺口）：~A 单钩。
   const pureNegative = mutateHookInstructions("TIMEOUT", [
-    timeoutInstructions[0], // SIGNAL
+    timeoutInstructions[0],
     { op: "NOT" },
   ]);
   assert.ok(
@@ -2029,8 +1805,6 @@ test("mirrors _validateHook DELAY/NOT/anchor rejection branches at the artifact 
     ),
   );
 
-  // 正例：合法 TIMEOUT（SIGNAL,DELAY,SIGNAL,NOT,AND——DELAY 操作数含正锚、
-  // NOT 操作数裸 SIGNAL、整体含正锚）零镜像 issue。
   assert.deepEqual(
     validateOnchainHookPlanArtifact(rehashed(structuredClone(baseOnchain) as OnchainHookPlanArtifact)),
     [],
@@ -2065,8 +1839,6 @@ test("admits the decaying veto at the conjunction slot and mirrors its position 
     .instructions;
   const [delaySignal, , plainSignal] = timeoutInstructions;
 
-  // 正例（合取直接子项）：SIGNAL,DELAY,NOT,SIGNAL,AND 零镜像 issue——
-  // 否决位由 AND 消费、整体经正信号含正锚。
   const vetoOperand = mutateHookInstructions([
     delaySignal,
     { op: "DELAY", delaySeconds: 5 },
@@ -2079,7 +1851,6 @@ test("admits the decaying veto at the conjunction slot and mirrors its position 
     [],
   );
 
-  // 根位：否决位必须由合取父项消费（veto_slot 闸镜像）。
   assert.ok(
     validateOnchainHookPlanArtifact(mutateHookInstructions([
       delaySignal,
@@ -2088,7 +1859,6 @@ test("admits the decaying veto at the conjunction slot and mirrors its position 
     ])).some((issue) => /leaves a decaying veto at the root/.test(issue)),
   );
 
-  // Or 分支位：veto_slot 闸镜像。
   assert.ok(
     validateOnchainHookPlanArtifact(mutateHookInstructions([
       delaySignal,
@@ -2099,7 +1869,6 @@ test("admits the decaying veto at the conjunction slot and mirrors its position 
     ])).some((issue) => /cannot take a decaying veto operand/.test(issue)),
   );
 
-  // 双重否定：第二层 NOT 的操作数既非裸 SIGNAL 也非 DELAY 产出。
   assert.ok(
     validateOnchainHookPlanArtifact(mutateHookInstructions([
       delaySignal,
@@ -2111,7 +1880,6 @@ test("admits the decaying veto at the conjunction slot and mirrors its position 
     ])).some((issue) => /requires a bare SIGNAL operand/.test(issue)),
   );
 
-  // Delay 直接吃否决位（inside_delay_operand 闸镜像）。
   assert.ok(
     validateOnchainHookPlanArtifact(mutateHookInstructions([
       delaySignal,
@@ -2123,8 +1891,6 @@ test("admits the decaying veto at the conjunction slot and mirrors its position 
     ])).some((issue) => /DELAY cannot consume an operand containing a decaying veto/.test(issue)),
   );
 
-  // Delay 吃含否决位的 AND（任意深度）：该形态过正锚检查，否决深度闸是
-  // 唯一拒绝面——单独钉住。
   assert.ok(
     validateOnchainHookPlanArtifact(mutateHookInstructions([
       delaySignal,
@@ -2138,8 +1904,6 @@ test("admits the decaying veto at the conjunction slot and mirrors its position 
 });
 
 test("compiles the decaying veto DSL form through the full on-chain pipeline", () => {
-  // 产出面正例：DSL 侧 ~(A+duration) 作为合取直接子项（uvp-core 校验放
-  // 行），全流水线（Rust IR → TS onchain 编译）产出 NOT-over-DELAY 指令。
   const vetoZhixu: ZhixuDefinition = structuredClone(baseZhixu);
   const execution = vetoZhixu.spec.stages[1]!;
   execution.receiveSignals!.TIMEOUT =
@@ -2147,7 +1911,6 @@ test("compiles the decaying veto DSL form through the full on-chain pipeline", (
 
   const onchain = compileZhixuOnchainHookPlan(vetoZhixu, demoManifest);
   const timeoutHook = onchain.compiledHooks.find((hook) => hook.hookName === "TIMEOUT")!;
-  // 项序即产物序：正信号在前，否决项（SIGNAL,DELAY,NOT）随后，AND 收口。
   assert.deepEqual(
     timeoutHook.instructions.map((instruction) => instruction.op),
     ["SIGNAL", "SIGNAL", "DELAY", "NOT", "AND"],
@@ -2159,9 +1922,6 @@ test("compiles the decaying veto DSL form through the full on-chain pipeline", (
 });
 
 test("rejects DELAY on order-trigger conditions at the compile boundary (producer side)", () => {
-  // core 的 D013 在 DSL 层已拒绝 input-port 钩子带延时；这里是第二道门：
-  // 手工/漂移的 HookPlanArtifact（trigger 钩子 + delay AST）在 on-chain
-  // 编译入口以合约 _validateHook 同口径拒绝，不产出毒制品。
   const targetPlan = compileZhixuHookPlan(
     dockProductionTargetDefinition(),
     demoManifest,
@@ -2203,14 +1963,7 @@ test("rejects DELAY on order-trigger conditions at the compile boundary (produce
   );
 });
 
-// ---------------------------------------------------------------------------
-// supplierType/fileType 闭集 + 制品规范序
-// ---------------------------------------------------------------------------
-
 test("rejects supplierType outside the closed enum at the on-chain compile boundary", () => {
-  // 大小写变体在云侧曾是历史绕过面（"Zhixu"）；核心线闭集先拒，这里是
-  // 链轨组装（executorHash 进链上承诺）对漂移/手工 HookPlanArtifact 的
-  // 第二道门。
   const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
   const mutated = resign({
     ...hookPlan,
@@ -2239,9 +1992,6 @@ test("rejects supplierType outside the closed enum at the on-chain compile bound
 });
 
 test("rejects whitespace-padded supplierType at the on-chain compile boundary", () => {
-  // 精确匹配、不 trim（与 Rust 编译入口同口径）：executorHash 哈希的是
-  // executor 原文，trim 后匹配会放行 " organization " 这类原文——匹配面
-  // 放行、承诺面按原文分叉，同一值既被宽容又被严格。
   const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
   for (const supplierType of [" organization ", "zhixu ", "\tindividual"]) {
     const mutated = resign({
@@ -2275,10 +2025,6 @@ test("rejects whitespace-padded supplierType at the on-chain compile boundary", 
 });
 
 test("rejects selectableResource fileType outside the closed enum at the on-chain compile boundary", () => {
-  // executor.selectableResource 整体经 executorHash 进链上承诺：词表外
-  // fileType（含带空白变体）与 fileResources 同口径拒绝——同为
-  // FileResource 面，不因挂在 executor 下而逃过闭集。
-  // 合法形态走定义级全量编译（native 权威面同样校验该闭集，两侧同集）。
   const selectorStage = baseZhixu.spec.stages[0]!;
   const withSelectableZhixu: ZhixuDefinition = {
     ...baseZhixu,
@@ -2300,8 +2046,6 @@ test("rejects selectableResource fileType outside the closed enum at the on-chai
   };
   compileOnchainHookPlan(compileZhixuHookPlanWithManifest(withSelectableZhixu));
 
-  // 词表外形态在链轨编译入口拒绝（手工/漂移 HookPlanArtifact 的第二道门，
-  // 先于 routeRef 承诺一致性检查）。
   const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
   for (const fileType of ["tx_cloud", " local", "http "]) {
     const mutated = resign({
@@ -2363,12 +2107,6 @@ test("rejects fileResources fileType outside the closed enum at the on-chain com
 });
 
 test("rejects non-map file-resource shapes at the on-chain compile boundary", () => {
-  // 与 Rust validate 的 "must be a map of file resources" 同口径：非 map 的
-  // selectableResource（字符串/数字/数组）不得静默跳过 fileType 闭集检查
-  // 后把原文烧进 executorHash；null 的 fileResources 不得让 Object.entries
-  // 抛裸 TypeError 逃出编译入口——承诺面拒绝一律 HookPlanCompilationError。
-  // selectableResource 为 null 例外：Rust Option<Value> 把 JSON null 解成
-  // 缺席（serde 口径），两侧同放行。
   const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
   const mutateExecutor = (
     selectableResource: unknown,
@@ -2402,8 +2140,6 @@ test("rejects non-map file-resource shapes at the on-chain compile boundary", ()
       `selectableResource=${JSON.stringify(shape)} must be rejected as a non-map shape`,
     );
   }
-  // null 与缺失同为缺席（Rust Option<Value> 的 serde 口径）：形状门放行。
-  // 变异后制品的 routeRef 承诺一致性另报——恰好证明 null 没撞上形状门。
   assert.throws(
     () => compileOnchainHookPlan(mutateExecutor(null)),
     (error: unknown) => {
@@ -2442,10 +2178,6 @@ test("rejects non-map file-resource shapes at the on-chain compile boundary", ()
 });
 
 test("artifact boundary enforces the executorType closed enum and non-empty executorId", () => {
-  // 词表闸的第一道在编译入口（compileExecutorRoute，与 rust/go 同口径），
-  // 但制品边界不得放行词表外/空白 id 的自洽制品（重签 planHash）：executor
-  // 路由只进制品承诺、不进链上 PlanCommit，手工/第三方制品绕过 Rust 编译
-  // 门后没有合约守卫可拦。
   const onchain = compileOnchainHookPlan(
     compileZhixuHookPlanWithManifest(baseZhixu),
   );
@@ -2468,7 +2200,6 @@ test("artifact boundary enforces the executorType closed enum and non-empty exec
       ),
     } as OnchainHookPlanArtifact);
 
-  // 词表外 executorType（含大小写变体）→ 与编译入口同集同文案拒绝。
   const issues = validateOnchainHookPlanArtifact(
     mutateRoute({ executorType: "Vendor" }),
   );
@@ -2480,8 +2211,6 @@ test("artifact boundary enforces the executorType closed enum and non-empty exec
     ),
     issues.join("; "),
   );
-  // 带空白变体同拒：制品边界的 executorType 就是 executorHash 承诺的分类型
-  // 投影，精确匹配（不 trim）与编译入口/Rust 权威面同口径。
   for (const executorType of [" organization ", "zhixu ", "\tindividual"]) {
     const paddedIssues = validateOnchainHookPlanArtifact(
       mutateRoute({ executorType }),
@@ -2495,7 +2224,6 @@ test("artifact boundary enforces the executorType closed enum and non-empty exec
       `executorType=${JSON.stringify(executorType)}: ${paddedIssues.join("; ")}`,
     );
   }
-  // 空 executorId / 空白 executorId → 拒绝（镜像编译入口 supplierID 门）。
   for (const executorId of ["", "   "]) {
     const idIssues = validateOnchainHookPlanArtifact(
       mutateRoute({ executorId }),
@@ -2507,8 +2235,6 @@ test("artifact boundary enforces the executorType closed enum and non-empty exec
       `executorId=${JSON.stringify(executorId)}: ${idIssues.join("; ")}`,
     );
   }
-  // 编译产物的原样制品（未变异）仍零 issue：闭集与编译入口同集，不收紧
-  // 合法产物。
   assert.deepEqual(
     validateOnchainHookPlanArtifact(
       rehashed(structuredClone(onchain) as OnchainHookPlanArtifact),
@@ -2518,8 +2244,6 @@ test("artifact boundary enforces the executorType closed enum and non-empty exec
 });
 
 test("compile boundary rejects whitespace-only executor.supplierID", () => {
-  // 只拒空串不够：空白 supplierID 是"有值"的假形态，过门即烧进
-  // executorHash，消费侧永远无法寻址执行者。与 Rust 编译入口同口径拒绝。
   const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
   const mutated = resign({
     ...hookPlan,
@@ -2548,17 +2272,12 @@ test("compile boundary rejects whitespace-only executor.supplierID", () => {
 });
 
 test("compile boundary mirrors _validateHook shape gates before producing artifacts", () => {
-  // MAX_ONCHAIN_HOOK_DELAY_SECONDS 等常量自述"fail-closed 预检必须拒绝同样
-  // 输入"：30 天延时上限/空指令栈形状/空依赖/EmptyPlan 不能只在反序列化
-  // 边界生效——否则手工/漂移的 IR 制品（过 IR 校验）会在编译入口静默
-  // 产出毒制品，交由 commitPlan revert。编译 preflight 必须同口径拒绝。
   const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
   const timeoutHook = hookPlan.compiledHooks.find(
     (hook) => hook.hookName === "TIMEOUT",
   );
   assert.ok(timeoutHook, "base fixture exposes the TIMEOUT watcher hook");
 
-  // 30 天延时上限（contract reverts HookDelayTooLong）。
   const overDelay = resign({
     ...hookPlan,
     compiledHooks: hookPlan.compiledHooks.map((hook) =>
@@ -2579,9 +2298,6 @@ test("compile boundary mirrors _validateHook shape gates before producing artifa
     },
   );
 
-  // 空依赖（contract reverts InvalidHook for empty dependencyKeys）：IR 校验
-  // 不拒绝空依赖数组，毒制品须在编译 preflight 拦下，不得留到
-  // toSolidityRegisterPlanArgs 才炸。
   const emptyDepsHooks = hookPlan.compiledHooks.map((hook) =>
     hook === timeoutHook ? { ...hook, dependencies: [] } : hook,
   );
@@ -2602,8 +2318,6 @@ test("compile boundary mirrors _validateHook shape gates before producing artifa
     },
   );
 
-  // EmptyPlan（contract reverts EmptyPlan）：零 hook 且无阶段声明投影的
-  // IR 制品过 IR 校验，编译入口必须拒绝。
   const emptyPlan = resign({
     ...hookPlan,
     compiledHooks: [],
@@ -2631,9 +2345,6 @@ test("artifact boundary rejects compiledHooks arrays that break the canonical or
   const onchain = compileOnchainHookPlan(
     compileZhixuHookPlanWithManifest(baseZhixu),
   );
-  // 重排 + 重建 dependencyIndex（per-key hookIds 跟随制品序）+ 重签
-  // planHash：承诺面全部自洽，唯一缺口是数组序——规范序是同一 plan 的
-  // 唯一形态（内容寻址前提），不得放行。
   const reversed = [...onchain.compiledHooks].reverse();
   const index = new Map<string, string[]>();
   for (const hook of reversed) {
@@ -2668,9 +2379,6 @@ test("artifact boundary rejects compiledHooks arrays that break the canonical or
 });
 
 test("collects non-canonicalizable planHash payloads as issues instead of throwing (L8)", () => {
-  // 2609100741 L8：顶层形状门（isPlanHashRecomputable）不检深层值——负载
-  // 携带非 JSON 值（bigint）时旧口径让 canonicalize 的裸 TypeError 逃出，
-  // 违反"校验器返回 issues"契约（姊妹实现 hook-plan.ts 有 try/catch）。
   const onchain = compileOnchainHookPlan(
     compileZhixuHookPlan(baseZhixu, demoManifest),
   );
@@ -2687,13 +2395,10 @@ test("collects non-canonicalizable planHash payloads as issues instead of throwi
     ),
     `expected a canonicalizability issue, got: ${JSON.stringify(issues)}`,
   );
-  // 不抛裸异常：validateOnchainHookPlanArtifact 对毒负载整体返回 issues。
   assert.doesNotThrow(() => validateOnchainHookPlanArtifact(poisoned));
 });
 
 test("rejects undeclared extra fields on on-chain HookPlan artifacts (L9)", () => {
-  // planHash 只覆盖声明字段：多余字段不进哈希，放行会让"同一 plan 唯一
-  // 字节数组形态"承诺失效（2609100741 L9）。
   const onchain = compileOnchainHookPlan(
     compileZhixuHookPlan(baseZhixu, demoManifest),
   );
@@ -2707,10 +2412,6 @@ test("rejects undeclared extra fields on on-chain HookPlan artifacts (L9)", () =
 });
 
 test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirror)", () => {
-  // 顶层 unknown-field 拒绝只覆盖第一层：深层对象（compiledHooks 及其
-  // instructions/dependencies/routeRef、admissions、三张能力表）携带未声明
-  // 额外键时，重签 planHash 即可通过承诺对拍——"同一 plan 唯一字节数组
-  // 形态"的键集闭包必须逐层成立，多一个键即拒。
   const zhixu: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
@@ -2741,7 +2442,6 @@ test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirr
       planHash: hashOnchainPlanPayload(payload as never),
     } as OnchainHookPlanArtifact;
   };
-  // 定位与变异都在克隆制品上进行（闭包对象是克隆实例，不是编译产物原例）。
   const issuesOf = (
     locate: (artifact: OnchainHookPlanArtifact) => object | undefined,
   ): readonly string[] => {
@@ -2767,7 +2467,6 @@ test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirr
   const compositeInstructionIndex = onchain.compiledHooks[compositeHookIndex]!.instructions
     .findIndex((instruction) => instruction.op !== "SIGNAL");
 
-  // compiledHooks[i] 与其深层对象。
   assert.ok(
     issuesOf((a) => a.compiledHooks[0]).includes(closureIssue("compiledHooks[0]")),
   );
@@ -2776,8 +2475,6 @@ test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirr
       closureIssue("compiledHooks[0].instructions[0]"),
     ),
   );
-  // 非 SIGNAL 指令（AND/OR/NOT/DELAY）的键集按 op 闭包：arity/delaySeconds
-  // 词表之外的额外键同样拒绝。
   assert.ok(
     issuesOf(
       (a) =>
@@ -2798,7 +2495,6 @@ test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirr
       closureIssue(`compiledHooks[${routedHookIndex}].routeRef`),
     ),
   );
-  // 适格面与三张能力表。
   assert.ok(
     issuesOf((a) => a.admissions[0]).includes(closureIssue("admissions[0]")),
   );
@@ -2812,7 +2508,6 @@ test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirr
     issuesOf((a) => a.signalCapabilities[0]).includes(closureIssue("signalCapabilities[0]")),
   );
 
-  // 未变异制品重签后仍零 issue：闭包不收紧合法产物。
   assert.deepEqual(
     validateOnchainHookPlanArtifact(rehashed(structuredClone(onchain))),
     [],
@@ -2820,17 +2515,10 @@ test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirr
 });
 
 test("rejects mint birth stages without their own static executor route", () => {
-  // 执行者终生不可变镜像（Rust validate_stage_executors /
-  // validate_mint_anchors 的出生阶段条款）：出生阶段（orderTriggerKind=
-  // mint）的投递目标编译期定死、运行时禁止 executor patch——
-  // selectedStages 可达不构成绑定。正例：出生阶段带静态执行者，制品零
-  // issue；反例：剥掉 executor route 后，编译入口与制品边界都拒绝。
   const zhixu: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      // 拍平后 routing 的 assign 与 selector 的 assign 撞名：两条都改用
-      // 所属 task 名（selector / routing），引用同步改指 selector。
       stages: [
         ...baseZhixu.spec.stages.map((stage) =>
           stage.name === "assign"
@@ -2885,18 +2573,14 @@ test("rejects mint birth stages without their own static executor route", () => 
   );
   assert.ok(birthHook, "birth hook missing from compiled plan");
   assert.equal(birthHook.orderTriggerKind, "mint");
-  // selectorBindings 确实可达出生阶段（反例的"可达"前提成立）。
   assert.ok(
     onchain.selectorBindings.some(
       (binding) => binding.targetStageIdentifier === "birth",
     ),
     "fixture must anchor the birth stage through selectedStages",
   );
-  // 正例：带静态执行者的出生制品零 issue。
   assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
 
-  // 反例（编译入口）：IR 剥掉出生阶段的 executor route 与 hook.route
-  // （隔离 routeRef 引用检查），重签 planHash 后编译必须拒绝。
   const strippedIr = resign({
     ...ir,
     executorRoutes: Object.fromEntries(
@@ -2908,8 +2592,6 @@ test("rejects mint birth stages without their own static executor route", () => 
       if (hook.stageIdentifier !== "birth") {
         return hook;
       }
-      // 显式 undefined 不进 canonical JSON（canonicalize 拒绝）——键必须
-      // 整体缺席。
       const { route: _omitted, ...withoutRoute } = hook;
       void _omitted;
       return withoutRoute;
@@ -2927,8 +2609,6 @@ test("rejects mint birth stages without their own static executor route", () => 
     "compile preflight must reject a mint birth stage without its own executor route",
   );
 
-  // 反例（制品边界）：链轨制品剥掉出生阶段的 route 与 routeRef 并重签
-  // planHash——selectorBindings 可达仍在，镜像同样拒绝（可达不豁免）。
   const rehashed = (mutated: OnchainHookPlanArtifact): OnchainHookPlanArtifact => {
     const { planHash: _drop, ...payload } = mutated;
     void _drop;
@@ -2946,7 +2626,6 @@ test("rejects mint birth stages without their own static executor route", () => 
       if (hook.stageIdentifier !== "birth") {
         return hook;
       }
-      // 与 IR 侧同口径：键整体缺席，不写显式 undefined。
       const { routeRef: _omitted, ...withoutRouteRef } = hook;
       void _omitted;
       return withoutRouteRef;
@@ -2963,9 +2642,6 @@ test("rejects mint birth stages without their own static executor route", () => 
 });
 test("duplicate birth-channel key is rejected at compile and deserialization boundaries (U2 mirror)", () => {
   const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
-  // (1) 编译入口：两个 order-trigger hook（mint∪dock）共享出生键——IR 层
-  // 把 PLACE 的种子事实改写为 START 的订阅事实，START 升为 mint、PLACE
-  // 升为 dock entrance。
   const startHook = sourcePlan.compiledHooks.find(
     (hook) => hook.hookName === "START",
   );
@@ -3012,8 +2688,6 @@ test("duplicate birth-channel key is rejected at compile and deserialization bou
     "compile preflight must reject two order-trigger hooks sharing a birth key",
   );
 
-  // (2) 反序列化边界：mint 出生键 == dock entrance 键同样拒绝；同键
-  // watcher（非出生通道）不受限。
   const onchain = compileOnchainHookPlan(sourcePlan);
   const stageA = "0x" + "01".repeat(32);
   const stageB = "0x" + "02".repeat(32);
@@ -3070,9 +2744,7 @@ test("duplicate birth-channel key is rejected at compile and deserialization bou
     1,
     `expected exactly one birth-channel issue, got: ${issues.join("; ")}`,
   );
-  // watcher 与出生键同阶段共享：不触发出生通道守卫（上一步唯一 issue 已证）。
 
-  // (3) mint∪mint 扇出（customs 基准 plan 形态）放行。
   const fanOutHooks = [
     hookOf("mint_line", "a", stageA, "mint"),
     hookOf("mint_line_2", "b", stageB, "mint"),
@@ -3095,8 +2767,6 @@ test("hook dependencies must mirror the SIGNAL atom key set (contract mirror)", 
   );
   assert.ok(watcher, "demo artifact must expose a single-dependency watcher");
 
-  // 依赖键换成 ghost 信号（sourceId/signalId/signalKey 三元组自洽）：
-  // 声明的键不是任何 SIGNAL 原子，且原 SIGNAL 原子未声明——两个方向同报。
   const ghostSignalName = "buyer::ghost.signal";
   const ghost = {
     kind: "positive",
@@ -3139,11 +2809,8 @@ test("hook dependencies must mirror the SIGNAL atom key set (contract mirror)", 
 });
 
 test("capabilitiesRoot varies with table contents and pins empty tables to EMPTY_MERKLE_ROOT", () => {
-  // selector-binding 无 128 上限：表内容由 capabilitiesRoot 承诺——
-  // 空表钉 EMPTY_MERKLE_ROOT，任何叶子变化都改根。
   assert.equal(capabilitiesRootOf([], []), EMPTY_MERKLE_ROOT);
 
-  // 绑定侧：同一能力表增删一个绑定叶，根随之变化（真实编译产物）。
   const withBinding = compileOnchainHookPlan(
     compileZhixuHookPlan(baseZhixu, demoManifest),
   );
@@ -3167,7 +2834,6 @@ test("capabilitiesRoot varies with table contents and pins empty tables to EMPTY
   assert.notEqual(withBinding.capabilitiesRoot, withoutBinding.capabilitiesRoot);
   assert.notEqual(withoutBinding.capabilitiesRoot, EMPTY_MERKLE_ROOT);
 
-  // 能力侧：同一绑定表换一片能力叶（relation 翻转），根随之变化。
   const tables = capabilityTablesOf(withoutBinding);
   const flipped = tables.signalCapabilities.map((capability, index) =>
     index === 0

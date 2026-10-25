@@ -1,16 +1,4 @@
 #!/usr/bin/env tsx
-/**
- * 生成能力树（capabilitiesRoot）跨语言 golden（链轨 TS 权威实现）：
- * `fixtures/capabilities-root/v1/vectors.json` 冻结两组能力表/绑定表样本
- * 的全部叶哈希、排序去重叶集、树根与成员资格证明。
- *
- * TS parity 测试（capabilities-root-golden.test.ts）与 Foundry
- * CapabilitiesRootParity.t.sol 从同一份 fixture 消费——两侧任何一方改动
- * 叶公式/建树规则都会在对侧测试响亮失配，不允许各自漂移无报警。
- *
- * 运行：`pnpm --filter @uvp-eth/compiler generate:capabilities-root-fixtures`
- * （幂等重生成；期望值由 `@uvp-eth/compiler` capabilities-root.ts 计算）。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,8 +28,6 @@ interface CapabilityInput {
 interface Sample {
   readonly name: string;
   readonly note: string;
-  /** forge 侧 vm.parseJson 不支持 .length 路径，计数显式镜像（TS 测试
-   * 断言与实际数组长一致，防止镜像漂移）。 */
   readonly counts: {
     readonly selectorBindings: number;
     readonly signalCapabilities: number;
@@ -128,9 +114,6 @@ function buildSample(
   };
 }
 
-// ---------------------------------------------------------------------
-// 样本 1：双表混编、5 叶奇数集（钉奇数尾叶提升），含 relation=1 叶。
-// ---------------------------------------------------------------------
 const stages = {
   init: word("init"),
   audit: word("audit"),
@@ -160,10 +143,6 @@ const mixedTables = buildSample(
   ],
 );
 
-// ---------------------------------------------------------------------
-// 样本 2：重复叶（同表内逐字段重复声明）钉排序去重语义：6 条原始输入
-// （3 绑定含 1 重复 + 3 能力含 1 重复）→ 4 条唯一叶。
-// ---------------------------------------------------------------------
 const duplicateLeaves = buildSample(
   "duplicate-leaves-dedup",
   "重复叶排序去重：3 绑定（1 重复）+ 3 能力（1 重复）→ 6 原始叶 → 4 唯一叶",
@@ -179,9 +158,6 @@ const duplicateLeaves = buildSample(
   ],
 );
 
-// ---------------------------------------------------------------------
-// 样本 3：深树——33 叶奇数集，证明路径深至 6 层（奇数尾叶逐层提升）。
-// ---------------------------------------------------------------------
 const deepLeaves = buildSample(
   "deep-tree-33-leaves",
   "16 绑定 + 17 能力 = 33 叶奇数集，证明路径深至 6 层（奇数尾叶逐层提升）",
@@ -197,9 +173,6 @@ const deepLeaves = buildSample(
   })),
 );
 
-// ---------------------------------------------------------------------
-// 样本 4：大规模——128 叶双满表（深叶抽验中部成员资格证明）。
-// ---------------------------------------------------------------------
 const largeTables = buildSample(
   "large-tables-128-leaves",
   "64 绑定 + 64 能力 = 128 叶大规模双满表，中部/首尾叶成员资格证明逐条钉住",
@@ -215,10 +188,6 @@ const largeTables = buildSample(
   })),
 );
 
-// ---------------------------------------------------------------------
-// 样本 5：重复 payload 重灾——8 条原始输入塌缩成 2 唯一叶（单对树）：
-// 去重语义在大比例重复下仍保持根 = 单对配对哈希。
-// ---------------------------------------------------------------------
 const duplicatePayloadHeavy = buildSample(
   "duplicate-payload-heavy-collapse",
   "重复 payload 重灾：4 绑定（1 唯一）+ 4 能力（1 唯一）→ 8 原始叶 → 2 唯一叶（单对树）",

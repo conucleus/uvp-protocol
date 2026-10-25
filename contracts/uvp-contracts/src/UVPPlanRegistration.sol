@@ -24,11 +24,6 @@ import {
     _EXECUTOR_CANDIDATE_LEAF_DOMAIN
 } from "./UVPStateMachineConstants.sol";
 
-/// 计划生命周期库：commitPlan / finalizePlan 及其全部注册边界校验。
-/// 以 Solidity 外部链接库机制部署，主合约经 DELEGATECALL 调用——状态写入
-/// 主合约存储，address(this) 仍是主合约（EIP-712 域、事件 emitter、模块侧
-/// msg.sender 鉴权全部保持）。库地址在链接时固定，只允许链接与本合约同批
-/// 审查的代码；禁止将任何调用目标改为可变地址。
 library UVPPlanRegistration {
     function commitPlan(
         mapping(bytes32 => UVPStateMachine.Plan) storage _plans,
@@ -62,15 +57,7 @@ library UVPPlanRegistration {
         bytes32 dockRoutesRoot = _orEmptyDockRoot(commit.dockRoutesRoot);
         bytes32 dockInterfaceRoot = _orEmptyDockRoot(commit.dockInterfaceRoot);
         bytes32 capabilitiesRoot = _orEmptyDockRoot(commit.capabilitiesRoot);
-        // 执行者候选集（UB-36②③）：叶 = keccak256(abi.encodePacked(
-        // _EXECUTOR_CANDIDATE_LEAF_DOMAIN, stageId, executor))，DockMerkle
-        // 同款排序去重建树；零条目（或 commit 侧零字）= EMPTY_ROOT，该形态
-        // 下逐单 executor patch 恒拒（不开候选集的计划没有逐单换人面）。
         bytes32 executorCandidatesRoot = _executorCandidatesRoot(executorCandidates);
-        // 签名承诺对拍：executorCandidatesRoot 是唯一从 calldata 数组重算
-        // 的承诺域，不与签名值比较即可用换掉的候选数组注册出 planId 不同
-        // 的兄弟计划，逐单 executor patch 的目标面随未签名数据漂移。零字
-        // 承诺 = 空集（与其余 root 的归一化同口径）。
         bytes32 committedCandidatesRoot = _orEmptyDockRoot(commit.executorCandidatesRoot);
         if (executorCandidatesRoot != committedCandidatesRoot) {
             revert UVPStateMachine.ExecutorCandidatesRootMismatch(committedCandidatesRoot, executorCandidatesRoot);
@@ -92,21 +79,11 @@ library UVPPlanRegistration {
         plan.publisher = commit.publisher;
         plan.birthAuthorizer = commit.birthAuthorizer;
         plan.committed = true;
-        // 候选集阶段投影（B8a）：assign 前置闸的免证判定材料随建树数组
-        // 落库——数组与 root 同源（planId 即由数组派生 root 键出），此处
-        // 落库的是同一承诺的阶段面，不引入第二个可信来源。
         for (uint256 i = 0; i < executorCandidates.length; i++) {
             plan.executorCandidateStages[executorCandidates[i].stageId] = true;
         }
 
-        // Cross-stage dependency scan scratch: scoped so the large memory
-        // arrays release their stack slots before the commit events fire.
         {
-            // 阶段物化防御纵深：每个被注册 hook 的阶段必须至少有
-            // 一个 order-trigger 或 EMIT_READY hook——纯 flags=0 watcher 阶段
-            // 在链上永远无法物化（物化只由本阶段 hook Ready 触发，executor
-            // patch 不物化），其 watcher 会让共享信号键的提交交易稳定回滚。
-            // 编译器是第一道防线；这里是注册边界。
             bytes32[] memory stageScratch = new bytes32[](hooks.length);
             bool[] memory stageMaterializer = new bool[](hooks.length);
             uint256 seenCount;
@@ -145,14 +122,10 @@ library UVPPlanRegistration {
         emit UVPStateMachine.PlanPublisherRecorded(planId, commit.publisher);
     }
 
-    /// 零字承诺归一化为空树根（四个 root 承诺域同口径：dockRoutes/
-    /// dockInterface/capabilities/executorCandidates）。
     function _orEmptyDockRoot(bytes32 root) private pure returns (bytes32) {
         return root == bytes32(0) ? DockMerkle.EMPTY_ROOT : root;
     }
 
-    /// 执行者候选集建树（UB-36②③）：叶公式与 DockMerkle 排序去重口径
-    /// 与链下建树方（编译器/发布器）逐字节一致；重复条目去重后不改变根。
     function _executorCandidatesRoot(UVPStateMachine.ExecutorCandidate[] calldata executorCandidates)
         private
         pure
@@ -169,9 +142,6 @@ library UVPPlanRegistration {
         return DockMerkle.root(leaves);
     }
 
-    /// finalize 与表规模解耦：能力表/绑定表已在 commit 时以 capabilitiesRoot
-    /// 形态被 publisher 签名承诺，叶子成员资格由使用方逐叶携 proof 验证
-    /// （悬空阶段引用、属主唯一性等表内不变量由编译器在产物层强制）。
     function finalizePlan(
         mapping(bytes32 => UVPStateMachine.Plan) storage _plans,
         address planMetadataModule,
@@ -185,9 +155,6 @@ library UVPPlanRegistration {
             revert UVPStateMachine.PlanAlreadyFinalized();
         }
 
-        // CEI：finalized 先于模块外调落定。模块回调（如重入 finalizePlan）
-        // 必须看到已终态并按 PlanAlreadyFinalized 拒绝，而不是在 finalized
-        // 落定前的窗口里二次过门。
         plan.finalized = true;
         IUVPPlanMetadataModule(planMetadataModule)
             .finalizePlanMetadata(planId, plan.capabilitiesRoot, plan.dockRoutesRoot, plan.dockInterfaceRoot);
@@ -201,28 +168,17 @@ library UVPPlanRegistration {
         UVPStateMachine.CompactHook calldata input,
         uint256 seenCount
     ) private returns (uint256) {
-        // 适格面槽位（flag=8）：进 plan.admissions（按被发射事实的
-        // signalKey = hookId 槽寻址），不进 plan.hooks/dependencyIndex/
-        // hookIds——适格在提交一拍求值，不为事实到达所重评。与 hook 槽
-        // 共享 hooksHash 承诺与提交顺序（commitPlan 的阶段物化扫描对
-        // 两类槽位一视同仁：仅适格、无物化 hook 的阶段在此暴露）。
         if (input.flags & HOOK_FLAG_ADMISSION != 0) {
             _registerPlanAdmission(plan, input);
             return seenCount;
         }
-        // hook 档指令校验（与适格档共享 _validateInstructions 遍历机，
-        // admissionMode=false 启用否决位位置闸/Or 正锚硬闸/根位闸）。
         _validateInstructions(input, false);
-        // 出生语义互斥——MINT 与 DOCK 不可同挂一个 hook。
         if (
             input.flags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK)
                 == (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK)
         ) {
             revert UVPStateMachine.InvalidHook();
         }
-        // HookReady 三线口径统一：order-trigger 必须携带 EMIT_READY——编译器
-        // 产物恒为 trigger|EMIT_READY；沉默 trigger（flags=1/2）的 HookReady
-        // 发出口径在链上链下会分叉。与下方阶段物化守卫同构：注册边界拒绝。
         if (_isOrderTrigger(input.flags) && input.flags & HOOK_FLAG_EMIT_READY == 0) {
             revert UVPStateMachine.SilentOrderTriggerHook(input.hookId);
         }
@@ -245,30 +201,10 @@ library UVPPlanRegistration {
         for (uint256 j = 0; j < input.dependencyKeys.length; j++) {
             bytes32 dependencyKey = input.dependencyKeys[j];
 
-            // 跨 hook 去重与跨阶段闸读已落库的 dependencyIndex（O(1) 判
-            // 重），不做 memory 全表线性扫描：对每个新键做
-            // _seenDependencyIndex 全表扫描，满配 1024 键 ≈ 52 万次迭代
-            // （O(n²)），叠加每键双 push 的存储成本后 TooManyDependencies
-            // 在 30M block gas 内恒先被 OOG 挡住。首键注册前 hook 定义
-            // （stageId/flags）已写全，重复键回读已注册 hook 即可重建
-            // scratch 语义：首见阶段取 dependents[0]，trigger-only 折叠取
-            // 已注册 hook 集合的 AND（与逐次 AND 折叠逐点等价）。
-            // Trigger watchers crossing stages are the normal selectedStages
-            // flow: the evaluation guard skips triggers of unmaterialized
-            // stages. The brick is a NON-trigger watcher in a stage that has
-            // not materialized yet -- submitting the shared key would revert
-            // that transaction forever.
             bytes32[] storage dependents = plan.dependencyIndex[dependencyKey];
-            // 同一 hook 输入内的重复 dependencyKey 先去重（存储侧 O(1)，
-            // 与跨 hook 判重同源）：HookAlreadyRegistered 已排除同 id 旧注
-            // 册，dependents 尾元素等于本 hookId 当且仅当本输入刚推过该
-            // 键。重复项会逐次推入 plan.dependencyIndex，此后该键每次信
-            // 号提交都重复执行 _evaluateHook N 次，N 足够大即永久 OOG。
             if (dependents.length != 0 && dependents[dependents.length - 1] == input.hookId) {
                 continue;
             }
-            // per-key 扇出上限：该键每次信号提交都全量循环 dependents，
-            // 单键挂 N hook 即每次提交 O(N)——注册期封顶。
             if (dependents.length >= MAX_HOOKS_PER_DEPENDENCY_KEY) {
                 revert UVPStateMachine.TooManyHooksPerDependencyKey(dependencyKey);
             }
@@ -280,22 +216,6 @@ library UVPPlanRegistration {
                 updatedCount += 1;
             } else {
                 bool inputIsDock = input.flags & HOOK_FLAG_ORDER_TRIGGER_DOCK != 0;
-                // U2 出生通道键查重——独立全量循环，绝不与 triggerOnly 折叠
-                // 的早退 break 共线：折叠在首个非 trigger 依赖处 break 是刻意
-                // 行为，查重若共用该循环，排在同阶段 watcher 之后的 trigger
-                // 依赖会被 break 永远跳过，出生键冲突静默放行。按通道语义
-                // 分界：
-                // - 跨通道（mint∪dock）：outside 出生与 dock 出生是
-                //   两个不同的出生上下文，共享出生键会让任一侧的
-                //   出生事务把另一侧的出生线一并推 Ready、物化幻影
-                //   阶段——拒绝。
-                // - dock∪dock：entrance 键按 route 钉死
-                //   （planHookDependsOn），一键挂两条 entrance 意味着
-                //   任一 route 的子单会物化另一 route 的阶段——拒绝。
-                // - mint∪mint：一事实扇出多条 mint 出生线是产品现行
-                //   形态（customs 基准 plan：order::registered 同时
-                //   出生执行者选择与资源发布两阶段），同一 mint 出生
-                //   上下文内物化，不是幻影——放行。
                 for (uint256 k = 0; k < dependents.length; k++) {
                     if (inputIsTrigger && _isOrderTrigger(plan.hooks[dependents[k]].flags)) {
                         if (inputIsDock || plan.hooks[dependents[k]].flags & HOOK_FLAG_ORDER_TRIGGER_DOCK != 0) {
@@ -303,9 +223,6 @@ library UVPPlanRegistration {
                         }
                     }
                 }
-                // 跨阶段闸的 trigger-only 折叠：dependents 全为 trigger 时
-                // 跨阶段共享合法（selectedStages 流：求值守卫跳过未物化
-                // 阶段的 trigger），首个非 trigger 依赖即定音——早退安全。
                 bool triggerOnly = inputIsTrigger;
                 for (uint256 k = 0; k < dependents.length; k++) {
                     if (!_isOrderTrigger(plan.hooks[dependents[k]].flags)) {
@@ -327,20 +244,12 @@ library UVPPlanRegistration {
         return updatedCount;
     }
 
-    /// 适格面注册：hookId 槽 = 被发射事实的 signalKey（提交路径只持有
-    /// (sourceId, signalId)，signalKey 是它可计算的唯一寻址键；全名在
-    /// plan 内唯一属主保证键不碰撞）。首条适格置 plan.admissionsDeclared
-    /// （与 committed/finalized 同槽），_createOrder 复制进订单供提交
-    /// 卡点短路。chimera flags 拒绝：适格与出生/就绪位共用一个 word 会
-    /// 让同一槽位同时寻址两个人口。
     function _registerPlanAdmission(UVPStateMachine.Plan storage plan, UVPStateMachine.CompactHook calldata input)
         private
     {
         if (input.flags != HOOK_FLAG_ADMISSION) {
             revert UVPStateMachine.InvalidHook();
         }
-        // 适格档指令校验（与 hook 档共享 _validateInstructions 遍历机，
-        // admissionMode=true 放开否决位位置/根位/Or 正锚硬闸）。
         _validateInstructions(input, true);
         UVPStateMachine.StoredAdmission storage admission = plan.admissions[input.hookId];
         if (admission.exists) {
@@ -353,43 +262,15 @@ library UVPPlanRegistration {
         plan.admissionsDeclared = true;
     }
 
-    /// `_validateInstructions` 的位打包槽位字布局（hook 档与适格档共享）：
-    /// 六个布尔标志 + 32 位子树嵌套深度并进单 uint256 槽位字——六个平行
-    /// bool[] 加一个 uint32[]（或结构体数组）同帧在 via_ir 下深栈溢出，
-    /// 位打包后帧内仅存活一个内存数组且每操作臂只做一次读改写；字段
-    /// 语义与平行数组/结构体版本逐位一致，适格档不消费 veto 位（见引擎
-    /// 内分档注释）。深度域恒 ≤ 121（120 深度闸先于任何进位触发），位 64
-    /// 以上恒零。
-    uint256 private constant _SLOT_BARE_SIGNAL = 1 << 0; // 裸 SIGNAL：NOT 操作数词表位一（~(A&B) 组合否定拒绝）
-    uint256 private constant _SLOT_DELAY_RESULT = 1 << 1; // DELAY 产出：NOT 操作数词表位二（衰减否决位内层）
-    uint256 private constant _SLOT_VETO_TERM = 1 << 2; // 本槽即 `~(DELAY)` 否决位产出（唯一合法位置：合取直接子项）
-    uint256 private constant _SLOT_VETO_INSIDE = 1 << 3; // 子树含否决位（穿透 AND/OR；Delay 操作数内一律禁止）
-    uint256 private constant _SLOT_DELAY_INSIDE = 1 << 4; // 子树含 DELAY（UB-1 reject_nested_delay 镜像，全深度传递）
-    uint256 private constant _SLOT_POS_ANCHOR = 1 << 5; // 子树含正向信号锚点（Not 归零；And 取任一；Or 两档异口径）
-    uint256 private constant _SLOT_DEPTH_INC = uint256(1) << 32; // NOT/DELAY：操作数深度 +1
-    uint256 private constant _SLOT_DEPTH_FIELD = type(uint256).max << 32; // 深度域保留掩码
+    uint256 private constant _SLOT_BARE_SIGNAL = 1 << 0;
+    uint256 private constant _SLOT_DELAY_RESULT = 1 << 1;
+    uint256 private constant _SLOT_VETO_TERM = 1 << 2;
+    uint256 private constant _SLOT_VETO_INSIDE = 1 << 3;
+    uint256 private constant _SLOT_DELAY_INSIDE = 1 << 4;
+    uint256 private constant _SLOT_POS_ANCHOR = 1 << 5;
+    uint256 private constant _SLOT_DEPTH_INC = uint256(1) << 32;
+    uint256 private constant _SLOT_DEPTH_FIELD = type(uint256).max << 32;
 
-    /// 指令遍历校验机（hook 档与适格档共享，EIP-170 瘦身合并）：op 解码
-    /// + 位打包槽位栈（_SLOT_* 位布局）+ 子树深度计数单引擎承载，两档差异全部经
-    /// admissionMode 位分派，语义与合并前的 _validateHook /
-    /// _validateAdmission 双实现逐条等价（对拍钉在 UVPStateMachine.t.sol
-    /// 的 testHookInstructionDepthCap/testAdmissionInstructionDepthCap、
-    /// UVPAdmission.t.sol 全量与 SemanticsReplayCorpus）：
-    /// - hook 档（admissionMode=false）：否决位位置闸（唯一合法位置是
-    ///   合取直接子项——Or 分支位、根位、Delay 操作数内一律拒绝）、
-    ///   Or 分支正锚硬闸（每一分支都必须含正向锚点）、根位否决/正锚闸、
-    ///   order-trigger hook 内禁 DELAY；
-    /// - 适格档（admissionMode=true，一拍求值、任何位置的瞬时值都良
-    ///   定义）：上述位置/锚位/根位闸全部放开（裸衰减根、Or 分支下的
-    ///   衰减否决位均合法注册），vetoTerm/vetoInside 位仍被写入但从不
-    ///   参与分档判定。
-    /// 两档共享的保留闸：身份/长度前置闸、零字事实键拒绝、NOT 操作数
-    /// 词表（裸 SIGNAL 或 DELAY 产出，组合否定拒绝）、DELAY 时长
-    /// ∈ (0, 30d]、DELAY 操作数正向锚点（UB-1）、嵌套延时闸
-    ///（reject_nested_delay 镜像）、AND/OR arity ≥ 2、栈深充足、嵌套
-    /// 深度 ≤ 120（replay 同值闸）、结束恰一值、dependencyKeys 与
-    /// SIGNAL 原子键逐点一致。自引用/出生锚/订阅原子是编译期拒绝
-    ///（uvp-compiler D028-D030），注册门看到的只有指令形态。
     function _validateInstructions(UVPStateMachine.CompactHook calldata input, bool admissionMode) private pure {
         if (
             input.hookId == bytes32(0) || input.stageId == bytes32(0) || input.hookName == bytes32(0)
@@ -398,24 +279,12 @@ library UVPPlanRegistration {
             revert UVPStateMachine.InvalidHook();
         }
 
-        // order-trigger（mint/dock）hook 内禁止 DELAY：outside 出生的事
-        // 实与订单创建同笔交易（anchorAt=now），Delay(SIGNAL) 必得 Wait，
-        // 出生路径永久 InvalidTriggerHook；dock entrance 由模块直接标记
-        // Ready，DELAY 只是死代码。编译器产物的 trigger hook 恒为裸
-        // SIGNAL；注册边界拒绝。适格槽 flags 恒为 HOOK_FLAG_ADMISSION
-        //（无 trigger 位），本位自然为 false。
         bool orderTrigger = _isOrderTrigger(input.flags);
-        // 位打包槽位栈：单 uint256[] 内存数组（位布局见 _SLOT_* 常量）。
         uint256[] memory slots = new uint256[](input.instructions.length);
         uint256 stackDepth;
         for (uint256 i = 0; i < input.instructions.length; i++) {
             UVPStateMachine.Instruction calldata instruction = input.instructions[i];
             if (instruction.op == uint8(UVPStateMachine.InstructionOp.Signal)) {
-                // 零字 sourceId 事实键与其余写入口同口径拒绝
-                // （triggerOrderFromOutsideFor/_authorizeSignalSubmitter 均显式
-                // 拒零键）：sourceId==0 绕过 _signalStageId（恒返回 0），是
-                // stage 物化与 executor 门的永久豁免键，且该键一经注册即随
-                // dependencyIndex 常驻求值路径——注册边界封死。
                 if (instruction.sourceId == bytes32(0)) {
                     revert UVPStateMachine.ZeroSourceId();
                 }
@@ -442,41 +311,22 @@ library UVPPlanRegistration {
                     if (orderTrigger) {
                         revert UVPStateMachine.InvalidInstruction();
                     }
-                    // UB-1 无锚延时注册即拒（两档同闸）：全否定/缺席的操作
-                    // 数在 value=true 时 anchorAt=0，到期时刻恒在过去，Delay
-                    // 沦为立即放行（Rust 权威 eval_expr 的 Delay 臂对无锚
-                    // Ready 操作数返回 NeedsMore，注册即拒而不是留死代码）。
                     if (operand & _SLOT_POS_ANCHOR == 0) {
                         revert UVPStateMachine.InvalidInstruction();
                     }
-                    // 否决位位置闸（hook 档）：否决位的 Ready 会衰减，Delay
-                    // 成熟是永久的，外层延时锚在已过期的否决上会静默放行。
-                    // 适格档放行——瞬时值在任何位置都良定义。
                     if (!admissionMode && operand & (_SLOT_VETO_TERM | _SLOT_VETO_INSIDE) != 0) {
                         revert UVPStateMachine.InvalidInstruction();
                     }
-                    // 嵌套延时闸（UB-1，两档同源）：操作数子树内已含 DELAY
-                    // 即拒绝（reject_nested_delay 镜像）。
                     if (operand & _SLOT_DELAY_INSIDE != 0) {
                         revert UVPStateMachine.InvalidInstruction();
                     }
-                    // Delay 结果的锚点口径 = 操作数口径（成熟时刻成为新
-                    // 锚点，正负性随操作数——_SLOT_POS_ANCHOR 位承袭）；
-                    // delayInside 置位——本子树从此处于某延时的操作数内。
                     slots[stackDepth - 1] =
                         ((operand & (_SLOT_POS_ANCHOR | _SLOT_DEPTH_FIELD)) | _SLOT_DELAY_RESULT | _SLOT_DELAY_INSIDE)
                             + _SLOT_DEPTH_INC;
                 } else {
-                    // NOT 操作数词表（两档同源）：裸 SIGNAL（现状）或 DELAY
-                    // 产出（衰减否决位内层），组合否定 ~(A&B) 一类拒绝。否决
-                    // 位自身的合法位置（合取直接子项）由 vetoTerm 位交给消
-                    // 费方校验（适格档不消费）；delayInside 随 NOT 透传
-                    //（~(A+5s) 的否决位深处仍是延时操作数的一部分）。
                     if (operand & (_SLOT_BARE_SIGNAL | _SLOT_DELAY_RESULT) == 0) {
                         revert UVPStateMachine.InvalidInstruction();
                     }
-                    // vetoTerm = 旧 delayResult（位 1 → 位 2）；vetoInside 承袭
-                    // 旧位并并入新否决位；正锚归零；delayInside/深度透传 +1。
                     uint256 newVetoTerm = (operand & _SLOT_DELAY_RESULT) << 1;
                     slots[stackDepth - 1] =
                         ((operand & (_SLOT_DELAY_INSIDE | _SLOT_VETO_INSIDE | _SLOT_DEPTH_FIELD)) | newVetoTerm)
@@ -489,17 +339,6 @@ library UVPPlanRegistration {
                 if (instruction.arity < 2 || stackDepth < instruction.arity) {
                     revert UVPStateMachine.InvalidInstruction();
                 }
-                // hook 档 Or 双硬闸折叠进操作数扫描（同一 InvalidInstruction
-                // 出口，逐操作数判定与原双循环逐点等价）：否决位唯一合法
-                // 位置是合取直接子项，Or 分支位一律拒绝（uvp-hook-dsl
-                // validate_anchors 的 veto_slot 闸镜像）；且 OR 分支正锚硬闸
-                //（UB-1）：每一分支都必须含正向锚点，不满足直接 revert——
-                // 不再作为软标志允许外层 AND 抢救（镜像 validate_anchors 的
-                // Or 臂 "each OR branch must contain a positive signal
-                // anchor"）。无锚分支可单独就绪且 anchorAt=0，赢得 OR 出线
-                // 后让外层延时锚到过去（求值侧 _orValue/_delayValue 的无锚
-                // 防御是纵深，注册边界先拒）。适格档两闸全放开：Or 分支下
-                // 的衰减否决位良定义，Or 与 And 同取任一锚。
                 bool orHardGate = instruction.op == uint8(UVPStateMachine.InstructionOp.Or) && !admissionMode;
                 uint256 folded;
                 uint256 maxOperandDepth;
@@ -510,25 +349,19 @@ library UVPPlanRegistration {
                     if (operandDepth > maxOperandDepth) {
                         maxOperandDepth = operandDepth;
                     }
-                    // vetoTerm 位存在或正锚位缺失（= 36 掩码下不恰等于
-                    // _SLOT_POS_ANCHOR）即拒。
                     if (orHardGate && operand & (_SLOT_VETO_TERM | _SLOT_POS_ANCHOR) != _SLOT_POS_ANCHOR) {
                         revert UVPStateMachine.InvalidInstruction();
                     }
                 }
                 stackDepth = stackDepth - instruction.arity + 1;
                 if (orHardGate) {
-                    // 双硬闸已过：每个分支都有正锚，结果位恒置。
                     slots[stackDepth - 1] =
                         (folded & (_SLOT_VETO_INSIDE | _SLOT_DELAY_INSIDE)) | _SLOT_POS_ANCHOR | ((maxOperandDepth + 1) << 32);
                 } else {
-                    // And（两档）与适格档 Or：任一操作数有正锚即置位。
                     slots[stackDepth - 1] =
                         (folded & (_SLOT_VETO_INSIDE | _SLOT_DELAY_INSIDE | _SLOT_POS_ANCHOR)) | ((maxOperandDepth + 1) << 32);
                 }
             } else {
-                // 词表外操作码显式拒绝：op 以 uint8 承载，旧扇入操作码
-                //（数值 5）等未知值在此响亮回滚。
                 revert UVPStateMachine.InvalidInstruction();
             }
             if (slots[stackDepth - 1] >> 32 > MAX_INSTRUCTION_DEPTH) {
@@ -539,30 +372,16 @@ library UVPPlanRegistration {
             revert UVPStateMachine.InvalidInstruction();
         }
         if (!admissionMode) {
-            // 根位的否决位拒绝（否决位必须由合取父项消费，validate_anchors
-            // 镜像）：根否决位同时缺正锚，两条闸都以 InvalidInstruction 拒绝，
-            // 显式判定让拒绝面可读而不是靠正锚闸的副作用。适格档放行裸
-            // 衰减根（一拍求值下任何位置的瞬时值都良定义）。
             if (slots[0] & _SLOT_VETO_TERM != 0) {
                 revert UVPStateMachine.InvalidInstruction();
             }
-            // 整体至少一正锚（validate_anchors 镜像）：纯否定条件（如 ~A）在
-            // value=true 时 anchorAt=0——外层延时锚到过去、回放锚点无源，注册
-            // 边界拒绝（编译器产物恒含正锚，这里是兜底）。
             if (slots[0] & _SLOT_POS_ANCHOR == 0) {
                 revert UVPStateMachine.InvalidInstruction();
             }
         }
-        // dependencyKeys 与 SIGNAL 原子键集合逐点一致（两档同口径）。未声明
-        // 的 SIGNAL 键不进 dependencyIndex——该事实到达永不触发本 hook 求
-        // 值，hook 永久 Init 且零告警（幻影 watcher）；多余声明的键只是死
-        // 索引。错位键让制品与链上注册面分叉，注册边界对拍拒绝。
         _requireDependencyKeysMatch(input.hookId, input.instructions, input.dependencyKeys);
     }
 
-    /// dependencyKeys 与 SIGNAL 原子键集合逐点对拍（原 _validateHook /
-    /// _validateAdmission 共用的收尾段，两档同口径抽出）：声明的键必须
-    /// 逐个命中 SIGNAL 原子键集合，且两集合基数一致（去重后）。
     function _requireDependencyKeysMatch(
         bytes32 hookId,
         UVPStateMachine.Instruction[] calldata instructions,
@@ -624,8 +443,6 @@ library UVPPlanRegistration {
         return flags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK) != 0;
     }
 
-    /// 阶段物化三线统一：order-trigger 与 EMIT_READY hook 都能物化
-    /// 自身阶段；纯 flags=0 watcher 不能。
     function _hookCanMaterializeStage(uint8 flags) private pure returns (bool) {
         return _isOrderTrigger(flags) || flags & HOOK_FLAG_EMIT_READY != 0;
     }
@@ -692,37 +509,12 @@ library UVPPlanRegistration {
         );
     }
 
-    // ==================================================================
-    // 订单出生/镜像运行时（EIP-170 瘦身外置，UB-36①④/UB-2/UB-39 批随迁）
-    // ==================================================================
-    // 主合约对以下入口保留公共 ABI 签名与模块鉴权（msg.sender 检查），执行体
-    // 经 DELEGATECALL 进入本库——状态写入主合约存储、事件 emitter 与
-    // EIP-712 域（address(this)）保持不变，与 commitPlan/finalizePlan 的
-    // 外置模式同构：
-    //   - triggerOrderFromOutsideFor（outside 出生）
-    //   - triggerOrderFromSignalFromModule（trigger-origin 出生 + 同意链）
-    //   - hasTriggerOriginConsent（视图）
-    //   - forkOrder（UB-39 新增出生通道，门/建单段 + 重放段）
-    //   - createDockedOrderFromModule / recordDockedInputFromModule
-    //
-    // 存储访问经 UVPStateMachine.OrderRuntimeCtx（storage 指针成员的
-    // memory 结构体）单参数传递：storage 指针是运行期值、占真实栈位（与
-    // 主合约内隐式槽常量的免费再生物化不同），逐参数传递会让求值链撞
-    // via_ir 深栈上限——_s 收拢后库内链路与主合约同源副本的栈形一致。
-    // 求值引擎（指令求值/事实落库/hook 物化）在本库与主合约各持一份
-    // 逐字节同源的副本（主合约的 submitSignal 热路径仍需就地求值，无法
-    // 整体外移）；两份副本的语义对拍由既有 forge 测试与冻结 fixture 的
-    // bytecode 哈希钉住。库私有副本以 L_ 前缀命名，防止审查时与主合约
-    // 同名函数混淆。
-
     bytes32 private constant _L_ORDER_LINK_ORDER_ID_DOMAIN = keccak256("uvp.order_link.order_id.v1");
     bytes32 private constant _L_FORK_ORDER_ID_DOMAIN = keccak256("uvp.fork.order_id.v1");
     bytes32 private constant _L_TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
     );
 
-    /// outside 出生入口执行体（主合约 triggerOrderFromOutsideFor 的外置体；
-    /// relayer = DELEGATECALL 下的 msg.sender）。
     function triggerOrderFromOutside(
         UVPStateMachine.SMState storage _s,
         UVPStateMachine.TriggerOrderFromOutsideRequest calldata trigger,
@@ -736,20 +528,12 @@ library UVPPlanRegistration {
         if (trigger.submitter == address(0)) {
             revert UVPStateMachine.ZeroSubmitter();
         }
-        // 出生事实零字与其余写入口同口径拒绝：零 capability 的手工 plan 不
-        // 做词表闸，而零字事实键在词表内恒无成员资格——零字事实是 stage
-        // 物化与 executor 门的永久豁免键，且会以 lastSignalSubmitter 污染
-        // HANDOFF 回退链。
         if (trigger.sourceId == bytes32(0)) {
             revert UVPStateMachine.ZeroSourceId();
         }
         if (trigger.signalId == bytes32(0)) {
             revert UVPStateMachine.ZeroSignalId();
         }
-        // 出生事实属主解析统一走 L_resolveSourceStage：声明属主必须验过能力
-        // 叶，有词表的 plan 不携有效 attribution 即响亮回滚（词表闸
-        // fail-closed，UB-2 计数不可被"省证"绕过）；零词表手工 plan 按
-        // source==stage 回退。解析结果随 L_recordSignal 进 per-stage 计数。
         bytes32 birthStageId =
             L_resolveSourceStage(_s, trigger.planId, trigger.sourceId, trigger.signalId, birthFactAttribution);
 
@@ -761,11 +545,6 @@ library UVPPlanRegistration {
                 revert UVPStateMachine.InvalidTriggerOrderSignature(trigger.submitter, recoveredSigner);
             }
         }
-        // 出生授权闸（10.4 复裁选 A）：outside 出生只认计划承诺的
-        // birthAuthorizer——持受害者签名请求的中继方自签竞争请求（换
-        // creator/authorizations 抢占订单号与下游授权面）在此被精确拒绝；
-        // 零地址 = 该计划关闭 outside 出生通道。fork/派生通道自有同意门，
-        // 不在本闸射程。未知 plan 先回 L_createOrder 家族的 PlanNotFinalized。
         UVPStateMachine.Plan storage plan = _s.plans[trigger.planId];
         if (!plan.committed) {
             revert UVPStateMachine.PlanNotFinalized();
@@ -774,10 +553,6 @@ library UVPPlanRegistration {
             revert UVPStateMachine.UnauthorizedBirthSubmitter(trigger.submitter);
         }
 
-        // 一事一单执行体：订单 id 由合约从事实纯函数派生（与主合约
-        // triggerOrderIdFor 同公式：keccak256(abi.encode(...)) 恒清 dock
-        // 命名空间位），重放同一事实恒定派生同一 id，按
-        // OrderAlreadyRegistered 幂等拒绝。
         bytes32 orderId = bytes32(
             uint256(keccak256(abi.encode(trigger.planId, trigger.sourceId, trigger.signalId, trigger.payloadHash)))
                 & ~(uint256(1) << 255)
@@ -795,9 +570,6 @@ library UVPPlanRegistration {
             trigger.signalId,
             trigger.submitter
         );
-        // 无单外部出生同样过适格筛：出生订单的 pre-state 是空集，正锚
-        // 表达式的裁决自然是拒绝——这是封死「gated 信号绕窗铸单」的
-        // 口子（内部出生/dock 写入不经适格面）。
         L_requireSignalAdmission(_s, trigger.planId, orderId, trigger.sourceId, trigger.signalId);
         L_recordSignal(
             _s,
@@ -808,16 +580,12 @@ library UVPPlanRegistration {
             trigger.payloadHash,
             trigger.idempotencyKey,
             trigger.submitter,
-            // 出生事务内的出生事实写入：这是 outside 出生路径对 order-trigger
-            // hook 求值的唯一合法时点（就绪结果随后被出生闸断言）。
             true,
             birthStageId
         );
         L_requireTriggerHookReady(_s, trigger.planId, orderId, trigger.triggerHookId, trigger.triggerStageId);
     }
 
-    /// trigger-origin 出生入口执行体（主合约 triggerOrderFromSignalFromModule
-    /// 的外置体；模块鉴权在主合约 wrapper 内完成）。
     function triggerOrderFromSignal(
         UVPStateMachine.SMState storage _s,
         UVPStateMachine.TriggerOrderFromSignalRequest calldata trigger,
@@ -829,8 +597,6 @@ library UVPPlanRegistration {
             revert UVPStateMachine.ZeroSubmitter();
         }
 
-        // trigger-origin 订单按 (originPlanId, triggerOriginOrderId)
-        // 复合键寻址，跨 plan 链接必须显式声明 origin 的 plan。
         UVPStateMachine.Order storage triggerOriginOrder = _s.orders[trigger.originPlanId][trigger.triggerOriginOrderId];
         if (!triggerOriginOrder.exists) {
             revert UVPStateMachine.UnknownOrder();
@@ -840,18 +606,9 @@ library UVPPlanRegistration {
             )) {
             revert UVPStateMachine.UnknownOrder();
         }
-        // origin 事实的属主阶段由调用方携 proof 自证（能力树 membership）；
-        // 有词表的 origin plan 不携证即回滚（InvalidSignalCapability，与
-        // 提交/出生路径同口径），零词表 plan 才保留 source==stage 回退。
         bytes32 declaredOriginStage = L_resolveSourceStageFrom(
             _s, trigger.originPlanId, trigger.originSourceId, trigger.originSignalId, originFactAttributions
         );
-        // trigger link 建立需要 origin 侧同意。执行 relayer 或
-        // EIP712 请求 submitter 必须在 origin 订单的同意集合内（创建者 /
-        // origin 源阶段执行者 / origin 事实的授权提交者）。语义：能对 origin
-        // 订单说出该事实的一方，才允许把它作为 trigger-origin 消费、在其上
-        // 派生新订单。外部 plan 镜像公开 capability 声明不足以建立链接——
-        // 这封死 capability 镜像攻击链（镜像 plan → 镜像 link → 回写注入）。
         if (
             !L_eitherTriggerOriginConsent(
                 _s,
@@ -868,9 +625,6 @@ library UVPPlanRegistration {
                 trigger.originPlanId, trigger.triggerOriginOrderId, trigger.submitter
             );
         }
-        // orderId 不可自报（0300 H-1）：合约按 link 事实派生，请求携带的
-        // orderId 只作镜像校验——与 routeId/dockInstanceId 的"重算即拒绝"
-        // 口径一致（攻击推演见 docs/design-notes.md §1）。
         {
             bytes32 derivedOrderId = L_orderLinkOrderIdFor(
                 trigger.planId,
@@ -892,14 +646,6 @@ library UVPPlanRegistration {
             trigger.triggerHookId,
             trigger.triggerStageId
         );
-        // 每个被消费的 SIGNAL 指令独立过 origin 同意门（UVP-08）：声明
-        // 的 origin 事实已同意，但 hook 求值实际读取的其它事实同样构成
-        // "把 origin 订单的事实拿去派生新单"，逐一校验。跳过未发生的
-        // 事实不是因为它们不影响求值——恰恰相反，经 NOT 它们可以让表
-        // 达式就绪（A & ~X 正是在 X 未发生时为真）——而是因为同意门只
-        // 约束"已被说出"的事实：未发生的事实不是 origin 订单上任何一方
-        // 的发言，不存在可被要求同意的主体（"X 未发生"是全链可见的缺
-        // 席状态，不是 origin 订单的私有信息）。
         L_requireTriggerHookSignalConsent(
             _s,
             trigger.originPlanId,
@@ -936,12 +682,6 @@ library UVPPlanRegistration {
         );
     }
 
-    /// fork 出生通道·门与建单段（UB-39）：授权门（裁决信号存在 + initiator
-    /// ∈ {父单 creator, 裁决信号提交者}）、forkedOrderId 派生、建单、血缘
-    /// 落库、授权写入与 OrderForked 事件。与重放段（forkOrderReplay）由
-    /// 主合约 wrapper 顺序调用——拆段压 via_ir 深栈，状态全部落主合约
-    /// 存储，同一事务内拆段无原子性风险。birthFacts 仅用于 OrderForked 的
-    /// 重放事实键清单（B-03：重放/新生可区分），事实本体由重放段消费。
     function forkOrderGate(
         UVPStateMachine.SMState storage _s,
         bytes32 planId,
@@ -952,17 +692,14 @@ library UVPPlanRegistration {
         UVPStateMachine.ForkBirthFact[] calldata birthFacts,
         UVPStateMachine.SignalAuthorization[] calldata authorizations
     ) external returns (bytes32 forkedOrderId) {
-        // DELEGATECALL 保持 msg.sender：initiator 即主合约入口的直接调用方。
         address initiator = msg.sender;
         UVPStateMachine.Order storage parentOrder = _s.orders[planId][parentOrderId];
         if (!parentOrder.exists) {
             revert UVPStateMachine.UnknownOrder();
         }
-        // 裁决信号必须存在于父单（零字键在父单恒无信号，同拒）。
         if (!L_hasSignal(_s, planId, parentOrderId, approvalSourceId, approvalSignalId)) {
             revert UVPStateMachine.ForkApprovalSignalUnknown(planId, parentOrderId, approvalSourceId, approvalSignalId);
         }
-        // 授权门：父单 creator 或裁决信号提交者。
         {
             address approvalSubmitter =
                 _s.signals[planId][parentOrderId][L_signalKey(approvalSourceId, approvalSignalId)].submitter;
@@ -973,9 +710,6 @@ library UVPPlanRegistration {
 
         forkedOrderId = L_forkOrderIdFor(planId, parentOrderId, forkPayloadHash);
         L_requireNotDockNamespace(forkedOrderId);
-        // creator 承袭父单（血缘连续：fork 是同一业务订单的治理分叉，不是
-        // 新下单方）；relayer 记 initiator（其身份由 OrderForked 事件单独
-        // 携带，creator 面不因 relayer 混入）。
         L_createOrder(_s, planId, forkedOrderId, parentOrder.creator, initiator);
         _s.orders[planId][forkedOrderId].parentOrderId = parentOrderId;
         L_authorizeSignalSubmitters(_s, planId, forkedOrderId, authorizations);
@@ -997,17 +731,6 @@ library UVPPlanRegistration {
         }
     }
 
-    /// fork 出生通道·重放段（UB-39）：birthFacts 逐字段对父单历史核验
-    ///（fail-closed）后写入（SignalSubmitted 事件口径，order-trigger hook
-    /// 在重放事务内求值），全部事实落库后对非 order-trigger hook 统一补扫
-    /// 一遍（skip 语义与 L_evaluateAffectedHooks 一致：未物化阶段的纯
-    /// flags=0 watcher 跳过，EMIT_READY 求值并物化）。
-    /// 每条事实的 per-stage 归属按 source==stage 回退解析（sourceId 是
-    /// 本 plan 已注册 stage id 时归属该 stage；词表携证解析需要 proof，
-    /// 而 fork 签名面按裁决不含 per-fact attribution——fork 事实已在父单
-    /// 提交时过全部词表闸，重放侧不重复收证，词表属主事实（sourceId !=
-    /// stageId）不进 fork 单的 per-stage 计数；hook 状态不受影响，
-    /// ASSIGN 时序闸在 fork 单上只覆盖 stage 命名事实）。
     function forkOrderReplay(
         UVPStateMachine.SMState storage _s,
         bytes32 planId,
@@ -1037,11 +760,7 @@ library UVPPlanRegistration {
                 fact.signalId,
                 fact.payloadHash,
                 fact.idempotencyKey,
-                // 提交者承袭父单事实的原始提交者：业务归因（谁说出的该事实）
-                // 不因重放换头。
                 parentSignal.submitter,
-                // 出生事务内的重放写入：order-trigger hook 允许求值（fork 的
-                // 出生线语义与 outside/dock 出生同构）。
                 true,
                 factStageId
             );
@@ -1060,8 +779,6 @@ library UVPPlanRegistration {
             L_evaluateHook(_s, planId, forkedOrderId, plan.hookIds[i], bytes32(0), bytes32(0));
         }
     }
-
-    // ---------------- L_ 私有副本（与主合约同源，见文件头说明） ----------------
 
     function L_signalKey(bytes32 sourceId, bytes32 signalId) private pure returns (bytes32) {
         return keccak256(abi.encode(sourceId, signalId));
@@ -1099,7 +816,6 @@ library UVPPlanRegistration {
         return IUVPPlanMetadataModule(_s.planMetadataModule).hasCapabilityVocabulary(planId);
     }
 
-    /// 属主自证验证（主合约 _verifiedFactOwner 同源副本）。
     function L_verifiedFactOwner(
         UVPStateMachine.SMState storage _s,
         bytes32 planId,
@@ -1122,8 +838,6 @@ library UVPPlanRegistration {
         return attribution.stageId;
     }
 
-    /// 属主阶段解析（主合约 _resolveSourceStage 同源副本）：携证解析优先，
-    /// 无证事实走共享回退（L_unattributedStage）。
     function L_resolveSourceStage(
         UVPStateMachine.SMState storage _s,
         bytes32 planId,
@@ -1138,9 +852,6 @@ library UVPPlanRegistration {
         stageId = L_unattributedStage(_s, planId, sourceId, signalId);
     }
 
-    /// 无证（或零词表）事实的属主阶段回退（L_resolveSourceStage /
-    /// L_resolveSourceStageFrom 共享收尾段）：有词表 fail-closed 回滚，
-    /// 零词表 plan 按 source==stage 回退。
     function L_unattributedStage(
         UVPStateMachine.SMState storage _s,
         bytes32 planId,
@@ -1185,9 +896,6 @@ library UVPPlanRegistration {
         return _s.signalAuthorizations[planId][orderId][L_signalKey(sourceId, signalId)][submitter].exists;
     }
 
-    /// origin 侧同意判定（主合约 _triggerOriginConsent 同源副本）：创建者 /
-    /// 显式授权提交者 / origin 源阶段在任执行者（UB-36① 后显式授权是唯一
-    /// 授权来源，收紧方向）。
     function L_triggerOriginConsent(
         UVPStateMachine.SMState storage _s,
         bytes32 originPlanId,
@@ -1207,7 +915,6 @@ library UVPPlanRegistration {
         if (originOrder.creator == party) {
             return true;
         }
-        // 显式 order 级授权独立于执行者委任（不可被 patch 撤销）。
         if (L_hasExplicitSignalAuthorization(_s, originPlanId, originOrderId, originSourceId, originSignalId, party)) {
             return true;
         }
@@ -1219,10 +926,6 @@ library UVPPlanRegistration {
         return false;
     }
 
-    /// 同意门双主体判定（triggerOrderFromSignal 与
-    /// L_requireTriggerHookSignalConsent 共享）：EIP-712 请求 submitter 或
-    /// 执行 relayer 任一在 origin 同意集合内即放行。L_triggerOriginConsent
-    /// 对零地址主体恒 false，relayer 零址无需前置短路。
     function L_eitherTriggerOriginConsent(
         UVPStateMachine.SMState storage _s,
         bytes32 originPlanId,
@@ -1323,7 +1026,6 @@ library UVPPlanRegistration {
         }
     }
 
-    /// 授权集哈希（主合约 signalAuthorizationsHash 同公式副本）。
     function L_signalAuthorizationsHash(UVPStateMachine.SignalAuthorization[] calldata authorizations)
         private
         pure
@@ -1346,7 +1048,6 @@ library UVPPlanRegistration {
         return rollingHash;
     }
 
-    /// 发射适格面卡点（主合约 _requireSignalAdmission 同源副本）。
     function L_requireSignalAdmission(
         UVPStateMachine.SMState storage _s,
         bytes32 planId,
@@ -1368,7 +1069,6 @@ library UVPPlanRegistration {
         }
     }
 
-    /// 事实落库 + per-stage 原生计数（主合约 _recordSignal 同源副本）。
     function L_recordSignal(
         UVPStateMachine.SMState storage _s,
         bytes32 planId,
@@ -1423,7 +1123,6 @@ library UVPPlanRegistration {
         L_evaluateAffectedHooks(_s, planId, orderId, key, sourceId, signalId, evaluateOrderTriggerHooks);
     }
 
-    /// 出生锚订单归属 + 到达重评（主合约 _evaluateAffectedHooks 同源副本）。
     function L_evaluateAffectedHooks(
         UVPStateMachine.SMState storage _s,
         bytes32 planId,
@@ -1455,8 +1154,6 @@ library UVPPlanRegistration {
         }
     }
 
-    /// hook 求值（主合约 _evaluateHook 同源副本；order-trigger 与
-    /// EMIT_READY 的 Ready 分支语义相同，合并书写）。
     function L_evaluateHook(
         UVPStateMachine.SMState storage _s,
         bytes32 planId,
@@ -1510,9 +1207,6 @@ library UVPPlanRegistration {
         }
 
         if (nextStatus == UVPStateMachine.HookStatus.Ready && !runtime.readyEmitted) {
-            // 发射面与主合约同构：仅 order-trigger / EMIT_READY 钩发
-            // HookReady 并物化——flags=0 纯 watcher 判 Ready 不发事件、不
-            // 物化（fork 重放路径不得产出顺序提交不会产生的幻影就绪）。
             if (hook.flags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK | HOOK_FLAG_EMIT_READY) != 0) {
                 runtime.readyEmitted = true;
                 L_materializeStage(_s, planId, orderId, hook.stageId, hookId, triggerSourceId, triggerSignalId);
@@ -1564,9 +1258,6 @@ library UVPPlanRegistration {
         );
     }
 
-    /// 指令求值（主合约 _evaluateInstructions + 值运算同源副本，含 UB-1
-    /// 无锚防御：L_delayValue 对 anchorAt==0 永不放行、L_orValue 无锚分支
-    /// 永不出线）。
     function L_evaluateInstructions(
         mapping(bytes32 => UVPStateMachine.SignalRecord) storage orderSignals,
         UVPStateMachine.Instruction[] storage instructions
@@ -1637,8 +1328,6 @@ library UVPPlanRegistration {
         if (value.cancel || !value.value) {
             return value;
         }
-        // 无锚永不放行（UB-1，与 Rust 权威 eval_expr Delay 臂对齐：Ready 且
-        // anchors 为空返回 NeedsMore，不把 anchorAt=0 当 0 时刻起算）。
         if (value.anchorAt == 0) {
             return UVPStateMachine.EvalValue({value: false, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
         }
@@ -1686,11 +1375,6 @@ library UVPPlanRegistration {
         returns (UVPStateMachine.EvalValue memory)
     {
         if (left.value || right.value) {
-            // UB-1：无锚分支永不出线（Rust branch_maturity (None,_) => false；
-            // 有锚对无锚恒胜，双方有锚取早者）。incumbent=左，candidate=右只在
-            // 严格更好时替换：右胜仅当右有锚而左无锚、或双有锚且右严格更早——
-            // 四格全表 (0,0)/(t,0) 保左、(0,t) 右胜、(t,t) 取早者且平局保先到
-            //（左）分支，与主合约 _orValue 逐格同表。
             bool leftWins;
             if (left.value && !right.value) {
                 leftWins = true;
@@ -1708,7 +1392,6 @@ library UVPPlanRegistration {
             });
         }
         if (left.wait || right.wait) {
-            // 等待期限只由等待成员贡献（Rust: waits.min()；0=无限语义）。
             return UVPStateMachine.EvalValue({
                 value: false,
                 wait: true,
@@ -1801,8 +1484,6 @@ library UVPPlanRegistration {
         bytes32 triggerHookId,
         bytes32 triggerStageId
     ) private view {
-        // 语义保持不变：用新单 plan 的 trigger hook 定义，评估 origin 订单的
-        // 信号状态（origin 事实在 origin 订单的作用域内可见）。
         UVPStateMachine.StoredHook storage hook = L_validatedTriggerHook(_s, planId, triggerHookId, triggerStageId);
         UVPStateMachine.EvalValue memory result =
             L_evaluateInstructions(_s.signals[originPlanId][originOrderId], hook.instructions);
@@ -1811,10 +1492,6 @@ library UVPPlanRegistration {
         }
     }
 
-    /// UVP-08：trigger hook 的每一条 SIGNAL 指令读取的 origin 事实都必须
-    /// 独立通过同意门（未发生的事实不是 origin 订单任何一方的发言，
-    /// 只约束"已被说出"的事实；每条事实的属主阶段从 originFactAttributions
-    /// 携证解析，有词表的 origin plan 缺证事实响亮回滚）。
     function L_requireTriggerHookSignalConsent(
         UVPStateMachine.SMState storage _s,
         bytes32 originPlanId,
@@ -1856,13 +1533,6 @@ library UVPPlanRegistration {
         }
     }
 
-    /// order-link 派生单的 trigger hook 就绪落位（仅 order-link 出生路径
-    /// 使用）。与 outside/dock 不同，派生单在标记前没有事务内求值——
-    /// 子单事实集为空，多原子触发线在子单作用域内永不可达 Ready；其
-    /// 就绪裁决由 L_requireTriggerHookReadyForOrder 以 origin 订单的事实
-    /// 作用域预先断言（求值面 = origin 事实）。本入口保留链接路径的
-    /// 旧守卫：Cancelled（终态矛盾）拒绝，其余落 Ready——outside/dock
-    /// 的断言式守卫（非 Ready 即拒）只适用于"先求值后标记"的出生路径。
     function L_markTriggerHookReady(
         UVPStateMachine.SMState storage _s,
         bytes32 planId,
@@ -1900,18 +1570,12 @@ library UVPPlanRegistration {
         }
     }
 
-
-    /// 高位命名空间保留闸（三个出生入口共享）：The high-bit namespace is
-    /// reserved for deterministic dock child orders. A derived id colliding
-    /// with it is a hash-collision-level event; fail closed rather than let a
-    /// dock child be front-run.
     function L_requireNotDockNamespace(bytes32 orderId) private pure {
         if (uint256(orderId) & (uint256(1) << 255) != 0) {
             revert UVPStateMachine.InvalidDockOrderNamespace(orderId);
         }
     }
 
-    /// order-link 派生订单号（主合约 orderLinkOrderIdFor 同公式副本）。
     function L_orderLinkOrderIdFor(
         bytes32 planId,
         bytes32 originPlanId,
@@ -1937,7 +1601,6 @@ library UVPPlanRegistration {
         );
     }
 
-    /// fork 派生订单号（主合约 forkOrderIdFor 同公式副本）。
     function L_forkOrderIdFor(bytes32 planId, bytes32 parentOrderId, bytes32 forkPayloadHash)
         private
         pure

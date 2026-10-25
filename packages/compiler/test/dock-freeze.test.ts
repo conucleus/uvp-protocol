@@ -28,13 +28,6 @@ import type {
   ZhixuDefinition,
 } from "../src/types/index.js";
 
-/**
- * Protocol freeze gate: the TS-authority generated compatibility manifest is
- * the only fixture input for this test.  The target artifact in its
- * resolution entry, the parent routes (new + existing 双模式), and the
- * EVM-facing plans must all resolve to the same committed identities and
- * dock roots.
- */
 const manifestPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../fixtures/dock/v1/manifest.json",
@@ -91,8 +84,6 @@ test("protocol freeze consumes one Rust dock fixture and one resolved artifact",
   assert.deepEqual(validateHookPlanArtifact(target), []);
   assert.deepEqual(validateHookPlanArtifact(parent), []);
 
-  // 双模式 instanceId 口径：hook_plan 产物同时携带 new/existing 两条
-  // route（existing 挂接的链轨接受面在 onchain 测试另行断言）。
   assert.deepEqual(
     parent.dockRoutes.map((route) => [route.target.interfaceName, route.orderMode]),
     [
@@ -161,8 +152,6 @@ test("core linker errors retain stable code, path, and target reference", () => 
   };
   const dockStage = brokenParent.spec.stages[1];
   assert.ok(dockStage?.executor?.zhixuExecutorConfig, "fixture route missing");
-  // 本地形状保持合法（EXECUTE 是真实通道、恰一条绑定满足 D010 出生锚），
-  // 让 link 期 D009（目标接口没有该 input 端口）成为首个错误。
   dockStage.executor.zhixuExecutorConfig.inputMap.EXECUTE = "missing_port";
 
   assert.throws(
@@ -188,8 +177,6 @@ test("core linker errors retain stable code, path, and target reference", () => 
 });
 
 test("D020 mode-not-allowed and D003 target-shape errors surface from the core linker", () => {
-  // D020：mode ∉ 接口 orderModes（production_service 只允许 new；existing
-  // 模式本地允许 0..N 条 input 绑定，故不会先触发 D010）。
   const wrongMode = structuredClone(fixture.parentDefinition) as unknown as ZhixuDefinition & {
     spec: {
       stages: Array<{
@@ -217,8 +204,6 @@ test("D020 mode-not-allowed and D003 target-shape errors surface from the core l
     },
   );
 
-  // D003：target.zhixu 形态必须是目标定义的内容派生 uid（zx-<32hex>）；
-  // 合法 slug 形态但非 zx-uid 的 name 式引用同样拒绝（name 不是寻址面）。
   for (const badTargetValue of ["Payment-Zhixu", "payment-zhixu"]) {
     const badName = structuredClone(fixture.parentDefinition) as unknown as ZhixuDefinition & {
       spec: {

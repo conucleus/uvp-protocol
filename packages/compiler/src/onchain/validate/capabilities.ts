@@ -18,17 +18,10 @@ import {
 import type { HexString } from "../../types/index.js";
 
 /**
- * 能力声明族校验（自 onchain-hook-plan.ts 原样迁入）：executorRoutes /
- * selectorBindings / signalCapabilities 的形状与承诺重算，E16 事实键唯一
- * 属主镜像，以及 supplierType/fileType 闭集词表（编译入口与校验边界同集
- * 单一来源）。
+ * 能力声明族校验：executorRoutes / selectorBindings / signalCapabilities
+ * 的形状与承诺重算，事实键唯一属主镜像，supplierType/fileType 闭集词表。
  */
 
-/**
- * 三张表的封闭键集（与 types/index.ts 声明同步）：与顶层 unknown-field
- * 拒绝同款——深层携带未声明额外键的制品不得作为 plan 的唯一字节数组
- * 形态通过校验。
- */
 const EXECUTOR_ROUTE_FIELDS: readonly string[] = [
   "routeId",
   "stageId",
@@ -59,37 +52,12 @@ const SIGNAL_CAPABILITY_FIELDS: readonly string[] = [
   "capabilityHash",
 ];
 
-/**
- * supplierType 闭集（与 uvp_model::SUPPLIER_TYPES / Go supplierTypes 同源，
- * 注册表 rule executor-supplier-type-closed-enum）：executorRoutes 只进
- * 制品承诺（executorHash → planHash），不进链上 PlanCommit（实参只有
- * hooksHash/capabilitiesRoot/dock roots），链上没有闭集守卫——闭集外的
- * 字符串（含 "Zhixu" 等大小写变体）只存在编译/制品边界这一道拦截。
- * 比对精确匹配、不 trim：executorHash 哈希的是原文，trim 后匹配会放行
- * 带空白的原文进承诺（与 Rust/Go 严格枚举闸同口径）。
- */
 const SUPPLIER_TYPES: readonly string[] = ["individual", "organization", "zhixu"];
 
-/**
- * fileResources 的 fileType 闭集（与 Go fileTypes 同源：
- * local|http|txcloud|plain_text）：fileResources 经 resourcesHash 进制品
- * 承诺（与 executor 路由同面，不上链），拼错的 fileType 不得静默成承诺
- * 内容。
- */
 const FILE_TYPES: readonly string[] = ["local", "http", "txcloud", "plain_text"];
 
 export { SUPPLIER_TYPES, FILE_TYPES };
 
-/**
- * E16 镜像（uvp-constraints.v1.json（自宿主 uvp-core protocol/）rejectionSurfaces
- * e16-current-order-factkey-unique-owner）：事实键
- * (targetSourceId, signalId) 在 plan 内有唯一属主阶段。属主唯一性是携证
- * 解析的前提——链上按能力叶声明事实属主，同一事实键存在两个声明属主时，
- * 任一方都能携证把事实落到自己的阶段（阶段物化/executor 门与 origin
- * 同意链的执行者腿随之被模糊）。Rust 镜像（uvp-core uvp-compiler
- * artifact/mod.rs build_signal_capabilities）已实现同规则；Go 编译面
- * 不承载链轨能力面（权威分治：Go 云轨身份归 DB），无待补镜像。
- */
 function duplicateCurrentOrderFactKeyIssues(
   capabilities: readonly {
     readonly stage: string;
@@ -139,10 +107,6 @@ function validateOnchainExecutorRoutes(
       issues,
     );
     expectNonEmptyString(route.executorType, `${prefix}.executorType`, issues);
-    // executorType 闭集（编译入口 SUPPLIER_TYPES 同集同精确匹配口径）：
-    // executor 路由只进制品承诺、不进链上 PlanCommit，闭集外字符串没有
-    // 合约侧兜底——手工/第三方制品不得绕过 Rust 编译门把词表外值带进
-    // 承诺。
     if (
       typeof route.executorType === "string" &&
       !SUPPLIER_TYPES.includes(route.executorType)
@@ -151,8 +115,6 @@ function validateOnchainExecutorRoutes(
         `${prefix}.executorType must be one of ${SUPPLIER_TYPES.join("|")} (case-sensitive), received ${JSON.stringify(route.executorType)}`,
       );
     }
-    // executorId 与编译入口 executor.supplierID 同口径拒空串/空白：空 id
-    // 寻址不了执行者，只会在 keeper 投递面变成确定性失败。
     if (typeof route.executorId === "string" && route.executorId.trim().length === 0) {
       issues.push(
         `${prefix}.executorId must be a non-empty executor id (whitespace-only ids are rejected at the compile entry already)`,

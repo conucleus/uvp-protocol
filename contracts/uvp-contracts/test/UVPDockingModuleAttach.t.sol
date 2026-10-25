@@ -11,15 +11,6 @@ import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {DockMerkle} from "../src/libraries/DockMerkle.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 
-/// @title Zhixu Dock existing 模式（attach）测试：对等挂接既有目标单
-/// @dev 覆盖：同意矩阵（无授权拒 / creator / 在任执行者及其负例：锚错
-///      阶段、跨单冒用 / publisher 预授权）、不铸子单 + gas 上界、N:1
-///      多父挂同一目标单（dockByTargetOrder 保持 new 专属）、input 恰一次
-///      + 重放幂等、attach 前已成立 output 的回填重放、target:null 动态
-///      选择（合法/伪造/异叶/他路由候选集 proof、选定钉住、非空绑定
-///      routeHash 失配拒）、接口 existing 位、深度账本 max 更新与不降。
-///      默认目标单 creator = 测试合约（creator 同意腿天然成立）；不同意
-///      腿用例以显式 creator/prank/permit 隔离。
 interface AttachVm {
     function addr(uint256 privateKey) external returns (address keyAddr);
     function expectEmit(bool checkTopic1, bool checkTopic2, bool checkTopic3, bool checkData, address emitter) external;
@@ -79,11 +70,6 @@ contract UVPDockingModuleAttachTest {
     bytes32 private constant TRIGGER_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
     );
-    bytes32 private constant ATTACH_PERMIT_TYPEHASH = keccak256(
-        "UVPDockAttachPermitV1(bytes32 targetPlanId,bytes32 targetOrderId,bytes32 interfaceNameId,bytes32 localPlanId,bytes32 routeHash,bytes32 dockInstanceId,uint256 feeLimit,uint256 nonce,uint256 deadline)"
-    );
-
-    // preimage v2 域（与 packages/compiler/docs/dock-word-layout.md 逐字节一致）。
     bytes32 private constant DOMAIN_DEFINITION_REF = keccak256("UVP_DEFINITION_REF_V1");
     bytes32 private constant DOMAIN_INTERFACE = keccak256("UVP_DOCK_INTERFACE_V2");
     bytes32 private constant DOMAIN_INTERFACE_INPUT = keccak256("UVP_DOCK_INTERFACE_INPUT_V2");
@@ -96,12 +82,9 @@ contract UVPDockingModuleAttachTest {
     bytes32 private constant DOMAIN_RUNTIME_EIP155 = keccak256("UVP_RUNTIME_EIP155_V1");
     bytes32 private constant DOMAIN_DOCK_CANDIDATE = keccak256("UVP_DOCK_CANDIDATE_V2");
     bytes32 private constant EMPTY_DOCK_ROOT = keccak256("");
-    /// 第二候选的链上 planId word（镜像计划占位，B-01 候选叶 V2 槽）。
     bytes32 private constant OTHER_CANDIDATE_PLAN_ID = keccak256("other-candidate-plan");
-    // 与 UVPStagePatchModule 同值的镜像常量（既有测试文件的惯例）。
     bytes32 private constant EXECUTOR_PATCH_MODE_ASSIGN = bytes32("assign");
 
-    // 父侧 stage/hook。
     bytes32 private constant PARENT_START_HOOK = keccak256("start#START");
     bytes32 private constant PARENT_STAGE = keccak256("start");
     bytes32 private constant SIGNAL_START = keccak256("start");
@@ -112,26 +95,21 @@ contract UVPDockingModuleAttachTest {
     bytes32 private constant PARENT_DYN_STAGE = keccak256("dyn");
     bytes32 private constant SIGNAL_DYN = keccak256("select");
 
-    // 目标定义身份与具名接口（existing-only：mask=2）。
     bytes32 private constant TARGET_UID_ID = keccak256("zx-b0ba5e11e77a2c0ffee0dd5eed1c0deb0a");
     bytes32 private constant INTERFACE_NAME_ID = keccak256("evidence");
     bytes32 private constant TARGET_BIRTH_HOOK = keccak256("pay#MINT");
     bytes32 private constant TARGET_STAGE = keccak256("pay");
     bytes32 private constant TARGET_BIRTH_SOURCE = keccak256("observe");
     bytes32 private constant TARGET_BIRTH_SIGNAL = keccak256("pay.born");
-    // output 事实（attach 前已成立→回填；接口经 done/progress 两端口暴露）。
     bytes32 private constant TARGET_SOURCE = keccak256("payroll");
     bytes32 private constant TARGET_SIGNAL = keccak256("pay.paid");
-    // input 交付事实（经 amend 端口写入既有单）。
     bytes32 private constant TARGET_INPUT_SOURCE = keccak256("audit");
     bytes32 private constant TARGET_INPUT_SIGNAL = keccak256("pay.amend");
     bytes32 private constant TARGET_RECEIVE_HOOK = keccak256("pay#RECEIVE");
-    // executor 同意腿的可 patch 阶段（无 order-trigger hook）。
     bytes32 private constant TARGET_CONTROL_STAGE = keccak256("control");
     bytes32 private constant TARGET_CONTROL_HOOK = keccak256("control#WATCH");
     bytes32 private constant TARGET_CONTROL_SOURCE = keccak256("control");
     bytes32 private constant TARGET_CONTROL_SIGNAL = keccak256("control.tick");
-    // 输出镜像的本地事实键。
     bytes32 private constant LOCAL_MAPPED_SOURCE = keccak256("recycler");
     bytes32 private constant LOCAL_MAPPED_SIGNAL = keccak256("exec.paid");
     bytes32 private constant LOCAL_PROGRESS_SOURCE = keccak256("recycler");
@@ -150,7 +128,6 @@ contract UVPDockingModuleAttachTest {
     address private constant FOREIGN_CREATOR = address(0xC0C0);
     address private constant KEEPER = address(0x5EED1);
     address private constant EXECUTOR_CONSENTER = address(0xE0E0);
-    // 动态选择的第二候选（不在本测试目标 plan 身份内，只进候选叶）。
     bytes32 private constant OTHER_CANDIDATE_DEF_REF = keccak256("other-candidate-definition-ref");
 
     UVPStateMachine private machine;
@@ -163,19 +140,16 @@ contract UVPDockingModuleAttachTest {
     bytes32 private targetPlanId;
     bytes32 private runtimeDomain;
 
-    // 静态 existing 路由（目标槽 = targetDefinitionRef）。
     bytes32 private execRouteId;
     bytes32 private amendInputBinding;
     bytes32 private doneOutputBinding;
     bytes32 private progressOutputBinding;
     bytes32 private attachRouteHash;
-    // 动态选择路由（目标槽 = candidatesRoot，无 input/output 绑定）。
     bytes32 private dynRouteId;
     bytes32 private candidatesRoot;
     bytes32 private targetCandidateLeaf;
     bytes32 private otherCandidateLeaf;
     bytes32 private dynRouteHash;
-    // 目标接口承诺（existing-only）。
     bytes32 private evidenceInterfaceLeaf;
     bytes32 private evidenceInputsRoot;
     bytes32 private evidenceOutputsRoot;
@@ -194,20 +168,11 @@ contract UVPDockingModuleAttachTest {
         stagePatch = _stagePatchModule;
         runtimeDomain = keccak256(abi.encode(DOMAIN_RUNTIME_EIP155, block.chainid, address(machine)));
         _computeRouteParts();
-        // B-01：routeHash/候选叶承诺目标 planId——目标 plan 先注册。
         targetPlanId = _registerTargetPlan();
         _computeRouteHashes();
         parentPlanId = _registerParentPlan();
     }
 
-    // ------------------------------------------------------------------
-    // 建立语义
-    // ------------------------------------------------------------------
-
-    /// 挂接建立：dock 记录就位、linkedOrderId = 既有目标单、不铸子单。
-    /// 隐藏建单在本路径结构上不可达：attach 不携带任何可派生子单身份，
-    /// 而 createDockedOrderFromModule 落在既有单上必撞 OrderAlreadyRegistered；
-    /// 目标端点索引（new 模式出生键）也保持未被 existing 占用。
     function testAttachRecordsDockWithoutMintingChild() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
@@ -243,8 +208,6 @@ contract UVPDockingModuleAttachTest {
         assertTrue(_attach(execRoute(), parentOrder, targetOrder));
     }
 
-    /// 成功挂接的重放是 permissionless 幂等面：无同意面的 keeper 重放同一
-    /// 请求 return false（幂等检查在同意门之前），不触碰 nonce/账本。
     function testAttachIsIdempotentForSameInstance() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
@@ -253,10 +216,6 @@ contract UVPDockingModuleAttachTest {
         assertFalse(_attach(execRoute(), parentOrder, targetOrder));
     }
 
-    /// gas 与存量 dock 数无关：先测基准，再积累 5 条既有 attach 后另挂
-    /// 一条——attach 只做 O(1) 存储写，不铸单不遍历。2k 上界容纳深度
-    /// 账本 max 更新与新鲜/既有槽的读写差异；绝对上界排除隐藏建单
-    ///（铸子单本身 >200k gas）。
     function testAttachGasIndependentOfExistingDocks() public {
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
         bytes32 firstParent = _spawnParentOrder(SIGNAL_EXEC);
@@ -274,14 +233,8 @@ contract UVPDockingModuleAttachTest {
         assertTrue(_attach(execRoute(), lastParent, targetOrder));
         uint256 spent2 = gasAgain - gasleft();
         assertTrue(spent2 <= spent1 + 2000);
-        // 绝对上界排除隐藏建单：铸一个子单（_createOrder + 出生事实 +
-        // hook 求值）本身 >250k gas，含建单的 attach 必然越过本界。
         assertTrue(spent1 < 850000);
     }
-
-    // ------------------------------------------------------------------
-    // 同意矩阵
-    // ------------------------------------------------------------------
 
     function testAttachRejectsWithoutConsent() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
@@ -292,9 +245,6 @@ contract UVPDockingModuleAttachTest {
         _attach(execRoute(), parentOrder, targetOrder);
     }
 
-    /// creator 腿：目标单 creator（非默认测试合约，隔离验证）可挂接；
-    /// 另一父订单对同一目标单的 keeper 挂接（新实例，非幂等重放）仍无
-    /// 同意面。
     function testAttachAllowsTargetOrderCreator() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
         bytes32 targetOrder = _spawnTargetOrderBy(PAYLOAD, FOREIGN_CREATOR);
@@ -312,10 +262,6 @@ contract UVPDockingModuleAttachTest {
         _attach(execRoute(), otherParent, targetOrder);
     }
 
-    /// 在任执行者腿：目标单 targetStageId 的 active executor patch 持有者
-    /// 可挂接。经无 input 绑定的动态路由构造（executor 腿的阶段锚由请求
-    /// 自报，不受 input 端口 hook 归属约束）；assign 模式 patch 由订单
-    /// creator 作 selector 落地。
     function testAttachAllowsActiveStageExecutor() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_DYN);
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
@@ -326,9 +272,6 @@ contract UVPDockingModuleAttachTest {
         assertTrue(_attachWithArgs(request, _attachInterfaceProof(), _permitEmpty()));
     }
 
-    /// executor 腿负例（锚错阶段）：control 阶段持 patch 的执行者在请求
-    /// 自报 targetStageId = 出生阶段时腿失效——阶段锚是 O(1) 寻址而非全阶
-    /// 段枚举，锚错即回落到同意门（空 permit）拒绝。
     function testAttachRejectsExecutorAnchoredToWrongStage() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_DYN);
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
@@ -343,8 +286,6 @@ contract UVPDockingModuleAttachTest {
         _attachWithArgs(request, _attachInterfaceProof(), _permitEmpty());
     }
 
-    /// executor 腿负例（非本单执行者）：executor patch 按单落位——同
-    /// plan 下另一订单同阶段的执行者对本单不成立，跨单冒用被拒。
     function testAttachRejectsExecutorOfDifferentOrder() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_DYN);
         bytes32 otherOrder = _spawnTargetOrder(PAYLOAD);
@@ -364,7 +305,6 @@ contract UVPDockingModuleAttachTest {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
         bytes32 instance = _attachInstanceId(parentOrder, attachRouteHash, targetOrder);
-        // permit 先离线签署（digest 视图调用不得吃掉 prank），keeper 中继。
         UVPDockingModule.EntrancePermitV2 memory permit = _attachPermitSigned(instance, parentOrder, targetOrder, 1);
         vm.prank(KEEPER);
         assertTrue(_attachWithPermit(execRoute(), parentOrder, targetOrder, permit));
@@ -408,48 +348,6 @@ contract UVPDockingModuleAttachTest {
         _attachWithPermit(execRoute(), parentOrder, targetOrder, permit);
     }
 
-    /// attach permit digest 与 EIP-712 规范公式逐字一致（域 version "4"，
-    /// typehash V1 含 targetOrderId，feeLimit 固定 0）。
-    function testAttachPermitDigestMatchesEip712Formula() public {
-        bytes32 digest = docking.attachPermitDigest(
-            targetPlanId,
-            keccak256("some-order"),
-            INTERFACE_NAME_ID,
-            parentPlanId,
-            attachRouteHash,
-            bytes32(uint256(0x1)),
-            1,
-            2000000000
-        );
-        bytes32 structHash = keccak256(
-            abi.encode(
-                ATTACH_PERMIT_TYPEHASH,
-                targetPlanId,
-                keccak256("some-order"),
-                INTERFACE_NAME_ID,
-                parentPlanId,
-                attachRouteHash,
-                bytes32(uint256(0x1)),
-                uint256(0),
-                uint256(1),
-                uint256(2000000000)
-            )
-        );
-        bytes32 domainSeparator = keccak256(
-            abi.encode(
-                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-                keccak256("UVPDockingModule"),
-                keccak256("4"),
-                block.chainid,
-                address(docking)
-            )
-        );
-        assertEq(digest, keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash)));
-    }
-
-    /// B7 自挂接拒绝：父单与目标单同 (planId, orderId) 复合键即镜像退化
-    ///（output 把订单自身事实写回自身），身份比较在接口/路由证明之前
-    /// 响亮拒绝——深度上限不是这条路径的防御（合法挂接同样消耗深度）。
     function testAttachRejectsSelfAttach() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
         UVPDockingModule.AttachDockRequestV1 memory request =
@@ -461,16 +359,7 @@ contract UVPDockingModuleAttachTest {
         _attachRaw(request);
     }
 
-    /// B7 跨 plan 同 uid（内容寻址声明的反证钉）：别名父 plan 的定义 uid
-    /// 与目标定义 uid 完全相同——localDefinitionRefHash == targetDefinitionRefHash，
-    /// uid 级身份两边重合；但 planId 是内容寻址的（runtimePlanHash 覆盖
-    /// dockRoutesRoot，别名单叶路由树 → 相异 planId），(planId, orderId)
-    /// 复合键相异。身份比较必须按复合键判定：若比较退化到 uid/defRef 级，
-    /// 本用例在身份检查处误报 DockSelfAttach 而失败；跨 plan 挂接照常
-    /// 建立——同 uid 在内容寻址下只能造出不同 planId 的兄弟定义，造不出
-    /// 同键自挂接（「target 必异」声明的机制性验证）。
     function testAttachCrossPlanSameUidIsNotSelfAttach() public {
-        // 别名路由材料：defRef 槽取目标 uid 的 defRef（同 uid 声明）。
         bytes32 aliasDefRef = targetDefinitionRef;
         bytes32 aliasRouteId = keccak256(abi.encode(DOMAIN_ROUTE_ID, aliasDefRef, PARENT_EXEC_STAGE));
         bytes32 aliasAmendBinding = keccak256(
@@ -511,7 +400,6 @@ contract UVPDockingModuleAttachTest {
         bytes32[] memory aliasOutputBindings = new bytes32[](2);
         aliasOutputBindings[0] = aliasDoneBinding;
         aliasOutputBindings[1] = aliasProgressBinding;
-        // 静态 existing 路由：同 uid 下 defRef 槽与目标槽重合，仍是静态形态。
         bytes32 aliasRouteHash = keccak256(
             abi.encode(
                 DOMAIN_ROUTE,
@@ -525,7 +413,6 @@ contract UVPDockingModuleAttachTest {
             )
         );
 
-        // 别名 plan：与父 plan 同形钩子，路由树只含别名单叶。
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](3);
         hooks[0] = _compactHook(
             PARENT_START_HOOK, PARENT_STAGE, keccak256("START"), FLAG_MINT | FLAG_EMIT_READY, PARENT_STAGE, SIGNAL_START
@@ -547,7 +434,6 @@ contract UVPDockingModuleAttachTest {
         require(aliasPlanId != targetPlanId, "alias plan must not collide with the target plan");
         require(aliasPlanId != parentPlanId, "alias plan must not collide with the parent plan");
 
-        // 别名父单：outside 出生（镜像 _spawnParentOrder，planId 换别名 plan）。
         bytes32 payload = keccak256("alias-parent-order");
         UVPStateMachine.SignalAuthorization[] memory auths = new UVPStateMachine.SignalAuthorization[](2);
         auths[0] = _auth(PARENT_STAGE, SIGNAL_START, address(this));
@@ -563,9 +449,6 @@ contract UVPDockingModuleAttachTest {
 
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
 
-        // 请求：local = (aliasPlanId, aliasOrder)、target = (targetPlanId,
-        // targetOrder)——uid/defRef 两边同字，复合键相异（既有实例身份的
-        // 10 word 形态，local 侧换别名 plan 的键与 defRef）。
         bytes32 instance = keccak256(
             abi.encode(
                 DOMAIN_DOCK_INSTANCE,
@@ -631,7 +514,7 @@ contract UVPDockingModuleAttachTest {
         assertTrue(
             docking.attachDockedOrder(
                 request,
-                new bytes32[](0), // 单叶路由树：membership 证明为空
+                new bytes32[](0),
                 _attachInterfaceProof(),
                 inputs,
                 outputs,
@@ -644,8 +527,6 @@ contract UVPDockingModuleAttachTest {
         assertEq(linked, targetOrder);
     }
 
-    /// 重放在幂等检查之后：已成功的 dock 重放 return false，不因 nonce
-    /// 已消费而回退（与 open 的 entrance permit 同口径）。
     function testAttachPermitReplayReturnsFalseAfterDockExists() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
@@ -657,13 +538,6 @@ contract UVPDockingModuleAttachTest {
         assertFalse(_attachWithPermit(execRoute(), parentOrder, targetOrder, permit));
     }
 
-    // ------------------------------------------------------------------
-    // N:1 与回填
-    // ------------------------------------------------------------------
-
-    /// 多父挂同一目标单：每父订单各成一条 dock 实例（spec §2.4 拼批
-    /// 语义：每调用方按（本地订单, 本地阶段）各成一条），共享同一目标
-    /// 端点；dockByTargetOrder 不承载 existing——目标侧投影由事件承载。
     function testMultipleParentsAttachSameTargetOrder() public {
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
         bytes32 parentA = _spawnParentOrder(SIGNAL_EXEC);
@@ -678,15 +552,9 @@ contract UVPDockingModuleAttachTest {
         assertTrue(existsA && existsB);
         assertEq(linkedA, targetOrder);
         assertEq(linkedB, targetOrder);
-        // dockByTargetOrder 保持 new 专属（子单出生键）：existing 不落反向
-        // 索引，目标侧"谁挂了我"的投影由 DockAttached 事件承载——多父
-        // 挂接后该键仍为零，N:1 不会被单值索引伪造成 1:1。
         assertEq(docking.dockByTargetOrder(keccak256(abi.encode(targetPlanId, targetOrder))), bytes32(0));
     }
 
-    /// 回填口径：attach 前已成立的目标输出，attach 后经 submitDockedSignal
-    /// 按 output 绑定重放到每个父侧（permissionless，payload 读目标单存储，
-    /// keeper 无法自选内容）。
     function testBackfillMirrorsEstablishedOutputToEachParent() public {
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
         _establishTargetFact(targetOrder);
@@ -714,7 +582,6 @@ contract UVPDockingModuleAttachTest {
         assertTrue(mappedA && mappedB);
         assertEq(payloadA, TARGET_FACT_PAYLOAD);
         assertEq(payloadB, TARGET_FACT_PAYLOAD);
-        // 兄弟 output 绑定（同目标事实、不同本地键/端口）独立交付且幂等。
         vm.prank(KEEPER);
         assertTrue(
             docking.submitDockedSignal(
@@ -729,14 +596,6 @@ contract UVPDockingModuleAttachTest {
         );
     }
 
-    // ------------------------------------------------------------------
-    // input 交付（existing 是活路径）
-    // ------------------------------------------------------------------
-
-    /// 每端口恰一次：attach 登记未交付的 input 绑定，submitDockedInput
-    /// 首次真实写入目标单（derived payload），此后幂等重放 return false。
-    /// 与 new 模式不同，这里 submitDockedInput 是活的交付路径（无出生锚
-    /// 在建立时被消费）。
     function testAttachInputDeliveredExactlyOnceThenIdempotent() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
@@ -753,8 +612,6 @@ contract UVPDockingModuleAttachTest {
         assertFalse(docking.submitDockedInput(instance, PARENT_EXEC_HOOK, amendInputBinding, _amendInputAttribution()));
     }
 
-    /// 目标事实槽位已有不同 provenance 的事实：交付 fail-closed（A14，
-    /// 同一事实槽位不得复用表达新事实），账本保持未交付。
     function testSubmitDockedInputConflictsWithPreexistingFact() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
@@ -775,9 +632,6 @@ contract UVPDockingModuleAttachTest {
         assertFalse(docking.dockInputDelivered(instance, amendInputBinding));
     }
 
-    /// A-09b：同一 attach 的两条 input 绑定指向同一目标事实键即拒绝——
-    /// 否则首条交付后兄弟绑定在 submitDockedInput 永久撞 DockInputConflict
-    /// （不置交付位），keeper 每个重发窗口烧 gas 且永不收敛。
     function testAttachRejectsDuplicateTargetFactKeyInputs() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
@@ -801,12 +655,6 @@ contract UVPDockingModuleAttachTest {
         );
     }
 
-    // ------------------------------------------------------------------
-    // target:null 动态选择
-    // ------------------------------------------------------------------
-
-    /// 候选集 root 占据动态路由的目标槽（随 dockRoutesRoot 在 finalize
-    /// 冻结）；attach 携 (候选叶, membership proof) 选定，正常建立。
     function testAttachSelectsCandidateFromCommittedSet() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_DYN);
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
@@ -830,7 +678,6 @@ contract UVPDockingModuleAttachTest {
         _attachWithProof(dynRoute(), parentOrder, targetOrder, proof);
     }
 
-    /// 选定目标与所携证明不一致（证明的是另一候选叶）：membership 失配。
     function testAttachRejectsProofOfUnselectedCandidate() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_DYN);
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
@@ -844,9 +691,6 @@ contract UVPDockingModuleAttachTest {
         _attachWithProof(dynRoute(), parentOrder, targetOrder, proof);
     }
 
-    /// 他路由/他 plan 的候选集 root 不在已提交 route 叶内：目标槽失配，
-    /// routeHash 重算即拒（候选集承诺由父 plan 的 dockRoutesRoot 背书，
-    /// 调用方无法自造槽 word）。
     function testAttachRejectsForeignCandidateRoot() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_DYN);
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
@@ -858,10 +702,6 @@ contract UVPDockingModuleAttachTest {
         _attachRaw(request);
     }
 
-    /// 选定后钉住：同一父 route instance 已挂接目标 A 后，向目标 B 的
-    /// 第二次挂接（不同 dockInstanceId、同 localRouteInstanceKey）被
-    /// DockEndpointOccupied 拒绝——选定目标在 dockInstanceId preimage +
-    /// 父 route 唯一键两层钉死，终身不可改。
     function testAttachSelectionIsPinnedToTargetOrder() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_DYN);
         bytes32 targetA = _spawnTargetOrder(PAYLOAD);
@@ -873,11 +713,6 @@ contract UVPDockingModuleAttachTest {
         _attachRaw(request);
     }
 
-    /// 动态路由的冻结形态 = 双空绑定根（4.4 口径）：携非空 inputs 或
-    /// outputs 的挂接在 routeHash 重算处失配——非空绑定根换掉 preimage 的
-    /// 绑定 word，静态槽与候选集槽两次重算都撞不上 committed 动态叶。
-    /// 绑定材料逐项合法（叶重算/端口 membership 全过），失配只在承诺面
-    /// 暴露——端口绑定/交付不在动态路径的 4.4 形态内，该边界由此钉死。
     function testAttachRejectsDynamicRouteCarryingBindings() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_DYN);
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
@@ -885,8 +720,6 @@ contract UVPDockingModuleAttachTest {
         UVPDockingModule.DockAttachInterfaceProofV1 memory proof = _attachInterfaceProof();
         UVPDockingModule.EntrancePermitV2 memory permit = _permitEmpty();
 
-        // 非空 inputs：绑定哈希按 dynRouteId 重算自洽（逐项检查全过），
-        // 单叶树根即叶自身。
         bytes32 dynAmendBinding = keccak256(
             abi.encode(
                 DOMAIN_INPUT_BINDING,
@@ -920,7 +753,6 @@ contract UVPDockingModuleAttachTest {
             new IUVPStateMachineCore.FactAttribution[](0)
         );
 
-        // 非空 outputs：同口径（output 绑定叶按 dynRouteId 重算自洽）。
         bytes32 dynDoneBinding = keccak256(
             abi.encode(
                 DOMAIN_OUTPUT_BINDING,
@@ -956,16 +788,11 @@ contract UVPDockingModuleAttachTest {
         );
     }
 
-    // ------------------------------------------------------------------
-    // 拒绝路径（对称于 open）
-    // ------------------------------------------------------------------
-
-    /// attach 路由的接口承诺必须宣告 existing（bit1）；new-only 接口拒。
     function testAttachRejectsInterfaceWithoutExistingMode() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
         UVPDockingModule.DockAttachInterfaceProofV1 memory proof = _attachInterfaceProof();
-        proof.commitment.orderModesWord = 1; // new-only
+        proof.commitment.orderModesWord = 1;
         _expect(abi.encodeWithSelector(UVPDockingModule.DockInterfaceModeUnsupported.selector, 1));
         _attachWithProof(execRoute(), parentOrder, targetOrder, proof);
     }
@@ -980,9 +807,6 @@ contract UVPDockingModuleAttachTest {
         _attach(execRoute(), parentOrder, keccak256("ghost-order"));
     }
 
-    /// modeWord 钉 existing：new 形状的 routeHash（同绑定根、modeWord=0）
-    /// 无法通过 attach 的重算——两模式身份不可互冒（open 侧的反向拒绝见
-    /// UVPDockingModuleTest.testRejectsExistingModeRoute）。
     function testAttachRejectsNewModeRouteHash() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
@@ -994,13 +818,11 @@ contract UVPDockingModuleAttachTest {
                 targetDefinitionRef,
                 targetPlanId,
                 INTERFACE_NAME_ID,
-                uint256(0), // modeWord new
+                uint256(0),
                 DockMerkle.root(_single(amendInputBinding)),
                 _outputsRootOf()
             )
         );
-        // 重算先按静态目标槽（existing modeWord）→ 失配；再按候选集根
-        // （=0 word，planId 槽随动态形态恒零）→ 仍失配，以第二次重算值回退。
         bytes32 recomputed = _routeHash(bytes32(0), bytes32(0), DockMerkle.root(_single(amendInputBinding)), _outputsRootOf());
         _expect(abi.encodeWithSelector(UVPDockingModule.DockRouteLeafMismatch.selector, request.routeHash, recomputed));
         _attachRaw(request);
@@ -1015,17 +837,11 @@ contract UVPDockingModuleAttachTest {
         _attachRaw(request);
     }
 
-    /// B-02 有界祖先检查：目标出现在父单的父链（沿 dockParentOfOrder
-    /// 上溯）即拒。B-01 后计划级路由承诺是注册期 DAG，合法路由面造不出
-    /// 环——本用例按既有账本模拟惯例 vm.store 植入父链指针与祖先 dock
-    ///（local=(targetPlan,B)、exists=true），钉祖先闸本身的行为边界：
-    /// 父单账本未达上限，拒绝只能来自祖先检查而非边数闸。
     function testAttachRejectsAncestorCycle() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
         bytes32 ancestorDockId = keccak256("ancestor-dock");
         _plantDock(ancestorDockId, targetPlanId, targetOrder);
-        // dockParentOfOrder 是模块第 9 个存储变量（slot 8）。
         bytes32 fatherSlot =
             keccak256(abi.encode(parentOrder, keccak256(abi.encode(parentPlanId, uint256(8)))));
         vm.store(address(docking), fatherSlot, ancestorDockId);
@@ -1035,18 +851,14 @@ contract UVPDockingModuleAttachTest {
         _attachRaw(request);
     }
 
-    /// B-02 祖先链传递：父链隔代表先（两跳命中）与单跳同口径拒绝。
     function testAttachRejectsTransitiveAncestorCycle() public {
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
         bytes32 midOrder = keccak256("ancestor-mid");
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
         bytes32 midDockId = keccak256("ancestor-mid-dock");
         bytes32 targetDockId = keccak256("ancestor-target-dock");
-        // mid dock：local=(parentPlan, midOrder)——把父链再延一跳。
         _plantDock(midDockId, parentPlanId, midOrder);
-        // target dock：local=(targetPlan, targetOrder)。
         _plantDock(targetDockId, targetPlanId, targetOrder);
-        // 父链：parentOrder → midDock(local=mid) → midOrder 的父 = targetDock。
         vm.store(
             address(docking),
             keccak256(abi.encode(parentOrder, keccak256(abi.encode(parentPlanId, uint256(8))))),
@@ -1063,23 +875,13 @@ contract UVPDockingModuleAttachTest {
         _attachRaw(request);
     }
 
-    /// vm.store 植入一条 _docks 记录（祖先闸消费的最小面：local 复合键 +
-    /// exists）。_docks 是模块第 1 个存储变量（slot 0）：struct 槽序
-    /// localPlanId (base+0) / localOrderId (base+1) / (depth, exists) 同槽
-    /// 打包 (base+8)。成员寻址 = keccak(dockId, 0) + 字段序偏移（mapping
-    /// 值是 struct 时槽序连续，不是再哈希的 mapping 槽公式）；打包槽内
-    /// depth（uint8）取最低字节、exists（bool）取次低字节——置 exists 的
-    /// word 是 0x0100（depth=0）。
     function _plantDock(bytes32 dockId, bytes32 localPlanId, bytes32 localOrderId) private {
         bytes32 dockBase = keccak256(abi.encode(dockId, uint256(0)));
         vm.store(address(docking), dockBase, localPlanId);
         vm.store(address(docking), bytes32(uint256(dockBase) + 1), localOrderId);
-        vm.store(address(docking), bytes32(uint256(dockBase) + 8), bytes32(uint256(1) << 8)); // depth=0, exists=true
+        vm.store(address(docking), bytes32(uint256(dockBase) + 8), bytes32(uint256(1) << 8));
     }
 
-    /// 边数账本 max 更新（B-02）：attach 计边——父 3 边挂接后目标单
-    /// 账本抬到 4；父 8 边的挂接被 MAX 拒绝。dockEdgeCountOfOrder 是模块
-    /// 第 8 个存储变量（slot 7）。
     function testAttachRaisesTargetDepthAndEnforcesMax() public {
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
         bytes32 parentOrder = _spawnParentOrder(SIGNAL_EXEC);
@@ -1099,8 +901,6 @@ contract UVPDockingModuleAttachTest {
         _attachWithArgs(deepRequest, _attachInterfaceProof(), _permitEmpty());
     }
 
-    /// 边数账本 max 的不降方向：目标单已更深时浅父挂接不覆盖——抬升只走
-    /// max(现值, 父账本+1)，既有深链账本（此前挂接积累）对后来者只读。
     function testAttachKeepsDeeperTargetDepth() public {
         bytes32 targetOrder = _spawnTargetOrder(PAYLOAD);
         bytes32 targetDepthSlot = keccak256(abi.encode(targetOrder, keccak256(abi.encode(targetPlanId, uint256(7)))));
@@ -1109,10 +909,6 @@ contract UVPDockingModuleAttachTest {
         assertTrue(_attach(execRoute(), parentOrder, targetOrder));
         assertEq(docking.dockEdgeCountOfOrder(targetPlanId, targetOrder), 5);
     }
-
-    // ------------------------------------------------------------------
-    // setup
-    // ------------------------------------------------------------------
 
     UVPDockingModule private _dockingModule;
     UVPStagePatchModule private _stagePatchModule;
@@ -1181,7 +977,7 @@ contract UVPDockingModuleAttachTest {
             abi.encode(DOMAIN_INTERFACE_INPUT, TARGET_UID_ID, INTERFACE_NAME_ID, AMEND_PORT, TARGET_RECEIVE_HOOK)
         );
         evidenceInputsRoot = DockMerkle.root(_single(amendPortLeaf));
-        amendPortProof = new bytes32[](0); // 单叶树
+        amendPortProof = new bytes32[](0);
         donePortLeaf = _outputPortLeaf(DONE_PORT, TARGET_SOURCE, TARGET_SIGNAL);
         progressPortLeaf = _outputPortLeaf(PROGRESS_PORT, TARGET_SOURCE, TARGET_SIGNAL);
         bytes32[] memory portLeaves = new bytes32[](2);
@@ -1196,7 +992,6 @@ contract UVPDockingModuleAttachTest {
         );
     }
 
-    /// B-01：静态路由/动态候选的承诺按目标注册 planId 计算（目标注册后）。
     function _computeRouteHashes() private {
         attachRouteHash =
             _routeHash(targetDefinitionRef, targetPlanId, DockMerkle.root(_single(amendInputBinding)), _outputsRootOf());
@@ -1261,7 +1056,6 @@ contract UVPDockingModuleAttachTest {
         proofB[0] = la;
     }
 
-    /// 两候选叶树上的 membership proof。
     function _merkleProofForLeaves(bytes32 leaf) private view returns (bytes32[] memory proof) {
         proof = new bytes32[](1);
         proof[0] = leaf == targetCandidateLeaf ? otherCandidateLeaf : targetCandidateLeaf;
@@ -1295,8 +1089,6 @@ contract UVPDockingModuleAttachTest {
         );
         StageSelectorBinding[] memory bindings = new StageSelectorBinding[](1);
         bindings[0] = StageSelectorBinding({selectorStageId: TARGET_CONTROL_STAGE, targetStageId: TARGET_CONTROL_STAGE});
-        // 词表：出生事实 + output 事实 + input 交付事实（后两者供公开信号
-        // 面预写，构造回填与 DockInputConflict 路径）。
         SignalCapability[] memory capabilities = new SignalCapability[](3);
         capabilities[0] = SignalCapability({
             stageId: TARGET_STAGE,
@@ -1375,13 +1167,6 @@ contract UVPDockingModuleAttachTest {
         });
     }
 
-    // ------------------------------------------------------------------
-    // 订单孵化
-    // ------------------------------------------------------------------
-
-    /// 父订单：outside 触发出生（每单独立 nonce 派生 payload/order id），
-    /// 并喂入 readySignal 就绪对应本地 hook（attach 不要求就绪，就绪是
-    /// submitDockedInput 的交付期门；喂入为 input 交付用例直接可用）。
     function _spawnParentOrder(bytes32 readySignal) private returns (bytes32) {
         _spawnNonce += 1;
         bytes32 payload = keccak256(abi.encode("parent-order", _spawnNonce));
@@ -1408,7 +1193,6 @@ contract UVPDockingModuleAttachTest {
         return orderId;
     }
 
-    /// 既有目标单（默认 creator = 测试合约：creator 同意腿天然成立）。
     function _spawnTargetOrder(bytes32 payload) private returns (bytes32) {
         return _spawnTargetOrderBy(payload, address(this));
     }
@@ -1432,7 +1216,6 @@ contract UVPDockingModuleAttachTest {
         return machine.triggerOrderIdFor(targetPlanId, TARGET_BIRTH_SOURCE, TARGET_BIRTH_SIGNAL, payload);
     }
 
-    /// attach 前已成立的目标输出（公开信号面写入，词表携证）。
     function _establishTargetFact(bytes32 targetOrder) private {
         machine.submitSignal(
             targetPlanId,
@@ -1445,9 +1228,6 @@ contract UVPDockingModuleAttachTest {
         );
     }
 
-    /// executor 同意腿材料：订单 creator 作 selector，对 control 阶段落
-    /// assign 模式 patch（selector 绑定 control→control 在目标词表树内；
-    /// control 阶段无 order-trigger hook，出生阶段守门不适用）。
     function _assignControlExecutor(bytes32 targetOrder, address executor) private {
         UVPStagePatchModule.StageExecutorPatch memory patch = UVPStagePatchModule.StageExecutorPatch({
             selectorStageId: TARGET_CONTROL_STAGE,
@@ -1471,10 +1251,6 @@ contract UVPDockingModuleAttachTest {
             new IUVPStateMachineCore.SignalAuthorization[](0)
         );
     }
-
-    // ------------------------------------------------------------------
-    // attach calldata builders
-    // ------------------------------------------------------------------
 
     struct AttachRoute {
         bytes32 routeId;
@@ -1535,15 +1311,12 @@ contract UVPDockingModuleAttachTest {
         UVPDockingModule.DockAttachInterfaceProofV1 memory proof,
         UVPDockingModule.EntrancePermitV2 memory permit
     ) private returns (bool) {
-        // 绑定数组随路由形态：动态路由无 input/output 绑定（route 叶的
-        // 绑定根为 EMPTY），静态路由携带完整两集。
         UVPDockingModule.AttachInputBindingArg[] memory inputs;
         UVPDockingModule.DockOutputBindingArg[] memory outputs;
         if (request.targetCandidatesRoot != bytes32(0)) {
             inputs = new UVPDockingModule.AttachInputBindingArg[](0);
             outputs = new UVPDockingModule.DockOutputBindingArg[](0);
         } else {
-            // 静态路由唯一形态：exec 舞台（本 fixture 只有一条静态路由）。
             inputs = _attachInputs(PARENT_EXEC_HOOK);
             outputs = _attachOutputs();
         }
@@ -1608,8 +1381,6 @@ contract UVPDockingModuleAttachTest {
         });
     }
 
-    /// existing 实例身份（10 word：尾 word = 既有目标单键原字入槽——与
-    /// TS dockInstanceId(targetOrderRef) 的 word 形态槽一致）。
     function _instanceIdOf(bytes32 routeIdWord, bytes32 routeHash, bytes32 parentOrder, bytes32 targetOrder)
         private
         view
@@ -1644,13 +1415,11 @@ contract UVPDockingModuleAttachTest {
     function _attachInterfaceProof() private view returns (UVPDockingModule.DockAttachInterfaceProofV1 memory) {
         return UVPDockingModule.DockAttachInterfaceProofV1({
             commitment: UVPDockingModule.DockInterfaceCommitmentV2({
-                orderModesWord: 2, // [existing]
+                orderModesWord: 2,
                 inputsRoot: evidenceInputsRoot,
                 outputsRoot: evidenceOutputsRoot
             }),
-            interfaceProof: new bytes32[](0), // 单接口叶树
-            // 静态路由不读候选证明；动态路由按选定目标叶构造（测试内
-            // 固定为 targetCandidateLeaf 的证明）。
+            interfaceProof: new bytes32[](0),
             candidateProof: _merkleProofForLeaves(targetCandidateLeaf)
         });
     }
@@ -1692,7 +1461,6 @@ contract UVPDockingModuleAttachTest {
         return outputs;
     }
 
-    /// 父 plan 两叶 route 树（static + dynamic）的 membership proof。
     function _routeProofFor(bytes32 routeHash) private view returns (bytes32[] memory) {
         bytes32[] memory proof = new bytes32[](1);
         proof[0] = routeHash == attachRouteHash ? dynRouteHash : attachRouteHash;
@@ -1725,10 +1493,6 @@ contract UVPDockingModuleAttachTest {
         return permit;
     }
 
-    // ------------------------------------------------------------------
-    // 能力表测试基建（与 UVPDockingModuleTest 同款镜像）
-    // ------------------------------------------------------------------
-
     struct StageSelectorBinding {
         bytes32 selectorStageId;
         bytes32 targetStageId;
@@ -1760,8 +1524,6 @@ contract UVPDockingModuleAttachTest {
     ) private returns (bytes32) {
         address publisher = vm.addr(publisherKey);
         bytes32[] memory leaves = _capabilityLeaves(selectorBindings, signalCapabilities);
-        // UB-36②③：默认候选集 = plan 全部 hook 阶段 × {executor, PARENT}
-        //（attach 测试的执行者面默认全开）。
         UVPStateMachine.ExecutorCandidate[] memory candidates =
             new UVPStateMachine.ExecutorCandidate[](hooks.length * 2);
         uint256 candidateCount;
@@ -1868,7 +1630,6 @@ contract UVPDockingModuleAttachTest {
         return exact;
     }
 
-    /// 排序去重叶表上的 membership proof（奇数尾叶直接提升）。
     function _merkleProofFor(bytes32[] memory sorted, bytes32 leaf) private pure returns (bytes32[] memory proof) {
         uint256 index = type(uint256).max;
         for (uint256 i = 0; i < sorted.length; i++) {
@@ -1942,7 +1703,6 @@ contract UVPDockingModuleAttachTest {
         });
     }
 
-    /// amend input 事实的属主自证（目标 plan 词表内的映射事实键）。
     function _amendInputAttribution() private view returns (IUVPStateMachineCore.FactAttribution memory) {
         return _coreFactAttributionFor(targetPlanId, TARGET_INPUT_SOURCE, TARGET_INPUT_SIGNAL);
     }
@@ -2056,10 +1816,6 @@ contract UVPDockingModuleAttachTest {
         }
     }
 
-    // ------------------------------------------------------------------
-    // 触发订单基建
-    // ------------------------------------------------------------------
-
     function _auth(bytes32 sourceId, bytes32 signalId, address submitter)
         private
         pure
@@ -2076,7 +1832,7 @@ contract UVPDockingModuleAttachTest {
 
     function _outsideTrigger(bytes32 signalId) private returns (UVPStateMachine.TriggerOrderFromOutsideRequest memory) {
         return UVPStateMachine.TriggerOrderFromOutsideRequest({
-            planId: bytes32(0), // 由调用方覆盖
+            planId: bytes32(0),
             creator: address(this),
             triggerHookId: PARENT_START_HOOK,
             triggerStageId: PARENT_STAGE,

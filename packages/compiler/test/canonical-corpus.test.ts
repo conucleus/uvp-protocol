@@ -5,29 +5,6 @@ import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { canonicalStringify } from "../src/index.js";
 
-/**
- * Canonical-JSON 跨语言钉死语料：Rust（uvp-ir
- * canonical_stringify）是权威，语料文件 uvp-core
- * fixtures/canonical/canonical.v1.json 是三线共享的唯一出处（消费方式与
- * hook-core/statemachine 的 semantics-corpus 测试同构）。
- *
- * JS 数字模型的固有边界决定了 TS 消费侧的四条口径：
- * 1. 纯整数 token（无 '.'/'e'）且可精确表示 → 与 expectCanonical 逐字节
- *    相等（Rust u64/i64 路径）。
- * 2. 语料 input 含 JS 可见浮点（非整数 number 或负零 -0，两者经
- *    Number.isInteger/Object.is 在 JS 均可观测）→ TS canonicalize 响亮
- *    拒绝，与语料 expectReject 用例同口径（#15：浮点拒绝含负零——
- *    serde_json 把 "-0"/"-0.0" 都解析为 f64 -0.0）。
- * 3. |x| ≥ 2^53 的整值（含 1e21 指数形态）在 JS 侧已丢精度——TS 一律
- *    响亮拒绝（绝不哈希抹平后的另一个整数；≥1e21 还会被 JSON.stringify
- *    写成指数形式，违反"整数按十进制整型输出"）。语料中 "u64 beyond
- *    double precision stays an integer" 是 Rust u64 权威的接受向量，TS
- *    消费侧无法逐字节复现，必须拒绝（大整数载荷以 string/hex word 携带）。
- * 4. 整值浮点 token（100.0、1e2、1e15 等抹平后仍是安全整数）在
- *    JSON.parse 后与整数不可区分——TS 按抹平后的整数放行，字节级区分是
- *    JS 不可表示的分叉；不做逐字节断言，只断言行为方向与语料一致
- *    （Rust 侧对整值浮点字面量的拒绝发生在解析边界，先于 JS 可观察面）。
- */
 const corpusUrl = new URL(
   "../../../../uvp-core/fixtures/canonical/canonical.v1.json",
   import.meta.url,
@@ -38,8 +15,6 @@ interface RawNumber {
   readonly value: number;
 }
 
-// 语料格式版本钉住：文件升版时这里必须先响亮失败（semantics/closed-sets
-// 消费面同款纪律）。
 const corpusDocument = JSON.parse(
   readFileSync(corpusUrl, "utf8"),
 ) as { readonly schemaVersion: string; readonly cases: readonly unknown[] };
@@ -53,7 +28,6 @@ interface CorpusCase {
   readonly name: string;
   readonly input: unknown;
   readonly expectCanonical?: string;
-  /** 拒绝标记：语料现为字符串原因（如 "float-form JSON number"）。 */
   readonly expectReject?: string | boolean;
   readonly expectError?: string | boolean;
 }
@@ -68,7 +42,6 @@ function isRawNumber(value: unknown): value is RawNumber {
   );
 }
 
-/** 語料 input 还原为普通 JS 值（RawNumber → number）。 */
 function unwrap(node: unknown): unknown {
   if (isRawNumber(node)) {
     return node.value;
@@ -101,10 +74,6 @@ function collectNumbers(node: unknown, into: RawNumber[] = []): RawNumber[] {
   return into;
 }
 
-/**
- * 保留数字原始 token 的最小 JSON 解析器：语料经 JSON.parse 后整值浮点
- * （100.0）与整数不可区分，浮点拒绝边界的对齐必须看原始 token。
- */
 class RawNumberJsonParser {
   private pos = 0;
   constructor(private readonly text: string) {}
@@ -161,7 +130,7 @@ class RawNumberJsonParser {
   }
 
   private parseObject(): Record<string, unknown> {
-    this.pos += 1; // '{'
+    this.pos += 1;
     const out: Record<string, unknown> = {};
     this.skipWhitespace();
     if (this.peek() === "}") {
@@ -193,7 +162,7 @@ class RawNumberJsonParser {
   }
 
   private parseArray(): unknown[] {
-    this.pos += 1; // '['
+    this.pos += 1;
     const out: unknown[] = [];
     this.skipWhitespace();
     if (this.peek() === "]") {
@@ -303,7 +272,6 @@ class RawNumberJsonParser {
 
 function isExactlyRepresentable(number: RawNumber): boolean {
   if (Object.is(number.value, -0)) {
-    // "-0"/"-0.0" 都是 f64 载荷：负零按拒绝口径处理，不落入精确整数桶。
     return false;
   }
   return String(number.value) === number.raw;
@@ -321,7 +289,6 @@ test("canonical TS behavior aligns with the shared uvp-core corpus", () => {
   let jsErasedDivergence = 0;
   for (const case_ of corpus.cases) {
     const numbers = collectNumbers(case_.input);
-    // JS 可见浮点 = 非整数 number 或负零（Object.is 可观测）。
     const jsVisibleFloat = numbers.some(
       (n) => !Number.isInteger(n.value) || Object.is(n.value, -0),
     );
@@ -332,8 +299,6 @@ test("canonical TS behavior aligns with the shared uvp-core corpus", () => {
       case_.expectReject !== undefined || case_.expectError !== undefined;
 
     if (jsVisibleFloat) {
-      // 口径 2：JS 可见浮点（含负零）→ 响亮拒绝；语料对该用例也必须是
-      // 拒绝用例（expectReject），否则两线对同一输入分叉。
       assert.throws(
         () => canonicalStringify(input),
         /must be an integer: canonical JSON hash preimages reject float-form numbers/,
@@ -349,11 +314,6 @@ test("canonical TS behavior aligns with the shared uvp-core corpus", () => {
     }
 
     if (numbers.some((n) => !Number.isSafeInteger(n.value))) {
-      // 口径 3：超出安全整数范围的整值（≥ 2^53，含 1e21 指数形态）在 JS
-      // 侧已丢精度——TS 一律响亮拒绝，绝不哈希抹平后的另一个整数。语料
-      // 的 "u64 beyond double precision stays an integer" 是 Rust u64 权威
-      // 的接受向量；TS 消费侧无法逐字节复现它，必须拒绝（大整数载荷以
-      // string/hex word 携带），否则两线对同一输入产出分叉哈希。
       assert.throws(
         () => canonicalStringify(input),
         /must be a safe integer: canonical JSON hash preimages reject integers beyond 2\^53-1/,
@@ -364,10 +324,6 @@ test("canonical TS behavior aligns with the shared uvp-core corpus", () => {
     }
 
     if (floatFormToken || !exactIntegers) {
-      // 口径 4：抹平后仍是安全整数的整值浮点 token（1.0/1e2）——TS 按抹平
-      // 后的整数放行（不抛）；Rust 权威在解析边界拒绝整值浮点字面量，语料
-      // 将其钉为 expectReject。字节级区分是 JS 不可表示的分叉：断言止于
-      // "TS 不抛"，语料的拒绝标记记录权威侧行为。
       assert.doesNotThrow(
         () => canonicalStringify(input),
         `${case_.name}: erased-integer input must stay canonicalizable on the TS side`,
@@ -376,8 +332,6 @@ test("canonical TS behavior aligns with the shared uvp-core corpus", () => {
       continue;
     }
 
-    // 口径 1：可精确表示的纯整数 input → 与语料钉死的 canonical 串逐字节
-    // 相等；语料不得把纯整数 input 钉成拒绝用例（两线将真实分叉）。
     assert.equal(
       corpusRejects,
       false,
@@ -391,16 +345,12 @@ test("canonical TS behavior aligns with the shared uvp-core corpus", () => {
     byteAligned += 1;
   }
 
-  // 三类口径都要有覆盖，防止语料演进后本消费测试退化成空转。
   assert.ok(byteAligned > 0, "corpus must keep byte-aligned integer vectors");
   assert.ok(rejected > 0, "corpus must keep JS-visible float rejection cases");
   assert.ok(jsErasedDivergence > 0, "corpus must keep integral-float divergence cases");
 });
 
 test("rejects integers beyond the safe range loudly (2^60, 1e21)", () => {
-  // 2609100052 C-2 / 2609100054 R4-1 / 2609100328 L6：Number.isInteger 对
-  // ≥2^53 已丢精度的值仍真，≥1e21 还会被 JSON.stringify 输出指数形式
-  // ——一律响亮拒绝，杜绝产出与 Rust 权威分叉的哈希输入。
   assert.throws(
     () => canonicalStringify({ a: 2 ** 60 }),
     /must be a safe integer: canonical JSON hash preimages reject integers beyond 2\^53-1.*received 1152921504606847000/,
@@ -413,7 +363,6 @@ test("rejects integers beyond the safe range loudly (2^60, 1e21)", () => {
     () => canonicalStringify([-(2 ** 60)]),
     /must be a safe integer/,
   );
-  // 安全整数边界内（含 MAX_SAFE_INTEGER）照常按十进制整型输出。
   assert.equal(
     canonicalStringify({ a: Number.MAX_SAFE_INTEGER }),
     `{"a":${Number.MAX_SAFE_INTEGER}}`,

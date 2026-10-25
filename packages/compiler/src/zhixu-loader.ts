@@ -34,16 +34,8 @@ function parseStructuredText(raw: string, sourceName: string): unknown {
   }
 }
 
-/** name 是作者技术标签，slug 形态（字节 ≤100）。 */
 const NAME_SLUG_PATTERN = /^[a-z][a-z0-9_-]{0,99}$/;
 
-/**
- * 未知字段拒绝的层级字段集，镜像 uvp_model 的 serde deny_unknown_fields
- * （ZhixuDefinition/ObjectMeta/ZhixuSpec/ZhixuPlatform/Nucleation/
- * ZhixuStage/ZhixuExecutor/DockInterfaceSpec/端口）。Value 型开放面（fileResources 条目、selectableResource、
- * zhixuExecutorConfig 的键、labels/annotations/params 的键）不在其中——
- * 它们是数据，不是结构字段。
- */
 export const KNOWN_FIELDS = {
   root: ["apiVersion", "kind", "metadata", "spec"],
   metadata: ["name", "labels", "annotations"],
@@ -60,8 +52,6 @@ export const KNOWN_FIELDS = {
     "receiveSignals",
     "fileResources",
   ],
-  // sendSignals 条目键闭集（镜像 uvp_model ZhixuSendSignal 的
-  // deny_unknown_fields：{name, validWhen}）。
   sendSignalEntry: ["name", "validWhen"],
   executor: ["supplierType", "supplierID", "zhixuExecutorConfig", "selectableResource"],
   dockInterfaceEntry: ["orderModes", "inputs", "outputs"],
@@ -85,12 +75,6 @@ function rejectUnknownFields(
   }
 }
 
-/**
- * labels/annotations/params/receiveSignals 的值面：镜像 uvp_model 的
- * BTreeMap<String, String> serde 形状面。非字符串值（YAML 裸标量 010/yes/.inf
- * 的三轨分叉形态、合并键物化的对象）在装载边界确定性拒绝，不静默沿用各轨
- * 解析器的标量归一。
- */
 function assertStringValues(
   value: unknown,
   path: string,
@@ -126,8 +110,6 @@ function assertZhixuDefinitionShape(
   if (!isRecord(value.metadata) || typeof value.metadata.name !== "string") {
     throw new ZhixuLoadError(`${sourceName}.metadata.name is required`);
   }
-  // uid 由系统从定义内容派生（zx-<32hex>），不是作者可写字段：单独给锚点
-  // （注册表 metadata-uid-not-an-input），先于通用未知字段拒绝。
   if ("uid" in value.metadata) {
     throw new ZhixuLoadError(
       `${sourceName}.metadata.uid: unknown field \`uid\` — the definition identity is derived from content (zx-<32hex>), never authored`,
@@ -167,10 +149,6 @@ function assertZhixuDefinitionShape(
     );
     assertStringValues(value.spec.nucleation.params, "spec.nucleation.params", sourceName);
   }
-  // stages 形状在本层响亮拒绝：loader 的声明契约是镜像 uvp_model 的
-  // serde 形状面（typed 反序列化对缺失/非数组的 stages、非 map 的
-  // stage 条目都会响亮失败），静默 return 会让残缺声明携带"已过
-  // loader 校验"的假象离开本层。
   value.spec.stages.forEach((stage: unknown, stageIndex: number) => {
     const stagePath = `spec.stages[${stageIndex}]`;
     if (!isRecord(stage)) {
@@ -182,9 +160,6 @@ function assertZhixuDefinitionShape(
       `${stagePath}.receiveSignals`,
       sourceName,
     );
-    // sendSignals 条目形状在 loader 层响亮拒绝（镜像 serde 面的对象形
-    // 态与键闭集）：残缺条目静默放行会让"已过 loader 校验"的假象离开
-    // 本层，旧字符串形态等价迁移后不再有第二种合法形态。
     if (stage.sendSignals !== undefined) {
       if (!Array.isArray(stage.sendSignals)) {
         throw new ZhixuLoadError(`${sourceName}.${stagePath}.sendSignals must be an array`);

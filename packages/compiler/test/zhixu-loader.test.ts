@@ -34,7 +34,6 @@ test("loads UVP update zhixu yaml and compiles stable on-chain plan", async () =
   assert.equal(hookPlan.platform.network, "base");
   assert.equal(onchain.platform.network, "base");
   assert.equal(hookPlan.planHash, again.planHash);
-  // 身份是内容派生（zx-<32hex>），不是作者手写 uid。
   assert.match(hookPlan.zhixuId, /^zx-[0-9a-f]{32}$/);
   assert.equal(onchain.zhixuId, hookPlan.zhixuId);
   assert.equal(hookPlan.compiledHooks.length, 14);
@@ -87,9 +86,6 @@ test("rejects non-Zhixu yaml at loader boundary", () => {
 });
 
 test("rejects authored metadata.uid as an unknown field", () => {
-  // uid 由系统从定义内容派生（zx-<32hex>），不是作者可写字段；出现即按
-  // 未知字段响亮拒绝——锚点与 Rust serde deny_unknown_fields 的
-  // "unknown field `uid`" 同口径（constraints 注册表 metadata-uid-not-an-input）。
   assert.throws(
     () =>
       parseZhixuDefinition(
@@ -112,8 +108,6 @@ test("rejects authored metadata.uid as an unknown field", () => {
 });
 
 test("rejects metadata.name that is not a slug", () => {
-  // 文案锚点与 Rust validate_zhixu_shape 的 NAME_SLUG_PATTERN 对齐
-  // （constraints 注册表 metadata-name-slug-shape）。
   for (const badName of ["Probe", "1probe", "probe name", "probe/name", ""]) {
     const yaml = [
       "apiVersion: uvp/v0",
@@ -131,7 +125,6 @@ test("rejects metadata.name that is not a slug", () => {
       `name=${JSON.stringify(badName)} must be rejected`,
     );
   }
-  // 合法 slug（含中划线/下划线/数字）照常通过。
   assert.doesNotThrow(() =>
     parseZhixuDefinition(
       "apiVersion: uvp/v0\nkind: Zhixu\nmetadata:\n  name: probe_2nd-gen\nspec:\n  stages: []\n",
@@ -141,8 +134,6 @@ test("rejects metadata.name that is not a slug", () => {
 });
 
 test("rejects unknown fields at every structural level", () => {
-  // 镜像 uvp_model serde deny_unknown_fields：拼错/不受支持的结构字段都是
-  // 确定性非法输入，静默忽略会把"看似生效"的定义落成零值。
   const cases: readonly [string, RegExp][] = [
     [
       "apiVersion: uvp/v0\nkind: Zhixu\nmetadata:\n  name: probe\nextra: 1\nspec:\n  stages: []\n",
@@ -167,7 +158,7 @@ test("rejects unknown fields at every structural level", () => {
         "  nucleation: {id: core}",
         "  stages:",
         "    - name: work",
-        "      source: buyer",
+        "      source: slot_a",
         "      delaiy: 5",
       ].join("\n"),
       /stages\[0\]: unknown field `delaiy`/,
@@ -183,7 +174,7 @@ test("rejects unknown fields at every structural level", () => {
         "  nucleation: {id: core}",
         "  stages:",
         "    - name: work",
-        "      source: buyer",
+        "      source: slot_a",
         "      executor:",
         "            supplierType: organization",
         "            supplierID: org-1",
@@ -221,8 +212,6 @@ test("rejects unknown fields at every structural level", () => {
 });
 
 test("rejects non-string values in labels/annotations/params/receiveSignals (serde BTreeMap<String,String> face)", () => {
-  // 值面镜像 uvp_model 的 BTreeMap<String, String>：YAML 裸标量的三轨分叉
-  // 形态（010→number、yes→string/go→boolean 等）不允许静默穿越装载边界。
   const head = [
     "apiVersion: uvp/v0",
     "kind: Zhixu",
@@ -268,7 +257,7 @@ test("rejects non-string values in labels/annotations/params/receiveSignals (ser
         "spec:",
         "  stages:",
         "    - name: work",
-        "      source: buyer",
+        "      source: slot_a",
         "      receiveSignals:",
         '        "work#RUN": 010',
       ],
@@ -282,7 +271,6 @@ test("rejects non-string values in labels/annotations/params/receiveSignals (ser
       `非字符串值必须被拒绝：${lines.join("\n")}`,
     );
   }
-  // 引号包裹的字符串值照常通过五个值面。
   assert.doesNotThrow(() =>
     parseZhixuDefinition(
       [
@@ -302,7 +290,7 @@ test("rejects non-string values in labels/annotations/params/receiveSignals (ser
         '      channel: "on"',
         "  stages:",
         "    - name: work",
-        "      source: buyer",
+        "      source: slot_a",
         "      receiveSignals:",
         '        "work#RUN": "order::registered"',
       ].join("\n"),
@@ -312,9 +300,6 @@ test("rejects non-string values in labels/annotations/params/receiveSignals (ser
 });
 
 test("rejects spec.stages that are missing or malformed (no silent pass-through)", () => {
-  // 2609100328 疑点10：loader 声明契约 = 镜像 uvp_model 的 serde 形状面
-  // （typed 反序列化对 stages 缺失/非数组、非 map 的 stage 条目响亮失败），
-  // 静默 return 会让残缺 pattern 带着"已过 loader 校验"的假象离开本层。
   const head = [
     "apiVersion: uvp/v0",
     "kind: Zhixu",
@@ -343,15 +328,6 @@ test("rejects spec.stages that are missing or malformed (no silent pass-through)
   );
 });
 
-/**
- * 定义结构体字段闭集的跨语言钉死（TS 线）：与 uvp-core 仓
- * `crates/uvp-model/tests/field_set_parity.rs`、miniprogram 仓
- * `uvp-utils/api/core/v0` 的 json tag 反射测试对同一份
- * `uvp-core/fixtures/closed-sets/fields.v1.json` 做逐元素相等比对——
- * KNOWN_FIELDS 是装载边未知字段拒绝的唯一词表，任一侧增删字段都会让
- * 至少一侧的测试报警。语料文件由 uvp-core 仓持有（跨仓相对 URL 消费，
- * 与 semantics-corpus.test.ts 同范式）。
- */
 test("KNOWN_FIELDS match the shared uvp-core field-set corpus", () => {
   const fieldsUrl = new URL(
     "../../../../uvp-core/fixtures/closed-sets/fields.v1.json",
@@ -363,8 +339,6 @@ test("KNOWN_FIELDS match the shared uvp-core field-set corpus", () => {
   };
   assert.equal(corpus.schemaVersion, "uvp.fieldSets.v1");
 
-  // 键集钉死在 KNOWN_FIELDS 的字面类型上：group 以 keyof 索引，闭集
-  // 分组漂移（增删结构体）继续由 deepEqual 报警，类型面不再依赖 string 索引。
   const groups = Object.keys(KNOWN_FIELDS) as (keyof typeof KNOWN_FIELDS)[];
   assert.deepEqual(
     [...groups].sort(),
@@ -377,7 +351,6 @@ test("KNOWN_FIELDS match the shared uvp-core field-set corpus", () => {
       corpus[group] as readonly string[],
       `${group}: 字段闭集与钉死语料分叉`,
     );
-    // 闭集是集合语义：重复成员会掩盖"集合同源"的比对。
     assert.equal(new Set(KNOWN_FIELDS[group]).size, KNOWN_FIELDS[group].length, group);
   }
 });

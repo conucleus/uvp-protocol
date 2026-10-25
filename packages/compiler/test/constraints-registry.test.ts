@@ -1,19 +1,3 @@
-/**
- * uvp-constraints.v1 一致性 harness（TS 线）。
- *
- * 约束注册表自宿主于 uvp-core 仓 `protocol/uvp-constraints.v1.json`（姊妹检出）
- * 是跨语言接受面规则（zhixu / hook-dsl / dock / onchain-plan）的单一出处。
- * 本 harness：
- *   1. 钉住注册表 version，并把实际 sha256 与同目录 meta 文件声明的值比对
- *      （sha 声明点唯一在与注册表同目录的 uvp-core/protocol/
- *      uvp-constraints.v1.meta.json，两份 uvp-core 副本同批更新，改表不同步
- *      声明会让三线 TS/Rust/Go 测试同声报警）；
- *   2. 对 applies 含 "ts" 的每条 rule 生成边界探针（满足/违反各一）打真 validator
- *      （zhixu-loader / onchain-hook-plan），断言真实错误文案锚点；
- *   3. ts 线没有探针 builder 的新 rule 会让本文件硬失败（防静默漏测）。
- *
- * 读不到注册表时硬失败并给出重建/路径指引，绝不 skip。
- */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -34,12 +18,7 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// ---------------------------------------------------------------------------
-// 注册表加载 + 版本/摘要钉
-// ---------------------------------------------------------------------------
-
 const CONSTRAINTS_ENV_VAR = "UVP_CONSTRAINTS_PATH";
-// 默认路径：packages/compiler/test → uvp-eth 工作区根 → uvp-core 姊妹检出。
 const DEFAULT_CONSTRAINTS_PATH = join(
   __dirname,
   "..",
@@ -59,8 +38,6 @@ interface ConstraintsMeta {
   readonly algorithm: string;
 }
 
-// 注册表内容 sha 的唯一声明点：与注册表同目录的 meta 文件。声明缺失比
-// sha 不匹配更危险（会让比对退化成摆设），所以读不到/算法不符也硬失败。
 function loadConstraintsMeta(registryPath: string): ConstraintsMeta {
   const metaPath = join(dirname(registryPath), "uvp-constraints.v1.meta.json");
   let raw: string;
@@ -150,10 +127,6 @@ test("every ts-applicable rule has a probe registered in this harness", () => {
   }
 });
 
-// ---------------------------------------------------------------------------
-// 探针基元
-// ---------------------------------------------------------------------------
-
 function expectZhixuLoadViolation(yaml: string, anchor: RegExp | string): void {
   assert.throws(
     () => parseZhixuDefinition(yaml, "constraints-probe"),
@@ -162,10 +135,6 @@ function expectZhixuLoadViolation(yaml: string, anchor: RegExp | string): void {
     `期望 parseZhixuDefinition 拒绝：${yaml}`,
   );
 }
-
-// ---------------------------------------------------------------------------
-// 逐 rule 探针（satisfy / violate 各一，打真 validator）
-// ---------------------------------------------------------------------------
 
 const MINIMAL_ZHIXU_YAML = [
   "apiVersion: uvp/v0",
@@ -182,42 +151,42 @@ type Probe = () => void | Promise<void>;
 
 const TS_PROBES = new Map<string, Probe>([
   ["zhixu-api-version-closed-enum", () => {
-    parseZhixuDefinition(MINIMAL_ZHIXU_YAML, "constraints-probe"); // satisfy
+    parseZhixuDefinition(MINIMAL_ZHIXU_YAML, "constraints-probe");
     expectZhixuLoadViolation(
       MINIMAL_ZHIXU_YAML.replace("apiVersion: uvp/v0", "apiVersion: uvp/v1"),
       "apiVersion must be uvp/v0",
     );
   }],
   ["zhixu-kind-closed-enum", () => {
-    parseZhixuDefinition(MINIMAL_ZHIXU_YAML, "constraints-probe"); // satisfy
+    parseZhixuDefinition(MINIMAL_ZHIXU_YAML, "constraints-probe");
     expectZhixuLoadViolation(
       MINIMAL_ZHIXU_YAML.replace("kind: Zhixu", "kind: NotZhixu"),
       "kind must be Zhixu",
     );
   }],
   ["metadata-name-required", () => {
-    parseZhixuDefinition(MINIMAL_ZHIXU_YAML, "constraints-probe"); // satisfy
+    parseZhixuDefinition(MINIMAL_ZHIXU_YAML, "constraints-probe");
     expectZhixuLoadViolation(
       MINIMAL_ZHIXU_YAML.replace("  name: constraints-probe\n", ""),
       "metadata.name is required",
     );
   }],
   ["metadata-name-slug-shape", () => {
-    parseZhixuDefinition(MINIMAL_ZHIXU_YAML, "constraints-probe"); // satisfy
+    parseZhixuDefinition(MINIMAL_ZHIXU_YAML, "constraints-probe");
     expectZhixuLoadViolation(
       MINIMAL_ZHIXU_YAML.replace("constraints-probe", "Constraints_Probe"),
       "must match ^[a-z][a-z0-9_-]{0,99}$",
     );
   }],
   ["metadata-name-max-length", () => {
-    parseZhixuDefinition(MINIMAL_ZHIXU_YAML, "constraints-probe"); // satisfy
+    parseZhixuDefinition(MINIMAL_ZHIXU_YAML, "constraints-probe");
     expectZhixuLoadViolation(
       MINIMAL_ZHIXU_YAML.replace("constraints-probe", "p".repeat(101)),
       "must match ^[a-z][a-z0-9_-]{0,99}$",
     );
   }],
   ["metadata-uid-not-an-input", () => {
-    parseZhixuDefinition(MINIMAL_ZHIXU_YAML, "constraints-probe"); // satisfy
+    parseZhixuDefinition(MINIMAL_ZHIXU_YAML, "constraints-probe");
     expectZhixuLoadViolation(
       MINIMAL_ZHIXU_YAML.replace(
         "  name: constraints-probe\n",
@@ -229,7 +198,6 @@ const TS_PROBES = new Map<string, Probe>([
   ["hook-delay-seconds-range", async () => {
     const definition = await loadZhixuDefinition(FIXTURE_PATH);
     const artifact = compileZhixuOnchainHookPlan(definition);
-    // satisfy：fixture 产物内所有 delaySeconds 都在 [1, 2592000]。
     assert.deepEqual(validateOnchainHookPlanArtifact(artifact), []);
     const instruction = {
       ...artifact.compiledHooks[0]!.instructions[0]!,
@@ -251,7 +219,7 @@ const TS_PROBES = new Map<string, Probe>([
   ["onchain-instruction-op-closed-enum", async () => {
     const definition = await loadZhixuDefinition(FIXTURE_PATH);
     const artifact = compileZhixuOnchainHookPlan(definition);
-    assert.deepEqual(validateOnchainHookPlanArtifact(artifact), []); // satisfy
+    assert.deepEqual(validateOnchainHookPlanArtifact(artifact), []);
     const mutated = structuredClone(artifact);
     const hooks = mutated.compiledHooks as unknown as Array<{ instructions: Array<Record<string, unknown>> }>;
     hooks[0]!.instructions = [{ ...hooks[0]!.instructions[0]!, op: "XOR" }];
@@ -264,7 +232,7 @@ const TS_PROBES = new Map<string, Probe>([
   ["plan-dependencies-max-count", async () => {
     const definition = await loadZhixuDefinition(FIXTURE_PATH);
     const hookPlan = compileZhixuHookPlan(definition);
-    compileOnchainHookPlan(hookPlan); // satisfy：fixture 计划依赖数远低于 1024
+    compileOnchainHookPlan(hookPlan);
     const bloated = structuredClone(hookPlan);
     const hooks = bloated.compiledHooks as unknown as Array<{
       hookId: string;
@@ -273,8 +241,6 @@ const TS_PROBES = new Map<string, Probe>([
     for (let i = 0; i < 1025; i += 1) {
       hooks[0]!.dependencies.push({ kind: "positive", source: "probe", signalName: `stage.s${i}` });
     }
-    // 同步重建 dependencyIndex（key = `${source}::${signalName}` → hookIds），
-    // 否则 artifact 形状校验会先于依赖数 preflight 报错。
     const recomputed: Record<string, string[]> = {};
     for (const hook of hooks) {
       for (const dependency of hook.dependencies) {
@@ -285,8 +251,6 @@ const TS_PROBES = new Map<string, Probe>([
     for (const hookIds of Object.values(recomputed)) hookIds.sort();
     (bloated as unknown as { dependencyIndex: Record<string, string[]> }).dependencyIndex =
       Object.fromEntries(Object.entries(recomputed).sort(([l], [r]) => (l < r ? -1 : 1)));
-    // 变异后按载荷重签 planHash：承诺重算域先于 preflight 校验，未重签会以
-    // planHash 不匹配报错而非 TooManyDependencies 镜像。
     const resigned = {
       ...bloated,
       planHash: hookPlanHashOf(bloated as unknown as HookPlanArtifact),

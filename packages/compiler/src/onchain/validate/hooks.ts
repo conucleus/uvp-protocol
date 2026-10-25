@@ -23,17 +23,10 @@ import type {
 } from "../../types/index.js";
 
 /**
- * hook 族校验（自 onchain-hook-plan.ts 原样迁入）：compiledHooks 形状与
- * _validateHook 栈机镜像、依赖形状、阶段物化门、HookReady 三线口径、跨
- * 阶段依赖门与依赖索引重算。编译入口 preflight 与反序列化边界共用。
+ * hook 族校验：compiledHooks 形状与 _validateHook 栈机镜像、依赖形状、
+ * 阶段物化门、跨阶段依赖门与依赖索引重算（两个边界共用）。
  */
 
-/**
- * compiledHooks[i] 及更深对象（instructions/dependencies/routeRef、
- * admissions 条目）的封闭键集（与 types/index.ts 声明同步）：顶层已有
- * unknown-field 拒绝，深层缺同款闭包会让"唯一字节数组形态"承诺在深层
- * fail-open。
- */
 const COMPILED_HOOK_FIELDS: readonly string[] = [
   "hookId",
   "stageId",
@@ -66,7 +59,6 @@ const ADMISSION_FIELDS: readonly string[] = [
   "instructions",
   "dependencies",
 ];
-/** 指令键集按 op 闭包（未声明 op 无键集可查，由 op 词表 issue 报告）。 */
 const INSTRUCTION_FIELDS: Readonly<Record<string, readonly string[]>> = {
   SIGNAL: ["op", "source", "signalName", "sourceId", "signalId", "signalKey"],
   NOT: ["op"],
@@ -178,10 +170,6 @@ function validateOnchainCompiledHooks(
           `${prefix}.dependencies`,
         ),
       );
-      // 合约镜像：dependencyKeys 与指令集 SIGNAL 原子键逐点一致
-      // （UVPStateMachine._validateHook reverts HookDependencyKeyMismatch）。
-      // 未声明的 SIGNAL 键不进 dependencyIndex——该事实到达永不触发求值，
-      // hook 永久 Init 且零告警；多声明的键只是死索引。
       const signalKeys = new Set<string>();
       if (Array.isArray(hook.instructions)) {
         for (const instruction of hook.instructions) {
@@ -280,11 +268,6 @@ function validateOnchainCompiledHooks(
   return issues;
 }
 
-/**
- * 镜像 UVPStateMachine._validateHook 的栈机语义（bareSignal/hasPosAnchor
- * 双轨 + 否决位位置轨），形状校验与语义镜像同址：形状坏项计入 issues 后
- * 仍按合同口径推进栈机，让单次校验暴露全部缺口。
- */
 function validateInstructions(
   instructions: readonly unknown[],
   path: string,
@@ -294,11 +277,7 @@ function validateInstructions(
   let stackDepth = 0;
   const bareSignal: boolean[] = [];
   const hasPosAnchor: boolean[] = [];
-  // DELAY 产出标志：NOT 的第二类合法操作数（衰减否决位内层）。
   const delayResult: boolean[] = [];
-  // 否决位标志（本槽即 NOT-over-DELAY，尚待合取父项消费）与子树含否决位
-  // 标志（穿透 AND/OR）——位置规则镜像 uvp-hook-dsl validate_anchors 的
-  // veto_slot / inside_delay_operand 双闸与合约 _validateHook 的同位判定。
   const vetoTerm: boolean[] = [];
   const vetoInside: boolean[] = [];
 
@@ -361,18 +340,12 @@ function validateInstructions(
           issues.push(`${prefix}.op requires one stack item`);
           break;
         }
-        // NOT 操作数词表（_validateHook 镜像）：裸 SIGNAL（现状），或
-        // DELAY 产出（衰减否决位 ~(A+duration)，唯一合法位置是合取直接
-        // 子项——位置由 vetoTerm 位交给消费方校验）。~(A&B) 一类组合否定
-        // 的取消/锚点语义与编译器产物形态分叉，注册边界拒绝。
         if (!bareSignal[stackDepth - 1] && !delayResult[stackDepth - 1]) {
           issues.push(
             `${prefix}.op requires a bare SIGNAL operand `
               + "(contract _validateHook reverts InvalidInstruction for NOT over composite operands)",
           );
         }
-        // （数组下标读取在 noUncheckedIndexedAccess 下带 undefined——
-        // `=== true` 折回布尔，缺席即 false。）
         const operandIsDelayResult = delayResult[stackDepth - 1] === true;
         vetoTerm[stackDepth - 1] = operandIsDelayResult;
         vetoInside[stackDepth - 1] = vetoInside[stackDepth - 1] === true || operandIsDelayResult;
@@ -395,8 +368,6 @@ function validateInstructions(
           issues.push(`${prefix}.op requires ${arity} stack items`);
           break;
         }
-        // 否决位唯一合法位置是合取直接子项（_validateHook 镜像）：Or 分支
-        // 位一律拒绝。
         if (instruction.op === "OR") {
           for (let j = stackDepth - arity; j < stackDepth; j++) {
             if (vetoTerm[j]) {
@@ -409,8 +380,6 @@ function validateInstructions(
             }
           }
         }
-        // And 取任一正锚，Or 需每一分支都有（Or 的缺席分支可单独就绪且
-        // 锚点为 0）——只被 DELAY 的操作数正锚检查消费。
         const anchored =
           instruction.op === "AND"
             ? hasPosAnchor
@@ -448,25 +417,18 @@ function validateInstructions(
           issues.push(`${prefix}.op requires one stack item`);
           break;
         }
-        // order-trigger hook 内禁止 DELAY（_validateHook 镜像）：出生事实
-        // 与订单创建同笔交易，DELAY 只会让出生路径永久 InvalidTriggerHook。
         if (options.orderTrigger) {
           issues.push(
             `${prefix}.op DELAY is not allowed on order-trigger hooks `
             + "(contract _validateHook reverts InvalidInstruction; birth facts settle at order creation)",
           );
         }
-        // 延时操作数须含正向信号锚点（validate_anchors 镜像）：全否定/
-        // 缺席的操作数在 value=true 时 anchorAt=0，到期时刻恒在过去。
         if (!hasPosAnchor[stackDepth - 1]) {
           issues.push(
             `${prefix}.op DELAY requires an operand with a positive signal anchor `
               + "(contract _validateHook reverts InvalidInstruction for delay over purely-negative operands)",
           );
         }
-        // Delay 操作数内任何深度禁止否决位（_validateHook 镜像）：否决位
-        // 的 Ready 会衰减而 Delay 成熟是永久的——外层延时锚在已过期的
-        // 否决上会静默放行。
         if (vetoTerm[stackDepth - 1] || vetoInside[stackDepth - 1]) {
           issues.push(
             `${prefix}.op DELAY cannot consume an operand containing a decaying veto `
@@ -484,21 +446,15 @@ function validateInstructions(
     }
   }
 
-  // Aligned with UVPStateMachine._validateHook: `hook.instructions.length == 0`
-  // reverts InvalidHook on-chain, so an empty instruction array must fail the
-  // preflight too (stack depth 0 !== 1 below).
   if (stackDepth !== 1) {
     issues.push(`${path} must leave exactly one stack item`);
   } else if (vetoTerm[0]) {
-    // 根位否决位（_validateHook 镜像）：否决位必须由合取父项消费。
     issues.push(
       `${path} leaves a decaying veto at the root; `
         + "decaying veto NOT-over-DELAY is only legal as a direct AND operand "
         + "(contract _validateHook reverts InvalidInstruction)",
     );
   } else if (!hasPosAnchor[0]) {
-    // 整体至少一正锚（validate_anchors 镜像）：纯否定条件在 value=true 时
-    // anchorAt=0，注册边界拒绝。
     issues.push(
       `${path} must contain at least one positive signal anchor `
       + "(contract _validateHook reverts InvalidInstruction for purely-negative hook conditions)",
@@ -508,32 +464,15 @@ function validateInstructions(
   return issues;
 }
 
-/**
- * 镜像 UVPPlanRegistration._validateAdmission 的过滤档栈机（_validateHook
- * 的过滤档兄弟）：适格面只在到达一拍对 pre-state 求值、不参与任何调度——
- * 无根位/OR 分支正锚要求，衰减否决位 ~(A+duration) 位置全放开（任何位置
- * 的瞬时值都良定义）。与钩子档同源的保留闸：NOT 操作数词表（裸 SIGNAL
- * 或 DELAY 产出）、duration ∈ (0, 30d]、AND/OR arity ≥ 2、栈深、结束恰
- * 一值、DELAY 操作数必须有正向锚点（UB-1 无锚延时闸：无锚延时在求值侧
- * 恒 NeedsMore，注册即拒）与嵌套延时闸（uvp-hook-dsl validate_filter_hook
- * 的 reject_nested_delay 同口径）。自引用/出生锚/订阅原子是编译期拒绝
- * （core D028-D030），注册门看到的只有指令形态。
- */
 function validateAdmissionInstructions(
   instructions: readonly unknown[],
   path: string,
 ): readonly string[] {
   const issues: string[] = [];
   let stackDepth = 0;
-  // 裸 SIGNAL 栈标志与 DELAY 产出标志：NOT 操作数词表的判定面。
   const bareSignal: boolean[] = [];
   const delayResult: boolean[] = [];
-  // 正向锚点标志（_validateAdmission 镜像）：Signal 贡献，Not 归零，
-  // Delay 承袭操作数，And/Or 取任一（过滤档无 OR 分支硬闸）——DELAY
-  // 操作数闸的判定材料。
   const hasPosAnchor: boolean[] = [];
-  // 子树含 DELAY 标志（UB-1 嵌套延时闸，reject_nested_delay 镜像）：
-  // Delay 置位，Not 透传，And/Or 取任一，Delay 操作数已在场即拒。
   const delayInside: boolean[] = [];
 
   for (const [index, instruction] of instructions.entries()) {
@@ -594,9 +533,6 @@ function validateAdmissionInstructions(
           issues.push(`${prefix}.op requires one stack item`);
           break;
         }
-        // NOT 操作数词表（_validateAdmission 镜像，与钩子档同源）：裸
-        // SIGNAL 或 DELAY 产出。~(A&B) 一类组合否定的取消/求值语义与
-        // 编译器产物形态分叉，注册边界拒绝。
         if (!bareSignal[stackDepth - 1] && !delayResult[stackDepth - 1]) {
           issues.push(
             `${prefix}.op requires a bare SIGNAL operand `
@@ -606,7 +542,6 @@ function validateAdmissionInstructions(
         bareSignal[stackDepth - 1] = false;
         delayResult[stackDepth - 1] = false;
         hasPosAnchor[stackDepth - 1] = false;
-        // delayInside 经 NOT 透传（否决位内层仍是延时操作数）。
         break;
       }
       case "AND":
@@ -623,8 +558,6 @@ function validateAdmissionInstructions(
           issues.push(`${prefix}.op requires ${arity} stack items`);
           break;
         }
-        // delayInside 与 hasPosAnchor 都取任一（_validateAdmission 镜像）：
-        // 过滤档无 OR 分支正锚硬闸，And/Or 同口径。
         const delayInsideResult = delayInside
           .slice(stackDepth - arity, stackDepth)
           .some(Boolean);
@@ -656,10 +589,6 @@ function validateAdmissionInstructions(
           issues.push(`${prefix}.op requires one stack item`);
           break;
         }
-        // UB-1 无锚延时闸（_validateAdmission 镜像）：过滤档允许纯否定
-        // 操作数存在（瞬时值良定义），但禁止它直接喂延时——无锚延时在
-        // 求值侧是恒未决死代码（Rust 权威 eval_expr 的 Delay 臂对无锚
-        // Ready 操作数返回 NeedsMore）。hasPosAnchor 承袭操作数。
         if (!hasPosAnchor[stackDepth - 1]) {
           issues.push(
             `${prefix}.op DELAY requires an operand with a positive signal anchor `
@@ -667,9 +596,6 @@ function validateAdmissionInstructions(
               + "(UB-1: an anchorless delay never matures on the evaluation side))",
           );
         }
-        // 嵌套延时闸（reject_nested_delay 镜像）：DELAY 的操作数子树内
-        // 已含 DELAY 即拒——外层延时锚在内层延时成熟时刻上，两层调度的
-        // 组合语义与编译器产物形态分叉。
         if (delayInside[stackDepth - 1]) {
           issues.push(
             `${prefix}.op DELAY cannot consume an operand containing another DELAY `
@@ -692,14 +618,6 @@ function validateAdmissionInstructions(
   return issues;
 }
 
-/**
- * 适格面 artifact 校验（编译入口 preflight 与反序列化边界共用）：条目
- * 形状、admissionId/stageId/signalId 派生重算、(stageIdentifier,
- * signalName) 与 admissionId 去重、指令集过滤档镜像、依赖形状与
- * dependencyKeys ≡ SIGNAL 原子键逐点一致（合约 _validateAdmission 的
- * HookDependencyKeyMismatch 镜像——未声明键的事实到达永不触发求值面，
- * 但适格是提交时求值，键错位意味着制品与链上注册面分叉）。
- */
 function validateOnchainCompiledAdmissions(
   admissions: readonly unknown[],
 ): readonly string[] {
@@ -841,9 +759,6 @@ function validateOnchainDependencies(
   path: string,
 ): readonly string[] {
   const issues: string[] = [];
-  // Aligned with UVPStateMachine._validateHook: `hook.dependencyKeys.length == 0`
-  // reverts InvalidHook on-chain, so a hook without dependencies is invalid
-  // at the artifact boundary as well.
   if (dependencies.length === 0) {
     issues.push(
       `${path} must not be empty `
@@ -896,8 +811,6 @@ function validateOnchainDependencies(
       );
     }
     if (dependency.delaySeconds !== undefined) {
-      // E12：delaySeconds 只要在场就必须是正安全整数——非数值/NaN/零/负数
-      // 一律拒绝，不按 kind 静默放行。
       if (
         !Number.isSafeInteger(dependency.delaySeconds) ||
         Number(dependency.delaySeconds) <= 0
@@ -921,24 +834,6 @@ function validateOnchainDependencies(
   return issues;
 }
 
-/**
- * 阶段物化门（onchain target，镜像 uvp-core 的
- * validate_onchain_stage_materialization）：
- *
- * - 每个出现在 compiledHooks 的阶段必须至少有一个 order-trigger 或
- *   EMIT_READY hook（能物化自身阶段的 hook）。纯 flags=0 watcher 阶段在
- *   链上永远无法物化——挂在其上的任何 hook 都构成不可恢复死锁。
- * - 每个在 artifact 上留有声明投影（signalCapabilities / executorRoutes /
- *   selectorBindings）的阶段不得编译为零 hook——零 hook 阶段同样永不可
- *   物化，且其 sendSignals 在链上没有钩子可挂（submitSignal 恒 revert
- *   UnknownHook）。Rust 定义层第一道拒绝（"declares no receiveSignals"），
- *   这里是 artifact 边界的第二道。
- *
- * dock entrance 豁免口径与 Rust dock_entrance_hook_ids 单一来源一致：entrance
- * 端口钩子在两个编译器里都编译为 orderTriggerKind=dock（dock|emitReady=6），
- * 因此 artifact 层只认编译后的物化位本身、不再从 dockInterface 端口重推——
- * flags 即该豁免的产物投影，重推属于镜像扩张。
- */
 function unmaterializableStageIssues(
   hooks: readonly OnchainCompiledHook[],
   declaredStages: ReadonlySet<string>,
@@ -975,15 +870,6 @@ function unmaterializableStageIssues(
   return issues;
 }
 
-/**
- * artifact 边界可见的“阶段声明”全集：sendSignals（signalCapabilities）、
- * executor（executorRoutes）、dock 委托（dockRoutes）、selectedStages
- * （selectorBindings 两侧）四类声明各留一处投影；receiveSignals 的投影是
- * compiledHooks 本体。零 hook 阶段没有 compiledHooks 记录，只能从这四处
- * 发现——zhixu 委托阶段只出现在 dockRoutes 一侧、不进 executorRoutes，漏
- * 投影会让手工制品绕过零 hook 门。非字符串项交由形状校验报错，这里静默
- * 跳过。
- */
 function declaredStageIdentifiers(
   ...identifierGroups: readonly (readonly (string | undefined)[])[]
 ): Set<string> {
@@ -998,12 +884,6 @@ function declaredStageIdentifiers(
   return identifiers;
 }
 
-/**
- * HookReady 三线口径统一镜像：order-trigger hook 必须携带 emitReady——
- * Rust 编译器产物恒为 trigger|EMIT_READY（flags=5/6），UVPStateMachine
- * commitPlan 对缺 EMIT_READY 的"沉默 trigger"revert SilentOrderTriggerHook。
- * 这里是 artifact 边界的镜像门禁（编译器第一道，合约注册边界兜底）。
- */
 function silentOrderTriggerIssues(
   hooks: readonly OnchainCompiledHook[],
 ): readonly string[] {
@@ -1020,22 +900,6 @@ function silentOrderTriggerIssues(
   return issues;
 }
 
-/**
- * Cross-stage dependency preflight mirroring UVPStateMachine._registerPlanHook
- * byte-for-byte in SEMANTICS: hooks are processed in submitted (artifact)
- * order, and per signal key the FIRST watcher pins the recorded stage.
- * A later cross-stage watcher passes only while every watcher seen so far on
- * that key (AND-accumulated) is an order trigger; a set-based "any stage plus
- * any non-trigger watcher" check is STRICTER than the contract and rejects
- * plans the contract accepts (e.g. trigger(A) → trigger(B) → watcher(A)),
- * so the sequential scan is load-bearing, not an optimization.
- *
- * Field mapping note: artifacts carry `orderTriggerKind`
- * ("none" | "mint" | "dock") — there is no `isOrderTrigger` boolean, neither
- * at compile time nor in deserialized artifacts. The trigger flag is always
- * derived as `orderTriggerKind !== "none"`; reading a boolean field here
- * silently skipped the guard for every deserialized artifact.
- */
 function crossStageDependencyIssues(hooks: readonly unknown[]): readonly string[] {
   interface KeyState {
     stageId: string;
@@ -1079,19 +943,6 @@ function crossStageDependencyIssues(hooks: readonly unknown[]): readonly string[
   return issues;
 }
 
-/**
- * U2 出生通道键查重镜像 UVPStateMachine._registerPlanHook，按通道语义
- * 分界：
- * - 跨通道（mint∪dock）：outside 出生与 dock 出生是两个不同的出生上
- *   下文，共享出生键会让任一侧的出生事务把另一侧的出生线一并推 Ready
- *   并物化幻影阶段——commitPlan reverts DuplicateBirthChannelKey；
- * - dock∪dock：entrance 键按 route 钉死（planHookDependsOn），一键挂
- *   两条 entrance 意味着任一 route 的子单会物化另一 route 的阶段——拒绝；
- * - mint∪mint：一事实扇出多条 mint 出生线是产品现行形态（customs 基准
- *   plan：order::registered 同时出生执行者选择与资源发布两阶段），同一
- *   mint 出生上下文内物化，不是幻影——放行。
- * watcher 共享出生键不受限（watcher 不由出生通道置 Ready）。
- */
 function duplicateBirthChannelKeyIssues(hooks: readonly unknown[]): readonly string[] {
   const issues: string[] = [];
   const birthKeyOwner = new Map<string, { label: string; dock: boolean }>();
@@ -1135,8 +986,6 @@ function validateOnchainDependencyIndex(
   dependencyIndex: Record<string, readonly string[]>,
 ): readonly string[] {
   const issues: string[] = [];
-  // Recompute in compiledHooks (= calldata) order, exactly like
-  // buildOnchainDependencyIndex and UVPStateMachine._registerPlanHook.
   const recomputed = new Map<string, string[]>();
   for (const hook of hooks) {
     if (
@@ -1187,16 +1036,6 @@ function isOnchainHookDependency(
   );
 }
 
-/**
- * 执行者终生不可变镜像（uvp-core validate_stage_executors /
- * validate_mint_anchors 的出生阶段条款，Rust 是第一道，这里是 artifact
- * 边界的第二道）：订阅/出生阶段在 artifact 上的投影是 orderTriggerKind
- * = mint 的 hook——投递目标编译期定死、运行时禁止 executor patch，
- * selectedStages（selectorBindings）可达不构成绑定。缺静态执行者路由的
- * 出生阶段是"出生即死"：阶段随出生事实物化，却没有 executor route 可
- * 投递，又禁运行时补绑。zhixu 委托不适用（委托 route 不进 executorRoutes，
- * 且 mint 出生 + 委托在 Rust 侧已是拒绝形态）。
- */
 function birthStageStaticExecutorIssues(
   hooks: readonly unknown[],
   executorRoutes: readonly unknown[],

@@ -2,9 +2,6 @@
 pragma solidity ^0.8.24;
 
 interface IUVPPlanMetadataModule {
-    /// 能力树的域分隔叶编码。叶子由承诺输入在合约内重算（调用方不得
-    /// 自报叶值），membership 由调用方携带的 proof 证明——与
-    /// verifyDockInterfacePort 同一纪律。
     function signalCapabilityLeaf(bytes32 stageId, bytes32 targetSourceId, bytes32 signalId, uint8 relation)
         external
         pure

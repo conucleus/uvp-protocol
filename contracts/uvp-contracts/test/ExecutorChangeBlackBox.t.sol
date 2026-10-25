@@ -1,11 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// 执行者换人面黑盒对抗测试（独立测试工程师视角，无实现背景）：
-/// 只依据行为规格构造对抗场景——候选集边界、授权集一致性、fork 边界、
-/// 时序与歧义、零字段/词表闭集等攻击面。造证方式与 UVPStateMachine.t.sol
-/// 同款（叶重算 + Merkle proof + EIP-712 摘要签名）。
-
 import {UVPStateMachine} from "../src/UVPStateMachine.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
@@ -47,8 +42,6 @@ contract ExecutorChangeBlackBoxTest {
         uint8 targetOrderRelation;
     }
 
-    /// relayed patch 的预备材料（摘要/签名先于 expectRevert 完成，保持
-    /// vm.expectRevert 与目标调用的配对干净）。
     struct PreparedPatch {
         UVPStagePatchModule.StageExecutorPatch patch;
         address selector;
@@ -127,18 +120,11 @@ contract ExecutorChangeBlackBoxTest {
 
     mapping(address machine => mapping(bytes32 planId => CapabilityTables tables)) private _capabilityTables;
 
-    // ==================================================================
-    // 候选集边界
-    // ==================================================================
-
-    /// 跨阶段混用 proof：用 STAGE_INIT 的合法候选叶/proof 提交 STAGE_AUDIT
-    /// 的 patch——叶公式含 targetStageId，重算叶不在树内，必须拒绝。
     function testCandidateGateRejectsCrossStageProofMixing() public {
         UVPStateMachine machine = _patchMachineReady();
         IUVPStateMachineCore.SignalAuthorization[] memory auths =
             _executorAuthorizationsFor(machine, PLAN_ID, STAGE_AUDIT, E1());
         UVPStagePatchModule.StageExecutorPatch memory patch = _withAuthHash(_patch(1, E1(), PATCH_HASH), auths);
-        // proof 是 (STAGE_INIT, E1) 叶的合法成员资格证明。
         bytes32[] memory initStageProof = _candidateProofFor(machine, PLAN_ID, STAGE_INIT, E1());
         require(initStageProof.length != 0, "test setup: init stage leaf missing");
 
@@ -154,8 +140,6 @@ contract ExecutorChangeBlackBoxTest {
             );
     }
 
-    /// 候选集内地址只对本 stage 生效：E1 是 STAGE_INIT 的候选、不是
-    /// STAGE_AUDIT 的候选——对 AUDIT 的 patch 恒拒。
     function testCandidateOfDifferentStageRejected() public {
         UVPStateMachine machine = _patchMachineReady();
         IUVPStateMachineCore.SignalAuthorization[] memory auths =
@@ -174,8 +158,6 @@ contract ExecutorChangeBlackBoxTest {
             );
     }
 
-    /// 重复条目去重后的 root 等价：commitPlan 携重复候选条目注册成功，
-    /// root 与去重集合一致；去重叶集构造的 proof 照常验过 patch。
     function testCandidateTreeDedupKeepsRootAndProofEquivalence() public {
         UVPStateMachine.ExecutorCandidate[] memory duplicates = new UVPStateMachine.ExecutorCandidate[](5);
         duplicates[0] = UVPStateMachine.ExecutorCandidate({stageId: STAGE_AUDIT, executor: E1()});
@@ -200,14 +182,11 @@ contract ExecutorChangeBlackBoxTest {
         _materializeAuditStage(machine, ORDER_ID);
         require(machine.planExecutorCandidatesRoot(PLAN_ID) == dedupedRoot, "committed root mismatch");
 
-        // patch 用去重叶集的 proof——建树若未去重该 proof 必验不过。
         vm.prank(CREATOR);
         _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
         require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E1(), "dedup proof patch failed");
     }
 
-    /// 空候选集计划恒拒 patch：assign 与 handoff 全模式拒绝，creator 亲自
-    /// 出面也一样（候选集外没有任何人可以成为逐单执行者）。
     function testEmptyCandidateSetRejectsAssignAndHandoffEvenForCreator() public {
         UVPStateMachine machine = _newMachine();
         _registerPlanWithCandidates(
@@ -230,7 +209,6 @@ contract ExecutorChangeBlackBoxTest {
         );
         _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
 
-        // handoff 同拒：候选集闸先于模式闸。
         vm.prank(E1());
         machine.submitSignal(
             PLAN_ID,
@@ -257,12 +235,6 @@ contract ExecutorChangeBlackBoxTest {
         _sendRelayed(machine, PLAN_ID, ORDER_ID, prepared);
     }
 
-    // ==================================================================
-    // selector 权与签名面
-    // ==================================================================
-
-    /// 候选集内地址 + 真实 selector 私钥，但对另一份 patch 内容签名——
-    /// 伪造 digest 必被拒（recover 出的不是 selector）。
     function testRelayedPatchRejectsSelectorSignatureOverDifferentPatch() public {
         UVPStateMachine machine = _patchMachineReady();
         IUVPStateMachineCore.SignalAuthorization[] memory auths =
@@ -297,8 +269,6 @@ contract ExecutorChangeBlackBoxTest {
             );
     }
 
-    /// 第三方直接出面（无 EXECUTOR_PATCH 授权、非 creator）：即使目标在
-    /// 候选集内、proof 完整，也必须在 selector 权闸被拒。
     function testDirectPatchRejectsThirdPartyWithoutSelectorRights() public {
         UVPStateMachine machine = _patchMachineReady();
 
@@ -311,15 +281,12 @@ contract ExecutorChangeBlackBoxTest {
         _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
     }
 
-    /// selector 绑定证混用：selectorStageId 与 patch 声明不一致、或携空证
-    /// 都必须在绑定闸响亮拒绝。
     function testSelectorBindingProofMixingRejected() public {
         UVPStateMachine machine = _patchMachineReady();
         IUVPStateMachineCore.SignalAuthorization[] memory auths =
             _executorAuthorizationsFor(machine, PLAN_ID, STAGE_AUDIT, E1());
         UVPStagePatchModule.StageExecutorPatch memory patch = _withAuthHash(_patch(1, E1(), PATCH_HASH), auths);
 
-        // 绑定证声明属主 STAGE_AUDIT，与 patch.selectorStageId=STAGE_INIT 不一致。
         vm.prank(CREATOR);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -336,7 +303,6 @@ contract ExecutorChangeBlackBoxTest {
                 auths
             );
 
-        // selectorStageId 一致但不携 proof：成员资格验不过，同拒。
         vm.prank(CREATOR);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -354,12 +320,6 @@ contract ExecutorChangeBlackBoxTest {
             );
     }
 
-    // ==================================================================
-    // 授权集一致性
-    // ==================================================================
-
-    /// digest 承诺的 authorizationsHash 与实参授权集不一致（签的是 E2 的
-    /// 集、递的是 E3 的集）——中途换集必须 revert。
     function testPatchRejectsAuthorizationSetSwapAfterDigestSigning() public {
         UVPStateMachine machine = _patchMachineReady();
         IUVPStateMachineCore.SignalAuthorization[] memory swappedAuths =
@@ -391,8 +351,6 @@ contract ExecutorChangeBlackBoxTest {
             );
     }
 
-    /// 授权集内重复条目：哈希按原始列表折叠，模块写入侧同键幂等吸收，
-    /// patch 正常生效且新城执行者获得提交权。
     function testPatchAuthorizationSetWithDuplicateEntriesAbsorbed() public {
         UVPStateMachine machine = _patchMachineReady();
         IUVPStateMachineCore.SignalAuthorization[] memory base =
@@ -421,7 +379,6 @@ contract ExecutorChangeBlackBoxTest {
         );
     }
 
-    /// patch 生效后新城执行者实际获得提交权，集外第三方仍被拒。
     function testPatchedExecutorCanSubmitStageSignalWhileStrangerCannot() public {
         UVPStateMachine machine = _patchMachineReady();
 
@@ -460,8 +417,6 @@ contract ExecutorChangeBlackBoxTest {
         require(submitter == E3, "patched executor submission not recorded");
     }
 
-    /// 显式订单级授权独立于执行者委任：handoff 后旧执行者的既有授权不被
-    /// 撤销（仍可凭出生授权提交后续事实）；集外第三方始终被拒。
     function testExplicitAuthorizationsSurviveExecutorHandoff() public {
         UVPStateMachine machine = _patchMachineReady();
 
@@ -488,8 +443,6 @@ contract ExecutorChangeBlackBoxTest {
         _sendRelayed(machine, PLAN_ID, ORDER_ID, handoff);
         require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E2(), "handoff not applied");
 
-        // 旧执行者 E1 不再是 stage 委任执行者，但既有显式授权仍在——REVIEW
-        // 照常落库且提交者归因不变。
         vm.prank(E1());
         machine.submitSignal(
             PLAN_ID,
@@ -503,7 +456,6 @@ contract ExecutorChangeBlackBoxTest {
         (,,,, address reviewSubmitter) = machine.getSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW);
         require(reviewSubmitter == E1(), "old executor explicit auth not preserved");
 
-        // 集外第三方（无任何授权）始终被拒。
         vm.prank(STRANGER);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -525,13 +477,10 @@ contract ExecutorChangeBlackBoxTest {
         );
     }
 
-    /// 空授权集 + 一致哈希：patch 生效写 overlay，但新城执行者没有提交权
-    /// ——授权面与委任面分离的黑盒口径。
     function testPatchWithEmptyAuthorizationSetLeavesNoSubmitLane() public {
         UVPStateMachine machine = _patchMachineReady();
         IUVPStateMachineCore.SignalAuthorization[] memory emptyAuths = new IUVPStateMachineCore.SignalAuthorization[](0);
 
-        // E3 无出生授权——空授权集 patch 后不得凭空获得提交权。
         vm.prank(CREATOR);
         _patchDirectWithAuths(
             machine, PLAN_ID, ORDER_ID, _withAuthHash(_patch(1, E3, PATCH_HASH), emptyAuths), emptyAuths
@@ -558,12 +507,6 @@ contract ExecutorChangeBlackBoxTest {
         );
     }
 
-    // ==================================================================
-    // 出生阶段守门 / 模式词表 / nonce / 零字段 / handoff 签名
-    // =================================================================
-
-    /// 出生（mint trigger）阶段终生不可变：候选集内执行者 + creator 出面
-    /// 也拒；assign/handoff 两模式同拒。
     function testBirthStageExecutorPatchForbiddenEvenInsideCandidateSet() public {
         UVPStateMachine machine = _patchMachineReady();
 
@@ -589,7 +532,6 @@ contract ExecutorChangeBlackBoxTest {
         );
     }
 
-    /// 模式词表闭集：assign/handoff 之外的任何模式词（含零字）拒绝。
     function testPatchModeVocabularyIsClosedSet() public {
         UVPStateMachine machine = _patchMachineReady();
         bytes32 foreignMode = bytes32("replace");
@@ -603,8 +545,6 @@ contract ExecutorChangeBlackBoxTest {
         _patchDirect(machine, PLAN_ID, ORDER_ID, _patchWithMode(1, E1(), PATCH_HASH, bytes32(0), address(0)));
     }
 
-    /// nonce 跨模式/跨执行者单调：assign → 信号 → handoff → handoff 链上
-    /// nonce 必须严格递增；同值重放拒绝。
     function testPatchNonceMonotonicAcrossModesAndExecutors() public {
         UVPStateMachine machine = _patchMachineReady();
 
@@ -642,7 +582,6 @@ contract ExecutorChangeBlackBoxTest {
             _stagePatch(machine).orderStageExecutorPatchNonce(PLAN_ID, ORDER_ID, STAGE_AUDIT) == 3, "nonce not tracked"
         );
 
-        // 同参重放（nonce 3 ≤ 3）拒绝——已生效 patch 不可重放。
         vm.expectRevert(
             abi.encodeWithSelector(
                 UVPStagePatchModule.StageExecutorPatchNonceNotIncreasing.selector, ORDER_ID, STAGE_AUDIT, 3, 3
@@ -651,8 +590,6 @@ contract ExecutorChangeBlackBoxTest {
         _sendRelayed(machine, PLAN_ID, ORDER_ID, handoff2);
     }
 
-    /// 零字段与未知订单：零 selector、零 targetStageId、未知订单各自响亮
-    /// 拒绝。
     function testPatchValidatesZeroFieldsAndUnknownOrder() public {
         UVPStateMachine machine = _patchMachineReady();
         IUVPStateMachineCore.SignalAuthorization[] memory auths =
@@ -686,8 +623,6 @@ contract ExecutorChangeBlackBoxTest {
         _patchDirect(machine, PLAN_ID, bytes32(uint256(0xdeadbeef)), foreignOrderPatch);
     }
 
-    /// handoff 的上一执行者会签是唯一授权材料：直接路径（无签名材料）与
-    /// 错误私钥会签都拒绝；正确会签放行。
     function testHandoffRequiresPreviousExecutorSignature() public {
         UVPStateMachine machine = _patchMachineReady();
 
@@ -704,7 +639,6 @@ contract ExecutorChangeBlackBoxTest {
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
 
-        // 直接路径无会签材料（previousExecutorSigner 恒为 0）。
         vm.prank(CREATOR);
         vm.expectRevert(
             abi.encodeWithSelector(UVPStagePatchModule.InvalidStageExecutorPatchSignature.selector, E1(), address(0))
@@ -713,7 +647,6 @@ contract ExecutorChangeBlackBoxTest {
             machine, PLAN_ID, ORDER_ID, _patchWithMode(2, E2(), PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, E1())
         );
 
-        // 会签私钥错误（E2 冒充 E1 签名）。
         PreparedPatch memory wrongSigner = _prepareRelayed(
             machine,
             PLAN_ID,
@@ -727,7 +660,6 @@ contract ExecutorChangeBlackBoxTest {
         );
         _sendRelayed(machine, PLAN_ID, ORDER_ID, wrongSigner);
 
-        // 正确会签放行。
         PreparedPatch memory correct = _prepareRelayed(
             machine,
             PLAN_ID,
@@ -740,20 +672,9 @@ contract ExecutorChangeBlackBoxTest {
         require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E2(), "handoff not applied");
     }
 
-    // ==================================================================
-    // 时序与歧义
-    // ==================================================================
-
-    /// 同秒并列两提交者（无 active patch）→ handoff fail-closed 拒绝；
-    /// 同秒同提交者不歧义 → handoff 放行；有 active patch 时歧义标记不
-    /// 参与判定（patch executor 是权威上一执行者）。
-    /// assign 前置闸（B8a）后，"无 active patch + 有计数"只余 fork 重放一
-    /// 条合法构造：场景 1/2 的歧义计数先在父单（已 assign）制造，再经
-    /// fork 重放进子单（无 patch、计数承袭原始提交者）。
     function testHandoffFailClosedOnSameSecondAmbiguousSubmitters() public {
         UVPStateMachine machine = _patchMachineReady();
 
-        // 场景 1：同秒不同提交者 → 子单计数歧义 → StagePreviousExecutorAmbiguous。
         vm.prank(CREATOR);
         _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
         vm.prank(E1());
@@ -813,7 +734,6 @@ contract ExecutorChangeBlackBoxTest {
         );
         _sendRelayed(machine, PLAN_ID, ambiguousChild, ambiguousHandoff);
 
-        // 场景 2：同秒同提交者 → 无歧义，handoff 放行。
         bytes32 secondOrder = _birthSecondOrder(machine, keccak256("ambiguous-test/second"));
         vm.prank(CREATOR);
         _patchDirect(machine, PLAN_ID, secondOrder, _patch(1, E1(), PATCH_HASH));
@@ -867,7 +787,6 @@ contract ExecutorChangeBlackBoxTest {
         _sendRelayed(machine, PLAN_ID, cleanChild, cleanHandoff);
         require(machine.activeStageExecutor(PLAN_ID, cleanChild, STAGE_AUDIT) == E2(), "clean handoff failed");
 
-        // 场景 3：active patch 在场时歧义标记不参与——patch executor 权威。
         bytes32 thirdOrder = _birthSecondOrder(machine, keccak256("ambiguous-test/third"));
         vm.prank(CREATOR);
         _patchDirect(machine, PLAN_ID, thirdOrder, _patch(1, E1(), PATCH_HASH));
@@ -905,15 +824,11 @@ contract ExecutorChangeBlackBoxTest {
         require(machine.activeStageExecutor(PLAN_ID, thirdOrder, STAGE_AUDIT) == E3, "patch-authoritative handoff");
     }
 
-    /// 「上一执行者」优先级反向钉死：active patch 在场时权威上一执行者是
-    /// patch executor——以"最近提交者"冒充上一执行者（即使其提交了最新
-    /// 事实）必须拒绝；以 patch executor 会签才放行。
     function testHandoffPreviousExecutorPrecedencePinnedToPatchExecutor() public {
         UVPStateMachine machine = _patchMachineReady();
 
         vm.prank(CREATOR);
         _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
-        // 最近提交者是 E2（非 patch 执行者）。
         vm.prank(E2());
         machine.submitSignal(
             PLAN_ID,
@@ -925,7 +840,6 @@ contract ExecutorChangeBlackBoxTest {
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
 
-        // 以最近提交者 E2 冒充上一执行者：拒绝（expected = patch executor E1）。
         PreparedPatch memory impostor = _prepareRelayed(
             machine,
             PLAN_ID,
@@ -945,7 +859,6 @@ contract ExecutorChangeBlackBoxTest {
         );
         _sendRelayed(machine, PLAN_ID, ORDER_ID, impostor);
 
-        // 以 patch executor E1 会签：放行。
         PreparedPatch memory authoritative = _prepareRelayed(
             machine,
             PLAN_ID,
@@ -958,8 +871,6 @@ contract ExecutorChangeBlackBoxTest {
         require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E3, "authoritative handoff failed");
     }
 
-    /// assign → 信号 → handoff 生命周期；有信号后 assign 永久关闭
-    ///（StageAlreadyHasSignal），handoff 后新城执行者承接提交权。
     function testAssignSignalHandoffLifecycleAndAssignBlockedAfterSignal() public {
         UVPStateMachine machine = _patchMachineReady();
 
@@ -976,7 +887,6 @@ contract ExecutorChangeBlackBoxTest {
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
 
-        // 首信号之后 assign 永久顶死。
         vm.prank(CREATOR);
         vm.expectRevert(
             abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, ORDER_ID, STAGE_AUDIT)
@@ -994,7 +904,6 @@ contract ExecutorChangeBlackBoxTest {
         _sendRelayed(machine, PLAN_ID, ORDER_ID, handoff);
         require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E2(), "handoff not applied");
 
-        // 新执行者承接提交权（patch 授权集）。
         vm.prank(E2());
         machine.submitSignal(
             PLAN_ID,
@@ -1009,10 +918,6 @@ contract ExecutorChangeBlackBoxTest {
         require(finalCount == 2, "stage count mismatch");
     }
 
-    /// B8a：候选集覆盖阶段的 assign 前置闸不依赖调用方携证——显式授权的
-    /// 携证业务事实在指派前同样拒收（旧形态落库后把 assign 恒顶死，时序
-    /// DoS 面）；指派后同键事实正常落库并进 per-stage 计数，后续 assign
-    /// 的零信号闸同口径关闭。
     function testAssignBlockedByProofAttributedBusinessFact() public {
         UVPStateMachine machine = _newMachine();
         SignalCapability[] memory extra = new SignalCapability[](1);
@@ -1072,14 +977,6 @@ contract ExecutorChangeBlackBoxTest {
         _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(2, E1(), PATCH_HASH_2));
     }
 
-    // ==================================================================
-    // resource patch 与 assign 共用零信号闸
-    // ==================================================================
-
-    /// resource patch 与 assign 共闸：目标阶段零信号时放行；首个信号后
-    /// 永久关闭。出生阶段不受出生守门（资源可替换）——但出生事实计数
-    /// 使零信号闸先行关闭（错误面是 StageAlreadyHasSignal 而非出生守门，
-    /// 证明 resource 车道不经出生闸）。
     function testResourcePatchSharesZeroSignalGateWithAssign() public {
         UVPStateMachine machine = _newMachine();
         StageSelectorBinding[] memory extraBinding = new StageSelectorBinding[](1);
@@ -1095,8 +992,6 @@ contract ExecutorChangeBlackBoxTest {
         _submitBirth(machine, CREATOR, _overlayAuthorizations());
         _materializeAuditStage(machine, ORDER_ID);
 
-        // 出生阶段（STAGE_INIT）目标：资源补丁不触出生守门——错在零信号闸
-        //（出生事实已计数），不在 StageExecutorPatchForbiddenOnBirthStage。
         vm.prank(_selector());
         vm.expectRevert(
             abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, ORDER_ID, STAGE_INIT)
@@ -1109,7 +1004,6 @@ contract ExecutorChangeBlackBoxTest {
                 _moduleBindingFor(machine, PLAN_ID, STAGE_INIT)
             );
 
-        // 目标阶段零信号：放行。
         vm.prank(_selector());
         _stagePatch(machine)
             .applyStageResourcePatch(
@@ -1122,8 +1016,6 @@ contract ExecutorChangeBlackBoxTest {
             _stagePatch(machine).getActiveStageResourcePatch(PLAN_ID, ORDER_ID, STAGE_AUDIT, RESOURCE_KEY);
         require(exists, "resource patch not applied");
 
-        // B8a：资源补丁不是执行者指派——首个携证信号在 executor assign
-        // 前仍被 assign 前置闸拒收。
         vm.prank(E1());
         vm.expectRevert(
             abi.encodeWithSelector(UVPStateMachine.StageExecutorNotAssigned.selector, ORDER_ID, STAGE_AUDIT)
@@ -1138,7 +1030,6 @@ contract ExecutorChangeBlackBoxTest {
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
 
-        // executor assign 后首个信号落地，资源补丁与其共用零信号闸关闭。
         vm.prank(CREATOR);
         _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
         vm.prank(E1());
@@ -1164,11 +1055,6 @@ contract ExecutorChangeBlackBoxTest {
             );
     }
 
-    // ==================================================================
-    // fork 边界
-    // ==================================================================
-
-    /// 裁决信号只存在于兄弟订单、不在父单 → ForkApprovalSignalUnknown。
     function testForkRejectsApprovalSignalAbsentOnParent() public {
         UVPStateMachine machine = _forkMachineReady();
         bytes32 parentOrderId = ORDER_ID;
@@ -1204,8 +1090,6 @@ contract ExecutorChangeBlackBoxTest {
         );
     }
 
-    /// initiator 是父单其它信号的提交者（非裁决信号提交者、非 creator）
-    /// → UnauthorizedOrderFork。
     function testForkRejectsInitiatorWhoSubmittedDifferentSignal() public {
         UVPStateMachine machine = _forkMachineReady();
         bytes32 parentOrderId = ORDER_ID;
@@ -1230,7 +1114,6 @@ contract ExecutorChangeBlackBoxTest {
             _noAttribution()
         );
 
-        // EXECUTOR1 提交过 DONE，但裁决信号是 REVIEW（提交者 EXECUTOR2）。
         vm.prank(E1());
         vm.expectRevert(
             abi.encodeWithSelector(UVPStateMachine.UnauthorizedOrderFork.selector, PLAN_ID, parentOrderId, E1())
@@ -1245,7 +1128,6 @@ contract ExecutorChangeBlackBoxTest {
         );
     }
 
-    /// birthFact 的 idempotencyKey 与父单历史不符 → InvalidForkBirthFact。
     function testForkRejectsBirthFactWithForgedIdempotencyKey() public {
         UVPStateMachine machine = _forkMachineReady();
         bytes32 parentOrderId = ORDER_ID;
@@ -1264,7 +1146,7 @@ contract ExecutorChangeBlackBoxTest {
             sourceId: SOURCE_BOOTSTRAP,
             signalId: SIGNAL_STAGE_DONE,
             payloadHash: PAYLOAD_HASH,
-            idempotencyKey: bytes32(uint256(0xF00D)) // 伪造：父单是 0xF001
+            idempotencyKey: bytes32(uint256(0xF00D))
         });
 
         vm.prank(CREATOR);
@@ -1284,8 +1166,6 @@ contract ExecutorChangeBlackBoxTest {
         );
     }
 
-    /// birthFact 只存在于兄弟订单、不在父单 → InvalidForkBirthFact
-    ///（重放输入只能来自父单真实历史）。
     function testForkRejectsBirthFactFromSiblingOrder() public {
         UVPStateMachine machine = _forkMachineReady();
         bytes32 parentOrderId = ORDER_ID;
@@ -1335,7 +1215,6 @@ contract ExecutorChangeBlackBoxTest {
         );
     }
 
-    /// 同参重试幂等（OrderAlreadyRegistered）+ 不同载荷派生不同单号。
     function testForkIdempotentReplayAndDistinctPayloads() public {
         UVPStateMachine machine = _forkMachineReady();
         bytes32 parentOrderId = ORDER_ID;
@@ -1384,8 +1263,6 @@ contract ExecutorChangeBlackBoxTest {
         require(machine.orderExists(PLAN_ID, second), "second fork missing");
     }
 
-    /// fork 单血缘：单号纯函数派生、creator 承袭父单、initiator 记为
-    /// relayer、OrderForked 事件恰好一条。
     function testForkChildLineageCreatorInheritanceAndRelayerAttribution() public {
         UVPStateMachine machine = _forkMachineReady();
         bytes32 parentOrderId = ORDER_ID;
@@ -1422,8 +1299,6 @@ contract ExecutorChangeBlackBoxTest {
         );
     }
 
-    /// fork of fork：裁决信号可用重放入子单的事实（提交者承袭），血缘链
-    /// 逐级可溯；第三方对子单发起 fork 被拒。
     function testForkOfForkNestedLineage() public {
         UVPStateMachine machine = _forkMachineReady();
         bytes32 parent = ORDER_ID;
@@ -1466,11 +1341,9 @@ contract ExecutorChangeBlackBoxTest {
         );
         require(machine.orderParent(PLAN_ID, child1) == parent, "child1 lineage");
 
-        // 子单上重放入的事实提交者承袭——REVIEW 的提交者仍是 EXECUTOR2。
         (,,,, address reviewSubmitter) = machine.getSignal(PLAN_ID, child1, SOURCE_BOOTSTRAP, SIGNAL_STAGE_REVIEW);
         require(reviewSubmitter == E2(), "fork fact submitter attribution broken");
 
-        // 第三方（非子单 creator、非子单裁决信号提交者）发起 fork 被拒。
         vm.prank(STRANGER);
         vm.expectRevert(
             abi.encodeWithSelector(UVPStateMachine.UnauthorizedOrderFork.selector, PLAN_ID, child1, STRANGER)
@@ -1484,7 +1357,6 @@ contract ExecutorChangeBlackBoxTest {
             _singleFact(SOURCE_BOOTSTRAP, SIGNAL_STAGE_REVIEW, bytes32(uint256(0xF002)))
         );
 
-        // 裁决信号提交者（REVIEW → EXECUTOR2）在子单上二次 fork。
         vm.prank(E2());
         bytes32 child2 = _fork(
             machine,
@@ -1497,7 +1369,6 @@ contract ExecutorChangeBlackBoxTest {
         require(machine.orderParent(PLAN_ID, child2) == child1, "child2 lineage");
         require(machine.orderCreator(PLAN_ID, child2) == CREATOR, "nested creator inheritance");
 
-        // creator 对 child2 三次 fork（深度嵌套链）。
         vm.prank(CREATOR);
         bytes32 child3 = _fork(
             machine,
@@ -1511,9 +1382,6 @@ contract ExecutorChangeBlackBoxTest {
         require(machine.hasSignal(PLAN_ID, child3, SOURCE_BOOTSTRAP, SIGNAL_STAGE_REVIEW), "nested replay missing");
     }
 
-    /// fork 单上的换人面：重放的 stage 键事实进子单 per-stage 计数——
-    /// assign 被顶死；handoff 以父单原始提交者为"上一执行者"（其会签是
-    /// 唯一授权材料）；子单提交权只来自 fork 调用授权集。
     function testPatchAndHandoffOnForkedOrderWithReplayedStageCounts() public {
         UVPStateMachine machine = _stageFactForkMachineReady();
         bytes32 parent = ORDER_ID;
@@ -1529,19 +1397,16 @@ contract ExecutorChangeBlackBoxTest {
             _forkChildAuthorizations()
         );
 
-        // 重放事实进子单计数（source==stage 回退口径）。
         (uint256 stageCount, address childLast,, bool childAmbiguous) =
             machine.stageSignalState(PLAN_ID, child, STAGE_AUDIT);
         require(stageCount == 1, "replayed stage fact not counted on child");
         require(childLast == E1(), "replayed submitter attribution");
         require(!childAmbiguous, "unexpected ambiguity");
 
-        // assign 被重放计数顶死。
         vm.prank(CREATOR);
         vm.expectRevert(abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, child, STAGE_AUDIT));
         _patchDirect(machine, PLAN_ID, child, _patch(1, E2(), PATCH_HASH));
 
-        // handoff：上一执行者 = 父单原始提交者 EXECUTOR1，其会签生效。
         PreparedPatch memory handoff = _prepareRelayed(
             machine,
             PLAN_ID,
@@ -1553,7 +1418,6 @@ contract ExecutorChangeBlackBoxTest {
         _sendRelayed(machine, PLAN_ID, child, handoff);
         require(machine.activeStageExecutor(PLAN_ID, child, STAGE_AUDIT) == E2(), "fork child handoff failed");
 
-        // 子单授权来自 fork 调用授权集：原始提交者在子单无提交权。
         vm.prank(E1());
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -1570,10 +1434,6 @@ contract ExecutorChangeBlackBoxTest {
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
         );
     }
-
-    // ==================================================================
-    // 机器与造证工具（与 UVPStateMachine.t.sol 同风格）
-    // ==================================================================
 
     function E1() private view returns (address) {
         return vm.addr(EXECUTOR1_PRIVATE_KEY);
@@ -1612,7 +1472,6 @@ contract ExecutorChangeBlackBoxTest {
         hooks = new UVPStateMachine.CompactHook[](3);
         hooks[0] = _signalHook(HOOK_ORDER_START, STAGE_INIT, HOOK_NAME_ORDER_START, true, SIGNAL_ORDER_START);
         hooks[1] = _emitReadyHook(HOOK_AUDIT, STAGE_AUDIT, HOOK_NAME_INIT_DONE, SIGNAL_INIT_CMP);
-        // STAGE_AUDIT 的第二条推进线（默认不提交，保留事实键余量）。
         hooks[2] = _emitReadyHook(bytes32(uint256(0x6002)), STAGE_AUDIT, bytes32(uint256(0x7006)), SIGNAL_AUDIT_PASS);
     }
 
@@ -1646,7 +1505,6 @@ contract ExecutorChangeBlackBoxTest {
         candidates[4] = UVPStateMachine.ExecutorCandidate({stageId: STAGE_INIT, executor: E2()});
     }
 
-    /// patch 面 StdA 机器：注册计划 → 出生 → 物化 STAGE_AUDIT。
     function _patchMachineReady() private returns (UVPStateMachine machine) {
         machine = _newMachine();
         _registerPlanWithCandidates(
@@ -1709,7 +1567,7 @@ contract ExecutorChangeBlackBoxTest {
 
     function _submitBirth(
         UVPStateMachine machine,
-        address, // creator 固定 CREATOR，参数占位保持调用点对齐
+        address,
         UVPStateMachine.SignalAuthorization[] memory authorizations
     ) private {
         ORDER_ID = bytes32(
@@ -1734,8 +1592,6 @@ contract ExecutorChangeBlackBoxTest {
         );
     }
 
-    /// 同 plan 第二个出生订单（不同 payloadHash → 不同派生单号），并物化
-    /// 其 STAGE_AUDIT。
     function _birthSecondOrder(UVPStateMachine machine, bytes32 salt) private returns (bytes32 orderId) {
         bytes32 payload = keccak256(abi.encode("executor-change-blackbox/second-order", salt));
         orderId = bytes32(
@@ -1763,7 +1619,6 @@ contract ExecutorChangeBlackBoxTest {
         _materializeAuditStage(machine, orderId);
     }
 
-    /// fork 机器（零词表）的兄弟出生订单：事实免证（零声明口径）。
     function _birthSecondOrderFork(UVPStateMachine machine) private returns (bytes32 orderId) {
         bytes32 payload = keccak256("executor-change-blackbox/fork-sibling");
         orderId = bytes32(
@@ -1809,7 +1664,6 @@ contract ExecutorChangeBlackBoxTest {
         return _packedSignature(v, r, s);
     }
 
-    /// INIT_CMP 物化 STAGE_AUDIT（EMIT_READY hook Ready → 阶段物化）。
     function _materializeAuditStage(UVPStateMachine machine, bytes32 orderId) private {
         vm.prank(_selector());
         machine.submitSignal(
@@ -1822,8 +1676,6 @@ contract ExecutorChangeBlackBoxTest {
             _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP)
         );
     }
-
-    // ---------------- patch 造证 ----------------
 
     function _patch(uint256 nonce, address executor, bytes32 patchHash)
         private
@@ -1897,7 +1749,6 @@ contract ExecutorChangeBlackBoxTest {
         return patch;
     }
 
-    /// 直接路径（msg.sender 即 selector），授权集按目标阶段能力表推导。
     function _patchDirect(
         UVPStateMachine machine,
         bytes32 planId,
@@ -1928,8 +1779,6 @@ contract ExecutorChangeBlackBoxTest {
             );
     }
 
-    /// relayed 路径预备材料（签名在 expectRevert 之前完成）。
-    /// previousExecutorPrivateKey = 0 表示不带会签。
     function _prepareRelayed(
         UVPStateMachine machine,
         bytes32 planId,
@@ -1973,8 +1822,6 @@ contract ExecutorChangeBlackBoxTest {
             );
     }
 
-    /// 出生授权集：patch/resource selector 车道 + INIT_CMP + 目标阶段双
-    /// 执行者事实授权（E1/E2 全量）。
     function _overlayAuthorizations()
         private
         view
@@ -2013,7 +1860,6 @@ contract ExecutorChangeBlackBoxTest {
         });
     }
 
-    /// patch 生效时写入的显式授权集：目标阶段全部 relation=0 能力键。
     function _executorAuthorizationsFor(UVPStateMachine machine, bytes32 planId, bytes32 stageId, address executor)
         private
         view
@@ -2081,8 +1927,6 @@ contract ExecutorChangeBlackBoxTest {
             );
         }
     }
-
-    // ---------------- Merkle 造证 ----------------
 
     function _capabilityLeaves(
         StageSelectorBinding[] memory selectorBindings,
@@ -2318,8 +2162,6 @@ contract ExecutorChangeBlackBoxTest {
         merged[base.length] = extra;
     }
 
-    // ---------------- fork 机器（零词表手工 plan） ----------------
-
     function _forkMachineReady() private returns (UVPStateMachine machine) {
         machine = _newMachine();
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
@@ -2386,8 +2228,6 @@ contract ExecutorChangeBlackBoxTest {
         });
     }
 
-    // ---------------- stage 键事实 fork 机器（带词表 + 绑定 + 候选集） ----------------
-
     function _stageFactForkMachineReady() private returns (UVPStateMachine machine) {
         machine = _newMachine();
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
@@ -2413,8 +2253,6 @@ contract ExecutorChangeBlackBoxTest {
         _submitBirth(machine, CREATOR, auths);
         _materializeAuditStage(machine, ORDER_ID);
 
-        // B8a：候选集覆盖 STAGE_AUDIT，父单 stage 键事实（fork 裁决信号 +
-        // 计数源）须在 assign 后提交——EXECUTOR1 先被指派再提交。
         vm.prank(CREATOR);
         _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
         vm.prank(E1());
@@ -2428,8 +2266,6 @@ contract ExecutorChangeBlackBoxTest {
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
     }
-
-    // ---------------- 杂项 ----------------
 
     function _signalHook(bytes32 hookId, bytes32 stageId, bytes32 hookName, bool isTrigger, bytes32 signalId)
         private

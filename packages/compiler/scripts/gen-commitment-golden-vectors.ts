@@ -1,22 +1,8 @@
 #!/usr/bin/env tsx
 /**
- * 生成承诺面（uid / planHash / hooksHash）跨语言金向量（链轨 TS 权威
- * 实现）：`uvp-core/fixtures/commitments/golden-vectors.v1.json` 冻结
- * compiler 测试文件用到的定义输入及其全部承诺值——定义内容派生 uid
- * （Rust uvp-ir derive_definition_uid 同公式）、IR planHash
- * （uvp.hookPlan.v4）、onchain 制品载荷哈希（uvp.onchainHookPlan.v3）、
- * hooksHash（keccak256(abi.encode(CompactHook[]))，合约 commitPlan 同
- * 公式）与六域 runtime planHash（uvp.plan.runtime.v4）及四棵根。
- *
- * 三侧消费同一份 fixture：TS 测试直读（onchain-hook-plan / hook-plan /
- * candidates-blackbox / emission-admission）、Rust
- * uvp-ir/tests/commitment_golden_vectors.rs（uid 格逐格）、Foundry
- * CommitmentGoldenVectors.t.sol（hooksHash / runtimePlanHash 格按格重算）。
- * 任何一侧改动承诺公式都至少在一侧响亮失配。
- *
- * 运行：`pnpm --filter @uvp-eth/compiler generate:commitment-golden-vectors`
- * （幂等重生成；uvp-core 根 Makefile 的 golden-vectors 目标重跑后校验
- * 无漂移）。
+ * 生成承诺面跨语言金向量到 uvp-core/fixtures/commitments/golden-vectors.v1.json
+ * （TS/Rust/Foundry 三侧消费）；运行 pnpm --filter @uvp-eth/compiler
+ * generate:commitment-golden-vectors。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -43,7 +29,6 @@ import {
 } from "../test/dock-demo.js";
 import { commitmentRegisterHooksArgs } from "../test/commitment-golden.js";
 
-/** uid-only 格：不可编译的最小定义也参与身份派生对拍。 */
 interface UidVector {
   readonly name: string;
   readonly note: string;
@@ -51,9 +36,6 @@ interface UidVector {
   readonly expected: { readonly uid: string };
 }
 
-/** 数值化指令 tuple（与 registration.ts solidityInstructionTuple 同口径：
- * 非 SIGNAL 指令 sourceId/signalId 填零字、未用位填 0——Solidity 消费方
- * 逐字段重建 CompactHook 后重算 keccak256(abi.encode(hooks))）。 */
 interface GoldenInstruction {
   readonly op: number;
   readonly sourceId: HexString;
@@ -78,20 +60,13 @@ interface CommitmentGoldenCase {
     readonly definition: ZhixuDefinition;
     readonly dockManifest?: DockResolutionManifest;
     readonly executorCandidates?: readonly ExecutorCandidateInput[];
-    /** 数值化 CompactHook 数组（Solidity 消费方逐字段重建后重算
-     * hooksHash / runtimePlanHash；TS 侧由定义现算对拍）。 */
     readonly hooks: readonly GoldenHook[];
   };
-  /** forge 侧 vm.parseJson 不支持 .length 路径，计数显式镜像（TS 测试断言
-   * 计数与实际数组长一致，防止镜像漂移）。 */
   readonly counts: {
     readonly hooks: number;
     readonly instructions: readonly number[];
     readonly dependencyKeys: readonly number[];
   };
-  /** planHash 两格的 canonical 原像串（TS canonicalStringify 冻结形态）：
-   * Rust/forge 消费方各以已侧公式（域分隔符 + keccak256，Rust 另经自身
-   * canonicalize 重排对拍）重算 == pinned 哈希，锁死跨语言哈希公式。 */
   readonly preimages: {
     readonly hookPlanCanonical: string;
     readonly onchainPlanCanonical: string;
@@ -204,11 +179,6 @@ function buildDefinitionCase(
     },
   };
 }
-
-// ---------------------------------------------------------------------
-// 定义输入原样取自 compiler 测试文件的内联定义（demo manifest 由
-// resolutionManifestFor 现算，目标/父定义与 test/dock-demo.ts 单源）。
-// ---------------------------------------------------------------------
 
 const demoManifest = resolutionManifestFor(dockProductionTargetDefinition());
 
@@ -487,10 +457,6 @@ const cases: readonly CommitmentGoldenCase[] = [
   ),
 ];
 
-// ---------------------------------------------------------------------
-// hooks-only 格：冻结的非 SIGNAL 指令零字填充向量（逐字段可重建，无定义
-// 面——只记 hooksHash）。
-// ---------------------------------------------------------------------
 const zeroWordFillHooks: readonly GoldenHook[] = [
   {
     hookId: "0x0000000000000000000000000000000000000000000000000000000000001001",

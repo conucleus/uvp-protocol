@@ -8,11 +8,8 @@ import type {
 } from "../types/index.js";
 
 /**
- * 计划能力树（capabilitiesRoot）的权威实现：能力表与绑定表以域分隔叶
- * 混编进同一棵排序配对 Merkle 树（排序去重、奇数尾叶提升、空树
- * root = keccak256("")），链上只存 root，成员资格由使用方按"字段重算叶
- * + 携 proof"验证。叶子公式与 UVPPlanMetadataModule 的
- * signalCapabilityLeaf/selectorBindingLeaf 逐字节一致。
+ * 计划能力树（capabilitiesRoot）权威实现：叶子公式与 UVPPlanMetadataModule
+ * 逐字节一致；链上只存 root，成员资格按"重算叶 + 携 proof"验证。
  */
 
 export const SIGNAL_CAPABILITY_LEAF_DOMAIN = "UVP_SIGNAL_CAPABILITY_V1";
@@ -63,7 +60,6 @@ export function capabilityLeaves(
   ];
 }
 
-/** 两表全部叶子的树根；空表返回 EMPTY_MERKLE_ROOT。 */
 export function capabilitiesRootOf(
   selectorBindings: readonly { selectorStageId: HexString; targetStageId: HexString }[],
   signalCapabilities: readonly {
@@ -112,7 +108,6 @@ export function selectorBindingProof(
   );
 }
 
-/** 事实属主（relation=0 能力）自证材料：属主阶段 + 成员资格证明。 */
 export function factAttribution(
   selectorBindings: readonly { selectorStageId: HexString; targetStageId: HexString }[],
   signalCapabilities: readonly {
@@ -147,7 +142,6 @@ export function factAttribution(
   return undefined;
 }
 
-/** 从公开产物直接取两表（造证入口的通用形状）。 */
 export function capabilityTablesOf(artifact: OnchainHookPlanArtifact): {
   selectorBindings: SolidityRegisterPlanArgs["selectorBindings"];
   signalCapabilities: SolidityRegisterPlanArgs["signalCapabilities"];

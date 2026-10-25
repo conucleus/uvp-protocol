@@ -47,9 +47,6 @@ interface Corpus {
 
 async function loadCorpus(): Promise<Corpus> {
   const raw = await readFile(corpusUrl, "utf8");
-  // 内容指纹门（Rust corpus_is_pinned_by_content_sha256 同款）：语料与同目录
-  // meta 声明的 sha256 不一致即响亮失败，防止就地改写语料而消费测试仍静默
-  // 按旧口径通过。本钉只实现 sha256；改算法须三线 harness 同批迁移。
   const meta = JSON.parse(await readFile(corpusMetaUrl, "utf8")) as {
     readonly algorithm: string;
     readonly contentSha256: string;
@@ -63,13 +60,6 @@ async function loadCorpus(): Promise<Corpus> {
   return JSON.parse(raw) as Corpus;
 }
 
-/**
- * The shared semantic corpus pins native-core semantics and predates the
- * frozen v0.10 chain-event contract: its replayCases carry the projected
- * pre-freeze HookStatusChanged shape (single `status`). replayChainEvents
- * only accepts frozen v0.10 events carrying previousStatus/newStatus, so
- * this test-side adapter lifts `status` onto `newStatus` before replaying.
- */
 function liftCorpusEventToFrozenChainEvent(event: ChainModeEvent): ChainModeEvent {
   const raw = event as unknown as Record<string, unknown>;
   if (event.eventName !== "HookStatusChanged" || "newStatus" in raw) {
@@ -83,16 +73,8 @@ function liftCorpusEventToFrozenChainEvent(event: ChainModeEvent): ChainModeEven
   return { ...raw, newStatus: raw.status } as unknown as ChainModeEvent;
 }
 
-/**
- * 互证口径：同一份语料同时喂 Rust uvp-replay（native 测试）与本 TS oracle
- * 包装层。TS 侧不是复刻一份求值器，而是钉住适配层的门与投影（默认排序、
- * poke 守门、v0.10 形状抬升）不得分叉 native 结论——mismatch 条目经由
- * ChainReplayMismatchError 的 mismatch 集合逐条比对（reason/hook/
- * occurrence），干净条目比对全部观察细节。
- */
 test("chain replay follows shared hook semantic corpus", async () => {
   const corpus = await loadCorpus();
-  // 语料格式版本钉住：v2 迁移时这里必须先响亮失败（Rust/Go 消费测试同款）。
   assert.equal(
     corpus.schemaVersion,
     "uvp.hookSemanticsCorpus.v1",
@@ -119,8 +101,6 @@ test("chain replay follows shared hook semantic corpus", async () => {
       result = replayChainEvents(item.events.map(liftCorpusEventToFrozenChainEvent));
     } catch (error) {
       if (item.expect.mismatchCount > 0) {
-        // 非空 mismatch 集合在导出面恒转为 ChainReplayMismatchError：断言
-        // 集合本身（reason + hook + occurrence），而不是只数条数。
         assert.ok(
           error instanceof ChainReplayMismatchError,
           `${item.name} must surface mismatches as ChainReplayMismatchError`
@@ -182,10 +162,6 @@ test("chain replay follows shared hook semantic corpus", async () => {
         }
       }
     }
-    // 多订单血统（order-link 出生等）把事实拆落在多个 order 状态上：
-    // native 对同一语料钉了 stateOrderKeys 的在场性，TS 线同样断言该
-    // 维度，不再只靠 native 兜底。按自有键精确匹配（Object.prototype
-    // 上的继承键不算在册订单）。
     if (item.expect.stateOrderKeys !== undefined) {
       for (const orderKey of item.expect.stateOrderKeys) {
         assert.ok(

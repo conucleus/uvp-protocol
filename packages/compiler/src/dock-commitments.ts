@@ -51,15 +51,12 @@ import {
 
 /**
  * 链轨承诺层：uvp-core 只产出中性 plan 壳（无哈希、无派生身份），本模块
- * 在壳上计算全部链上承诺（TS 权威实现）。
- * 公式与 word 布局冻结于 UVPDockingModule abiVersion 4.2（规格见
- * docs/dock-word-layout.md），Solidity 逐字节对拍钉死。
+ * 在壳上计算全部链上承诺（TS 权威实现；word 布局单源 docs/dock-word-layout.md）。
  */
 
 export const HOOK_PLAN_ID_DOMAIN = "uvp:hook-plan-id:v1";
 export const HOOK_PLAN_HASH_DOMAIN = "uvp:hook-plan-artifact:v1";
 
-/** core 中性 hook_plan 壳（承诺字段的输入面；哈希字段一律不在此层）。 */
 export interface HookPlanShell {
   readonly schemaVersion: typeof HOOK_PLAN_SCHEMA_VERSION;
   readonly zhixuName: string;
@@ -72,7 +69,6 @@ export interface HookPlanShell {
   readonly unresolvedDockRoutes?: readonly NeutralUnresolvedDockRoute[];
   readonly selectedStageBindings: readonly unknown[];
   readonly signalCapabilities: readonly unknown[];
-  /** 发射适格面条目（core 恒产数组，可为空）。 */
   readonly admissions: readonly unknown[];
 }
 
@@ -86,20 +82,13 @@ interface ShellHook {
   }[];
 }
 
-/** 链轨 resolution manifest 的校验+解析结果（route 组装的寻址面）。 */
 export interface PreparedDockResolution {
-  /** core linker 消费的 {uid, definition} 注册表（条目=定义原文）。 */
   readonly neutral: NeutralDockTargets;
-  /**
-   * uid → 发布面数据（含 TS 重算的定义级 dockInterfaceRoot）。uid 是唯一
-   * 解析键（显式重绑纪律，见 prepareDockResolution）。
-   */
   readonly byUid: ReadonlyMap<string, PreparedTarget>;
 }
 
 export interface PreparedTarget {
   readonly uid: string;
-  /** 目标定义展示名（metadata.name，仅 JSON 投影，不参与寻址）。 */
   readonly name: string;
   readonly definitionRefHash: HexString;
   readonly artifactHash: HexString;
@@ -107,16 +96,9 @@ export interface PreparedTarget {
   readonly dockInterfaceRoot: HexString;
   readonly cloudArtifactId?: string;
   readonly evmPlanId?: HexString;
-  /** 链上注册 planId（B-01 route 身份 word；路由组装的必需面）。 */
   readonly chainPlanId?: HexString;
 }
 
-/**
- * 清单解析键 = definitionUid（显式重绑纪律）：route 钉的是目标定义的
- * 内容派生 uid，解析按 uid 精确匹配、不跟随——目标内容变即新 uid，旧
- * route 恒指旧 uid，升级必须由引用方改绑新 uid 重新发布；清单内重复 uid
- * 是注入数据错误，响亮拒绝（同一 uid 两个 planId 的形态没有合法语义）。
- */
 export function prepareDockResolution(
   manifest: DockResolutionManifest,
 ): PreparedDockResolution {
@@ -137,9 +119,6 @@ export function prepareDockResolution(
       );
     }
     byUid.set(uid, prepared);
-    // FFI 注入面是 {uid, definition}：接口声明与静态出边由 core 从定义
-    // 原文单源提取（D008），调用方自报清单的旧契约已退役；manifest 发布
-    // 面的接口/出边交叉校验仍在本函数（prepareTargetEntry）完成。
     neutralDefinitions.push({
       uid,
       definition: entry.definition,
@@ -151,14 +130,6 @@ export function prepareDockResolution(
   };
 }
 
-/**
- * planId preimage 的 platform 归一（Rust 权威 normalize_platform_value
- * 同口径）：空 params 不入 preimage，其余键按原文。内嵌定义允许携带
- * params:{}，跳过归一会把空对象当成 preimage 分叉误拒 manifest。
- * 归一收敛在 planIdOf 单点执行：本地编译、manifest evmPlanId 重算与制品
- * 校验三个 planId 计算面共用同一入口——任何一面绕开都会复活"携带空
- * params 的定义双向不可修复"的双口径。
- */
 export function normalizePlatformPreimage(platform: unknown): unknown {
   if (
     typeof platform !== "object" ||
@@ -181,11 +152,6 @@ export function normalizePlatformPreimage(platform: unknown): unknown {
   return normalized;
 }
 
-/**
- * 单个发布面 entry 的内容寻址校验（链轨内务，不入 core）：uid/引用哈希从
- * 内嵌定义全文重算，接口叶/根由 manifest 数据逐 word 重算——自不一致的
- * manifest 在编译期拒绝，不推迟到运行期。
- */
 function prepareTargetEntry(
   entry: DockResolutionTarget,
   path: string,
@@ -207,12 +173,6 @@ function prepareTargetEntry(
       `${path}: target artifact ${uid} is not published/immutable`,
     );
   }
-  // evmPlanId 是目标定义的派生 planId（同 keyed preimage：compiler/platform/
-  // zhixuId/zhixuName），可从内嵌定义独立重算——manifest 自身可重算的
-  // 承诺面到此为止（artifactHash = 目标 plan 的 planHash，目标 plan 不在
-  // manifest 内，无法在此重算，信任边界在发布流程）。preimage 的 platform
-  // 归一（空 params 不入 preimage）由 planIdOf 单点执行：内嵌定义允许携带
-  // params:{}，以原文重算会把空对象当成 preimage 分叉误拒 manifest。
   if (entry.evmPlanId !== undefined) {
     const recomputedPlanId = planIdOf(
       uid,
@@ -225,10 +185,6 @@ function prepareTargetEntry(
       );
     }
   }
-  // manifest 声明面对内嵌定义的交叉重算：dockEdges（静态出边）与
-  // interfaces（接口声明）都是"持有定义全文却纯信任输入"的字段——漏报
-  // dockEdges 会绕过 core D015 的启动图环检测，接口漂移则让调用方按
-  // 幻影端口组装配 route。
   const edgeIssues = dockEdgeCorrespondenceIssues(entry, path);
   if (edgeIssues.length > 0) {
     throw new RangeError(edgeIssues.join("; "));
@@ -240,8 +196,6 @@ function prepareTargetEntry(
   const dockInterfaceRoot = merkleRoot(
     entry.interfaces.map((interfaceEntry) => interfaceEntry.interfaceRoot),
   );
-  // 接口叶/两根/定义级根的逐 word 重算（复用 dock-validation 的 fail-closed
-  // 重算路径）；_uid/refHash 已单独校验，此处占位值不再参与。
   const commitmentIssues = validateDockCommitments({
     dockRoutes: [],
     dockRoutesRoot: EMPTY_MERKLE_ROOT,
@@ -271,15 +225,6 @@ function prepareTargetEntry(
   };
 }
 
-// ---------------------------------------------------------------------------
-// 中性接口声明 → 接口承诺 artifact v2（目标侧）
-// ---------------------------------------------------------------------------
-
-/**
- * 从中性接口声明 + 本地 hook 表推导接口承诺：入口端口的 canonical 信号取
- * 该 hook 编译后的单一正向原子（D013 由 core 保证），sourceId/signalId 是
- * 运行期寻址数据、只随产物携带不入叶。
- */
 export function buildDockInterfaceArtifact(
   declarations: readonly NeutralInterfaceDeclaration[],
   uid: string,
@@ -292,8 +237,6 @@ export function buildDockInterfaceArtifact(
         .sort(([left], [right]) => compareBytes(left, right))
         .map(([portName, port]) => {
           const hook = hooksById.get(port.hook);
-          // D013 判定必须覆盖依赖列表全量：只看第一条会让"首项正向 + 尾随
-          // 否定/计时依赖"的组合条件伪装成单一 atom 进接口承诺。
           const dependency =
             hook !== undefined && hook.dependencies.length === 1
               ? hook.dependencies[0]
@@ -306,9 +249,6 @@ export function buildDockInterfaceArtifact(
               `dockInterface input port ${portName} must reference a hook with exactly one positive canonical signal atom, received ${JSON.stringify(port.hook)}`,
             );
           }
-          // 中性声明的 input 端口 source（所属 stage 的 source 类，core 自
-          // 定义派生）与编译后 hook 原子 source 必须一致（core D013 同口径）：
-          // 分叉即制品自不一致，响亮拒绝。
           if (port.source !== dependency.source) {
             throw new RangeError(
               `dockInterface input port ${portName} declares source ${JSON.stringify(port.source)} but its hook atom source is ${JSON.stringify(dependency.source)} — the neutral declaration and the compiled hook disagree`,
@@ -379,10 +319,6 @@ export function buildDockInterfaceArtifact(
   return artifact;
 }
 
-// ---------------------------------------------------------------------------
-// 中性 route → 链轨承诺 route v2（调用方侧）
-// ---------------------------------------------------------------------------
-
 export function buildDockRoute(
   neutral: NeutralDockRoute,
   context: {
@@ -395,9 +331,6 @@ export function buildDockRoute(
   const stageIdentifier = neutral.local.stageIdentifier;
   const stageKeyWord = stageKey(stageIdentifier);
   const routeId = dockRouteId(context.localDefinitionRefHash, stageKeyWord);
-  // 解析键 = 目标 uid（中性壳的 target.uid 引用即 DSL target.zhixu 的
-  // uid 串）：按 uid 精确查取，不按 name 跟随——显式重绑纪律见
-  // prepareDockResolution 的文档注释。
   const target = context.resolution.byUid.get(neutral.target.uid);
   if (target === undefined) {
     throw new RangeError(
@@ -412,8 +345,6 @@ export function buildDockRoute(
       `dock route ${stageIdentifier} targets interface ${JSON.stringify(neutral.target.interfaceName)} which target ${neutral.target.uid} does not publish`,
     );
   }
-  // B-01 route 身份：routeHash 承诺目标计划的链上注册 planId——manifest
-  // 必须携带该发布面字段（与 evmPlanId 分域），缺失即响亮拒绝。
   if (target.chainPlanId === undefined) {
     throw new RangeError(
       `dock route ${stageIdentifier} targets ${JSON.stringify(neutral.target.uid)} whose resolution manifest entry lacks chainPlanId — `
@@ -492,13 +423,6 @@ export function buildDockRoute(
     },
   );
 
-  // 同一 route 内多条 output 绑定映射同一本地事实键（localSourceId +
-  // localSignalId = 同一 stage 的同一本地信号）：每条绑定把同一本地事实
-  // 投递到不同端口/目标事实，第二条交付必撞 SignalAlreadyExists——合约侧
-  // 已按本地键幂等吸收兄弟绑定（UVPDockingModule.submitDockedSignal 的
-  // 镜像槽位检查），但那是 keeper 烧过 gas 之后的事后止血；DSL 的
-  // signalMap 键唯一表达不了该形态，可达面是手工/第三方中性壳与未来 DSL
-  // 扩展——link 期直接拒绝，route 本不该表达"一事实多投"。
   const localFactKeys = new Set<string>();
   for (const binding of outputBindings) {
     const factKey = `${binding.localSourceId}:${binding.localSignalId}`;
@@ -512,7 +436,6 @@ export function buildDockRoute(
     localFactKeys.add(factKey);
   }
 
-  // 绑定按 bindingHash 排序（word 字节序）；merkle root 与产物数组同口径。
   inputBindings.sort((left, right) => compareBytes(left.bindingHash, right.bindingHash));
   outputBindings.sort((left, right) => compareBytes(left.bindingHash, right.bindingHash));
   const inputBindingsRoot = merkleRoot(
@@ -522,13 +445,6 @@ export function buildDockRoute(
     outputBindings.map((binding) => binding.bindingHash),
   );
 
-  // D012 双侧镜像（core link_dock_routes）：seam 只收本 route 实际绑定的
-  // 端口——input 侧从 route 绑定的 input 端口 source 观测，output 侧从
-  // route 绑定的输出端口 canonical signal 前缀观测；接口声明但未被本
-  // route 绑定的端口不属于这条执行通道（可由其他 route 另行绑定），不得
-  // 参与 seam。两侧并集必须恰好一个 seam（>1 才拒）——绑定端口跨源寻址
-  // 在编译期拒绝；并集为空需要 route 无任何绑定，与 D019（至少一项绑定）
-  // 矛盾，不可达。
   const seams = new Set<string>();
   for (const binding of neutral.inputBindings) {
     const port = interfaceEntry.inputs.find(
@@ -593,23 +509,6 @@ export function buildDockRoute(
   };
 }
 
-// ---------------------------------------------------------------------------
-// 中性未解析 route → 链轨承诺声明面（调用方侧，target:null 动态选择）
-// ---------------------------------------------------------------------------
-
-/**
- * 未解析 route（target:null 动态选择）的候选集派生与本地承诺计算
- * （UVPDockingModule 4.4）：
- * - 候选来源 = resolution manifest（链轨发布面）：发布该具名接口且
- *   orderModes 覆盖 route 模式的全部定义。DSL 壳对动态路由只声明
- *   `target: null`（Rust 声明面无候选信息），manifest 是唯一既有的
- *   "已知发布目标"声明面——候选集即选择宇宙，内容寻址、零新字段；
- * - routeId 与静态路由同公式；候选叶 = dockCandidateLeaf（域、word 序与
- *   合约 _DOMAIN_DOCK_CANDIDATE 逐字节一致）；
- * - routeHash 的目标槽 = candidatesRoot，两绑定根恒 EMPTY（bindingHash 的
- *   preimage 含目标端口寻址 word，选定前不可计算；合约 attach 对动态路由
- *   以空绑定数组重算同一 preimage）。
- */
 export function buildUnresolvedDockRoute(
   neutral: NeutralUnresolvedDockRoute,
   context: {
@@ -632,9 +531,6 @@ export function buildUnresolvedDockRoute(
   const candidates: UnresolvedDockRouteCandidate[] = [];
   let selfTargetSkipped = false;
   for (const target of context.resolution.byUid.values()) {
-    // B7 编译期纵深：本地定义自身不进自己的动态候选集——自挂接在合约
-    // 侧被身份比较拒绝（DockSelfAttach），冻结进候选根只会制造一个
-    // 永久不可达（且镜像退化）的候选叶。
     if (target.definitionRefHash === context.localDefinitionRefHash) {
       selfTargetSkipped = true;
       continue;
@@ -648,9 +544,6 @@ export function buildUnresolvedDockRoute(
     ) {
       continue;
     }
-    // 候选叶 V2（B-01）承诺候选计划的链上注册 planId——manifest 未发布
-    // 该字段的目标不进候选集（其叶不可计算，静默跳过会让候选集无声缩窄，
-    // 直接拒绝让发布面缺口显式暴露）。
     if (target.chainPlanId === undefined) {
       throw new RangeError(
         `unresolved dock route ${stageIdentifier}: manifest definition ${JSON.stringify(target.uid)} is a candidate but lacks chainPlanId — `
@@ -715,8 +608,6 @@ export function buildUnresolvedDockRoute(
     routeId,
     candidates,
     candidatesRoot,
-    // 动态路由的 targetPlanId 槽 = 零字（冻结期无选定目标；选定目标的
-    // planId 经候选叶 V2 进 candidatesRoot）。
     routeHash: routeHashOf({
       localDefinitionRefHash: context.localDefinitionRefHash,
       targetDefinitionRefHash: candidatesRoot,
@@ -728,10 +619,6 @@ export function buildUnresolvedDockRoute(
     }),
   };
 }
-
-// ---------------------------------------------------------------------------
-// 中性壳 → 链轨 hook plan 制品
-// ---------------------------------------------------------------------------
 
 export function assembleChainTrackHookPlan(
   definition: ZhixuDefinition,
@@ -750,8 +637,6 @@ export function assembleChainTrackHookPlan(
   const dockInterfaceRoot =
     dockInterface === null ? EMPTY_MERKLE_ROOT : dockInterface.interfaceRoot;
   const platform = shell.platform as HookPlanArtifact["platform"];
-  // planId 的 platform preimage 归一（空 params 不入 preimage）由 planIdOf
-  // 单点执行；制品 carried platform 保持 core 原样（planHash 覆盖它）。
   const planId = planIdOf(zhixuId, shell.zhixuName, platform);
   const localStageSources = flattenStageSources(definition);
   const dockRoutes = (shell.dockRoutes ?? []).map((route) =>
@@ -769,16 +654,11 @@ export function assembleChainTrackHookPlan(
       resolution,
     }),
   );
-  // dockRoutesRoot 是静态叶 ∪ 动态叶的最终根（onchain 产物与 finalize 冻结
-  // 同一口径）：动态叶的 routeHash 目标槽 = 候选集 root，两绑定根恒 EMPTY。
   const dockRoutesRoot = merkleRoot([
     ...dockRoutes.map((route) => route.routeHash),
     ...(unresolvedDockRoutes ?? []).map((route) => route.routeHash),
   ]);
 
-  // planHash 的 source 快照剔除 metadata.annotations：注解永不参与任何
-  // 身份，planHash 随业务内容变化、不随文档注解变化。admissions 与
-  // compiledHooks 同约定进 preimage（core 恒产数组，含空集）。
   const payload = {
     schemaVersion: HOOK_PLAN_SCHEMA_VERSION,
     planId,
@@ -832,10 +712,6 @@ export function planIdOf(
   zhixuName: string,
   platform: unknown,
 ): HexString {
-  // planId 口径单点：platform preimage 经 normalizePlatformPreimage 归一
-  // （Rust 权威 normalize_platform_value，空 params 不入 preimage）。三个
-  // 计算面（本地编译/manifest evmPlanId 重算/制品校验）都经本函数，归一
-  // 不得下放到调用方各自实现。
   return hashCanonical(HOOK_PLAN_ID_DOMAIN, {
     compiler: { name: COMPILER_NAME, version: COMPILER_VERSION },
     platform: normalizePlatformPreimage(platform),
@@ -844,11 +720,6 @@ export function planIdOf(
   });
 }
 
-/**
- * planHash 的 preimage 装配（与 assembleChainTrackHookPlan 同口径）：
- * 边界校验用它对携带字段整体重算，防"篡改 compiledHooks + 保留旧
- * planHash"的毒制品通过反序列化校验。
- */
 export function hookPlanPayloadForHash(
   artifact: Omit<HookPlanArtifact, "planHash">,
 ): Record<string, unknown> {
@@ -890,7 +761,6 @@ function failNoResolution(route: NeutralDockRoute): PreparedDockResolution {
   );
 }
 
-/** stage.name 单段标识（与 core flatten_stages 同口径）。 */
 function flattenStageSources(
   definition: ZhixuDefinition,
 ): Map<string, string> {
@@ -921,16 +791,10 @@ function hookNameOfHook(hookId: string): string {
   return hookId.slice(hashIndex + 1);
 }
 
-/** 字节序比较（Rust str Ord）；hex word 与 ASCII 标识符上等价于码点序。 */
 function compareBytes(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-/**
- * dockEdges 声明 vs 内嵌定义静态出边（各 stage zhixu 执行者解析态目标
- * uid 集）的交叉比对：D015 的启动图以 manifest 声明为边源，漏报即绕过
- * 环检测——集不相等（含缺声明/多声明/重复）一律拒绝。
- */
 function dockEdgeCorrespondenceIssues(
   entry: DockResolutionTarget,
   path: string,
@@ -972,11 +836,6 @@ function dockEdgeCorrespondenceIssues(
   return issues;
 }
 
-/**
- * manifest interfaces vs 内嵌定义 spec.dockInterface 的对应性比对：接口
- * 名/下单模式/端口及其 hook/signal 引用逐项相等——自不一致的发布面在
- * 编译期拒绝，调用方不得按幻影端口组装 route。
- */
 function interfaceCorrespondenceIssues(
   entry: DockResolutionTarget,
   path: string,

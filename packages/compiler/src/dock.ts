@@ -9,22 +9,8 @@ import type {
 } from "./types/index.js";
 
 /**
- * Zhixu Dock v2 跨运行时哈希库（链轨权威实现）。
- *
- * word 布局定稿冻结于 UVPDockingModule abiVersion 4.2，动态选择候选叶域
- * （UVP_DOCK_CANDIDATE_V1）随 4.4 追加（规格 =
- * packages/compiler/docs/dock-word-layout.md）：
- * - 所有 commitment = `keccak256(keccak256(domain) ‖ words…)`，等价于
- *   Solidity `keccak256(abi.encode(keccak256(domain), …))`；
- * - Merkle：叶子排序去重后逐层 `keccak256(min ‖ max)`，空集合用
- *   `EMPTY_MERKLE_ROOT = keccak256("")`；奇数尾叶直接提升；
- * - 枚举 word：route modeWord new=0/existing=1；接口 orderModesWord
- *   u8 位掩码 bit0=new、bit1=existing；
- * - EIP-712 permit（V2 typehash + interfaceNameId）按 EIP-712 规范
- *   `keccak256(concat(...))`（无 domain word 前缀）。
- *
- * 任何修改都必须同步 Solidity 并重新生成
- * `packages/compiler/fixtures/dock/v1/manifest.json` golden vectors。
+ * Zhixu Dock v2 跨运行时哈希库（链轨权威实现）；word 布局单源
+ * docs/dock-word-layout.md，改动须同步 Solidity 并重生成 dock golden vectors。
  */
 
 export const EMPTY_MERKLE_ROOT =
@@ -38,13 +24,10 @@ export const DOMAIN_INTERFACE_OUTPUT = "UVP_DOCK_INTERFACE_OUTPUT_V3";
 export const DOMAIN_ROUTE_ID = "UVP_DOCK_ROUTE_ID_V1";
 export const DOMAIN_INPUT_BINDING = "UVP_DOCK_INPUT_BINDING_V2";
 export const DOMAIN_OUTPUT_BINDING = "UVP_DOCK_OUTPUT_BINDING_V2";
-/** route 域 V3（B-01，UVPDockingModule abiVersion 4.7）：preimage 追加 targetPlanId word。 */
 export const DOMAIN_ROUTE = "UVP_DOCK_ROUTE_V3";
 export const DOMAIN_DOCK_INSTANCE = "UVP_DOCK_INSTANCE_V2";
 export const DOMAIN_DOCK_ORDER = "UVP_DOCK_ORDER_V1";
-/** 动态选择候选叶域 V2（B-01，abiVersion 4.7）：叶追加 targetPlanId word。 */
 export const DOMAIN_DOCK_CANDIDATE = "UVP_DOCK_CANDIDATE_V2";
-/** Highest bit marks a derived dock child-order namespace. */
 export const DOCK_ORDER_NAMESPACE_MASK = 1n << 255n;
 export const DOMAIN_RUNTIME_EIP155 = "UVP_RUNTIME_EIP155_V1";
 export const DOMAIN_RUNTIME_CLOUD = "UVP_RUNTIME_CLOUD_V1";
@@ -53,26 +36,11 @@ export const DOMAIN_INPUT_IDEMPOTENCY = "UVP_DOCK_INPUT_IDEMPOTENCY_V1";
 export const DOMAIN_OUTPUT_IDEMPOTENCY = "UVP_DOCK_OUTPUT_IDEMPOTENCY_V1";
 export const DOMAIN_SOURCE_FACT_SET = "UVP_DOCK_SOURCE_FACT_SET_V1";
 
-/**
- * MAX_DOCK_INPUTS 是**接口声明面**的 input 端口数上限（单个 dockInterface
- * 具名接口可声明的 input 端口数）；链上 route 绑定面是另一个观测面——
- * mode=new 的 input 绑定恒 1 条（D010 出生锚唯一，UVPStateMachine
- * DockBindingCountInvalid），mode=existing 的 input 绑定为 0。两个面各自
- * 计数，不得互推。MAX_DOCK_OUTPUTS 则两面同用（合约 open 时对 outputs
- * 数组执行同一上限）。
- */
 export const MAX_DOCK_INPUTS = 8;
 export const MAX_DOCK_OUTPUTS = 16;
-/**
- * B-02：每单总挂接边数上限（父链账本口径，合约 MAX_DOCK_EDGES 同值）。
- * 原路径深度语义退役——链上只维护边数预算 + 有界祖先检查，最长路径由
- * 索引器从 dock 事件图派生。
- */
 export const MAX_DOCK_EDGES = 8;
-/** `^[a-z][a-z0-9_]{0,31}$`：端口名与接口名同规则。 */
 export const MAX_PORT_NAME_BYTES = 32;
 
-/** payload preimage 中 sourceFactSetHash 槽位的固定零字（与 Solidity `_DOMAIN_SOURCE_FACT_SET_ZERO` 对齐）。 */
 export const ZERO_WORD = `0x${"0".repeat(64)}` as HexString;
 
 export function keccakWord(data: string | Uint8Array): HexString {
@@ -97,9 +65,6 @@ export function hexToBytes(value: HexString): Uint8Array {
 }
 
 export function u64Word(value: bigint | number): HexString {
-  // 数值域显式拒绝（与 u256Word 同口径）：负数的 toString 带 '-' 会落成
-  // 含非 hex 字符的假 word，≥ 2^64 则溢出 32 字节槽位破坏 word 布局——
-  // 两者都是静默产出毒承诺，必须在入口响亮失败。
   const big = requireUintWord(value, "u64 word value");
   if (big < 0n || big >= 1n << 64n) {
     throw new RangeError(
@@ -109,13 +74,6 @@ export function u64Word(value: bigint | number): HexString {
   return `0x${big.toString(16).padStart(64, "0")}` as HexString;
 }
 
-/**
- * u64/u256 数值槽的表示形态入口（符号/值域由各 word 构造器的既有区间检查
- * 把守）：string 只收规范非负十进制形态——BigInt("0x10") 会静默按 16 进制
- * 解析，两个哈希线对同一字符串得到不同 word；number 必须是安全整数
- * （2^53 以上已丢精度，不静默取整）。permit nonce/deadline、sequence、
- * occurrence 等全部经此收敛（与 protocol-bindings normalizeUint* 同口径）。
- */
 function requireUintWord(
   value: bigint | number | string,
   path: string,
@@ -139,12 +97,6 @@ function requireUintWord(
   );
 }
 
-/**
- * uint256 word（32 字节大端、高位在左）。合约侧 EIP-155 运行时域以
- * `abi.encode(_DOMAIN_RUNTIME_EIP155, block.chainid, address(...))` 编码
- * chainId（uint256，UVPDockingModule）；word 落位按完整 256 位，但 chainId
- * 取值域保持 64 位（见 requireChainId）。
- */
 export function u256Word(value: bigint): HexString {
   if (value < 0n || value >= 1n << 256n) {
     throw new RangeError(
@@ -154,17 +106,8 @@ export function u256Word(value: bigint): HexString {
   return `0x${value.toString(16).padStart(64, "0")}` as HexString;
 }
 
-/**
- * chainId 取值域上界：跨运行时域（evmRuntimeDomain 与
- * EIP-712 permit 域）的 FFI 侧字段保持 64 位——TS 编译入口对 ≥ 2^64、
- * 负数与非整数 chainId 显式拒绝（fail-closed），不放宽到 u256。
- */
 export const MAX_CHAIN_ID = (1n << 64n) - 1n;
 
-/**
- * chainId 入口校验：非整数/负数/≥ 2^64 一律响亮拒绝。number 入参在
- * 2^53 以上本就无法精确表示，同样在此拦截（不静默四舍五入）。
- */
 export function requireChainId(chainId: bigint | number, path = "chainId"): bigint {
   if (typeof chainId === "number") {
     if (!Number.isInteger(chainId)) {
@@ -200,12 +143,10 @@ export function addressWord(address: HexString): HexString {
   return `0x${"0".repeat(24)}${address.slice(2).toLowerCase()}` as HexString;
 }
 
-/** `keccak256(keccak256(domain) ‖ words…)`（= Solidity abi.encode 版本）。 */
 export function keccakWords(domain: string, words: readonly HexString[]): HexString {
   return keccak256(concatWords([keccakWord(domain), ...words])) as HexString;
 }
 
-/** 排序配对 Merkle root；空集合返回 `EMPTY_MERKLE_ROOT`。 */
 export function merkleRoot(leaves: readonly HexString[]): HexString {
   if (leaves.length === 0) {
     return EMPTY_MERKLE_ROOT;
@@ -229,7 +170,6 @@ export function merkleRoot(leaves: readonly HexString[]): HexString {
   return level[0] as HexString;
 }
 
-/** Merkle inclusion proof（与 Rust `dock::merkle_proof` 同规则）。 */
 export function merkleProof(
   leaves: readonly HexString[],
   leaf: HexString,
@@ -282,11 +222,6 @@ export function verifyMerkleProof(
   return current === root;
 }
 
-// ---------------------------------------------------------------------------
-// 枚举 word
-// ---------------------------------------------------------------------------
-
-/** route 的 order mode word：new=0、existing=1。 */
 export function modeWord(mode: DockOrderMode): HexString {
   if (mode !== "new" && mode !== "existing") {
     throw new RangeError(`order mode must be "new" or "existing", received ${mode}`);
@@ -294,10 +229,6 @@ export function modeWord(mode: DockOrderMode): HexString {
   return u8Word(mode === "new" ? 0 : 1);
 }
 
-/**
- * 接口 orderModes word：u8 位掩码，bit0=new、bit1=existing；空集/未知取值/
- * 重复项返回 undefined（对拍 Rust order_modes_word 的 None 路径）。
- */
 export function orderModesWord(modes: readonly string[]): HexString | undefined {
   let mask = 0;
   const seen = new Set<string>();
@@ -320,19 +251,6 @@ export function orderModesWord(modes: readonly string[]): HexString | undefined 
   return u8Word(mask);
 }
 
-// ---------------------------------------------------------------------------
-// 身份推导
-// ---------------------------------------------------------------------------
-
-/**
- * 定义身份派生函数（链轨权威，与 Rust uvp_ir::derive_definition_uid 同
- * 公式，共享金向量语料互钉）：canonical 剔除展示性字段
- * `metadata.name` + `metadata.annotations` 后按 `uvp:definition-uid:v2:`
- * 域哈希，`zx-` + hex 前 32 字符（uid 总长 35）。name 纯展示——改名不换
- * 身份；内容变即新 uid，引用按 uid 精确指向。链轨制品的 zhixuId 与
- * resolution manifest 的内容寻址校验都从这里派生——云轨不镜像本公式
- * （其身份归 DB）。
- */
 export function definitionUid(definition: unknown): string {
   const digest = keccak256Hex(
     `${DEFINITION_UID_DOMAIN}:${canonicalStringify(stripDisplayFields(definition))}`,
@@ -340,10 +258,6 @@ export function definitionUid(definition: unknown): string {
   return `zx-${digest.slice(2, 2 + 32)}`;
 }
 
-/**
- * 定义身份 preimage 的展示性字段剔除：`metadata.name` 与
- * `metadata.annotations` 都不参与定义身份。metadata 缺省时原样返回。
- */
 export function stripDisplayFields(definition: unknown): unknown {
   const node = canonicalize(definition);
   if (node === null || typeof node !== "object" || Array.isArray(node)) {
@@ -360,11 +274,6 @@ export function stripDisplayFields(definition: unknown): unknown {
   return { ...record, metadata: rest };
 }
 
-/**
- * planHash 的 source 快照剔除 `metadata.annotations`：注解永不参与任何
- * 哈希。只剔注解不剔 name——plan 制品身份（planId preimage）本就携带
- * zhixuName，快照保留它与制品字段同口径。
- */
 export function stripAnnotations(definition: unknown): unknown {
   const node = canonicalize(definition);
   if (node === null || typeof node !== "object" || Array.isArray(node)) {
@@ -380,18 +289,15 @@ export function stripAnnotations(definition: unknown): unknown {
   return { ...record, metadata: rest };
 }
 
-/** `definitionRefHash = H("UVP_DEFINITION_REF_V1", keccak(uid))`。 */
 export function definitionRefHash(uid: string): HexString {
   return keccakWords(DOMAIN_DEFINITION_REF, [keccakWord(uid)]);
 }
 
-/** 显示口径：`name(uid 去 zx- 后前 8 hex)`。 */
 export function displayIdentity(name: string, uid: string): string {
   const hex = uid.startsWith("zx-") ? uid.slice(3) : uid;
   return `${name}(${hex.slice(0, 8)})`;
 }
 
-/** `keccak256(abi.encode(sourceId, signalId))`（StateMachine 事实键）。 */
 export function signalKey(sourceId: HexString, signalId: HexString): HexString {
   return keccak256(concatWords([sourceId, signalId])) as HexString;
 }
@@ -412,7 +318,6 @@ export function canonicalSignalHash(canonical: string): HexString {
   return keccakWord(canonical);
 }
 
-/** 接口名在全部 v2 preimage 中的 word 形态：`keccak256(utf8(name))`。 */
 export function interfaceNameKey(interfaceName: string): HexString {
   return keccakWord(interfaceName);
 }
@@ -428,8 +333,6 @@ export function evmRuntimeDomain(
   chainId: bigint | number,
   stateMachineAddress: HexString,
 ): HexString {
-  // chainId 按合约 uint256 全宽落位（block.chainid 是 uint256），但取值域
-  // 保持 64 位（requireChainId）：FFI 域不放宽，≥ 2^64 在入口显式拒绝。
   return keccakWords(DOMAIN_RUNTIME_EIP155, [
     u256Word(requireChainId(chainId)),
     addressWord(stateMachineAddress),
@@ -447,17 +350,9 @@ export function cloudRuntimeDomain(
 }
 
 export function localOrderKey(orderId: string): HexString {
-  // EVM 轨订单号本身就是 bytes32 word（合约 preimage 本字入槽）：
-  // 已是 word 形态的原样使用，二次哈希会让 TS 预测的 dockInstanceId
-  // 与合约恒不等。云轨字符串订单号才走 keccak(word 化)。
   return isWordLiteral(orderId) ? (orderId as HexString) : keccakWord(orderId);
 }
 
-/**
- * existing 模式的目标 order 引用在 dockInstanceId preimage 中的 word 形态。
- * EVM 轨该槽收 bytes32 word 原字（合约 _dockInstanceIdExisting 的尾 word =
- * linkedOrderId，不二次哈希）；云轨字符串引用走 keccak(word 化)。
- */
 export function targetOrderRefKey(orderRef: string): HexString {
   return isWordLiteral(orderRef) ? (orderRef as HexString) : keccakWord(orderRef);
 }
@@ -466,12 +361,6 @@ function isWordLiteral(value: string): boolean {
   return /^0x[0-9a-fA-F]{64}$/u.test(value);
 }
 
-/**
- * dockInstanceId v2（§8.5）：new 模式恰 9 word（幂等建单锚，末 word =
- * targetPlanId——接口承诺 word 可被第三方复制进自建 plan，实例/子单身份
- * 必须与对接目标 plan 绑定）；existing 模式在尾部追加第 10 个 word =
- * target order 引用（引用不同即不同实例）。
- */
 export function dockInstanceId(input: {
   readonly runtimeDomain: HexString;
   readonly localPlanId: HexString;
@@ -513,15 +402,6 @@ export function linkedOrderId(
     .padStart(64, "0")}` as HexString;
 }
 
-// ---------------------------------------------------------------------------
-// 接口承诺（目标侧，§8.3）
-// ---------------------------------------------------------------------------
-
-/**
- * `inputPortLeaf_v2 = H(UVP_DOCK_INTERFACE_INPUT_V2; keccak(uid),
- * keccak(interfaceName), keccak(portName), keccak(hookRef))`。
- * sourceId/signalId 是运行期寻址数据，不入叶。
- */
 export function inputPortLeaf(input: {
   readonly uid: string;
   readonly interfaceName: string;
@@ -536,14 +416,6 @@ export function inputPortLeaf(input: {
   ]);
 }
 
-/**
- * `outputPortLeaf_v3 = H(UVP_DOCK_INTERFACE_OUTPUT_V3; keccak(uid),
- * keccak(interfaceName), keccak(portName), keccak(source), keccak(signalName))`。
- * 叶钉事实键分量（= 绑定侧 targetSourceId/targetSignalId 的派生输入）：
- * 若叶只承诺 canonical 信号 word 而不拆分量，与绑定侧分量哈希分属不同
- * 派生域，链上无法互证相等——调用方可把端口绑到词表内另一条事实，
- * 目标方"经此端口暴露该事实"的承诺被架空。
- */
 export function outputPortLeaf(input: {
   readonly uid: string;
   readonly interfaceName: string;
@@ -560,7 +432,6 @@ export function outputPortLeaf(input: {
   ]);
 }
 
-/** `<source>::<stage>.<signal>` → [source, `<stage>.<signal>`]。 */
 export function splitCanonicalSignal(signal: string): [string, string] {
   const separator = signal.indexOf("::");
   if (separator <= 0) {
@@ -571,11 +442,6 @@ export function splitCanonicalSignal(signal: string): [string, string] {
   return [signal.slice(0, separator), signal.slice(separator + 2)];
 }
 
-/**
- * `interfaceLeaf_v2 = H(UVP_DOCK_INTERFACE_V2; keccak(uid),
- * keccak(interfaceName), orderModesWord, inputsRoot, outputsRoot)`；
- * 非法 orderModes（空/未知/重复）响亮抛错，不静默落成零 word。
- */
 export function interfaceLeaf(input: {
   readonly uid: string;
   readonly interfaceName: string;
@@ -598,19 +464,9 @@ export function interfaceLeaf(input: {
   ]);
 }
 
-// ---------------------------------------------------------------------------
-// 绑定与路由（调用方侧，§8.4）
-// ---------------------------------------------------------------------------
-
-/**
- * `inputBindingHash_v2 = H(UVP_DOCK_INPUT_BINDING_V2; routeId,
- * keccak(interfaceName), keccak("<stage>#<channel>"),
- * keccak(portName), targetSourceId, targetSignalId)`。
- */
 export function inputBindingHash(input: {
   readonly routeId: HexString;
   readonly interfaceName: string;
-  /** 本地被绑定通道的 `<stageIdentifier>#<hookName>` 原文。 */
   readonly localHookId: string;
   readonly portName: string;
   readonly targetSourceId: HexString;
@@ -626,7 +482,6 @@ export function inputBindingHash(input: {
   ]);
 }
 
-/** `outputBindingHash_v2 = H(UVP_DOCK_OUTPUT_BINDING_V2; routeId, keccak(interfaceName), localSourceId, localSignalId, keccak(portName), targetSourceId, targetSignalId)`。 */
 export function outputBindingHash(input: {
   readonly routeId: HexString;
   readonly interfaceName: string;
@@ -647,18 +502,9 @@ export function outputBindingHash(input: {
   ]);
 }
 
-/**
- * `routeHash_v3 = H(UVP_DOCK_ROUTE_V3; localDefinitionRefHash,
- * targetDefinitionRefHash, targetPlanId, keccak(interfaceName), modeWord,
- * inputBindingsRoot, outputBindingsRoot)`（7 word；B-01 起目标 planId 入
- * 身份——接口承诺可被第三方复制进自建镜像 plan，不绑 planId 时路由实例
- * 可被镜像计划抢注。动态路由 targetPlanId 槽 = 零字，选定目标的 planId
- * 经候选叶 V2 进候选集 root）。
- */
 export function routeHash(input: {
   readonly localDefinitionRefHash: HexString;
   readonly targetDefinitionRefHash: HexString;
-  /** 目标计划在链上注册的 planId（静态路由必填；动态路由传 ZERO_WORD）。 */
   readonly targetPlanId: HexString;
   readonly interfaceName: string;
   readonly orderMode: DockOrderMode;
@@ -676,13 +522,6 @@ export function routeHash(input: {
   ]);
 }
 
-/**
- * target:null 动态选择（§8.8 / UVPDockingModule 4.7）的候选叶 V2：
- * `H(UVP_DOCK_CANDIDATE_V2; routeId, targetDefinitionRefHash, targetPlanId,
- * keccak(interfaceName))`。routeId 绑定（父定义, 父阶段）；planId 入叶后
- * 镜像计划（同 defRef、复制接口承诺）无法占据候选叶——选定目标的运行期
- * 身份由此钉进候选集 root。
- */
 export function dockCandidateLeaf(input: {
   readonly routeId: HexString;
   readonly targetDefinitionRefHash: HexString;
@@ -696,10 +535,6 @@ export function dockCandidateLeaf(input: {
     interfaceNameKey(input.interfaceName),
   ]);
 }
-
-// ---------------------------------------------------------------------------
-// Envelope / 幂等键
-// ---------------------------------------------------------------------------
 
 export function sourceFactSetHash(factWords: readonly HexString[]): HexString {
   return keccakWords(DOMAIN_SOURCE_FACT_SET, [
@@ -761,11 +596,6 @@ export function dockInputPayloadHash(input: {
   ]);
 }
 
-// ---------------------------------------------------------------------------
-// 从 artifact 重算 root（fail-closed 校验 core 产物）
-// ---------------------------------------------------------------------------
-
-/** 定义级 dockInterfaceRoot = 全部接口叶（interfaces[].interfaceRoot）的 merkle root。 */
 export function interfaceRootOf(
   interfaceArtifact: DockInterfaceArtifactV2,
 ): HexString {
@@ -778,26 +608,14 @@ export function dockRoutesRootOf(routes: readonly DockRouteV2[]): HexString {
   return merkleRoot(routes.map((route) => route.routeHash));
 }
 
-// ---------------------------------------------------------------------------
-// EIP-712 entrance permit（V2 typehash，§8.6）
-// ---------------------------------------------------------------------------
-
-/** 相对 v1 在 targetEntrancePortId 后加 `interfaceNameId = keccak(interfaceName)`。 */
 export const PERMIT_TYPEHASH =
   "UVPDockEntrancePermitV2(bytes32 targetPlanId,bytes32 targetEntrancePortId,bytes32 interfaceNameId,bytes32 localPlanId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,uint256 feeLimit,uint256 nonce,uint256 deadline)";
 
-/** 链侧 docking module EIP-712 域 version（abiVersion 4.x 线恒 "4"）。 */
 export const PERMIT_DOMAIN_VERSION = "4";
 export const PERMIT_DOMAIN_NAME = "UVPDockingModule";
 export const PERMIT_DOMAIN_TYPE =
   "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)";
 
-/**
- * 注意：EIP-712 structHash/typehash 与 domain 的编码是
- * `keccak256(concat(...))`（无 domain word 前缀），与 keccakWords 不同；
- * 这里按 EIP-712 规范逐字实现，Solidity 端用 abi.encode 得到相同结果。
- * feeLimit 固定 0（无费用机制，与合约一致）。
- */
 export function eip712PermitDomainSeparator(input: {
   readonly chainId: bigint | number;
   readonly verifyingContract: HexString;
@@ -822,9 +640,6 @@ export function eip712PermitStructHash(input: {
   readonly routeHash: HexString;
   readonly dockInstanceId: HexString;
   readonly linkedOrderId: HexString;
-  // nonce/deadline 收 bigint/安全 number/规范十进制字符串（requireUintWord
-  // 严格口径；0x 前缀等非规范形态响亮拒绝），与 protocol-bindings
-  // normalizeUint* 的公共载荷类型一致。
   readonly nonce: bigint | number | string;
   readonly deadline: bigint | number | string;
 }): HexString {
@@ -856,16 +671,9 @@ export function eip712PermitDigest(input: {
   readonly routeHash: HexString;
   readonly dockInstanceId: HexString;
   readonly linkedOrderId: HexString;
-  // nonce/deadline 收 bigint/安全 number/规范十进制字符串（requireUintWord
-  // 严格口径；0x 前缀等非规范形态响亮拒绝），与 protocol-bindings
-  // normalizeUint* 的公共载荷类型一致。
   readonly nonce: bigint | number | string;
   readonly deadline: bigint | number | string;
 }): HexString {
-  // nonce 序列从 1 起（UVPDockingModule usedEntrancePermitNonce 的 storage
-  // 缺省 0 即单调下界）：nonce=0 的 permit 链上恒拒，在此响亮拒绝而不是
-  // 让签发方产出一个必定回退的签名。"0x…" 等非规范字符串形态在此一并
-  // 拒绝（requireUintWord 与 protocol-bindings 同口径）。
   if (requireUintWord(input.nonce, "permit nonce") < 1n) {
     throw new RangeError(
       "entrance permit nonce sequence starts at 1 (the contract's usedEntrancePermitNonce storage defaults to 0, so nonce=0 always reverts)",
@@ -881,11 +689,6 @@ export function eip712PermitDigest(input: {
   return keccak256Hex(buf);
 }
 
-// ---------------------------------------------------------------------------
-// EIP-712 open 目标侧同意（B-01，UVPDockingModule abiVersion 4.7）
-// ---------------------------------------------------------------------------
-
-/** open 同意 typehash（合约 _OPEN_CONSENT_TYPEHASH 逐字一致）。 */
 export const OPEN_CONSENT_TYPEHASH =
   "UVPDockOpenConsentV1(bytes32 targetPlanId,bytes32 interfaceNameId,bytes32 localPlanId,bytes32 localOrderId,bytes32 routeId,bytes32 routeHash,bytes32 dockInstanceId,bytes32 linkedOrderId,uint256 nonce,uint256 deadline)";
 
@@ -933,8 +736,6 @@ export function eip712OpenConsentDigest(input: {
   readonly nonce: bigint | number | string;
   readonly deadline: bigint | number | string;
 }): HexString {
-  // nonce 序列从 1 起（合约 usedOpenConsentNonce 的 storage 缺省 0 即单调
-  // 下界）：nonce=0 的同意链上恒拒，在此响亮拒绝。
   if (requireUintWord(input.nonce, "consent nonce") < 1n) {
     throw new RangeError(
       "open consent nonce sequence starts at 1 (the contract's usedOpenConsentNonce storage defaults to 0, so nonce=0 always reverts)",

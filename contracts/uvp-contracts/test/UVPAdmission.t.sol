@@ -27,8 +27,6 @@ interface Vm {
     function warp(uint256 newTimestamp) external;
 }
 
-/// 整批原子性载体：一笔交易内连续两发射——第二个发射不适格时整笔回滚
-/// （EVM 原生原子性，接受为设计，spec §3.4）。
 contract BatchSubmitter {
     function submitTwo(
         UVPStateMachine machine,
@@ -64,9 +62,6 @@ contract BatchSubmitter {
     }
 }
 
-/// 发射适格面（admission，CompactHook flag=8）测试：注册门（_validateAdmission
-/// 过滤档）、提交卡点三态、窗口边界、幂等吸收、内部生产者豁免与 gas 钉。
-/// 每个测试断言一条语义规则；基建镜像 UVPStateMachine.t.sol 的最小子集。
 contract UVPAdmissionTest {
     Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
@@ -77,9 +72,7 @@ contract UVPAdmissionTest {
     bytes32 private constant SOURCE_BOOTSTRAP = bytes32(uint256(0x3001));
     bytes32 private constant SIGNAL_ORDER_START = bytes32(uint256(0x4001));
     bytes32 private constant SIGNAL_TRIGGER = bytes32(uint256(0x4002));
-    /// 适格表达式的正锚信号（在案即放行腿）。
     bytes32 private constant SIGNAL_ANCHOR = bytes32(uint256(0x4008));
-    /// 适格表达式的否决信号（在案 + 窗口内即拒绝腿）。
     bytes32 private constant SIGNAL_CANCEL = bytes32(uint256(0x4009));
     bytes32 private constant STAGE_INIT = bytes32(uint256(0x5001));
     bytes32 private constant HOOK_ORDER_START = bytes32(uint256(0x6000));
@@ -111,20 +104,12 @@ contract UVPAdmissionTest {
     bytes32 private PLAN_ID;
     bytes32 private ORDER_ID;
 
-    // ------------------------------------------------------------------
-    // 注册门
-    // ------------------------------------------------------------------
-
-    /// 合法适格面注册：hook 档同形的 anchor & ~(cancel+5s) 以 flag=8 槽位
-    /// 进 plan.admissions，plan 注册成功。
     function testValidAdmissionPlanRegisters() public {
         UVPStateMachine machine = _newMachine();
         bytes32 planId = _registerPlan(machine, _admissionPlan(5, true));
         require(machine.planExists(planId), "admission plan not registered");
     }
 
-    /// 过滤档放行钩子档非法形态之一：裸衰减根（hook 档在根位双闸拒绝，
-    /// 适格一拍求值下任何位置的瞬时值都良定义）。
     function testBareDecayingRootAdmissionRegisters() public {
         UVPStateMachine machine = _newMachine();
 
@@ -137,7 +122,6 @@ contract UVPAdmissionTest {
         require(machine.planExists(planId), "bare decaying root plan not registered");
     }
 
-    /// 过滤档放行钩子档非法形态之二：Or 分支下的衰减否决位。
     function testDecayingVetoUnderOrAdmissionRegisters() public {
         UVPStateMachine machine = _newMachine();
 
@@ -152,9 +136,6 @@ contract UVPAdmissionTest {
         require(machine.planExists(planId), "veto-under-or plan not registered");
     }
 
-    /// UB-1 嵌套延时闸（过滤档同源）：适格面指令计划内的延时链
-    ///（Delay 操作数子树含 Delay）在注册边界直接拒绝——镜像
-    /// uvp-hook-dsl validate_filter_hook 的 reject_nested_delay 前置。
     function testDecayingVetoInsideDelayOperandAdmissionRegisters() public {
         UVPStateMachine machine = _newMachine();
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
@@ -167,9 +148,6 @@ contract UVPAdmissionTest {
         _commitOnly(machine, hooks);
     }
 
-    /// UB-1 适格面无锚延时：`(~A) + 5s` 的延时操作数无正向锚点（纯否定）
-    /// ——求值侧永不放行（Rust 权威 NeedsMore），注册即拒；裸衰减根
-    /// `~(A + 5s)` 仍是合法形态（NOT 的合法位不动）。
     function testAdmissionRejectsUnanchoredDelayOperand() public {
         UVPStateMachine machine = _newMachine();
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
@@ -182,7 +160,6 @@ contract UVPAdmissionTest {
         _commitOnly(machine, hooks);
     }
 
-    /// 回归：裸衰减根 `~(A + 5s)` 在适格位仍合法注册（UB-1 不动 NOT 位）。
     function testAdmissionBareDecayingVetoRootStillRegisters() public {
         UVPStateMachine machine = _newMachine();
         UVPStateMachine.CompactHook[] memory base = _basePlan(true);
@@ -198,8 +175,6 @@ contract UVPAdmissionTest {
         _commitOnly(machine, hooks);
     }
 
-    /// 过滤档保留闸：NOT 操作数词表（裸 SIGNAL 或 DELAY 产出）——双重
-    /// 否定的第二层 NOT 吃组合操作数，注册边界拒绝。
     function testDoubleNegationAdmissionIsRejectedAtCommit() public {
         UVPStateMachine machine = _newMachine();
 
@@ -213,7 +188,6 @@ contract UVPAdmissionTest {
         _commitOnly(machine, _withOrderStart(_admissionOnly(instructions)));
     }
 
-    /// 过滤档保留闸：延时界限 (0, 30d]——零时长与超上限都在注册边界拒绝。
     function testAdmissionDelayBoundsAreRejectedAtCommit() public {
         UVPStateMachine machine = _newMachine();
 
@@ -230,7 +204,6 @@ contract UVPAdmissionTest {
         _commitOnly(machine, _withOrderStart(_admissionOnly(over)));
     }
 
-    /// 过滤档保留闸：结束栈上恰一值（多结果拒绝）。
     function testAdmissionRootNotSingleIsRejectedAtCommit() public {
         UVPStateMachine machine = _newMachine();
 
@@ -241,8 +214,6 @@ contract UVPAdmissionTest {
         _commitOnly(machine, _withOrderStart(_admissionOnly(two)));
     }
 
-    /// 过滤档保留闸：dependencyKeys 与 SIGNAL 原子键逐点一致（多声明的
-    /// 死索引键与缺声明的键同样拒绝）。
     function testAdmissionDependencyKeyMismatchIsRejectedAtCommit() public {
         UVPStateMachine machine = _newMachine();
 
@@ -260,8 +231,6 @@ contract UVPAdmissionTest {
         _commitOnly(machine, hooks);
     }
 
-    /// chimera flags 拒绝：适格位与出生/就绪位共用一个 word 会让同一槽位
-    /// 同时寻址 hooks 与 admissions 两个人口。
     function testAdmissionChimeraFlagsAreRejectedAtCommit() public {
         UVPStateMachine machine = _newMachine();
 
@@ -277,8 +246,6 @@ contract UVPAdmissionTest {
         _commitOnly(machine, hooks);
     }
 
-    /// 同一 (stageId, signalKey) 适格面重复声明：注册边界拒绝（编译器
-    /// D031 的链上镜像）。
     function testDuplicateAdmissionIsRejectedAtCommit() public {
         UVPStateMachine machine = _newMachine();
 
@@ -298,8 +265,6 @@ contract UVPAdmissionTest {
         _commitOnly(machine, hooks);
     }
 
-    /// 仅适格、无物化 hook 的阶段不可注册：适格挂在永不物化的阶段上是
-    /// 死承诺（阶段物化扫描对 flag=8 槽位一视同仁）。
     function testAdmissionOnlyStageIsRejectedAsNotMaterializable() public {
         UVPStateMachine machine = _newMachine();
 
@@ -315,11 +280,6 @@ contract UVPAdmissionTest {
         _commitOnly(machine, hooks);
     }
 
-    // ------------------------------------------------------------------
-    // 提交卡点
-    // ------------------------------------------------------------------
-
-    /// 适格三态之 Ready：事实落库 + 依赖钩子照常求值（watcher 走到 Ready）。
     function testAdmittedSignalRecordsFactAndRunsHooks() public {
         UVPStateMachine machine = _gatedMachine(5);
         vm.warp(100);
@@ -338,8 +298,6 @@ contract UVPAdmissionTest {
         require(readyEmitted, "ready marker missing");
     }
 
-    /// 适格三态之非 Ready（NeedsMore：正锚缺席）：类型化 revert，事实流
-    /// 零落库、钩子零推进、零事件。
     function testNonReadyAdmissionRevertsAndRecordsNothing() public {
         UVPStateMachine machine = _gatedMachine(5);
         vm.warp(100);
@@ -366,11 +324,6 @@ contract UVPAdmissionTest {
         );
     }
 
-    /// B1a 真空臂排除（forge 求值钉）：`(A | ~X) + 5s` 的 OR 锚点竞争中，
-    /// 无锚 Ready 分支（~X，X 缺席）不参与竞争——结果锚定有锚分支 A 的
-    /// 到达时刻。若真空臂以 anchorAt=0 恒胜（旧缺陷：私造纪元初锚），
-    /// dueAt = 0 + 5s 恒在过去，A 到达后适格立即放行——103 时刻的拒绝钉
-    /// 死该形态（与 Rust 权威 branch_maturity 的无锚分支永不出线同口径）。
     function testAdmissionOrVacuumArmLosesToAnchoredArm() public {
         UVPStateMachine machine = _newMachine();
         UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](5);
@@ -393,8 +346,6 @@ contract UVPAdmissionTest {
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
-        // A@100 + 5s = 105：锚定 A 的延时未熟 → Wait → 整笔拒绝（X 缺席
-        // 产生的真空 Ready 臂不得把锚拉回 0）。
         vm.warp(103);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -405,7 +356,6 @@ contract UVPAdmissionTest {
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         );
 
-        // 到期放行：X 仍缺席，真空臂在场不改变锚点。
         vm.warp(105);
         machine.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
@@ -414,18 +364,7 @@ contract UVPAdmissionTest {
         require(exists, "admitted emission missing at anchored maturity");
     }
 
-    /// B1a OR 平票 (0,0) 格（双真空 Ready 竞选保左）：双方 value=true 且都
-    /// 无锚（anchorAt=0）时，胜者保持左支——镜像 Rust branch_maturity 的
-    /// incumbent=左、candidate=右仅在严格更好时替换（(None, None) => 不替换）。
-    /// 可观测性边界（钉格口径）：胜者的区分字段只有 dueAt，而适格裁决只读
-    /// value/wait/cancel（钩子档经注册闸的 OR 分支正锚硬闸不可达该格）——
-    /// 本测试钉住的是该格经真实提交路径稳定落 value-Ready 三元组（不误入
-    /// 中性/等待/取消），以及非对称 dueAt 载荷（103 vs 107）下折叠加倍执行
-    /// 该 disputed 分支时裁决仍按 Ready 放行；左保留本身由 _orValue 与
-    /// Rust 严格改写规则的逐格同表保证（四格注释见合约内）。
     function testAdmissionOrDoubleVacuumTieKeepsLeftBranch() public {
-        // 腿 1：`(~A) | (~B)`，A/B 双缺席——双臂真空 Ready（anchor=0，
-        // due=0），(0,0) 平票折叠加倍执行，结果必须 value-Ready 放行。
         UVPStateMachine machine = _newMachine();
         UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](5);
         instructions[0] = _signal(SIGNAL_ANCHOR);
@@ -447,7 +386,6 @@ contract UVPAdmissionTest {
         (bool admitted,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(admitted, "double-vacuum tie must resolve value-Ready and admit");
 
-        // 腿 2：折叠加倍序交换（(~B) | (~A)）——放行结果与臂序无关。
         UVPStateMachine swapped = _newMachine();
         UVPStateMachine.Instruction[] memory swappedInstrs = new UVPStateMachine.Instruction[](5);
         swappedInstrs[0] = _signal(SIGNAL_CANCEL);
@@ -468,9 +406,6 @@ contract UVPAdmissionTest {
         (bool admittedSwapped,,,,) = swapped.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(admittedSwapped, "double-vacuum tie outcome must be fold-order independent");
 
-        // 腿 3：非对称载荷的 (0,0) 折叠——`(~(A+3s)) | (~(B+7s))`，A/B 同在
-        // 100 到达且均未熟：双臂 Ready、anchor=0、dueAt 103 vs 107（胜者
-        // 载荷真实分歧的 disputed 格），101 拍裁决仍按 Ready 放行。
         UVPStateMachine asymmetric = _newMachine();
         UVPStateMachine.Instruction[] memory asymInstrs = new UVPStateMachine.Instruction[](7);
         asymInstrs[0] = _signal(SIGNAL_ANCHOR);
@@ -502,9 +437,6 @@ contract UVPAdmissionTest {
         require(admittedAsym, "asymmetric-payload (0,0) tie must stay value-Ready and admit");
     }
 
-    /// 窗口边界：恰到期（block.timestamp == dueAt）延时成熟 → NOT 翻转
-    /// cancel → 拒绝；前一秒仍放行（严格 < 边界镜像 _delayValue）。两腿各
-    /// 用独立订单——首腿放行即落库，重复提交会先进幂等吸收、测不到适格。
     function testWindowBoundaryExactlyAtExpiryRejects() public {
         UVPStateMachine before = _gatedMachine(5);
         vm.warp(100);
@@ -538,8 +470,6 @@ contract UVPAdmissionTest {
         );
     }
 
-    /// 幂等吸收先于适格：已落库的重复提交在窗口过期后重试不 revert、
-    /// 不再过适格（at-least-once 重试不得被过期窗拒绝）。
     function testDuplicateAbsorbsAfterWindowExpiry() public {
         UVPStateMachine machine = _gatedMachine(5);
         vm.warp(100);
@@ -569,8 +499,6 @@ contract UVPAdmissionTest {
         require(payloadHash == PAYLOAD_HASH, "absorbed retry overwrote the first write");
     }
 
-    /// 内部生产者（dock output 镜像通道）不经适格面：目标信号声明了会
-    /// 拒绝的适格，模块写入照常落库。
     function testInternalProducerBypassesAdmission() public {
         UVPStateMachine machine = _gatedMachine(5);
         vm.warp(100);
@@ -591,8 +519,6 @@ contract UVPAdmissionTest {
         require(exists, "internal producer write missing");
     }
 
-    /// 无单外部出生过筛：出生事实自身的适格在空 pre-state 上裁决——正
-    /// 锚缺席即拒绝，封死「gated 信号绕窗铸单」的口子。
     function testOutsideBirthIsScreenedByAdmission() public {
         UVPStateMachine machine = _newMachine();
 
@@ -618,8 +544,6 @@ contract UVPAdmissionTest {
         machine.triggerOrderFromOutsideFor(trigger, authorizations, signature, _noAttribution());
     }
 
-    /// 整批原子性：一笔交易多发射，一个不适格整批回滚——先落库的合格
-    /// 发射也一并消失。
     function testMultiSignalTxWithIneligibleEmissionRevertsEntirely() public {
         BatchSubmitter submitter = new BatchSubmitter();
         UVPStateMachine machine = _gatedMachineFor(5, address(submitter), false);
@@ -638,14 +562,6 @@ contract UVPAdmissionTest {
         require(!cancelRecorded, "atomic rollback must erase the earlier eligible emission");
     }
 
-    // ------------------------------------------------------------------
-    // gas 钉
-    // ------------------------------------------------------------------
-
-    /// 无适格面的 plan：提交成本增量有界（≤ 常数预算）——增量构成是幂等
-    /// 吸收检查的一次 signalKey 派生 + 信号槽/订单布尔槽的暖读，全部
-    /// O(1)、不随 plan 形态缩放。基线 128_082 是适格面引入前同形态提交
-    /// 路径的实测值（实测增量 1_024）。
     function testNoAdmissionPlanSubmitCostDeltaIsBounded() public {
         UVPStateMachine machine = _plainMachine();
 
@@ -659,10 +575,6 @@ contract UVPAdmissionTest {
         require(spent <= 128_082 + 1_500, "no-admission submit overhead exceeds the constant budget");
     }
 
-    /// 带适格面的提交成本是常数增量（适格存储冷读 + 指令分派）且不随
-    /// 窗口时长缩放（镜像衰减负门 gas 先例的钉法：5s 与 1h 求值路径逐
-    /// 指令相同）。两侧机器同形（mint-trigger watcher，普通提交不推进）
-    /// 且先落同一锚事实，暖冷读基线一致。
     function testAdmissionSubmitGasIsConstantIncrement() public {
         UVPStateMachine plain = _plainMachine();
         vm.warp(100);
@@ -698,16 +610,10 @@ contract UVPAdmissionTest {
         uint256 hourSpent = gasBefore - gasleft();
 
         require(admissionSpent > plainSpent, "admission face must cost more than the ungated path");
-        // 增量构成：适格槽一次冷读 + 逐指令的存储读取（本形态 5 条指令，
-        // 实测 13_683）——随指令数线性、不随窗口时长/plan 规模缩放。
         require(admissionSpent - plainSpent <= 15_000, "admission submit delta exceeds the constant budget");
         uint256 durationWobble = admissionSpent > hourSpent ? admissionSpent - hourSpent : hourSpent - admissionSpent;
         require(durationWobble <= 100, "admission gas must not scale with the window duration");
     }
-
-    // ------------------------------------------------------------------
-    // 基建
-    // ------------------------------------------------------------------
 
     function _newMachine() private returns (UVPStateMachine machine) {
         machine = new UVPStateMachine();
@@ -726,14 +632,10 @@ contract UVPAdmissionTest {
         machine.freezeModules();
     }
 
-    /// 带适格面的已注册机（出生单已开；HOOK_INIT 是 EMIT_READY watcher，
-    /// 提交语义测试借它断言"钩子照常求值"）。SIGNAL_TRIGGER 的适格 =
-    /// 正锚在案 且 否决信号缺席/未熟（窗口 delaySeconds）。
     function _gatedMachine(uint64 delaySeconds) private returns (UVPStateMachine machine) {
         return _gatedMachineFor(delaySeconds, address(0), false);
     }
 
-    /// gas 对照用的同形适格机（mint-trigger watcher，普通提交不推进）。
     function _gatedTriggerMachine(uint64 delaySeconds) private returns (UVPStateMachine machine) {
         return _gatedMachineFor(delaySeconds, address(0), true);
     }
@@ -747,15 +649,12 @@ contract UVPAdmissionTest {
         _submitTriggerOrderFromOutside(machine, extraSubmitter);
     }
 
-    /// 无适格对照机（gas 基线用；HOOK_INIT 与基线同形——mint trigger，
-    /// 普通提交不推进它）。
     function _plainMachine() private returns (UVPStateMachine machine) {
         machine = _newMachine();
         _registerPlan(machine, _basePlan(true));
         _submitTriggerOrderFromOutside(machine, address(0));
     }
 
-    /// 出生单 + SIGNAL_TRIGGER watcher + 适格面（anchor & ~(cancel+delay)）。
     function _admissionPlan(uint64 delaySeconds, bool watcherIsTrigger)
         private
         pure
@@ -776,15 +675,12 @@ contract UVPAdmissionTest {
         hooks[base.length] = _admissionHook(SIGNAL_TRIGGER, instructions);
     }
 
-    /// 出生单 + SIGNAL_TRIGGER 槽（watcher 形态可切换）。
     function _basePlan(bool watcherIsTrigger) private pure returns (UVPStateMachine.CompactHook[] memory hooks) {
         hooks = new UVPStateMachine.CompactHook[](2);
         hooks[0] = _signalHook(HOOK_ORDER_START, STAGE_INIT, HOOK_NAME_ORDER_START, true, SIGNAL_ORDER_START);
         hooks[1] = _signalHook(HOOK_INIT, STAGE_INIT, HOOK_NAME_TRIGGER, watcherIsTrigger, SIGNAL_TRIGGER);
     }
 
-    /// 单条适格槽（挂在 SIGNAL_TRIGGER 的事实键上），调用方自行前置
-    /// 出生单（_withOrderStart）。
     function _admissionOnly(UVPStateMachine.Instruction[] memory instructions)
         private
         pure
@@ -794,8 +690,6 @@ contract UVPAdmissionTest {
         hooks[0] = _admissionHook(SIGNAL_TRIGGER, instructions);
     }
 
-    /// 适格槽构造：hookId = signalKey（提交路径按事实键寻址），hookName
-    /// 槽 = signalId（word 布局的信号身份位）。
     function _admissionHook(bytes32 signalId, UVPStateMachine.Instruction[] memory instructions)
         private
         pure
@@ -811,7 +705,6 @@ contract UVPAdmissionTest {
         });
     }
 
-    /// dependencyKeys = 指令集 SIGNAL 原子键（注册门对拍口径）。
     function _declaredKeys(UVPStateMachine.Instruction[] memory instructions)
         private
         pure
@@ -969,8 +862,6 @@ contract UVPAdmissionTest {
         PLAN_ID = planId;
     }
 
-    /// 只跑 commitPlan（注册面负例用）：拒绝面在 commit 边界即止，不触发
-    /// finalizePlan 对零值 planId 的二次报错。
     function _commitOnly(UVPStateMachine machine, UVPStateMachine.CompactHook[] memory hooks) private {
         address publisher = vm.addr(PUBLISHER_PRIVATE_KEY);
         UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
@@ -1028,8 +919,6 @@ contract UVPAdmissionTest {
         });
     }
 
-    /// 出生授权覆盖本文件全部可提交信号（出生事实/触发/锚/否决）；零地址
-    /// 的 extraSubmitter 跳过（不产生重复授权条目）。
     function _authorizationsFor(address submitter, address extra)
         private
         pure

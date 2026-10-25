@@ -5,13 +5,10 @@ import type {
 } from "../src/types/index.js";
 
 /**
- * 测试用 dock 目标/manifest 构造器（镜像 Store/发布系统流程与
- * uvp-core `gen_dock_fixtures` 的样本形状）：先编译目标定义（含双具名接口
- * dockInterface、无 zhixu executor），再把其产物组装成 resolution
- * manifest v2 供父定义 link。
+ * 测试用 dock 目标/manifest 构造器：镜像 uvp-core gen_dock_fixtures 的
+ * 样本形状，把目标编译产物组装成 resolution manifest v2 供父定义 link。
  */
 
-/** 目标定义：两个具名接口——production_service[new]（建单型服务）与 production_evidence[existing]（只读既有事实）。 */
 export function dockProductionTargetDefinition(): ZhixuDefinition {
   return {
     apiVersion: "uvp/v0",
@@ -74,18 +71,12 @@ export function dockProductionTargetDefinition(): ZhixuDefinition {
   };
 }
 
-/** demo 目标定义的 metadata.name（slug，纯展示标签，不参与寻址）。 */
 export const dockDemoTargetName = "friction_wheel_production";
 
-/**
- * demo 目标的内容派生身份（zx-<32hex>），供调用方定义的 target.zhixu
- * 引用（引用一律 uid；先编译目标再取 uid，与发布流程同序）。
- */
 export function dockDemoTargetUid(): string {
   return dockDemoResolutionManifest().definitions[0]!.zhixu;
 }
 
-/** 调用方定义：new 模式生产委托 + existing 模式既有事实引用，各一条 route。 */
 export function dockSourcingParentDefinition(targetUid: string): ZhixuDefinition {
   return {
     apiVersion: "uvp/v0",
@@ -100,8 +91,6 @@ export function dockSourcingParentDefinition(targetUid: string): ZhixuDefinition
         {
           name: "confirm",
           source: "purchaser",
-          // 物化门：零 hook 阶段在链上永不可物化；seed 是执行者
-          // 自发入口信号。
           receiveSignals: { ORDER: "purchaser::confirm.seed" },
           sendSignals: [{ name: "cmp" }, { name: "seed" }],
           executor: {
@@ -149,11 +138,6 @@ export function dockSourcingParentDefinition(targetUid: string): ZhixuDefinition
   };
 }
 
-/**
- * 组装 resolution manifest v2：zhixu/definitionRefHash/interfaces 直接取自
- * 目标编译产物（zhixuId 即内容派生 uid），并内嵌目标定义全文（内容寻址，
- * linker 重算 uid 三方一致校验）。
- */
 export function dockDemoResolutionManifest(): DockResolutionManifest {
   return resolutionManifestFor(dockProductionTargetDefinition());
 }
@@ -176,9 +160,6 @@ export function resolutionManifestFor(
         published: true,
         interfaces: target.dockInterface.interfaces,
         evmPlanId: target.planId,
-        // B-01 route 身份 word：测试/demo 场景把目标编译产物的 planId
-        // word 直接充当链上注册 planId（无真实注册流程时 routeHash 的
-        // 承诺槽需要一个确定的 plan id word）。
         chainPlanId: target.planId,
         cloudArtifactId: `artifact://${target.planHash}`,
       },

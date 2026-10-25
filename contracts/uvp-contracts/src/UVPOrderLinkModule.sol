@@ -6,9 +6,6 @@ import {ECDSA} from "./libraries/ECDSA.sol";
 import {UVPSignatures} from "./libraries/UVPSignatures.sol";
 
 contract UVPOrderLinkModule {
-    // 链接存储按 (planId, triggeredOrderId) 寻址，并记录 origin 的 plan。
-    // orderId 不是全局键：不同 plan 下同一 orderId 的派生单互不影响，
-    // 同 plan 内重复注册仍被拒绝。
     struct OrderTriggerLink {
         bytes32 triggerOriginOrderId;
         bytes32 triggerOriginPlanId;
@@ -35,7 +32,6 @@ contract UVPOrderLinkModule {
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _EIP712_NAME_HASH = keccak256("UVPOrderLinkModule");
     bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.8");
-    // 签名绑定 origin 的 (planId, orderId)，防止请求在 plan 域之间移植。
     bytes32 private constant _TRIGGER_ORDER_FROM_SIGNAL_TYPEHASH = keccak256(
         "UVPOrderLinkModuleTriggerOrderFromSignal(bytes32 orderId,bytes32 planId,address creator,bytes32 triggerOriginOrderId,bytes32 originPlanId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
     );
@@ -43,9 +39,6 @@ contract UVPOrderLinkModule {
     mapping(bytes32 planId => mapping(bytes32 triggeredOrderId => OrderTriggerLink link)) private _orderTriggerLinks;
 
     event OrderLinked(
-        // 链接事件携带触发侧 planId——两 plan 同号订单的事件字节级不同；
-        // origin 侧复合身份由
-        // (triggerOriginPlanId, triggerOriginOrderId) 数据字段完整携带。
         bytes32 indexed triggeredOrderId,
         bytes32 indexed triggerOriginOrderId,
         bytes32 indexed triggerStageId,
@@ -71,7 +64,6 @@ contract UVPOrderLinkModule {
         if (trigger.submitter == address(0)) {
             revert ZeroSubmitter();
         }
-        // origin 订单按 (originPlanId, triggerOriginOrderId) 寻址。
         if (!stateMachine.orderExists(trigger.originPlanId, trigger.triggerOriginOrderId)) {
             revert UnknownOrder();
         }
@@ -95,18 +87,11 @@ contract UVPOrderLinkModule {
         _registerLinkAndTrigger(trigger, authorizations, originFactAttributions);
     }
 
-    /// 链接登记 + 状态机派生 + 链接事件。独立函数体：OrderLinked 事件携带
-    /// 复合身份数据字段后编码压力上升，外部入口帧保持精简（栈深约束）。
-    /// origin 事实的属主证明集不进 EIP-712 摘要（辅助材料），随调用透传给
-    /// 状态机的同意链。
     function _registerLinkAndTrigger(
         IUVPStateMachineCore.TriggerOrderFromSignalRequest calldata trigger,
         IUVPStateMachineCore.SignalAuthorization[] calldata authorizations,
         IUVPStateMachineCore.FactAttribution[] calldata originFactAttributions
     ) private {
-        // origin 侧同意的权威校验在状态机的
-        // triggerOrderFromSignalFromModule 内执行（提交者或执行 relayer 持有
-        // origin 订单同意集合中的身份），整笔事务原子回滚，这里无需重复。
         _orderTriggerLinks[trigger.planId][trigger.orderId] = OrderTriggerLink({
             triggerOriginOrderId: trigger.triggerOriginOrderId,
             triggerOriginPlanId: trigger.originPlanId,
@@ -128,8 +113,6 @@ contract UVPOrderLinkModule {
         );
     }
 
-    // 关系判定比较 (planId, orderId) 复合身份。两个 plan 下同一
-    // orderId 互为不同订单，绝不因裸 orderId 相同而被视作"当前订单"。
     function targetOrderRelation(bytes32 fromPlanId, bytes32 fromOrderId, bytes32 targetPlanId, bytes32 targetOrderId)
         external
         view

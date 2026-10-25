@@ -8,9 +8,8 @@ import type {
 } from "../../types/index.js";
 
 /**
- * 链轨非 plan 级承诺的组装（自 onchain-hook-plan.ts 原样迁入）：标识 id
- * 派生、route/binding/capability 哈希与 Solidity 零字。哈希基元全部复用根
- * hash.ts / canonical.ts，本文件不复制实现。
+ * 链轨非 plan 级承诺的组装：标识 id 派生、route/binding/capability 哈希与
+ * Solidity 零字；哈希基元复用根 hash.ts / canonical.ts。
  */
 
 const ONCHAIN_ROUTE_HASH_DOMAIN = "uvp:onchain-hook-route:v1";

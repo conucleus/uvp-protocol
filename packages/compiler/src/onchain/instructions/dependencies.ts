@@ -12,7 +12,7 @@ import type {
 } from "../../types/index.js";
 
 /**
- * hook 依赖编译与依赖索引组装（自 onchain-hook-plan.ts 原样迁入）。
+ * hook 依赖编译与依赖索引组装。
  */
 
 function compileDependency(dependency: HookDependency): OnchainHookDependency {
@@ -31,14 +31,6 @@ function compileDependency(dependency: HookDependency): OnchainHookDependency {
   };
 }
 
-/**
- * Per-key hookIds MUST follow the compiledHooks (= commitPlan calldata) order:
- * UVPStateMachine._registerPlanHook pushes `input.hookId` while scanning the
- * submitted hooks array, and the replay oracle replays the per-key array
- * positionally. Sorting by hookId (keccak order) forks the contract's
- * dependencyIndex and flips the oracle's event pairing whenever the two
- * orders disagree on a key with ≥2 same-partition (trigger/watcher) hooks.
- */
 function buildOnchainDependencyIndex(
   compiledHooks: readonly OnchainCompiledHook[],
 ): Record<HexString, readonly HexString[]> {
@@ -46,8 +38,6 @@ function buildOnchainDependencyIndex(
   for (const hook of compiledHooks) {
     for (const dependency of hook.dependencies) {
       const hookIds = index.get(dependency.signalKey) ?? [];
-      // Mirror the contract's per-hook dependencyKey dedup: one hook can only
-      // register once per key.
       if (!hookIds.includes(hook.hookId)) {
         hookIds.push(hook.hookId);
       }

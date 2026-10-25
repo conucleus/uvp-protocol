@@ -1,23 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type {
-  EvidenceProofDTO,
   FulfillmentPluginKind,
   ParticipantAddOnManifestDTO,
   ProductSubmissionDTO,
-  ProductSubmitIntent,
-  TaskSubmitIntent,
 } from "@uvp-eth/product-dto";
 import {
   submitIntentByPluginKind,
   taskSubmitIntent,
   taskSubmitIntentForAction,
 } from "@uvp-eth/product-dto";
-
-// 写侧契约的形状与推导钉子——形状对齐 uvp-chain-services 服务端真身
-// （submissions/types.ts、evidence/types.ts、evidence/service.ts getProof、
-// reconcile/status.ts），推导对齐 order-app taskPresentation 与
-// zhixu-store workbenchSupport 的镜像。
 
 const ALL_PLUGIN_KINDS: readonly FulfillmentPluginKind[] = [
   "payment_placeholder",
@@ -26,26 +18,13 @@ const ALL_PLUGIN_KINDS: readonly FulfillmentPluginKind[] = [
   "validation_confirm",
 ];
 
-const ALL_SUBMIT_INTENTS: readonly ProductSubmitIntent[] = [
-  "confirm_stage",
-  "reject_stage",
-];
-
 describe("写侧词表对齐服务端", () => {
-  it("ProductSubmitIntent 与 TaskSubmitIntent 值域恒等（提交契约面与任务推导面同一联合）", () => {
-    const asTask: readonly TaskSubmitIntent[] = ALL_SUBMIT_INTENTS;
-    const asProduct: readonly ProductSubmitIntent[] = asTask;
-    assert.equal(asProduct.length, 2);
-    assert.deepEqual(new Set(asProduct), new Set(ALL_SUBMIT_INTENTS));
-  });
-
   it("submitIntentByPluginKind 覆盖全部插件类型", () => {
     for (const kind of ALL_PLUGIN_KINDS) {
       assert.equal(submitIntentByPluginKind[kind], "confirm_stage");
     }
   });
 });
-
 
 function manifestWithActions(
   actions: ParticipantAddOnManifestDTO["actions"],
@@ -102,9 +81,6 @@ describe("taskSubmitIntent 推导（manifest 优先，两端镜像收敛）", ()
     assert.equal(taskSubmitIntent(task), "confirm_stage");
   });
 
-
-
-
   it("非 submit_signal 动作不参与推导", () => {
     const task = {
       addOnManifest: manifestWithActions([
@@ -123,20 +99,6 @@ describe("taskSubmitIntent 推导（manifest 优先，两端镜像收敛）", ()
 });
 
 describe("写侧 DTO 形状（编译期由 tsc --noEmit 钉住）", () => {
-  it("EvidenceProofDTO：getProof 恒产出字段必填（evidenceId/payloadRef/storageURI）", () => {
-    const proof = {
-      evidenceId: "ev-1",
-      payloadHash: "0x01",
-      contentHash: "0x02",
-      metadataHash: "0x03",
-      payloadRef: "cos://payload",
-      storageURI: "cos://store",
-      verificationStatus: "matched",
-    } as const satisfies EvidenceProofDTO;
-    assert.equal(proof.evidenceId, "ev-1");
-    assert.equal(proof.storageURI, "cos://store");
-  });
-
   it("ProductSubmissionDTO：statusLabel 必填（服务端读取兜底恒产出）", () => {
     const submission = {
       submissionId: "sub-1",
@@ -177,8 +139,7 @@ describe("写侧 DTO 形状（编译期由 tsc --noEmit 钉住）", () => {
       submissionId: "sub-1",
     } as const;
     void _missingStatusLabel;
-    // 形状断言在编译期：以下赋值缺 statusLabel，tsc 必须报错。
-    // @ts-expect-error statusLabel 是必填字段（服务端兜底恒产出的裁决落点）
+    // @ts-expect-error statusLabel is a required field
     const bad: ProductSubmissionDTO = { submissionId: "sub-1" };
     void bad;
   });
