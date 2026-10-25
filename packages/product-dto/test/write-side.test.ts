@@ -55,9 +55,6 @@ describe("写侧词表对齐服务端", () => {
   });
 });
 
-function capabilityPlugin(pluginKind: FulfillmentPluginKind) {
-  return { pluginKind, source: "explicit" as const };
-}
 
 function manifestWithActions(
   actions: ParticipantAddOnManifestDTO["actions"],
@@ -114,35 +111,8 @@ describe("taskSubmitIntent 推导（manifest 优先，两端镜像收敛）", ()
     assert.equal(taskSubmitIntent(task), "resolve_dispute");
   });
 
-  it("manifest 未声明 intent 时按能力插件类型推导", () => {
-    const task = {
-      addOnManifest: manifestWithActions([
-        {
-          actionId: "a1",
-          actionKind: "submit_signal",
-          label: "提交",
-          inputBindings: {},
-        },
-      ]),
-      capabilityPlugin: capabilityPlugin("evidence_submission"),
-    };
-    assert.equal(taskSubmitIntent(task), "confirm_stage");
-  });
 
-  it("dispute_material 未声明动作不得兜底成 confirm_stage", () => {
-    const task = {
-      capabilityPlugin: capabilityPlugin("dispute_material"),
-    };
-    assert.equal(taskSubmitIntent(task), "raise_dispute");
-    assert.equal(
-      taskSubmitIntentForAction(undefined, task),
-      "raise_dispute",
-    );
-  });
 
-  it("无 manifest 且无 capabilityPlugin 时中性兜底 confirm_stage", () => {
-    assert.equal(taskSubmitIntent({}), "confirm_stage");
-  });
 
   it("非 submit_signal 动作不参与推导", () => {
     const task = {

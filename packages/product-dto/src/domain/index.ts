@@ -24,7 +24,6 @@ export type OrderStatus = "registered";
  * 与链投影承载），"done" 是服务端永不产出的死词，不进词表。
  */
 export type TaskStatus = "open" | "submitted" | "blocked";
-export type PermissionPayloadPolicy = "required" | "optional";
 export type FulfillmentPluginKind =
   | "payment_placeholder"
   | "evidence_submission"
@@ -127,25 +126,6 @@ export type StoreSupplierReviewStatus =
   | "rejected"
   | "revoked";
 export type StoreSupplierIdentityStatus = "active" | "revoked" | "not_found";
-
-export const STORE_PRODUCT_SCHEMA_V1_REQUIRED_FIELDS = [
-  "schemaVersion",
-  "version",
-  "title",
-  "maintainer",
-  "planId",
-  "planHash",
-  "artifactHash",
-  "roleSlots",
-  "orderPermissionTable",
-  "capabilityPlugins",
-  "businessPersonaLabels",
-  "stages",
-  "schemaHash",
-  "validation",
-  "createdAt",
-  "updatedAt",
-] as const;
 
 export const PARTICIPANT_ADDON_MANIFEST_V1_ACTION_KINDS = [
   "submit_signal",
@@ -451,7 +431,6 @@ export interface RoleSlotDTO {
   readonly required: boolean;
   readonly performanceSlotLabel?: string;
   readonly businessPersonaLabels?: readonly string[];
-  readonly capabilityPlugins?: readonly SlotCapabilityPluginDTO[];
   readonly addOnManifest?: ParticipantAddOnManifestDTO;
 }
 
@@ -479,24 +458,6 @@ export interface DockableZhixuModuleDTO {
   readonly status: DockableModuleStatus;
 }
 
-export interface OrderPermissionTableEntryDTO {
-  readonly permissionId: string;
-  readonly roleSlotId: string;
-  readonly stageId: string;
-  readonly source: string;
-  readonly signalName: string;
-  readonly payloadPolicy: PermissionPayloadPolicy;
-  readonly requiredEvidence: readonly string[];
-}
-
-export interface StoreProductCreateOrderTriggerDTO {
-  readonly source: string;
-  readonly signalName: string;
-  readonly triggerHookId: string;
-  readonly triggerStageId: string;
-  readonly submitterRoleSlotId?: string;
-}
-
 export interface ZhixuSummaryDTO {
   readonly zhixuId: string;
   readonly title: string;
@@ -518,8 +479,6 @@ export interface ZhixuDetailDTO extends ZhixuSummaryDTO {
   readonly roleSlots: readonly RoleSlotDTO[];
   readonly dockableModules: readonly DockableZhixuModuleDTO[];
   readonly stages: readonly ZhixuStageDTO[];
-  readonly orderPermissionTable: readonly OrderPermissionTableEntryDTO[];
-  readonly createOrderTrigger?: StoreProductCreateOrderTriggerDTO;
   readonly proofRows: readonly ChainProofRowDTO[];
   readonly createOrderHint: string;
 }
@@ -577,138 +536,6 @@ export interface ProductTimelineEventDTO {
 
 export type TaskEvidenceInputKind = "file" | "text" | "date";
 
-/**
- * Structured, publisher-owned evidence requirement for one task slot.
- * Sole source of task evidence rules: when the publisher carries no spec the
- * task has no evidence slots (field-only confirmation or offline submission
- * by business convention), so consumers must not synthesize generic slots.
- * Store surfaces must stay generic and must never hardcode business-specific
- * labels, document types, or file formats.
- */
-export interface TaskEvidenceSpecDTO {
-  /** Stable identifier; becomes the evidence documentType when uploaded. */
-  readonly key: string;
-  /** Publisher-provided display label. */
-  readonly label: string;
-  /** How the slot is collected. Defaults to "file". */
-  readonly inputKind?: TaskEvidenceInputKind;
-  /** Accepted file types (MIME types or extensions) for file inputs. */
-  readonly accept?: readonly string[];
-  /** Whether the slot must be satisfied. Defaults to true. */
-  readonly required?: boolean;
-  /** Optional publisher-provided explanation shown next to the slot. */
-  readonly description?: string;
-}
-
-export type TaskEvidenceSpecIssueCode =
-  | "empty_spec"
-  | "empty_key"
-  | "empty_label"
-  | "duplicate_key"
-  | "invalid_input_kind"
-  | "accept_on_non_file_input"
-  | "invalid_accept_entry";
-
-export interface TaskEvidenceSpecIssueDTO {
-  readonly code: TaskEvidenceSpecIssueCode;
-  readonly message: string;
-  readonly index?: number;
-}
-
-/**
- * Validates an optional task evidence spec. An absent spec is valid; an
- * empty array is not (either declare nothing or declare slots). Validation
- * is structural only — it must never encode business-specific expectations.
- */
-export function validateTaskEvidenceSpec(
-  spec: readonly TaskEvidenceSpecDTO[] | undefined | null,
-): readonly TaskEvidenceSpecIssueDTO[] {
-  if (spec === undefined || spec === null) {
-    return [];
-  }
-  if (!Array.isArray(spec)) {
-    return [
-      {
-        code: "empty_spec",
-        message: "evidenceSpec must be an array when present",
-      },
-    ];
-  }
-  if (spec.length === 0) {
-    return [
-      {
-        code: "empty_spec",
-        message: "evidenceSpec must declare at least one slot when present",
-      },
-    ];
-  }
-  const issues: TaskEvidenceSpecIssueDTO[] = [];
-  const seenKeys = new Set<string>();
-  spec.forEach((entry, index) => {
-    const key = typeof entry?.key === "string" ? entry.key.trim() : "";
-    if (key.length === 0) {
-      issues.push({
-        code: "empty_key",
-        message: `evidenceSpec[${index}].key must be a non-empty string`,
-        index,
-      });
-    } else if (seenKeys.has(key)) {
-      issues.push({
-        code: "duplicate_key",
-        message: `evidenceSpec[${index}].key "${key}" is duplicated`,
-        index,
-      });
-    }
-    if (key.length > 0) {
-      seenKeys.add(key);
-    }
-    const label = typeof entry?.label === "string" ? entry.label.trim() : "";
-    if (label.length === 0) {
-      issues.push({
-        code: "empty_label",
-        message: `evidenceSpec[${index}].label must be a non-empty string`,
-        index,
-      });
-    }
-    const inputKind = entry?.inputKind ?? "file";
-    if (inputKind !== "file" && inputKind !== "text" && inputKind !== "date") {
-      issues.push({
-        code: "invalid_input_kind",
-        message: `evidenceSpec[${index}].inputKind must be "file", "text", or "date"`,
-        index,
-      });
-    }
-    const accept = entry?.accept;
-    if (accept !== undefined) {
-      if (!Array.isArray(accept)) {
-        issues.push({
-          code: "invalid_accept_entry",
-          message: `evidenceSpec[${index}].accept must be an array of strings`,
-          index,
-        });
-      } else {
-        if (inputKind !== "file") {
-          issues.push({
-            code: "accept_on_non_file_input",
-            message: `evidenceSpec[${index}].accept only applies to file inputs`,
-            index,
-          });
-        }
-        accept.forEach((acceptEntry: unknown, acceptIndex: number) => {
-          if (typeof acceptEntry !== "string" || acceptEntry.trim().length === 0) {
-            issues.push({
-              code: "invalid_accept_entry",
-              message: `evidenceSpec[${index}].accept[${acceptIndex}] must be a non-empty string`,
-              index,
-            });
-          }
-        });
-      }
-    }
-  });
-  return issues;
-}
-
 export interface ProductTaskSubmitSignalDTO {
   readonly signalName: string;
   readonly sourceId: string;
@@ -735,7 +562,6 @@ export interface ProductTaskDTO {
    * authority for task evidence slots. When absent the task has no evidence
    * slots — consumers must not synthesize generic slots nor reject.
    */
-  readonly evidenceSpec?: readonly TaskEvidenceSpecDTO[];
   readonly status: TaskStatus;
   readonly addOnKind?: ParticipantAddOnKind;
   readonly selectableTargets?: readonly ProductSelectableTargetDTO[];
@@ -746,7 +572,6 @@ export interface ProductTaskDTO {
   readonly performanceSlotId?: string;
   readonly performanceSlotLabel?: string;
   readonly businessPersonaLabels?: readonly string[];
-  readonly capabilityPlugin?: ProductTaskCapabilityPluginDTO;
   readonly addOnManifest?: ParticipantAddOnManifestDTO;
   readonly primaryActionLabel?: string;
   readonly requiredInputs?: readonly FulfillmentRequiredInputDTO[];
@@ -761,33 +586,16 @@ export interface ProductTaskDTO {
   readonly proofRows: readonly ChainProofRowDTO[];
 }
 
-export interface SlotCapabilityPluginDTO {
-  readonly pluginKind: FulfillmentPluginKind;
-  readonly source: CapabilityPluginSource;
-  readonly stageIds: readonly string[];
-  readonly title?: string;
-  readonly summary?: string;
-  readonly primaryActionLabel?: string;
-  readonly requiredEvidence: readonly string[];
-  readonly inputPolicy?: readonly FulfillmentRequiredInputDTO[];
-}
-
 export type StoreProductSchemaValidationSeverity = "error" | "warning";
 
 export type StoreProductSchemaValidationIssueCode =
   | "plan_identity_mismatch"
   | "missing_role_slot"
-  | "permission_role_slot_not_found"
-  | "unsupported_system_permission"
   | "stage_not_covered"
-  | "slot_missing_capability_plugin"
-  | "capability_plugin_not_explicit"
   | "addon_manifest_invalid"
   | "addon_manifest_stage_not_bound"
   | "addon_manifest_input_not_found"
   | "stage_executor_selection_invalid"
-  | "create_order_trigger_invalid"
-  | "duplicate_stage_capability";
 
 export interface StoreProductSchemaValidationIssueDTO {
   readonly code: StoreProductSchemaValidationIssueCode;
@@ -823,10 +631,7 @@ export interface StoreProductSchemaDTO {
   readonly planHash: string;
   readonly artifactHash: string;
   readonly onchainHookPlanArtifact?: unknown;
-  readonly createOrderTrigger?: StoreProductCreateOrderTriggerDTO;
   readonly roleSlots: readonly RoleSlotDTO[];
-  readonly orderPermissionTable: readonly OrderPermissionTableEntryDTO[];
-  readonly capabilityPlugins: readonly SlotCapabilityPluginDTO[];
   readonly businessPersonaLabels: readonly string[];
   readonly stages: readonly ZhixuStageDTO[];
   readonly selectorBindings?: readonly StoreProductSchemaSelectorBindingDTO[];
@@ -836,16 +641,6 @@ export interface StoreProductSchemaDTO {
   readonly updatedAt: string;
   readonly publishedAt?: string;
   readonly deprecatedAt?: string;
-}
-
-export interface ProductTaskCapabilityPluginDTO {
-  readonly pluginKind: FulfillmentPluginKind;
-  readonly source: CapabilityPluginSource;
-  readonly roleSlotId?: string;
-  readonly title?: string;
-  readonly summary?: string;
-  readonly primaryActionLabel?: string;
-  readonly inputPolicy?: readonly FulfillmentRequiredInputDTO[];
 }
 
 export interface ProductResponsibilityStatementDTO {
@@ -994,16 +789,6 @@ export interface StoreZhixuStageDTO {
   readonly statusInSampleOrder?: string;
 }
 
-export interface StoreRoleSlotCapabilityPluginDTO {
-  readonly pluginKind: FulfillmentPluginKind;
-  readonly source: CapabilityPluginSource;
-  readonly stageIds: readonly string[];
-  readonly title: string;
-  readonly summary: string;
-  readonly primaryActionLabel?: string;
-  readonly requiredEvidence: readonly string[];
-}
-
 export interface StoreRoleSlotDTO {
   readonly roleSlotId: string;
   readonly title: string;
@@ -1013,10 +798,7 @@ export interface StoreRoleSlotDTO {
   readonly statusLabel: string;
   readonly performanceSlotLabel: string;
   readonly businessPersonaLabels: readonly string[];
-  readonly capabilityPlugins: readonly StoreRoleSlotCapabilityPluginDTO[];
   readonly addOnManifest?: ParticipantAddOnManifestDTO;
-  readonly capabilityReviewStatus: StoreCapabilityReviewStatus;
-  readonly capabilityReviewLabel: string;
 }
 
 export interface StoreSupplierRequirementDTO {
@@ -1463,14 +1245,8 @@ function storeStageFromZhixuStage(
   stage: ZhixuStageDTO,
   zhixu: ZhixuDetailDTO,
 ): StoreZhixuStageDTO {
-  const permission = zhixu.orderPermissionTable.find(
-    (entry) => entry.stageId === stage.stageId,
-  );
   const roleSlot = zhixu.roleSlots.find(
-    (slot) =>
-      slot.slotId === permission?.roleSlotId ||
-      slot.title === stage.ownerRole ||
-      slot.label === stage.ownerRole,
+    (slot) => slot.title === stage.ownerRole || slot.label === stage.ownerRole,
   );
   const evidenceText =
     stage.evidence.length > 0
@@ -1508,23 +1284,6 @@ function roleSlotStatusLabel(status: RoleSlotStatus): string {
 }
 
 function storeRoleSlotFromZhixuSlot(slot: RoleSlotDTO): StoreRoleSlotDTO {
-  const capabilityPlugins: readonly StoreRoleSlotCapabilityPluginDTO[] = (
-    slot.capabilityPlugins ?? []
-  ).map((plugin) => ({
-    pluginKind: plugin.pluginKind,
-    source: plugin.source,
-    stageIds: plugin.stageIds,
-    title: plugin.title ?? capabilityPluginKindLabel(plugin.pluginKind),
-    summary:
-      plugin.summary ??
-      "该能力由 Store 操作员审核，用于说明该履约插槽可执行的阶段动作。",
-    ...(plugin.primaryActionLabel
-      ? { primaryActionLabel: plugin.primaryActionLabel }
-      : {}),
-    requiredEvidence: plugin.requiredEvidence,
-  }));
-  const capabilityReviewStatus =
-    capabilityReviewStatusForPlugins(capabilityPlugins);
   return {
     roleSlotId: slot.slotId,
     title: slot.title,
@@ -1537,52 +1296,8 @@ function storeRoleSlotFromZhixuSlot(slot: RoleSlotDTO): StoreRoleSlotDTO {
       slot.businessPersonaLabels && slot.businessPersonaLabels.length > 0
         ? slot.businessPersonaLabels
         : [slot.label],
-    capabilityPlugins,
     ...(slot.addOnManifest ? { addOnManifest: slot.addOnManifest } : {}),
-    capabilityReviewStatus,
-    capabilityReviewLabel: capabilityReviewLabel(capabilityReviewStatus),
   };
-}
-
-function capabilityReviewStatusForPlugins(
-  capabilityPlugins: readonly StoreRoleSlotCapabilityPluginDTO[],
-): StoreCapabilityReviewStatus {
-  if (
-    capabilityPlugins.length === 0 ||
-    capabilityPlugins.some((plugin) => plugin.source === "missing")
-  ) {
-    return "missing";
-  }
-  if (capabilityPlugins.some((plugin) => plugin.source === "inferred")) {
-    return "inferred";
-  }
-  return "explicit";
-}
-
-function capabilityReviewLabel(status: StoreCapabilityReviewStatus): string {
-  switch (status) {
-    case "explicit":
-      return "显式配置";
-    case "inferred":
-      return "推断待确认";
-    case "missing":
-      return "缺少能力配置";
-  }
-}
-
-function capabilityPluginKindLabel(kind: FulfillmentPluginKind): string {
-  switch (kind) {
-    case "payment_placeholder":
-      return "资金动作占位";
-    case "evidence_submission":
-      return "提交履约凭证";
-    case "delivery_update":
-      return "更新交付状态";
-    case "validation_confirm":
-      return "确认验收结果";
-    case "dispute_material":
-      return "提交争议材料";
-  }
 }
 
 function defaultRiskTags(zhixu: ZhixuDetailDTO): readonly string[] {
@@ -1754,12 +1469,8 @@ export function summarizeZhixu(zhixu: ZhixuDetailDTO): ZhixuSummaryDTO {
     roleSlots: _roleSlots,
     dockableModules: _dockableModules,
     stages: _stages,
-    orderPermissionTable: _orderPermissionTable,
     proofRows: _proofRows,
     createOrderHint: _createOrderHint,
-    // createOrderTrigger 是 Detail/Schema 面字段（triggerHookId 等 执行内部
-    // 键）：列表/控制台摘要按 ZhixuSummaryDTO 声明面投影，不得夹带。
-    createOrderTrigger: _createOrderTrigger,
     ...summary
   } = zhixu;
   return summary;

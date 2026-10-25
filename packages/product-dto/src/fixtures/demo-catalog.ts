@@ -1,7 +1,6 @@
 import {
   type ChainProofRowDTO,
   type FulfillmentRequiredInputDTO,
-  type OrderPermissionTableEntryDTO,
   type ParticipantDTO,
   type ParticipantAddOnKind,
   type ParticipantAddOnManifestDTO,
@@ -11,10 +10,7 @@ import {
   type ProductResourceRequirementDTO,
   type ProductOrderDTO,
   type ProductSelectableTargetDTO,
-  type ProductTaskCapabilityPluginDTO,
   type ProductTaskDTO,
-  type SlotCapabilityPluginDTO,
-  type TaskEvidenceSpecDTO,
   type ZhixuDetailDTO,
   type ZhixuStageDTO
 } from "../domain/index.js";
@@ -109,21 +105,6 @@ export const demoStages: readonly ZhixuStageDTO[] = [
 ];
 
 const demoStageSignalNames = ["str", "cmp", "pass", "fail", "confirm_stage", "reject_stage"] as const;
-
-export const demoOrderPermissionTable: readonly OrderPermissionTableEntryDTO[] = [
-  ...demoStages.flatMap((stage) => demoStageSignalNames.map((signalName) => {
-    const canonicalSignalName = `${stage.stageId}.${signalName}`;
-    return {
-      permissionId: `stage.${canonicalSignalName}`,
-      roleSlotId: demoRoleSlotIdForStage(stage.stageId),
-      stageId: stage.stageId,
-      source: "product",
-      signalName: canonicalSignalName,
-      payloadPolicy: "required" as const,
-      requiredEvidence: stage.evidence
-    };
-  }))
-];
 
 const demoPaymentRequiredInputs: readonly FulfillmentRequiredInputDTO[] = [
   {
@@ -304,143 +285,8 @@ const demoSelectableTargets: readonly ProductSelectableTargetDTO[] = [
     targetStageName: "出口报关",
     allowed: true,
     workStarted: true,
-    stageSignalCount: 1,
-    currentExecutorWallet: demoPreviousExecutorWallet,
-    currentExecutorLabel: "现任报关履约者",
-    previousExecutor: demoPreviousExecutorWallet,
-    previousExecutorWallet: demoPreviousExecutorWallet,
-    previousExecutorLabel: "现任报关履约者",
-    executorPatchMode: "handoff",
-    executorPatchModes: [demoHandoffPatchMode],
-    priorAuthorityLabel: "已完成部分不变",
-    futureAuthorityLabel: "确认后只变更后续履约权限",
-    resourceRequirements: demoCustomsResourceRequirements
   }
-];
-
-const fundsPaymentPlugin = {
-  pluginKind: "payment_placeholder",
-  source: "explicit",
-  stageIds: ["funds-protected"],
-  title: "资金条件记录",
-  summary: "记录付款条件和资金凭证；不托管、不划转、不释放、不退款任何资金。",
-  primaryActionLabel: "确认付款条件",
-  requiredEvidence: ["付款条件确认", "资金凭证指纹"],
-  inputPolicy: demoPaymentRequiredInputs
-} satisfies SlotCapabilityPluginDTO;
-
-const orderConfirmationPlugin = {
-  pluginKind: "evidence_submission",
-  source: "explicit",
-  stageIds: ["order-confirmed"],
-  title: "订单确认凭证",
-  summary: "提交合同或订单确认凭证，证明订单责任已经被接受。",
-  primaryActionLabel: "提交订单确认",
-  requiredEvidence: ["合同"],
-  inputPolicy: [
-    {
-      inputId: "order-contract",
-      label: "合同或订单确认文件",
-      inputType: "evidence",
-      required: true,
-      completed: false
-    }
-  ]
-} satisfies SlotCapabilityPluginDTO;
-
-const supplyEvidencePlugin = {
-  pluginKind: "evidence_submission",
-  source: "explicit",
-  stageIds: ["stock-ready", "export-documents"],
-  title: "供给侧凭证提交",
-  summary: "提交备货、装箱、商业发票和出口单证等供给侧履约凭证。",
-  primaryActionLabel: "提交供给凭证",
-  requiredEvidence: ["合同", "装箱清单", "出口单证"],
-  inputPolicy: [
-    {
-      inputId: "supply-evidence",
-      label: "供给侧履约凭证",
-      inputType: "evidence",
-      required: true,
-      completed: false
-    }
-  ]
-} satisfies SlotCapabilityPluginDTO;
-
-const deliveryUpdatePlugin = {
-  pluginKind: "delivery_update",
-  source: "explicit",
-  stageIds: ["customs-complete", "export.customs", "shipping", "arrival"],
-  title: "交付进度更新",
-  summary: "提交报关、装船、物流和到港凭证，更新交付环节状态。",
-  primaryActionLabel: "确认报关完成",
-  requiredEvidence: ["报关单", "提单", "到港通知"],
-  inputPolicy: demoCustomsRequiredInputs
-} satisfies SlotCapabilityPluginDTO;
-
-const validationConfirmPlugin = {
-  pluginKind: "validation_confirm",
-  source: "explicit",
-  stageIds: ["inspection"],
-  title: "检验验收确认",
-  summary: "核对检验报告和验收单，确认阶段条件是否满足。",
-  primaryActionLabel: "确认验收结果",
-  requiredEvidence: ["检验报告", "验收单"],
-  inputPolicy: [
-    {
-      inputId: "inspection-report",
-      label: "检验报告或验收单",
-      inputType: "evidence",
-      required: true,
-      completed: false
-    },
-    {
-      inputId: "inspection-confirmation",
-      label: "确认验收结果",
-      inputType: "confirmation",
-      required: true,
-      completed: false
-    }
-  ]
-} satisfies SlotCapabilityPluginDTO;
-
-const disputeMaterialPlugin = {
-  pluginKind: "dispute_material",
-  source: "explicit",
-  stageIds: ["close-or-dispute"],
-  title: "争议材料提交",
-  summary: "提交争议说明、补充凭证和裁定材料，供订单参与方核对。",
-  primaryActionLabel: "提交争议材料",
-  requiredEvidence: ["争议说明", "裁定通知"],
-  inputPolicy: [
-    {
-      inputId: "dispute-material",
-      label: "争议说明或裁定材料",
-      inputType: "evidence",
-      required: true,
-      completed: false
-    }
-  ]
-} satisfies SlotCapabilityPluginDTO;
-
-const maintainerCloseoutPlugin = {
-  pluginKind: "validation_confirm",
-  source: "explicit",
-  stageIds: ["close-or-dispute"],
-  title: "完成或争议流转确认",
-  summary: "维护秩序版本和订单收口状态，确认完成或争议流转记录。",
-  primaryActionLabel: "确认订单收口",
-  requiredEvidence: ["完成确认书", "争议说明"],
-  inputPolicy: [
-    {
-      inputId: "closeout-confirmation",
-      label: "完成确认或争议流转记录",
-      inputType: "confirmation",
-      required: true,
-      completed: false
-    }
-  ]
-} satisfies SlotCapabilityPluginDTO;
+]
 
 function submitSignalAddOnManifest(input: {
   readonly roleSlotId: string;
@@ -679,26 +525,6 @@ const maintainerAddOnManifest = submitSignalAddOnManifest({
   evidenceLabel: "收口记录引用"
 });
 
-const demoPaymentTaskCapabilityPlugin: ProductTaskCapabilityPluginDTO = {
-  pluginKind: fundsPaymentPlugin.pluginKind,
-  source: fundsPaymentPlugin.source,
-  roleSlotId: "funds",
-  title: fundsPaymentPlugin.title,
-  summary: fundsPaymentPlugin.summary,
-  primaryActionLabel: fundsPaymentPlugin.primaryActionLabel,
-  inputPolicy: demoPaymentRequiredInputs
-};
-
-const demoCustomsTaskCapabilityPlugin: ProductTaskCapabilityPluginDTO = {
-  pluginKind: deliveryUpdatePlugin.pluginKind,
-  source: deliveryUpdatePlugin.source,
-  roleSlotId: "delivery",
-  title: deliveryUpdatePlugin.title,
-  summary: deliveryUpdatePlugin.summary,
-  primaryActionLabel: deliveryUpdatePlugin.primaryActionLabel,
-  inputPolicy: demoCustomsRequiredInputs
-};
-
 export const demoZhixuDetail: ZhixuDetailDTO = {
   zhixuId: CROSS_BORDER_ZHIXU_ID,
   title: "跨境高价值货物分阶段付款秩序",
@@ -733,7 +559,6 @@ export const demoZhixuDetail: ZhixuDetailDTO = {
       required: true,
       performanceSlotLabel: "资金保障履约者",
       businessPersonaLabels: ["买家", "资金提供者"],
-      capabilityPlugins: [orderConfirmationPlugin, fundsPaymentPlugin],
       addOnManifest: fundsAddOnManifest
     },
     {
@@ -747,7 +572,6 @@ export const demoZhixuDetail: ZhixuDetailDTO = {
       required: true,
       performanceSlotLabel: "供给履约者",
       businessPersonaLabels: ["卖家", "车商", "供应商"],
-      capabilityPlugins: [supplyEvidencePlugin],
       addOnManifest: supplyAddOnManifest
     },
     {
@@ -761,7 +585,6 @@ export const demoZhixuDetail: ZhixuDetailDTO = {
       required: true,
       performanceSlotLabel: "交付履约者",
       businessPersonaLabels: ["报关行", "物流/货代"],
-      capabilityPlugins: [deliveryUpdatePlugin],
       addOnManifest: deliveryAddOnManifest
     },
     {
@@ -775,7 +598,6 @@ export const demoZhixuDetail: ZhixuDetailDTO = {
       required: true,
       performanceSlotLabel: "验收执行者",
       businessPersonaLabels: ["检验方", "验收方"],
-      capabilityPlugins: [validationConfirmPlugin],
       addOnManifest: validationAddOnManifest
     },
     {
@@ -789,7 +611,6 @@ export const demoZhixuDetail: ZhixuDetailDTO = {
       required: false,
       performanceSlotLabel: "争议裁定履约者",
       businessPersonaLabels: ["裁定方", "争议处理方"],
-      capabilityPlugins: [disputeMaterialPlugin],
       addOnManifest: disputeAddOnManifest
     },
     {
@@ -803,7 +624,6 @@ export const demoZhixuDetail: ZhixuDetailDTO = {
       required: true,
       performanceSlotLabel: "秩序维护履约者",
       businessPersonaLabels: ["共同秩序", "治理维护方"],
-      capabilityPlugins: [maintainerCloseoutPlugin],
       addOnManifest: maintainerAddOnManifest
     }
   ],
@@ -863,8 +683,6 @@ export const demoZhixuDetail: ZhixuDetailDTO = {
     }
   ],
   stages: demoStages,
-  orderPermissionTable: demoOrderPermissionTable,
-  createOrderTrigger: demoCreateOrderTrigger,
   proofRows: [
     { label: "秩序编号", value: CROSS_BORDER_ZHIXU_ID },
     { label: "审核域", value: "共同秩序官方审核" },
@@ -987,7 +805,6 @@ export const demoPaymentTask: ProductTaskDTO = {
   performanceSlotId: "funds",
   performanceSlotLabel: "资金保障履约者",
   businessPersonaLabels: ["买家", "资金提供者"],
-  capabilityPlugin: demoPaymentTaskCapabilityPlugin,
   addOnManifest: fundsAddOnManifest,
   primaryActionLabel: "确认付款条件",
   requiredInputs: demoPaymentRequiredInputs,
@@ -1273,40 +1090,6 @@ export const demoResourcePatchTask: ProductTaskDTO = {
   ]
 };
 
-/**
- * Demo evidence configuration, shaped exactly like a nucleation-core-carried
- * evidenceSpec: the store renders it through the generic evidence path and
- * contains no equivalent business-specific code.
- */
-export const demoCustomsEvidenceSpec: readonly TaskEvidenceSpecDTO[] = [
-  {
-    key: "customs_declaration_pdf",
-    label: "报关单 PDF",
-    inputKind: "file",
-    accept: ["application/pdf", ".pdf"],
-    required: true,
-    description: "海关报关单扫描件，仅支持 PDF。"
-  },
-  {
-    key: "customs_declaration_no",
-    label: "报关单号",
-    inputKind: "text",
-    required: true
-  },
-  {
-    key: "export_port",
-    label: "出口港口",
-    inputKind: "text",
-    required: true
-  },
-  {
-    key: "completion_date",
-    label: "完成时间",
-    inputKind: "date",
-    required: true
-  }
-];
-
 export const demoTask: ProductTaskDTO = {
   taskId: DEMO_TASK_ID,
   orderId: DEMO_ORDER_ID,
@@ -1319,14 +1102,12 @@ export const demoTask: ProductTaskDTO = {
   stageName: "出口报关",
   deadline: "2026-05-03 18:00",
   fundingImpact: "进入验收；通过后第 2 阶段付款条件满足",
-  evidenceSpec: demoCustomsEvidenceSpec,
   status: "open",
   addOnKind: "submit_signal",
   resourceRequirements: demoCustomsResourceRequirements,
   performanceSlotId: "delivery",
   performanceSlotLabel: "交付履约者",
   businessPersonaLabels: ["报关行", "物流/货代"],
-  capabilityPlugin: demoCustomsTaskCapabilityPlugin,
   addOnManifest: deliveryAddOnManifest,
   primaryActionLabel: "确认报关完成",
   requiredInputs: demoCustomsRequiredInputs,

@@ -1,5 +1,4 @@
 import {
-  type OrderPermissionTableEntryDTO,
   type ParticipantAddOnManifestDTO,
   type ParticipantDTO,
   type ProductCatalogDTO,
@@ -9,7 +8,6 @@ import {
   type ProductResourceRequirementDTO,
   type ProductTaskDTO,
   type RoleSlotDTO,
-  type SlotCapabilityPluginDTO,
   type StoreProductSchemaDTO,
   type ZhixuDetailDTO,
   type ZhixuStageDTO
@@ -166,41 +164,8 @@ export const customsStages: readonly ZhixuStageDTO[] = [
     status: "done",
     updatedAt: "2026-05-01T00:20:00.000Z",
     stageKind: "business",
-    executorAssignment: "selected",
-    addOnKind: "submit_signal",
-    resourceRequirements: customsResourceRequirements
   }
-];
-
-const buyerSelectorPlugin = {
-  pluginKind: "evidence_submission",
-  source: "explicit",
-  stageIds: [customsStageIds.buyerSelectCustomsExecutor],
-  title: "选择报关履约者",
-  summary: "买家通过钱包签名为报关完成阶段指定履约者。",
-  primaryActionLabel: "选择报关履约者",
-  requiredEvidence: ["履约者元数据指纹"]
-} satisfies SlotCapabilityPluginDTO;
-
-const buyerResourceControllerPlugin = {
-  pluginKind: "evidence_submission",
-  source: "explicit",
-  stageIds: [customsStageIds.buyerPublishCustomsResources],
-  title: "发布报关资源清单",
-  summary: "买家发布资源清单 URI、清单指纹和访问策略指纹。",
-  primaryActionLabel: "发布资源清单",
-  requiredEvidence: ["资源清单指纹", "访问策略指纹"]
-} satisfies SlotCapabilityPluginDTO;
-
-const customsExecutorPlugin = {
-  pluginKind: "delivery_update",
-  source: "explicit",
-  stageIds: [customsStageIds.customsComplete],
-  title: "提交报关完成",
-  summary: "被选中的报关履约者提交钱包绑定的报关完成信号。",
-  primaryActionLabel: "提交报关完成",
-  requiredEvidence: ["报关完成凭证引用", "报关单 PDF 资源清单"]
-} satisfies SlotCapabilityPluginDTO;
+]
 
 export const customsBuyerSelectorManifest: ParticipantAddOnManifestDTO = {
   schemaVersion: "participant-addon-manifest.v1",
@@ -353,7 +318,6 @@ export const customsRoleSlots: readonly RoleSlotDTO[] = [
     required: true,
     performanceSlotLabel: "买家选择方",
     businessPersonaLabels: ["买家"],
-    capabilityPlugins: [buyerSelectorPlugin],
     addOnManifest: customsBuyerSelectorManifest
   },
   {
@@ -367,7 +331,6 @@ export const customsRoleSlots: readonly RoleSlotDTO[] = [
     required: true,
     performanceSlotLabel: "买家资源请求方",
     businessPersonaLabels: ["买家"],
-    capabilityPlugins: [buyerResourceControllerPlugin],
     addOnManifest: customsBuyerResourceControllerManifest
   },
   {
@@ -381,38 +344,7 @@ export const customsRoleSlots: readonly RoleSlotDTO[] = [
     required: true,
     performanceSlotLabel: "报关履约者",
     businessPersonaLabels: ["报关行", "关务服务商"],
-    capabilityPlugins: [customsExecutorPlugin],
     addOnManifest: customsExecutorManifest
-  }
-];
-
-export const customsOrderPermissionTable: readonly OrderPermissionTableEntryDTO[] = [
-  {
-    permissionId: "customs.executor-patch",
-    roleSlotId: customsRoleSlotIds.buyerSelector,
-    stageId: customsStageIds.buyerSelectCustomsExecutor,
-    source: "buyer",
-    signalName: customsSignalIds.executorSelected,
-    payloadPolicy: "required",
-    requiredEvidence: ["履约者元数据指纹"]
-  },
-  {
-    permissionId: "customs.resource-patch",
-    roleSlotId: customsRoleSlotIds.buyerResourceController,
-    stageId: customsStageIds.buyerPublishCustomsResources,
-    source: "buyer",
-    signalName: customsSignalIds.resourcesPublished,
-    payloadPolicy: "required",
-    requiredEvidence: ["资源清单指纹", "访问策略指纹"]
-  },
-  {
-    permissionId: "customs.executor-signal",
-    roleSlotId: customsRoleSlotIds.customsExecutor,
-    stageId: customsStageIds.customsComplete,
-    source: "customs",
-    signalName: customsSignalIds.customsCompleteConfirmed,
-    payloadPolicy: "required",
-    requiredEvidence: ["报关完成凭证引用"]
   }
 ];
 
@@ -441,14 +373,6 @@ export const customsZhixuDetail: ZhixuDetailDTO = {
   roleSlots: customsRoleSlots,
   dockableModules: [],
   stages: customsStages,
-  orderPermissionTable: customsOrderPermissionTable,
-  createOrderTrigger: {
-    source: customsInitialTriggerSource,
-    signalName: customsSignalIds.orderRegistered,
-    triggerHookId: "0x4625d43b26ce487427096279b6f54b8bf51a479e9ff90e52c0e71bcc0cba42a2",
-    triggerStageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca",
-    submitterRoleSlotId: customsRoleSlotIds.buyerResourceController
-  },
   proofRows: [
     { label: "Plan ID", value: customsPlanIds.planId },
     { label: "Plan Hash", value: customsPlanIds.planHash },
@@ -595,10 +519,6 @@ export const customsExecutorTask: ProductTaskDTO = {
   performanceSlotLabel: "报关履约者",
   businessPersonaLabels: ["报关行", "关务服务商"],
   // schema 插件的 requiredEvidence 属于秩序发布面，不随任务 DTO 下发，显式剔除。
-  capabilityPlugin: (() => {
-    const { requiredEvidence: _schemaPluginEvidence, ...plugin } = customsExecutorPlugin;
-    return { ...plugin, roleSlotId: customsRoleSlotIds.customsExecutor };
-  })(),
   primaryActionLabel: "提交报关完成",
   participantRoleLabel: "报关履约者",
   participantWallet: customsWallets.customsExecutor,
@@ -821,16 +741,7 @@ export const customsStoreProductSchema: StoreProductSchemaDTO = {
   planHash: customsPlanIds.planHash,
   artifactHash: customsPlanIds.artifactHash,
   onchainHookPlanArtifact: customsOnchainHookPlanArtifact,
-  createOrderTrigger: {
-    source: customsInitialTriggerSource,
-    signalName: customsSignalIds.orderRegistered,
-    triggerHookId: "0x4625d43b26ce487427096279b6f54b8bf51a479e9ff90e52c0e71bcc0cba42a2",
-    triggerStageId: "0xc670b506d61c646291c5d7ad8521d23188993447ada564c84d6be83599107cca",
-    submitterRoleSlotId: customsRoleSlotIds.buyerResourceController
-  },
   roleSlots: customsRoleSlots,
-  orderPermissionTable: customsOrderPermissionTable,
-  capabilityPlugins: customsRoleSlots.flatMap((slot) => slot.capabilityPlugins ?? []),
   businessPersonaLabels: ["买家", "报关行", "关务服务商"],
   stages: customsStages,
   selectorBindings: customsOnchainHookPlanArtifact.selectorBindings,

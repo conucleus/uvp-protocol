@@ -2796,3 +2796,5 @@ export {
   type SignalCapabilityTableEntry,
   type StageSelectorBindingTableEntry,
 } from "./capabilities-root.js";
+
+export * from "./order-book.js";
