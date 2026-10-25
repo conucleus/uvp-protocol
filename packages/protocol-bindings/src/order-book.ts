@@ -1,7 +1,6 @@
-// UVP 订单簿（UVPOrderBook/1）EIP-712 域与两个订单域消息：
-// UVPStageInviteAccept（slot 接受绑定本 stage 条款）与
-// UVPStageSettlementProposal（结算提案双签）。这里只放通用域常量、
-// 字段表、type hash 与规范化构造/校验；不含行业字段，也不做链上授权。
+// UVP 订单簿（UVPOrderBook/1）EIP-712 域与通用订单消息：
+// UVPStageInviteAccept（slot 接受绑定本 stage 条款）与 UVPOrderFinalize。
+// 这里只放通用域常量、字段表、type hash 与规范化构造/校验。
 
 import { getAddress, isAddress, isHex, keccak256, toHex, type Address, type Hex } from "viem";
 
@@ -9,7 +8,6 @@ export const UVP_ORDER_BOOK_DOMAIN_NAME = "UVPOrderBook";
 export const UVP_ORDER_BOOK_DOMAIN_VERSION = "1";
 
 export const UVP_STAGE_INVITE_ACCEPT_PRIMARY_TYPE = "UVPStageInviteAccept";
-export const UVP_STAGE_SETTLEMENT_PROPOSAL_PRIMARY_TYPE = "UVPStageSettlementProposal";
 export const UVP_ORDER_FINALIZE_PRIMARY_TYPE = "UVPOrderFinalize";
 
 export interface OrderBookTypedDataField {
@@ -24,26 +22,10 @@ export const UVP_STAGE_INVITE_ACCEPT_TYPED_DATA_FIELDS: readonly OrderBookTypedD
   { name: "stageId", type: "bytes32" },
   { name: "slotKey", type: "string" },
   { name: "invitee", type: "address" },
-  { name: "payee", type: "address" },
-  { name: "verifier", type: "address" },
   { name: "amount", type: "uint256" },
-  { name: "feeBps", type: "uint256" },
   { name: "finalStandardHash", type: "bytes32" },
   { name: "workDeadline", type: "uint256" },
   { name: "termsHash", type: "bytes32" },
-  { name: "nonce", type: "uint256" },
-  { name: "deadline", type: "uint256" },
-];
-
-export const UVP_STAGE_SETTLEMENT_PROPOSAL_TYPED_DATA_FIELDS: readonly OrderBookTypedDataField[] = [
-  { name: "orderId", type: "bytes32" },
-  { name: "stageId", type: "bytes32" },
-  { name: "payerAmount", type: "uint256" },
-  { name: "payeeAmount", type: "uint256" },
-  { name: "sourceFact", type: "bytes32" },
-  { name: "instructionRef", type: "bytes32" },
-  { name: "proposer", type: "address" },
-  { name: "counterparty", type: "address" },
   { name: "nonce", type: "uint256" },
   { name: "deadline", type: "uint256" },
 ];
@@ -74,13 +56,9 @@ function encodeType(
 export const UVP_STAGE_INVITE_ACCEPT_TYPE_HASH: Hex = keccak256(
   toHex(encodeType(UVP_STAGE_INVITE_ACCEPT_PRIMARY_TYPE, UVP_STAGE_INVITE_ACCEPT_TYPED_DATA_FIELDS)),
 );
-export const UVP_STAGE_SETTLEMENT_PROPOSAL_TYPE_HASH: Hex = keccak256(
-  toHex(encodeType(UVP_STAGE_SETTLEMENT_PROPOSAL_PRIMARY_TYPE, UVP_STAGE_SETTLEMENT_PROPOSAL_TYPED_DATA_FIELDS)),
-);
 export const UVP_ORDER_FINALIZE_TYPE_HASH: Hex = keccak256(
   toHex(encodeType(UVP_ORDER_FINALIZE_PRIMARY_TYPE, UVP_ORDER_FINALIZE_TYPED_DATA_FIELDS)),
 );
-
 export interface OrderBookDomain {
   readonly name: typeof UVP_ORDER_BOOK_DOMAIN_NAME;
   readonly version: typeof UVP_ORDER_BOOK_DOMAIN_VERSION;
@@ -113,10 +91,7 @@ export interface UVPStageInviteAcceptTypedData {
     readonly stageId: Hex;
     readonly slotKey: string;
     readonly invitee: Address;
-    readonly payee: Address;
-    readonly verifier: Address;
     readonly amount: string;
-    readonly feeBps: string;
     readonly finalStandardHash: Hex;
     readonly workDeadline: string;
     readonly termsHash: Hex;
@@ -134,11 +109,7 @@ export interface BuildUVPStageInviteAcceptTypedDataInput {
   readonly stageId: Hex | string;
   readonly slotKey: string;
   readonly invitee: Address | string;
-  /** payee/verifier 不适用时传零地址。 */
-  readonly payee: Address | string;
-  readonly verifier: Address | string;
   readonly amount: bigint | number | string;
-  readonly feeBps: bigint | number | string;
   readonly finalStandardHash: Hex | string;
   readonly workDeadline: bigint | number | string;
   readonly termsHash: Hex | string;
@@ -160,70 +131,10 @@ export function buildUVPStageInviteAcceptTypedData(
       stageId: normalizeBytes32(input.stageId, "stageId"),
       slotKey: normalizeNonEmptyString(input.slotKey, "slotKey"),
       invitee: normalizeAddress(input.invitee, "invitee"),
-      payee: normalizeAddress(input.payee, "payee"),
-      verifier: normalizeAddress(input.verifier, "verifier"),
       amount: normalizeUintString(input.amount, "amount"),
-      feeBps: normalizeUintString(input.feeBps, "feeBps"),
       finalStandardHash: normalizeBytes32(input.finalStandardHash, "finalStandardHash"),
       workDeadline: normalizeUintString(input.workDeadline, "workDeadline"),
       termsHash: normalizeBytes32(input.termsHash, "termsHash"),
-      nonce: normalizeUintString(input.nonce, "nonce"),
-      deadline: normalizeUintString(input.deadline, "deadline"),
-    },
-  };
-}
-
-export interface UVPStageSettlementProposalTypedData {
-  readonly domain: OrderBookDomain;
-  readonly types: {
-    readonly UVPStageSettlementProposal: readonly OrderBookTypedDataField[];
-  };
-  readonly primaryType: typeof UVP_STAGE_SETTLEMENT_PROPOSAL_PRIMARY_TYPE;
-  readonly message: {
-    readonly orderId: Hex;
-    readonly stageId: Hex;
-    readonly payerAmount: string;
-    readonly payeeAmount: string;
-    readonly sourceFact: Hex;
-    readonly instructionRef: Hex;
-    readonly proposer: Address;
-    readonly counterparty: Address;
-    readonly nonce: string;
-    readonly deadline: string;
-  };
-}
-
-export interface BuildUVPStageSettlementProposalTypedDataInput {
-  readonly chainId: number;
-  readonly verifyingContract: Address | string;
-  readonly orderId: Hex | string;
-  readonly stageId: Hex | string;
-  readonly payerAmount: bigint | number | string;
-  readonly payeeAmount: bigint | number | string;
-  readonly sourceFact: Hex | string;
-  readonly instructionRef: Hex | string;
-  readonly proposer: Address | string;
-  readonly counterparty: Address | string;
-  readonly nonce: bigint | number | string;
-  readonly deadline: bigint | number | string;
-}
-
-export function buildUVPStageSettlementProposalTypedData(
-  input: BuildUVPStageSettlementProposalTypedDataInput,
-): UVPStageSettlementProposalTypedData {
-  return {
-    domain: buildOrderBookDomain(input),
-    types: { UVPStageSettlementProposal: UVP_STAGE_SETTLEMENT_PROPOSAL_TYPED_DATA_FIELDS },
-    primaryType: UVP_STAGE_SETTLEMENT_PROPOSAL_PRIMARY_TYPE,
-    message: {
-      orderId: normalizeBytes32(input.orderId, "orderId"),
-      stageId: normalizeBytes32(input.stageId, "stageId"),
-      payerAmount: normalizeUintString(input.payerAmount, "payerAmount"),
-      payeeAmount: normalizeUintString(input.payeeAmount, "payeeAmount"),
-      sourceFact: normalizeBytes32(input.sourceFact, "sourceFact"),
-      instructionRef: normalizeBytes32(input.instructionRef, "instructionRef"),
-      proposer: normalizeAddress(input.proposer, "proposer"),
-      counterparty: normalizeAddress(input.counterparty, "counterparty"),
       nonce: normalizeUintString(input.nonce, "nonce"),
       deadline: normalizeUintString(input.deadline, "deadline"),
     },
@@ -270,10 +181,7 @@ export function validateUVPStageInviteAcceptTypedData(
       stageId: normalizeBytes32(requireString(message.stageId, "stageId"), "stageId"),
       slotKey: requireString(message.slotKey, "slotKey"),
       invitee: normalizeAddress(requireString(message.invitee, "invitee"), "invitee"),
-      payee: normalizeAddress(requireString(message.payee, "payee"), "payee"),
-      verifier: normalizeAddress(requireString(message.verifier, "verifier"), "verifier"),
       amount: normalizeUintString(requireString(message.amount, "amount"), "amount"),
-      feeBps: normalizeUintString(requireString(message.feeBps, "feeBps"), "feeBps"),
       finalStandardHash: normalizeBytes32(
         requireString(message.finalStandardHash, "finalStandardHash"),
         "finalStandardHash",
@@ -283,53 +191,6 @@ export function validateUVPStageInviteAcceptTypedData(
         "workDeadline",
       ),
       termsHash: normalizeBytes32(requireString(message.termsHash, "termsHash"), "termsHash"),
-      nonce: normalizeUintString(requireString(message.nonce, "nonce"), "nonce"),
-      deadline: normalizeUintString(requireString(message.deadline, "deadline"), "deadline"),
-    },
-  };
-}
-
-export function validateUVPStageSettlementProposalTypedData(
-  value: unknown,
-): UVPStageSettlementProposalTypedData {
-  const record = requireRecord(value, "UVPStageSettlementProposal");
-  const domain = requireOrderBookDomain(record.domain);
-  const primaryType = requireString(record.primaryType, "primaryType");
-  if (primaryType !== UVP_STAGE_SETTLEMENT_PROPOSAL_PRIMARY_TYPE) {
-    throw new Error(`primaryType must be ${UVP_STAGE_SETTLEMENT_PROPOSAL_PRIMARY_TYPE}`);
-  }
-  const types = requireRecord(record.types, "types");
-  const fields = types[UVP_STAGE_SETTLEMENT_PROPOSAL_PRIMARY_TYPE];
-  if (!Array.isArray(fields)) {
-    throw new Error(`types.${UVP_STAGE_SETTLEMENT_PROPOSAL_PRIMARY_TYPE} must be an array`);
-  }
-  const expected = UVP_STAGE_SETTLEMENT_PROPOSAL_TYPED_DATA_FIELDS;
-  if (fields.length !== expected.length) {
-    throw new Error("UVPStageSettlementProposal field list does not match the canonical type");
-  }
-  for (let index = 0; index < expected.length; index += 1) {
-    const field = requireRecord(fields[index], `types.UVPStageSettlementProposal[${index}]`);
-    if (field.name !== expected[index]!.name || field.type !== expected[index]!.type) {
-      throw new Error(`UVPStageSettlementProposal field ${index} does not match the canonical type`);
-    }
-  }
-  const message = requireRecord(record.message, "message");
-  return {
-    domain,
-    types: { UVPStageSettlementProposal: expected },
-    primaryType: UVP_STAGE_SETTLEMENT_PROPOSAL_PRIMARY_TYPE,
-    message: {
-      orderId: normalizeBytes32(requireString(message.orderId, "orderId"), "orderId"),
-      stageId: normalizeBytes32(requireString(message.stageId, "stageId"), "stageId"),
-      payerAmount: normalizeUintString(requireString(message.payerAmount, "payerAmount"), "payerAmount"),
-      payeeAmount: normalizeUintString(requireString(message.payeeAmount, "payeeAmount"), "payeeAmount"),
-      sourceFact: normalizeBytes32(requireString(message.sourceFact, "sourceFact"), "sourceFact"),
-      instructionRef: normalizeBytes32(
-        requireString(message.instructionRef, "instructionRef"),
-        "instructionRef",
-      ),
-      proposer: normalizeAddress(requireString(message.proposer, "proposer"), "proposer"),
-      counterparty: normalizeAddress(requireString(message.counterparty, "counterparty"), "counterparty"),
       nonce: normalizeUintString(requireString(message.nonce, "nonce"), "nonce"),
       deadline: normalizeUintString(requireString(message.deadline, "deadline"), "deadline"),
     },

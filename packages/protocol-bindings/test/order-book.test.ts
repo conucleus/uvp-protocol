@@ -8,20 +8,16 @@ import { privateKeyToAccount } from "viem/accounts";
 import {
   buildOrderBookDomain,
   buildUVPStageInviteAcceptTypedData,
-  buildUVPStageSettlementProposalTypedData,
   buildUVPOrderFinalizeTypedData,
   UVP_ORDER_BOOK_DOMAIN_NAME,
   UVP_ORDER_BOOK_DOMAIN_VERSION,
   UVP_STAGE_INVITE_ACCEPT_PRIMARY_TYPE,
   UVP_STAGE_INVITE_ACCEPT_TYPED_DATA_FIELDS,
   UVP_STAGE_INVITE_ACCEPT_TYPE_HASH,
-  UVP_STAGE_SETTLEMENT_PROPOSAL_TYPE_HASH,
-  UVP_STAGE_SETTLEMENT_PROPOSAL_TYPED_DATA_FIELDS,
   UVP_ORDER_FINALIZE_TYPED_DATA_FIELDS,
   UVP_ORDER_FINALIZE_TYPE_HASH,
   validateUVPOrderFinalizeTypedData,
   validateUVPStageInviteAcceptTypedData,
-  validateUVPStageSettlementProposalTypedData,
 } from "../src/order-book.js";
 
 const verifyingContract = "0x1234567890abcdef1234567890abcdef12345678" as const;
@@ -47,10 +43,7 @@ function inviteTypedData() {
     stageId,
     slotKey: "performer",
     invitee,
-    payee: invitee,
-    verifier: "0x0000000000000000000000000000000000000000",
     amount: "1200000000",
-    feeBps: 100,
     finalStandardHash: standardHash,
     workDeadline: 1_900_000_000,
     termsHash,
@@ -122,46 +115,6 @@ describe("UVPStageInviteAccept typed data", () => {
       message: { ...typedData.message, amount: "-1" },
     };
     assert.throws(() => validateUVPStageInviteAcceptTypedData(wrongAmount), /amount/);
-  });
-});
-
-describe("UVPStageSettlementProposal typed data", () => {
-  it("computes the canonical type hash and validates the shape", () => {
-    const expected = keccak256(
-      toHex(
-        `UVPStageSettlementProposal(${UVP_STAGE_SETTLEMENT_PROPOSAL_TYPED_DATA_FIELDS.map(
-          (field) => `${field.type} ${field.name}`,
-        ).join(",")})`,
-      ),
-    );
-    assert.equal(UVP_STAGE_SETTLEMENT_PROPOSAL_TYPE_HASH, expected);
-
-    const typedData = buildUVPStageSettlementProposalTypedData({
-      chainId: 31337,
-      verifyingContract,
-      orderId: `0x${"01".repeat(32)}`,
-      stageId,
-      payerAmount: 800,
-      payeeAmount: 200,
-      sourceFact: `0x${"02".repeat(32)}`,
-      instructionRef: `0x${"03".repeat(32)}`,
-      proposer: buyer,
-      counterparty: invitee,
-      nonce: 7,
-      deadline: 1_800_000_000,
-    });
-    const validated = validateUVPStageSettlementProposalTypedData(typedData);
-    assert.equal(validated.message.payerAmount, "800");
-    assert.equal(validated.message.payeeAmount, "200");
-
-    assert.throws(
-      () =>
-        validateUVPStageSettlementProposalTypedData({
-          ...typedData,
-          primaryType: "UVPStageInviteAccept",
-        }),
-      /primaryType/,
-    );
   });
 });
 

@@ -69,7 +69,6 @@ export type ConfigAcceptanceModeV3 = "self" | "third_party" | "mutual" | "none";
 
 export interface ConfigAcceptanceV3 {
   readonly mode: ConfigAcceptanceModeV3;
-  readonly verifierSlot?: string;
 }
 
 /** 文件资源引用只存句柄/元数据，正文与凭据在配置包之外。 */
@@ -88,7 +87,7 @@ export interface ConfigStageV3 {
   readonly funded?: boolean;
   readonly description?: string;
   readonly senders?: readonly (ConfigStageSenderV3 | string)[];
-  /** slot 角色映射（如 payer/payee/verifier/performer → 配置 slot key）。 */
+  /** slot key → 该配置阶段的业务标签/展示名；不含协议角色语义。 */
   readonly slots?: Readonly<Record<string, string>>;
   readonly signals?: readonly ConfigStageSignalV3[];
   readonly receiveSignals?: readonly ConfigStageSignalV3[];
@@ -96,16 +95,12 @@ export interface ConfigStageV3 {
   readonly time?: readonly ConfigTimeV3[];
   readonly acceptance?: ConfigAcceptanceV3;
   readonly fileResources?: readonly (ConfigFileResourceRefV3 | string)[];
-  readonly feeBps?: number;
   readonly amount?: Readonly<Record<string, unknown>>;
   readonly linkSignal?: string;
   readonly ui?: Readonly<Record<string, unknown>>;
 }
 
 export interface ConfigDefaultsV3 {
-  readonly feeBps?: number;
-  readonly fees?: Readonly<Record<string, unknown>>;
-  readonly feeRecipientPolicy?: string;
   readonly timeExpressions?: Readonly<Record<string, string>>;
   readonly acceptance?: ConfigAcceptanceV3;
 }
@@ -183,16 +178,13 @@ export interface StageTermsV3 {
   readonly configHash: string;
   readonly stageKey: string;
   readonly stageId: string;
-  readonly payer: string;
-  readonly payee: string | null;
-  readonly verifier: string | null;
+  readonly slots: Readonly<Record<string, string>>;
   readonly amount: string;
-  readonly feeBps: number;
-  readonly feeRecipient: string | null;
   readonly standard?: StageStandardRefV3;
   readonly finalStandardHash: string;
   readonly inviteDeadline: string;
   readonly workDeadline: string;
+  readonly profileRef?: string;
   readonly termsHash?: string;
 }
 
@@ -268,7 +260,6 @@ export interface StageBindingV3 {
   readonly stageId: string;
   readonly slotKey: string;
   readonly wallet: string;
-  readonly role: "payer" | "payee" | "verifier" | "participant";
   readonly termsHash: string;
   readonly acceptedAt?: string;
 }
@@ -301,12 +292,11 @@ export interface OrderStageV3 {
   readonly stageId: string;
   readonly index: number;
   readonly amount: string;
-  readonly feeBps: number;
-  readonly acceptanceMode: ConfigAcceptanceModeV3;
-  readonly verifierMode: "self" | "third_party";
+  readonly slots: Readonly<Record<string, string>>;
   readonly finalStandardHash: string;
   readonly inviteDeadline: string;
   readonly workDeadline: string;
+  readonly profileRef?: string;
   readonly status: string;
 }
 
@@ -331,15 +321,12 @@ export interface OrderV3 {
 export interface StageTermsInputV3 {
   readonly stageKey: string;
   readonly amount: string;
-  readonly feeBps?: number;
-  readonly feeRecipient?: string;
-  readonly acceptanceMode?: ConfigAcceptanceModeV3;
-  readonly verifierMode?: "self" | "third_party";
-  readonly verifierWallet?: string;
+  readonly slots?: Readonly<Record<string, string>>;
   readonly standard?: StageStandardRefV3;
   readonly finalStandardHash?: string;
   readonly inviteDeadline: string;
   readonly workDeadline: string;
+  readonly profileRef?: string;
 }
 
 export interface CreateOrderDraftV3Input {
@@ -463,10 +450,7 @@ export interface UVPStageInviteAcceptMessage {
   readonly stageId: string;
   readonly slotKey: string;
   readonly invitee: string;
-  readonly payee: string;
-  readonly verifier: string;
   readonly amount: string;
-  readonly feeBps: string;
   readonly finalStandardHash: string;
   readonly workDeadline: string;
   readonly termsHash: string;
@@ -502,26 +486,4 @@ export interface UVPOrderFinalizeTypedData {
   };
   readonly primaryType: "UVPOrderFinalize";
   readonly message: UVPOrderFinalizeMessage;
-}
-
-export interface UVPStageSettlementProposalMessage {
-  readonly orderId: string;
-  readonly stageId: string;
-  readonly payerAmount: string;
-  readonly payeeAmount: string;
-  readonly sourceFact: string;
-  readonly instructionRef: string;
-  readonly proposer: string;
-  readonly counterparty: string;
-  readonly nonce: string;
-  readonly deadline: string;
-}
-
-export interface UVPStageSettlementProposalTypedData {
-  readonly domain: OrderBookDomainV3;
-  readonly types: {
-    readonly UVPStageSettlementProposal: readonly Eip712FieldV3[];
-  };
-  readonly primaryType: "UVPStageSettlementProposal";
-  readonly message: UVPStageSettlementProposalMessage;
 }

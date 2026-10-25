@@ -6,8 +6,7 @@
   "description": "User-facing product DTOs for UVP Zhixu workbench APIs.",
   "license": "Apache-2.0",
   "exports": {
-    ".": "./src/index.ts",
-    "./fixtures": "./src/fixtures/index.ts"
+    ".": "./src/index.ts"
   },
   "files": [
     "src",
