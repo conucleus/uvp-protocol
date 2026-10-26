@@ -15,7 +15,9 @@ pnpm --filter @uvp-eth/protocol-bindings build
 
 - Exposes core and module ABI constants, EIP-712 Product submit typed-data
   helpers, split stage executor/resource patch typed-data helpers,
-  `submitSignalFor`, `applyStageExecutorPatchFor`, and `applyStageResourcePatchFor` call
+  `UVPZhixuRegistry/1` registry typed data (`ZhixuRecord`/`IdentityClaim`
+  schema, builders, type hashes), `submitSignalFor`,
+  `applyStageExecutorPatchFor`, and `applyStageResourcePatchFor` call
   construction, capability-tree root/proof helpers, address/bytes32
   validation, and manifest hashing. Canonical JSON serialization and evidence
   hashing are owned by `@uvp-eth/canonical-json`.

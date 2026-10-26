@@ -2682,3 +2682,4 @@ export {
 } from "./capabilities-root.js";
 
 export * from "./order-book.js";
+export * from "./registry.js";

@@ -378,3 +378,133 @@ function normalizeChainId(value: number): number {
 }
 
 export const ORDER_BOOK_ZERO_ADDRESS = ZERO_ADDRESS;
+
+export const UVP_STAGE_INVITE_CREATE_PRIMARY_TYPE = "UVPStageInviteCreate";
+
+// 开单人邀请授权：buyer 在应用后端铸造 invite 之前签署的条款（不含 inviteId/token，
+// 二者由后端在验签后生成）；字段词表与 accept 保持一致，去掉 accept 才有的 inviteId。
+export const UVP_STAGE_INVITE_CREATE_TYPED_DATA_FIELDS: readonly OrderBookTypedDataField[] = [
+  { name: "draftId", type: "string" },
+  { name: "stageKey", type: "string" },
+  { name: "stageId", type: "bytes32" },
+  { name: "slotKey", type: "string" },
+  { name: "invitee", type: "address" },
+  { name: "amount", type: "uint256" },
+  { name: "finalStandardHash", type: "bytes32" },
+  { name: "workDeadline", type: "uint256" },
+  { name: "termsHash", type: "bytes32" },
+  { name: "nonce", type: "uint256" },
+  { name: "deadline", type: "uint256" },
+];
+
+export const UVP_STAGE_INVITE_CREATE_TYPE_HASH: Hex = keccak256(
+  toHex(encodeType(UVP_STAGE_INVITE_CREATE_PRIMARY_TYPE, UVP_STAGE_INVITE_CREATE_TYPED_DATA_FIELDS)),
+);
+
+export interface UVPStageInviteCreateTypedData {
+  readonly domain: OrderBookDomain;
+  readonly types: {
+    readonly UVPStageInviteCreate: readonly OrderBookTypedDataField[];
+  };
+  readonly primaryType: typeof UVP_STAGE_INVITE_CREATE_PRIMARY_TYPE;
+  readonly message: {
+    readonly draftId: string;
+    readonly stageKey: string;
+    readonly stageId: Hex;
+    readonly slotKey: string;
+    readonly invitee: Address;
+    readonly amount: string;
+    readonly finalStandardHash: Hex;
+    readonly workDeadline: string;
+    readonly termsHash: Hex;
+    readonly nonce: string;
+    readonly deadline: string;
+  };
+}
+
+export interface BuildUVPStageInviteCreateTypedDataInput {
+  readonly chainId: number;
+  readonly verifyingContract: Address | string;
+  readonly draftId: string;
+  readonly stageKey: string;
+  readonly stageId: Hex | string;
+  readonly slotKey: string;
+  readonly invitee: Address | string;
+  readonly amount: bigint | number | string;
+  readonly finalStandardHash: Hex | string;
+  readonly workDeadline: bigint | number | string;
+  readonly termsHash: Hex | string;
+  readonly nonce: bigint | number | string;
+  readonly deadline: bigint | number | string;
+}
+
+export function buildUVPStageInviteCreateTypedData(
+  input: BuildUVPStageInviteCreateTypedDataInput,
+): UVPStageInviteCreateTypedData {
+  return {
+    domain: buildOrderBookDomain(input),
+    types: { UVPStageInviteCreate: UVP_STAGE_INVITE_CREATE_TYPED_DATA_FIELDS },
+    primaryType: UVP_STAGE_INVITE_CREATE_PRIMARY_TYPE,
+    message: {
+      draftId: normalizeNonEmptyString(input.draftId, "draftId"),
+      stageKey: normalizeNonEmptyString(input.stageKey, "stageKey"),
+      stageId: normalizeBytes32(input.stageId, "stageId"),
+      slotKey: normalizeNonEmptyString(input.slotKey, "slotKey"),
+      invitee: normalizeAddress(input.invitee, "invitee"),
+      amount: normalizeUintString(input.amount, "amount"),
+      finalStandardHash: normalizeBytes32(input.finalStandardHash, "finalStandardHash"),
+      workDeadline: normalizeUintString(input.workDeadline, "workDeadline"),
+      termsHash: normalizeBytes32(input.termsHash, "termsHash"),
+      nonce: normalizeUintString(input.nonce, "nonce"),
+      deadline: normalizeUintString(input.deadline, "deadline"),
+    },
+  };
+}
+
+export function validateUVPStageInviteCreateTypedData(
+  value: unknown,
+): UVPStageInviteCreateTypedData {
+  const record = requireRecord(value, "UVPStageInviteCreate");
+  const domain = requireOrderBookDomain(record.domain);
+  const primaryType = requireString(record.primaryType, "primaryType");
+  if (primaryType !== UVP_STAGE_INVITE_CREATE_PRIMARY_TYPE) {
+    throw new Error(`primaryType must be ${UVP_STAGE_INVITE_CREATE_PRIMARY_TYPE}`);
+  }
+  const types = requireRecord(record.types, "types");
+  const fields = types[UVP_STAGE_INVITE_CREATE_PRIMARY_TYPE];
+  if (!Array.isArray(fields)) {
+    throw new Error(`types.${UVP_STAGE_INVITE_CREATE_PRIMARY_TYPE} must be an array`);
+  }
+  const expected = UVP_STAGE_INVITE_CREATE_TYPED_DATA_FIELDS;
+  if (fields.length !== expected.length) {
+    throw new Error("UVPStageInviteCreate field list does not match the canonical type");
+  }
+  for (let index = 0; index < expected.length; index += 1) {
+    const field = requireRecord(fields[index], `types.UVPStageInviteCreate[${index}]`);
+    if (field.name !== expected[index]!.name || field.type !== expected[index]!.type) {
+      throw new Error(`UVPStageInviteCreate field ${index} does not match the canonical type`);
+    }
+  }
+  const message = requireRecord(record.message, "message");
+  return {
+    domain,
+    types: { UVPStageInviteCreate: expected },
+    primaryType: UVP_STAGE_INVITE_CREATE_PRIMARY_TYPE,
+    message: {
+      draftId: requireString(message.draftId, "draftId"),
+      stageKey: requireString(message.stageKey, "stageKey"),
+      stageId: normalizeBytes32(requireString(message.stageId, "stageId"), "stageId"),
+      slotKey: requireString(message.slotKey, "slotKey"),
+      invitee: normalizeAddress(requireString(message.invitee, "invitee"), "invitee"),
+      amount: normalizeUintString(requireString(message.amount, "amount"), "amount"),
+      finalStandardHash: normalizeBytes32(
+        requireString(message.finalStandardHash, "finalStandardHash"),
+        "finalStandardHash",
+      ),
+      workDeadline: normalizeUintString(requireString(message.workDeadline, "workDeadline"), "workDeadline"),
+      termsHash: normalizeBytes32(requireString(message.termsHash, "termsHash"), "termsHash"),
+      nonce: normalizeUintString(requireString(message.nonce, "nonce"), "nonce"),
+      deadline: normalizeUintString(requireString(message.deadline, "deadline"), "deadline"),
+    },
+  };
+}
