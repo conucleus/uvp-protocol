@@ -1,4 +1,4 @@
-import { canonicalStringify } from "../../canonical.js";
+import { canonicalJson } from "@uvp-eth/canonical-json";
 import { hashCanonical, keccak256Hex } from "../../hash.js";
 import { isHexHash } from "../shape.js";
 import type {
@@ -9,7 +9,7 @@ import type {
 
 /**
  * 链轨非 plan 级承诺的组装：标识 id 派生、route/binding/capability 哈希与
- * Solidity 零字；哈希基元复用根 hash.ts / canonical.ts。
+ * Solidity 零字；哈希基元复用根 hash.ts / @uvp-eth/canonical-json。
  */
 
 const ONCHAIN_ROUTE_HASH_DOMAIN = "uvp:onchain-hook-route:v1";
@@ -81,7 +81,7 @@ export function onchainSignalKey(
 }
 
 export function opaqueContentHash(value: unknown): HexString {
-  return keccak256Hex(canonicalStringify(value));
+  return keccak256Hex(canonicalJson(value));
 }
 
 export function onchainRouteHash(route: HookPlanExecutorRoute): HexString {

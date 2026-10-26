@@ -13,6 +13,7 @@ import {
   type Address,
   type Hex,
 } from "viem";
+import { canonicalJson } from "@uvp-eth/canonical-json";
 
 // 部分签名的嵌套深度超出 viem parseAbi 的类型级解析预算
 // （运行时解析正常，tsc 下落入 Error 分支），这几条以等价的 JSON const
@@ -1379,13 +1380,6 @@ export interface ApplyStageResourcePatchForCall {
 
 
 
-export interface EvidenceHashResult {
-  readonly algorithm: "keccak256";
-  readonly evidenceHash: Hex;
-  readonly byteLength: number;
-  readonly source: "bytes" | "json" | "text";
-}
-
 const BYTES32_RE = /^0x[a-fA-F0-9]{64}$/;
 const ZERO_BYTES32 = `0x${"0".repeat(64)}` as Hex;
 const ZERO_ADDRESS = `0x${"0".repeat(40)}` as Address;
@@ -1970,116 +1964,6 @@ export function buildApplyStageResourcePatchForCall(
     ...(config.chainId !== undefined
       ? { chainId: normalizeChainId(config.chainId) }
       : {}),
-  };
-}
-
-export function canonicalJson(value: unknown): string {
-  if (value === null) {
-    return "null";
-  }
-
-  if (typeof value === "string") {
-    return JSON.stringify(value);
-  }
-
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) {
-      throw new TypeError("canonical JSON does not support non-finite numbers");
-    }
-    // 浮点拒绝：canonical 哈希输入的数字词表封闭为整数
-    // （u64/i64）——非整值 float 与负零（serde_json 把 "-0"/"-0.0" 都解析
-    // 为 f64 -0.0，权威侧按浮点拒绝）一律响亮拒绝。与 @uvp-eth/compiler
-    // canonical.ts 同口径，三线语料（uvp-core
-    // fixtures/canonical/canonical.v1.json）钉死边界。JS 数字模型无法区分
-    // 1 与源字面量 1.0，整值浮点字面量（不含 -0）的拒绝在 Rust 权威解析侧。
-    if (!Number.isInteger(value) || Object.is(value, -0)) {
-      const token = Object.is(value, -0) ? "-0" : String(value);
-      throw new TypeError(
-        `canonical JSON does not support float-form numbers (integer hash preimages only), received ${token}`,
-      );
-    }
-    // 安全整数边界：|x| ≥ 2^53 的 number 在 JS 侧已丢精度，且 ≥1e21 经
-    // JSON.stringify 输出指数形式——与 compiler canonical.ts 同口径响亮
-    // 拒绝（大整数载荷以 string/hex word 携带）。
-    if (!Number.isSafeInteger(value)) {
-      throw new TypeError(
-        `canonical JSON does not support integers beyond the safe integer range 2^53-1 (precision loss / exponential stringification), received ${value}`,
-      );
-    }
-    return JSON.stringify(value);
-  }
-
-  if (typeof value === "boolean") {
-    return value ? "true" : "false";
-  }
-
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
-  }
-
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    // Code-point key order (= UTF-8 byte order), matching the Rust authority
-    // (serde_json BTreeMap / str Ord) and the compiler's canonical.ts. The
-    // default Array#sort compares UTF-16 code units, which orders astral
-    // keys (surrogate pairs) before high-BMP keys — a different canonical
-    // byte stream and therefore a different evidence hash.
-    const entries = Object.keys(record)
-      .sort(compareJsonKeyByCodePoint)
-      .map((key) => {
-        const child = record[key];
-        if (typeof child === "undefined") {
-          throw new TypeError(
-            "canonical JSON does not support undefined object properties",
-          );
-        }
-        return `${JSON.stringify(key)}:${canonicalJson(child)}`;
-      });
-    return `{${entries.join(",")}}`;
-  }
-
-  throw new TypeError(`canonical JSON does not support ${typeof value}`);
-}
-
-function compareJsonKeyByCodePoint(left: string, right: string): number {
-  const leftPoints = Array.from(left);
-  const rightPoints = Array.from(right);
-  const length = Math.min(leftPoints.length, rightPoints.length);
-  for (let index = 0; index < length; index += 1) {
-    const comparison =
-      (leftPoints[index] as string).codePointAt(0)! - (rightPoints[index] as string).codePointAt(0)!;
-    if (comparison !== 0) {
-      return comparison;
-    }
-  }
-  return leftPoints.length - rightPoints.length;
-}
-
-export function hashEvidenceBytes(bytes: Uint8Array): EvidenceHashResult {
-  return {
-    algorithm: "keccak256",
-    evidenceHash: keccak256(toHex(bytes)),
-    byteLength: bytes.byteLength,
-    source: "bytes",
-  };
-}
-
-export function hashEvidenceText(text: string): EvidenceHashResult {
-  return {
-    algorithm: "keccak256",
-    evidenceHash: keccak256(stringToHex(text)),
-    byteLength: new TextEncoder().encode(text).byteLength,
-    source: "text",
-  };
-}
-
-export function hashEvidenceJson(value: unknown): EvidenceHashResult {
-  const canonical = canonicalJson(value);
-  return {
-    algorithm: "keccak256",
-    evidenceHash: keccak256(stringToHex(canonical)),
-    byteLength: new TextEncoder().encode(canonical).byteLength,
-    source: "json",
   };
 }
 

@@ -1,3 +1,11 @@
+/**
+ * 规范化 JSON 与 evidence hash 单源：code-point 键序、整数词表（float/-0/
+ * 超 2^53 整数响亮拒绝）与 keccak256 哈希。Rust 权威语料见
+ * uvp-core/fixtures/canonical/canonical.v1.json。
+ */
+
+import { keccak256, stringToHex, toHex, type Hex } from "viem";
+
 export type CanonicalJsonValue =
   | null
   | boolean
@@ -68,8 +76,48 @@ export function compareByCodePoint(left: string, right: string): number {
   return leftPoints.length - rightPoints.length;
 }
 
-export function canonicalStringify(value: unknown): string {
+export function canonicalJson(value: unknown): string {
   return writeCanonical(canonicalize(value));
+}
+
+/** canonical JSON 的 keccak256（无域前缀；域分离由调用方的 preimage 负责）。 */
+export function hashCanonicalJson(value: unknown): Hex {
+  return keccak256(stringToHex(canonicalJson(value)));
+}
+
+export interface EvidenceHashResult {
+  readonly algorithm: "keccak256";
+  readonly evidenceHash: Hex;
+  readonly byteLength: number;
+  readonly source: "bytes" | "json" | "text";
+}
+
+export function hashEvidenceBytes(bytes: Uint8Array): EvidenceHashResult {
+  return {
+    algorithm: "keccak256",
+    evidenceHash: keccak256(toHex(bytes)),
+    byteLength: bytes.byteLength,
+    source: "bytes",
+  };
+}
+
+export function hashEvidenceText(text: string): EvidenceHashResult {
+  return {
+    algorithm: "keccak256",
+    evidenceHash: keccak256(stringToHex(text)),
+    byteLength: new TextEncoder().encode(text).byteLength,
+    source: "text",
+  };
+}
+
+export function hashEvidenceJson(value: unknown): EvidenceHashResult {
+  const canonical = canonicalJson(value);
+  return {
+    algorithm: "keccak256",
+    evidenceHash: keccak256(stringToHex(canonical)),
+    byteLength: new TextEncoder().encode(canonical).byteLength,
+    source: "json",
+  };
 }
 
 function writeCanonicalNumber(value: number): string {

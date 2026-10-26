@@ -1,6 +1,6 @@
 import { keccak256 } from "viem";
 import { keccak256Hex } from "./hash.js";
-import { canonicalize, canonicalStringify } from "./canonical.js";
+import { canonicalJson, canonicalize } from "@uvp-eth/canonical-json";
 import type {
   DockInterfaceArtifactV2,
   DockOrderMode,
@@ -253,7 +253,7 @@ export function orderModesWord(modes: readonly string[]): HexString | undefined 
 
 export function definitionUid(definition: unknown): string {
   const digest = keccak256Hex(
-    `${DEFINITION_UID_DOMAIN}:${canonicalStringify(stripDisplayFields(definition))}`,
+    `${DEFINITION_UID_DOMAIN}:${canonicalJson(stripDisplayFields(definition))}`,
   );
   return `zx-${digest.slice(2, 2 + 32)}`;
 }

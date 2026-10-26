@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
-import { canonicalStringify } from "../src/index.js";
+import { canonicalJson } from "../src/index.js";
 
 const corpusUrl = new URL(
   "../../../../uvp-core/fixtures/canonical/canonical.v1.json",
@@ -300,7 +300,7 @@ test("canonical TS behavior aligns with the shared uvp-core corpus", () => {
 
     if (jsVisibleFloat) {
       assert.throws(
-        () => canonicalStringify(input),
+        () => canonicalJson(input),
         /must be an integer: canonical JSON hash preimages reject float-form numbers/,
         `${case_.name}: JS-visible float must be rejected`,
       );
@@ -315,7 +315,7 @@ test("canonical TS behavior aligns with the shared uvp-core corpus", () => {
 
     if (numbers.some((n) => !Number.isSafeInteger(n.value))) {
       assert.throws(
-        () => canonicalStringify(input),
+        () => canonicalJson(input),
         /must be a safe integer: canonical JSON hash preimages reject integers beyond 2\^53-1/,
         `${case_.name}: erased-precision integers must be rejected loudly on the TS side`,
       );
@@ -325,7 +325,7 @@ test("canonical TS behavior aligns with the shared uvp-core corpus", () => {
 
     if (floatFormToken || !exactIntegers) {
       assert.doesNotThrow(
-        () => canonicalStringify(input),
+        () => canonicalJson(input),
         `${case_.name}: erased-integer input must stay canonicalizable on the TS side`,
       );
       jsErasedDivergence += 1;
@@ -338,7 +338,7 @@ test("canonical TS behavior aligns with the shared uvp-core corpus", () => {
       `${case_.name}: exactly-representable integers must stay acceptance vectors`,
     );
     assert.equal(
-      canonicalStringify(input),
+      canonicalJson(input),
       case_.expectCanonical,
       `${case_.name}: canonical bytes diverged from the pinned vector`,
     );
@@ -352,19 +352,19 @@ test("canonical TS behavior aligns with the shared uvp-core corpus", () => {
 
 test("rejects integers beyond the safe range loudly (2^60, 1e21)", () => {
   assert.throws(
-    () => canonicalStringify({ a: 2 ** 60 }),
+    () => canonicalJson({ a: 2 ** 60 }),
     /must be a safe integer: canonical JSON hash preimages reject integers beyond 2\^53-1.*received 1152921504606847000/,
   );
   assert.throws(
-    () => canonicalStringify({ a: 1e21 }),
+    () => canonicalJson({ a: 1e21 }),
     /must be a safe integer: canonical JSON hash preimages reject integers beyond 2\^53-1.*received 1e\+21/,
   );
   assert.throws(
-    () => canonicalStringify([-(2 ** 60)]),
+    () => canonicalJson([-(2 ** 60)]),
     /must be a safe integer/,
   );
   assert.equal(
-    canonicalStringify({ a: Number.MAX_SAFE_INTEGER }),
+    canonicalJson({ a: Number.MAX_SAFE_INTEGER }),
     `{"a":${Number.MAX_SAFE_INTEGER}}`,
   );
 });

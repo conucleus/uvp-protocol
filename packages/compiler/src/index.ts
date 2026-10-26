@@ -1,4 +1,3 @@
-export { canonicalize, canonicalStringify } from "./canonical.js";
 export {
   assertHookPlanArtifact,
   compileZhixuHookPlan,

@@ -20,6 +20,7 @@ modeled as local/linked order signal binding rather than an order hierarchy.
 This domain owns deterministic semantics and public protocol interfaces:
 
 - `packages/hook-core/`: Hook DSL parsing, dependency extraction, and local evaluation.
+- `packages/canonical-json/`: canonical JSON serialization and evidence hashing single source.
 - `packages/compiler/`: Zhixu-to-on-chain HookPlan artifact and register-plan argument generation.
 - `packages/statemachine/`: offline chain-event replay oracle.
 - `packages/product-dto/`: shared Product DTO contracts derived from protocol projections.

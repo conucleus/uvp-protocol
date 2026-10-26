@@ -7,7 +7,7 @@ import {
   type DockResolutionManifest,
 } from "./types/index.js";
 import { validateDockCommitments, validateUnresolvedDockRouteDeclarations } from "./dock-validation.js";
-import { compareByCodePoint } from "./canonical.js";
+import { compareByCodePoint } from "@uvp-eth/canonical-json";
 import { hashCanonical } from "./hash.js";
 import {
   assembleChainTrackHookPlan,

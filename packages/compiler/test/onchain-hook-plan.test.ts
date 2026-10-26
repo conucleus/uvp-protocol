@@ -16,9 +16,9 @@ import {
   ZERO_WORD,
 } from "../src/dock.js";
 import test from "node:test";
+import { canonicalJson } from "@uvp-eth/canonical-json";
 import {
   assertOnchainHookPlanArtifact,
-  canonicalStringify,
   compileZhixuOnchainHookPlan,
   hashSolidityRegisterHooks,
   keccak256Hex,
@@ -659,12 +659,12 @@ test("commitment golden vectors pin uid/planHash/hooksHash from the shared fixtu
       `${golden.name}: onchainPlanHash preimage rehash`,
     );
     assert.equal(
-      canonicalStringify(JSON.parse(golden.preimages.hookPlanCanonical)),
+      canonicalJson(JSON.parse(golden.preimages.hookPlanCanonical)),
       golden.preimages.hookPlanCanonical,
       `${golden.name}: hookPlanCanonical must stay in canonical form`,
     );
     assert.equal(
-      canonicalStringify(JSON.parse(golden.preimages.onchainPlanCanonical)),
+      canonicalJson(JSON.parse(golden.preimages.onchainPlanCanonical)),
       golden.preimages.onchainPlanCanonical,
       `${golden.name}: onchainPlanCanonical must stay in canonical form`,
     );

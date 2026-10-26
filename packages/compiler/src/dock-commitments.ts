@@ -19,7 +19,7 @@ import {
   stripAnnotations,
   ZERO_WORD,
 } from "./dock.js";
-import { canonicalize } from "./canonical.js";
+import { canonicalize } from "@uvp-eth/canonical-json";
 import { validateDockCommitments } from "./dock-validation.js";
 import {
   COMPILER_NAME,

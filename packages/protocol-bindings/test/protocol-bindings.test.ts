@@ -40,13 +40,11 @@ import {
   buildTriggerOrderFromOutsideForCall,
   buildTriggerOrderFromSignalForCall,
   buildTriggerOrderFromSignalTypedData,
-  canonicalJson,
   capabilitiesRootOf,
   deriveOrderLinkOrderId,
   deriveTriggerOrderId,
   EMPTY_CAPABILITIES_ROOT,
   factAttribution,
-  hashEvidenceJson,
   hashResourceManifest,
   hashStageExecutorPatchPayload,
   hashStageResourcePatchPayload,
@@ -1299,44 +1297,6 @@ const executorAuthorizations = [
     assert.deepEqual(decodedArgs[6], { selectorStageId, proof: [] });
   });
 
-  it("hashes canonical JSON in a browser-safe helper", () => {
-    assert.equal(
-      canonicalJson({ b: 2, a: { d: 4, c: 3 } }),
-      '{"a":{"c":3,"d":4},"b":2}',
-    );
-    // 浮点拒绝——canonical 哈希输入只收整数，非整值 float
-    // 与负零（f64 -0.0）响亮拒绝（与 @uvp-eth/compiler canonical.ts 同口
-    // 径，三线语料 uvp-core fixtures/canonical/canonical.v1.json 钉死边界）。
-    assert.equal(canonicalJson({ n: 0 }), '{"n":0}');
-    assert.throws(() => canonicalJson({ n: -0 }), /float-form numbers.*received -0/);
-    assert.throws(
-      () => canonicalJson({ optional: undefined }),
-      /undefined object properties/,
-    );
-    assert.equal(
-      hashEvidenceJson({ b: 2, a: 1 }).evidenceHash,
-      hashEvidenceJson({ a: 1, b: 2 }).evidenceHash,
-    );
-    // Code-point key order (Rust authority): astral keys sort AFTER every
-    // BMP key; UTF-16 code-unit order would put the surrogate pair first.
-    const astral = "\u{1F600}";
-    const bmp = "\uFFFD";
-    assert.equal(
-      canonicalJson({ [astral]: 1, [bmp]: 2 }),
-      `{"${bmp}":2,"${astral}":1}`,
-    );
-    assert.equal(
-      canonicalJson({ "\u{10FFFF}": 1, "\uFFFE": 2 }),
-      `{"\uFFFE":2,"\u{10FFFF}":1}`,
-    );
-    // 浮点拒绝——canonical 哈希输入只收整数与 -0，
-    // 非整值 float 响亮拒绝（与 @uvp-eth/compiler canonical.ts 同口径，
-    // 三线语料 uvp-core fixtures/canonical/canonical.v1.json 钉死边界）。
-    assert.throws(() => canonicalJson(1.5), /float-form numbers/);
-    assert.throws(() => canonicalJson({ a: [0, 0.5] }), /float-form numbers/);
-    assert.throws(() => canonicalJson(1e-5), /float-form numbers/);
-  });
-
   it("rejects chain ids at and beyond the 64-bit FFI boundary", () => {
     const base = {
       verifyingContract,
@@ -1681,24 +1641,6 @@ const executorAuthorizations = [
         "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
         "0xebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7",
       ),
-    );
-  });
-
-  it("rejects unsafe-range integers in canonical JSON (2^60, 1e21)", () => {
-    // 2609100052 C-2 同型：|x| >= 2^53 已丢精度、>=1e21 输出指数形式——与
-    // @uvp-eth/compiler canonical.ts 同口径响亮拒绝（大整数以 string/hex
-    // word 携带）。
-    assert.throws(
-      () => canonicalJson({ n: 2 ** 60 }),
-      /beyond the safe integer range 2\^53-1.*received 1152921504606847000/,
-    );
-    assert.throws(
-      () => canonicalJson({ n: 1e21 }),
-      /beyond the safe integer range 2\^53-1.*received 1e\+21/,
-    );
-    assert.equal(
-      canonicalJson({ n: Number.MAX_SAFE_INTEGER }),
-      `{"n":${Number.MAX_SAFE_INTEGER}}`,
     );
   });
 

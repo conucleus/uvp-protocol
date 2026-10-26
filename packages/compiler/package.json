@@ -22,6 +22,7 @@
     "generate:commitment-golden-vectors": "tsx scripts/gen-commitment-golden-vectors.ts"
   },
   "dependencies": {
+    "@uvp-eth/canonical-json": "workspace:*",
     "@uvp-eth/hook-core": "workspace:*",
     "viem": "^2.21.58",
     "yaml": "^2.8.3"

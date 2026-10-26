@@ -1,4 +1,4 @@
-import { canonicalStringify } from "./canonical.js";
+import { canonicalJson } from "@uvp-eth/canonical-json";
 import type { HexString } from "./types/index.js";
 import { keccak256, stringToBytes } from "viem";
 
@@ -7,5 +7,5 @@ export function keccak256Hex(data: Uint8Array | string): HexString {
 }
 
 export function hashCanonical(domain: string, payload: unknown): HexString {
-  return keccak256Hex(`${domain}:${canonicalStringify(payload)}`);
+  return keccak256Hex(`${domain}:${canonicalJson(payload)}`);
 }

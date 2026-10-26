@@ -21,6 +21,7 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "@uvp-eth/canonical-json": "workspace:*",
     "viem": "^2.21.58"
   },
   "devDependencies": {
