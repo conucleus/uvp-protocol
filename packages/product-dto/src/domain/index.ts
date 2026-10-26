@@ -85,7 +85,6 @@ export type ProductDockedZhixuRuntimeStatus =
   | "signal_map_satisfied"
   | "blocked"
   | "not_modeled";
-export type CapabilityPluginSource = "explicit" | "inferred" | "missing";
 export type StoreSchemaValidationStatus = "explicit" | "inferred" | "missing";
 export type StoreProductSchemaVersion = "store-product-schema.v1";
 export type StoreSearchType = "all" | "zhixu" | "order" | "supplier";
@@ -826,7 +825,6 @@ export interface StoreSupplierDTO {
   readonly notificationUpdatedAt?: string;
   readonly identityStatus: StoreSupplierIdentityStatus;
   readonly identityLabel: string;
-  readonly capabilityTags: readonly string[];
   readonly supportedRoleSlotIds: readonly string[];
   readonly supportedStageIds: readonly string[];
   readonly registryAddresses: readonly string[];

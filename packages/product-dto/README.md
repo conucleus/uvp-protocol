@@ -23,9 +23,9 @@ It describes the product language the UI consumes:
 - `ProductResourceManifestDTO`, `ProductResourceAccessPolicyDTO`, and
   `ProductResourceAccessStatusDTO` for product-safe resource visibility,
   manifest, and access-state language.
-- `RoleSlotDTO` stage responsibility metadata and capability plugin declarations
-  for wallet-bound order executors. `roleSlotId` remains the protocol key; product
-  clients may call the same responsibility a performance slot.
+- `RoleSlotDTO` stage responsibility metadata for wallet-bound order executors.
+  `roleSlotId` remains the protocol key; product clients may call the same
+  responsibility a performance slot.
 - `StoreZhixuConsoleDTO` for the first nucleus-facing Store Console lifecycle
   view.
 - `StoreSearchResponseDTO`, `StoreOrderCandidatesResponseDTO`, and
@@ -53,7 +53,7 @@ help with matching and review workflows, but they are not chain truth and do not
 grant `submitSignal` authorization.
 
 Generic participant manifests are independent from `FulfillmentPluginKind`.
-Task plugin metadata uses the canonical `capabilityPlugin` field. Clients should prefer `RoleSlotDTO.addOnManifest` and
+Clients should prefer `RoleSlotDTO.addOnManifest` and
 `ProductTaskDTO.addOnManifest` when present: the manifest is a declarative page
 contract for executor actions. The public action vocabulary is `submit_signal`,
 `stage_executor_patch`, and `stage_resource_patch`. Production resource DTOs
