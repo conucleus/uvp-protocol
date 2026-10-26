@@ -50,7 +50,7 @@ Plan publisher governance, order registrar governance, and signal submitter auth
 package verifies the resulting event stream and hook semantics; it does not
 replace contract authorization.
 
-This mode does not model HTTP dispatchers, executor-kit delivery, escrow,
+This mode does not model HTTP dispatchers, client-side watcher delivery, escrow,
 funding, or payment adapters. A successful delivery is never interpreted as
 business completion; the only completion input is a submitted business signal.
 

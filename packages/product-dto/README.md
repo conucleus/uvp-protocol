@@ -39,7 +39,7 @@ fixtures, and the customs scenario live behind the explicit
 `@uvp-eth/product-dto/fixtures` subpath; the package root is the production
 DTO/domain surface. The customs fixture includes role-slot manifests, resource
 manifest metadata, Product Schema selector bindings, and a deterministic
-on-chain HookPlan artifact for Store draft validation. `zhixu-store-web` should
+on-chain HookPlan artifact for registry/app-side draft validation. `@uvp-eth/zhixu-registry` should
 render these DTOs without showing internal protocol words such as signal, gas,
 HookReady, sourceId, signalId, ABI, or registryAddress in ordinary UI.
 

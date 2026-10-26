@@ -33,7 +33,7 @@ dependencies are internal to this repository and are resolved by its local
 
 Use the `uvp-eth` umbrella checkout for full integration development so pnpm
 can resolve cross-package `workspace:*` dependencies for compiler,
-statemachine, contracts, chain services, deploy scripts, and executor-kit.
+statemachine, contracts, chain services, deploy scripts, and uvp-client.
 
 Do not put chain-service API state, product-specific UI state, deployment manifests,
 or ordinary-user app code here. ABI, EIP-712 types, events, canonical hashes, and

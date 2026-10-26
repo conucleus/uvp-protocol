@@ -23,6 +23,6 @@ fixtures、Product DTO 和 replay model 是公开主干。外部审计和生产�
 
 本仓库由 `uvp-eth` 作为 Git submodule 挂载。大多数 package 依赖都在本仓库内部，并由本地 `pnpm-workspace.yaml` 解析。
 
-完整集成开发请使用 `uvp-eth` umbrella checkout，这样 pnpm 可以为 compiler、statemachine、contracts、chain services、deploy scripts 和 executor-kit 解析跨 package 的 `workspace:*` 依赖。
+完整集成开发请使用 `uvp-eth` umbrella checkout，这样 pnpm 可以为 compiler、statemachine、contracts、chain services、deploy scripts 和 uvp-client 解析跨 package 的 `workspace:*` 依赖。
 
 不要把 chain-service API 状态、产品专用 UI 状态、部署 manifest 或普通用户 app 代码放在这里。ABI、EIP-712 types、events、canonical hashes 和 artifact encodings 都是公开接口。

@@ -31,7 +31,7 @@ args for the two-step `UVPStateMachine.commitPlan` + `finalizePlan` flow.
   `dockInterfaceRoot`;
 - stable hook, stage, source, signal, dependency, and route ids;
 - on-chain selector bindings for order-level executor overlay authority;
-- golden fixtures for compiler, contract, executor-kit, and replay tests.
+- golden fixtures for compiler, contract, uvp-client, and replay tests.
   Dock commitments are computed by this package (the chain-track hash-layer
   authority; frozen word layout in `docs/dock-word-layout.md`), and the dock
   golden manifest regenerates via
@@ -175,7 +175,7 @@ The current state-machine alignment is `toSolidityRegisterPlanArgs()`:
   operations;
 - `dependencyKeys` must match `UVPStateMachine.signalKey(sourceId, signalId)`;
 - executor route metadata stays off chain and is used by Product APIs and
-  `executor-kit` for routing;
+  `uvp-client` for routing;
 - order-level signal authorization is constructed outside the compiler by
   deploy/Product tooling from participant wallets and compiled source/signal
   ids.
