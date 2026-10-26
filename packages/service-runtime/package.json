@@ -1,0 +1,26 @@
+{
+  "name": "@uvp-eth/service-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared Node service runtime primitives (address/hex, display, redaction, JSON bigints, Postgres row helpers).",
+  "license": "MPL-2.0",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@uvp-eth/protocol-bindings": "workspace:*",
+    "pg": "^8.20.0",
+    "viem": "^2.21.58"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "@types/pg": "^8.20.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.4"
+  }
+}
