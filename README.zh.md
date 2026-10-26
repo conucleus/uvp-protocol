@@ -17,6 +17,7 @@ fixtures、Product DTO 和 replay model 是公开主干。外部审计和生产�
 - `packages/compiler/`：Zhixu 到链上 HookPlan 制品和 register-plan 参数生成。
 - `packages/statemachine/`：离线链事件 replay oracle。
 - `packages/product-dto/`：由协议投影派生的共享 Product DTO 合约。
+- `packages/chain-read-contract/`：chain-services `/chain/*` 投影读接口的中立 wire DTO 与 runtime decoder。
 - `contracts/uvp-contracts/`：Solidity 合约、ABI fixtures 和 Foundry tests。
 
 ## 开发拓扑
