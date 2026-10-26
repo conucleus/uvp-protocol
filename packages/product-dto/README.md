@@ -5,6 +5,11 @@ User-facing DTO contracts for the UVP product workbench.
 This package intentionally avoids React, chain clients, storage, and wallet code.
 It describes the product language the UI consumes:
 
+Order-book EIP-712 typed data (`UVPOrderBook/1`, `UVPOrderFinalize`,
+`UVPStageInviteAccept`) is owned by `@uvp-eth/protocol-bindings`; this package
+only references those types in API DTOs and defines no domain, field table, or
+type hash of its own.
+
 - `ZhixuDetailDTO` for reviewed order structures;
 - `ProductOrderDTO` for one running order;
 - `ProductTaskDTO` for a user's actionable work item.

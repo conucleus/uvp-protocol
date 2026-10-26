@@ -55,8 +55,8 @@ pnpm verify:identity-registry-fixture
 For the cross-module local Anvil bootstrap, run from the repository root:
 
 ```bash
-uvp-deploy/deploy/scripts/bootstrap-local-anvil.sh --self-update
-uvp-deploy/deploy/scripts/bootstrap-local-anvil.sh --failure
+uvp-deploy/qa/scripts/bootstrap-local-anvil.sh --self-update
+uvp-deploy/qa/scripts/bootstrap-local-anvil.sh --failure
 ```
 
 That script deploys `UVPDeploymentRegistry`, `UVPStateMachine`, the protocol

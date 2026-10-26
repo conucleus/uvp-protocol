@@ -1,7 +1,13 @@
 /**
- * 订单域 DTO：配置对象、订单草稿/阶段/slot/邀请、订单读面与订单簿
- * EIP-712 消息形状；只定义通用产品语言，不含行业字段。
+ * 订单域 DTO：配置对象、订单草稿/阶段/slot/邀请、订单读面。
+ * EIP-712 订单簿 typed-data 单源在 @uvp-eth/protocol-bindings（UVPOrderBook/1），
+ * 本模块只引用其类型，不自持副本；不含行业字段。
  */
+
+import type {
+  UVPOrderFinalizeTypedData,
+  UVPStageInviteAcceptTypedData,
+} from "@uvp-eth/protocol-bindings";
 
 export const ORDER_CONFIG_SCHEMA = "uvp.order-config/v3" as const;
 
@@ -389,61 +395,4 @@ export interface AcceptStageInviteResult {
   readonly slot: StageSlot;
   readonly draftStatus: OrderDraftStatus;
   readonly termsHash: string;
-}
-
-export interface Eip712Field {
-  readonly name: string;
-  readonly type: string;
-}
-
-export interface OrderBookDomain {
-  readonly name: "UVPOrderBook";
-  readonly version: "1";
-  readonly chainId: number;
-  readonly verifyingContract: string;
-}
-
-export interface UVPStageInviteAcceptMessage {
-  readonly draftId: string;
-  readonly inviteId: string;
-  readonly stageKey: string;
-  readonly stageId: string;
-  readonly slotKey: string;
-  readonly invitee: string;
-  readonly amount: string;
-  readonly finalStandardHash: string;
-  readonly workDeadline: string;
-  readonly termsHash: string;
-  readonly nonce: string;
-  readonly deadline: string;
-}
-
-export interface UVPStageInviteAcceptTypedData {
-  readonly domain: OrderBookDomain;
-  readonly types: {
-    readonly UVPStageInviteAccept: readonly Eip712Field[];
-  };
-  readonly primaryType: "UVPStageInviteAccept";
-  readonly message: UVPStageInviteAcceptMessage;
-}
-
-export interface UVPOrderFinalizeMessage {
-  readonly draftId: string;
-  readonly planId: string;
-  readonly configId: string;
-  readonly configVersion: string;
-  readonly configHash: string;
-  readonly buyer: string;
-  readonly termsHash: string;
-  readonly nonce: string;
-  readonly deadline: string;
-}
-
-export interface UVPOrderFinalizeTypedData {
-  readonly domain: OrderBookDomain;
-  readonly types: {
-    readonly UVPOrderFinalize: readonly Eip712Field[];
-  };
-  readonly primaryType: "UVPOrderFinalize";
-  readonly message: UVPOrderFinalizeMessage;
 }
