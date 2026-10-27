@@ -1383,6 +1383,14 @@ contract UVPStateMachine {
         return _s.activeStageExecutorPatches[planId][orderId][targetStageId].executor;
     }
 
+    function activeStageExecutorNonce(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
+        external
+        view
+        returns (uint256)
+    {
+        return _s.activeStageExecutorPatches[planId][orderId][targetStageId].patchNonce;
+    }
+
     function DOMAIN_SEPARATOR() public view returns (bytes32) {
         return keccak256(
             abi.encode(_EIP712_DOMAIN_TYPEHASH, _EIP712_NAME_HASH, _EIP712_VERSION_HASH, block.chainid, address(this))

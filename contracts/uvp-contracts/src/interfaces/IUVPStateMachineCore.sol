@@ -47,6 +47,10 @@ interface IUVPStateMachineCore {
         FactAttribution calldata originAttribution
     ) external view returns (bool);
     function activeStageExecutor(bytes32 planId, bytes32 orderId, bytes32 targetStageId) external view returns (address);
+    function activeStageExecutorNonce(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
+        external
+        view
+        returns (uint256);
     function activateStageExecutorFromModule(
         bytes32 planId,
         bytes32 orderId,

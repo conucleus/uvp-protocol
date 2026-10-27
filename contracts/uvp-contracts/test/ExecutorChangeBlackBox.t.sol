@@ -1437,57 +1437,42 @@ contract ExecutorChangeBlackBoxTest {
     }
 
     function testAssignStageExecutorByBuyer() public {
-        UVPStateMachine machine = _assignMachineReady();
-        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
-        uint64 deadline = uint64(block.timestamp + 1 hours);
-
-        _assignWithSignature(machine, ORDER_ID, STAGE_AUDIT, E1(), signals, deadline, BUYER_PRIVATE_KEY);
-
-        require(
-            _stagePatch(machine).stageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E1(), "stage executor not recorded"
+        UVPStateMachine machine = _newMachine();
+        _registerPlanWithCandidates(
+            machine,
+            _patchHooks(),
+            _selectorBindings(),
+            _patchCapabilities(),
+            PUBLISHER_PRIVATE_KEY,
+            _standardCandidates()
         );
-        require(
-            _stagePatch(machine).stageExecutorNonce(PLAN_ID, ORDER_ID, STAGE_AUDIT) == 1,
-            "stage executor nonce not advanced"
+        ORDER_ID = _birthOrder(machine, _buyer(), PAYLOAD_HASH);
+        _materializeAuditStage(machine, ORDER_ID);
+        _assignWithSignature(
+            machine, ORDER_ID, STAGE_AUDIT, E3, _auditSignals(), uint64(block.timestamp + 1 hours), BUYER_PRIVATE_KEY
         );
+
+        require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E3, "stage executor not recorded");
         require(
-            machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, E1()),
+            machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, E3),
             "stage signal authorization missing"
         );
         require(
-            machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW, E1()),
+            machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW, E3),
             "stage signal authorization missing"
         );
-    }
 
-    function testAssignStageExecutorRejectsNonBuyerSignature() public {
-        UVPStateMachine machine = _assignMachineReady();
-        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
-        uint64 deadline = uint64(block.timestamp + 1 hours);
-        bytes memory signature = _signDigest(
-            EXECUTOR2_PRIVATE_KEY, _executorChangeDigest(machine, ORDER_ID, STAGE_AUDIT, E1(), signals, deadline)
+        vm.prank(E3);
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            STAGE_AUDIT,
+            SIGNAL_STAGE_DONE,
+            PAYLOAD_HASH,
+            bytes32(uint256(0x9300)),
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
         );
-
-        vm.expectRevert(
-            abi.encodeWithSelector(UVPStagePatchModule.InvalidStageExecutorSignature.selector, _buyer(), E2())
-        );
-        _stagePatch(machine).assignStageExecutor(
-            PLAN_ID, ORDER_ID, STAGE_AUDIT, E1(), signals, deadline, signature
-        );
-    }
-
-    function testAssignStageExecutorRejectsDuplicateAssignment() public {
-        UVPStateMachine machine = _assignMachineReady();
-        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
-        uint64 deadline = uint64(block.timestamp + 1 hours);
-        _assignWithSignature(machine, ORDER_ID, STAGE_AUDIT, E1(), signals, deadline, BUYER_PRIVATE_KEY);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStagePatchModule.StageExecutorAlreadyAssigned.selector, ORDER_ID, STAGE_AUDIT, E1()
-            )
-        );
-        _stagePatch(machine).assignStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT, E2(), signals, deadline, "");
+        require(machine.hasSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE), "assigned executor cannot submit");
     }
 
     function testAssignStageExecutorRejectsExpiredDeadline() public {
@@ -1499,7 +1484,7 @@ contract ExecutorChangeBlackBoxTest {
         _stagePatch(machine).assignStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT, E1(), signals, deadline, "");
     }
 
-    function testAssignStageExecutorRejectsStageOutsidePlan() public {
+    function testStageExecutorChangeRejectsStageOutsidePlan() public {
         UVPStateMachine machine = _assignMachineReady();
         bytes32 unknownStage = bytes32(uint256(0x5f00));
         uint64 deadline = uint64(block.timestamp + 1 hours);
@@ -1508,71 +1493,24 @@ contract ExecutorChangeBlackBoxTest {
         _stagePatch(machine).assignStageExecutor(
             PLAN_ID, ORDER_ID, unknownStage, E1(), _auditSignals(), deadline, ""
         );
-    }
-
-    function testReplaceStageExecutorRejectsStageOutsidePlan() public {
-        UVPStateMachine machine = _assignMachineReady();
-        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
-        _assignWithSignature(
-            machine, ORDER_ID, STAGE_AUDIT, E1(), signals, uint64(block.timestamp + 1 hours), BUYER_PRIVATE_KEY
-        );
-        bytes32 unknownStage = bytes32(uint256(0x5f00));
-        uint64 deadline = uint64(block.timestamp + 1 hours);
 
         vm.expectRevert(abi.encodeWithSelector(UVPStagePatchModule.UnknownStage.selector, PLAN_ID, unknownStage));
         _stagePatch(machine).replaceStageExecutor(
-            PLAN_ID, ORDER_ID, unknownStage, E1(), E2(), signals, deadline, "", ""
-        );
-    }
-
-    function testAssignedStageExecutorCanSubmitStageSignal() public {
-        UVPStateMachine machine = _assignMachineReady();
-        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
-        _assignWithSignature(
-            machine, ORDER_ID, STAGE_AUDIT, E3, signals, uint64(block.timestamp + 1 hours), BUYER_PRIVATE_KEY
-        );
-
-        vm.prank(E3);
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9301)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
-        require(
-            machine.hasSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE), "assigned executor signal missing"
+            PLAN_ID, ORDER_ID, unknownStage, E1(), E2(), _auditSignals(), deadline, "", ""
         );
     }
 
     function testReplaceStageExecutorWithBothSignatures() public {
         UVPStateMachine machine = _assignMachineReady();
         UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
-        _assignWithSignature(
-            machine, ORDER_ID, STAGE_AUDIT, E1(), signals, uint64(block.timestamp + 1 hours), BUYER_PRIVATE_KEY
-        );
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+        _assignWithSignature(machine, ORDER_ID, STAGE_AUDIT, E1(), signals, deadline, BUYER_PRIVATE_KEY);
 
         _replaceWithSignatures(
-            machine,
-            ORDER_ID,
-            STAGE_AUDIT,
-            E1(),
-            E2(),
-            signals,
-            uint64(block.timestamp + 1 hours),
-            BUYER_PRIVATE_KEY,
-            EXECUTOR1_PRIVATE_KEY
+            machine, ORDER_ID, STAGE_AUDIT, E1(), E2(), signals, deadline, BUYER_PRIVATE_KEY, EXECUTOR1_PRIVATE_KEY
         );
 
-        require(
-            _stagePatch(machine).stageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E2(), "replacement not recorded"
-        );
-        require(
-            _stagePatch(machine).stageExecutorNonce(PLAN_ID, ORDER_ID, STAGE_AUDIT) == 2,
-            "replacement nonce not advanced"
-        );
+        require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E2(), "replacement not recorded");
         require(
             !machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, E1()),
             "old executor authorization not revoked"
@@ -1581,33 +1519,29 @@ contract ExecutorChangeBlackBoxTest {
             machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, E2()),
             "new executor authorization missing"
         );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPStagePatchModule.StageExecutorActiveMismatch.selector, ORDER_ID, STAGE_AUDIT, E2(), E1()
+            )
+        );
+        _stagePatch(machine).replaceStageExecutor(
+            PLAN_ID, ORDER_ID, STAGE_AUDIT, E1(), E2(), signals, deadline, "", ""
+        );
     }
 
-    function testReplaceStageExecutorRejectsMissingOldSignature() public {
+    function testReplaceStageExecutorRejectsOldExecutorSignature() public {
         UVPStateMachine machine = _assignMachineReady();
         UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
-        _assignWithSignature(
-            machine, ORDER_ID, STAGE_AUDIT, E1(), signals, uint64(block.timestamp + 1 hours), BUYER_PRIVATE_KEY
-        );
         uint64 deadline = uint64(block.timestamp + 1 hours);
-        bytes memory buyerSignature = _signDigest(
-            BUYER_PRIVATE_KEY, _executorChangeDigest(machine, ORDER_ID, STAGE_AUDIT, E2(), signals, deadline)
-        );
+        _assignWithSignature(machine, ORDER_ID, STAGE_AUDIT, E1(), signals, deadline, BUYER_PRIVATE_KEY);
+        bytes32 digest = _executorChangeDigest(machine, ORDER_ID, STAGE_AUDIT, E2(), signals, deadline);
+        bytes memory buyerSignature = _signDigest(BUYER_PRIVATE_KEY, digest);
 
         vm.expectRevert(abi.encodeWithSelector(UVPStagePatchModule.InvalidStageExecutorSignatureLength.selector, 0));
         _stagePatch(machine).replaceStageExecutor(
             PLAN_ID, ORDER_ID, STAGE_AUDIT, E1(), E2(), signals, deadline, buyerSignature, ""
         );
-    }
-
-    function testReplaceStageExecutorRejectsWrongOldSignature() public {
-        UVPStateMachine machine = _assignMachineReady();
-        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
-        _assignWithSignature(
-            machine, ORDER_ID, STAGE_AUDIT, E1(), signals, uint64(block.timestamp + 1 hours), BUYER_PRIVATE_KEY
-        );
-        uint64 deadline = uint64(block.timestamp + 1 hours);
-        bytes32 digest = _executorChangeDigest(machine, ORDER_ID, STAGE_AUDIT, E2(), signals, deadline);
 
         vm.expectRevert(
             abi.encodeWithSelector(UVPStagePatchModule.InvalidStageExecutorPreviousSignature.selector, E1(), E2())
@@ -1620,18 +1554,67 @@ contract ExecutorChangeBlackBoxTest {
             E2(),
             signals,
             deadline,
-            _signDigest(BUYER_PRIVATE_KEY, digest),
+            buyerSignature,
             _signDigest(EXECUTOR2_PRIVATE_KEY, digest)
         );
     }
 
-    function testReplaceStageExecutorRejectsNonBuyerSignature() public {
+    function testStageExecutorChangeRejectsReplayedNonceSignature() public {
         UVPStateMachine machine = _assignMachineReady();
         UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
-        _assignWithSignature(
-            machine, ORDER_ID, STAGE_AUDIT, E1(), signals, uint64(block.timestamp + 1 hours), BUYER_PRIVATE_KEY
-        );
         uint64 deadline = uint64(block.timestamp + 1 hours);
+        _assignWithSignature(machine, ORDER_ID, STAGE_AUDIT, E1(), signals, deadline, BUYER_PRIVATE_KEY);
+        _replaceWithSignatures(
+            machine, ORDER_ID, STAGE_AUDIT, E1(), E2(), signals, deadline, BUYER_PRIVATE_KEY, EXECUTOR1_PRIVATE_KEY
+        );
+        _replaceWithSignatures(
+            machine, ORDER_ID, STAGE_AUDIT, E2(), E1(), signals, deadline, BUYER_PRIVATE_KEY, EXECUTOR2_PRIVATE_KEY
+        );
+
+        bytes32 staleDigest = _stagePatch(machine).stageExecutorChangeDigest(
+            PLAN_ID, ORDER_ID, STAGE_AUDIT, E2(), _stagePatch(machine).signalRefsHash(signals), deadline, 1
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(BUYER_PRIVATE_KEY, staleDigest);
+        bytes memory staleBuyerSignature = _packedSignature(v, r, s);
+        bytes memory staleOldExecutorSignature = _signDigest(EXECUTOR1_PRIVATE_KEY, staleDigest);
+        address expectedRecovered = ecrecover(
+            _executorChangeDigest(machine, ORDER_ID, STAGE_AUDIT, E2(), signals, deadline), v, r, s
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPStagePatchModule.InvalidStageExecutorSignature.selector, _buyer(), expectedRecovered
+            )
+        );
+        _stagePatch(machine).replaceStageExecutor(
+            PLAN_ID,
+            ORDER_ID,
+            STAGE_AUDIT,
+            E1(),
+            E2(),
+            signals,
+            deadline,
+            staleBuyerSignature,
+            staleOldExecutorSignature
+        );
+    }
+
+    function testStageExecutorChangeRejectsNonBuyerSignature() public {
+        UVPStateMachine machine = _assignMachineReady();
+        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+        bytes memory nonBuyerSignature = _signDigest(
+            EXECUTOR2_PRIVATE_KEY, _executorChangeDigest(machine, ORDER_ID, STAGE_AUDIT, E1(), signals, deadline)
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(UVPStagePatchModule.InvalidStageExecutorSignature.selector, _buyer(), E2())
+        );
+        _stagePatch(machine).assignStageExecutor(
+            PLAN_ID, ORDER_ID, STAGE_AUDIT, E1(), signals, deadline, nonBuyerSignature
+        );
+
+        _assignWithSignature(machine, ORDER_ID, STAGE_AUDIT, E1(), signals, deadline, BUYER_PRIVATE_KEY);
         bytes32 digest = _executorChangeDigest(machine, ORDER_ID, STAGE_AUDIT, E2(), signals, deadline);
 
         vm.expectRevert(
@@ -1650,52 +1633,32 @@ contract ExecutorChangeBlackBoxTest {
         );
     }
 
-    function testReplaceStageExecutorRejectsUnknownAssignment() public {
+    function testStageExecutorChangeEnforcesActiveState() public {
         UVPStateMachine machine = _assignMachineReady();
         UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
         uint64 deadline = uint64(block.timestamp + 1 hours);
 
         vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStagePatchModule.StageExecutorNotAssigned.selector, ORDER_ID, STAGE_AUDIT, E1()
-            )
+            abi.encodeWithSelector(UVPStagePatchModule.StageExecutorNotActive.selector, ORDER_ID, STAGE_AUDIT, E1())
         );
         _stagePatch(machine).replaceStageExecutor(
             PLAN_ID, ORDER_ID, STAGE_AUDIT, E1(), E2(), signals, deadline, "", ""
         );
-    }
 
-    function testReplaceStageExecutorRejectsRepeatedReplacement() public {
-        UVPStateMachine machine = _assignMachineReady();
-        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
-        _assignWithSignature(
-            machine, ORDER_ID, STAGE_AUDIT, E1(), signals, uint64(block.timestamp + 1 hours), BUYER_PRIVATE_KEY
-        );
-        _replaceWithSignatures(
-            machine,
-            ORDER_ID,
-            STAGE_AUDIT,
-            E1(),
-            E2(),
-            signals,
-            uint64(block.timestamp + 1 hours),
-            BUYER_PRIVATE_KEY,
-            EXECUTOR1_PRIVATE_KEY
-        );
+        _assignWithSignature(machine, ORDER_ID, STAGE_AUDIT, E1(), signals, deadline, BUYER_PRIVATE_KEY);
 
         vm.expectRevert(
-            abi.encodeWithSelector(UVPStagePatchModule.StageExecutorMismatch.selector, ORDER_ID, STAGE_AUDIT, E2(), E1())
+            abi.encodeWithSelector(UVPStagePatchModule.StageExecutorAlreadyActive.selector, ORDER_ID, STAGE_AUDIT, E1())
+        );
+        _stagePatch(machine).assignStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT, E2(), signals, deadline, "");
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPStagePatchModule.StageExecutorActiveMismatch.selector, ORDER_ID, STAGE_AUDIT, E1(), E2()
+            )
         );
         _stagePatch(machine).replaceStageExecutor(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            E1(),
-            E2(),
-            signals,
-            uint64(block.timestamp + 1 hours),
-            "",
-            ""
+            PLAN_ID, ORDER_ID, STAGE_AUDIT, E2(), E3, signals, deadline, "", ""
         );
     }
 
@@ -1761,11 +1724,11 @@ contract ExecutorChangeBlackBoxTest {
         );
 
         require(
-            _stagePatch(machine).stageExecutor(PLAN_ID, otherOrderId, STAGE_AUDIT) == address(0),
+            machine.activeStageExecutor(PLAN_ID, otherOrderId, STAGE_AUDIT) == address(0),
             "assignment leaked across orders"
         );
         require(
-            _stagePatch(machine).stageExecutor(PLAN_ID, ORDER_ID, STAGE_INIT) == address(0),
+            machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_INIT) == address(0),
             "assignment leaked across stages"
         );
 
@@ -1802,17 +1765,14 @@ contract ExecutorChangeBlackBoxTest {
         require(machine.hasSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE), "assigned executor cannot submit");
     }
 
-    function testRevokeSignalSubmittersRequiresStagePatchModule() public {
+    function testRevokeSignalSubmittersIsModuleOnlyAndIdempotent() public {
         UVPStateMachine machine = _assignMachineReady();
         UVPStateMachine.SignalAuthorization[] memory authorizations = _revokeAuthorizations(E3);
 
         vm.prank(STRANGER);
         vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.UnauthorizedStateMachineModule.selector, STRANGER));
         machine.revokeSignalSubmittersFromModule(PLAN_ID, ORDER_ID, authorizations);
-    }
 
-    function testRevokeSignalSubmittersRemovesAuthorizationIdempotently() public {
-        UVPStateMachine machine = _assignMachineReady();
         _assignWithSignature(
             machine,
             ORDER_ID,
@@ -1827,7 +1787,6 @@ contract ExecutorChangeBlackBoxTest {
             "assign did not authorize"
         );
 
-        UVPStateMachine.SignalAuthorization[] memory authorizations = _revokeAuthorizations(E3);
         vm.prank(address(_stagePatch(machine)));
         machine.revokeSignalSubmittersFromModule(PLAN_ID, ORDER_ID, authorizations);
         require(
@@ -1925,7 +1884,7 @@ contract ExecutorChangeBlackBoxTest {
             executor,
             module.signalRefsHash(signals),
             deadline,
-            module.stageExecutorNonce(PLAN_ID, orderId, stageId)
+            machine.activeStageExecutorNonce(PLAN_ID, orderId, stageId)
         );
     }
 
