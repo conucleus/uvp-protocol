@@ -1436,5 +1436,6 @@ export * from "./evidence.js";
 export * from "./order-errors.js";
 export * from "./audit.js";
 export * from "./wallet-proof.js";
+export * from "./write-signature.js";
 export * from "./write-side.js";
 export * from "./submit-intent.js";

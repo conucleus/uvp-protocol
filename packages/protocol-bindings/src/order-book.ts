@@ -45,7 +45,7 @@ export const UVP_ORDER_FINALIZE_TYPED_DATA_FIELDS: readonly OrderBookTypedDataFi
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 const BYTES32_RE = /^0x[a-fA-F0-9]{64}$/;
 
-function encodeType(
+export function encodeTypedDataFields(
   primaryType: string,
   fields: readonly OrderBookTypedDataField[],
 ): string {
@@ -54,10 +54,10 @@ function encodeType(
 
 /** EIP-712 type hash = keccak256(encodeType(primaryType))。 */
 export const UVP_STAGE_INVITE_ACCEPT_TYPE_HASH: Hex = keccak256(
-  toHex(encodeType(UVP_STAGE_INVITE_ACCEPT_PRIMARY_TYPE, UVP_STAGE_INVITE_ACCEPT_TYPED_DATA_FIELDS)),
+  toHex(encodeTypedDataFields(UVP_STAGE_INVITE_ACCEPT_PRIMARY_TYPE, UVP_STAGE_INVITE_ACCEPT_TYPED_DATA_FIELDS)),
 );
 export const UVP_ORDER_FINALIZE_TYPE_HASH: Hex = keccak256(
-  toHex(encodeType(UVP_ORDER_FINALIZE_PRIMARY_TYPE, UVP_ORDER_FINALIZE_TYPED_DATA_FIELDS)),
+  toHex(encodeTypedDataFields(UVP_ORDER_FINALIZE_PRIMARY_TYPE, UVP_ORDER_FINALIZE_TYPED_DATA_FIELDS)),
 );
 export interface OrderBookDomain {
   readonly name: typeof UVP_ORDER_BOOK_DOMAIN_NAME;
@@ -398,7 +398,7 @@ export const UVP_STAGE_INVITE_CREATE_TYPED_DATA_FIELDS: readonly OrderBookTypedD
 ];
 
 export const UVP_STAGE_INVITE_CREATE_TYPE_HASH: Hex = keccak256(
-  toHex(encodeType(UVP_STAGE_INVITE_CREATE_PRIMARY_TYPE, UVP_STAGE_INVITE_CREATE_TYPED_DATA_FIELDS)),
+  toHex(encodeTypedDataFields(UVP_STAGE_INVITE_CREATE_PRIMARY_TYPE, UVP_STAGE_INVITE_CREATE_TYPED_DATA_FIELDS)),
 );
 
 export interface UVPStageInviteCreateTypedData {

@@ -2784,5 +2784,6 @@ export {
   type StageSelectorBindingTableEntry,
 } from "./capabilities-root.js";
 
+export * from "./app-write.js";
 export * from "./order-book.js";
 export * from "./registry.js";
