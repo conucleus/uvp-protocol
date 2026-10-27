@@ -9,6 +9,7 @@ import type {
   UVPStageInviteAcceptTypedData,
 } from "@uvp-eth/protocol-bindings";
 import type { ConfigFileResourceRef } from "./file-resource.js";
+import type { ConfigStageExecutorChange } from "./executor-change.js";
 
 export const ORDER_CONFIG_SCHEMA = "uvp.order-config/v3" as const;
 
@@ -83,6 +84,7 @@ export interface ConfigStage {
   readonly amount?: Readonly<Record<string, unknown>>;
   readonly linkSignal?: string;
   readonly ui?: Readonly<Record<string, unknown>>;
+  readonly executorChange?: ConfigStageExecutorChange;
 }
 
 export interface ConfigDefaults {
