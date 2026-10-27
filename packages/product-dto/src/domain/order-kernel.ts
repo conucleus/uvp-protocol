@@ -133,21 +133,10 @@ export interface ConfigVersion {
   readonly planId?: string;
   readonly planHash?: string;
   readonly birth?: ConfigBirth;
-  readonly createdBy: string;
+  readonly createdBy?: string;
   readonly createdAt: string;
   readonly publishedAt?: string;
   readonly bundle: ConfigBundle;
-}
-
-export interface ConfigValidationIssue {
-  readonly path?: string;
-  readonly code: string;
-  readonly message: string;
-}
-
-export interface ConfigValidationResult {
-  readonly ok: boolean;
-  readonly issues: readonly ConfigValidationIssue[];
 }
 
 export interface StageStandardRef {

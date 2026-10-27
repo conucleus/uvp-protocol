@@ -4,8 +4,6 @@
  */
 
 export const AUDIT_ACTIONS = [
-  "config.publish",
-  "config.deprecate",
   "draft.create",
   "draft.update",
   "invite.create",
