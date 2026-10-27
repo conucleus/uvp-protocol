@@ -17,6 +17,8 @@ import type {
   ChainOrderProjection,
   ChainOrderStatus,
   ChainOrderTriggerLink,
+  ChainPlanAdmission,
+  ChainPlanAdmissionsResponse,
   ChainPlanProjection,
   ChainProjectionSnapshot,
   ChainProof,
@@ -739,6 +741,28 @@ export function parseSnapshotResponse(body: unknown): ChainProjectionSnapshot {
   return decodeSnapshotWire(record["snapshot"], "snapshot");
 }
 
+export function parsePlanAdmissionsResponse(body: unknown): ChainPlanAdmissionsResponse {
+  const record = wireRecord(body, "response");
+  requireNumber(record, "chainId", "response");
+  requireBytes32(record, "planId", "response");
+  requireBytes32(record, "planHash", "response");
+  const admissions = decodeArray(record["admissions"], "response.admissions");
+  admissions.forEach((admission, index) => {
+    decodePlanAdmissionWire(admission, `admissions[${index}]`);
+  });
+  return body as ChainPlanAdmissionsResponse;
+}
+
+function decodePlanAdmissionWire(value: unknown, path: string): ChainPlanAdmission {
+  const record = wireRecord(value, path);
+  for (const field of ["admissionId", "stageId", "signalId", "sourceId"] as const) {
+    requireBytes32(record, field, path);
+  }
+  requireNonEmptyString(record, "stageIdentifier", path);
+  requireNonEmptyString(record, "signalName", path);
+  return value as ChainPlanAdmission;
+}
+
 
 function decodeProofArgs(value: unknown, path: string): void {
   const args = wireRecord(value, path);
@@ -784,6 +808,20 @@ function requireString(record: WireRecord, field: string, path: string): void {
 function optionalString(record: WireRecord, field: string, path: string): void {
   if (record[field] !== undefined && typeof record[field] !== "string") {
     throw new ChainReadContractError(`${path}.${field}`, "must be a string when present");
+  }
+}
+
+function requireBytes32(record: WireRecord, field: string, path: string): void {
+  const value = record[field];
+  if (typeof value !== "string" || !/^0x[0-9a-fA-F]{64}$/u.test(value)) {
+    throw new ChainReadContractError(`${path}.${field}`, "must be a 0x-prefixed 32-byte hex string");
+  }
+}
+
+function requireNonEmptyString(record: WireRecord, field: string, path: string): void {
+  const value = record[field];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new ChainReadContractError(`${path}.${field}`, "must be a non-empty string");
   }
 }
 

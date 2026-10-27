@@ -285,6 +285,22 @@ export interface ChainPlanProjection {
   readonly finalizationProof?: ChainProof;
 }
 
+export interface ChainPlanAdmission {
+  readonly admissionId: Hex;
+  readonly stageId: Hex;
+  readonly stageIdentifier: string;
+  readonly signalName: string;
+  readonly signalId: Hex;
+  readonly sourceId: Hex;
+}
+
+export interface ChainPlanAdmissionsResponse {
+  readonly chainId: number;
+  readonly planId: Hex;
+  readonly planHash: Hex;
+  readonly admissions: readonly ChainPlanAdmission[];
+}
+
 export type ChainDeploymentStatus =
   | "candidate"
   | "canary"

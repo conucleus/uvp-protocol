@@ -11,6 +11,7 @@ import {
   decodeTaskWire,
   isChainOrderProjection,
   parseOrdersResponse,
+  parsePlanAdmissionsResponse,
   parseSyncStateResponse,
   parseTaskResponse,
   parseSnapshotResponse,
@@ -269,6 +270,37 @@ describe("chain read wire contract", () => {
       () => parseOrdersResponse({ orders: "not-an-array" }),
       (error: unknown) =>
         error instanceof ChainReadContractError && error.path === "response.orders"
+    );
+  });
+
+  it("rejects plan admissions with a non-bytes32 identity or an empty stage identifier", () => {
+    const admission = {
+      admissionId: HOOK_ID,
+      stageId: STAGE_ID,
+      stageIdentifier: "intake",
+      signalName: "intake.cmp",
+      signalId: SIGNAL_ID,
+      sourceId: HASH
+    };
+    const response = {
+      chainId: CHAIN_ID,
+      planId: PLAN_ID,
+      planHash: PLAN_HASH,
+      admissions: [admission]
+    };
+
+    assert.throws(
+      () => parsePlanAdmissionsResponse({ ...response, planHash: "0x1234" }),
+      (error: unknown) =>
+        error instanceof ChainReadContractError && error.path === "response.planHash"
+    );
+    assert.throws(
+      () => parsePlanAdmissionsResponse({
+        ...response,
+        admissions: [{ ...admission, stageIdentifier: " " }]
+      }),
+      (error: unknown) =>
+        error instanceof ChainReadContractError && error.path === "admissions[0].stageIdentifier"
     );
   });
 });

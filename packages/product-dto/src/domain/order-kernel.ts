@@ -8,6 +8,7 @@ import type {
   UVPOrderFinalizeTypedData,
   UVPStageInviteAcceptTypedData,
 } from "@uvp-eth/protocol-bindings";
+import type { ConfigFileResourceRef } from "./file-resource.js";
 
 export const ORDER_CONFIG_SCHEMA = "uvp.order-config/v3" as const;
 
@@ -63,13 +64,6 @@ export interface ConfigTimeDefault {
   readonly name: string;
   readonly expr: string;
   readonly description?: string;
-}
-
-export interface ConfigFileResourceRef {
-  readonly name?: string;
-  readonly version?: string;
-  readonly hash?: string;
-  readonly ref: string;
 }
 
 export interface ConfigStage {
@@ -143,6 +137,17 @@ export interface ConfigVersion {
   readonly createdAt: string;
   readonly publishedAt?: string;
   readonly bundle: ConfigBundle;
+}
+
+export interface ConfigValidationIssue {
+  readonly path?: string;
+  readonly code: string;
+  readonly message: string;
+}
+
+export interface ConfigValidationResult {
+  readonly ok: boolean;
+  readonly issues: readonly ConfigValidationIssue[];
 }
 
 export interface StageStandardRef {
@@ -262,6 +267,31 @@ export interface StageTask {
   readonly actionRef?: string;
 }
 
+export type DataState = "ok" | "none" | "pending" | "unknown";
+
+export interface TaskActionSignal {
+  readonly signalName: string;
+  readonly admissionId: string;
+  readonly stageId: string;
+  readonly sourceId: string;
+  readonly signalId: string;
+}
+
+export interface TaskActionView {
+  readonly orderId: string;
+  readonly taskId: string;
+  readonly stageKey: string;
+  readonly slotKey: string;
+  readonly kind: StageTaskKind;
+  readonly chainId: number;
+  readonly stateMachineAddress: string;
+  readonly planId: string;
+  readonly planHash: string;
+  readonly submitter: string;
+  readonly signals: readonly TaskActionSignal[];
+  readonly nextAction: string;
+}
+
 export interface OrderStage {
   readonly stageKey: string;
   readonly stageId: string;
@@ -287,6 +317,42 @@ export interface Order {
   readonly txHash?: string;
   readonly createdAt: string;
   readonly stages: readonly OrderStage[];
+}
+
+export interface OrderSummary {
+  readonly orderId: string;
+  readonly draftId: string;
+  readonly configId: string;
+  readonly configVersion: string;
+  readonly buyerWallet: string;
+  readonly role: "buyer" | "participant";
+  readonly title: string;
+  readonly currency: string;
+  readonly status: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface OperatorStageView {
+  readonly stageKey: string;
+  readonly index: number;
+  readonly status: string;
+}
+
+export interface OperatorOrderExceptionView {
+  readonly code: string;
+  readonly stageKey?: string;
+  readonly count: number;
+  readonly firstSeenAt?: string;
+}
+
+export interface OperatorOrderView {
+  readonly orderId: string;
+  readonly planId?: string;
+  readonly status?: string;
+  readonly dataState: DataState;
+  readonly stages: readonly OperatorStageView[];
+  readonly exceptions: readonly OperatorOrderExceptionView[];
 }
 
 export interface StageTermsInput {
@@ -335,6 +401,16 @@ export interface RejectStageInviteInput {
   readonly token: string;
 }
 
+export interface ResendStageInviteInput {
+  readonly expiresAt?: string;
+}
+
+export interface AttachOrderInput {
+  readonly orderId: string;
+  readonly planId: string;
+  readonly txHash?: string;
+}
+
 export type OrderBirthStatus = "confirmed" | "submitted" | "unknown";
 
 export interface FinalizeOrderDraftResult {
@@ -344,6 +420,19 @@ export interface FinalizeOrderDraftResult {
   readonly planHash: string;
   readonly stateMachine: string;
   readonly status: OrderBirthStatus;
+  readonly fundedStageKeys: readonly string[];
+  readonly skippedStageKeys: readonly string[];
+  readonly txHash?: string;
+}
+
+/** attach 回执：业务行已登记（status 是应用订单状态，不是出生状态）。 */
+export interface AttachOrderResult {
+  readonly draftId: string;
+  readonly orderId: string;
+  readonly planId: string;
+  readonly planHash: string;
+  readonly stateMachine: string;
+  readonly status: "triggered";
   readonly fundedStageKeys: readonly string[];
   readonly skippedStageKeys: readonly string[];
   readonly txHash?: string;
@@ -375,6 +464,7 @@ export interface OrderStageDetail {
 export interface OrderDraftDetail {
   readonly draft: OrderDraft;
   readonly slots: readonly StageSlot[];
+  readonly invites: readonly Invite[];
 }
 
 export interface StageInvitePreview {

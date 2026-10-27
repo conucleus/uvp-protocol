@@ -18,6 +18,7 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "@uvp-eth/canonical-json": "workspace:*",
     "@uvp-eth/protocol-bindings": "workspace:*"
   },
   "devDependencies": {

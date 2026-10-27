@@ -1431,6 +1431,8 @@ export function summarizeZhixu(zhixu: ZhixuDetailDTO): ZhixuSummaryDTO {
   return summary;
 }
 
+export * from "./file-resource.js";
+export * from "./evidence.js";
+export * from "./order-errors.js";
 export * from "./write-side.js";
 export * from "./submit-intent.js";
-export * from "./order-requirements.js";
