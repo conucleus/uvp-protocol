@@ -63,6 +63,11 @@ interface IUVPStateMachineCore {
         bytes32 orderId,
         SignalAuthorization[] calldata authorizations
     ) external;
+    function revokeSignalSubmittersFromModule(
+        bytes32 planId,
+        bytes32 orderId,
+        SignalAuthorization[] calldata authorizations
+    ) external;
     function authorizeDockedSignalsFromModule(
         bytes32 planId,
         bytes32 orderId,
@@ -86,6 +91,7 @@ interface IUVPStateMachineCore {
     function orderCreator(bytes32 planId, bytes32 orderId) external view returns (address);
     function orderExists(bytes32 planId, bytes32 orderId) external view returns (bool);
     function orderLinkModule() external view returns (address);
+    function isPlanStage(bytes32 planId, bytes32 stageId) external view returns (bool);
     function planExists(bytes32 planId) external view returns (bool);
     function planMetadataModule() external view returns (address);
     function planPublisher(bytes32 planId) external view returns (address);

@@ -93,6 +93,7 @@ contract ExecutorChangeBlackBoxTest {
     uint256 private constant SELECTOR_PRIVATE_KEY = 0xa11ce;
     uint256 private constant EXECUTOR1_PRIVATE_KEY = 0xb0b;
     uint256 private constant EXECUTOR2_PRIVATE_KEY = 0xb0c;
+    uint256 private constant BUYER_PRIVATE_KEY = 0xb0b1e5;
     uint256 private constant PUBLISHER_PRIVATE_KEY = 0xc0ffee;
     uint8 private constant FLAG_ORDER_TRIGGER_MINT = 1;
     uint8 private constant FLAG_EMIT_READY = 4;
@@ -1433,6 +1434,559 @@ contract ExecutorChangeBlackBoxTest {
             bytes32(uint256(0xFC00)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
         );
+    }
+
+    function testAssignStageExecutorByBuyer() public {
+        UVPStateMachine machine = _assignMachineReady();
+        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        _assignWithSignature(machine, ORDER_ID, STAGE_AUDIT, E1(), signals, deadline, BUYER_PRIVATE_KEY);
+
+        require(
+            _stagePatch(machine).stageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E1(), "stage executor not recorded"
+        );
+        require(
+            _stagePatch(machine).stageExecutorNonce(PLAN_ID, ORDER_ID, STAGE_AUDIT) == 1,
+            "stage executor nonce not advanced"
+        );
+        require(
+            machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, E1()),
+            "stage signal authorization missing"
+        );
+        require(
+            machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW, E1()),
+            "stage signal authorization missing"
+        );
+    }
+
+    function testAssignStageExecutorRejectsNonBuyerSignature() public {
+        UVPStateMachine machine = _assignMachineReady();
+        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+        bytes memory signature = _signDigest(
+            EXECUTOR2_PRIVATE_KEY, _executorChangeDigest(machine, ORDER_ID, STAGE_AUDIT, E1(), signals, deadline)
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(UVPStagePatchModule.InvalidStageExecutorSignature.selector, _buyer(), E2())
+        );
+        _stagePatch(machine).assignStageExecutor(
+            PLAN_ID, ORDER_ID, STAGE_AUDIT, E1(), signals, deadline, signature
+        );
+    }
+
+    function testAssignStageExecutorRejectsDuplicateAssignment() public {
+        UVPStateMachine machine = _assignMachineReady();
+        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+        _assignWithSignature(machine, ORDER_ID, STAGE_AUDIT, E1(), signals, deadline, BUYER_PRIVATE_KEY);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPStagePatchModule.StageExecutorAlreadyAssigned.selector, ORDER_ID, STAGE_AUDIT, E1()
+            )
+        );
+        _stagePatch(machine).assignStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT, E2(), signals, deadline, "");
+    }
+
+    function testAssignStageExecutorRejectsExpiredDeadline() public {
+        UVPStateMachine machine = _assignMachineReady();
+        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
+        uint64 deadline = uint64(block.timestamp - 1);
+
+        vm.expectRevert(abi.encodeWithSelector(UVPStagePatchModule.ExpiredStageExecutorSignature.selector, deadline));
+        _stagePatch(machine).assignStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT, E1(), signals, deadline, "");
+    }
+
+    function testAssignStageExecutorRejectsStageOutsidePlan() public {
+        UVPStateMachine machine = _assignMachineReady();
+        bytes32 unknownStage = bytes32(uint256(0x5f00));
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        vm.expectRevert(abi.encodeWithSelector(UVPStagePatchModule.UnknownStage.selector, PLAN_ID, unknownStage));
+        _stagePatch(machine).assignStageExecutor(
+            PLAN_ID, ORDER_ID, unknownStage, E1(), _auditSignals(), deadline, ""
+        );
+    }
+
+    function testReplaceStageExecutorRejectsStageOutsidePlan() public {
+        UVPStateMachine machine = _assignMachineReady();
+        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
+        _assignWithSignature(
+            machine, ORDER_ID, STAGE_AUDIT, E1(), signals, uint64(block.timestamp + 1 hours), BUYER_PRIVATE_KEY
+        );
+        bytes32 unknownStage = bytes32(uint256(0x5f00));
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        vm.expectRevert(abi.encodeWithSelector(UVPStagePatchModule.UnknownStage.selector, PLAN_ID, unknownStage));
+        _stagePatch(machine).replaceStageExecutor(
+            PLAN_ID, ORDER_ID, unknownStage, E1(), E2(), signals, deadline, "", ""
+        );
+    }
+
+    function testAssignedStageExecutorCanSubmitStageSignal() public {
+        UVPStateMachine machine = _assignMachineReady();
+        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
+        _assignWithSignature(
+            machine, ORDER_ID, STAGE_AUDIT, E3, signals, uint64(block.timestamp + 1 hours), BUYER_PRIVATE_KEY
+        );
+
+        vm.prank(E3);
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            STAGE_AUDIT,
+            SIGNAL_STAGE_DONE,
+            PAYLOAD_HASH,
+            bytes32(uint256(0x9301)),
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
+        );
+        require(
+            machine.hasSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE), "assigned executor signal missing"
+        );
+    }
+
+    function testReplaceStageExecutorWithBothSignatures() public {
+        UVPStateMachine machine = _assignMachineReady();
+        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
+        _assignWithSignature(
+            machine, ORDER_ID, STAGE_AUDIT, E1(), signals, uint64(block.timestamp + 1 hours), BUYER_PRIVATE_KEY
+        );
+
+        _replaceWithSignatures(
+            machine,
+            ORDER_ID,
+            STAGE_AUDIT,
+            E1(),
+            E2(),
+            signals,
+            uint64(block.timestamp + 1 hours),
+            BUYER_PRIVATE_KEY,
+            EXECUTOR1_PRIVATE_KEY
+        );
+
+        require(
+            _stagePatch(machine).stageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E2(), "replacement not recorded"
+        );
+        require(
+            _stagePatch(machine).stageExecutorNonce(PLAN_ID, ORDER_ID, STAGE_AUDIT) == 2,
+            "replacement nonce not advanced"
+        );
+        require(
+            !machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, E1()),
+            "old executor authorization not revoked"
+        );
+        require(
+            machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, E2()),
+            "new executor authorization missing"
+        );
+    }
+
+    function testReplaceStageExecutorRejectsMissingOldSignature() public {
+        UVPStateMachine machine = _assignMachineReady();
+        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
+        _assignWithSignature(
+            machine, ORDER_ID, STAGE_AUDIT, E1(), signals, uint64(block.timestamp + 1 hours), BUYER_PRIVATE_KEY
+        );
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+        bytes memory buyerSignature = _signDigest(
+            BUYER_PRIVATE_KEY, _executorChangeDigest(machine, ORDER_ID, STAGE_AUDIT, E2(), signals, deadline)
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(UVPStagePatchModule.InvalidStageExecutorSignatureLength.selector, 0));
+        _stagePatch(machine).replaceStageExecutor(
+            PLAN_ID, ORDER_ID, STAGE_AUDIT, E1(), E2(), signals, deadline, buyerSignature, ""
+        );
+    }
+
+    function testReplaceStageExecutorRejectsWrongOldSignature() public {
+        UVPStateMachine machine = _assignMachineReady();
+        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
+        _assignWithSignature(
+            machine, ORDER_ID, STAGE_AUDIT, E1(), signals, uint64(block.timestamp + 1 hours), BUYER_PRIVATE_KEY
+        );
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+        bytes32 digest = _executorChangeDigest(machine, ORDER_ID, STAGE_AUDIT, E2(), signals, deadline);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(UVPStagePatchModule.InvalidStageExecutorPreviousSignature.selector, E1(), E2())
+        );
+        _stagePatch(machine).replaceStageExecutor(
+            PLAN_ID,
+            ORDER_ID,
+            STAGE_AUDIT,
+            E1(),
+            E2(),
+            signals,
+            deadline,
+            _signDigest(BUYER_PRIVATE_KEY, digest),
+            _signDigest(EXECUTOR2_PRIVATE_KEY, digest)
+        );
+    }
+
+    function testReplaceStageExecutorRejectsNonBuyerSignature() public {
+        UVPStateMachine machine = _assignMachineReady();
+        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
+        _assignWithSignature(
+            machine, ORDER_ID, STAGE_AUDIT, E1(), signals, uint64(block.timestamp + 1 hours), BUYER_PRIVATE_KEY
+        );
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+        bytes32 digest = _executorChangeDigest(machine, ORDER_ID, STAGE_AUDIT, E2(), signals, deadline);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(UVPStagePatchModule.InvalidStageExecutorSignature.selector, _buyer(), E2())
+        );
+        _stagePatch(machine).replaceStageExecutor(
+            PLAN_ID,
+            ORDER_ID,
+            STAGE_AUDIT,
+            E1(),
+            E2(),
+            signals,
+            deadline,
+            _signDigest(EXECUTOR2_PRIVATE_KEY, digest),
+            _signDigest(EXECUTOR1_PRIVATE_KEY, digest)
+        );
+    }
+
+    function testReplaceStageExecutorRejectsUnknownAssignment() public {
+        UVPStateMachine machine = _assignMachineReady();
+        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPStagePatchModule.StageExecutorNotAssigned.selector, ORDER_ID, STAGE_AUDIT, E1()
+            )
+        );
+        _stagePatch(machine).replaceStageExecutor(
+            PLAN_ID, ORDER_ID, STAGE_AUDIT, E1(), E2(), signals, deadline, "", ""
+        );
+    }
+
+    function testReplaceStageExecutorRejectsRepeatedReplacement() public {
+        UVPStateMachine machine = _assignMachineReady();
+        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
+        _assignWithSignature(
+            machine, ORDER_ID, STAGE_AUDIT, E1(), signals, uint64(block.timestamp + 1 hours), BUYER_PRIVATE_KEY
+        );
+        _replaceWithSignatures(
+            machine,
+            ORDER_ID,
+            STAGE_AUDIT,
+            E1(),
+            E2(),
+            signals,
+            uint64(block.timestamp + 1 hours),
+            BUYER_PRIVATE_KEY,
+            EXECUTOR1_PRIVATE_KEY
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(UVPStagePatchModule.StageExecutorMismatch.selector, ORDER_ID, STAGE_AUDIT, E2(), E1())
+        );
+        _stagePatch(machine).replaceStageExecutor(
+            PLAN_ID,
+            ORDER_ID,
+            STAGE_AUDIT,
+            E1(),
+            E2(),
+            signals,
+            uint64(block.timestamp + 1 hours),
+            "",
+            ""
+        );
+    }
+
+    function testReplacedStageExecutorLosesSignalAuthorization() public {
+        UVPStateMachine machine = _assignMachineReady();
+        UVPStagePatchModule.SignalRef[] memory signals = _auditSignals();
+        _assignWithSignature(
+            machine, ORDER_ID, STAGE_AUDIT, E1(), signals, uint64(block.timestamp + 1 hours), BUYER_PRIVATE_KEY
+        );
+        _replaceWithSignatures(
+            machine,
+            ORDER_ID,
+            STAGE_AUDIT,
+            E1(),
+            E2(),
+            signals,
+            uint64(block.timestamp + 1 hours),
+            BUYER_PRIVATE_KEY,
+            EXECUTOR1_PRIVATE_KEY
+        );
+
+        vm.prank(E1());
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPStateMachine.UnauthorizedSignalSubmitter.selector, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, E1()
+            )
+        );
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            STAGE_AUDIT,
+            SIGNAL_STAGE_DONE,
+            PAYLOAD_HASH,
+            bytes32(uint256(0x9302)),
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
+        );
+
+        vm.prank(E2());
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            STAGE_AUDIT,
+            SIGNAL_STAGE_DONE,
+            PAYLOAD_HASH,
+            bytes32(uint256(0x9303)),
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
+        );
+        require(machine.hasSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE), "new executor cannot submit");
+    }
+
+    function testStageExecutorAssignmentIsolatedAcrossOrdersAndStages() public {
+        UVPStateMachine machine = _assignMachineReady();
+        bytes32 otherOrderId = _birthOrder(machine, _buyer(), keccak256("stage-executor-assignment/cross-order"));
+        _materializeAuditStage(machine, otherOrderId);
+        _assignWithSignature(
+            machine,
+            ORDER_ID,
+            STAGE_AUDIT,
+            E3,
+            _auditSignals(),
+            uint64(block.timestamp + 1 hours),
+            BUYER_PRIVATE_KEY
+        );
+
+        require(
+            _stagePatch(machine).stageExecutor(PLAN_ID, otherOrderId, STAGE_AUDIT) == address(0),
+            "assignment leaked across orders"
+        );
+        require(
+            _stagePatch(machine).stageExecutor(PLAN_ID, ORDER_ID, STAGE_INIT) == address(0),
+            "assignment leaked across stages"
+        );
+
+        vm.prank(E3);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPStateMachine.UnauthorizedSignalSubmitter.selector,
+                otherOrderId,
+                STAGE_AUDIT,
+                SIGNAL_STAGE_DONE,
+                E3
+            )
+        );
+        machine.submitSignal(
+            PLAN_ID,
+            otherOrderId,
+            STAGE_AUDIT,
+            SIGNAL_STAGE_DONE,
+            PAYLOAD_HASH,
+            bytes32(uint256(0x9304)),
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
+        );
+
+        vm.prank(E3);
+        machine.submitSignal(
+            PLAN_ID,
+            ORDER_ID,
+            STAGE_AUDIT,
+            SIGNAL_STAGE_DONE,
+            PAYLOAD_HASH,
+            bytes32(uint256(0x9305)),
+            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
+        );
+        require(machine.hasSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE), "assigned executor cannot submit");
+    }
+
+    function testRevokeSignalSubmittersRequiresStagePatchModule() public {
+        UVPStateMachine machine = _assignMachineReady();
+        UVPStateMachine.SignalAuthorization[] memory authorizations = _revokeAuthorizations(E3);
+
+        vm.prank(STRANGER);
+        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.UnauthorizedStateMachineModule.selector, STRANGER));
+        machine.revokeSignalSubmittersFromModule(PLAN_ID, ORDER_ID, authorizations);
+    }
+
+    function testRevokeSignalSubmittersRemovesAuthorizationIdempotently() public {
+        UVPStateMachine machine = _assignMachineReady();
+        _assignWithSignature(
+            machine,
+            ORDER_ID,
+            STAGE_AUDIT,
+            E3,
+            _auditSignals(),
+            uint64(block.timestamp + 1 hours),
+            BUYER_PRIVATE_KEY
+        );
+        require(
+            machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, E3),
+            "assign did not authorize"
+        );
+
+        UVPStateMachine.SignalAuthorization[] memory authorizations = _revokeAuthorizations(E3);
+        vm.prank(address(_stagePatch(machine)));
+        machine.revokeSignalSubmittersFromModule(PLAN_ID, ORDER_ID, authorizations);
+        require(
+            !machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, E3),
+            "revoke did not delete authorization"
+        );
+        require(
+            !machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW, E3),
+            "revoke did not delete authorization"
+        );
+        require(
+            machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, _selector()),
+            "revoke touched unrelated authorization"
+        );
+
+        vm.prank(address(_stagePatch(machine)));
+        machine.revokeSignalSubmittersFromModule(PLAN_ID, ORDER_ID, authorizations);
+        require(
+            !machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, E3),
+            "repeat revoke changed state"
+        );
+    }
+
+    function _buyer() private view returns (address) {
+        return vm.addr(BUYER_PRIVATE_KEY);
+    }
+
+    function _assignMachineReady() private returns (UVPStateMachine machine) {
+        machine = _newMachine();
+        _registerPlanWithCandidates(
+            machine,
+            _patchHooks(),
+            _selectorBindings(),
+            _patchCapabilities(),
+            PUBLISHER_PRIVATE_KEY,
+            new UVPStateMachine.ExecutorCandidate[](0)
+        );
+        ORDER_ID = _birthOrder(machine, _buyer(), PAYLOAD_HASH);
+        _materializeAuditStage(machine, ORDER_ID);
+    }
+
+    function _birthOrder(UVPStateMachine machine, address creator, bytes32 payloadHash)
+        private
+        returns (bytes32 orderId)
+    {
+        orderId = bytes32(
+            uint256(keccak256(abi.encode(PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, payloadHash)))
+                & ~uint256(1 << 255)
+        );
+        UVPStateMachine.SignalAuthorization[] memory authorizations = _minimalAuthorizations();
+        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = UVPStateMachine.TriggerOrderFromOutsideRequest({
+            planId: PLAN_ID,
+            creator: creator,
+            triggerHookId: HOOK_ORDER_START,
+            triggerStageId: STAGE_INIT,
+            sourceId: SOURCE_BOOTSTRAP,
+            signalId: SIGNAL_ORDER_START,
+            payloadHash: payloadHash,
+            idempotencyKey: IDEMPOTENCY_KEY,
+            submitter: _selector(),
+            deadline: block.timestamp + 1 hours
+        });
+        machine.triggerOrderFromOutsideFor(
+            trigger,
+            authorizations,
+            _triggerSignature(machine, trigger, authorizations),
+            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START)
+        );
+    }
+
+    function _minimalAuthorizations() private view returns (UVPStateMachine.SignalAuthorization[] memory authorizations) {
+        authorizations = new UVPStateMachine.SignalAuthorization[](1);
+        authorizations[0] = _stageAuthorization(SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, _selector());
+    }
+
+    function _auditSignals() private pure returns (UVPStagePatchModule.SignalRef[] memory signals) {
+        signals = new UVPStagePatchModule.SignalRef[](2);
+        signals[0] = UVPStagePatchModule.SignalRef({sourceId: STAGE_AUDIT, signalId: SIGNAL_STAGE_DONE});
+        signals[1] = UVPStagePatchModule.SignalRef({sourceId: STAGE_AUDIT, signalId: SIGNAL_STAGE_REVIEW});
+    }
+
+    function _executorChangeDigest(
+        UVPStateMachine machine,
+        bytes32 orderId,
+        bytes32 stageId,
+        address executor,
+        UVPStagePatchModule.SignalRef[] memory signals,
+        uint64 deadline
+    ) private view returns (bytes32) {
+        UVPStagePatchModule module = _stagePatch(machine);
+        return module.stageExecutorChangeDigest(
+            PLAN_ID,
+            orderId,
+            stageId,
+            executor,
+            module.signalRefsHash(signals),
+            deadline,
+            module.stageExecutorNonce(PLAN_ID, orderId, stageId)
+        );
+    }
+
+    function _signDigest(uint256 privateKey, bytes32 digest) private view returns (bytes memory) {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
+        return _packedSignature(v, r, s);
+    }
+
+    function _assignWithSignature(
+        UVPStateMachine machine,
+        bytes32 orderId,
+        bytes32 stageId,
+        address executor,
+        UVPStagePatchModule.SignalRef[] memory signals,
+        uint64 deadline,
+        uint256 buyerPrivateKey
+    ) private {
+        _stagePatch(machine).assignStageExecutor(
+            PLAN_ID,
+            orderId,
+            stageId,
+            executor,
+            signals,
+            deadline,
+            _signDigest(buyerPrivateKey, _executorChangeDigest(machine, orderId, stageId, executor, signals, deadline))
+        );
+    }
+
+    function _replaceWithSignatures(
+        UVPStateMachine machine,
+        bytes32 orderId,
+        bytes32 stageId,
+        address oldExecutor,
+        address newExecutor,
+        UVPStagePatchModule.SignalRef[] memory signals,
+        uint64 deadline,
+        uint256 buyerPrivateKey,
+        uint256 oldExecutorPrivateKey
+    ) private {
+        bytes32 digest = _executorChangeDigest(machine, orderId, stageId, newExecutor, signals, deadline);
+        _stagePatch(machine).replaceStageExecutor(
+            PLAN_ID,
+            orderId,
+            stageId,
+            oldExecutor,
+            newExecutor,
+            signals,
+            deadline,
+            _signDigest(buyerPrivateKey, digest),
+            _signDigest(oldExecutorPrivateKey, digest)
+        );
+    }
+
+    function _revokeAuthorizations(address submitter)
+        private
+        pure
+        returns (UVPStateMachine.SignalAuthorization[] memory authorizations)
+    {
+        authorizations = new UVPStateMachine.SignalAuthorization[](2);
+        authorizations[0] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_DONE, submitter);
+        authorizations[1] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_REVIEW, submitter);
     }
 
     function E1() private view returns (address) {

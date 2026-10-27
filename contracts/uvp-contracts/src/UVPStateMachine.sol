@@ -417,6 +417,13 @@ contract UVPStateMachine {
         bytes32 role,
         bytes32 metadataHash
     );
+    event SignalSubmitterRevoked(
+        bytes32 indexed planId,
+        bytes32 indexed orderId,
+        bytes32 indexed sourceId,
+        bytes32 signalId,
+        address submitter
+    );
     event SignalSubmitted(
         bytes32 indexed planId,
         bytes32 indexed orderId,
@@ -879,6 +886,40 @@ contract UVPStateMachine {
         }
     }
 
+    function revokeSignalSubmittersFromModule(
+        bytes32 planId,
+        bytes32 orderId,
+        SignalAuthorization[] calldata authorizations
+    ) external {
+        if (msg.sender != stagePatchModule) {
+            revert UnauthorizedStateMachineModule(msg.sender);
+        }
+        Order storage order = _s.orders[planId][orderId];
+        if (!order.exists) {
+            revert UnknownOrder();
+        }
+        for (uint256 i = 0; i < authorizations.length; i++) {
+            SignalAuthorization calldata authorization = authorizations[i];
+            if (authorization.sourceId == bytes32(0)) {
+                revert ZeroSourceId();
+            }
+            if (authorization.signalId == bytes32(0)) {
+                revert ZeroSignalId();
+            }
+            if (authorization.submitter == address(0)) {
+                revert ZeroSubmitter();
+            }
+            bytes32 key = _signalKey(authorization.sourceId, authorization.signalId);
+            if (!_s.signalAuthorizations[planId][orderId][key][authorization.submitter].exists) {
+                continue;
+            }
+            delete _s.signalAuthorizations[planId][orderId][key][authorization.submitter];
+            emit SignalSubmitterRevoked(
+                planId, orderId, authorization.sourceId, authorization.signalId, authorization.submitter
+            );
+        }
+    }
+
     function authorizeDockedSignalsFromModule(
         bytes32 planId,
         bytes32 orderId,
@@ -1207,6 +1248,10 @@ contract UVPStateMachine {
 
     function planExists(bytes32 planId) external view returns (bool) {
         return _s.plans[planId].finalized;
+    }
+
+    function isPlanStage(bytes32 planId, bytes32 stageId) external view returns (bool) {
+        return _isPlanStage(planId, stageId);
     }
 
     function planCommitted(bytes32 planId) external view returns (bool) {

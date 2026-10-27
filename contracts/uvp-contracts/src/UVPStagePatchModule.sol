@@ -43,6 +43,11 @@ contract UVPStagePatchModule {
         string manifestURI;
     }
 
+    struct SignalRef {
+        bytes32 sourceId;
+        bytes32 signalId;
+    }
+
     struct ActiveStageExecutorPatch {
         address executor;
         bytes32 role;
@@ -63,19 +68,27 @@ contract UVPStagePatchModule {
     }
 
     error ExpiredStageExecutorPatchSignature(uint256 deadline);
+    error ExpiredStageExecutorSignature(uint256 deadline);
     error ExpiredStageResourcePatchSignature(uint256 deadline);
     error InvalidStageExecutorPatchMode(bytes32 mode);
     error InvalidStageExecutorPatchSignature(address expectedSigner, address recoveredSigner);
     error InvalidStageExecutorPatchSignatureLength(uint256 length);
+    error InvalidStageExecutorPreviousSignature(address expectedSigner, address recoveredSigner);
+    error InvalidStageExecutorSignature(address expectedSigner, address recoveredSigner);
+    error InvalidStageExecutorSignatureLength(uint256 length);
     error InvalidStageResourcePatchSignature(address expectedSigner, address recoveredSigner);
     error InvalidStageResourcePatchSignatureLength(uint256 length);
     error StageAlreadyHasSignal(bytes32 orderId, bytes32 targetStageId);
+    error StageExecutorAlreadyAssigned(bytes32 orderId, bytes32 stageId, address executor);
+    error StageExecutorMismatch(bytes32 orderId, bytes32 stageId, address currentExecutor, address expectedExecutor);
+    error StageExecutorNotAssigned(bytes32 orderId, bytes32 stageId, address expectedExecutor);
     error StageExecutorPatchNonceNotIncreasing(
         bytes32 orderId, bytes32 targetStageId, uint256 previousNonce, uint256 patchNonce
     );
     error StageExecutorPatchPreviousExecutorMismatch(
         bytes32 orderId, bytes32 targetStageId, address expectedExecutor, address previousExecutor
     );
+    error StageExecutorUnchanged(bytes32 orderId, bytes32 stageId, address executor);
     error StageHasNoSignal(bytes32 orderId, bytes32 targetStageId);
     error StageExecutorPatchForbiddenOnBirthStage(bytes32 orderId, bytes32 targetStageId);
     error StagePreviousExecutorAmbiguous(bytes32 orderId, bytes32 targetStageId, uint64 submittedAt);
@@ -87,6 +100,7 @@ contract UVPStagePatchModule {
     error UnauthorizedStageExecutorPatchSelector(bytes32 orderId, bytes32 selectorStageId, address selector);
     error UnauthorizedStageResourcePatchSelector(bytes32 orderId, bytes32 selectorStageId, address selector);
     error UnknownOrder();
+    error UnknownStage(bytes32 planId, bytes32 stageId);
     error ZeroManifestHash();
     error ZeroPatchHash();
     error ZeroPolicyHash();
@@ -116,6 +130,9 @@ contract UVPStagePatchModule {
     bytes32 private constant _STAGE_RESOURCE_PATCH_TYPEHASH = keccak256(
         "UVPStagePatchModuleStageResourcePatch(bytes32 planId,bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,bytes32 resourceKey,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI,address selector,uint256 deadline)"
     );
+    bytes32 private constant _STAGE_EXECUTOR_CHANGE_TYPEHASH = keccak256(
+        "UVPStagePatchModuleStageExecutorChange(bytes32 planId,bytes32 orderId,bytes32 stageId,address executor,bytes32 signalsHash,uint64 deadline,uint256 nonce)"
+    );
     bytes32 private constant _STAGE_EXECUTOR_PATCH_APPLIED_TOPIC = keccak256(
         "StageExecutorPatchApplied(bytes32,bytes32,bytes32,bytes32,address,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256,string)"
     );
@@ -130,7 +147,24 @@ contract UVPStagePatchModule {
                 => mapping(bytes32 targetStageId => mapping(bytes32 resourceKey => ActiveStageResourcePatch patch))
         )
     ) private _activeStageResourcePatches;
+    mapping(bytes32 => mapping(bytes32 => mapping(bytes32 => address))) public stageExecutor;
+    mapping(bytes32 => mapping(bytes32 => mapping(bytes32 => uint256))) public stageExecutorNonce;
 
+    event StageExecutorAssigned(
+        bytes32 indexed planId,
+        bytes32 indexed orderId,
+        bytes32 indexed stageId,
+        address executor,
+        address operator
+    );
+    event StageExecutorReplaced(
+        bytes32 indexed planId,
+        bytes32 indexed orderId,
+        bytes32 indexed stageId,
+        address oldExecutor,
+        address newExecutor,
+        address operator
+    );
     event StageExecutorPatchApplied(
         bytes32 indexed orderId,
         bytes32 indexed selectorStageId,
@@ -255,6 +289,110 @@ contract UVPStagePatchModule {
         _applyStageResourcePatch(planId, orderId, patch, selector, bindingProof);
     }
 
+    function assignStageExecutor(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 stageId,
+        address executor,
+        SignalRef[] calldata signals,
+        uint64 deadline,
+        bytes calldata buyerSignature
+    ) external {
+        if (block.timestamp > deadline) {
+            revert ExpiredStageExecutorSignature(deadline);
+        }
+        if (stageId == bytes32(0)) {
+            revert ZeroTargetStageId();
+        }
+        if (executor == address(0)) {
+            revert ZeroStageExecutor();
+        }
+        if (!stateMachine.isPlanStage(planId, stageId)) {
+            revert UnknownStage(planId, stageId);
+        }
+        if (!stateMachine.orderExists(planId, orderId)) {
+            revert UnknownOrder();
+        }
+        address assignedExecutor = stageExecutor[planId][orderId][stageId];
+        if (assignedExecutor != address(0)) {
+            revert StageExecutorAlreadyAssigned(orderId, stageId, assignedExecutor);
+        }
+
+        uint256 nonce = stageExecutorNonce[planId][orderId][stageId];
+        address buyer = stateMachine.orderCreator(planId, orderId);
+        address recoveredBuyer = _recoverStageExecutorChangeSigner(
+            stageExecutorChangeDigest(planId, orderId, stageId, executor, signalRefsHash(signals), deadline, nonce),
+            buyerSignature
+        );
+        if (recoveredBuyer != buyer) {
+            revert InvalidStageExecutorSignature(buyer, recoveredBuyer);
+        }
+
+        stageExecutor[planId][orderId][stageId] = executor;
+        stageExecutorNonce[planId][orderId][stageId] = nonce + 1;
+        stateMachine.authorizeSignalSubmittersFromModule(planId, orderId, _signalAuthorizations(signals, executor));
+
+        emit StageExecutorAssigned(planId, orderId, stageId, executor, msg.sender);
+    }
+
+    function replaceStageExecutor(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 stageId,
+        address oldExecutor,
+        address newExecutor,
+        SignalRef[] calldata signals,
+        uint64 deadline,
+        bytes calldata buyerSignature,
+        bytes calldata oldExecutorSignature
+    ) external {
+        if (block.timestamp > deadline) {
+            revert ExpiredStageExecutorSignature(deadline);
+        }
+        if (stageId == bytes32(0)) {
+            revert ZeroTargetStageId();
+        }
+        if (newExecutor == address(0)) {
+            revert ZeroStageExecutor();
+        }
+        if (!stateMachine.isPlanStage(planId, stageId)) {
+            revert UnknownStage(planId, stageId);
+        }
+        if (!stateMachine.orderExists(planId, orderId)) {
+            revert UnknownOrder();
+        }
+        address assignedExecutor = stageExecutor[planId][orderId][stageId];
+        if (assignedExecutor == address(0)) {
+            revert StageExecutorNotAssigned(orderId, stageId, oldExecutor);
+        }
+        if (assignedExecutor != oldExecutor) {
+            revert StageExecutorMismatch(orderId, stageId, assignedExecutor, oldExecutor);
+        }
+        if (newExecutor == oldExecutor) {
+            revert StageExecutorUnchanged(orderId, stageId, oldExecutor);
+        }
+
+        uint256 nonce = stageExecutorNonce[planId][orderId][stageId];
+        bytes32 digest =
+            stageExecutorChangeDigest(planId, orderId, stageId, newExecutor, signalRefsHash(signals), deadline, nonce);
+        address buyer = stateMachine.orderCreator(planId, orderId);
+        address recoveredBuyer = _recoverStageExecutorChangeSigner(digest, buyerSignature);
+        if (recoveredBuyer != buyer) {
+            revert InvalidStageExecutorSignature(buyer, recoveredBuyer);
+        }
+        address recoveredOldExecutor = _recoverStageExecutorChangeSigner(digest, oldExecutorSignature);
+        if (recoveredOldExecutor != oldExecutor) {
+            revert InvalidStageExecutorPreviousSignature(oldExecutor, recoveredOldExecutor);
+        }
+
+        stageExecutor[planId][orderId][stageId] = newExecutor;
+        stageExecutorNonce[planId][orderId][stageId] = nonce + 1;
+        stateMachine.revokeSignalSubmittersFromModule(planId, orderId, _signalAuthorizations(signals, oldExecutor));
+        stateMachine.authorizeSignalSubmittersFromModule(planId, orderId, _signalAuthorizations(signals, newExecutor));
+
+        emit StageExecutorReplaced(planId, orderId, stageId, oldExecutor, newExecutor, msg.sender);
+    }
+
     function activeStageExecutor(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
         external
         view
@@ -375,6 +513,64 @@ contract UVPStagePatchModule {
             )
         );
         return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
+    }
+
+    function signalRefsHash(SignalRef[] calldata signals) public pure returns (bytes32) {
+        return keccak256(abi.encode(signals));
+    }
+
+    function stageExecutorChangeDigest(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 stageId,
+        address executor,
+        bytes32 signalsHash,
+        uint64 deadline,
+        uint256 nonce
+    ) public view returns (bytes32) {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                _STAGE_EXECUTOR_CHANGE_TYPEHASH, planId, orderId, stageId, executor, signalsHash, deadline, nonce
+            )
+        );
+        return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
+    }
+
+    function _signalAuthorizations(SignalRef[] calldata signals, address submitter)
+        private
+        pure
+        returns (IUVPStateMachineCore.SignalAuthorization[] memory authorizations)
+    {
+        authorizations = new IUVPStateMachineCore.SignalAuthorization[](signals.length);
+        for (uint256 i = 0; i < signals.length; i++) {
+            authorizations[i] = IUVPStateMachineCore.SignalAuthorization({
+                sourceId: signals[i].sourceId,
+                signalId: signals[i].signalId,
+                submitter: submitter,
+                role: bytes32(0),
+                metadataHash: bytes32(0)
+            });
+        }
+    }
+
+    function _recoverStageExecutorChangeSigner(bytes32 digest, bytes calldata signature)
+        private
+        pure
+        returns (address)
+    {
+        if (signature.length != 65) {
+            revert InvalidStageExecutorSignatureLength(signature.length);
+        }
+
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := calldataload(signature.offset)
+            s := calldataload(add(signature.offset, 0x20))
+            v := byte(0, calldataload(add(signature.offset, 0x40)))
+        }
+        return ECDSA.recover(digest, UVPSignatures.Signature({v: v, r: r, s: s}));
     }
 
     function _applyStageExecutorPatch(
