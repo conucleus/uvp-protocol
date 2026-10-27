@@ -3,6 +3,8 @@
  * token；没有账户/登录/地址锚定字段。
  */
 
+export const WALLET_PROOF_SESSION_HEADER = "x-uvp-store-session";
+
 export interface WalletProofChallengeView {
   readonly nonce: string;
   readonly wallet: string;
