@@ -367,6 +367,8 @@ export interface StageTermsInput {
 }
 
 export interface CreateOrderDraftInput {
+  /** 客户端生成的草稿 id；重复即 409，服务端不依赖通用幂等 key。 */
+  readonly draftId?: string;
   readonly configId: string;
   readonly configVersion: string;
   readonly title: string;
@@ -399,10 +401,6 @@ export interface AcceptStageInviteInput {
 
 export interface RejectStageInviteInput {
   readonly token: string;
-}
-
-export interface ResendStageInviteInput {
-  readonly expiresAt?: string;
 }
 
 export interface AttachOrderInput {
