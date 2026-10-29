@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x008529db02a05dcb939a192866dc1e5eb8037eb544fe3dc538057516771ef05e",
-    "bytecodeHash": "0x928249e0c44b142fb02a0ac50c8d330e293f3a4e422d768508900621cfb00d7f",
-    "deployedBytecodeHash": "0x74ba6c44d378979e2ba0a609a4ee7ce899fb3585088d8350939285f95dfed8e3",
-    "artifactHash": "0x2947927d4aae81d81e48f616c422cd7852c38d06bd0f3a455847cd2d12e71c1c"
+    "abiHash": "0x246d16dfad76b61a6e530a0c164865fddb01b293cce172f2e3bb5902be20393f",
+    "bytecodeHash": "0xdbdec34f109951ca40adb43542698943b1c9bc07c107ef36f404739e9736c4bc",
+    "deployedBytecodeHash": "0x180efb16bcb44b8987bb4ebce74a6c677d7d3327e9defa60068375301e606c08",
+    "artifactHash": "0x9232c7b40e660045cf6f31709fb0f4b104841dca37e786d9385520823e9767e3"
   },
   "events": {
     "HookReady": {
@@ -70,6 +70,10 @@
     "SignalSubmitterAuthorized": {
       "signature": "SignalSubmitterAuthorized(bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32)",
       "topic": "0xfbed2bb16f4db2fb83e09c0e7f3c5992d5e64c6f45534d37e7058089d836b6d3"
+    },
+    "SignalSubmitterRevoked": {
+      "signature": "SignalSubmitterRevoked(bytes32,bytes32,bytes32,bytes32,address)",
+      "topic": "0x183563a55b7ac71b46e6bd75c3127f3faa0ed124a8b2a3f01ba18265a26ce81c"
     },
     "StageExecutorActivated": {
       "signature": "StageExecutorActivated(bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256,string)",
@@ -169,6 +173,10 @@
       "signature": "activeStageExecutor(bytes32,bytes32,bytes32)",
       "selector": "0x43d35f65"
     },
+    "activeStageExecutorNonce": {
+      "signature": "activeStageExecutorNonce(bytes32,bytes32,bytes32)",
+      "selector": "0x399993da"
+    },
     "authorizeDockedSignalsFromModule": {
       "signature": "authorizeDockedSignalsFromModule(bytes32,bytes32,(bytes32,bytes32,address,bytes32,bytes32)[])",
       "selector": "0xc93886d0"
@@ -236,6 +244,10 @@
     "hasTriggerOriginConsent": {
       "signature": "hasTriggerOriginConsent(bytes32,bytes32,bytes32,bytes32,address,(bytes32,bytes32,bytes32,bytes32[]))",
       "selector": "0xa1968e4f"
+    },
+    "isPlanStage": {
+      "signature": "isPlanStage(bytes32,bytes32)",
+      "selector": "0x087392d4"
     },
     "isSignalSubmitterAuthorized": {
       "signature": "isSignalSubmitterAuthorized(bytes32,bytes32,bytes32,bytes32,address)",
@@ -348,6 +360,10 @@
     "recordDockedInputFromModule": {
       "signature": "recordDockedInputFromModule((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,(bytes32,bytes32,bytes32,bytes32[])))",
       "selector": "0x61b7bc01"
+    },
+    "revokeSignalSubmittersFromModule": {
+      "signature": "revokeSignalSubmittersFromModule(bytes32,bytes32,(bytes32,bytes32,address,bytes32,bytes32)[])",
+      "selector": "0x49bb1e46"
     },
     "setDerivedSignalModule": {
       "signature": "setDerivedSignalModule(address)",

@@ -1,4 +1,5 @@
 import {
+  decodeEventLog,
   encodeAbiParameters,
   encodeFunctionData,
   getAddress,
@@ -8,12 +9,17 @@ import {
   parseAbi,
   parseAbiParameters,
   recoverTypedDataAddress,
+  stringToBytes,
   stringToHex,
   toHex,
   type Address,
   type Hex,
 } from "viem";
 import { canonicalJson } from "@uvp-eth/canonical-json";
+import type {
+  SignalCapabilityTableEntry,
+  StageSelectorBindingTableEntry,
+} from "./capabilities-root.js";
 
 // 部分签名的嵌套深度超出 viem parseAbi 的类型级解析预算
 // （运行时解析正常，tsc 下落入 Error 分支），这几条以等价的 JSON const
@@ -2758,6 +2764,496 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// Plan registration transaction builders: encode the two-step Solidity
+// registration flow (commitPlan + finalizePlan) from precompiled register
+// arguments. Pure calldata only — no signer, network, or compiler import; the
+// typed-data digest is PlanCommit above and the ABI is STATE_MACHINE_ABI.
+export type PlanInstructionOp = "SIGNAL" | "NOT" | "AND" | "OR" | "DELAY";
+
+export const PLAN_INSTRUCTION_OP_CODES: Readonly<Record<PlanInstructionOp, number>> = {
+  SIGNAL: 0,
+  NOT: 1,
+  AND: 2,
+  OR: 3,
+  DELAY: 4,
+};
+
+export type PlanRegistrationInstruction =
+  | {
+      readonly op: "SIGNAL";
+      readonly sourceId: Hex | string;
+      readonly signalId: Hex | string;
+      readonly signalKey?: Hex | string;
+    }
+  | { readonly op: "NOT" }
+  | { readonly op: "AND" | "OR"; readonly arity: number }
+  | { readonly op: "DELAY"; readonly delaySeconds: number | string };
+
+export interface PlanRegistrationHook {
+  readonly hookId: Hex | string;
+  readonly stageId: Hex | string;
+  readonly hookName: Hex | string;
+  readonly kind?: "receive" | "admission";
+  readonly flags: number;
+  readonly instructions: readonly PlanRegistrationInstruction[];
+  readonly dependencyKeys: readonly (Hex | string)[];
+  readonly routeId?: Hex | string;
+}
+
+export interface PlanRegistrationExecutorCandidate {
+  readonly stageId: Hex | string;
+  readonly executor: Address | string;
+}
+
+export interface PlanRegistrationArgs {
+  readonly planId: Hex | string;
+  readonly planHash: Hex | string;
+  readonly hooksHash: Hex | string;
+  readonly capabilitiesRoot: Hex | string;
+  readonly dockRoutesRoot: Hex | string;
+  readonly dockInterfaceRoot: Hex | string;
+  readonly executorCandidatesRoot: Hex | string;
+  readonly hooks: readonly PlanRegistrationHook[];
+  readonly executorCandidates: readonly PlanRegistrationExecutorCandidate[];
+}
+
+export interface PlanRegistrationSource {
+  readonly planHash: Hex | string;
+  readonly hooksHash: Hex | string;
+  readonly capabilitiesRoot: Hex | string;
+  readonly dockRoutesRoot: Hex | string;
+  readonly dockInterfaceRoot: Hex | string;
+  readonly executorCandidatesRoot: Hex | string;
+  readonly hooks: readonly PlanRegistrationHook[];
+  readonly executorCandidates: readonly PlanRegistrationExecutorCandidate[];
+}
+
+export interface StateMachineCallConfig {
+  readonly stateMachineAddress: Address | string;
+  readonly chainId?: number;
+}
+
+export interface PlanTransactionCall {
+  readonly address: Address;
+  readonly functionName: "commitPlan" | "finalizePlan";
+  readonly data: Hex;
+  readonly chainId?: number;
+}
+
+/** Cut a PlanRegistrationArgs out of compiler register args plus the derived planId. */
+export function planRegistrationArgs(
+  source: PlanRegistrationSource,
+  planId: Hex | string,
+): PlanRegistrationArgs {
+  return {
+    planId,
+    planHash: source.planHash,
+    hooksHash: source.hooksHash,
+    capabilitiesRoot: source.capabilitiesRoot,
+    dockRoutesRoot: source.dockRoutesRoot,
+    dockInterfaceRoot: source.dockInterfaceRoot,
+    executorCandidatesRoot: source.executorCandidatesRoot,
+    hooks: source.hooks,
+    executorCandidates: source.executorCandidates,
+  };
+}
+
+export interface PlanCommitCallArgs {
+  readonly publisher: Address | string;
+  readonly birthAuthorizer?: Address | string;
+  readonly deadline: bigint | number | string;
+  readonly registration: PlanRegistrationArgs;
+  readonly signature: Hex | string;
+}
+
+export interface PlanRegistrationBuild {
+  readonly typedData: PlanCommitTypedData;
+  readonly commitCall: PlanTransactionCall;
+  readonly finalizeCall: PlanTransactionCall;
+}
+
+interface PlanCommitTuple {
+  readonly publisher: Address;
+  readonly hooksHash: Hex;
+  readonly capabilitiesRoot: Hex;
+  readonly dockRoutesRoot: Hex;
+  readonly dockInterfaceRoot: Hex;
+  readonly executorCandidatesRoot: Hex;
+  readonly birthAuthorizer: Address;
+  readonly deadline: bigint;
+}
+
+interface PlanCommitHookTuple {
+  readonly hookId: Hex;
+  readonly stageId: Hex;
+  readonly hookName: Hex;
+  readonly flags: number;
+  readonly instructions: readonly CompactInstructionTuple[];
+  readonly dependencyKeys: readonly Hex[];
+}
+
+interface CompactInstructionTuple {
+  readonly op: number;
+  readonly sourceId: Hex;
+  readonly signalId: Hex;
+  readonly arity: number;
+  readonly delaySeconds: bigint;
+}
+
+export function buildPlanCommitTypedDataFor(
+  config: Pick<StateMachineCallConfig, "stateMachineAddress" | "chainId">,
+  args: Pick<PlanCommitCallArgs, "publisher" | "birthAuthorizer" | "deadline" | "registration">,
+): PlanCommitTypedData {
+  const commit = planCommitTuple(config, args);
+  return buildPlanCommitTypedData({
+    chainId: planTypedDataChainId(config.chainId),
+    verifyingContract: normalizeAddressChecksummed(config.stateMachineAddress, "stateMachineAddress"),
+    publisher: commit.publisher,
+    hooksHash: commit.hooksHash,
+    capabilitiesRoot: commit.capabilitiesRoot,
+    dockRoutesRoot: commit.dockRoutesRoot,
+    dockInterfaceRoot: commit.dockInterfaceRoot,
+    executorCandidatesRoot: commit.executorCandidatesRoot,
+    birthAuthorizer: commit.birthAuthorizer,
+    deadline: commit.deadline,
+  });
+}
+
+export function buildPlanCommitCall(
+  config: StateMachineCallConfig,
+  args: PlanCommitCallArgs,
+): PlanTransactionCall {
+  const address = normalizeAddressChecksummed(config.stateMachineAddress, "stateMachineAddress");
+  const commit = planCommitTuple(config, args);
+  const signature = normalizePlanSignature(args.signature);
+  const hooks = encodePlanRegistrationHooks(args.registration.hooks);
+  const executorCandidates = args.registration.executorCandidates.map((candidate) => ({
+    stageId: normalizeBytes32(candidate.stageId, "executorCandidates[].stageId"),
+    executor: normalizeAddressChecksummed(candidate.executor, "executorCandidates[].executor"),
+  }));
+  const data = encodeFunctionData({
+    abi: STATE_MACHINE_ABI,
+    functionName: "commitPlan",
+    args: [commit, hooks, executorCandidates, signature],
+  });
+  return planCallObject(address, "commitPlan", data, config.chainId);
+}
+
+export function buildPlanFinalizeCall(
+  config: StateMachineCallConfig,
+  planId: Hex | string,
+): PlanTransactionCall {
+  const address = normalizeAddressChecksummed(config.stateMachineAddress, "stateMachineAddress");
+  const data = encodeFunctionData({
+    abi: STATE_MACHINE_ABI,
+    functionName: "finalizePlan",
+    args: [normalizeBytes32(planId, "planId")],
+  });
+  return planCallObject(address, "finalizePlan", data, config.chainId);
+}
+
+export function buildPlanRegistration(
+  config: StateMachineCallConfig,
+  args: PlanCommitCallArgs,
+): PlanRegistrationBuild {
+  return {
+    typedData: buildPlanCommitTypedDataFor(config, args),
+    commitCall: buildPlanCommitCall(config, args),
+    finalizeCall: buildPlanFinalizeCall(config, args.registration.planId),
+  };
+}
+
+export function encodePlanRegistrationHooks(
+  hooks: readonly PlanRegistrationHook[],
+): readonly PlanCommitHookTuple[] {
+  if (hooks.length === 0) {
+    throw new Error("plan registration requires at least one hook");
+  }
+  return hooks.map((hook) => ({
+    hookId: normalizeBytes32(hook.hookId, "hooks[].hookId"),
+    stageId: normalizeBytes32(hook.stageId, "hooks[].stageId"),
+    hookName: normalizeBytes32(hook.hookName, "hooks[].hookName"),
+    flags: normalizePlanFlags(hook.flags),
+    instructions: hook.instructions.map(encodePlanInstruction),
+    dependencyKeys: hook.dependencyKeys.map((key, index) =>
+      normalizeBytes32(key, `hooks[].dependencyKeys[${index}]`)),
+  }));
+}
+
+function planCommitTuple(
+  config: StateMachineCallConfig,
+  args: Pick<PlanCommitCallArgs, "publisher" | "birthAuthorizer" | "deadline" | "registration">,
+): PlanCommitTuple {
+  const publisher = normalizeAddressChecksummed(args.publisher, "publisher");
+  return {
+    publisher,
+    hooksHash: normalizeBytes32(args.registration.hooksHash, "hooksHash"),
+    capabilitiesRoot: normalizeBytes32(args.registration.capabilitiesRoot, "capabilitiesRoot"),
+    dockRoutesRoot: normalizeBytes32(args.registration.dockRoutesRoot, "dockRoutesRoot"),
+    dockInterfaceRoot: normalizeBytes32(args.registration.dockInterfaceRoot, "dockInterfaceRoot"),
+    executorCandidatesRoot: normalizeBytes32(
+      args.registration.executorCandidatesRoot,
+      "executorCandidatesRoot",
+    ),
+    birthAuthorizer: args.birthAuthorizer === undefined
+      ? publisher
+      : normalizeAddressChecksummed(args.birthAuthorizer, "birthAuthorizer"),
+    deadline: normalizeUintBigInt(args.deadline, "deadline"),
+  };
+}
+
+function encodePlanInstruction(
+  instruction: PlanRegistrationInstruction,
+): CompactInstructionTuple {
+  switch (instruction.op) {
+    case "SIGNAL":
+      return {
+        op: PLAN_INSTRUCTION_OP_CODES.SIGNAL,
+        sourceId: normalizeBytes32(instruction.sourceId, "instructions[].sourceId"),
+        signalId: normalizeBytes32(instruction.signalId, "instructions[].signalId"),
+        arity: 0,
+        delaySeconds: 0n,
+      };
+    case "NOT":
+      return {
+        op: PLAN_INSTRUCTION_OP_CODES.NOT,
+        sourceId: ZERO_BYTES32,
+        signalId: ZERO_BYTES32,
+        arity: 0,
+        delaySeconds: 0n,
+      };
+    case "AND":
+    case "OR":
+      return {
+        op: PLAN_INSTRUCTION_OP_CODES[instruction.op],
+        sourceId: ZERO_BYTES32,
+        signalId: ZERO_BYTES32,
+        arity: normalizePlanArity(instruction.arity),
+        delaySeconds: 0n,
+      };
+    case "DELAY":
+      return {
+        op: PLAN_INSTRUCTION_OP_CODES.DELAY,
+        sourceId: ZERO_BYTES32,
+        signalId: ZERO_BYTES32,
+        arity: 0,
+        delaySeconds: normalizeUintBigInt(instruction.delaySeconds, "instructions[].delaySeconds"),
+      };
+  }
+}
+
+function planTypedDataChainId(chainId: number | undefined): number {
+  if (chainId === undefined) {
+    throw new Error("chainId must be a positive integer for typed data");
+  }
+  return normalizeChainId(chainId);
+}
+
+function normalizePlanArity(value: number): number {
+  if (!Number.isSafeInteger(value) || value < 0 || value > 0xffff) {
+    throw new Error("instructions[].arity must be a uint16-safe integer");
+  }
+  return value;
+}
+
+function normalizePlanFlags(value: number): number {
+  if (!Number.isSafeInteger(value) || value < 0 || value > 0xff) {
+    throw new Error("hooks[].flags must be a uint8-safe integer");
+  }
+  return value;
+}
+
+function normalizePlanSignature(signature: Hex | string): Hex {
+  if (typeof signature !== "string" || !/^0x[0-9a-fA-F]{130}$/.test(signature)) {
+    throw new Error("signature must be a 65-byte hex string");
+  }
+  return signature as Hex;
+}
+
+function planCallObject(
+  address: Address,
+  functionName: PlanTransactionCall["functionName"],
+  data: Hex,
+  chainId: number | undefined,
+): PlanTransactionCall {
+  return {
+    address,
+    functionName,
+    data,
+    ...(chainId !== undefined ? { chainId } : {}),
+  };
+}
+
+// HookReady event surface: the topic and decoder for the state machine's
+// ready emission. The ABI/event shape is STATE_MACHINE_ABI above; consumers
+// (watcher, deploy driver, order app) must not re-derive the topic locally.
+export const HOOK_READY_TOPIC = keccak256(
+  stringToBytes("HookReady(bytes32,bytes32,bytes32,bytes32,bytes32)"),
+);
+
+export interface StateMachineRawLog {
+  readonly data: Hex;
+  readonly topics: readonly Hex[];
+  readonly address?: Address | string;
+  readonly blockNumber?: bigint | null;
+  readonly transactionHash?: Hex | null;
+  readonly logIndex?: number | bigint | null;
+}
+
+export interface StateMachineHookReady {
+  readonly type: "HookReady";
+  readonly eventId: Hex;
+  readonly stateMachineAddress?: Address;
+  readonly planId: Hex;
+  readonly orderId: Hex;
+  readonly hookId: Hex;
+  readonly stageId: Hex;
+  readonly hookNameId: Hex;
+  readonly stageIdentifier?: string;
+  readonly hookName?: string;
+  readonly blockNumber?: bigint;
+  readonly transactionHash?: Hex;
+  readonly logIndex?: bigint;
+  readonly raw?: StateMachineRawLog;
+}
+
+export interface StateMachineArtifactIndex {
+  readonly hooksByHookId?: Readonly<Record<string, StateMachineHookMetadata>>;
+  readonly signals?: Readonly<Record<string, StateMachineSignalMetadata>>;
+  readonly selectorBindings?: readonly StageSelectorBindingTableEntry[];
+  readonly signalCapabilities?: readonly SignalCapabilityTableEntry[];
+}
+
+export interface StateMachineHookMetadata {
+  readonly stageIdentifier: string;
+  readonly hookName: string;
+}
+
+export interface StateMachineSignalMetadata {
+  readonly sourceId: Hex | string;
+  readonly signalId: Hex | string;
+}
+
+export function decodeHookReadyLog(
+  log: StateMachineRawLog,
+  artifact?: StateMachineArtifactIndex,
+): StateMachineHookReady | undefined {
+  if (log.topics[0] !== HOOK_READY_TOPIC) {
+    return undefined;
+  }
+
+  let decoded: unknown;
+  try {
+    decoded = decodeEventLog({
+      abi: STATE_MACHINE_ABI,
+      eventName: "HookReady",
+      data: log.data,
+      topics: log.topics as [Hex, ...Hex[]],
+    });
+  } catch (error) {
+    throw new Error(`failed to decode HookReady log data: ${describeHookDecodeError(error)}`);
+  }
+
+  const args = (decoded as { readonly args?: unknown }).args as {
+    readonly planId?: unknown;
+    readonly orderId?: unknown;
+    readonly hookId?: unknown;
+    readonly stageId?: unknown;
+    readonly hookName?: unknown;
+  };
+  const blockNumber = log.blockNumber ?? undefined;
+  const transactionHash = log.transactionHash ?? undefined;
+  const logIndex = normalizeHookLogIndex(log.logIndex);
+  const hookId = normalizeBytes32(hookStringField(args.hookId, "hookId"), "hookId");
+  const metadata = artifact?.hooksByHookId?.[hookId];
+  const stateMachineAddress = log.address
+    ? normalizeAddressChecksummed(log.address, "log.address")
+    : undefined;
+
+  return {
+    type: "HookReady",
+    eventId: hookReadyEventId(log),
+    ...(stateMachineAddress ? { stateMachineAddress } : {}),
+    planId: normalizeBytes32(hookStringField(args.planId, "planId"), "planId"),
+    orderId: normalizeBytes32(hookStringField(args.orderId, "orderId"), "orderId"),
+    hookId,
+    stageId: normalizeBytes32(hookStringField(args.stageId, "stageId"), "stageId"),
+    hookNameId: normalizeBytes32(hookStringField(args.hookName, "hookName"), "hookName"),
+    ...(metadata?.stageIdentifier ? { stageIdentifier: metadata.stageIdentifier } : {}),
+    ...(metadata?.hookName ? { hookName: metadata.hookName } : {}),
+    ...(blockNumber !== undefined ? { blockNumber } : {}),
+    ...(transactionHash ? { transactionHash } : {}),
+    ...(logIndex !== undefined ? { logIndex } : {}),
+    raw: log,
+  };
+}
+
+export function hookReadyEventId(log: Pick<StateMachineRawLog, "transactionHash" | "logIndex">): Hex {
+  if (!log.transactionHash) {
+    throw new Error(
+      "HookReady log is missing transactionHash; refusing to derive an event id from zero values",
+    );
+  }
+  const logIndex = normalizeHookLogIndex(log.logIndex);
+  if (logIndex === undefined) {
+    throw new Error(
+      "HookReady log is missing logIndex; refusing to derive an event id from zero values",
+    );
+  }
+  return keccak256(encodeAbiParameters(
+    [
+      { type: "bytes32" },
+      { type: "uint256" },
+    ],
+    [normalizeBytes32(log.transactionHash, "transactionHash"), logIndex],
+  ));
+}
+
+export function tryHookReadyEventId(log: StateMachineRawLog): Hex | undefined {
+  try {
+    return hookReadyEventId(log);
+  } catch {
+    return undefined;
+  }
+}
+
+export function tryNormalizeStateMachineAddress(
+  address: Address | string | undefined,
+): Address | undefined {
+  if (address === undefined) {
+    return undefined;
+  }
+  try {
+    return normalizeAddressChecksummed(address, "log.address");
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeHookLogIndex(value: number | bigint | null | undefined): bigint | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "bigint") {
+    return value;
+  }
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error("logIndex must be a non-negative safe integer");
+  }
+  return BigInt(value);
+}
+
+function hookStringField(value: unknown, fieldName: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`${fieldName} must be a string`);
+  }
+  return value;
+}
+
+function describeHookDecodeError(error: unknown): string {
+  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+}
+
 // 签名闸门单源（三端签名前校验与用户拒绝判定的最强集），见 signing-gate.ts。
 export {
   isUserRejectedRequestError,
@@ -2784,6 +3280,5 @@ export {
   type StageSelectorBindingTableEntry,
 } from "./capabilities-root.js";
 
-export * from "./app-write.js";
 export * from "./order-book.js";
 export * from "./registry.js";

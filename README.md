@@ -23,7 +23,6 @@ This domain owns deterministic semantics and public protocol interfaces:
 - `packages/canonical-json/`: canonical JSON serialization and evidence hashing single source.
 - `packages/compiler/`: Zhixu-to-on-chain HookPlan artifact and register-plan argument generation.
 - `packages/statemachine/`: offline chain-event replay oracle.
-- `packages/product-dto/`: shared Product DTO contracts derived from protocol projections.
 - `packages/chain-read-contract/`: neutral wire DTOs/decoders for chain-services' `/chain/*` projection reads.
 - `contracts/uvp-contracts/`: Solidity contracts, ABI fixtures, and Foundry tests.
 
