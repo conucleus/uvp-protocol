@@ -17,6 +17,7 @@ export const UVP_APP_WRITE_ACTIONS = [
   "order.attach",
   "evidence.upload",
   "joint.child_order",
+  "joint.child_settle",
 ] as const;
 
 export type UvpAppWriteAction = (typeof UVP_APP_WRITE_ACTIONS)[number];
@@ -29,6 +30,7 @@ export const UVP_APP_WRITE_PRIMARY_TYPES = {
   "order.attach": "UVPAttachOrder",
   "evidence.upload": "UVPEvidenceUpload",
   "joint.child_order": "UVPJointChildOrder",
+  "joint.child_settle": "UVPJointChildSettle",
 } as const satisfies Record<UvpAppWriteAction, string>;
 
 export type UvpAppWritePrimaryType =
@@ -87,6 +89,17 @@ const FIELD_TABLES: Record<UvpAppWriteAction, readonly OrderBookTypedDataField[]
     { name: "nonce", type: "uint256" },
     { name: "deadline", type: "uint256" },
   ],
+  "joint.child_settle": [
+    { name: "parentPlanId", type: "bytes32" },
+    { name: "parentOrderId", type: "bytes32" },
+    { name: "parentStageKey", type: "string" },
+    { name: "childPlanId", type: "bytes32" },
+    { name: "creator", type: "address" },
+    { name: "jointRef", type: "bytes32" },
+    { name: "bodyHash", type: "bytes32" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
 };
 
 export const UVP_APP_WRITE_FIELDS = FIELD_TABLES;
@@ -99,6 +112,7 @@ export const UVP_APP_WRITE_TYPE_HASHES = {
   "order.attach": typeHashFor("order.attach"),
   "evidence.upload": typeHashFor("evidence.upload"),
   "joint.child_order": typeHashFor("joint.child_order"),
+  "joint.child_settle": typeHashFor("joint.child_settle"),
 } as const satisfies Record<UvpAppWriteAction, Hex>;
 
 export const UVP_APP_WRITE_RESOURCE_FIELDS = {
@@ -109,6 +123,7 @@ export const UVP_APP_WRITE_RESOURCE_FIELDS = {
   "order.attach": "draftId",
   "evidence.upload": undefined,
   "joint.child_order": "parentOrderId",
+  "joint.child_settle": "parentOrderId",
 } as const satisfies Record<UvpAppWriteAction, string | undefined>;
 
 export interface UvpAppBackendDomain {
