@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@uvp-eth/canonical-json": "workspace:*",
+    "@uvp-eth/compiler": "workspace:*",
     "viem": "^2.21.58"
   },
   "devDependencies": {

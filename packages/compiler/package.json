@@ -6,7 +6,8 @@
   "description": "Deterministic EVM artifact compiler for Zhixu HookPlan state-machine definitions.",
   "license": "Apache-2.0",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./browser": "./src/browser.ts"
   },
   "files": [
     "src",
