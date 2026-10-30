@@ -92,17 +92,17 @@ export type ChainStageExecutorPatchMode = "assign" | "handoff";
 
 export interface ChainStageExecutorOverlay {
   readonly orderId: Hex;
-  readonly selectorStageId: Hex;
+  readonly selectorStageId?: Hex;
   readonly targetStageId: Hex;
-  readonly selectorWallet: Address;
+  readonly selectorWallet?: Address;
   readonly activeExecutorWallet: Address;
-  readonly mode: ChainStageExecutorPatchMode;
+  readonly mode?: ChainStageExecutorPatchMode;
   readonly modeHash?: Hex;
   readonly previousExecutor?: Address;
   readonly authorizationsHash?: Hex;
   readonly roleHash: Hex;
   readonly executorMetadataHash: Hex;
-  readonly patchHash: Hex;
+  readonly patchHash?: Hex;
   readonly patchNonce: string;
   readonly metadataURI: string;
   readonly updatedAt: ChainProvenance;
@@ -113,13 +113,13 @@ export interface ChainStageExecutorOverlay {
 
 export interface ChainStageResourceOverlay {
   readonly orderId: Hex;
-  readonly selectorStageId: Hex;
+  readonly selectorStageId?: Hex;
   readonly targetStageId: Hex;
   readonly resourceKey: Hex;
-  readonly selectorWallet: Address;
+  readonly selectorWallet?: Address;
   readonly manifestHash: Hex;
   readonly policyHash: Hex;
-  readonly patchHash: Hex;
+  readonly patchHash?: Hex;
   readonly patchNonce: string;
   readonly manifestURI: string;
   readonly updatedAt: ChainProvenance;
@@ -238,7 +238,7 @@ export type ChainSignalTargetRelation = "current" | "triggerOrigin" | "unknown";
 export interface ChainStageSelectorBinding {
   readonly selectorStageIdentifier?: string;
   readonly targetStageIdentifier?: string;
-  readonly selectorStageId: Hex;
+  readonly selectorStageId?: Hex;
   readonly targetStageId: Hex;
   readonly bindingHash?: Hex;
 }

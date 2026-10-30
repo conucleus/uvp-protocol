@@ -177,19 +177,19 @@ export function decodeStageExecutorOverlayWire(
   const record = wireRecord(value, path);
   for (const field of [
     "orderId",
-    "selectorStageId",
     "targetStageId",
-    "selectorWallet",
     "activeExecutorWallet",
     "roleHash",
     "executorMetadataHash",
-    "patchHash",
     "patchNonce",
     "metadataURI"
   ] as const) {
     requireString(record, field, path);
   }
-  requireEnum(record, "mode", path, EXECUTOR_PATCH_MODES);
+  optionalString(record, "selectorStageId", path);
+  optionalString(record, "selectorWallet", path);
+  optionalString(record, "patchHash", path);
+  optionalEnum(record, "mode", path, EXECUTOR_PATCH_MODES);
   optionalString(record, "modeHash", path);
   optionalString(record, "previousExecutor", path);
   optionalString(record, "authorizationsHash", path);
