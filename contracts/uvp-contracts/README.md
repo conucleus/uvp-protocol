@@ -162,7 +162,9 @@ code do not silently drift away from the contract ABI.
    positive-anchored admission naturally rejects there.
 7. A wallet authorized for `EXECUTOR_PATCH_SIGNAL_ID` on a stage may apply an
    order-level executor patch through `UVPStagePatchModule` for a registered
-   stage-to-target binding. Every executor patch must prove
+   stage-to-target binding. The order creator may act as selector without that
+   explicit authorization, but the same binding and candidate gates apply.
+   Every executor patch must prove
    `(targetStageId, executor)` membership in the plan's committed
    `executorCandidatesRoot` (plans without a candidate set reject all
    executor patches — fail-closed). Executor patches use `assign` before the

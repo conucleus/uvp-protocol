@@ -73,16 +73,6 @@ pnpm --filter @uvp-eth/protocol-bindings build
 - Use the zero address or zero `bytes32` for unused `previousExecutor` and
   approval fields so those absences are still explicit in the signed payload.
 
-## Stage Executor Change Helpers
-
-- `buildStageExecutorChangeTypedData` builds
-  `UVPStagePatchModuleStageExecutorChange` EIP-712 typed data for the
-  buyer-selected stage executor `assign`/`replace` flow; the signed payload
-  binds `planId`, `orderId`, `stageId`, `executor`, `signalsHash`, `deadline`,
-  and the active `patchNonce` (replay guard).
-- `recoverStageExecutorChangeSigner` recovers the buyer or outgoing executor
-  wallet from a signature over the same typed data.
-
 ## Stage Resource Patch Helpers
 
 - `buildStageResourcePatchTypedData` builds

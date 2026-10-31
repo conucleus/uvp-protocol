@@ -441,12 +441,6 @@ export const STAGE_EXECUTOR_PATCH_DOMAIN_NAME = "UVPStagePatchModule";
 export const STAGE_EXECUTOR_PATCH_DOMAIN_VERSION = "0.2";
 export const STAGE_EXECUTOR_PATCH_PRIMARY_TYPE =
   "UVPStagePatchModuleStageExecutorPatch";
-export const STAGE_EXECUTOR_CHANGE_DOMAIN_NAME =
-  STAGE_EXECUTOR_PATCH_DOMAIN_NAME;
-export const STAGE_EXECUTOR_CHANGE_DOMAIN_VERSION =
-  STAGE_EXECUTOR_PATCH_DOMAIN_VERSION;
-export const STAGE_EXECUTOR_CHANGE_PRIMARY_TYPE =
-  "UVPStagePatchModuleStageExecutorChange";
 export const STAGE_RESOURCE_PATCH_DOMAIN_NAME =
   STAGE_EXECUTOR_PATCH_DOMAIN_NAME;
 export const STAGE_RESOURCE_PATCH_DOMAIN_VERSION =
@@ -603,17 +597,6 @@ export const STAGE_EXECUTOR_PATCH_TYPED_DATA_FIELDS: readonly ProductSubmitTyped
     { name: "metadataURI", type: "string" },
     { name: "selector", type: "address" },
     { name: "deadline", type: "uint256" },
-  ];
-
-export const STAGE_EXECUTOR_CHANGE_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] =
-  [
-    { name: "planId", type: "bytes32" },
-    { name: "orderId", type: "bytes32" },
-    { name: "stageId", type: "bytes32" },
-    { name: "executor", type: "address" },
-    { name: "signalsHash", type: "bytes32" },
-    { name: "deadline", type: "uint64" },
-    { name: "patchNonce", type: "uint256" },
   ];
 
 export const STAGE_RESOURCE_PATCH_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] =
@@ -912,38 +895,6 @@ export interface StageResourcePatchTypedData {
   };
 }
 
-export interface StageExecutorChangePayload {
-  readonly planId: Hex | string;
-  readonly orderId: Hex | string;
-  readonly stageId: Hex | string;
-  readonly executor: Address | string;
-  readonly signalsHash: Hex | string;
-  readonly deadline: bigint | number | string;
-  readonly patchNonce: bigint | number | string;
-}
-
-export interface StageExecutorChangeTypedData {
-  readonly domain: {
-    readonly name: typeof STAGE_EXECUTOR_CHANGE_DOMAIN_NAME;
-    readonly version: typeof STAGE_EXECUTOR_CHANGE_DOMAIN_VERSION;
-    readonly chainId: number;
-    readonly verifyingContract: Address;
-  };
-  readonly types: {
-    readonly UVPStagePatchModuleStageExecutorChange: readonly ProductSubmitTypedDataField[];
-  };
-  readonly primaryType: typeof STAGE_EXECUTOR_CHANGE_PRIMARY_TYPE;
-  readonly message: {
-    readonly planId: Hex;
-    readonly orderId: Hex;
-    readonly stageId: Hex;
-    readonly executor: Address;
-    readonly signalsHash: Hex;
-    readonly deadline: string;
-    readonly patchNonce: string;
-  };
-}
-
 
 
 
@@ -1042,12 +993,6 @@ export interface BuildStageResourcePatchTypedDataInput
   readonly orderId: Hex | string;
   readonly selector: Address | string;
   readonly deadline: bigint | number | string;
-}
-
-export interface BuildStageExecutorChangeTypedDataInput
-  extends StageExecutorChangePayload {
-  readonly chainId: number;
-  readonly verifyingContract: Address | string;
 }
 
 
@@ -1713,40 +1658,6 @@ export function buildStageResourcePatchTypedData(
   };
 }
 
-export function buildStageExecutorChangeTypedData(
-  input: BuildStageExecutorChangeTypedDataInput,
-): StageExecutorChangeTypedData {
-  const executor = normalizeAddress(input.executor, "executor");
-  if (executor === ZERO_ADDRESS) {
-    throw new Error("executor must be non-zero");
-  }
-  return {
-    domain: {
-      name: STAGE_EXECUTOR_CHANGE_DOMAIN_NAME,
-      version: STAGE_EXECUTOR_CHANGE_DOMAIN_VERSION,
-      chainId: normalizeChainId(input.chainId),
-      verifyingContract: normalizeAddress(
-        input.verifyingContract,
-        "verifyingContract",
-      ),
-    },
-    types: {
-      UVPStagePatchModuleStageExecutorChange:
-        STAGE_EXECUTOR_CHANGE_TYPED_DATA_FIELDS,
-    },
-    primaryType: STAGE_EXECUTOR_CHANGE_PRIMARY_TYPE,
-    message: {
-      planId: normalizeBytes32(input.planId, "planId"),
-      orderId: normalizeBytes32(input.orderId, "orderId"),
-      stageId: normalizeNonZeroBytes32(input.stageId, "stageId"),
-      executor,
-      signalsHash: normalizeBytes32(input.signalsHash, "signalsHash"),
-      deadline: normalizeUintString(input.deadline, "deadline"),
-      patchNonce: normalizeUintString(input.patchNonce, "patchNonce"),
-    },
-  };
-}
-
 
 export async function recoverProductSubmitSigner(
   typedData: ProductSubmitTypedData,
@@ -1844,20 +1755,6 @@ export async function recoverStageResourcePatchSigner(
     signature: normalizeHex(signature, "signature"),
   } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
   return normalizeAddress(recovered, "recoveredSelector");
-}
-
-export async function recoverStageExecutorChangeSigner(
-  typedData: StageExecutorChangeTypedData,
-  signature: Hex | string,
-): Promise<Address> {
-  const recovered = await recoverTypedDataAddress({
-    domain: typedData.domain,
-    types: typedData.types,
-    primaryType: typedData.primaryType,
-    message: typedData.message,
-    signature: normalizeHex(signature, "signature"),
-  } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
-  return normalizeAddress(recovered, "recoveredStageExecutorChangeSigner");
 }
 
 

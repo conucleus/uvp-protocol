@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStagePatchModule",
-  "abiVersion": "0.5",
+  "abiVersion": "0.6",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStagePatchModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStagePatchModule.sol/UVPStagePatchModule.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xaca4842a3907defdba67f0789d4615171a6f2d746494cfcbf17f5b0b5535e957",
-    "bytecodeHash": "0xd2cf83d306f2dd79aba3b63cd6208f54d1c521c32586c17d101a08d5bd7adad0",
-    "deployedBytecodeHash": "0x9930899e07e223b98a5a2f608659f86ff6e3cb6d71e5e16c01269c487d924c69",
-    "artifactHash": "0xb36196477f87e490e893659a4d6d6ef1be16780c8c99f6b30d8a3b2b2477ee2d"
+    "abiHash": "0xaf9ea773f147f94ba003b71b2a778e59f9c67c281233bc27eebad8ec1261b3c9",
+    "bytecodeHash": "0x853b59d5b349b6cfaa0bf3f558578299d83c571a7b9a112c68d8c0fb29d771f7",
+    "deployedBytecodeHash": "0xcc81cf706a310a9e1b1193ec3ceff161008cdfc089cdefc6e293f76896074092",
+    "artifactHash": "0x078f6bd2af672ee596f5503016ee8f237edef22507614bb4b47b8336461da243"
   },
   "events": {
     "StageExecutorPatchApplied": {
@@ -69,10 +69,6 @@
       "signature": "applyStageResourcePatchFor(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string),address,uint256,bytes,(bytes32,bytes32[]))",
       "selector": "0x980e49a4"
     },
-    "assignStageExecutor": {
-      "signature": "assignStageExecutor(bytes32,bytes32,bytes32,address,(bytes32,bytes32)[],uint64,bytes)",
-      "selector": "0xd46eb017"
-    },
     "getActiveStageExecutorPatch": {
       "signature": "getActiveStageExecutorPatch(bytes32,bytes32,bytes32)",
       "selector": "0x1ae5b35a"
@@ -88,18 +84,6 @@
     "orderStageResourcePatchNonce": {
       "signature": "orderStageResourcePatchNonce(bytes32,bytes32,bytes32,bytes32)",
       "selector": "0x4ca77733"
-    },
-    "replaceStageExecutor": {
-      "signature": "replaceStageExecutor(bytes32,bytes32,bytes32,address,address,(bytes32,bytes32)[],uint64,bytes,bytes)",
-      "selector": "0xc2276a09"
-    },
-    "signalRefsHash": {
-      "signature": "signalRefsHash((bytes32,bytes32)[])",
-      "selector": "0x4787c86b"
-    },
-    "stageExecutorChangeDigest": {
-      "signature": "stageExecutorChangeDigest(bytes32,bytes32,bytes32,address,bytes32,uint64,uint256)",
-      "selector": "0xae0962ec"
     },
     "stageExecutorPatchDigest": {
       "signature": "stageExecutorPatchDigest(bytes32,bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256,string),address,uint256)",
