@@ -143,6 +143,7 @@ export {
 } from "./types/index.js";
 export type {
   Address,
+  BirthChannel,
   CompiledHookPlanAdmission,
   DockInterfaceArtifactInterface,
   DockInterfaceArtifactPortInput,

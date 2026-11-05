@@ -2484,6 +2484,125 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
+    "name": "triggerOrderFromOutsideByAuthorizer",
+    "inputs": [
+      {
+        "name": "trigger",
+        "type": "tuple",
+        "internalType": "struct UVPStateMachine.TriggerOrderFromOutsideByAuthorizerRequest",
+        "components": [
+          {
+            "name": "planId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "creator",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "triggerHookId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "triggerStageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "sourceId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "signalId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "payloadHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "idempotencyKey",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "deadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "authorizations",
+        "type": "tuple[]",
+        "internalType": "struct UVPStateMachine.SignalAuthorization[]",
+        "components": [
+          {
+            "name": "sourceId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "signalId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "submitter",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "role",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "metadataHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          }
+        ]
+      },
+      {
+        "name": "birthFactAttribution",
+        "type": "tuple",
+        "internalType": "struct UVPStateMachine.FactAttribution",
+        "components": [
+          {
+            "name": "sourceId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "signalId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "stageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "capabilityProof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "triggerOrderFromOutsideFor",
     "inputs": [
       {
@@ -3519,6 +3638,17 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "signalKey",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BirthAuthorizerNotContract",
+    "inputs": [
+      {
+        "name": "authorizer",
+        "type": "address",
+        "internalType": "address"
       }
     ]
   },

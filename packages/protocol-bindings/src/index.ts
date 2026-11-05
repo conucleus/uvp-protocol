@@ -72,6 +72,52 @@ const TRIGGER_ORDER_FROM_OUTSIDE_FOR_ABI_ENTRY = [
   },
 ] as const;
 
+const TRIGGER_ORDER_FROM_OUTSIDE_BY_AUTHORIZER_ABI_ENTRY = [
+  {
+    type: "function",
+    name: "triggerOrderFromOutsideByAuthorizer",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        name: "trigger",
+        type: "tuple",
+        components: [
+          { name: "planId", type: "bytes32" },
+          { name: "creator", type: "address" },
+          { name: "triggerHookId", type: "bytes32" },
+          { name: "triggerStageId", type: "bytes32" },
+          { name: "sourceId", type: "bytes32" },
+          { name: "signalId", type: "bytes32" },
+          { name: "payloadHash", type: "bytes32" },
+          { name: "idempotencyKey", type: "bytes32" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      {
+        name: "authorizations",
+        type: "tuple[]",
+        components: [
+          { name: "sourceId", type: "bytes32" },
+          { name: "signalId", type: "bytes32" },
+          { name: "submitter", type: "address" },
+          { name: "role", type: "bytes32" },
+          { name: "metadataHash", type: "bytes32" },
+        ],
+      },
+      {
+        name: "birthFactAttribution",
+        type: "tuple",
+        components: [
+          { name: "sourceId", type: "bytes32" },
+          { name: "signalId", type: "bytes32" },
+          { name: "stageId", type: "bytes32" },
+          { name: "capabilityProof", type: "bytes32[]" },
+        ],
+      },
+    ],
+  },
+] as const;
+
 const TRIGGER_ORDER_FROM_SIGNAL_FROM_MODULE_ABI_ENTRY = [
   {
     type: "function",
@@ -225,6 +271,7 @@ export const STATE_MACHINE_ABI = [
   "function planHookDependsOn(bytes32 planId,bytes32 hookId,bytes32 sourceId,bytes32 signalId) view returns (bool)",
   ]),
   ...TRIGGER_ORDER_FROM_OUTSIDE_FOR_ABI_ENTRY,
+  ...TRIGGER_ORDER_FROM_OUTSIDE_BY_AUTHORIZER_ABI_ENTRY,
   ...TRIGGER_ORDER_FROM_SIGNAL_FROM_MODULE_ABI_ENTRY,
 ] as const;
 
@@ -700,6 +747,18 @@ export interface TriggerOrderFromOutsidePayload {
   readonly deadline: bigint | number | string;
 }
 
+export interface TriggerOrderFromOutsideByAuthorizerPayload {
+  readonly planId: Hex | string;
+  readonly creator: Address | string;
+  readonly triggerHookId: Hex | string;
+  readonly triggerStageId: Hex | string;
+  readonly sourceId: Hex | string;
+  readonly signalId: Hex | string;
+  readonly payloadHash: Hex | string;
+  readonly idempotencyKey: Hex | string;
+  readonly deadline: bigint | number | string;
+}
+
 export interface TriggerOrderFromSignalPayload {
   readonly orderId: Hex | string;
   readonly planId: Hex | string;
@@ -1138,6 +1197,12 @@ export interface TriggerOrderFromOutsideForCallArgs
   readonly birthFactAttribution: SignalAttributionPayload;
 }
 
+export interface TriggerOrderFromOutsideByAuthorizerCallArgs
+  extends TriggerOrderFromOutsideByAuthorizerPayload {
+  readonly authorizations: readonly SignalAuthorizationPayload[];
+  readonly birthFactAttribution: SignalAttributionPayload;
+}
+
 export interface TriggerOrderFromSignalForCallArgs
   extends TriggerOrderFromSignalPayload {
   readonly authorizations: readonly SignalAuthorizationPayload[];
@@ -1196,6 +1261,8 @@ export type ApplyStageExecutorPatchForCallConfig = StagePatchModuleCallConfig;
 export type ApplyStageResourcePatchForCallConfig = StagePatchModuleCallConfig;
 export type SubmitDerivedSignalForCallConfig = DerivedSignalModuleCallConfig;
 export type TriggerOrderFromOutsideForCallConfig = SubmitSignalForCallConfig;
+export type TriggerOrderFromOutsideByAuthorizerCallConfig =
+  SubmitSignalForCallConfig;
 export type TriggerOrderFromSignalForCallConfig = OrderLinkModuleCallConfig;
 
 export interface SubmitSignalForCall {
@@ -1262,6 +1329,18 @@ export type TriggerOrderFromOutsideCallTuple = readonly [
   bigint,
 ];
 
+export type TriggerOrderFromOutsideByAuthorizerCallTuple = readonly [
+  Hex,
+  Address,
+  Hex,
+  Hex,
+  Hex,
+  Hex,
+  Hex,
+  Hex,
+  bigint,
+];
+
 export type TriggerOrderFromSignalCallTuple = readonly [
   Hex,
   Hex,
@@ -1302,6 +1381,19 @@ export interface TriggerOrderFromOutsideForCall {
     TriggerOrderFromOutsideCallTuple,
     readonly SignalAuthorizationCallTuple[],
     Hex,
+    SignalAttributionCallStruct,
+  ];
+  readonly data: Hex;
+  readonly chainId?: number;
+}
+
+export interface TriggerOrderFromOutsideByAuthorizerCall {
+  readonly address: Address;
+  readonly abi: typeof STATE_MACHINE_ABI;
+  readonly functionName: "triggerOrderFromOutsideByAuthorizer";
+  readonly args: readonly [
+    TriggerOrderFromOutsideByAuthorizerCallTuple,
+    readonly SignalAuthorizationCallTuple[],
     SignalAttributionCallStruct,
   ];
   readonly data: Hex;
@@ -1872,6 +1964,35 @@ export function buildTriggerOrderFromOutsideForCall(
   };
 }
 
+export function buildTriggerOrderFromOutsideByAuthorizerCall(
+  config: TriggerOrderFromOutsideByAuthorizerCallConfig,
+  args: TriggerOrderFromOutsideByAuthorizerCallArgs,
+): TriggerOrderFromOutsideByAuthorizerCall {
+  const normalizedArgs = [
+    normalizeTriggerOrderFromOutsideByAuthorizer(args),
+    args.authorizations.map(normalizeSignalAuthorization),
+    normalizeSignalAttribution(args.birthFactAttribution),
+  ] as const;
+
+  return {
+    address: normalizeAddress(
+      config.stateMachineAddress,
+      "stateMachineAddress",
+    ),
+    abi: STATE_MACHINE_ABI,
+    functionName: "triggerOrderFromOutsideByAuthorizer",
+    args: normalizedArgs,
+    data: encodeFunctionData({
+      abi: STATE_MACHINE_ABI,
+      functionName: "triggerOrderFromOutsideByAuthorizer",
+      args: normalizedArgs,
+    }),
+    ...(config.chainId !== undefined
+      ? { chainId: normalizeChainId(config.chainId) }
+      : {}),
+  };
+}
+
 export function buildTriggerOrderFromSignalForCall(
   config: TriggerOrderFromSignalForCallConfig,
   args: TriggerOrderFromSignalForCallArgs,
@@ -2257,6 +2378,22 @@ function normalizeTriggerOrderFromOutside(
     normalizeBytes32(trigger.payloadHash, "payloadHash"),
     normalizeBytes32(trigger.idempotencyKey, "idempotencyKey"),
     normalizeAddress(trigger.submitter, "submitter"),
+    normalizeUintBigInt(trigger.deadline, "deadline"),
+  ] as const;
+}
+
+function normalizeTriggerOrderFromOutsideByAuthorizer(
+  trigger: TriggerOrderFromOutsideByAuthorizerPayload,
+): TriggerOrderFromOutsideByAuthorizerCallTuple {
+  return [
+    normalizeNonZeroBytes32(trigger.planId, "planId"),
+    normalizeAddress(trigger.creator, "creator"),
+    normalizeNonZeroBytes32(trigger.triggerHookId, "triggerHookId"),
+    normalizeNonZeroBytes32(trigger.triggerStageId, "triggerStageId"),
+    normalizeNonZeroBytes32(trigger.sourceId, "sourceId"),
+    normalizeNonZeroBytes32(trigger.signalId, "signalId"),
+    normalizeBytes32(trigger.payloadHash, "payloadHash"),
+    normalizeBytes32(trigger.idempotencyKey, "idempotencyKey"),
     normalizeUintBigInt(trigger.deadline, "deadline"),
   ] as const;
 }

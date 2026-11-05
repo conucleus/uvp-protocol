@@ -156,7 +156,7 @@ function buildDefinitionCase(
   );
   const args: SolidityRegisterPlanArgs = toSolidityRegisterPlanArgs(onchain);
   const hooks = goldenHooks(args.hooks);
-  const { planHash: _onchainHash, ...onchainPayload } = onchain;
+  const { planHash: _onchainHash, birthChannel: _birthChannel, ...onchainPayload } = onchain;
   return {
     name,
     note,

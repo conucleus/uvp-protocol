@@ -155,6 +155,31 @@ recomputes ids, validates instruction stack shape, verifies `dependencyIndex`,
 and verifies `planHash`. `toSolidityRegisterPlanArgs(value)` strips audit labels
 and returns a deterministic data shape for the Solidity registration ABI.
 
+## Birth Channel
+
+`OnchainHookPlanArtifact.birthChannel` is a derived, read-only field:
+`entry` | `mint` | `dock`. It describes the plan's birth line from the
+canonical-order first order-trigger hook and that hook's positive dependency:
+
+- a dependency on the hook's own `<stageIdentifier>.str` fact
+  (`dependency.signalName === "<stageIdentifier>.str"` and
+  `dependency.sourceId === keccak256(dependency.source)`) is the implicit
+  `entry` channel;
+- every other order trigger keeps its `mint`/`dock` channel;
+- a plan without an order-trigger hook omits the field.
+
+The derivation reads committed artifact fields only; it does not consult
+`signalCapabilities`.
+
+The field is not part of the `planHash` preimage — `hashOnchainPlanPayload`
+strips it, so the commitment covers the submitted payload only — and the
+Solidity registration args do not carry it. `assertOnchainHookPlanArtifact`
+recomputes the channel from `compiledHooks` and rejects a tampered, missing, or
+surplus value. The artifact schema stays `uvp.onchainHookPlan.v3`; there is no
+version bump and no compatibility shim. Artifacts recorded before the field
+existed are rejected when re-validated, while stored read paths that do not
+re-assert the artifact keep working.
+
 ## Solidity Alignment
 
 The current state-machine alignment is `toSolidityRegisterPlanArgs()`:

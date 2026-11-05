@@ -586,6 +586,73 @@ library UVPPlanRegistration {
         L_requireTriggerHookReady(_s, trigger.planId, orderId, trigger.triggerHookId, trigger.triggerStageId);
     }
 
+    function triggerOrderFromOutsideByAuthorizer(
+        UVPStateMachine.SMState storage _s,
+        UVPStateMachine.TriggerOrderFromOutsideByAuthorizerRequest calldata trigger,
+        UVPStateMachine.SignalAuthorization[] calldata authorizations,
+        UVPStateMachine.FactAttribution calldata birthFactAttribution
+    ) external {
+        if (block.timestamp > trigger.deadline) {
+            revert UVPStateMachine.ExpiredSignalSignature(trigger.deadline);
+        }
+        if (trigger.sourceId == bytes32(0)) {
+            revert UVPStateMachine.ZeroSourceId();
+        }
+        if (trigger.signalId == bytes32(0)) {
+            revert UVPStateMachine.ZeroSignalId();
+        }
+        UVPStateMachine.Plan storage plan = _s.plans[trigger.planId];
+        if (!plan.committed || !plan.finalized) {
+            revert UVPStateMachine.PlanNotFinalized();
+        }
+        if (msg.sender != plan.birthAuthorizer) {
+            revert UVPStateMachine.UnauthorizedBirthSubmitter(msg.sender);
+        }
+        if (msg.sender.code.length == 0) {
+            revert UVPStateMachine.BirthAuthorizerNotContract(msg.sender);
+        }
+        L_validatedTriggerHook(_s, trigger.planId, trigger.triggerHookId, trigger.triggerStageId);
+
+        bytes32 orderId = bytes32(
+            uint256(keccak256(abi.encode(trigger.planId, trigger.sourceId, trigger.signalId, trigger.payloadHash)))
+                & ~(uint256(1) << 255)
+        );
+        if (_s.orders[trigger.planId][orderId].exists) {
+            if (_s.signals[trigger.planId][orderId][L_signalKey(trigger.sourceId, trigger.signalId)].exists) {
+                return;
+            }
+            revert UVPStateMachine.OrderAlreadyRegistered();
+        }
+
+        bytes32 birthStageId =
+            L_resolveSourceStage(_s, trigger.planId, trigger.sourceId, trigger.signalId, birthFactAttribution);
+        L_createOrder(_s, trigger.planId, orderId, trigger.creator, msg.sender);
+        L_authorizeSignalSubmitters(_s, trigger.planId, orderId, authorizations);
+        emit UVPStateMachine.OrderTriggered(
+            orderId,
+            trigger.planId,
+            trigger.triggerStageId,
+            trigger.triggerHookId,
+            trigger.sourceId,
+            trigger.signalId,
+            msg.sender
+        );
+        L_requireSignalAdmission(_s, trigger.planId, orderId, trigger.sourceId, trigger.signalId);
+        L_recordSignal(
+            _s,
+            trigger.planId,
+            orderId,
+            trigger.sourceId,
+            trigger.signalId,
+            trigger.payloadHash,
+            trigger.idempotencyKey,
+            msg.sender,
+            true,
+            birthStageId
+        );
+        L_requireTriggerHookReady(_s, trigger.planId, orderId, trigger.triggerHookId, trigger.triggerStageId);
+    }
+
     function triggerOrderFromSignal(
         UVPStateMachine.SMState storage _s,
         UVPStateMachine.TriggerOrderFromSignalRequest calldata trigger,

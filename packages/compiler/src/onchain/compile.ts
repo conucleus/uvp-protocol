@@ -21,6 +21,7 @@ import {
 } from "./validate/hooks.js";
 import { planDependencyCountIssues } from "./validate/limits.js";
 import { duplicateCurrentOrderFactKeyIssues } from "./validate/capabilities.js";
+import { onchainBirthChannelOf } from "./birth-channel.js";
 import { capabilitiesRootOf } from "./capabilities-root.js";
 import {
   executorCandidatesRootOf,
@@ -263,8 +264,10 @@ export function compileOnchainHookPlan(
     executorCandidatesRoot,
   };
 
+  const birthChannel = onchainBirthChannelOf(compiledHooks);
   return {
     ...payload,
+    ...(birthChannel === undefined ? {} : { birthChannel }),
     planHash: hashOnchainPlanPayload(payload),
   };
 }

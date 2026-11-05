@@ -294,6 +294,8 @@ export interface HookPlanArtifact {
 
 export type OrderTriggerKind = "none" | "mint" | "dock";
 
+export type BirthChannel = "entry" | "mint" | "dock";
+
 export interface CompiledHookPlanHook {
   readonly hookId: string;
   readonly kind: "receive";
@@ -472,6 +474,7 @@ export interface OnchainHookPlanArtifact {
   readonly admissions: readonly OnchainCompiledAdmission[];
   readonly executorCandidates: readonly OnchainExecutorCandidate[];
   readonly executorCandidatesRoot: HexString;
+  readonly birthChannel?: BirthChannel;
   readonly planHash: HexString;
 }
 

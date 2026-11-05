@@ -12,6 +12,7 @@ import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 import {IUVPPlanMetadataModule} from "../src/interfaces/IUVPPlanMetadataModule.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
 import {DockMerkle} from "../src/libraries/DockMerkle.sol";
+import {BirthAuthorizerForwarder} from "./BirthAuthorizerForwarder.sol";
 
 interface Vm {
     struct Log {
@@ -4874,6 +4875,24 @@ contract UVPStateMachineTest {
         machine.finalizePlan(planId);
     }
 
+    function _registerPlanWithBirthAuthorizer(
+        UVPStateMachine machine,
+        UVPStateMachine.CompactHook[] memory hooks,
+        SignalCapability[] memory signalCapabilities,
+        address birthAuthorizer
+    ) private returns (bytes32 planId) {
+        planId = _commitPlanWithCandidatesAndAuthorizer(
+            machine,
+            hooks,
+            new StageSelectorBinding[](0),
+            signalCapabilities,
+            PUBLISHER_PRIVATE_KEY,
+            _defaultExecutorCandidates(hooks),
+            birthAuthorizer
+        );
+        machine.finalizePlan(planId);
+    }
+
     function _commitPlanWithKey(
         UVPStateMachine machine,
         UVPStateMachine.CompactHook[] memory hooks,
@@ -4911,10 +4930,24 @@ contract UVPStateMachineTest {
         uint256 publisherPrivateKey,
         UVPStateMachine.ExecutorCandidate[] memory executorCandidates
     ) private returns (bytes32 planId) {
-        address publisher = vm.addr(publisherPrivateKey);
         address birthAuthorizer = publisherPrivateKey == ATTACKER_PUBLISHER_PRIVATE_KEY
             ? vm.addr(ATTACKER_SUBMITTER_PRIVATE_KEY)
             : vm.addr(SUBMITTER_PRIVATE_KEY);
+        return _commitPlanWithCandidatesAndAuthorizer(
+            machine, hooks, selectorBindings, signalCapabilities, publisherPrivateKey, executorCandidates, birthAuthorizer
+        );
+    }
+
+    function _commitPlanWithCandidatesAndAuthorizer(
+        UVPStateMachine machine,
+        UVPStateMachine.CompactHook[] memory hooks,
+        StageSelectorBinding[] memory selectorBindings,
+        SignalCapability[] memory signalCapabilities,
+        uint256 publisherPrivateKey,
+        UVPStateMachine.ExecutorCandidate[] memory executorCandidates,
+        address birthAuthorizer
+    ) private returns (bytes32 planId) {
+        address publisher = vm.addr(publisherPrivateKey);
         bytes32[] memory leaves = _capabilityLeaves(selectorBindings, signalCapabilities);
         bytes32[] memory candidateLeaves = _executorCandidateLeaves(executorCandidates);
         UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
@@ -7545,6 +7578,409 @@ contract UVPStateMachineTest {
                 _executorAuthorizationsFor(machine, PLAN_ID, ORDER_ID, STAGE_AUDIT, SUBMITTER_B)
             );
     }
+
+    function _entryTriggerRequest(
+        bytes32 planId,
+        bytes32 triggerHookId,
+        bytes32 triggerStageId,
+        bytes32 payloadHash,
+        bytes32 idempotencyKey,
+        uint256 deadline
+    ) private pure returns (UVPStateMachine.TriggerOrderFromOutsideByAuthorizerRequest memory) {
+        return UVPStateMachine.TriggerOrderFromOutsideByAuthorizerRequest({
+            planId: planId,
+            creator: ORDER_CREATOR,
+            triggerHookId: triggerHookId,
+            triggerStageId: triggerStageId,
+            sourceId: SOURCE_BOOTSTRAP,
+            signalId: SIGNAL_ORDER_START,
+            payloadHash: payloadHash,
+            idempotencyKey: idempotencyKey,
+            deadline: deadline
+        });
+    }
+
+    function _entrySignalCapabilities() private pure returns (SignalCapability[] memory capabilities) {
+        capabilities = new SignalCapability[](1);
+        capabilities[0] = SignalCapability({
+            stageId: STAGE_INIT,
+            targetSourceId: SOURCE_BOOTSTRAP,
+            signalId: SIGNAL_ORDER_START,
+            targetOrderRelation: 0
+        });
+    }
+
+    function _entryBirthAttribution(UVPStateMachine machine, bytes32 planId)
+        private
+        view
+        returns (UVPStateMachine.FactAttribution memory)
+    {
+        return _factAttribution(machine, planId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START);
+    }
+
+    function _birthEntryOrder(UVPStateMachine machine, address authorizer)
+        private
+        returns (
+            bytes32 planId,
+            bytes32 orderId,
+            UVPStateMachine.TriggerOrderFromOutsideByAuthorizerRequest memory trigger
+        )
+    {
+        planId = _registerPlanWithBirthAuthorizer(
+            machine, _withOrderStart(_positiveHookPlan(HOOK_INIT, false)), _entrySignalCapabilities(), authorizer
+        );
+        trigger = _entryTriggerRequest(
+            planId, HOOK_ORDER_START, STAGE_INIT, PAYLOAD_HASH, IDEMPOTENCY_KEY, block.timestamp + 1 hours
+        );
+        orderId = machine.triggerOrderIdFor(planId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, PAYLOAD_HASH);
+        vm.prank(authorizer);
+        machine.triggerOrderFromOutsideByAuthorizer(
+            trigger, _auths1(SIGNAL_ORDER_START, address(this)), _entryBirthAttribution(machine, planId)
+        );
+    }
+
+    function testTriggerOrderFromOutsideByAuthorizerBirthsOrder() public {
+        UVPStateMachine machine = _newMachine();
+        address authorizer = address(new BirthAuthorizerForwarder(address(machine)));
+        bytes32 planId = _registerPlanWithBirthAuthorizer(
+            machine, _withOrderStart(_positiveHookPlan(HOOK_INIT, false)), _entrySignalCapabilities(), authorizer
+        );
+        UVPStateMachine.SignalAuthorization[] memory authorizations = _auths1(SIGNAL_ORDER_START, address(this));
+        UVPStateMachine.TriggerOrderFromOutsideByAuthorizerRequest memory trigger = _entryTriggerRequest(
+            planId, HOOK_ORDER_START, STAGE_INIT, PAYLOAD_HASH, IDEMPOTENCY_KEY, block.timestamp + 1 hours
+        );
+        bytes32 orderId = machine.triggerOrderIdFor(planId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, PAYLOAD_HASH);
+
+        vm.recordLogs();
+        vm.prank(authorizer);
+        machine.triggerOrderFromOutsideByAuthorizer(
+            trigger, authorizations, _entryBirthAttribution(machine, planId)
+        );
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        require(machine.orderExists(planId, orderId), "entry order missing");
+        require(machine.orderCreator(planId, orderId) == ORDER_CREATOR, "entry creator mismatch");
+        require(machine.orderRelayer(planId, orderId) == authorizer, "entry relayer mismatch");
+        require(_countTopic(logs, keccak256("OrderRegistered(bytes32,bytes32)")) == 1, "OrderRegistered count");
+        require(
+            _countTopic(logs, keccak256("OrderTriggered(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)")) == 1,
+            "OrderTriggered count"
+        );
+        require(_countSignalSubmitterAuthorized(logs) == 1, "SignalSubmitterAuthorized count");
+        require(_hasHookReadyFor(logs, HOOK_ORDER_START), "HookReady missing");
+        require(
+            _countTopic(logs, keccak256("StageMaterialized(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)")) == 1,
+            "StageMaterialized count"
+        );
+
+        Vm.Log memory signalLog = _firstLogWithTopic(
+            logs, keccak256("SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32)")
+        );
+        require(signalLog.topics[2] == orderId, "signal order mismatch");
+        (bytes32 signalId, bytes32 payloadHash, bytes32 idempotencyKey, address submitter, bytes32 factStageId) =
+            abi.decode(signalLog.data, (bytes32, bytes32, bytes32, address, bytes32));
+        require(signalId == SIGNAL_ORDER_START, "signal id mismatch");
+        require(payloadHash == PAYLOAD_HASH && idempotencyKey == IDEMPOTENCY_KEY, "signal fact mismatch");
+        require(submitter == authorizer, "signal submitter mismatch");
+        require(factStageId == STAGE_INIT, "signal fact stage mismatch");
+
+        Vm.Log memory triggeredLog = _firstLogWithTopic(
+            logs, keccak256("OrderTriggered(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)")
+        );
+        require(triggeredLog.topics[1] == orderId, "triggered order mismatch");
+        (,,, address triggeredSubmitter) = abi.decode(triggeredLog.data, (bytes32, bytes32, bytes32, address));
+        require(triggeredSubmitter == authorizer, "triggered submitter mismatch");
+
+        Vm.Log memory relayerLog =
+            _firstLogWithTopic(logs, keccak256("OrderRelayerRecorded(bytes32,bytes32,address,address)"));
+        require(relayerLog.topics[2] == bytes32(uint256(uint160(authorizer))), "relayer log mismatch");
+        (bytes32 relayerOrderId, address recordedCreator) = abi.decode(relayerLog.data, (bytes32, address));
+        require(relayerOrderId == orderId && recordedCreator == ORDER_CREATOR, "relayer record mismatch");
+
+        (UVPStateMachine.HookStatus status,, bool readyEmitted) = machine.getHookStatus(planId, orderId, HOOK_ORDER_START);
+        require(status == UVPStateMachine.HookStatus.Ready && readyEmitted, "trigger hook not ready");
+        require(
+            machine.isSignalSubmitterAuthorized(planId, orderId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, address(this)),
+            "authorization missing"
+        );
+        (uint256 stageCount,,,) = machine.stageSignalState(planId, orderId, STAGE_INIT);
+        require(stageCount == 1, "stage signal count");
+    }
+
+    function testTriggerOrderFromOutsideByAuthorizerAbsorbsDuplicateBirth() public {
+        UVPStateMachine machine = _newMachine();
+        address authorizer = address(new BirthAuthorizerForwarder(address(machine)));
+        (bytes32 planId, bytes32 orderId, UVPStateMachine.TriggerOrderFromOutsideByAuthorizerRequest memory trigger) =
+            _birthEntryOrder(machine, authorizer);
+        UVPStateMachine.SignalAuthorization[] memory authorizations = _auths1(SIGNAL_ORDER_START, address(this));
+
+        trigger.idempotencyKey = bytes32(uint256(0x9002));
+        trigger.deadline = block.timestamp + 1 hours;
+        vm.recordLogs();
+        vm.prank(authorizer);
+        machine.triggerOrderFromOutsideByAuthorizer(
+            trigger, authorizations, _entryBirthAttribution(machine, planId)
+        );
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        require(logs.length == 0, "absorbed replay emitted events");
+
+        (bool signalExists, bytes32 payloadHash, bytes32 idempotencyKey,, address recordedSubmitter) =
+            machine.getSignal(planId, orderId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START);
+        require(signalExists, "birth fact missing");
+        require(payloadHash == PAYLOAD_HASH && idempotencyKey == IDEMPOTENCY_KEY, "birth fact mutated");
+        require(recordedSubmitter == authorizer, "birth submitter mutated");
+        (uint256 stageCount,,,) = machine.stageSignalState(planId, orderId, STAGE_INIT);
+        require(stageCount == 1, "stage signal count changed");
+        require(machine.orderExists(planId, orderId), "order missing");
+    }
+
+    function testTriggerOrderFromOutsideByAuthorizerDifferentPayloadHashBirthsDistinctOrder() public {
+        UVPStateMachine machine = _newMachine();
+        address authorizer = address(new BirthAuthorizerForwarder(address(machine)));
+        (bytes32 planId, bytes32 orderId,) = _birthEntryOrder(machine, authorizer);
+        bytes32 secondPayloadHash = keccak256("entry-second-payload");
+        bytes32 secondOrderId =
+            machine.triggerOrderIdFor(planId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, secondPayloadHash);
+        require(secondOrderId != orderId, "order id must be payload scoped");
+
+        UVPStateMachine.TriggerOrderFromOutsideByAuthorizerRequest memory second = _entryTriggerRequest(
+            planId, HOOK_ORDER_START, STAGE_INIT, secondPayloadHash, IDEMPOTENCY_KEY, block.timestamp + 1 hours
+        );
+        vm.recordLogs();
+        vm.prank(authorizer);
+        machine.triggerOrderFromOutsideByAuthorizer(
+            second, _auths1(SIGNAL_ORDER_START, address(this)), _entryBirthAttribution(machine, planId)
+        );
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        require(machine.orderExists(planId, orderId), "first order missing");
+        require(machine.orderExists(planId, secondOrderId), "second order missing");
+        require(_countTopic(logs, keccak256("OrderRegistered(bytes32,bytes32)")) == 1, "second order event");
+        Vm.Log memory signalLog = _firstLogWithTopic(
+            logs, keccak256("SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32)")
+        );
+        require(signalLog.topics[2] == secondOrderId, "second order signal mismatch");
+        (bytes32 secondSignalId, bytes32 decodedPayloadHash,,, bytes32 factStageId) =
+            abi.decode(signalLog.data, (bytes32, bytes32, bytes32, address, bytes32));
+        require(secondSignalId == SIGNAL_ORDER_START, "second signal id mismatch");
+        require(decodedPayloadHash == secondPayloadHash, "second payload mismatch");
+        require(factStageId == STAGE_INIT, "second fact stage mismatch");
+    }
+
+    function testTriggerOrderFromOutsideByAuthorizerRejectsEOAAuthorizer() public {
+        UVPStateMachine machine = _newMachine();
+        address authorizer = vm.addr(SUBMITTER_PRIVATE_KEY);
+        bytes32 planId = _registerPlan(machine, _withOrderStart(_positiveHookPlan(HOOK_INIT, false)));
+        UVPStateMachine.TriggerOrderFromOutsideByAuthorizerRequest memory trigger = _entryTriggerRequest(
+            planId, HOOK_ORDER_START, STAGE_INIT, PAYLOAD_HASH, IDEMPOTENCY_KEY, block.timestamp + 1 hours
+        );
+        bytes32 orderId = machine.triggerOrderIdFor(planId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, PAYLOAD_HASH);
+
+        vm.prank(authorizer);
+        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.BirthAuthorizerNotContract.selector, authorizer));
+        machine.triggerOrderFromOutsideByAuthorizer(
+            trigger, _auths1(SIGNAL_ORDER_START, address(this)), _entryBirthAttribution(machine, planId)
+        );
+        require(!machine.orderExists(planId, orderId), "EOA authorizer must not mint");
+    }
+
+    function testTriggerOrderFromOutsideByAuthorizerRejectsNonAuthorizerContract() public {
+        UVPStateMachine machine = _newMachine();
+        address authorizer = address(new BirthAuthorizerForwarder(address(machine)));
+        bytes32 planId = _registerPlanWithBirthAuthorizer(
+            machine, _withOrderStart(_positiveHookPlan(HOOK_INIT, false)), _entrySignalCapabilities(), authorizer
+        );
+        address outsider = address(new BirthAuthorizerForwarder(address(machine)));
+        UVPStateMachine.TriggerOrderFromOutsideByAuthorizerRequest memory trigger = _entryTriggerRequest(
+            planId, HOOK_ORDER_START, STAGE_INIT, PAYLOAD_HASH, IDEMPOTENCY_KEY, block.timestamp + 1 hours
+        );
+        bytes32 orderId = machine.triggerOrderIdFor(planId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, PAYLOAD_HASH);
+
+        vm.prank(outsider);
+        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.UnauthorizedBirthSubmitter.selector, outsider));
+        machine.triggerOrderFromOutsideByAuthorizer(
+            trigger, _auths1(SIGNAL_ORDER_START, address(this)), _entryBirthAttribution(machine, planId)
+        );
+        require(!machine.orderExists(planId, orderId), "non-authorizer must not mint");
+    }
+
+    function testTriggerOrderFromOutsideByAuthorizerRejectsExpiredDeadline() public {
+        vm.warp(1_000_000);
+        UVPStateMachine machine = _newMachine();
+        address authorizer = address(new BirthAuthorizerForwarder(address(machine)));
+        bytes32 planId = _registerPlanWithBirthAuthorizer(
+            machine, _withOrderStart(_positiveHookPlan(HOOK_INIT, false)), _entrySignalCapabilities(), authorizer
+        );
+        uint256 expiredDeadline = block.timestamp - 1;
+        UVPStateMachine.TriggerOrderFromOutsideByAuthorizerRequest memory trigger = _entryTriggerRequest(
+            planId, HOOK_ORDER_START, STAGE_INIT, PAYLOAD_HASH, IDEMPOTENCY_KEY, expiredDeadline
+        );
+        bytes32 orderId = machine.triggerOrderIdFor(planId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, PAYLOAD_HASH);
+
+        vm.prank(authorizer);
+        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.ExpiredSignalSignature.selector, expiredDeadline));
+        machine.triggerOrderFromOutsideByAuthorizer(
+            trigger, _auths1(SIGNAL_ORDER_START, address(this)), _entryBirthAttribution(machine, planId)
+        );
+        require(!machine.orderExists(planId, orderId), "expired request must not mint");
+    }
+
+    function testTriggerOrderFromOutsideByAuthorizerRejectsUnfinalizedPlan() public {
+        UVPStateMachine machine = _newMachine();
+        address authorizer = address(new BirthAuthorizerForwarder(address(machine)));
+        UVPStateMachine.CompactHook[] memory hooks = _withOrderStart(_positiveHookPlan(HOOK_INIT, false));
+        bytes32 planId = _commitPlanWithCandidatesAndAuthorizer(
+            machine,
+            hooks,
+            new StageSelectorBinding[](0),
+            _entrySignalCapabilities(),
+            PUBLISHER_PRIVATE_KEY,
+            _defaultExecutorCandidates(hooks),
+            authorizer
+        );
+        UVPStateMachine.TriggerOrderFromOutsideByAuthorizerRequest memory trigger = _entryTriggerRequest(
+            planId, HOOK_ORDER_START, STAGE_INIT, PAYLOAD_HASH, IDEMPOTENCY_KEY, block.timestamp + 1 hours
+        );
+
+        vm.prank(authorizer);
+        vm.expectRevert(UVPStateMachine.PlanNotFinalized.selector);
+        machine.triggerOrderFromOutsideByAuthorizer(
+            trigger, _auths1(SIGNAL_ORDER_START, address(this)), _entryBirthAttribution(machine, planId)
+        );
+
+        trigger.planId = keccak256("entry-unknown-plan");
+        vm.prank(authorizer);
+        vm.expectRevert(UVPStateMachine.PlanNotFinalized.selector);
+        machine.triggerOrderFromOutsideByAuthorizer(
+            trigger, _auths1(SIGNAL_ORDER_START, address(this)), _noAttribution()
+        );
+    }
+
+    function testTriggerOrderFromOutsideByAuthorizerRequiresMintTriggerHook() public {
+        UVPStateMachine machine = _newMachine();
+        address authorizer = address(new BirthAuthorizerForwarder(address(machine)));
+        bytes32 planId = _registerPlanWithBirthAuthorizer(
+            machine, _withOrderStart(_positiveHookPlan(HOOK_INIT, false)), _entrySignalCapabilities(), authorizer
+        );
+
+        UVPStateMachine.TriggerOrderFromOutsideByAuthorizerRequest memory trigger = _entryTriggerRequest(
+            planId, HOOK_INIT, STAGE_INIT, PAYLOAD_HASH, IDEMPOTENCY_KEY, block.timestamp + 1 hours
+        );
+        vm.prank(authorizer);
+        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.InvalidTriggerHook.selector, HOOK_INIT));
+        machine.triggerOrderFromOutsideByAuthorizer(
+            trigger, _auths1(SIGNAL_ORDER_START, address(this)), _entryBirthAttribution(machine, planId)
+        );
+
+        trigger = _entryTriggerRequest(
+            planId, HOOK_ORDER_START, STAGE_AUDIT, PAYLOAD_HASH, IDEMPOTENCY_KEY, block.timestamp + 1 hours
+        );
+        vm.prank(authorizer);
+        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.InvalidTriggerHook.selector, HOOK_ORDER_START));
+        machine.triggerOrderFromOutsideByAuthorizer(
+            trigger, _auths1(SIGNAL_ORDER_START, address(this)), _entryBirthAttribution(machine, planId)
+        );
+        require(
+            !machine.orderExists(
+                planId, machine.triggerOrderIdFor(planId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, PAYLOAD_HASH)
+            ),
+            "invalid trigger hook must not mint"
+        );
+    }
+
+    function testTriggerOrderFromOutsideByAuthorizerRejectsDuplicateAuthorization() public {
+        UVPStateMachine machine = _newMachine();
+        address authorizer = address(new BirthAuthorizerForwarder(address(machine)));
+        bytes32 planId = _registerPlanWithBirthAuthorizer(
+            machine, _withOrderStart(_positiveHookPlan(HOOK_INIT, false)), _entrySignalCapabilities(), authorizer
+        );
+        UVPStateMachine.SignalAuthorization[] memory authorizations = new UVPStateMachine.SignalAuthorization[](2);
+        authorizations[0] = _authorization(SIGNAL_ORDER_START, address(this));
+        authorizations[1] = _authorization(SIGNAL_ORDER_START, address(this));
+        UVPStateMachine.TriggerOrderFromOutsideByAuthorizerRequest memory trigger = _entryTriggerRequest(
+            planId, HOOK_ORDER_START, STAGE_INIT, PAYLOAD_HASH, IDEMPOTENCY_KEY, block.timestamp + 1 hours
+        );
+        bytes32 orderId = machine.triggerOrderIdFor(planId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, PAYLOAD_HASH);
+
+        vm.prank(authorizer);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPStateMachine.SignalSubmitterAlreadyAuthorized.selector,
+                orderId,
+                SOURCE_BOOTSTRAP,
+                SIGNAL_ORDER_START,
+                address(this)
+            )
+        );
+        machine.triggerOrderFromOutsideByAuthorizer(
+            trigger, authorizations, _entryBirthAttribution(machine, planId)
+        );
+        require(!machine.orderExists(planId, orderId), "duplicate authorization must not mint");
+    }
+
+    function testTriggerOrderFromOutsideByAuthorizerAppliesAdmission() public {
+        UVPStateMachine machine = _newMachine();
+        address authorizer = address(new BirthAuthorizerForwarder(address(machine)));
+        UVPStateMachine.CompactHook[] memory baseHooks = _withOrderStart(_positiveHookPlan(HOOK_INIT, false));
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](baseHooks.length + 1);
+        for (uint256 i = 0; i < baseHooks.length; i++) {
+            hooks[i] = baseHooks[i];
+        }
+        UVPStateMachine.Instruction[] memory admissionInstructions = new UVPStateMachine.Instruction[](1);
+        admissionInstructions[0] = _signal(SIGNAL_TRIGGER);
+        hooks[baseHooks.length] = _hookWithFlags(
+            keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_ORDER_START)),
+            STAGE_INIT,
+            HOOK_NAME_ORDER_START,
+            FLAG_ADMISSION,
+            admissionInstructions,
+            _deps(SIGNAL_TRIGGER)
+        );
+        bytes32 planId = _registerPlanWithBirthAuthorizer(machine, hooks, _entrySignalCapabilities(), authorizer);
+        bytes32 orderId = machine.triggerOrderIdFor(planId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, PAYLOAD_HASH);
+        UVPStateMachine.TriggerOrderFromOutsideByAuthorizerRequest memory trigger = _entryTriggerRequest(
+            planId, HOOK_ORDER_START, STAGE_INIT, PAYLOAD_HASH, IDEMPOTENCY_KEY, block.timestamp + 1 hours
+        );
+
+        vm.prank(authorizer);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPStateMachine.SignalAdmissionRejected.selector, orderId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START
+            )
+        );
+        machine.triggerOrderFromOutsideByAuthorizer(
+            trigger, _auths1(SIGNAL_ORDER_START, address(this)), _entryBirthAttribution(machine, planId)
+        );
+        require(!machine.orderExists(planId, orderId), "admission rejection must not mint");
+    }
+
+    function testSubmitSignalAbsorbsEntryBirthFact() public {
+        UVPStateMachine machine = _newMachine();
+        address authorizer = address(new BirthAuthorizerForwarder(address(machine)));
+        (bytes32 planId, bytes32 orderId,) = _birthEntryOrder(machine, authorizer);
+
+        vm.recordLogs();
+        machine.submitSignal(
+            planId,
+            orderId,
+            SOURCE_BOOTSTRAP,
+            SIGNAL_ORDER_START,
+            bytes32(uint256(0x8002)),
+            bytes32(uint256(0x9002)),
+            _entryBirthAttribution(machine, planId)
+        );
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        require(logs.length == 0, "duplicate submitSignal emitted events");
+
+        (bool signalExists, bytes32 payloadHash, bytes32 idempotencyKey,, address recordedSubmitter) =
+            machine.getSignal(planId, orderId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START);
+        require(signalExists, "birth fact missing");
+        require(payloadHash == PAYLOAD_HASH && idempotencyKey == IDEMPOTENCY_KEY, "birth fact mutated");
+        require(recordedSubmitter == authorizer, "birth submitter mutated");
+        (uint256 stageCount,,,) = machine.stageSignalState(planId, orderId, STAGE_INIT);
+        require(stageCount == 1, "stage signal count changed");
+    }
+
 }
 
 contract ReenteringMetadataModule is IUVPPlanMetadataModule {

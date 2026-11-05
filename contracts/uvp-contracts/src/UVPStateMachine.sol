@@ -90,6 +90,18 @@ contract UVPStateMachine {
         uint256 deadline;
     }
 
+    struct TriggerOrderFromOutsideByAuthorizerRequest {
+        bytes32 planId;
+        address creator;
+        bytes32 triggerHookId;
+        bytes32 triggerStageId;
+        bytes32 sourceId;
+        bytes32 signalId;
+        bytes32 payloadHash;
+        bytes32 idempotencyKey;
+        uint256 deadline;
+    }
+
     struct TriggerOrderFromSignalRequest {
         bytes32 orderId;
         bytes32 planId;
@@ -306,6 +318,7 @@ contract UVPStateMachine {
     error ZeroPlanPublisher();
     error ZeroSignalId();
     error ZeroSourceId();
+    error BirthAuthorizerNotContract(address authorizer);
     error UnauthorizedBirthSubmitter(address submitter);
     error ZeroStageExecutor();
     error ZeroSubmitter();
@@ -616,6 +629,14 @@ contract UVPStateMachine {
         FactAttribution calldata birthFactAttribution
     ) external {
         UVPPlanRegistration.triggerOrderFromOutside(_s, trigger, authorizations, signature, birthFactAttribution);
+    }
+
+    function triggerOrderFromOutsideByAuthorizer(
+        TriggerOrderFromOutsideByAuthorizerRequest calldata trigger,
+        SignalAuthorization[] calldata authorizations,
+        FactAttribution calldata birthFactAttribution
+    ) external {
+        UVPPlanRegistration.triggerOrderFromOutsideByAuthorizer(_s, trigger, authorizations, birthFactAttribution);
     }
 
     /// @notice Outside 触发订单 id 的权威派生公式（一事一单）：

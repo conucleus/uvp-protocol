@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x246d16dfad76b61a6e530a0c164865fddb01b293cce172f2e3bb5902be20393f",
-    "bytecodeHash": "0xdbdec34f109951ca40adb43542698943b1c9bc07c107ef36f404739e9736c4bc",
-    "deployedBytecodeHash": "0x180efb16bcb44b8987bb4ebce74a6c677d7d3327e9defa60068375301e606c08",
-    "artifactHash": "0x9232c7b40e660045cf6f31709fb0f4b104841dca37e786d9385520823e9767e3"
+    "abiHash": "0x797a12325718cc92d5d3df07b6a8830c0627a9dfb13bfd0bf41543ee57a39bc5",
+    "bytecodeHash": "0x809711d9e05fdb2d26e9429ce14d9386e6b54b00c30657d2b0215c1e0ea56114",
+    "deployedBytecodeHash": "0x7c11ba0363bb7e05a959ef3744531619c27952ef0c3b09d1d16c71badaf71bec",
+    "artifactHash": "0x24e0730c89f3716469cab8f47b2047103f5e48d4ad1a6562b6e1f4fdc1e6e43d"
   },
   "events": {
     "HookReady": {
@@ -428,6 +428,10 @@
     "transferOwnership": {
       "signature": "transferOwnership(address)",
       "selector": "0xf2fde38b"
+    },
+    "triggerOrderFromOutsideByAuthorizer": {
+      "signature": "triggerOrderFromOutsideByAuthorizer((bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256),(bytes32,bytes32,address,bytes32,bytes32)[],(bytes32,bytes32,bytes32,bytes32[]))",
+      "selector": "0x936f736c"
     },
     "triggerOrderFromOutsideFor": {
       "signature": "triggerOrderFromOutsideFor((bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),(bytes32,bytes32,address,bytes32,bytes32)[],bytes,(bytes32,bytes32,bytes32,bytes32[]))",

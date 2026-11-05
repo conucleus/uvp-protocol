@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x70d7db1c5275314e7ee8049dd5cb771d2ade8023f044180531ab86aed1c6adab",
-    "bytecodeHash": "0xe3e3881feeca69ff9144e6aad1ade9cd32faec94707433e203894d817e1c7009",
-    "deployedBytecodeHash": "0x3f51b43a7e685225dad7143a11a85012017b63b3370694d21e33e2364b61b7ce",
-    "artifactHash": "0x39c400ac1ce840ee470c348ae5d33fe89d71c3d66cfa06edb26927e761789c75"
+    "abiHash": "0x577a12f009cea275a6c2096368b02775e3ed205718153db565a4865d83f14ed7",
+    "bytecodeHash": "0x60e5bfa237cf4c57a179edbdf806fa497beb6437391763f89399892c40a4b245",
+    "deployedBytecodeHash": "0x3a3e7d9203228179ca65791a6bd33fb33b88ccc8d771733d58a1f78da0b50164",
+    "artifactHash": "0x62d390d14b88ef1c1e828bff78c8f92ff021a63b7f89a667d79728c94f649cc1"
   },
   "events": {
     "HookReady": {
