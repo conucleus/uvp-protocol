@@ -1,0 +1,53 @@
+{
+  "name": "delay and negative guard expressions stay portable under evm plan",
+  "semanticVersion": "uvp.semantic.v1",
+  "target": "hook_plan",
+  "portable": true,
+  "input": {
+    "apiVersion": "uvp/v0",
+    "kind": "Zhixu",
+    "metadata": {
+      "name": "evm_guards"
+    },
+    "spec": {
+      "platform": {
+        "type": "evm",
+        "provider": "anvil",
+        "network": "local"
+      },
+      "nucleation": {
+        "id": "core"
+      },
+      "stages": [
+        {
+          "name": "pay",
+          "source": "buyer",
+          "receiveSignals": {
+            "PAY": "buyer::(pay.done +5s) & ~pay.refunded"
+          },
+          "sendSignals": [
+            {
+              "name": "done"
+            },
+            {
+              "name": "refunded"
+            }
+          ],
+          "executor": {
+            "supplierType": "organization",
+            "supplierID": "chain-org"
+          }
+        }
+      ]
+    }
+  },
+  "expect": {
+    "platform": "evm",
+    "hookIds": [
+      "pay#PAY"
+    ],
+    "hookDependencyCounts": {
+      "pay#PAY": 3
+    }
+  }
+}

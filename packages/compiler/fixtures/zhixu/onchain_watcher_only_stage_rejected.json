@@ -1,0 +1,60 @@
+{
+  "name": "on-chain watcher-only stage is rejected (all hooks compile to flags=0)",
+  "semanticVersion": "uvp.semantic.v1",
+  "target": "hook_plan",
+  "portable": true,
+  "input": {
+    "apiVersion": "uvp/v0",
+    "kind": "Zhixu",
+    "metadata": {
+      "name": "watcher_only_stage"
+    },
+    "spec": {
+      "platform": {
+        "type": "evm"
+      },
+      "nucleation": {
+        "id": "core"
+      },
+      "stages": [
+        {
+          "name": "anchor",
+          "source": "buyer",
+          "receiveSignals": {
+            "BEGIN": "buyer::anchor.seed"
+          },
+          "sendSignals": [
+            {
+              "name": "go"
+            },
+            {
+              "name": "seed"
+            }
+          ],
+          "selectedStages": [
+            "watcher"
+          ],
+          "executor": {
+            "supplierType": "organization",
+            "supplierID": "org-a"
+          }
+        },
+        {
+          "name": "watcher",
+          "source": "buyer",
+          "receiveSignals": {
+            "WATCH": "buyer::anchor.go"
+          },
+          "sendSignals": [
+            {
+              "name": "cmp"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "expect": {
+    "errorContains": "flags=0 watchers"
+  }
+}

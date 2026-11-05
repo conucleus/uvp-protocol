@@ -1,0 +1,69 @@
+{
+  "name": "cross-source direct trigger consumes another source's signal",
+  "semanticVersion": "uvp.semantic.v1",
+  "target": "hook_plan",
+  "portable": true,
+  "input": {
+    "apiVersion": "uvp/v0",
+    "kind": "Zhixu",
+    "metadata": {
+      "name": "cross_source_trigger"
+    },
+    "spec": {
+      "platform": {
+        "type": "cloud"
+      },
+      "nucleation": {
+        "id": "core"
+      },
+      "stages": [
+        {
+          "name": "listing",
+          "source": "seller",
+          "receiveSignals": {
+            "PUBLISH": "seller::listing.seed"
+          },
+          "sendSignals": [
+            {
+              "name": "listing_ready"
+            },
+            {
+              "name": "seed"
+            }
+          ],
+          "executor": {
+            "supplierType": "organization",
+            "supplierID": "seller-org"
+          }
+        },
+        {
+          "name": "watch",
+          "source": "buyer",
+          "receiveSignals": {
+            "WATCH": "seller::listing.listing_ready"
+          },
+          "sendSignals": [
+            {
+              "name": "ack"
+            }
+          ],
+          "executor": {
+            "supplierType": "organization",
+            "supplierID": "buyer-org"
+          }
+        }
+      ]
+    }
+  },
+  "expect": {
+    "platform": "cloud",
+    "hookIds": [
+      "listing#PUBLISH",
+      "watch#WATCH"
+    ],
+    "hookDependencyCounts": {
+      "listing#PUBLISH": 1,
+      "watch#WATCH": 1
+    }
+  }
+}

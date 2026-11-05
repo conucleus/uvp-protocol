@@ -1,4 +1,7 @@
-import { compileWithUvpCore } from "@uvp-eth/hook-core";
+import {
+  analyzeWithUvpCore,
+  type ZhixuAnalysis,
+} from "@uvp-eth/hook-core";
 import {
   HOOK_PLAN_SCHEMA_VERSION,
   type HookPlanArtifact,
@@ -15,8 +18,8 @@ import {
   planIdOf,
   prepareDockResolution,
   HOOK_PLAN_HASH_DOMAIN,
-  type HookPlanShell,
 } from "./dock-commitments.js";
+import { lowerHookPlanShell } from "./hook-plan/lower.js";
 
 export class HookPlanCompilationError extends Error {
   readonly issues: readonly string[];
@@ -63,10 +66,9 @@ export function compileZhixuHookPlan(
     }
   }
 
-  let shell: unknown;
+  let analysis: ZhixuAnalysis;
   try {
-    shell = compileWithUvpCore({
-      target: "hook_plan",
+    analysis = analyzeWithUvpCore({
       definition,
       ...(resolution === undefined ? {} : { dockTargets: resolution.neutral }),
     });
@@ -80,7 +82,7 @@ export function compileZhixuHookPlan(
   try {
     artifact = assembleChainTrackHookPlan(
       definition,
-      shell as HookPlanShell,
+      lowerHookPlanShell(analysis),
       resolution,
     );
   } catch (error) {

@@ -4,13 +4,16 @@ import { dirname, resolve } from "node:path";
 import {
   compile,
   evaluateHook,
-  hookPlanSchemaVersion,
   parseHook,
   replay,
   semanticVersion,
   version,
 } from "@conucleus/uvp-core-node";
 import * as uvpCoreNode from "@conucleus/uvp-core-node";
+import type {
+  ZhixuAnalysis,
+  ZhixuAnalysisRequest,
+} from "./analysis.js";
 
 export const EXPECTED_UVP_CORE_VERSION = "0.1.0" as const;
 export const EXPECTED_UVP_SEMANTIC_VERSION = "uvp.semantic.v1" as const;
@@ -34,16 +37,6 @@ export function uvpCoreBuildFingerprint(): string | undefined {
   return typeof candidate === "function"
     ? (candidate as () => string)()
     : undefined;
-}
-
-/**
- * hookPlan schema version straight from the loaded native uvp-compiler —
- * Rust is the semantic authority for hookPlan artifacts, so consumers pin
- * matrix entries against this export instead of re-extracting the constant
- * from uvp-core sources.
- */
-export function uvpCoreHookPlanSchemaVersion(): string {
-  return hookPlanSchemaVersion();
 }
 
 /**
@@ -133,14 +126,16 @@ export function uvpCoreCompatibility(): UvpCoreCompatibility {
   };
 }
 
-export function compileWithUvpCore(request: unknown): unknown {
-  ensureCompatible();
-  return compile(request);
-}
-
 export function parseHookWithUvpCore(request: unknown): unknown {
   ensureCompatible();
   return parseHook(request);
+}
+
+export function analyzeWithUvpCore(
+  request: ZhixuAnalysisRequest,
+): ZhixuAnalysis {
+  ensureCompatible();
+  return compile({ ...request, target: "analyze" }) as ZhixuAnalysis;
 }
 
 export function evaluateHookWithUvpCore(request: unknown): unknown {

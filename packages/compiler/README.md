@@ -11,6 +11,11 @@ args for the two-step `UVPStateMachine.commitPlan` + `finalizePlan` flow.
 
 - `apiVersion: uvp/v0`, `kind: Zhixu` YAML/JSON definitions;
 - Hook DSL expressions under `receiveSignals`;
+- the neutral `analyze` result from uvp-core (`uvp.zhixuAnalysis.v1`): shared
+  definition validation (including the chain target's implicit-entry
+  recognition/rejection and stage materialization gate), parsed hooks/AST, entry
+  hook, signal capabilities, composed admissions, and dock state — the single
+  source for DSL shape/dock/admission validation;
 - selected-stage executor bindings and supplier `signalMap` data;
 - the target-side `spec.dockInterface` and, for a `supplierType=zhixu`
   route, a `uvp.dock.resolution.v2` resolution manifest (chain-track
@@ -58,12 +63,26 @@ Executor topology follows the UVP closure rule: a stage without a
 fixed `executor.supplierID` passes the closure rule only when it can be reached
 through `selectedStages` from a stage that does name a fixed executor. Selector
 loops or selector chains with no fixed executor anchor are rejected. On top of
-the closure rule, the Rust materialization gate (mirrored at the on-chain
-artifact boundary) additionally requires every declared stage to compile at
+the closure rule, the materialization gate is evaluated by uvp-core `analyze`
+(shared validation for the chain target): every declared stage must compile at
 least one hook with a materialization bit (mint/dock order trigger or a static
 executor's EMIT_READY receive hook) — an executor-less selected stage is
 therefore rejected even when it is reachable, because on-chain stages
-materialize only through their own hooks.
+materialize only through their own hooks. This package consumes that result;
+`src/onchain/validate/hooks.ts` only re-asserts the compiled hook shape at the
+on-chain artifact boundary (a boundary check, not a second implementation of the
+definition-level gate). The contract `commitPlan` check is the separate
+registration boundary for hand-built plans.
+
+The hook_plan shell lowering itself (entry hook synthesis from analyze's parsed
+entry hook, order-trigger/emit-ready/route decoration, `dependencyIndex`,
+`executorRoutes`, `selectedStageBindings`, and shell assembly) lives in
+`src/hook-plan/lower.ts`. Entry recognition/rejection and the materialization
+gate are not re-implemented here: they are part of uvp-core `analyze`'s shared
+validation, and `signalCapabilities`/EvmStrict admissions are consumed from the
+same analysis. This package consumes analyze issues and parsed ASTs verbatim and
+must not re-implement shape/dock/admission/DSL validation or rewrite its error
+text.
 
 Do not execute hooks in this module. Runtime evaluation belongs in
 `hook-core`/`statemachine`.
@@ -93,7 +112,15 @@ pnpm --filter @uvp-eth/compiler typecheck
 
 - `src/types/`: public TypeScript interfaces for Zhixu inputs, compact
   on-chain hook plans, and Solidity registration args.
-- `src/hook-plan.ts`: deterministic Zhixu-to-HookPlan internal IR compiler.
+- `src/hook-plan.ts`: deterministic Zhixu-to-HookPlan internal IR compiler
+  (assembles the shell from the neutral uvp-core `analyze` result and the
+  lowering module, then commits dock/plan hashes).
+- `src/hook-plan/lower.ts`: chain hook_plan lowering implemented by this package —
+  entry hook synthesis from analyze's parsed entry hook,
+  `orderTriggerKind`/`emitReady`/route decoration, dependency index, and
+  executor routes; it consumes uvp-core `analyze` (shared validation, including
+  entry/materialization checks, plus parsed hooks/entry hook/capabilities/
+  admissions) and does not re-implement shape/dock/admission/DSL validation.
 - `src/onchain/`: public Zhixu-to-on-chain artifact compiler and Solidity
   registration input builder (`compile.ts` pipeline, `validate/` boundary
   checks, `canonical/` ordering, `hash/` commitments,

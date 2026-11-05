@@ -1,0 +1,90 @@
+{
+  "name": "multi-stage dependency fans two upstreams into one hook",
+  "semanticVersion": "uvp.semantic.v1",
+  "target": "hook_plan",
+  "portable": true,
+  "input": {
+    "apiVersion": "uvp/v0",
+    "kind": "Zhixu",
+    "metadata": {
+      "name": "multi_stage_dep"
+    },
+    "spec": {
+      "platform": {
+        "type": "cloud"
+      },
+      "nucleation": {
+        "id": "core"
+      },
+      "stages": [
+        {
+          "name": "one",
+          "source": "buyer",
+          "receiveSignals": {
+            "RUN": "buyer::one.seed"
+          },
+          "sendSignals": [
+            {
+              "name": "done"
+            },
+            {
+              "name": "seed"
+            }
+          ],
+          "executor": {
+            "supplierType": "organization",
+            "supplierID": "org-a"
+          }
+        },
+        {
+          "name": "two",
+          "source": "buyer",
+          "receiveSignals": {
+            "RUN": "buyer::two.seed"
+          },
+          "sendSignals": [
+            {
+              "name": "done"
+            },
+            {
+              "name": "seed"
+            }
+          ],
+          "executor": {
+            "supplierType": "organization",
+            "supplierID": "org-b"
+          }
+        },
+        {
+          "name": "three",
+          "source": "buyer",
+          "receiveSignals": {
+            "FINISH": "buyer::(one.done & two.done)"
+          },
+          "sendSignals": [
+            {
+              "name": "cmp"
+            }
+          ],
+          "executor": {
+            "supplierType": "organization",
+            "supplierID": "org-c"
+          }
+        }
+      ]
+    }
+  },
+  "expect": {
+    "platform": "cloud",
+    "hookIds": [
+      "one#RUN",
+      "three#FINISH",
+      "two#RUN"
+    ],
+    "hookDependencyCounts": {
+      "one#RUN": 1,
+      "three#FINISH": 2,
+      "two#RUN": 1
+    }
+  }
+}

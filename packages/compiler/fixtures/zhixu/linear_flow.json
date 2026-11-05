@@ -1,0 +1,69 @@
+{
+  "name": "linear flow across two stages",
+  "semanticVersion": "uvp.semantic.v1",
+  "target": "hook_plan",
+  "portable": true,
+  "input": {
+    "apiVersion": "uvp/v0",
+    "kind": "Zhixu",
+    "metadata": {
+      "name": "linear_flow"
+    },
+    "spec": {
+      "platform": {
+        "type": "cloud"
+      },
+      "nucleation": {
+        "id": "core"
+      },
+      "stages": [
+        {
+          "name": "start",
+          "source": "buyer",
+          "receiveSignals": {
+            "BEGIN": "buyer::start.seed"
+          },
+          "sendSignals": [
+            {
+              "name": "seed"
+            },
+            {
+              "name": "step_done"
+            }
+          ],
+          "executor": {
+            "supplierType": "organization",
+            "supplierID": "org-a"
+          }
+        },
+        {
+          "name": "finish",
+          "source": "buyer",
+          "receiveSignals": {
+            "FINISH": "buyer::start.step_done"
+          },
+          "sendSignals": [
+            {
+              "name": "cmp"
+            }
+          ],
+          "executor": {
+            "supplierType": "organization",
+            "supplierID": "org-b"
+          }
+        }
+      ]
+    }
+  },
+  "expect": {
+    "platform": "cloud",
+    "hookIds": [
+      "finish#FINISH",
+      "start#BEGIN"
+    ],
+    "hookDependencyCounts": {
+      "finish#FINISH": 1,
+      "start#BEGIN": 1
+    }
+  }
+}
