@@ -188,7 +188,10 @@ code do not silently drift away from the contract ABI.
 9. Stage file maps are owned by `UVPFileResourceModule` (configured as
     `fileResourceModule()` before `freezeModules`). A stage's map is
     `key -> (contentHash, handle)`: the chain stores a content hash and an
-    opaque bounded handle, never plaintext, and never resolves the handle.
+    opaque bounded handle, never plaintext, and never resolves the handle. The
+    chain does not define or interpret a file type: types are backend-defined,
+    freestyle and non-enumerable, and the engine must not carry a type/taxonomy
+    or storage decision on chain.
     Writes are first-class patch facts (`add` requires the key absent,
     `replace`/`remove` require it present; strict, whole-patch atomic) carrying
     a mandatory `baseHash` equal to the stage's current files version —
