@@ -95,6 +95,5 @@ pnpm --filter @uvp-eth/protocol-bindings build
   FilePatch filePatch)`; omitting both produces the fileless form, and a
   patch-bearing call is rejected unless `filesDigest` equals
   `filePatchDigest` for the same plan/order/patch.
-- The digest and 0.16 typed-data golden vectors live under `fixtures/` and are
-  shared with the Foundry parity probes; `PRODUCT_SUBMIT_DOMAIN_VERSION` is
-  `0.16` and `UVPStateMachineSignal` ends with `bytes32 filesDigest`.
+- `PRODUCT_SUBMIT_DOMAIN_VERSION` is `0.16` and `UVPStateMachineSignal` ends
+  with `bytes32 filesDigest`.

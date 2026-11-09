@@ -1,3 +1,17 @@
+// L3 ABI pin (generation-freshness, not two hand-written implementations):
+// 1. Compared facts: the checked-in generated constants in src/artifact-abis.ts
+//    versus the Forge artifact ABI JSON that scripts/generate-artifact-abis.ts
+//    consumes as its only input.
+// 2. Why they cannot be collapsed into one source: the Forge artifacts are
+//    build products under contracts/uvp-contracts/out and are not importable
+//    package exports; downstream packages must consume a checked-in copy.
+// 3. Why the comparison cannot run through the generator alone: the unit lane
+//    has no Forge toolchain (and must not require it), so staleness of the
+//    checked-in generated file is only observable here.
+// 4. Owner: protocol-bindings (L3) owns the ABI surface and the generator; this
+//    file never re-derives ABI shapes by hand.
+// 5. Exit condition: delete this pin when ABI generation becomes part of the
+//    package build or consumers import the Forge artifacts directly.
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";

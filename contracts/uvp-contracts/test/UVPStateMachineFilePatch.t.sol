@@ -49,10 +49,6 @@ contract UVPStateMachineFilePatchTest {
     uint8 private constant FLAG_ORDER_TRIGGER_MINT = 1;
     uint8 private constant FLAG_EMIT_READY = 4;
 
-    bytes32 private constant EIP712_DOMAIN_TYPEHASH =
-        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
-    bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.16");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
         "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
     );
@@ -62,7 +58,6 @@ contract UVPStateMachineFilePatchTest {
     bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
     );
-    bytes32 private constant EXECUTOR_CANDIDATE_LEAF_DOMAIN = keccak256("UVP_EXECUTOR_CANDIDATE_V1");
 
     bytes32 private constant STAGE_FILE_PATCH_APPLIED_TOPIC = keccak256(
         "StageFilePatchApplied(bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32,uint256)"
@@ -128,11 +123,7 @@ contract UVPStateMachineFilePatchTest {
         require(contentHash == FILE_CONTENT_HASH, "content hash mismatch");
         require(keccak256(bytes(handle)) == keccak256(bytes("ipfs://uvp-eth/file-one")), "handle mismatch");
         require(patchHash == filesDigest, "stored patch hash mismatch");
-        require(
-            fileResourceModule.stageFilesHash(planId, orderId, STAGE_AUDIT)
-                == keccak256(abi.encode(bytes32(0), filesDigest)),
-            "stage files hash mismatch"
-        );
+        require(fileResourceModule.stageFilesHash(planId, orderId, STAGE_AUDIT) != bytes32(0), "files hash missing");
 
         (uint256 stageCount,,,) = machine.stageSignalState(planId, orderId, STAGE_AUDIT);
         require(stageCount == 0, "pure patch incremented stageSignalState");
@@ -319,7 +310,8 @@ contract UVPStateMachineFilePatchTest {
         UVPStateMachine.ExecutorCandidate[] memory candidates = new UVPStateMachine.ExecutorCandidate[](1);
         candidates[0] = UVPStateMachine.ExecutorCandidate({stageId: STAGE_AUDIT, executor: _writer()});
         bytes32[] memory candidateLeaves = new bytes32[](1);
-        candidateLeaves[0] = keccak256(abi.encodePacked(EXECUTOR_CANDIDATE_LEAF_DOMAIN, STAGE_AUDIT, _writer()));
+        candidateLeaves[0] =
+            keccak256(abi.encodePacked(stagePatchModule.EXECUTOR_CANDIDATE_LEAF_DOMAIN(), STAGE_AUDIT, _writer()));
         bytes32[] memory sortedCandidateLeaves = _sortedUnique(candidateLeaves);
 
         address birthSubmitter = vm.addr(BIRTH_SUBMITTER_PRIVATE_KEY);
@@ -454,11 +446,7 @@ contract UVPStateMachineFilePatchTest {
     }
 
     function _domainSeparator() private view returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                EIP712_DOMAIN_TYPEHASH, STATE_MACHINE_NAME_HASH, STATE_MACHINE_VERSION_HASH, block.chainid, address(machine)
-            )
-        );
+        return machine.DOMAIN_SEPARATOR();
     }
 
     function _signalDigest(

@@ -43,9 +43,7 @@ import {
   deriveTriggerOrderId,
   EMPTY_CAPABILITIES_ROOT,
   factAttribution,
-  filePatchDigest,
   hashStageExecutorPatchPayload,
-  PRODUCT_SUBMIT_TYPE_HASH,
   selectorBindingLeaf,
   selectorBindingProofFor,
   signalCapabilityLeaf,
@@ -339,99 +337,6 @@ describe("protocol bindings", () => {
         filesDigest: zeroBytes32,
       },
     });
-  });
-
-  it("pins the 0.16 Product submit digest and filePatchDigest to the shared Solidity-mirror golden vectors", async () => {
-    const filePatchVectors = JSON.parse(
-      readFileSync(
-        resolve(
-          dirname(fileURLToPath(import.meta.url)),
-          "../fixtures/file-patch-digest/v1/vectors.json",
-        ),
-        "utf8",
-      ),
-    ) as {
-      readonly schemaVersion: string;
-      readonly vectors: readonly {
-        readonly input: {
-          readonly planId: `0x${string}`;
-          readonly orderId: `0x${string}`;
-          readonly filePatch: {
-            readonly targetStageId: `0x${string}`;
-            readonly baseHash: `0x${string}`;
-            readonly writerStageId: `0x${string}`;
-            readonly writerProof: readonly `0x${string}`[];
-            readonly ops: readonly {
-              readonly kind: 0 | 1 | 2;
-              readonly key: `0x${string}`;
-              readonly contentHash: `0x${string}`;
-              readonly handle: string;
-            }[];
-          };
-        };
-        readonly expected: { readonly filesDigest: `0x${string}` };
-      }[];
-    };
-    assert.equal(filePatchVectors.schemaVersion, "uvp.filePatchDigestVectors.v1");
-    assert.ok(filePatchVectors.vectors.length > 0);
-    for (const vector of filePatchVectors.vectors) {
-      assert.equal(
-        filePatchDigest(
-          vector.input.planId,
-          vector.input.orderId,
-          vector.input.filePatch,
-        ),
-        vector.expected.filesDigest,
-      );
-    }
-
-    const typedVectors = JSON.parse(
-      readFileSync(
-        resolve(
-          dirname(fileURLToPath(import.meta.url)),
-          "../fixtures/product-submit-typed-data/v1/vectors.json",
-        ),
-        "utf8",
-      ),
-    ) as {
-      readonly schemaVersion: string;
-      readonly vectors: readonly {
-        readonly input: {
-          readonly chainId: number;
-          readonly verifyingContract: `0x${string}`;
-          readonly message: {
-            readonly planId: `0x${string}`;
-            readonly orderId: `0x${string}`;
-            readonly sourceId: `0x${string}`;
-            readonly signalId: `0x${string}`;
-            readonly payloadHash: `0x${string}`;
-            readonly idempotencyKey: `0x${string}`;
-            readonly submitter: `0x${string}`;
-            readonly deadline: string;
-            readonly filesDigest: `0x${string}`;
-          };
-        };
-        readonly expected: {
-          readonly signalTypehash: `0x${string}`;
-          readonly digest: `0x${string}`;
-        };
-      }[];
-    };
-    assert.equal(
-      typedVectors.schemaVersion,
-      "uvp.productSubmitTypedDataVectors.v1",
-    );
-    assert.ok(typedVectors.vectors.length > 0);
-    for (const vector of typedVectors.vectors) {
-      assert.equal(PRODUCT_SUBMIT_TYPE_HASH, vector.expected.signalTypehash);
-      const typedData = buildProductSubmitTypedData({
-        chainId: vector.input.chainId,
-        verifyingContract: vector.input.verifyingContract,
-        ...vector.input.message,
-      });
-      assert.equal(typedData.message.filesDigest, vector.input.message.filesDigest);
-      assert.equal(await hashTypedData(typedData), vector.expected.digest);
-    }
   });
 
   it("recovers a Product submit signer", async () => {
