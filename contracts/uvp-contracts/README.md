@@ -197,8 +197,9 @@ code do not silently drift away from the contract ABI.
     a mandatory `baseHash` equal to the stage's current files version —
     mismatch rejects the whole request, and there is no nonce (the projection
     holds exactly one current value per key). Writes are authorized by the
-    target stage's `fileWriters` capability leaves (`UVP_FILE_WRITER_V1`) or by
-    the target stage's own active executor. A file patch may ride one business
+    target stage's `fileWriters` capability leaves (`UVP_FILE_WRITER_V1`) plus
+    an explicit `FILE_PATCH_SIGNAL_ID` authorization row on the writer stage
+    (the target stage for self). A file patch may ride one business
     signal in the same `0.16` signature, or stand alone as an empty signal
     (`signalId == 0`); a pure file patch is not a business signal — it does not
     increment business signal counts, does not evaluate hooks, and does not run

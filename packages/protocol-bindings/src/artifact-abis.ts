@@ -4557,6 +4557,19 @@ export const FILE_RESOURCE_MODULE_ABI = [
   },
   {
     "type": "function",
+    "name": "FILE_PATCH_SIGNAL_ID",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "applyStageFilePatch",
     "inputs": [
       {

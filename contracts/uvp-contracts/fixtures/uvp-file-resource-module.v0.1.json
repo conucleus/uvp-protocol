@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xe0fe925f30c011e98b9417e60ac4b0ff5f935d8c9249abad6a10a2989bf7b0ee",
-    "bytecodeHash": "0xfc77c1b64585ab779368418b228770d752d1719a7f76d676edd0eedc7fafd5fe",
-    "deployedBytecodeHash": "0x32aa37b7c1c8ae3a0f11643648cac7d3c7e6a642d25777ee2b4b96a169e19b0a",
-    "artifactHash": "0xc56c58c4d07bddd8259703e6042e6af52ffbe754b2bf31a2396dd7fc2a4496aa"
+    "abiHash": "0x257fcb1f87a16623d29c29a8395943bfbe88e417b1b8429459f61052ca7f8121",
+    "bytecodeHash": "0xf7186a022e06eb09649948b96a50d4e41a3524331570790aeed68a6c5e91552a",
+    "deployedBytecodeHash": "0x696d229c946dcd58504837d75b7ac8b453298f822f2606beddcc95789480f76c",
+    "artifactHash": "0x6b3effb665cb3d906503dcf818368c40d2ce3af382c632c9250f2626f3c13f54"
   },
   "events": {
     "StageFileOpApplied": {
@@ -25,6 +25,10 @@
     }
   },
   "functions": {
+    "FILE_PATCH_SIGNAL_ID": {
+      "signature": "FILE_PATCH_SIGNAL_ID()",
+      "selector": "0x12a86366"
+    },
     "applyStageFilePatch": {
       "signature": "applyStageFilePatch(bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]),address)",
       "selector": "0xd426cf62"

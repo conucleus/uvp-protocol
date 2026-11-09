@@ -37,11 +37,13 @@ contract UVPFileResourceModuleTest {
     UVPFileResourceModule private _fileModule;
     UVPPlanMetadataModule private _metadata;
     mapping(bytes32 stageId => address executor) private _activeExecutors;
+    mapping(bytes32 stageId => mapping(address submitter => bool)) private _filePatchAuthorized;
 
     function setUp() public {
         _metadata = new UVPPlanMetadataModule(address(this));
         _fileModule = new UVPFileResourceModule(address(this));
         _activeExecutors[TARGET_STAGE] = TARGET_EXECUTOR;
+        _filePatchAuthorized[TARGET_STAGE][TARGET_EXECUTOR] = true;
     }
 
     function orderExists(bytes32, bytes32) external pure returns (bool) {
@@ -58,6 +60,14 @@ contract UVPFileResourceModuleTest {
 
     function activeStageExecutor(bytes32, bytes32, bytes32 stageId) external view returns (address) {
         return _activeExecutors[stageId];
+    }
+
+    function hasExplicitSignalAuthorization(bytes32, bytes32, bytes32 stageId, bytes32, address submitter)
+        external
+        view
+        returns (bool)
+    {
+        return _filePatchAuthorized[stageId][submitter];
     }
 
     function planMetadataModule() external view returns (address) {
@@ -166,7 +176,7 @@ contract UVPFileResourceModuleTest {
         require(exists && contentHash == CONTENT_HASH_1, "duplicate rewrote key");
     }
 
-    function testSelfWriterMustBeTargetStageExecutor() public {
+    function testSelfWriterRequiresStageAuthorization() public {
         FilePatch memory patch = _singleOpPatch(bytes32(0), bytes32(0), _add(KEY, CONTENT_HASH_1, "uvp://file/one"));
         bytes32 digest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, patch);
         vm.expectRevert(
@@ -196,6 +206,7 @@ contract UVPFileResourceModuleTest {
 
     function testWriterStageCapabilityAuthorizesWriterExecutor() public {
         _activeExecutors[WRITER_STAGE] = WRITER_EXECUTOR;
+        _filePatchAuthorized[WRITER_STAGE][WRITER_EXECUTOR] = true;
         _metadata.finalizePlanMetadata(
             PLAN_ID, _metadata.fileWriterLeaf(TARGET_STAGE, WRITER_STAGE), bytes32(0), bytes32(0)
         );
