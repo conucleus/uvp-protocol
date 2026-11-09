@@ -6,10 +6,13 @@
 
 import {
   EMPTY_MERKLE_ROOT,
+  FILE_WRITER_LEAF_DOMAIN,
   SELECTOR_BINDING_LEAF_DOMAIN,
   SIGNAL_CAPABILITY_LEAF_DOMAIN,
   capabilitiesRootOf as sourceCapabilitiesRootOf,
   factAttribution as sourceFactAttribution,
+  fileWriterLeaf as sourceFileWriterLeaf,
+  fileWriterProof,
   selectorBindingLeaf as sourceSelectorBindingLeaf,
   selectorBindingProof,
   signalCapabilityLeaf as sourceSignalCapabilityLeaf,
@@ -18,6 +21,7 @@ import { isHex, type Hex } from "viem";
 
 export const UVP_SIGNAL_CAPABILITY_V1 = SIGNAL_CAPABILITY_LEAF_DOMAIN;
 export const UVP_SELECTOR_BINDING_V1 = SELECTOR_BINDING_LEAF_DOMAIN;
+export const UVP_FILE_WRITER_V1 = FILE_WRITER_LEAF_DOMAIN;
 export const EMPTY_CAPABILITIES_ROOT: Hex = EMPTY_MERKLE_ROOT;
 
 export const SIGNAL_CAPABILITY_RELATION_CURRENT_ORDER = 0;
@@ -33,6 +37,11 @@ export interface SignalCapabilityTableEntry {
 export interface StageSelectorBindingTableEntry {
   readonly selectorStageId: Hex | string;
   readonly targetStageId: Hex | string;
+}
+
+export interface FileWriterTableEntry {
+  readonly targetStageId: Hex | string;
+  readonly writerStageId: Hex | string;
 }
 
 export function signalCapabilityLeaf(
@@ -59,13 +68,25 @@ export function selectorBindingLeaf(
   );
 }
 
+export function fileWriterLeaf(
+  targetStageId: Hex | string,
+  writerStageId: Hex | string,
+): Hex {
+  return sourceFileWriterLeaf(
+    normalizeWord(targetStageId, "targetStageId"),
+    normalizeWord(writerStageId, "writerStageId"),
+  );
+}
+
 export function capabilitiesRootOf(
   selectorBindings: readonly StageSelectorBindingTableEntry[],
   signalCapabilities: readonly SignalCapabilityTableEntry[],
+  fileWriterBindings: readonly FileWriterTableEntry[] = [],
 ): Hex {
   return sourceCapabilitiesRootOf(
     normalizeBindings(selectorBindings),
     normalizeCapabilities(signalCapabilities),
+    normalizeFileWriters(fileWriterBindings),
   );
 }
 
@@ -74,6 +95,7 @@ export function factAttribution(
   signalCapabilities: readonly SignalCapabilityTableEntry[],
   sourceId: Hex | string,
   signalId: Hex | string,
+  fileWriterBindings: readonly FileWriterTableEntry[] = [],
 ): { readonly stageId: Hex; readonly capabilityProof: readonly Hex[] }
 | undefined {
   return sourceFactAttribution(
@@ -81,6 +103,7 @@ export function factAttribution(
     normalizeCapabilities(signalCapabilities),
     normalizeWord(sourceId, "sourceId"),
     normalizeWord(signalId, "signalId"),
+    normalizeFileWriters(fileWriterBindings),
   );
 }
 
@@ -88,6 +111,7 @@ export function selectorBindingProofFor(
   selectorBindings: readonly StageSelectorBindingTableEntry[],
   signalCapabilities: readonly SignalCapabilityTableEntry[],
   targetStageId: Hex | string,
+  fileWriterBindings: readonly FileWriterTableEntry[] = [],
 ): { readonly selectorStageId: Hex; readonly proof: readonly Hex[] }
 | undefined {
   const normalizedTargetStageId = normalizeWord(targetStageId, "targetStageId");
@@ -103,11 +127,28 @@ export function selectorBindingProofFor(
     normalizeCapabilities(signalCapabilities),
     binding.selectorStageId,
     normalizedTargetStageId,
+    normalizeFileWriters(fileWriterBindings),
   );
   if (proof === undefined) {
     return undefined;
   }
   return { selectorStageId: binding.selectorStageId, proof };
+}
+
+export function fileWriterProofFor(
+  selectorBindings: readonly StageSelectorBindingTableEntry[],
+  signalCapabilities: readonly SignalCapabilityTableEntry[],
+  fileWriterBindings: readonly FileWriterTableEntry[],
+  targetStageId: Hex | string,
+  writerStageId: Hex | string,
+): readonly Hex[] | undefined {
+  return fileWriterProof(
+    normalizeBindings(selectorBindings),
+    normalizeCapabilities(signalCapabilities),
+    normalizeFileWriters(fileWriterBindings),
+    normalizeWord(targetStageId, "targetStageId"),
+    normalizeWord(writerStageId, "writerStageId"),
+  );
 }
 
 function normalizeBindings(
@@ -138,6 +179,15 @@ function normalizeCapabilities(
     ),
     signalId: normalizeWord(capability.signalId, "capability.signalId"),
     targetOrderRelation: capability.relation,
+  }));
+}
+
+function normalizeFileWriters(
+  fileWriterBindings: readonly FileWriterTableEntry[],
+): readonly { readonly targetStageId: Hex; readonly writerStageId: Hex }[] {
+  return fileWriterBindings.map((binding) => ({
+    targetStageId: normalizeWord(binding.targetStageId, "fileWriter.targetStageId"),
+    writerStageId: normalizeWord(binding.writerStageId, "fileWriter.writerStageId"),
   }));
 }
 

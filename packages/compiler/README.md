@@ -148,7 +148,7 @@ Use these root-package entrypoints:
 - `toSolidityRegisterPlanArgs(onchainHookPlanArtifact)`.
 
 `compileZhixuOnchainHookPlan(zhixu)` emits schema
-`uvp.onchainHookPlan.v3`. It:
+`uvp.onchainHookPlan.v4`. It:
 
 - emits stable `planId` and `planHash`;
 - carries target `platform` from Zhixu YAML as a protocol field
@@ -163,10 +163,14 @@ Use these root-package entrypoints:
   target slot; the leaf joins `dockRoutesRoot`);
 - compiles `selectedStageBindings` into sorted `selectorBindings` for
   `StageSelectorBinding` registration;
-- commits both tables — `selectorBindings` and `signalCapabilities` — into a
-  single `capabilitiesRoot` (domain-separated leaves mixed into one sorted
-  paired Merkle tree; empty tables pin `keccak256("")`), and includes the
-  tables in the canonical on-chain `planHash`.
+- lowers `spec.stages[].fileWriters` into a sorted `stageFileWriters` section
+  (one `(targetStageId, writerStageId)` leaf per declared writer stage; self is
+  implicit and never a leaf);
+- commits the three tables — `selectorBindings`, `signalCapabilities`, and
+  `stageFileWriters` — into a single `capabilitiesRoot` (domain-separated
+  leaves mixed into one sorted paired Merkle tree; empty tables pin
+  `keccak256("")`), and includes the tables in the canonical on-chain
+  `planHash`.
 
 Stable ids use raw Keccak-256:
 
@@ -202,7 +206,7 @@ The field is not part of the `planHash` preimage — `hashOnchainPlanPayload`
 strips it, so the commitment covers the submitted payload only — and the
 Solidity registration args do not carry it. `assertOnchainHookPlanArtifact`
 recomputes the channel from `compiledHooks` and rejects a tampered, missing, or
-surplus value. The artifact schema stays `uvp.onchainHookPlan.v3`; there is no
+surplus value. The artifact schema stays `uvp.onchainHookPlan.v4`; there is no
 version bump and no compatibility shim. Artifacts recorded before the field
 existed are rejected when re-validated, while stored read paths that do not
 re-assert the artifact keep working.
@@ -213,16 +217,17 @@ The current state-machine alignment is `toSolidityRegisterPlanArgs()`:
 
 - `planId` and `planHash` are the state-machine plan identity;
 - `hooks` map to `UVPStateMachine.CompactHook`;
-- `selectorBindings` map to `UVPStateMachine.StageSelectorBinding`;
+- `selectorBindings` map to `UVPStateMachine.StageSelectorBinding` and
+  `stageFileWriters` to `UVPPlanMetadataModule.fileWriterLeaf`;
 - `capabilitiesRoot` is the domain-separated leaf-mixed Merkle root over
-  `selectorBindings` + `signalCapabilities` (`src/onchain/capabilities-root.ts`
-  is the authoritative implementation, byte-identical to the
-  `UVPPlanMetadataModule` leaf formulas). The chain stores only the root:
-  `finalizePlan` takes just the `planId`, so registration cost is decoupled
-  from table size, and membership is verified off-chain by recomputing the
-  leaf from its fields and carrying `signalCapabilityProof` /
-  `selectorBindingProof` through `verifyMerkleProof`. Empty tables pin
-  `keccak256("")`;
+  `selectorBindings` + `signalCapabilities` + `stageFileWriters`
+  (`src/onchain/capabilities-root.ts` is the authoritative implementation,
+  byte-identical to the `UVPPlanMetadataModule` leaf formulas). The chain
+  stores only the root: `finalizePlan` takes just the `planId`, so
+  registration cost is decoupled from table size, and membership is verified
+  off-chain by recomputing the leaf from its fields and carrying
+  `signalCapabilityProof` / `selectorBindingProof` / `fileWriterProof` through
+  `verifyMerkleProof`. Empty tables pin `keccak256("")`;
 - `instructions` map to compact `Signal`, `Not`, `And`, `Or`, and `Delay`
   operations;
 - `dependencyKeys` must match `UVPStateMachine.signalKey(sourceId, signalId)`;
@@ -234,7 +239,7 @@ The current state-machine alignment is `toSolidityRegisterPlanArgs()`:
 
 ## Overlay Hashing
 
-Stage executor patch, stage resource patch, and resource manifest hashing live
-in `@uvp-eth/protocol-bindings`. The compiler owns selector binding and
-on-chain HookPlan artifact hashing only; resource plaintext and manifests stay
-outside compiler artifacts.
+Stage executor patch hashing and the file patch canonical digest live in
+`@uvp-eth/protocol-bindings`. The compiler owns selector binding, file-writer
+leaf, and on-chain HookPlan artifact hashing only; file content and handles
+stay outside compiler artifacts.

@@ -16,17 +16,6 @@ interface IUVPStagePatchModuleLens {
             uint256 patchNonce,
             string memory metadataURI
         );
-    function getActiveStageResourcePatch(bytes32 planId, bytes32 orderId, bytes32 targetStageId, bytes32 resourceKey)
-        external
-        view
-        returns (
-            bool exists,
-            bytes32 manifestHash,
-            bytes32 policyHash,
-            bytes32 patchHash,
-            uint256 patchNonce,
-            string memory manifestURI
-        );
 }
 
 interface IUVPDockingModuleLens {
@@ -137,22 +126,6 @@ contract UVPStateMachineLens {
     {
         return IUVPStagePatchModuleLens(_moduleDirectory.stagePatchModule())
             .getActiveStageExecutorPatch(planId, orderId, targetStageId);
-    }
-
-    function getActiveStageResourcePatch(bytes32 planId, bytes32 orderId, bytes32 targetStageId, bytes32 resourceKey)
-        external
-        view
-        returns (
-            bool exists,
-            bytes32 manifestHash,
-            bytes32 policyHash,
-            bytes32 patchHash,
-            uint256 patchNonce,
-            string memory manifestURI
-        )
-    {
-        return IUVPStagePatchModuleLens(_moduleDirectory.stagePatchModule())
-            .getActiveStageResourcePatch(planId, orderId, targetStageId, resourceKey);
     }
 
     function getActiveDock(bytes32 dockInstanceId)

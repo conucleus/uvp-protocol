@@ -5,6 +5,7 @@ import type {
   OnchainCompiledHook,
   OnchainExecutorRoute,
   OnchainSignalCapability,
+  OnchainStageFileWriter,
   OnchainStageSelectorBinding,
 } from "../../types/index.js";
 
@@ -58,6 +59,17 @@ function compareSignalCapabilities(
   );
 }
 
+function compareStageFileWriters(
+  left: OnchainStageFileWriter,
+  right: OnchainStageFileWriter,
+): number {
+  return (
+    compareCanonicalKey(left.targetStageId, right.targetStageId) ||
+    compareCanonicalKey(left.writerStageId, right.writerStageId) ||
+    compareCanonicalKey(left.fileWriterLeaf, right.fileWriterLeaf)
+  );
+}
+
 function compareAdmissions(
   left: OnchainCompiledAdmission,
   right: OnchainCompiledAdmission,
@@ -74,6 +86,7 @@ export {
   compareExecutorRoutes,
   compareSelectorBindings,
   compareSignalCapabilities,
+  compareStageFileWriters,
   compareAdmissions,
 };
 
@@ -155,6 +168,14 @@ function executorCandidateOrderKey(
   return [String(candidate.stageId), String(candidate.executor)];
 }
 
+function fileWriterOrderKey(binding: Record<string, unknown>): readonly string[] {
+  return [
+    String(binding.targetStageId),
+    String(binding.writerStageId),
+    String(binding.fileWriterLeaf),
+  ];
+}
+
 export {
   canonicalOrderIssues,
   hookOrderKey,
@@ -163,4 +184,5 @@ export {
   signalCapabilityOrderKey,
   admissionOrderKey,
   executorCandidateOrderKey,
+  fileWriterOrderKey,
 };

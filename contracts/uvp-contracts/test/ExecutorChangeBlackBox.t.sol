@@ -8,6 +8,7 @@ import {UVPDockingModule} from "../src/UVPDockingModule.sol";
 import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
+import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
 import {DockMerkle} from "../src/libraries/DockMerkle.sol";
@@ -68,8 +69,6 @@ contract ExecutorChangeBlackBoxTest {
     bytes32 private constant SIGNAL_EXTRA = bytes32(uint256(0x4007));
     bytes32 private constant EXECUTOR_PATCH_SIGNAL_ID =
         0xbbb1770c9313f4029a89e03f4719037cdad52864ab4da5f623bc7c8a0c489e97;
-    bytes32 private constant RESOURCE_PATCH_SIGNAL_ID =
-        0x6dff331f2bb7b785cbcd99a911e6d30dc8714f43b3b9ba80c658215445ddd0ba;
     bytes32 private constant EXECUTOR_PATCH_MODE_ASSIGN = bytes32("assign");
     bytes32 private constant EXECUTOR_PATCH_MODE_HANDOFF = bytes32("handoff");
     bytes32 private constant STAGE_INIT = bytes32(uint256(0x5001));
@@ -84,9 +83,6 @@ contract ExecutorChangeBlackBoxTest {
     bytes32 private constant EXECUTOR_METADATA_HASH = bytes32(uint256(0xa004));
     bytes32 private constant PATCH_HASH = bytes32(uint256(0xa006));
     bytes32 private constant PATCH_HASH_2 = bytes32(uint256(0xa007));
-    bytes32 private constant RESOURCE_KEY = bytes32(uint256(0xa008));
-    bytes32 private constant MANIFEST_HASH = bytes32(uint256(0xa00a));
-    bytes32 private constant RESOURCE_POLICY_HASH = bytes32(uint256(0xa00b));
     address private constant CREATOR = address(uint160(0xc0de));
     address private constant STRANGER = address(uint160(0xbad));
     address private constant E3 = address(uint160(0x33));
@@ -100,7 +96,7 @@ contract ExecutorChangeBlackBoxTest {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.15");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.16");
     bytes32 private constant EXECUTOR_CANDIDATE_LEAF_DOMAIN = keccak256("UVP_EXECUTOR_CANDIDATE_V1");
     bytes32 private constant SIGNAL_CAPABILITY_LEAF_DOMAIN = keccak256("UVP_SIGNAL_CAPABILITY_V1");
     bytes32 private constant SELECTOR_BINDING_LEAF_DOMAIN = keccak256("UVP_SELECTOR_BINDING_V1");
@@ -977,83 +973,6 @@ contract ExecutorChangeBlackBoxTest {
         _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(2, E1(), PATCH_HASH_2));
     }
 
-    function testResourcePatchSharesZeroSignalGateWithAssign() public {
-        UVPStateMachine machine = _newMachine();
-        StageSelectorBinding[] memory extraBinding = new StageSelectorBinding[](1);
-        extraBinding[0] = StageSelectorBinding({selectorStageId: STAGE_INIT, targetStageId: STAGE_INIT});
-        _registerPlanWithCandidates(
-            machine,
-            _patchHooks(),
-            _mergeBindings(_selectorBindings(), extraBinding),
-            _patchCapabilities(),
-            PUBLISHER_PRIVATE_KEY,
-            _standardCandidates()
-        );
-        _submitBirth(machine, CREATOR, _overlayAuthorizations());
-        _materializeAuditStage(machine, ORDER_ID);
-
-        vm.prank(_selector());
-        vm.expectRevert(
-            abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, ORDER_ID, STAGE_INIT)
-        );
-        _stagePatch(machine)
-            .applyStageResourcePatch(
-                PLAN_ID,
-                ORDER_ID,
-                _resourcePatchToStage(1, STAGE_INIT, RESOURCE_KEY, PATCH_HASH),
-                _moduleBindingFor(machine, PLAN_ID, STAGE_INIT)
-            );
-
-        vm.prank(_selector());
-        _stagePatch(machine)
-            .applyStageResourcePatch(
-                PLAN_ID,
-                ORDER_ID,
-                _resourcePatchToStage(1, STAGE_AUDIT, RESOURCE_KEY, PATCH_HASH),
-                _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT)
-            );
-        (bool exists,,,,,) =
-            _stagePatch(machine).getActiveStageResourcePatch(PLAN_ID, ORDER_ID, STAGE_AUDIT, RESOURCE_KEY);
-        require(exists, "resource patch not applied");
-
-        vm.prank(E1());
-        vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.StageExecutorNotAssigned.selector, ORDER_ID, STAGE_AUDIT)
-        );
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9119)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
-
-        vm.prank(CREATOR);
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9119)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
-        vm.prank(_selector());
-        vm.expectRevert(
-            abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, ORDER_ID, STAGE_AUDIT)
-        );
-        _stagePatch(machine)
-            .applyStageResourcePatch(
-                PLAN_ID,
-                ORDER_ID,
-                _resourcePatchToStage(2, STAGE_AUDIT, RESOURCE_KEY, PATCH_HASH_2),
-                _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT)
-            );
-    }
 
     function testForkRejectsApprovalSignalAbsentOnParent() public {
         UVPStateMachine machine = _forkMachineReady();
@@ -1504,6 +1423,7 @@ contract ExecutorChangeBlackBoxTest {
         machine.setDockingModule(address(docking));
         machine.setPlanMetadataModule(address(planMetadata));
         machine.setOrderLinkModule(address(orderLink));
+        machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
         machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.freezeModules();
     }
@@ -1762,22 +1682,6 @@ contract ExecutorChangeBlackBoxTest {
         });
     }
 
-    function _resourcePatchToStage(uint256 nonce, bytes32 targetStageId, bytes32 resourceKey, bytes32 patchHash)
-        private
-        pure
-        returns (UVPStagePatchModule.StageResourcePatch memory)
-    {
-        return UVPStagePatchModule.StageResourcePatch({
-            selectorStageId: STAGE_INIT,
-            targetStageId: targetStageId,
-            resourceKey: resourceKey,
-            manifestHash: MANIFEST_HASH,
-            policyHash: RESOURCE_POLICY_HASH,
-            patchHash: patchHash,
-            patchNonce: nonce,
-            manifestURI: "ipfs://resource-manifest"
-        });
-    }
 
     function _withAuthHash(
         UVPStagePatchModule.StageExecutorPatch memory patch,
@@ -1865,14 +1769,13 @@ contract ExecutorChangeBlackBoxTest {
         view
         returns (UVPStateMachine.SignalAuthorization[] memory authorizations)
     {
-        authorizations = new UVPStateMachine.SignalAuthorization[](7);
+        authorizations = new UVPStateMachine.SignalAuthorization[](6);
         authorizations[0] = _stageAuthorization(STAGE_INIT, EXECUTOR_PATCH_SIGNAL_ID, _selector());
-        authorizations[1] = _stageAuthorization(STAGE_INIT, RESOURCE_PATCH_SIGNAL_ID, _selector());
-        authorizations[2] = _stageAuthorization(SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, _selector());
-        authorizations[3] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_DONE, E1());
-        authorizations[4] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_DONE, E2());
-        authorizations[5] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_REVIEW, E1());
-        authorizations[6] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_REVIEW, E2());
+        authorizations[1] = _stageAuthorization(SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, _selector());
+        authorizations[2] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_DONE, E1());
+        authorizations[3] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_DONE, E2());
+        authorizations[4] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_REVIEW, E1());
+        authorizations[5] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_REVIEW, E2());
     }
 
     function _forkChildAuthorizations()

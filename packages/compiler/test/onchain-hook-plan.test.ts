@@ -47,6 +47,7 @@ import {
   signalCapabilityLeaf,
   signalCapabilityProof,
 } from "../src/onchain/capabilities-root.js";
+import { fileWriterLeaf, fileWriterProof } from "../src/index.js";
 import {
   onchainSignalId,
   onchainSignalKey,
@@ -177,7 +178,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   const again = compileZhixuOnchainHookPlan(baseZhixu, demoManifest);
 
   assert.deepEqual(onchain, again);
-  assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v3");
+  assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v4");
   assert.equal(onchain.planId, sourcePlan.planId);
   assert.deepEqual(onchain.platform, sourcePlan.platform);
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
@@ -436,7 +437,7 @@ test("rejects a repinned capabilitiesRoot that drifts from the capability tables
     validateOnchainHookPlanArtifact(repinned).some(
       (issue) =>
         issue ===
-        "capabilitiesRoot must match the recomputed root over selector bindings and signal capabilities",
+        "capabilitiesRoot must match the recomputed root over selector bindings, signal capabilities, and stage file writers",
     ),
   );
   assert.throws(
@@ -455,11 +456,85 @@ test("rejects a repinned capabilitiesRoot that drifts from the capability tables
   assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
 });
 
+test("compiles fileWriters into artifact leaves and the capabilities root", () => {
+  const withFileWriters: ZhixuDefinition = {
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      stages: baseZhixu.spec.stages.map((stage) =>
+        stage.name === "main" ? { ...stage, fileWriters: ["assign"] } : stage,
+      ),
+    },
+  };
+  const without = compileZhixuOnchainHookPlan(baseZhixu, demoManifest);
+  const withWriters = compileZhixuOnchainHookPlan(withFileWriters, demoManifest);
+
+  assert.deepEqual(without.stageFileWriters, []);
+  const [binding] = withWriters.stageFileWriters;
+  assert.ok(binding);
+  const targetStageId = onchainStageId("main");
+  const writerStageId = onchainStageId("assign");
+  assert.deepEqual(binding, {
+    targetStageIdentifier: "main",
+    targetStageId,
+    writerStageIdentifier: "assign",
+    writerStageId,
+    fileWriterLeaf: fileWriterLeaf(targetStageId, writerStageId),
+  });
+
+  const tables = capabilityTablesOf(withWriters);
+  assert.equal(
+    withWriters.capabilitiesRoot,
+    capabilitiesRootOf(
+      tables.selectorBindings,
+      tables.signalCapabilities,
+      tables.fileWriterBindings,
+    ),
+  );
+  assert.notEqual(withWriters.capabilitiesRoot, without.capabilitiesRoot);
+  assert.notEqual(withWriters.planHash, without.planHash);
+
+  const proof = fileWriterProof(
+    tables.selectorBindings,
+    tables.signalCapabilities,
+    tables.fileWriterBindings,
+    targetStageId,
+    writerStageId,
+  );
+  assert.ok(proof);
+  assert.equal(
+    verifyMerkleProof(
+      withWriters.capabilitiesRoot,
+      fileWriterLeaf(targetStageId, writerStageId),
+      proof,
+    ),
+    true,
+  );
+  assert.deepEqual(validateOnchainHookPlanArtifact(withWriters), []);
+
+  const { planHash: _staleHash, ...payload } = withWriters;
+  const tampered = {
+    ...payload,
+    stageFileWriters: [
+      {
+        ...binding,
+        fileWriterLeaf: keccak256Hex("tampered file writer leaf"),
+      },
+    ],
+  };
+  assert.deepEqual(validateOnchainHookPlanArtifact({
+    ...tampered,
+    planHash: hashOnchainPlanPayload(tampered),
+  }), [
+    'stageFileWriters[0].fileWriterLeaf must match keccak256("UVP_FILE_WRITER_V1", targetStageId, writerStageId)',
+  ]);
+});
+
 test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   const args = toSolidityRegisterPlanArgs(onchain);
 
-  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v3");
+  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v4");
   assert.equal(args.sourcePlanId, onchain.planId);
   const { planHash: _storedPlanHash, ...artifactPayload } = onchain;
   assert.equal(args.artifactHash, hashOnchainPlanPayload(artifactPayload));
@@ -954,7 +1029,7 @@ test("rejects invalid on-chain HookPlan artifact shapes", () => {
 
   assert.deepEqual(
     validateOnchainHookPlanArtifact({ ...onchain, schemaVersion: "wrong" }),
-    ["schemaVersion must be uvp.onchainHookPlan.v3"],
+    ["schemaVersion must be uvp.onchainHookPlan.v4"],
   );
   assert.match(
     validateOnchainHookPlanArtifact({

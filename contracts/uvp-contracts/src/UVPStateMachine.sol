@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {ECDSA} from "./libraries/ECDSA.sol";
 import {UVPSignatures} from "./libraries/UVPSignatures.sol";
 import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
+import {IUVPFileResourceModule, FilePatch, FilePatchEmpty} from "./interfaces/IUVPFileResourceModule.sol";
 import {UVPPlanRegistration} from "./UVPPlanRegistration.sol";
 import {
     _HOOK_FLAG_ORDER_TRIGGER_MINT,
@@ -328,6 +329,7 @@ contract UVPStateMachine {
     address public stagePatchModule;
     address public derivedSignalModule;
     address public dockingModule;
+    address public fileResourceModule;
 
     function planMetadataModule() external view returns (address) {
         return _s.planMetadataModule;
@@ -353,7 +355,7 @@ contract UVPStateMachine {
     bytes32 private constant _ORDER_LINK_ORDER_ID_DOMAIN = keccak256("uvp.order_link.order_id.v1");
     bytes32 public constant DOCK_ORDER_NAMESPACE_MASK = bytes32(uint256(1) << 255);
     bytes32 private constant _SIGNAL_SUBMISSION_TYPEHASH = keccak256(
-        "UVPStateMachineSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
+        "UVPStateMachineSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline,bytes32 filesDigest)"
     );
     bytes32 private constant _TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
@@ -503,6 +505,7 @@ contract UVPStateMachine {
     bytes32 public constant PLAN_METADATA_MODULE_ID = keccak256("uvp.module.plan_metadata.v1");
     bytes32 public constant ORDER_LINK_MODULE_ID = keccak256("uvp.module.order_link.v1");
     bytes32 public constant LENS_MODULE_ID = keccak256("uvp.module.lens.v1");
+    bytes32 public constant FILE_RESOURCE_MODULE_ID = keccak256("uvp.module.file_resource.v1");
 
     constructor() {
         owner = msg.sender;
@@ -549,6 +552,10 @@ contract UVPStateMachine {
         lens = _setModule(LENS_MODULE_ID, lens, moduleAddress);
     }
 
+    function setFileResourceModule(address moduleAddress) external onlyOwner {
+        fileResourceModule = _setModule(FILE_RESOURCE_MODULE_ID, fileResourceModule, moduleAddress);
+    }
+
     function freezeModules() external onlyOwner {
         if (modulesFrozen) {
             revert ModulesAlreadyFrozen();
@@ -556,6 +563,7 @@ contract UVPStateMachine {
         if (
             stagePatchModule == address(0) || derivedSignalModule == address(0) || dockingModule == address(0)
                 || _s.planMetadataModule == address(0) || orderLinkModule == address(0) || lens == address(0)
+                || fileResourceModule == address(0)
         ) {
             revert IncompleteModuleConfiguration();
         }
@@ -567,7 +575,13 @@ contract UVPStateMachine {
     function moduleSetHash() public view returns (bytes32) {
         return keccak256(
             abi.encode(
-                stagePatchModule, derivedSignalModule, dockingModule, _s.planMetadataModule, orderLinkModule, lens
+                stagePatchModule,
+                derivedSignalModule,
+                dockingModule,
+                _s.planMetadataModule,
+                orderLinkModule,
+                lens,
+                fileResourceModule
             )
         );
     }
@@ -814,7 +828,9 @@ contract UVPStateMachine {
         address submitter,
         uint256 deadline,
         bytes calldata signature,
-        FactAttribution calldata attribution
+        FactAttribution calldata attribution,
+        bytes32 filesDigest,
+        FilePatch calldata filePatch
     ) external {
         if (block.timestamp > deadline) {
             revert ExpiredSignalSignature(deadline);
@@ -825,7 +841,7 @@ contract UVPStateMachine {
 
         address recoveredSigner = _recoverSignalSubmitter(
             _signalSubmissionDigest(
-                planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, deadline
+                planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, deadline, filesDigest
             ),
             signature
         );
@@ -833,7 +849,22 @@ contract UVPStateMachine {
             revert InvalidSignalSignature(submitter, recoveredSigner);
         }
 
-        _submitSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, attribution);
+        if (signalId == bytes32(0)) {
+            if (filePatch.ops.length == 0) {
+                revert FilePatchEmpty();
+            }
+        } else {
+            bool inserted =
+                _submitSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, attribution);
+            if (!inserted) {
+                return;
+            }
+            if (filePatch.ops.length == 0 && filesDigest == bytes32(0)) {
+                return;
+            }
+        }
+
+        _applyFilePatch(planId, orderId, filesDigest, filePatch, submitter);
     }
 
     function activateStageExecutorFromModule(
@@ -1138,7 +1169,7 @@ contract UVPStateMachine {
         bytes32 idempotencyKey,
         address submitter,
         FactAttribution calldata attribution
-    ) private {
+    ) private returns (bool inserted) {
         if (sourceId == bytes32(0)) {
             revert ZeroSourceId();
         }
@@ -1156,10 +1187,43 @@ contract UVPStateMachine {
         bytes32 sourceStageId = _resolveSourceStage(planId, sourceId, signalId, attribution);
         _requireSourceStageReady(planId, orderId, sourceStageId);
         if (_hasSignal(planId, orderId, sourceId, signalId)) {
-            return;
+            return false;
         }
         _requireSignalAdmission(planId, orderId, sourceId, signalId);
         _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false, sourceStageId);
+        return true;
+    }
+
+    function _applyFilePatch(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 filesDigest,
+        FilePatch calldata filePatch,
+        address submitter
+    ) private {
+        address module = fileResourceModule;
+        if (module == address(0)) {
+            revert InvalidModuleAddress();
+        }
+        uint256 selectorWord = uint256(uint32(IUVPFileResourceModule.applyStageFilePatch.selector)) << 224;
+        assembly ("memory-safe") {
+            let start := filePatch
+            let size := calldatasize()
+            if iszero(gt(size, start)) { revert(0, 0) }
+            let patchSize := sub(size, start)
+            let ptr := mload(0x40)
+            mstore(ptr, selectorWord)
+            mstore(add(ptr, 0x04), planId)
+            mstore(add(ptr, 0x24), orderId)
+            mstore(add(ptr, 0x44), filesDigest)
+            mstore(add(ptr, 0x64), 0xa0)
+            mstore(add(ptr, 0x84), submitter)
+            calldatacopy(add(ptr, 0xa4), start, patchSize)
+            if iszero(call(gas(), module, 0, ptr, add(0xa4, patchSize), 0, 0)) {
+                returndatacopy(ptr, 0, returndatasize())
+                revert(ptr, returndatasize())
+            }
+        }
     }
 
     function _requireSignalAdmission(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId) private view {
@@ -1426,7 +1490,8 @@ contract UVPStateMachine {
         bytes32 payloadHash,
         bytes32 idempotencyKey,
         address submitter,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 filesDigest
     ) private view returns (bytes32) {
         bytes32 structHash = keccak256(
             abi.encode(
@@ -1438,7 +1503,8 @@ contract UVPStateMachine {
                 payloadHash,
                 idempotencyKey,
                 submitter,
-                deadline
+                deadline,
+                filesDigest
             )
         );
         return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));

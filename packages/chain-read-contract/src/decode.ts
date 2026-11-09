@@ -31,8 +31,9 @@ import type {
   ChainSignalTargetRelation,
   ChainStageExecutorOverlay,
   ChainStageExecutorPatchMode,
+  ChainStageFileEntry,
+  ChainStageFileMap,
   ChainStageMaterialization,
-  ChainStageResourceOverlay,
   ChainStageSelectorBinding,
   ChainSubmitSignal,
   ChainSyncDiagnosticsCounts,
@@ -202,28 +203,32 @@ export function decodeStageExecutorOverlayWire(
   return value as ChainStageExecutorOverlay;
 }
 
-export function decodeStageResourceOverlayWire(
+export function decodeStageFileEntryWire(
   value: unknown,
-  path = "stageResourceOverlay"
-): ChainStageResourceOverlay {
+  path = "stageFileEntry"
+): ChainStageFileEntry {
   const record = wireRecord(value, path);
-  for (const field of [
-    "orderId",
-    "selectorStageId",
-    "targetStageId",
-    "resourceKey",
-    "selectorWallet",
-    "manifestHash",
-    "policyHash",
-    "patchHash",
-    "patchNonce",
-    "manifestURI"
-  ] as const) {
+  for (const field of ["key", "contentHash", "patchHash"] as const) {
     requireString(record, field, path);
   }
+  requireString(record, "handle", path);
   decodeProvenanceWire(record["updatedAt"], `${path}.updatedAt`);
   decodeProofWire(record["proof"], `${path}.proof`);
-  return value as ChainStageResourceOverlay;
+  return value as ChainStageFileEntry;
+}
+
+export function decodeStageFileMapWire(
+  value: unknown,
+  path = "stageFileMap"
+): ChainStageFileMap {
+  const record = wireRecord(value, path);
+  for (const field of ["planId", "orderId", "targetStageId", "filesHash"] as const) {
+    requireString(record, field, path);
+  }
+  decodeRecordMap(record["files"], `${path}.files`, decodeStageFileEntryWire);
+  decodeProvenanceWire(record["updatedAt"], `${path}.updatedAt`);
+  decodeProofWire(record["proof"], `${path}.proof`);
+  return value as ChainStageFileMap;
 }
 
 export function decodeHookWire(value: unknown, path = "hook"): ChainHook {
@@ -343,7 +348,7 @@ export function decodeOrderWire(value: unknown, path = "order"): ChainOrderProje
   decodeRecordMap(record["derivedSignals"], `${path}.derivedSignals`, decodeDerivedSignalWire);
   decodeRecordMap(record["stageMaterializations"], `${path}.stageMaterializations`, decodeStageMaterializationWire);
   decodeRecordMap(record["stageExecutorOverlays"], `${path}.stageExecutorOverlays`, decodeStageExecutorOverlayWire);
-  decodeRecordMap(record["stageResourceOverlays"], `${path}.stageResourceOverlays`, decodeStageResourceOverlayWire);
+  decodeRecordMap(record["stageFiles"], `${path}.stageFiles`, decodeStageFileMapWire);
   decodeRecordMap(record["hooks"], `${path}.hooks`, decodeHookWire);
   decodeRecordMap(record["tasks"], `${path}.tasks`, decodeTaskWire);
   decodeArray(record["timeline"], `${path}.timeline`).forEach((event, index) => {

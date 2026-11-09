@@ -6,6 +6,7 @@ import {UVPDockingModule} from "../src/UVPDockingModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
+import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
 import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {DockMerkle} from "../src/libraries/DockMerkle.sol";
@@ -925,6 +926,7 @@ contract UVPDockingModuleAttachTest {
         sm.setDockingModule(address(dock));
         sm.setPlanMetadataModule(address(metadata));
         sm.setOrderLinkModule(address(orderLink));
+        sm.setFileResourceModule(address(new UVPFileResourceModule(address(sm))));
         sm.setLens(address(new UVPStateMachineLens(address(sm))));
         sm.freezeModules();
         _dockingModule = dock;
@@ -1891,7 +1893,7 @@ contract UVPDockingModuleAttachTest {
             abi.encode(
                 keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
                 keccak256("UVPStateMachine"),
-                keccak256("0.15"),
+                keccak256("0.16"),
                 block.chainid,
                 address(machine)
             )

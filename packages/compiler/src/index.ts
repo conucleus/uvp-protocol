@@ -117,6 +117,9 @@ export {
   capabilityTablesOf,
   capabilitiesRootOf,
   factAttribution,
+  FILE_WRITER_LEAF_DOMAIN,
+  fileWriterLeaf,
+  fileWriterProof,
   SELECTOR_BINDING_LEAF_DOMAIN,
   selectorBindingLeaf,
   selectorBindingProof,
@@ -124,6 +127,11 @@ export {
   signalCapabilityLeaf,
   signalCapabilityProof,
 } from "./onchain/capabilities-root.js";
+export {
+  MAX_FILE_WRITERS_PER_STAGE,
+  compileStageFileWriters,
+  validateOnchainStageFileWriters,
+} from "./onchain/file-writers.js";
 export {
   EXECUTOR_CANDIDATE_LEAF_DOMAIN,
   executorCandidateLeaf,
@@ -175,12 +183,14 @@ export type {
   OnchainJoinInstruction,
   OnchainSignalCapability,
   OnchainSignalInstruction,
+  OnchainStageFileWriter,
   OnchainStageSelectorBinding,
   OnchainUnaryInstruction,
   SignalTargetOrderRelation,
   SolidityRegisterDependencyIndexArg,
   SolidityRegisterExecutorCandidateArg,
   SolidityRegisterExecutorRouteArg,
+  SolidityRegisterFileWriterBindingArg,
   SolidityRegisterHookArg,
   SolidityRegisterInstructionArg,
   SolidityRegisterPlanArgs,

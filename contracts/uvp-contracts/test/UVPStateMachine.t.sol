@@ -8,7 +8,9 @@ import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
+import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
+import {FileOp, FilePatch} from "../src/interfaces/IUVPFileResourceModule.sol";
 import {IUVPPlanMetadataModule} from "../src/interfaces/IUVPPlanMetadataModule.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
 import {DockMerkle} from "../src/libraries/DockMerkle.sol";
@@ -71,8 +73,6 @@ contract UVPStateMachineTest {
     bytes32 private constant SIGNAL_ALT_BIRTH = bytes32(uint256(0x4007));
     bytes32 private constant EXECUTOR_PATCH_SIGNAL_ID =
         0xbbb1770c9313f4029a89e03f4719037cdad52864ab4da5f623bc7c8a0c489e97;
-    bytes32 private constant RESOURCE_PATCH_SIGNAL_ID =
-        0x6dff331f2bb7b785cbcd99a911e6d30dc8714f43b3b9ba80c658215445ddd0ba;
     bytes32 private constant DOCKED_ORDER_LINK_SIGNAL_ID = keccak256("uvp.docked_order_link.v1");
     bytes32 private constant EXECUTOR_PATCH_MODE_ASSIGN = bytes32("assign");
     bytes32 private constant EXECUTOR_PATCH_MODE_HANDOFF = bytes32("handoff");
@@ -104,12 +104,6 @@ contract UVPStateMachineTest {
     bytes32 private constant EXECUTOR_METADATA_HASH = bytes32(uint256(0xa004));
     bytes32 private constant PATCH_HASH = bytes32(uint256(0xa006));
     bytes32 private constant PATCH_HASH_2 = bytes32(uint256(0xa007));
-    bytes32 private constant RESOURCE_KEY = bytes32(uint256(0xa008));
-    bytes32 private constant RESOURCE_KEY_2 = bytes32(uint256(0xa009));
-    bytes32 private constant MANIFEST_HASH = bytes32(uint256(0xa00a));
-    bytes32 private constant RESOURCE_POLICY_HASH = bytes32(uint256(0xa00b));
-    bytes32 private constant RESOURCE_PATCH_HASH = bytes32(uint256(0xa00c));
-    bytes32 private constant RESOURCE_PATCH_HASH_2 = bytes32(uint256(0xa00d));
     address private constant SUBMITTER_A = address(uint160(0xa11ce));
     address private constant SUBMITTER_B = address(uint160(0xb0b));
     address private constant UNAUTHORIZED_SUBMITTER = address(uint160(0xbad));
@@ -124,7 +118,7 @@ contract UVPStateMachineTest {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.15");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.16");
     bytes32 private constant EMPTY_DOCK_ROOT = keccak256("");
     uint8 private constant FLAG_ORDER_TRIGGER_MINT = 1;
     uint8 private constant FLAG_ORDER_TRIGGER_DOCK = 2;
@@ -140,7 +134,7 @@ contract UVPStateMachineTest {
     mapping(address machine => bytes32 planId) private _planIds;
     UVPStateMachine private _currentMachine;
     bytes32 private constant SIGNAL_SUBMISSION_TYPEHASH = keccak256(
-        "UVPStateMachineSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
+        "UVPStateMachineSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline,bytes32 filesDigest)"
     );
     bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
@@ -1703,216 +1697,12 @@ contract UVPStateMachineTest {
         );
     }
 
-    function testApplyStageResourcePatchStoresOverlayAndEmitsEvent() public {
-        UVPStateMachine machine = _registeredOverlayMachine(address(this), SUBMITTER_A);
-        UVPStagePatchModule.StageResourcePatch memory patch = _stageResourcePatch(1, RESOURCE_PATCH_HASH);
 
-        vm.recordLogs();
-        _stagePatch(machine)
-            .applyStageResourcePatch(PLAN_ID, ORDER_ID, patch, _moduleBindingFor(machine, PLAN_ID, patch.targetStageId));
-        Vm.Log[] memory logs = vm.getRecordedLogs();
 
-        require(
-            _countTopic(
-                logs,
-                keccak256(
-                    "StageResourcePatchApplied(bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,uint256,string)"
-                )
-            ) == 1,
-            "resource patch event count"
-        );
-        require(
-            _stagePatch(machine).orderStageResourcePatchNonce(PLAN_ID, ORDER_ID, STAGE_AUDIT, RESOURCE_KEY) == 1,
-            "bad resource patch nonce"
-        );
-        require(
-            machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == address(0), "resource patch changed executor"
-        );
 
-        (
-            bool exists,
-            bytes32 manifestHash,
-            bytes32 policyHash,
-            bytes32 patchHash,
-            uint256 patchNonce,
-            string memory manifestURI
-        ) = _stagePatch(machine).getActiveStageResourcePatch(PLAN_ID, ORDER_ID, STAGE_AUDIT, RESOURCE_KEY);
-        require(exists, "resource patch missing");
-        require(manifestHash == MANIFEST_HASH, "bad manifest hash");
-        require(policyHash == RESOURCE_POLICY_HASH, "bad policy hash");
-        require(patchHash == RESOURCE_PATCH_HASH, "bad resource patch hash");
-        require(patchNonce == 1, "bad stored resource nonce");
-        require(keccak256(bytes(manifestURI)) == keccak256(bytes("ipfs://resource-manifest")), "bad manifest uri");
-    }
 
-    function testApplyStageResourcePatchRejectsNonIncreasingNonceAndIsolatesResourceKeys() public {
-        UVPStateMachine machine = _registeredOverlayMachine(address(this), SUBMITTER_A);
 
-        _stagePatch(machine)
-            .applyStageResourcePatch(
-                PLAN_ID,
-                ORDER_ID,
-                _stageResourcePatch(2, RESOURCE_PATCH_HASH),
-                _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT)
-            );
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStagePatchModule.StageResourcePatchNonceNotIncreasing.selector,
-                ORDER_ID,
-                STAGE_AUDIT,
-                RESOURCE_KEY,
-                2,
-                2
-            )
-        );
-        _stagePatch(machine)
-            .applyStageResourcePatch(
-                PLAN_ID,
-                ORDER_ID,
-                _stageResourcePatch(2, RESOURCE_PATCH_HASH_2),
-                _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT)
-            );
-
-        _stagePatch(machine)
-            .applyStageResourcePatch(
-                PLAN_ID,
-                ORDER_ID,
-                _stageResourcePatchWithKey(RESOURCE_KEY_2, 1, RESOURCE_PATCH_HASH_2),
-                _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT)
-            );
-        require(
-            _stagePatch(machine).orderStageResourcePatchNonce(PLAN_ID, ORDER_ID, STAGE_AUDIT, RESOURCE_KEY_2) == 1,
-            "resource key nonce not isolated"
-        );
-    }
-
-    function testApplyStageResourcePatchRejectsUnauthorizedSelector() public {
-        UVPStateMachine machine = _newMachine();
-        _registerPlan(machine, _withOrderStart(_sequentialPlan()), _selectorBindings(), _birthSignalCapabilities());
-        _submitTriggerOrderFromOutside(
-            machine, PLAN_ID, ORDER_CREATOR, _targetSignalAuthorizations(SUBMITTER_A, SUBMITTER_B)
-        );
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStagePatchModule.UnauthorizedStageResourcePatchSelector.selector, ORDER_ID, STAGE_INIT, address(this)
-            )
-        );
-        _stagePatch(machine)
-            .applyStageResourcePatch(
-                PLAN_ID,
-                ORDER_ID,
-                _stageResourcePatch(1, RESOURCE_PATCH_HASH),
-                _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT)
-            );
-    }
-
-    function testApplyStageResourcePatchRejectsAfterTargetStageSignal() public {
-        UVPStateMachine machine = _registeredOverlayMachine(address(this), SUBMITTER_A);
-        _activateInitialStageExecutor(machine, address(this), SUBMITTER_A);
-
-        vm.prank(SUBMITTER_A);
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
-
-        vm.expectRevert(
-            abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, ORDER_ID, STAGE_AUDIT)
-        );
-        _stagePatch(machine)
-            .applyStageResourcePatch(
-                PLAN_ID,
-                ORDER_ID,
-                _stageResourcePatch(1, RESOURCE_PATCH_HASH),
-                _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT)
-            );
-    }
-
-    function testApplyStageResourcePatchRejectsZeroFields() public {
-        UVPStateMachine machine = _registeredOverlayMachine(address(this), SUBMITTER_A);
-
-        UVPStagePatchModule.StageResourcePatch memory patch = _stageResourcePatch(1, RESOURCE_PATCH_HASH);
-        patch.resourceKey = bytes32(0);
-        vm.expectRevert(UVPStagePatchModule.ZeroResourceKey.selector);
-        _stagePatch(machine)
-            .applyStageResourcePatch(PLAN_ID, ORDER_ID, patch, _moduleBindingFor(machine, PLAN_ID, patch.targetStageId));
-
-        patch = _stageResourcePatch(1, RESOURCE_PATCH_HASH);
-        patch.manifestHash = bytes32(0);
-        vm.expectRevert(UVPStagePatchModule.ZeroManifestHash.selector);
-        _stagePatch(machine)
-            .applyStageResourcePatch(PLAN_ID, ORDER_ID, patch, _moduleBindingFor(machine, PLAN_ID, patch.targetStageId));
-
-        patch = _stageResourcePatch(1, RESOURCE_PATCH_HASH);
-        patch.policyHash = bytes32(0);
-        vm.expectRevert(UVPStagePatchModule.ZeroPolicyHash.selector);
-        _stagePatch(machine)
-            .applyStageResourcePatch(PLAN_ID, ORDER_ID, patch, _moduleBindingFor(machine, PLAN_ID, patch.targetStageId));
-
-        patch = _stageResourcePatch(1, bytes32(0));
-        vm.expectRevert(UVPStagePatchModule.ZeroPatchHash.selector);
-        _stagePatch(machine)
-            .applyStageResourcePatch(PLAN_ID, ORDER_ID, patch, _moduleBindingFor(machine, PLAN_ID, patch.targetStageId));
-    }
-
-    function testRelayerCanApplyStageResourcePatchWithSelectorSignature() public {
-        address selector = vm.addr(SUBMITTER_PRIVATE_KEY);
-        UVPStateMachine machine = _registeredOverlayMachine(selector, SUBMITTER_A);
-        UVPStagePatchModule.StageResourcePatch memory patch = _stageResourcePatch(1, RESOURCE_PATCH_HASH);
-        uint256 deadline = block.timestamp + 1 hours;
-        bytes32 digest = _stagePatch(machine).stageResourcePatchDigest(PLAN_ID, ORDER_ID, patch, selector, deadline);
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(SUBMITTER_PRIVATE_KEY, digest);
-
-        vm.prank(UNAUTHORIZED_SUBMITTER);
-        _stagePatch(machine)
-            .applyStageResourcePatchFor(
-                PLAN_ID,
-                ORDER_ID,
-                patch,
-                selector,
-                deadline,
-                _packedSignature(v, r, s),
-                _moduleBindingFor(machine, PLAN_ID, patch.targetStageId)
-            );
-
-        require(
-            _stagePatch(machine).orderStageResourcePatchNonce(PLAN_ID, ORDER_ID, STAGE_AUDIT, RESOURCE_KEY) == 1,
-            "relayed resource patch not applied"
-        );
-    }
-
-    function testRelayedStageResourcePatchRejectsWrongSigner() public {
-        address selector = vm.addr(SUBMITTER_PRIVATE_KEY);
-        address wrongSigner = vm.addr(WRONG_SUBMITTER_PRIVATE_KEY);
-        UVPStateMachine machine = _registeredOverlayMachine(selector, SUBMITTER_A);
-        UVPStagePatchModule.StageResourcePatch memory patch = _stageResourcePatch(1, RESOURCE_PATCH_HASH);
-        uint256 deadline = block.timestamp + 1 hours;
-        bytes32 digest = _stagePatch(machine).stageResourcePatchDigest(PLAN_ID, ORDER_ID, patch, selector, deadline);
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(WRONG_SUBMITTER_PRIVATE_KEY, digest);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStagePatchModule.InvalidStageResourcePatchSignature.selector, selector, wrongSigner
-            )
-        );
-        _stagePatch(machine)
-            .applyStageResourcePatchFor(
-                PLAN_ID,
-                ORDER_ID,
-                patch,
-                selector,
-                deadline,
-                _packedSignature(v, r, s),
-                _moduleBindingFor(machine, PLAN_ID, patch.targetStageId)
-            );
-    }
 
     function testPositiveSignalMakesHookReady() public {
         UVPStateMachine machine = _registeredMachine(_emitReadyPositiveHookPlan(HOOK_INIT));
@@ -2154,7 +1944,8 @@ contract UVPStateMachineTest {
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
             submitter,
-            deadline
+            deadline,
+            bytes32(0)
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(SUBMITTER_PRIVATE_KEY, digest);
 
@@ -2169,7 +1960,9 @@ contract UVPStateMachineTest {
             submitter,
             deadline,
             _packedSignature(v, r, s),
-            _noAttribution()
+            _noAttribution(),
+            bytes32(0),
+            _emptyFilePatch()
         );
 
         (UVPStateMachine.HookStatus status,, bool readyEmitted) = machine.getHookStatus(PLAN_ID, ORDER_ID, HOOK_INIT);
@@ -2197,7 +1990,8 @@ contract UVPStateMachineTest {
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
             submitter,
-            deadline
+            deadline,
+            bytes32(0)
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(WRONG_SUBMITTER_PRIVATE_KEY, digest);
 
@@ -2212,7 +2006,9 @@ contract UVPStateMachineTest {
             submitter,
             deadline,
             _packedSignature(v, r, s),
-            _noAttribution()
+            _noAttribution(),
+            bytes32(0),
+            _emptyFilePatch()
         );
     }
 
@@ -2232,7 +2028,8 @@ contract UVPStateMachineTest {
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
             submitter,
-            deadline
+            deadline,
+            bytes32(0)
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(SUBMITTER_PRIVATE_KEY, digest);
 
@@ -2247,7 +2044,9 @@ contract UVPStateMachineTest {
             submitter,
             deadline,
             _packedSignature(v, r, s),
-            _noAttribution()
+            _noAttribution(),
+            bytes32(0),
+            _emptyFilePatch()
         );
     }
 
@@ -4008,7 +3807,9 @@ contract UVPStateMachineTest {
             vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline,
             new bytes(64),
-            _noAttribution()
+            _noAttribution(),
+            bytes32(0),
+            _emptyFilePatch()
         );
     }
 
@@ -4616,6 +4417,7 @@ contract UVPStateMachineTest {
         machine.setDerivedSignalModule(address(new UVPDerivedSignalModule(address(machine))));
         machine.setDockingModule(address(new UVPDockingModule(address(machine), address(attacker))));
         machine.setPlanMetadataModule(address(attacker));
+        machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
         machine.setOrderLinkModule(address(new UVPOrderLinkModule(address(machine))));
         machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.freezeModules();
@@ -5461,6 +5263,7 @@ contract UVPStateMachineTest {
         machine.setDockingModule(address(docking));
         machine.setPlanMetadataModule(address(planMetadata));
         machine.setOrderLinkModule(address(orderLink));
+        machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
         machine.setLens(address(new UVPStateMachineLens(address(machine))));
         return machine;
     }
@@ -5544,15 +5347,14 @@ contract UVPStateMachineTest {
         pure
         returns (UVPStateMachine.SignalAuthorization[] memory authorizations)
     {
-        authorizations = new UVPStateMachine.SignalAuthorization[](8);
+        authorizations = new UVPStateMachine.SignalAuthorization[](7);
         authorizations[0] = _stageAuthorization(STAGE_INIT, EXECUTOR_PATCH_SIGNAL_ID, selector);
         authorizations[1] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_DONE, executor);
         authorizations[2] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_DONE, alternateExecutor);
-        authorizations[3] = _stageAuthorization(STAGE_INIT, RESOURCE_PATCH_SIGNAL_ID, selector);
-        authorizations[4] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_REVIEW, executor);
-        authorizations[5] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_REVIEW, alternateExecutor);
-        authorizations[6] = _stageAuthorization(STAGE_INIT, SIGNAL_AUDIT_PASS, selector);
-        authorizations[7] = _authorization(SIGNAL_INIT_CMP, selector);
+        authorizations[3] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_REVIEW, executor);
+        authorizations[4] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_REVIEW, alternateExecutor);
+        authorizations[5] = _stageAuthorization(STAGE_INIT, SIGNAL_AUDIT_PASS, selector);
+        authorizations[6] = _authorization(SIGNAL_INIT_CMP, selector);
     }
 
     function _stagePatchSelectorAuthorizations(address selector)
@@ -5660,29 +5462,11 @@ contract UVPStateMachineTest {
         });
     }
 
-    function _stageResourcePatch(uint256 patchNonce, bytes32 patchHash)
-        private
-        pure
-        returns (UVPStagePatchModule.StageResourcePatch memory)
-    {
-        return _stageResourcePatchWithKey(RESOURCE_KEY, patchNonce, patchHash);
-    }
 
-    function _stageResourcePatchWithKey(bytes32 resourceKey, uint256 patchNonce, bytes32 patchHash)
-        private
-        pure
-        returns (UVPStagePatchModule.StageResourcePatch memory)
-    {
-        return UVPStagePatchModule.StageResourcePatch({
-            selectorStageId: STAGE_INIT,
-            targetStageId: STAGE_AUDIT,
-            resourceKey: resourceKey,
-            manifestHash: MANIFEST_HASH,
-            policyHash: RESOURCE_POLICY_HASH,
-            patchHash: patchHash,
-            patchNonce: patchNonce,
-            manifestURI: "ipfs://resource-manifest"
-        });
+
+    function _emptyFilePatch() private pure returns (FilePatch memory patch) {
+        patch.writerProof = new bytes32[](0);
+        patch.ops = new FileOp[](0);
     }
 
     function _packedSignature(uint8 v, bytes32 r, bytes32 s) private pure returns (bytes memory) {
@@ -5937,7 +5721,8 @@ contract UVPStateMachineTest {
         bytes32 payloadHash,
         bytes32 idempotencyKey,
         address submitter,
-        uint256 deadline
+        uint256 deadline,
+        bytes32 filesDigest
     ) private view returns (bytes32) {
         bytes32 structHash = keccak256(
             abi.encode(
@@ -5949,7 +5734,8 @@ contract UVPStateMachineTest {
                 payloadHash,
                 idempotencyKey,
                 submitter,
-                deadline
+                deadline,
+                filesDigest
             )
         );
         return keccak256(abi.encodePacked("\x19\x01", _stateMachineDomainSeparator(machine), structHash));
@@ -7212,30 +6998,6 @@ contract UVPStateMachineTest {
         _applyExecutorPatch(machine, PLAN_ID, ORDER_ID, patch);
     }
 
-    function testStageResourcePatchAllowedOnBirthStage() public {
-        UVPStateMachine machine = _newMachine();
-        StageSelectorBinding[] memory bindings = new StageSelectorBinding[](2);
-        bindings[0] = StageSelectorBinding({selectorStageId: STAGE_INIT, targetStageId: STAGE_AUDIT});
-        bindings[1] = StageSelectorBinding({selectorStageId: STAGE_INIT, targetStageId: STAGE_INIT});
-        UVPStateMachine.SignalAuthorization[] memory originAuthorizations = new UVPStateMachine.SignalAuthorization[](2);
-        originAuthorizations[0] = _stageAuthorization(STAGE_INIT, RESOURCE_PATCH_SIGNAL_ID, address(this));
-        originAuthorizations[1] = _authorization(SIGNAL_ORDER_START, address(this));
-        SignalCapability[] memory capabilities = new SignalCapability[](1);
-        capabilities[0] = SignalCapability({
-            stageId: STAGE_AUDIT, targetSourceId: SOURCE_BOOTSTRAP, signalId: SIGNAL_ORDER_START, targetOrderRelation: 0
-        });
-        _registerPlan(machine, _withOrderStart(_sequentialPlan()), bindings, capabilities);
-        _submitTriggerOrderFromOutside(machine, PLAN_ID, ORDER_CREATOR, originAuthorizations);
-
-        UVPStagePatchModule.StageResourcePatch memory patch = _stageResourcePatch(1, RESOURCE_PATCH_HASH);
-        patch.targetStageId = STAGE_INIT;
-        patch.selectorStageId = STAGE_INIT;
-        _stagePatch(machine)
-            .applyStageResourcePatch(PLAN_ID, ORDER_ID, patch, _moduleBindingFor(machine, PLAN_ID, patch.targetStageId));
-        (bool exists,,,,,) =
-            _stagePatch(machine).getActiveStageResourcePatch(PLAN_ID, ORDER_ID, STAGE_INIT, RESOURCE_KEY);
-        require(exists, "birth-stage resource patch missing");
-    }
 
     function testSameSecondDifferentSubmittersFailsClosedOnPreviousExecutor() public {
         address initialExecutor = vm.addr(WRONG_SUBMITTER_PRIVATE_KEY);
@@ -8041,6 +7803,14 @@ contract ReenteringMetadataModule is IUVPPlanMetadataModule {
     function verifyStageSelectorBinding(bytes32, bytes32, bytes32, bytes32[] calldata) external pure returns (bool) {
         revert("unused");
     }
+
+    function fileWriterLeaf(bytes32, bytes32) external pure returns (bytes32) {
+        revert("unused");
+    }
+
+    function verifyFileWriter(bytes32, bytes32, bytes32, bytes32[] calldata) external pure returns (bool) {
+        revert("unused");
+    }
 }
 
 contract UVPStateMachineCapabilityTreeTest {
@@ -8190,7 +7960,7 @@ contract UVPStateMachineCapabilityTreeTest {
                     abi.encode(
                         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
                         keccak256("UVPStateMachine"),
-                        keccak256("0.15"),
+                        keccak256("0.16"),
                         block.chainid,
                         address(machine)
                     )
@@ -8216,6 +7986,7 @@ contract UVPStateMachineCapabilityTreeTest {
         machine.setDerivedSignalModule(address(derived));
         machine.setDockingModule(address(docking));
         machine.setPlanMetadataModule(address(planMetadata));
+        machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
         machine.setOrderLinkModule(address(orderLink));
         machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.freezeModules();

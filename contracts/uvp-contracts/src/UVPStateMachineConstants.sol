@@ -17,7 +17,7 @@ uint256 constant _MAX_INSTRUCTION_DEPTH = 120;
 bytes32 constant _EIP712_DOMAIN_TYPEHASH =
     keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 bytes32 constant _EIP712_NAME_HASH = keccak256("UVPStateMachine");
-bytes32 constant _EIP712_VERSION_HASH = keccak256("0.15");
+bytes32 constant _EIP712_VERSION_HASH = keccak256("0.16");
 
 bytes32 constant _PLAN_RUNTIME_HASH_DOMAIN = keccak256("uvp.plan.runtime.v4");
 bytes32 constant _PLAN_ID_HASH_DOMAIN = keccak256("uvp.plan.id.v1");

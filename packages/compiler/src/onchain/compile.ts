@@ -23,6 +23,7 @@ import { planDependencyCountIssues } from "./validate/limits.js";
 import { duplicateCurrentOrderFactKeyIssues } from "./validate/capabilities.js";
 import { onchainBirthChannelOf } from "./birth-channel.js";
 import { capabilitiesRootOf } from "./capabilities-root.js";
+import { compileStageFileWriters } from "./file-writers.js";
 import {
   executorCandidatesRootOf,
   isExecutorAddress,
@@ -201,6 +202,10 @@ export function compileOnchainHookPlan(
   const signalCapabilities = compileSignalCapabilities(
     hookPlanArtifact.signalCapabilities,
   );
+  const stageFileWriters = compileStageFileWriters(
+    hookPlanArtifact.source,
+    new Set(compiledHooks.map((hook) => hook.stageIdentifier)),
+  );
   const dockRoutes = hookPlanArtifact.dockRoutes;
   const unresolvedDockRoutes =
     hookPlanArtifact.unresolvedDockRoutes !== undefined &&
@@ -234,9 +239,14 @@ export function compileOnchainHookPlan(
     signalId: capability.signalId,
     targetOrderRelation: 0 as const,
   }));
+  const solidityFileWriterBindings = stageFileWriters.map((binding) => ({
+    targetStageId: binding.targetStageId,
+    writerStageId: binding.writerStageId,
+  }));
   const capabilitiesRoot = capabilitiesRootOf(
     soliditySelectorBindings,
     soliditySignalCapabilities,
+    solidityFileWriterBindings,
   );
   const executorCandidatesRoot = executorCandidatesRootOf(executorCandidateList);
   const payload = {
@@ -259,6 +269,7 @@ export function compileOnchainHookPlan(
     capabilitiesRoot,
     selectorBindings,
     signalCapabilities,
+    stageFileWriters,
     admissions,
     executorCandidates: executorCandidateList,
     executorCandidatesRoot,

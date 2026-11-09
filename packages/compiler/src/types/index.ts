@@ -2,7 +2,7 @@ export const COMPILER_NAME = "uvp-eth-compiler" as const;
 export const COMPILER_VERSION = "0.1.0" as const;
 export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v4" as const;
 export const ONCHAIN_HOOK_PLAN_SCHEMA_VERSION =
-  "uvp.onchainHookPlan.v3" as const;
+  "uvp.onchainHookPlan.v4" as const;
 export const DOCK_INTERFACE_ARTIFACT_SCHEMA_VERSION =
   "uvp.dockInterfaceArtifact.v2" as const;
 export const DOCK_ROUTE_SCHEMA_VERSION = "uvp.dockRoute.v4" as const;
@@ -58,6 +58,7 @@ export interface ZhixuStage {
   readonly sendSignals?: readonly ZhixuSendSignal[];
   readonly receiveSignals?: Record<string, string>;
   readonly fileResources?: Record<string, FileResourceLike>;
+  readonly fileWriters?: readonly string[];
 }
 
 export interface ZhixuSendSignal {
@@ -416,6 +417,14 @@ export interface OnchainStageSelectorBinding {
   readonly bindingHash: HexString;
 }
 
+export interface OnchainStageFileWriter {
+  readonly targetStageIdentifier: string;
+  readonly targetStageId: HexString;
+  readonly writerStageIdentifier: string;
+  readonly writerStageId: HexString;
+  readonly fileWriterLeaf: HexString;
+}
+
 export interface OnchainSignalCapability {
   readonly stageIdentifier: string;
   readonly stageId: HexString;
@@ -471,6 +480,7 @@ export interface OnchainHookPlanArtifact {
   readonly capabilitiesRoot: HexString;
   readonly selectorBindings: readonly OnchainStageSelectorBinding[];
   readonly signalCapabilities: readonly OnchainSignalCapability[];
+  readonly stageFileWriters: readonly OnchainStageFileWriter[];
   readonly admissions: readonly OnchainCompiledAdmission[];
   readonly executorCandidates: readonly OnchainExecutorCandidate[];
   readonly executorCandidatesRoot: HexString;
@@ -528,6 +538,11 @@ export interface SolidityRegisterStageSelectorBindingArg {
   readonly targetStageId: HexString;
 }
 
+export interface SolidityRegisterFileWriterBindingArg {
+  readonly targetStageId: HexString;
+  readonly writerStageId: HexString;
+}
+
 export interface SolidityRegisterSignalCapabilityArg {
   readonly stageId: HexString;
   readonly targetSourceId: HexString;
@@ -557,4 +572,5 @@ export interface SolidityRegisterPlanArgs {
   readonly executorCandidates: readonly SolidityRegisterExecutorCandidateArg[];
   readonly selectorBindings: readonly SolidityRegisterStageSelectorBindingArg[];
   readonly signalCapabilities: readonly SolidityRegisterSignalCapabilityArg[];
+  readonly fileWriterBindings: readonly SolidityRegisterFileWriterBindingArg[];
 }

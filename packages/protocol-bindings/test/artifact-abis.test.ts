@@ -7,6 +7,7 @@ import { describe, it } from "node:test";
 import { toEventHash, type Abi, type AbiEvent } from "viem";
 import {
   buildCompactHookFlags,
+  FILE_RESOURCE_MODULE_ABI,
   HOOK_FLAG_EMIT_READY,
   HOOK_FLAG_ORDER_TRIGGER_DOCK,
   HOOK_FLAG_ORDER_TRIGGER_MINT,
@@ -21,6 +22,10 @@ const artifactPath = resolve(
   packageDir,
   "../../contracts/uvp-contracts/out/UVPStateMachine.sol/UVPStateMachine.json",
 );
+const fileResourceModuleArtifactPath = resolve(
+  packageDir,
+  "../../contracts/uvp-contracts/out/UVPFileResourceModule.sol/UVPFileResourceModule.json",
+);
 
 interface FoundryArtifact {
   readonly abi: Abi;
@@ -29,6 +34,9 @@ interface FoundryArtifact {
 // The generated ABI mirrors a forge build product; without `forge build` the
 // artifact does not exist and the pin has nothing to compare against.
 const artifactAvailable = existsSync(artifactPath);
+const fileResourceModuleArtifactAvailable = existsSync(
+  fileResourceModuleArtifactPath,
+);
 
 describe("generated artifact ABI bindings", () => {
   it("keeps CompactHook flag bits pinned to the contract constants", () => {
@@ -73,6 +81,16 @@ describe("generated artifact ABI bindings", () => {
       await readFile(artifactPath, "utf8"),
     ) as FoundryArtifact;
     assert.deepEqual(UVP_STATE_MACHINE_ARTIFACT_ABI, artifact.abi);
+  });
+
+  it("mirrors the full file resource module forge artifact ABI verbatim", async (t) => {
+    if (!fileResourceModuleArtifactAvailable) {
+      return t.skip("forge artifacts not built");
+    }
+    const artifact = JSON.parse(
+      await readFile(fileResourceModuleArtifactPath, "utf8"),
+    ) as FoundryArtifact;
+    assert.deepEqual(FILE_RESOURCE_MODULE_ABI, artifact.abi);
   });
 
   it("keeps finalizePlan free of capability-table size-gate errors", async (t) => {

@@ -29,12 +29,10 @@ import {
   STATE_MACHINE_ABI,
   STAGE_PATCH_MODULE_ABI,
   buildApplyStageExecutorPatchForCall,
-  buildApplyStageResourcePatchForCall,
   buildDerivedSignalTypedData,
   buildPlanCommitTypedData,
   buildProductSubmitTypedData,
   buildStageExecutorPatchTypedData,
-  buildStageResourcePatchTypedData,
   buildSubmitDerivedSignalForCall,
   buildSubmitSignalForCall,
   buildTriggerOrderFromOutsideForCall,
@@ -45,21 +43,18 @@ import {
   deriveTriggerOrderId,
   EMPTY_CAPABILITIES_ROOT,
   factAttribution,
-  hashResourceManifest,
+  filePatchDigest,
   hashStageExecutorPatchPayload,
-  hashStageResourcePatchPayload,
+  PRODUCT_SUBMIT_TYPE_HASH,
   selectorBindingLeaf,
   selectorBindingProofFor,
   signalCapabilityLeaf,
   STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN,
-  STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN,
   recoverDerivedSignalSigner,
   recoverPlanCommitSigner,
   recoverProductSubmitSigner,
   recoverStageExecutorPatchSigner,
-  recoverStageResourcePatchSigner,
   recoverTriggerOrderFromSignalSigner,
-  type ResourceManifestV1,
 } from "../src/index.js";
 
 // 能力树 golden 语料同源消费（模式对齐 compiler 侧
@@ -135,6 +130,23 @@ function goldenCapabilities(sample: GoldenSample) {
   }));
 }
 
+function bytes32(value: string): `0x${string}` {
+  return `0x${value.padStart(64, "0")}` as `0x${string}`;
+}
+
+function foldProof(
+  leaf: `0x${string}`,
+  proof: readonly `0x${string}`[],
+): `0x${string}` {
+  let current = leaf;
+  for (const sibling of proof) {
+    const [left, right] =
+      current <= sibling ? [current, sibling] : [sibling, current];
+    current = keccak256(concatHex([left, right]));
+  }
+  return current;
+}
+
 const privateKey =
   "0x1111111111111111111111111111111111111111111111111111111111111111" as const;
 const account = privateKeyToAccount(privateKey);
@@ -164,11 +176,6 @@ const selectorStageId = bytes32("06");
 const targetStageId = bytes32("07");
 const role = bytes32("08");
 const executorMetadataHash = bytes32("09");
-const policyHash = bytes32("0a");
-const recipientEnvelopeRoot = bytes32("0b");
-const ciphertextHash = bytes32("0c");
-const resourceKey = bytes32("0d");
-const contentHash = bytes32("0e");
 const authorizationsHash = bytes32("0f");
 const approvalSignalId = bytes32("10");
 const originSourceId = bytes32("16");
@@ -178,24 +185,9 @@ const executor = "0x7777777777777777777777777777777777777777" as const;
 const metadataURI = "ipfs://stage-overlay/executor-demo";
 const handoffMetadataURI = "ipfs://stage-overlay/executor-handoff";
 const replacementMetadataURI = "ipfs://stage-overlay/executor-replacement";
-const manifestURI = "ipfs://stage-overlay/resource-demo";
 const executorPatchNonce = "3";
 const handoffPatchNonce = "4";
 const replacementPatchNonce = "5";
-const resourcePatchNonce = "6";
-const resourceManifest: ResourceManifestV1 = {
-  schemaVersion: "uvp-resource-manifest-v1",
-  orderId,
-  targetStageId,
-  resourceKey,
-  visibility: "protected",
-  ciphertextHash,
-  storageCID: "ipfs://bafyresourceciphertext",
-  policyHash,
-  recipientEnvelopeRoot,
-  createdBy: submitter,
-  createdAt: "2026-04-30T00:00:00.000Z",
-};
 const assignExecutorPatchPayload = {
   selectorStageId,
   targetStageId,
@@ -241,16 +233,6 @@ const rotatedExecutorPatchPayload = {
 const rotatedExecutorPatchHash = hashStageExecutorPatchPayload(
   rotatedExecutorPatchPayload,
 );
-const manifestHash = hashResourceManifest(resourceManifest);
-const resourcePatchHash = hashStageResourcePatchPayload({
-  selectorStageId,
-  targetStageId,
-  resourceKey,
-  manifestHash,
-  policyHash,
-  patchNonce: resourcePatchNonce,
-  manifestURI,
-});
 const signalAuthorizations = [
   {
     sourceId,
@@ -327,7 +309,7 @@ describe("protocol bindings", () => {
     assert.deepEqual(typedData, {
       domain: {
         name: "UVPStateMachine",
-        version: "0.15",
+        version: "0.16",
         chainId: 31337,
         verifyingContract,
       },
@@ -341,6 +323,7 @@ describe("protocol bindings", () => {
           { name: "idempotencyKey", type: "bytes32" },
           { name: "submitter", type: "address" },
           { name: "deadline", type: "uint256" },
+          { name: "filesDigest", type: "bytes32" },
         ],
       },
       primaryType: "UVPStateMachineSignal",
@@ -353,8 +336,102 @@ describe("protocol bindings", () => {
         idempotencyKey,
         submitter,
         deadline,
+        filesDigest: zeroBytes32,
       },
     });
+  });
+
+  it("pins the 0.16 Product submit digest and filePatchDigest to the shared Solidity-mirror golden vectors", async () => {
+    const filePatchVectors = JSON.parse(
+      readFileSync(
+        resolve(
+          dirname(fileURLToPath(import.meta.url)),
+          "../fixtures/file-patch-digest/v1/vectors.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      readonly schemaVersion: string;
+      readonly vectors: readonly {
+        readonly input: {
+          readonly planId: `0x${string}`;
+          readonly orderId: `0x${string}`;
+          readonly filePatch: {
+            readonly targetStageId: `0x${string}`;
+            readonly baseHash: `0x${string}`;
+            readonly writerStageId: `0x${string}`;
+            readonly writerProof: readonly `0x${string}`[];
+            readonly ops: readonly {
+              readonly kind: 0 | 1 | 2;
+              readonly key: `0x${string}`;
+              readonly contentHash: `0x${string}`;
+              readonly handle: string;
+            }[];
+          };
+        };
+        readonly expected: { readonly filesDigest: `0x${string}` };
+      }[];
+    };
+    assert.equal(filePatchVectors.schemaVersion, "uvp.filePatchDigestVectors.v1");
+    assert.ok(filePatchVectors.vectors.length > 0);
+    for (const vector of filePatchVectors.vectors) {
+      assert.equal(
+        filePatchDigest(
+          vector.input.planId,
+          vector.input.orderId,
+          vector.input.filePatch,
+        ),
+        vector.expected.filesDigest,
+      );
+    }
+
+    const typedVectors = JSON.parse(
+      readFileSync(
+        resolve(
+          dirname(fileURLToPath(import.meta.url)),
+          "../fixtures/product-submit-typed-data/v1/vectors.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      readonly schemaVersion: string;
+      readonly vectors: readonly {
+        readonly input: {
+          readonly chainId: number;
+          readonly verifyingContract: `0x${string}`;
+          readonly message: {
+            readonly planId: `0x${string}`;
+            readonly orderId: `0x${string}`;
+            readonly sourceId: `0x${string}`;
+            readonly signalId: `0x${string}`;
+            readonly payloadHash: `0x${string}`;
+            readonly idempotencyKey: `0x${string}`;
+            readonly submitter: `0x${string}`;
+            readonly deadline: string;
+            readonly filesDigest: `0x${string}`;
+          };
+        };
+        readonly expected: {
+          readonly signalTypehash: `0x${string}`;
+          readonly digest: `0x${string}`;
+        };
+      }[];
+    };
+    assert.equal(
+      typedVectors.schemaVersion,
+      "uvp.productSubmitTypedDataVectors.v1",
+    );
+    assert.ok(typedVectors.vectors.length > 0);
+    for (const vector of typedVectors.vectors) {
+      assert.equal(PRODUCT_SUBMIT_TYPE_HASH, vector.expected.signalTypehash);
+      const typedData = buildProductSubmitTypedData({
+        chainId: vector.input.chainId,
+        verifyingContract: vector.input.verifyingContract,
+        ...vector.input.message,
+      });
+      assert.equal(typedData.message.filesDigest, vector.input.message.filesDigest);
+      assert.equal(await hashTypedData(typedData), vector.expected.digest);
+    }
   });
 
   it("recovers a Product submit signer", async () => {
@@ -587,53 +664,6 @@ describe("protocol bindings", () => {
     );
   });
 
-  it("builds and recovers stage resource patch typed data", async () => {
-    const typedData = buildStageResourcePatchTypedData({
-      chainId: 31337,
-      verifyingContract,
-      planId,
-      orderId,
-      selectorStageId,
-      targetStageId,
-      resourceKey,
-      manifestHash,
-      policyHash,
-      patchHash: resourcePatchHash,
-      patchNonce: resourcePatchNonce,
-      manifestURI,
-      selector: submitter,
-      deadline,
-    });
-    const signature = await account.signTypedData(
-      typedData as unknown as Parameters<typeof account.signTypedData>[0],
-    );
-
-    assert.deepEqual(typedData.types.UVPStagePatchModuleStageResourcePatch, [
-      { name: "planId", type: "bytes32" },
-      { name: "orderId", type: "bytes32" },
-      { name: "selectorStageId", type: "bytes32" },
-      { name: "targetStageId", type: "bytes32" },
-      { name: "resourceKey", type: "bytes32" },
-      { name: "manifestHash", type: "bytes32" },
-      { name: "policyHash", type: "bytes32" },
-      { name: "patchHash", type: "bytes32" },
-      { name: "patchNonce", type: "uint256" },
-      { name: "manifestURI", type: "string" },
-      { name: "selector", type: "address" },
-      { name: "deadline", type: "uint256" },
-    ]);
-    assert.equal(
-      typedData.primaryType,
-      "UVPStagePatchModuleStageResourcePatch",
-    );
-    assert.equal(typedData.message.patchNonce, resourcePatchNonce);
-    assert.equal(typedData.message.manifestURI, manifestURI);
-    assert.equal(
-      await recoverStageResourcePatchSigner(typedData, signature),
-      submitter,
-    );
-  });
-
   it("builds submitSignalFor calls from the shared ABI", () => {
     const signature = `0x${"aa".repeat(65)}` as const;
     const capabilityProof = [payloadHash, idempotencyKey] as const;
@@ -676,6 +706,14 @@ describe("protocol bindings", () => {
       signature,
       // attribution 归一化：大小写折叠 + proof 数组逐词 bytes32 校验。
       { sourceId, signalId, stageId: targetStageId, capabilityProof: [...capabilityProof] },
+      zeroBytes32,
+      {
+        targetStageId: zeroBytes32,
+        baseHash: zeroBytes32,
+        writerStageId: zeroBytes32,
+        writerProof: [],
+        ops: [],
+      },
     ]);
     assert.match(call.data, /^0x[0-9a-f]+$/);
     const decoded = decodeFunctionData({
@@ -694,9 +732,19 @@ describe("protocol bindings", () => {
       unknown,
       unknown,
       { sourceId: `0x${string}`; capabilityProof: readonly `0x${string}`[] },
+      `0x${string}`,
+      { targetStageId: `0x${string}`; baseHash: `0x${string}`; writerStageId: `0x${string}`; writerProof: readonly `0x${string}`[]; ops: readonly unknown[] },
     ];
     assert.equal(decodedArgs[9].sourceId, sourceId);
     assert.deepEqual(decodedArgs[9].capabilityProof, [...capabilityProof]);
+    assert.equal(decodedArgs[10], zeroBytes32);
+    assert.deepEqual(decodedArgs[11], {
+      targetStageId: zeroBytes32,
+      baseHash: zeroBytes32,
+      writerStageId: zeroBytes32,
+      writerProof: [],
+      ops: [],
+    });
   });
 
   it("matches the shared capabilities-root golden vectors consumed by compiler and Foundry", () => {
@@ -1223,80 +1271,6 @@ const executorAuthorizations = [
     );
   });
 
-  it("builds applyStageResourcePatchFor calls from the stage patch module ABI", () => {
-    const signature = `0x${"cc".repeat(65)}` as const;
-    const bindingProof = { selectorStageId, proof: [] } as const;
-    const call = buildApplyStageResourcePatchForCall(
-      {
-        stagePatchModuleAddress: verifyingContract,
-        chainId: 31337,
-      },
-      {
-        planId,
-        orderId,
-        patch: {
-          selectorStageId,
-          targetStageId,
-          resourceKey,
-          manifestHash,
-          policyHash,
-          patchHash: resourcePatchHash,
-          patchNonce: resourcePatchNonce,
-          manifestURI,
-        },
-        selector: submitter,
-        deadline,
-        signature,
-        bindingProof,
-      },
-    );
-    const decoded = decodeFunctionData({
-      abi: STAGE_PATCH_MODULE_ABI,
-      data: call.data,
-    });
-
-    assert.equal(call.address, verifyingContract);
-    assert.equal(call.abi, STAGE_PATCH_MODULE_ABI);
-    assert.equal(call.functionName, "applyStageResourcePatchFor");
-    assert.deepEqual(call.args, [
-      planId,
-      orderId,
-      [
-        selectorStageId,
-        targetStageId,
-        resourceKey,
-        manifestHash,
-        policyHash,
-        resourcePatchHash,
-        BigInt(resourcePatchNonce),
-        manifestURI,
-      ],
-      submitter,
-      BigInt(deadline),
-      signature,
-      { selectorStageId, proof: [] },
-    ]);
-    assert.equal(decoded.functionName, "applyStageResourcePatchFor");
-    assert.ok(decoded.args);
-    const decodedArgs = decoded.args;
-    assert.equal(decodedArgs[0], planId);
-    assert.equal(decodedArgs[1], orderId);
-    assert.deepEqual(decodedArgs[2], {
-      selectorStageId,
-      targetStageId,
-      resourceKey,
-      manifestHash,
-      policyHash,
-      patchHash: resourcePatchHash,
-      patchNonce: BigInt(resourcePatchNonce),
-      manifestURI,
-    });
-    assert.equal(String(decodedArgs[3]).toLowerCase(), submitter);
-    assert.equal(decodedArgs[4], BigInt(deadline));
-    assert.equal(decodedArgs[5], signature);
-    assert.deepEqual(decodedArgs[6], { selectorStageId, proof: [] });
-  });
-
   it("rejects chain ids at and beyond the 64-bit FFI boundary", () => {
     const base = {
       verifyingContract,
@@ -1343,7 +1317,7 @@ const executorAuthorizations = [
     );
   });
 
-  it("hashes split patch payloads canonically", () => {
+  it("hashes stage executor patch payload canonically", () => {
     assert.equal(
       EXECUTOR_PATCH_MODE_ASSIGN,
       "0x61737369676e0000000000000000000000000000000000000000000000000000",
@@ -1357,10 +1331,6 @@ const executorAuthorizations = [
     assert.equal(
       STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN,
       "uvp:stage-executor-patch-payload:v1",
-    );
-    assert.equal(
-      STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN,
-      "uvp:stage-resource-patch-payload:v1",
     );
     assert.equal(
       assignExecutorPatchHash,
@@ -1398,35 +1368,6 @@ const executorAuthorizations = [
       ),
     );
     assert.equal(
-      resourcePatchHash,
-      keccak256(
-        encodeAbiParameters(
-          [
-            { name: "domain", type: "bytes32" },
-            { name: "selectorStageId", type: "bytes32" },
-            { name: "targetStageId", type: "bytes32" },
-            { name: "resourceKey", type: "bytes32" },
-            { name: "manifestHash", type: "bytes32" },
-            { name: "policyHash", type: "bytes32" },
-            { name: "patchNonce", type: "uint256" },
-            { name: "manifestURI", type: "string" },
-          ],
-          [
-            keccak256(
-              stringToHex(STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN),
-            ),
-            selectorStageId,
-            targetStageId,
-            resourceKey,
-            manifestHash,
-            policyHash,
-            BigInt(resourcePatchNonce),
-            manifestURI,
-          ],
-        ),
-      ),
-    );
-    assert.equal(
       assignExecutorPatchHash,
       hashStageExecutorPatchPayload({
         targetStageId,
@@ -1457,352 +1398,5 @@ const executorAuthorizations = [
         metadataURI: "ipfs://stage-overlay/changed",
       }),
     );
-    assert.equal(
-      resourcePatchHash,
-      hashStageResourcePatchPayload({
-        targetStageId,
-        selectorStageId,
-        resourceKey,
-        manifestHash,
-        policyHash,
-        patchNonce: BigInt(resourcePatchNonce),
-        manifestURI,
-      }),
-    );
   });
-
-  it("hashes ResourceManifestV1 canonically and rejects public URLs", () => {
-    assert.equal(
-      manifestHash,
-      hashResourceManifest({
-        createdAt: "2026-04-30T00:00:00.000Z",
-        createdBy: submitter,
-        recipientEnvelopeRoot,
-        policyHash,
-        storageCID: "ipfs://bafyresourceciphertext",
-        ciphertextHash,
-        visibility: "protected",
-        resourceKey,
-        targetStageId,
-        orderId,
-        schemaVersion: "uvp-resource-manifest-v1",
-      }),
-    );
-    assert.throws(
-      () =>
-        hashResourceManifest({
-          ...resourceManifest,
-          storageCID: "https://files.example.com/plain.pdf",
-        }),
-      /not an HTTP URL/,
-    );
-    assert.throws(
-      () =>
-        hashResourceManifest({
-          ...resourceManifest,
-          contentHash,
-          plaintext: "invoice bytes",
-        } as ResourceManifestV1),
-      /plaintext is not part of ResourceManifestV1/,
-    );
-  });
-
-  // pinned 向量与 forge 测试 testTriggerOrderIdForMatchesPinnedMirrorVector
-  // （UVPStateMachine.t.sol）同源：向量由 `cast keccak` 对
-  // abi.encode(planId, sourceId, signalId, payloadHash) 生成后按合约
-  // triggerOrderIdFor 同口径清除 dock 子单命名空间保留位（最高位）。
-  // V3 的原始 digest 最高位为 1，专门钉住清位语义；两侧任一漂移即红。
-  it("derives trigger order ids matching the pinned contract vectors", () => {
-    // V1：小词输入。
-    assert.equal(
-      deriveTriggerOrderId(
-        "0x0000000000000000000000000000000000000000000000000000000000000001",
-        "0x0000000000000000000000000000000000000000000000000000000000000002",
-        "0x0000000000000000000000000000000000000000000000000000000000000003",
-        "0x0000000000000000000000000000000000000000000000000000000000000004",
-      ),
-      "0x392791df626408017a264f53fde61065d5a93a32b60171df9d8a46afdf82992d",
-    );
-
-    // V2：keccak 产物资（planId=keccak("plan")、sourceId=keccak("payment")、
-    // signalId=keccak("payment.ready")、payloadHash=keccak("payload")）。
-    assert.equal(
-      deriveTriggerOrderId(
-        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
-        "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
-        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
-        "0xebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7",
-      ),
-      "0x5ea3f67d172d893746b323173444e0dff190f5a4d4d91db58776692ad483009a",
-    );
-
-    // V3：同 V2 前三参，payloadHash=keccak("payload-3")——原始 digest
-    // 0xfadbfa9e…最高位为 1，清位后首字节 0xfa→0x7a。
-    assert.equal(
-      deriveTriggerOrderId(
-        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
-        "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
-        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
-        "0x7ddb57e56bc008d7f232156ac0c4a9be3da0582cbda6ae545fb75e0b912ee6fa",
-      ),
-      "0x7adbfa9eb5e66f4bda59ce36fa07abdf9979eb14222e023ed9480d0adb8d2c0a",
-    );
-
-    // V4：全零边界。
-    assert.equal(
-      deriveTriggerOrderId(
-        "0x0000000000000000000000000000000000000000000000000000000000000000",
-        "0x0000000000000000000000000000000000000000000000000000000000000000",
-        "0x0000000000000000000000000000000000000000000000000000000000000000",
-        "0x0000000000000000000000000000000000000000000000000000000000000000",
-      ),
-      "0x012893657d8eb2efad4de0a91bcd0e39ad9837745dec3ea923737ea803fc8e3d",
-    );
-  });
-
-  // pinned 向量：TS 镜像 deriveOrderLinkOrderId 与合约
-  // UVPStateMachine.orderLinkOrderIdFor 同公式（独立哈希域
-  // keccak256("uvp.order_link.order_id.v1") 前置七 word abi.encode，再清
-  // dock 子单命名空间保留位）。向量由 `cast keccak` 对拼接 preimage 生成，
-  // V3 的原始 digest 最高位为 1，专门钉住清位语义；两侧任一漂移即红。
-  it("derives order-link order ids matching the pinned contract vectors", () => {
-    // V1：小词输入（1..6）。
-    assert.equal(
-      deriveOrderLinkOrderId(
-        "0x0000000000000000000000000000000000000000000000000000000000000001",
-        "0x0000000000000000000000000000000000000000000000000000000000000002",
-        "0x0000000000000000000000000000000000000000000000000000000000000003",
-        "0x0000000000000000000000000000000000000000000000000000000000000004",
-        "0x0000000000000000000000000000000000000000000000000000000000000005",
-        "0x0000000000000000000000000000000000000000000000000000000000000006",
-      ),
-      "0x2a85d18c4db1553a4248c28a58ea2eb913f1026ffc9ae79238524b7ea562ef76",
-    );
-
-    // V2：keccak 产物资（planId=originPlanId=keccak("plan")、
-    // triggerOriginOrderId=keccak("payment")、
-    // originSourceId=originSignalId=keccak("payment.ready")、
-    // payloadHash=keccak("payload")）。
-    assert.equal(
-      deriveOrderLinkOrderId(
-        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
-        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
-        "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
-        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
-        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
-        "0xebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7",
-      ),
-      "0x51dc770df001368cdbd924a0ad6cebf1770018cc1c3b69245051bf57c45397cd",
-    );
-
-    // V3：同 V2 前五参，payloadHash=keccak("payload-2")——原始 digest
-    // 0xa570da95…最高位为 1，清位后首字节 0xa5→0x25。
-    assert.equal(
-      deriveOrderLinkOrderId(
-        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
-        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
-        "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
-        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
-        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
-        "0x8241913dbc6ac8cc21b32242513ef9be5acf2403b43493d66e9322c0c19dae2d",
-      ),
-      "0x2570da95a97484d11b2b3e8df25adb957eb8e33483b823e687c4035351b58f92",
-    );
-
-    // V4：全零边界。
-    assert.equal(
-      deriveOrderLinkOrderId(
-        "0x0000000000000000000000000000000000000000000000000000000000000000",
-        "0x0000000000000000000000000000000000000000000000000000000000000000",
-        "0x0000000000000000000000000000000000000000000000000000000000000000",
-        "0x0000000000000000000000000000000000000000000000000000000000000000",
-        "0x0000000000000000000000000000000000000000000000000000000000000000",
-        "0x0000000000000000000000000000000000000000000000000000000000000000",
-      ),
-      "0x386a21380204a6d039123b05c9103a1e778bc502867331596620244f0c018177",
-    );
-
-    // 域分离钉子：link 派生域与 outside 派生域（deriveTriggerOrderId）
-    // 对同一事实键必须给出不同 id——两域前置字不同，结构性不可互冒
-    // （合约侧 testOrderLinkDerivedIdCannotSquatOutsideTriggerNamespace
-    // 的链上同款断言）。
-    assert.notEqual(
-      deriveOrderLinkOrderId(
-        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
-        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
-        "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
-        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
-        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
-        "0xebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7",
-      ),
-      deriveTriggerOrderId(
-        "0x23ed4d6a785e89846f63d29858367b8fe694fb73179a0c2bc540e0687079c161",
-        "0x1fab0c92eaead7da02fe29795732249e0861c98d6738709e6be992a170920770",
-        "0x69a75a88c14fab0bfb411e1062f0e56850184f83a4737b3b14440b08947b43da",
-        "0xebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7",
-      ),
-    );
-  });
-
-  it("rejects zero sourceId at the trigger/authorization boundary (ZeroSourceId mirror)", () => {
-    // L-4：合约 triggerOrderFromOutsideFor / _authorizeSignalSubmitter 对
-    // sourceId==0 revert ZeroSourceId——签名摘要工具的可编码集不得大于
-    // 合约接受集（可构造必败调用）。
-    const signature = "0x" + "11".repeat(65);
-    const config = {
-      stateMachineAddress: "0x8888888888888888888888888888888888888888",
-    };
-    // 出生事实不主张属主：零 stageId + 空 proof 的空 attribution。
-    const noBirthFactAttribution = {
-      sourceId: zeroBytes32,
-      signalId: zeroBytes32,
-      stageId: zeroBytes32,
-      capabilityProof: [],
-    } as const;
-    assert.throws(
-      () =>
-        buildTriggerOrderFromOutsideForCall(config, {
-          planId,
-          creator: executor,
-          triggerHookId,
-          triggerStageId,
-          sourceId: zeroBytes32,
-          signalId,
-          payloadHash,
-          idempotencyKey,
-          submitter: executor,
-          deadline,
-          authorizations: [],
-          signature,
-          birthFactAttribution: noBirthFactAttribution,
-        }),
-      /sourceId must be non-zero/,
-    );
-    assert.throws(
-      () =>
-        buildTriggerOrderFromOutsideForCall(config, {
-          planId,
-          creator: executor,
-          triggerHookId,
-          triggerStageId,
-          sourceId,
-          signalId,
-          payloadHash,
-          idempotencyKey,
-          submitter: executor,
-          deadline,
-          authorizations: [
-            {
-              sourceId: zeroBytes32,
-              signalId,
-              submitter: executor,
-              role,
-              metadataHash: payloadHash,
-            },
-          ],
-          signature,
-          birthFactAttribution: noBirthFactAttribution,
-        }),
-      /authorization\.sourceId must be non-zero/,
-    );
-    // 非零 sourceId 照常可编码（回归护栏）。
-    assert.doesNotThrow(() =>
-      buildTriggerOrderFromOutsideForCall(config, {
-        planId,
-        creator: executor,
-        triggerHookId,
-        triggerStageId,
-        sourceId,
-        signalId,
-        payloadHash,
-        idempotencyKey,
-        submitter: executor,
-        deadline,
-        authorizations: [
-          {
-            sourceId,
-            signalId,
-            submitter: executor,
-            role,
-            metadataHash: payloadHash,
-          },
-        ],
-        signature,
-        birthFactAttribution: noBirthFactAttribution,
-      }),
-    );
-  });
-});
-
-
-function bytes32(suffix: string): `0x${string}` {
-  return `0x${suffix.padStart(64, "0")}`;
-}
-
-// 排序配对 Merkle 的独立折叠（keccak256(min ‖ max)），与包内造证工具
-// 分开实现，用于 proof → root 的对拍。
-function foldProof(leaf: `0x${string}`, proof: readonly `0x${string}`[]) {
-  let current = leaf;
-  for (const sibling of proof) {
-    const [min, max] =
-      current <= sibling ? [current, sibling] : [sibling, current];
-    current = keccak256(concatHex([min, max]));
-  }
-  return current;
-}
-
-// 手写 parseAbi 面 ⊆ 冻结 fixture 且逐字一致（UB-17 的机械收口腿）：
-// 手写 ABI 是有意子集（消费面裁剪），但子集内的每条签名必须与协议冻结
-// fixture 的规范形态完全一致——openDockedOrder 尾参滞后正是从这里漏过
-// 的（合约 v4.5 加 entranceAttribution，手写串停在 7 参，无任何门变红）。
-describe("handwritten ABI entries stay identical to the frozen fixtures", () => {
-  const fixturesDir = resolve(
-    dirname(fileURLToPath(import.meta.url)),
-    "../../../contracts/uvp-contracts/fixtures",
-  );
-  const handwrittenToFixture: readonly [readonly unknown[], string][] = [
-    [STATE_MACHINE_ABI, "uvp-state-machine.v0.17.json"],
-    [ORDER_LINK_MODULE_ABI, "uvp-order-link-module.v0.3.json"],
-    [STAGE_PATCH_MODULE_ABI, "uvp-stage-patch-module.v0.6.json"],
-    [DERIVED_SIGNAL_MODULE_ABI, "uvp-derived-signal-module.v0.5.json"],
-    [DOCKING_MODULE_ABI, "uvp-docking-module.v4.8.json"],
-  ];
-  for (const [abi, fixtureName] of handwrittenToFixture) {
-    it(`${fixtureName}: every handwritten entry matches the frozen signature`, () => {
-      const fixture = JSON.parse(
-        readFileSync(resolve(fixturesDir, fixtureName), "utf8"),
-      ) as {
-        readonly events: Readonly<Record<string, { readonly signature: string }>>;
-        readonly functions: Readonly<Record<string, { readonly signature: string }>>;
-      };
-      for (const entry of abi) {
-        const item = entry as { readonly type: string };
-        if (item.type === "function") {
-          const signature = toFunctionSignature(item as never);
-          const match = fixture.functions[signature.split("(")[0] ?? ""];
-          assert.ok(
-            match,
-            `${fixtureName}: handwritten function ${signature} is absent from the frozen fixture`,
-          );
-          assert.equal(
-            match.signature,
-            signature,
-            `${fixtureName}: handwritten function ${signature} drifted from the frozen signature ${match.signature}`,
-          );
-        } else if (item.type === "event") {
-          const signature = toEventSignature(item as never);
-          const match = fixture.events[signature.split("(")[0] ?? ""];
-          assert.ok(
-            match,
-            `${fixtureName}: handwritten event ${signature} is absent from the frozen fixture`,
-          );
-          assert.equal(
-            match.signature,
-            signature,
-            `${fixtureName}: handwritten event ${signature} drifted from the frozen signature ${match.signature}`,
-          );
-        }
-      }
-    });
-  }
 });

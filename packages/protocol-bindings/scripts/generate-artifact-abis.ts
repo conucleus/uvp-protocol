@@ -20,6 +20,13 @@ const stateMachineArtifactPath = resolve(
   contractsDir,
   "out/UVPStateMachine.sol/UVPStateMachine.json",
 );
+// Full generated file-module artifact ABI (functions, events, errors, and the
+// constructor), mirroring how UVP_STATE_MACHINE_ARTIFACT_ABI is pinned to the
+// Forge artifact rather than to a hand-maintained call surface.
+const fileResourceModuleArtifactPath = resolve(
+  contractsDir,
+  "out/UVPFileResourceModule.sol/UVPFileResourceModule.json",
+);
 // Single declaration point shared by UVPStateMachine and the linked
 // UVPPlanRegistration library; the flags bit values are not recoverable
 // from the artifact ABI alone.
@@ -45,6 +52,9 @@ async function main(): Promise<void> {
     await readFile(stateMachineArtifactPath, "utf8"),
   ) as FoundryArtifact;
   const constantsSource = await readFile(constantsSourcePath, "utf8");
+  const fileResourceModuleArtifact = JSON.parse(
+    await readFile(fileResourceModuleArtifactPath, "utf8"),
+  ) as FoundryArtifact;
 
   const abiJson = JSON.stringify(artifact.abi, null, 2);
   const signalSubmitted = artifact.abi.find(
@@ -78,6 +88,8 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = ${abiJson} as const;
 // importing the full artifact ABI.
 export const SIGNAL_SUBMITTED_ABI = ${JSON.stringify([signalSubmitted], null, 2)} as const;
 export const SIGNAL_SUBMITTED_TOPIC = "${signalSubmittedTopic}" as Hex;
+
+export const FILE_RESOURCE_MODULE_ABI = ${JSON.stringify(fileResourceModuleArtifact.abi, null, 2)} as const;
 
 ${flagLines.join("\n")}
 `;

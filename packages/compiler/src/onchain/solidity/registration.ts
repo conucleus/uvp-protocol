@@ -108,8 +108,16 @@ export function toSolidityRegisterPlanArgs(
     signalId: capability.signalId,
     targetOrderRelation: 0 as const,
   }));
+  const fileWriterBindings = artifact.stageFileWriters.map((binding) => ({
+    targetStageId: binding.targetStageId,
+    writerStageId: binding.writerStageId,
+  }));
   const hooksHash = hashSolidityHooks(hooks);
-  const capabilitiesRoot = capabilitiesRootOf(selectorBindings, signalCapabilities);
+  const capabilitiesRoot = capabilitiesRootOf(
+    selectorBindings,
+    signalCapabilities,
+    fileWriterBindings,
+  );
   const planHash = keccak256(
     encodeAbiParameters(
       parseAbiParameters(
@@ -159,6 +167,7 @@ export function toSolidityRegisterPlanArgs(
     })),
     selectorBindings,
     signalCapabilities,
+    fileWriterBindings,
   };
 }
 

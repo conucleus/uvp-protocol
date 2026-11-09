@@ -8,6 +8,7 @@ import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
+import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
 
 interface InvariantVm {
@@ -51,7 +52,7 @@ contract Handler {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.15");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.16");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
         "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
     );
@@ -93,6 +94,7 @@ contract Handler {
         machine.setDockingModule(address(docking));
         machine.setPlanMetadataModule(address(planMetadata));
         machine.setOrderLinkModule(address(orderLink));
+        machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
         machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.freezeModules();
 

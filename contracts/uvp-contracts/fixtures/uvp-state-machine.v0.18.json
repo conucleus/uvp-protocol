@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStateMachine",
-  "abiVersion": "0.17",
+  "abiVersion": "0.18",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStateMachine.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStateMachine.sol/UVPStateMachine.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x797a12325718cc92d5d3df07b6a8830c0627a9dfb13bfd0bf41543ee57a39bc5",
-    "bytecodeHash": "0x809711d9e05fdb2d26e9429ce14d9386e6b54b00c30657d2b0215c1e0ea56114",
-    "deployedBytecodeHash": "0x7c11ba0363bb7e05a959ef3744531619c27952ef0c3b09d1d16c71badaf71bec",
-    "artifactHash": "0x24e0730c89f3716469cab8f47b2047103f5e48d4ad1a6562b6e1f4fdc1e6e43d"
+    "abiHash": "0x6d8e5ccd5705070d6b4233b0195243a58257cb3bb03dbf026bfc8c25de91e420",
+    "bytecodeHash": "0x5107a32a9079de37ebb9a725b0813517414602809de7045dbb185d25469186f6",
+    "deployedBytecodeHash": "0x8af85b3f5d2526a0b87000187c0b3eecc0615e4ca2f26c26cc017f6624c9e7d3",
+    "artifactHash": "0xbd514d99bf58d0834d07f987d412e908be817763a053ba55a2b903f949682254"
   },
   "events": {
     "HookReady": {
@@ -113,6 +113,10 @@
       "signature": "DOMAIN_SEPARATOR()",
       "selector": "0x3644e515"
     },
+    "FILE_RESOURCE_MODULE_ID": {
+      "signature": "FILE_RESOURCE_MODULE_ID()",
+      "selector": "0x5940c690"
+    },
     "HOOK_FLAG_ADMISSION": {
       "signature": "HOOK_FLAG_ADMISSION()",
       "selector": "0xefa7a053"
@@ -200,6 +204,10 @@
     "dockingModule": {
       "signature": "dockingModule()",
       "selector": "0x4b11ebd2"
+    },
+    "fileResourceModule": {
+      "signature": "fileResourceModule()",
+      "selector": "0x63607506"
     },
     "finalizePlan": {
       "signature": "finalizePlan(bytes32)",
@@ -373,6 +381,10 @@
       "signature": "setDockingModule(address)",
       "selector": "0x618cddd7"
     },
+    "setFileResourceModule": {
+      "signature": "setFileResourceModule(address)",
+      "selector": "0xe648a069"
+    },
     "setLens": {
       "signature": "setLens(address)",
       "selector": "0x6f338582"
@@ -418,8 +430,8 @@
       "selector": "0xbb027d3f"
     },
     "submitSignalFor": {
-      "signature": "submitSignalFor(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256,bytes,(bytes32,bytes32,bytes32,bytes32[]))",
-      "selector": "0xe36ba506"
+      "signature": "submitSignalFor(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256,bytes,(bytes32,bytes32,bytes32,bytes32[]),bytes32,(bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]))",
+      "selector": "0xf0375988"
     },
     "submitSignalFromModule": {
       "signature": "submitSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,(bytes32,bytes32,bytes32,bytes32[]))",

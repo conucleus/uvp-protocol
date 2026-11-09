@@ -98,6 +98,7 @@ interface IUVPStateMachineCore {
     function isPlanStage(bytes32 planId, bytes32 stageId) external view returns (bool);
     function planExists(bytes32 planId) external view returns (bool);
     function planMetadataModule() external view returns (address);
+    function fileResourceModule() external view returns (address);
     function planPublisher(bytes32 planId) external view returns (address);
     function sourceSignalCount(bytes32 planId, bytes32 orderId, bytes32 sourceId) external view returns (uint256);
 

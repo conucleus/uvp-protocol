@@ -111,17 +111,21 @@ export interface ChainStageExecutorOverlay {
   readonly activationProof?: ChainProof;
 }
 
-export interface ChainStageResourceOverlay {
+export interface ChainStageFileEntry {
+  readonly key: Hex;
+  readonly contentHash: Hex;
+  readonly handle: string;
+  readonly patchHash: Hex;
+  readonly updatedAt: ChainProvenance;
+  readonly proof: ChainProof;
+}
+
+export interface ChainStageFileMap {
+  readonly planId: Hex;
   readonly orderId: Hex;
-  readonly selectorStageId?: Hex;
   readonly targetStageId: Hex;
-  readonly resourceKey: Hex;
-  readonly selectorWallet?: Address;
-  readonly manifestHash: Hex;
-  readonly policyHash: Hex;
-  readonly patchHash?: Hex;
-  readonly patchNonce: string;
-  readonly manifestURI: string;
+  readonly filesHash: Hex;
+  readonly files: Readonly<Record<string, ChainStageFileEntry>>;
   readonly updatedAt: ChainProvenance;
   readonly proof: ChainProof;
 }
@@ -210,7 +214,7 @@ export interface ChainOrderProjection {
   readonly derivedSignals: Readonly<Record<string, ChainDerivedSignal>>;
   readonly stageMaterializations: Readonly<Record<string, ChainStageMaterialization>>;
   readonly stageExecutorOverlays: Readonly<Record<string, ChainStageExecutorOverlay>>;
-  readonly stageResourceOverlays: Readonly<Record<string, ChainStageResourceOverlay>>;
+  readonly stageFiles: Readonly<Record<string, ChainStageFileMap>>;
   readonly triggerLink?: ChainOrderTriggerLink;
   readonly forkLineage?: ChainOrderFork;
   readonly hooks: Readonly<Record<string, ChainHook>>;

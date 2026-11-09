@@ -6,11 +6,13 @@ import {
   canonicalOrderIssues,
   admissionOrderKey,
   executorCandidateOrderKey,
+  fileWriterOrderKey,
   hookOrderKey,
   routeOrderKey,
   selectorBindingOrderKey,
   signalCapabilityOrderKey,
 } from "../canonical/ordering.js";
+import { validateOnchainStageFileWriters } from "../file-writers.js";
 import {
   executorCandidatesRootOf,
   isExecutorAddress,
@@ -85,6 +87,7 @@ const ONCHAIN_ARTIFACT_FIELDS: readonly string[] = [
   "capabilitiesRoot",
   "selectorBindings",
   "signalCapabilities",
+  "stageFileWriters",
   "admissions",
   "executorCandidates",
   "executorCandidatesRoot",
@@ -204,6 +207,12 @@ export function validateOnchainHookPlanArtifact(
     : undefined;
   if (!signalCapabilities) {
     issues.push("signalCapabilities must be an array");
+  }
+  const stageFileWriters = Array.isArray(value.stageFileWriters)
+    ? value.stageFileWriters
+    : undefined;
+  if (!stageFileWriters) {
+    issues.push("stageFileWriters must be an array");
   }
   const admissions = Array.isArray(value.admissions)
     ? value.admissions
@@ -350,6 +359,25 @@ export function validateOnchainHookPlanArtifact(
       ),
     );
   }
+  if (stageFileWriters) {
+    issues.push(
+      ...validateOnchainStageFileWriters(
+        stageFileWriters,
+        new Set(
+          (compiledHooks ?? []).flatMap((hook) =>
+            isRecord(hook) && typeof hook.stageIdentifier === "string"
+              ? [hook.stageIdentifier]
+              : [],
+          ),
+        ),
+      ),
+      ...canonicalOrderIssues(
+        stageFileWriters,
+        fileWriterOrderKey,
+        "stageFileWriters",
+      ),
+    );
+  }
 
   if (isPlanHashRecomputable(value)) {
     try {
@@ -374,6 +402,7 @@ export function validateOnchainHookPlanArtifact(
         capabilitiesRoot: value.capabilitiesRoot,
         selectorBindings: value.selectorBindings,
         signalCapabilities: value.signalCapabilities,
+        stageFileWriters: value.stageFileWriters,
         admissions: value.admissions,
         executorCandidates: value.executorCandidates,
         executorCandidatesRoot: value.executorCandidatesRoot,
@@ -446,9 +475,13 @@ function capabilitiesRootCommitmentIssues(
   const signalCapabilities = Array.isArray(value.signalCapabilities)
     ? value.signalCapabilities
     : undefined;
+  const stageFileWriters = Array.isArray(value.stageFileWriters)
+    ? value.stageFileWriters
+    : undefined;
   if (
     !selectorBindings ||
     !signalCapabilities ||
+    !stageFileWriters ||
     !isHexHash(value.capabilitiesRoot)
   ) {
     return [];
@@ -498,9 +531,31 @@ function capabilitiesRootCommitmentIssues(
     }
   }
 
-  if (value.capabilitiesRoot !== capabilitiesRootOf(bindings, capabilities)) {
+  const fileWriters: {
+    targetStageId: HexString;
+    writerStageId: HexString;
+  }[] = [];
+  for (const binding of stageFileWriters) {
+    if (
+      isRecord(binding) &&
+      isHexHash(binding.targetStageId) &&
+      isHexHash(binding.writerStageId)
+    ) {
+      fileWriters.push({
+        targetStageId: binding.targetStageId,
+        writerStageId: binding.writerStageId,
+      });
+    } else {
+      return [];
+    }
+  }
+
+  if (
+    value.capabilitiesRoot !==
+    capabilitiesRootOf(bindings, capabilities, fileWriters)
+  ) {
     return [
-      "capabilitiesRoot must match the recomputed root over selector bindings and signal capabilities",
+      "capabilitiesRoot must match the recomputed root over selector bindings, signal capabilities, and stage file writers",
     ];
   }
   return [];
@@ -626,6 +681,7 @@ function isPlanHashRecomputable(
     Array.isArray(value.executorRoutes) &&
     Array.isArray(value.selectorBindings) &&
     Array.isArray(value.signalCapabilities) &&
+    Array.isArray(value.stageFileWriters) &&
     Array.isArray(value.admissions) &&
     Array.isArray(value.executorCandidates) &&
     isHexHash(value.executorCandidatesRoot) &&

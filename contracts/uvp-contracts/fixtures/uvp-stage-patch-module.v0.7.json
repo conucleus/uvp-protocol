@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStagePatchModule",
-  "abiVersion": "0.6",
+  "abiVersion": "0.7",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStagePatchModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStagePatchModule.sol/UVPStagePatchModule.json",
   "compiler": {
@@ -9,19 +9,15 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xaf9ea773f147f94ba003b71b2a778e59f9c67c281233bc27eebad8ec1261b3c9",
-    "bytecodeHash": "0x853b59d5b349b6cfaa0bf3f558578299d83c571a7b9a112c68d8c0fb29d771f7",
-    "deployedBytecodeHash": "0xcc81cf706a310a9e1b1193ec3ceff161008cdfc089cdefc6e293f76896074092",
-    "artifactHash": "0x078f6bd2af672ee596f5503016ee8f237edef22507614bb4b47b8336461da243"
+    "abiHash": "0x7f41d56904799f316e22c96c09db365168146b77995bd305130b77b2d3ed1ea2",
+    "bytecodeHash": "0xa5f1ea85577325e19d48a022fba0c197d84bfa9623008ce525a96aeac79bf7ee",
+    "deployedBytecodeHash": "0xc04a8e515a46951332a9b7e7c4c1f30b5ffcbd425e51de28003606b6c11d31af",
+    "artifactHash": "0xe03974e94adf9295a132b51bd8ee5e18607e6f91d56df7fa27d88acd0919c7ca"
   },
   "events": {
     "StageExecutorPatchApplied": {
       "signature": "StageExecutorPatchApplied(bytes32,bytes32,bytes32,bytes32,address,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256,string)",
       "topic": "0x4f251bef40a877a48a036464cac1b0018e6d99517fe183a92cc55d81bcc3a7c5"
-    },
-    "StageResourcePatchApplied": {
-      "signature": "StageResourcePatchApplied(bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,uint256,string)",
-      "topic": "0x02ca1bc920125005b67cc2e2a262c4a51803c1927266a69aebde9adc4d3092bd"
     }
   },
   "functions": {
@@ -45,10 +41,6 @@
       "signature": "EXECUTOR_PATCH_SIGNAL_ID()",
       "selector": "0x0305855c"
     },
-    "RESOURCE_PATCH_SIGNAL_ID": {
-      "signature": "RESOURCE_PATCH_SIGNAL_ID()",
-      "selector": "0xfe5e196c"
-    },
     "activeStageExecutor": {
       "signature": "activeStageExecutor(bytes32,bytes32,bytes32)",
       "selector": "0x43d35f65"
@@ -61,37 +53,17 @@
       "signature": "applyStageExecutorPatchFor(bytes32,bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256,string),address,uint256,bytes,bytes,(bytes32,bytes32[]),bytes32[],(bytes32,bytes32,address,bytes32,bytes32)[])",
       "selector": "0xd6a73a14"
     },
-    "applyStageResourcePatch": {
-      "signature": "applyStageResourcePatch(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string),(bytes32,bytes32[]))",
-      "selector": "0xb83a93e3"
-    },
-    "applyStageResourcePatchFor": {
-      "signature": "applyStageResourcePatchFor(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string),address,uint256,bytes,(bytes32,bytes32[]))",
-      "selector": "0x980e49a4"
-    },
     "getActiveStageExecutorPatch": {
       "signature": "getActiveStageExecutorPatch(bytes32,bytes32,bytes32)",
       "selector": "0x1ae5b35a"
-    },
-    "getActiveStageResourcePatch": {
-      "signature": "getActiveStageResourcePatch(bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0xddfae56d"
     },
     "orderStageExecutorPatchNonce": {
       "signature": "orderStageExecutorPatchNonce(bytes32,bytes32,bytes32)",
       "selector": "0x14f3eb90"
     },
-    "orderStageResourcePatchNonce": {
-      "signature": "orderStageResourcePatchNonce(bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0x4ca77733"
-    },
     "stageExecutorPatchDigest": {
       "signature": "stageExecutorPatchDigest(bytes32,bytes32,(bytes32,bytes32,address,bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256,string),address,uint256)",
       "selector": "0x502daf8c"
-    },
-    "stageResourcePatchDigest": {
-      "signature": "stageResourcePatchDigest(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256,string),address,uint256)",
-      "selector": "0x055a32d3"
     },
     "stateMachine": {
       "signature": "stateMachine()",

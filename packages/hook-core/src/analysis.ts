@@ -39,6 +39,7 @@ export interface ZhixuAnalysisStage {
   readonly mint: string | null;
   readonly executor: unknown;
   readonly selectedStages: readonly string[];
+  readonly fileWriters: readonly string[];
   readonly fileResources: Readonly<Record<string, unknown>>;
   readonly sendSignals: readonly ZhixuAnalysisSendSignal[];
   readonly hooks: readonly ZhixuAnalysisHook[];

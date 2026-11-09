@@ -232,7 +232,7 @@ test("mint and dock plans keep their birth channel", () => {
   assert.equal(mint.birthChannel, "mint");
   assert.equal(
     mint.planHash,
-    "0xc92fa38acd9a1f33af6b5643454b697d2c242163726c29ca7bbc21014b6a82f5",
+    "0x106c608a9a2ed4b34429522e7777a20299e039e1475aed7756cda8c5dba9edb8",
   );
   assert.deepEqual(validateOnchainHookPlanArtifact(mint), []);
 

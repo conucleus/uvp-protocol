@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x81668632f36fd21f6b83504159fa1ee68857d57787ec407e50f3d59026c4bc0a",
-    "bytecodeHash": "0x9303986e74286e22ba7ce8ee96d79d3cda11a647f42447c8b783c2f421f60624",
-    "deployedBytecodeHash": "0x0461e5f646b1c94b935b84ade25bc45f94dedcfb026bcc03bc86719cfb9e4dc8",
-    "artifactHash": "0x63e8df4a3ca3901b8e2b7f4bf7f003c92bf5f9f3861bf0fb22ab83de6a76025d"
+    "abiHash": "0x98639a950e307b291438f477545398d5c285d37e60b28f9f3855a8f14c3fc184",
+    "bytecodeHash": "0x177a3eda0a51ed7e704ec0c1068f7051d39544b75760a9af77b6e4ee2cf0c247",
+    "deployedBytecodeHash": "0x288a98b7fa280e171ff4eaeeaa797ee72b4bfe2ba52b2529277bf62be00a92cb",
+    "artifactHash": "0x3b1e1d08ca4c70c520243f3146a0d757eac6dc145ae3faa7a9a4a6aeda4e2a90"
   },
   "events": {},
   "functions": {
@@ -31,10 +31,6 @@
     "getActiveStageExecutorPatch": {
       "signature": "getActiveStageExecutorPatch(bytes32,bytes32,bytes32)",
       "selector": "0x1ae5b35a"
-    },
-    "getActiveStageResourcePatch": {
-      "signature": "getActiveStageResourcePatch(bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0xddfae56d"
     },
     "getDockInputBinding": {
       "signature": "getDockInputBinding(bytes32,bytes32)",

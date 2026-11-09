@@ -15,8 +15,9 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { canonicalJson } from "@uvp-eth/canonical-json";
+import { encodeTypedDataFields } from "./order-book.js";
 import type {
+  FileWriterTableEntry,
   SignalCapabilityTableEntry,
   StageSelectorBindingTableEntry,
 } from "./capabilities-root.js";
@@ -197,6 +198,7 @@ export const STATE_MACHINE_ABI = [
   "function dockingModule() view returns (address)",
   "function planMetadataModule() view returns (address)",
   "function orderLinkModule() view returns (address)",
+  "function fileResourceModule() view returns (address)",
   "function lens() view returns (address)",
   "function modulesFrozen() view returns (bool)",
   "function moduleSetHash() view returns (bytes32)",
@@ -207,6 +209,7 @@ export const STATE_MACHINE_ABI = [
   "function setPlanMetadataModule(address moduleAddress)",
   "function setOrderLinkModule(address moduleAddress)",
   "function setLens(address moduleAddress)",
+  "function setFileResourceModule(address moduleAddress)",
   "function freezeModules()",
   "function commitPlan((address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline) commit,(bytes32 hookId,bytes32 stageId,bytes32 hookName,uint8 flags,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks,(bytes32 stageId,address executor)[] executorCandidates,bytes signature) returns (bytes32 planId)",
   "function finalizePlan(bytes32 planId)",
@@ -216,7 +219,7 @@ export const STATE_MACHINE_ABI = [
   "function orderLinkOrderIdFor(bytes32 planId,bytes32 originPlanId,bytes32 triggerOriginOrderId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash) pure returns (bytes32)",
   "function stageHasOrderTriggerHook(bytes32 planId,bytes32 stageId) view returns (bool)",
   "function submitSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution)",
-  "function submitSignalFor(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline,bytes signature,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution)",
+  "function submitSignalFor(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline,bytes signature,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution,bytes32 filesDigest,(bytes32 targetStageId,bytes32 baseHash,bytes32 writerStageId,bytes32[] writerProof,(uint8 kind,bytes32 key,bytes32 contentHash,string handle)[] ops) filePatch)",
   "function submitSignalFromModule(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution)",
   "function submitDerivedSignalFromModule(bytes32 planId,bytes32 orderId,bytes32 fromPlanId,bytes32 fromOrderId,bytes32 stageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter)",
   "function createDockedOrderFromModule((bytes32 targetPlanId,bytes32 linkedOrderId,address creator,address relayer,bytes32 entranceHookId,bytes32 entranceStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) entranceAttribution) request)",
@@ -238,6 +241,7 @@ export const STATE_MACHINE_ABI = [
   "function DOCK_ORDER_NAMESPACE_MASK() view returns (bytes32)",
   "function DERIVED_SIGNAL_MODULE_ID() view returns (bytes32)",
   "function DOCKING_MODULE_ID() view returns (bytes32)",
+  "function FILE_RESOURCE_MODULE_ID() view returns (bytes32)",
   "function HOOK_FLAG_EMIT_READY() view returns (uint8)",
   "function HOOK_FLAG_ORDER_TRIGGER_DOCK() view returns (uint8)",
   "function HOOK_FLAG_ORDER_TRIGGER_MINT() view returns (uint8)",
@@ -393,18 +397,12 @@ const APPLY_STAGE_EXECUTOR_PATCH_FOR_ABI_ENTRY = [
 export const STAGE_PATCH_MODULE_ABI = [
   ...parseAbi([
   "event StageExecutorPatchApplied(bytes32 indexed orderId,bytes32 indexed selectorStageId,bytes32 indexed targetStageId,bytes32 planId,address selector,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 authorizationsHash,bytes32 patchHash,uint256 patchNonce,string metadataURI)",
-  "event StageResourcePatchApplied(bytes32 indexed orderId,bytes32 indexed selectorStageId,bytes32 indexed targetStageId,bytes32 planId,address selector,bytes32 resourceKey,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI)",
   "function EXECUTOR_PATCH_SIGNAL_ID() view returns (bytes32)",
-  "function RESOURCE_PATCH_SIGNAL_ID() view returns (bytes32)",
   "function EXECUTOR_PATCH_MODE_ASSIGN() view returns (bytes32)",
   "function EXECUTOR_PATCH_MODE_HANDOFF() view returns (bytes32)",
   "function applyStageExecutorPatch(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 authorizationsHash,bytes32 patchHash,uint256 patchNonce,string metadataURI) patch,(bytes32 selectorStageId,bytes32[] proof) bindingProof,bytes32[] candidateProof,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] executorAuthorizations)",
-  "function applyStageResourcePatch(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 resourceKey,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI) patch,(bytes32 selectorStageId,bytes32[] proof) bindingProof)",
-  "function applyStageResourcePatchFor(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 resourceKey,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI) patch,address selector,uint256 deadline,bytes signature,(bytes32 selectorStageId,bytes32[] proof) bindingProof)",
   "function stageExecutorPatchDigest(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 authorizationsHash,bytes32 patchHash,uint256 patchNonce,string metadataURI) patch,address selector,uint256 deadline) view returns (bytes32)",
-  "function stageResourcePatchDigest(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 resourceKey,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI) patch,address selector,uint256 deadline) view returns (bytes32)",
   "function getActiveStageExecutorPatch(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bool exists,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 patchHash,uint256 patchNonce,string metadataURI)",
-  "function getActiveStageResourcePatch(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 resourceKey) view returns (bool exists,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI)",
   ]),
   ...APPLY_STAGE_EXECUTOR_PATCH_FOR_ABI_ENTRY,
 ] as const;
@@ -457,7 +455,6 @@ export const DOCKING_MODULE_ABI = parseAbi([
 export const STATE_MACHINE_LENS_ABI = parseAbi([
   "function stateMachine() view returns (address)",
   "function getActiveStageExecutorPatch(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bool exists,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 patchHash,uint256 patchNonce,string metadataURI)",
-  "function getActiveStageResourcePatch(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 resourceKey) view returns (bool exists,bytes32 manifestHash,bytes32 policyHash,bytes32 patchHash,uint256 patchNonce,string manifestURI)",
   "function getActiveDock(bytes32 dockInstanceId) view returns (bytes32 localPlanId,bytes32 localOrderId,bytes32 localStageId,bytes32 routeId,bytes32 routeHash,bytes32 targetPlanId,bytes32 linkedOrderId,bytes32 interfaceNameId,uint8 depth,bool exists)",
   "function getDockInputBinding(bytes32 dockInstanceId,bytes32 inputBindingHash) view returns (bytes32 localHookId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,bool exists)",
   "function getDockOutputBinding(bytes32 dockInstanceId,bytes32 outputBindingHash) view returns (bytes32 localSourceId,bytes32 localSignalId,bytes32 portKey,bytes32 targetSourceId,bytes32 targetSignalId,bool exists)",
@@ -472,7 +469,7 @@ export const STATE_MACHINE_LENS_ABI = parseAbi([
 ]);
 
 export const PRODUCT_SUBMIT_DOMAIN_NAME = "UVPStateMachine";
-export const PRODUCT_SUBMIT_DOMAIN_VERSION = "0.15";
+export const PRODUCT_SUBMIT_DOMAIN_VERSION = "0.16";
 export const PRODUCT_SUBMIT_PRIMARY_TYPE = "UVPStateMachineSignal";
 export const PLAN_COMMIT_PRIMARY_TYPE = "UVPStateMachinePlanCommit";
 export const TRIGGER_ORDER_FROM_OUTSIDE_PRIMARY_TYPE =
@@ -488,24 +485,15 @@ export const STAGE_EXECUTOR_PATCH_DOMAIN_NAME = "UVPStagePatchModule";
 export const STAGE_EXECUTOR_PATCH_DOMAIN_VERSION = "0.2";
 export const STAGE_EXECUTOR_PATCH_PRIMARY_TYPE =
   "UVPStagePatchModuleStageExecutorPatch";
-export const STAGE_RESOURCE_PATCH_DOMAIN_NAME =
-  STAGE_EXECUTOR_PATCH_DOMAIN_NAME;
-export const STAGE_RESOURCE_PATCH_DOMAIN_VERSION =
-  STAGE_EXECUTOR_PATCH_DOMAIN_VERSION;
-export const STAGE_RESOURCE_PATCH_PRIMARY_TYPE =
-  "UVPStagePatchModuleStageResourcePatch";
 export const STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN =
   "uvp:stage-executor-patch-payload:v1";
-export const STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN =
-  "uvp:stage-resource-patch-payload:v1";
-export const RESOURCE_MANIFEST_V1_SCHEMA_VERSION = "uvp-resource-manifest-v1";
-export const RESOURCE_MANIFEST_HASH_DOMAIN = "uvp:resource-manifest:v1";
 import {
   HOOK_FLAG_EMIT_READY,
   HOOK_FLAG_ORDER_TRIGGER_DOCK,
   HOOK_FLAG_ORDER_TRIGGER_MINT,
 } from "./artifact-abis.js";
 export {
+  FILE_RESOURCE_MODULE_ABI,
   HOOK_FLAG_EMIT_READY,
   HOOK_FLAG_ORDER_TRIGGER_DOCK,
   HOOK_FLAG_ORDER_TRIGGER_MINT,
@@ -564,7 +552,17 @@ export const PRODUCT_SUBMIT_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataFi
     { name: "idempotencyKey", type: "bytes32" },
     { name: "submitter", type: "address" },
     { name: "deadline", type: "uint256" },
+    { name: "filesDigest", type: "bytes32" },
   ];
+
+export const PRODUCT_SUBMIT_TYPE_HASH: Hex = keccak256(
+  stringToHex(
+    encodeTypedDataFields(
+      PRODUCT_SUBMIT_PRIMARY_TYPE,
+      PRODUCT_SUBMIT_TYPED_DATA_FIELDS,
+    ),
+  ),
+);
 
 export const PLAN_COMMIT_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] =
   [
@@ -646,22 +644,72 @@ export const STAGE_EXECUTOR_PATCH_TYPED_DATA_FIELDS: readonly ProductSubmitTyped
     { name: "deadline", type: "uint256" },
   ];
 
-export const STAGE_RESOURCE_PATCH_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] =
-  [
-    { name: "planId", type: "bytes32" },
-    { name: "orderId", type: "bytes32" },
-    { name: "selectorStageId", type: "bytes32" },
-    { name: "targetStageId", type: "bytes32" },
-    { name: "resourceKey", type: "bytes32" },
-    { name: "manifestHash", type: "bytes32" },
-    { name: "policyHash", type: "bytes32" },
-    { name: "patchHash", type: "bytes32" },
-    { name: "patchNonce", type: "uint256" },
-    { name: "manifestURI", type: "string" },
-    { name: "selector", type: "address" },
-    { name: "deadline", type: "uint256" },
-  ];
+export const FILE_PATCH_DIGEST_DOMAIN = "UVP_FILE_PATCH_V1";
 
+export type FileOpKind = 0 | 1 | 2;
+
+export const FILE_OP_KIND = {
+  add: 0,
+  replace: 1,
+  remove: 2,
+} as const;
+
+export interface FileOp {
+  readonly kind: FileOpKind;
+  readonly key: Hex;
+  readonly contentHash: Hex;
+  readonly handle: string;
+}
+
+export interface FilePatch {
+  readonly targetStageId: Hex;
+  readonly baseHash: Hex;
+  readonly writerStageId: Hex;
+  readonly writerProof: readonly Hex[];
+  readonly ops: readonly FileOp[];
+}
+
+export interface FileOpCallStruct {
+  readonly kind: FileOpKind;
+  readonly key: Hex;
+  readonly contentHash: Hex;
+  readonly handle: string;
+}
+
+export interface FilePatchCallStruct {
+  readonly targetStageId: Hex;
+  readonly baseHash: Hex;
+  readonly writerStageId: Hex;
+  readonly writerProof: readonly Hex[];
+  readonly ops: readonly FileOpCallStruct[];
+}
+
+export const FILE_OPS_LIMIT = 16;
+export const FILE_HANDLE_MAX_BYTES = 512;
+
+export function filePatchDigest(
+  planId: Hex | string,
+  orderId: Hex | string,
+  filePatch: FilePatch,
+): Hex {
+  const patch = normalizeFilePatchCallStruct(filePatch);
+  return keccak256(
+    encodeAbiParameters(
+      parseAbiParameters(
+        "bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,(uint8,bytes32,bytes32,string)[]",
+      ),
+      [
+        keccak256(stringToHex(FILE_PATCH_DIGEST_DOMAIN)),
+        normalizeBytes32(planId, "planId"),
+        normalizeBytes32(orderId, "orderId"),
+        patch.targetStageId,
+        patch.baseHash,
+        patch.writerStageId,
+        patch.ops.map((op) => [op.kind, op.key, op.contentHash, op.handle]),
+      ] as never,
+    ),
+  );
+}
 
 export interface ProductSubmitTypedData {
   readonly domain: {
@@ -683,6 +731,7 @@ export interface ProductSubmitTypedData {
     readonly idempotencyKey: Hex;
     readonly submitter: Address;
     readonly deadline: string;
+    readonly filesDigest: Hex;
   };
 }
 
@@ -913,85 +962,6 @@ export interface StageExecutorPatchTypedData {
   };
 }
 
-export interface StageResourcePatchPayload {
-  readonly selectorStageId: Hex | string;
-  readonly targetStageId: Hex | string;
-  readonly resourceKey: Hex | string;
-  readonly manifestHash: Hex | string;
-  readonly policyHash: Hex | string;
-  readonly patchNonce: bigint | number | string;
-  readonly manifestURI: string;
-}
-
-export interface StageResourcePatchCallPatch extends StageResourcePatchPayload {
-  readonly patchHash: Hex | string;
-}
-
-export interface StageResourcePatchTypedData {
-  readonly domain: {
-    readonly name: typeof STAGE_RESOURCE_PATCH_DOMAIN_NAME;
-    readonly version: typeof STAGE_RESOURCE_PATCH_DOMAIN_VERSION;
-    readonly chainId: number;
-    readonly verifyingContract: Address;
-  };
-  readonly types: {
-    readonly UVPStagePatchModuleStageResourcePatch: readonly ProductSubmitTypedDataField[];
-  };
-  readonly primaryType: typeof STAGE_RESOURCE_PATCH_PRIMARY_TYPE;
-  readonly message: {
-    readonly planId: Hex;
-    readonly orderId: Hex;
-    readonly selectorStageId: Hex;
-    readonly targetStageId: Hex;
-    readonly resourceKey: Hex;
-    readonly manifestHash: Hex;
-    readonly policyHash: Hex;
-    readonly patchHash: Hex;
-    readonly patchNonce: string;
-    readonly manifestURI: string;
-    readonly selector: Address;
-    readonly deadline: string;
-  };
-}
-
-
-
-
-
-export type ResourceVisibility = "public" | "protected" | "private";
-
-export interface ResourceManifestV1 {
-  readonly schemaVersion: typeof RESOURCE_MANIFEST_V1_SCHEMA_VERSION;
-  readonly orderId: Hex | string;
-  readonly targetStageId: Hex | string;
-  readonly resourceKey: Hex | string;
-  readonly visibility: ResourceVisibility;
-  readonly contentHash?: Hex | string;
-  readonly ciphertextHash?: Hex | string;
-  readonly storageCID: string;
-  readonly policyHash: Hex | string;
-  readonly recipientEnvelopeRoot: Hex | string;
-  readonly createdBy: Address | string;
-  readonly createdAt: string;
-  readonly supersedes?: Hex | string;
-}
-
-interface CanonicalResourceManifestV1 {
-  readonly schemaVersion: typeof RESOURCE_MANIFEST_V1_SCHEMA_VERSION;
-  readonly orderId: Hex;
-  readonly targetStageId: Hex;
-  readonly resourceKey: Hex;
-  readonly visibility: ResourceVisibility;
-  readonly contentHash?: Hex;
-  readonly ciphertextHash?: Hex;
-  readonly storageCID: string;
-  readonly policyHash: Hex;
-  readonly recipientEnvelopeRoot: Hex;
-  readonly createdBy: Address;
-  readonly createdAt: string;
-  readonly supersedes?: Hex;
-}
-
 export interface BuildProductSubmitTypedDataInput {
   readonly chainId: number;
   readonly verifyingContract: Address | string;
@@ -1007,6 +977,7 @@ export interface BuildProductSubmitTypedDataInput {
   readonly idempotencyKey: Hex | string;
   readonly submitter: Address | string;
   readonly deadline: string;
+  readonly filesDigest?: Hex | string;
 }
 
 export interface BuildPlanCommitTypedDataInput extends PlanCommitPayload {
@@ -1036,16 +1007,6 @@ export interface BuildDerivedSignalTypedDataInput
 
 export interface BuildStageExecutorPatchTypedDataInput
   extends StageExecutorPatchCallPatch {
-  readonly chainId: number;
-  readonly verifyingContract: Address | string;
-  readonly planId: Hex | string;
-  readonly orderId: Hex | string;
-  readonly selector: Address | string;
-  readonly deadline: bigint | number | string;
-}
-
-export interface BuildStageResourcePatchTypedDataInput
-  extends StageResourcePatchCallPatch {
   readonly chainId: number;
   readonly verifyingContract: Address | string;
   readonly planId: Hex | string;
@@ -1123,6 +1084,8 @@ export interface SubmitSignalForCallArgs {
   readonly deadline: bigint | number | string;
   readonly signature: Hex | string;
   readonly attribution: SignalAttributionPayload;
+  readonly filesDigest?: Hex | string;
+  readonly filePatch?: FilePatch;
 }
 
 export interface DerivedSignalRequestCallStruct {
@@ -1226,16 +1189,6 @@ export interface ApplyStageExecutorPatchForCallArgs {
   readonly executorAuthorizations: readonly SignalAuthorizationPayload[];
 }
 
-export interface ApplyStageResourcePatchForCallArgs {
-  readonly planId: Hex | string;
-  readonly orderId: Hex | string;
-  readonly patch: StageResourcePatchCallPatch;
-  readonly selector: Address | string;
-  readonly deadline: bigint | number | string;
-  readonly signature: Hex | string;
-  readonly bindingProof: SelectorBindingPayload;
-}
-
 
 export interface SubmitSignalForCallConfig {
   readonly stateMachineAddress: Address | string;
@@ -1258,7 +1211,6 @@ export interface OrderLinkModuleCallConfig {
 }
 
 export type ApplyStageExecutorPatchForCallConfig = StagePatchModuleCallConfig;
-export type ApplyStageResourcePatchForCallConfig = StagePatchModuleCallConfig;
 export type SubmitDerivedSignalForCallConfig = DerivedSignalModuleCallConfig;
 export type TriggerOrderFromOutsideForCallConfig = SubmitSignalForCallConfig;
 export type TriggerOrderFromOutsideByAuthorizerCallConfig =
@@ -1280,6 +1232,8 @@ export interface SubmitSignalForCall {
     bigint,
     Hex,
     SignalAttributionCallStruct,
+    Hex,
+    FilePatchCallStruct,
   ];
   readonly data: Hex;
   readonly chainId?: number;
@@ -1448,40 +1402,92 @@ export interface ApplyStageExecutorPatchForCall {
   readonly chainId?: number;
 }
 
-export type StageResourcePatchCallTuple = readonly [
-  Hex,
-  Hex,
-  Hex,
-  Hex,
-  Hex,
-  Hex,
-  bigint,
-  string,
-];
-
-export interface ApplyStageResourcePatchForCall {
-  readonly address: Address;
-  readonly abi: typeof STAGE_PATCH_MODULE_ABI;
-  readonly functionName: "applyStageResourcePatchFor";
-  readonly args: readonly [
-    Hex,
-    Hex,
-    StageResourcePatchCallTuple,
-    Address,
-    bigint,
-    Hex,
-    SelectorBindingCallStruct,
-  ];
-  readonly data: Hex;
-  readonly chainId?: number;
-}
-
 
 
 
 const BYTES32_RE = /^0x[a-fA-F0-9]{64}$/;
 const ZERO_BYTES32 = `0x${"0".repeat(64)}` as Hex;
 const ZERO_ADDRESS = `0x${"0".repeat(40)}` as Address;
+
+export const EMPTY_FILE_PATCH: FilePatch = {
+  targetStageId: ZERO_BYTES32,
+  baseHash: ZERO_BYTES32,
+  writerStageId: ZERO_BYTES32,
+  writerProof: [],
+  ops: [],
+};
+
+function normalizeFileOpCallStruct(op: FileOp): FileOpCallStruct {
+  if (op.kind !== FILE_OP_KIND.add && op.kind !== FILE_OP_KIND.replace && op.kind !== FILE_OP_KIND.remove) {
+    throw new Error("filePatch.ops[].kind must be 0 (add), 1 (replace), or 2 (remove)");
+  }
+  if (typeof op.handle !== "string") {
+    throw new Error("filePatch.ops[].handle must be a string");
+  }
+  return {
+    kind: op.kind,
+    key: normalizeBytes32(op.key, "filePatch.ops[].key"),
+    contentHash: normalizeBytes32(op.contentHash, "filePatch.ops[].contentHash"),
+    handle: op.handle,
+  };
+}
+
+function normalizeFilePatchCallStruct(
+  filePatch: FilePatch,
+): FilePatchCallStruct {
+  if (!Array.isArray(filePatch.ops)) {
+    throw new Error("filePatch.ops must be an array");
+  }
+  if (!Array.isArray(filePatch.writerProof)) {
+    throw new Error("filePatch.writerProof must be an array");
+  }
+  return {
+    targetStageId: normalizeBytes32(filePatch.targetStageId, "filePatch.targetStageId"),
+    baseHash: normalizeBytes32(filePatch.baseHash, "filePatch.baseHash"),
+    writerStageId: normalizeBytes32(filePatch.writerStageId, "filePatch.writerStageId"),
+    writerProof: filePatch.writerProof.map((word, index) =>
+      normalizeBytes32(word, `filePatch.writerProof[${index}]`),
+    ),
+    ops: filePatch.ops.map(normalizeFileOpCallStruct),
+  };
+}
+
+function normalizeSubmitFiles(
+  planId: Hex,
+  orderId: Hex,
+  filesDigest: Hex | string | undefined,
+  filePatch: FilePatch | undefined,
+): readonly [Hex, FilePatchCallStruct] {
+  const patch = normalizeFilePatchCallStruct(filePatch ?? EMPTY_FILE_PATCH);
+  if (patch.ops.length === 0) {
+    const digest =
+      filesDigest === undefined
+        ? ZERO_BYTES32
+        : normalizeBytes32(filesDigest, "filesDigest");
+    if (digest !== ZERO_BYTES32) {
+      throw new Error("filesDigest must be zero when filePatch carries no ops");
+    }
+    return [ZERO_BYTES32, patch];
+  }
+  if (filesDigest === undefined) {
+    throw new Error("filesDigest is required when filePatch carries ops");
+  }
+  const digest = normalizeBytes32(filesDigest, "filesDigest");
+  const expected = filePatchDigest(planId, orderId, {
+    targetStageId: patch.targetStageId,
+    baseHash: patch.baseHash,
+    writerStageId: patch.writerStageId,
+    writerProof: patch.writerProof,
+    ops: patch.ops,
+  });
+  if (digest !== expected) {
+    throw new Error(
+      "filesDigest must equal filePatchDigest(planId, orderId, filePatch)",
+    );
+  }
+  return [digest, patch];
+}
+
 const EXECUTOR_PATCH_MODE_BY_NAME: Readonly<Record<string, Hex>> = {
   assign: EXECUTOR_PATCH_MODE_ASSIGN,
   handoff: EXECUTOR_PATCH_MODE_HANDOFF,
@@ -1489,21 +1495,6 @@ const EXECUTOR_PATCH_MODE_BY_NAME: Readonly<Record<string, Hex>> = {
 const EXECUTOR_PATCH_MODE_VALUE_SET = new Set<Hex>([
   EXECUTOR_PATCH_MODE_ASSIGN,
   EXECUTOR_PATCH_MODE_HANDOFF,
-]);
-const ALLOWED_RESOURCE_MANIFEST_KEYS = new Set([
-  "schemaVersion",
-  "orderId",
-  "targetStageId",
-  "resourceKey",
-  "visibility",
-  "contentHash",
-  "ciphertextHash",
-  "storageCID",
-  "policyHash",
-  "recipientEnvelopeRoot",
-  "createdBy",
-  "createdAt",
-  "supersedes",
 ]);
 
 export function buildProductSubmitTypedData(
@@ -1532,6 +1523,10 @@ export function buildProductSubmitTypedData(
       idempotencyKey: normalizeBytes32(input.idempotencyKey, "idempotencyKey"),
       submitter: normalizeAddress(input.submitter, "submitter"),
       deadline: normalizeUintString(input.deadline, "deadline"),
+      filesDigest:
+        input.filesDigest === undefined
+          ? ZERO_BYTES32
+          : normalizeBytes32(input.filesDigest, "filesDigest"),
     },
   };
 }
@@ -1714,42 +1709,6 @@ export function buildStageExecutorPatchTypedData(
   };
 }
 
-export function buildStageResourcePatchTypedData(
-  input: BuildStageResourcePatchTypedDataInput,
-): StageResourcePatchTypedData {
-  const patch = normalizeStageResourcePatch(input);
-  return {
-    domain: {
-      name: STAGE_RESOURCE_PATCH_DOMAIN_NAME,
-      version: STAGE_RESOURCE_PATCH_DOMAIN_VERSION,
-      chainId: normalizeChainId(input.chainId),
-      verifyingContract: normalizeAddress(
-        input.verifyingContract,
-        "verifyingContract",
-      ),
-    },
-    types: {
-      UVPStagePatchModuleStageResourcePatch:
-        STAGE_RESOURCE_PATCH_TYPED_DATA_FIELDS,
-    },
-    primaryType: STAGE_RESOURCE_PATCH_PRIMARY_TYPE,
-    message: {
-      planId: normalizeBytes32(input.planId, "planId"),
-      orderId: normalizeBytes32(input.orderId, "orderId"),
-      selectorStageId: patch[0],
-      targetStageId: patch[1],
-      resourceKey: patch[2],
-      manifestHash: patch[3],
-      policyHash: patch[4],
-      patchHash: patch[5],
-      patchNonce: patch[6].toString(10),
-      manifestURI: patch[7],
-      selector: normalizeAddress(input.selector, "selector"),
-      deadline: normalizeUintString(input.deadline, "deadline"),
-    },
-  };
-}
-
 
 export async function recoverProductSubmitSigner(
   typedData: ProductSubmitTypedData,
@@ -1835,28 +1794,16 @@ export async function recoverStageExecutorPatchSigner(
   return normalizeAddress(recovered, "recoveredStageExecutorPatchSigner");
 }
 
-export async function recoverStageResourcePatchSigner(
-  typedData: StageResourcePatchTypedData,
-  signature: Hex | string,
-): Promise<Address> {
-  const recovered = await recoverTypedDataAddress({
-    domain: typedData.domain,
-    types: typedData.types,
-    primaryType: typedData.primaryType,
-    message: typedData.message,
-    signature: normalizeHex(signature, "signature"),
-  } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
-  return normalizeAddress(recovered, "recoveredSelector");
-}
-
 
 export function buildSubmitSignalForCall(
   config: SubmitSignalForCallConfig,
   args: SubmitSignalForCallArgs,
 ): SubmitSignalForCall {
+  const planId = normalizeBytes32(args.planId, "planId");
+  const orderId = normalizeBytes32(args.orderId, "orderId");
   const normalizedArgs = [
-    normalizeBytes32(args.planId, "planId"),
-    normalizeBytes32(args.orderId, "orderId"),
+    planId,
+    orderId,
     normalizeBytes32(args.sourceId, "sourceId"),
     normalizeBytes32(args.signalId, "signalId"),
     normalizeBytes32(args.payloadHash, "payloadHash"),
@@ -1865,6 +1812,7 @@ export function buildSubmitSignalForCall(
     normalizeUintBigInt(args.deadline, "deadline"),
     normalizeHex(args.signature, "signature"),
     normalizeSignalAttribution(args.attribution),
+    ...normalizeSubmitFiles(planId, orderId, args.filesDigest, args.filePatch),
   ] as const satisfies readonly [
     Hex,
     Hex,
@@ -1876,6 +1824,8 @@ export function buildSubmitSignalForCall(
     bigint,
     Hex,
     SignalAttributionCallStruct,
+    Hex,
+    FilePatchCallStruct,
   ];
 
   return {
@@ -2062,46 +2012,12 @@ export function buildApplyStageExecutorPatchForCall(
   };
 }
 
-export function buildApplyStageResourcePatchForCall(
-  config: ApplyStageResourcePatchForCallConfig,
-  args: ApplyStageResourcePatchForCallArgs,
-): ApplyStageResourcePatchForCall {
-  const normalizedArgs = [
-    normalizeBytes32(args.planId, "planId"),
-    normalizeBytes32(args.orderId, "orderId"),
-    normalizeStageResourcePatch(args.patch),
-    normalizeAddress(args.selector, "selector"),
-    normalizeUintBigInt(args.deadline, "deadline"),
-    normalizeHex(args.signature, "signature"),
-    normalizeSelectorBinding(args.bindingProof),
-  ] as const;
-
-  return {
-    address: normalizeAddress(
-      config.stagePatchModuleAddress,
-      "stagePatchModuleAddress",
-    ),
-    abi: STAGE_PATCH_MODULE_ABI,
-    functionName: "applyStageResourcePatchFor",
-    args: normalizedArgs,
-    data: encodeFunctionData({
-      abi: STAGE_PATCH_MODULE_ABI,
-      functionName: "applyStageResourcePatchFor",
-      args: normalizedArgs as never,
-    }),
-    ...(config.chainId !== undefined
-      ? { chainId: normalizeChainId(config.chainId) }
-      : {}),
-  };
-}
-
 export function hashStageExecutorPatchPayload(
   payload: StageExecutorPatchPayload,
 ): Hex {
   const normalized = normalizeStageExecutorPatchPayload(payload);
   // 域分离：payload 哈希以 keccak256(STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN)
-  // 开头，与 executor/resource 两个 patch 族的 preimage 分域——域常量必须
-  // 真正进入 preimage，只在定义处引用等于没有分域。
+  // 开头——域常量必须真正进入 preimage，只在定义处引用等于没有分域。
   return keccak256(
     encodeAbiParameters(
       [
@@ -2129,38 +2045,6 @@ export function hashStageExecutorPatchPayload(
         normalized.authorizationsHash,
         BigInt(normalized.patchNonce),
         normalized.metadataURI,
-      ],
-    ),
-  );
-}
-
-export function hashStageResourcePatchPayload(
-  payload: StageResourcePatchPayload,
-): Hex {
-  const normalized = normalizeStageResourcePatchPayload(payload);
-  // 域分离：与 executor patch 同构，域字取自
-  // STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN。
-  return keccak256(
-    encodeAbiParameters(
-      [
-        { name: "domain", type: "bytes32" },
-        { name: "selectorStageId", type: "bytes32" },
-        { name: "targetStageId", type: "bytes32" },
-        { name: "resourceKey", type: "bytes32" },
-        { name: "manifestHash", type: "bytes32" },
-        { name: "policyHash", type: "bytes32" },
-        { name: "patchNonce", type: "uint256" },
-        { name: "manifestURI", type: "string" },
-      ],
-      [
-        keccak256(stringToHex(STAGE_RESOURCE_PATCH_PAYLOAD_HASH_DOMAIN)),
-        normalized.selectorStageId,
-        normalized.targetStageId,
-        normalized.resourceKey,
-        normalized.manifestHash,
-        normalized.policyHash,
-        BigInt(normalized.patchNonce),
-        normalized.manifestURI,
       ],
     ),
   );
@@ -2265,11 +2149,6 @@ export function hashSignalAuthorizations(
     );
   }
   return rollingHash;
-}
-
-export function hashResourceManifest(manifest: ResourceManifestV1): Hex {
-  const normalized = normalizeResourceManifestV1(manifest);
-  return hashCanonicalJson(RESOURCE_MANIFEST_HASH_DOMAIN, normalized);
 }
 
 // 地址/字节规范化双形态（下游比较键与展示/签名场景的单源）：
@@ -2486,27 +2365,6 @@ function normalizeStageExecutorPatch(
   ] as const;
 }
 
-function normalizeStageResourcePatch(
-  patch: StageResourcePatchCallPatch,
-): StageResourcePatchCallTuple {
-  if (typeof patch.manifestURI !== "string") {
-    throw new Error("manifestURI must be a string");
-  }
-  if (patch.manifestURI.trim().length === 0) {
-    throw new Error("manifestURI must be a non-empty string");
-  }
-  return [
-    normalizeNonZeroBytes32(patch.selectorStageId, "selectorStageId"),
-    normalizeNonZeroBytes32(patch.targetStageId, "targetStageId"),
-    normalizeNonZeroBytes32(patch.resourceKey, "resourceKey"),
-    normalizeNonZeroBytes32(patch.manifestHash, "manifestHash"),
-    normalizeNonZeroBytes32(patch.policyHash, "policyHash"),
-    normalizeNonZeroBytes32(patch.patchHash, "patchHash"),
-    normalizeUintBigInt(patch.patchNonce, "patchNonce"),
-    patch.manifestURI,
-  ] as const;
-}
-
 function normalizeStageExecutorPatchPayload(
   payload: StageExecutorPatchPayload,
 ): {
@@ -2557,146 +2415,6 @@ function normalizeStageExecutorPatchPayload(
   };
 }
 
-function normalizeStageResourcePatchPayload(
-  payload: StageResourcePatchPayload,
-): {
-  readonly selectorStageId: Hex;
-  readonly targetStageId: Hex;
-  readonly resourceKey: Hex;
-  readonly manifestHash: Hex;
-  readonly policyHash: Hex;
-  readonly patchNonce: string;
-  readonly manifestURI: string;
-} {
-  if (typeof payload.manifestURI !== "string") {
-    throw new Error("manifestURI must be a string");
-  }
-  if (payload.manifestURI.trim().length === 0) {
-    throw new Error("manifestURI must be a non-empty string");
-  }
-  return {
-    selectorStageId: normalizeNonZeroBytes32(
-      payload.selectorStageId,
-      "selectorStageId",
-    ),
-    targetStageId: normalizeNonZeroBytes32(
-      payload.targetStageId,
-      "targetStageId",
-    ),
-    resourceKey: normalizeNonZeroBytes32(payload.resourceKey, "resourceKey"),
-    manifestHash: normalizeNonZeroBytes32(payload.manifestHash, "manifestHash"),
-    policyHash: normalizeNonZeroBytes32(payload.policyHash, "policyHash"),
-    patchNonce: normalizeUintString(payload.patchNonce, "patchNonce"),
-    manifestURI: payload.manifestURI,
-  };
-}
-
-
-function normalizeResourceManifestV1(
-  manifest: ResourceManifestV1,
-): CanonicalResourceManifestV1 {
-  if (!isRecord(manifest)) {
-    throw new Error("resource manifest must be an object");
-  }
-  assertAllowedResourceManifestKeys(manifest);
-
-  if (manifest.schemaVersion !== RESOURCE_MANIFEST_V1_SCHEMA_VERSION) {
-    throw new Error(
-      `schemaVersion must be ${RESOURCE_MANIFEST_V1_SCHEMA_VERSION}`,
-    );
-  }
-  if (!isResourceVisibility(manifest.visibility)) {
-    throw new Error("visibility must be public, protected, or private");
-  }
-  if (
-    typeof manifest.storageCID !== "string" ||
-    manifest.storageCID.trim().length === 0
-  ) {
-    throw new Error(
-      "storageCID must be a non-empty content-addressed reference",
-    );
-  }
-  if (/^https?:\/\//i.test(manifest.storageCID)) {
-    throw new Error("storageCID must be content-addressed, not an HTTP URL");
-  }
-  if (
-    typeof manifest.createdAt !== "string" ||
-    manifest.createdAt.trim().length === 0
-  ) {
-    throw new Error("createdAt must be a non-empty string");
-  }
-
-  const normalizedVisibility = manifest.visibility;
-  const normalizedContentHash = normalizeOptionalBytes32(
-    manifest.contentHash,
-    "contentHash",
-  );
-  const normalizedCiphertextHash = normalizeOptionalBytes32(
-    manifest.ciphertextHash,
-    "ciphertextHash",
-  );
-  const normalizedRecipientEnvelopeRoot = normalizeBytes32(
-    manifest.recipientEnvelopeRoot,
-    "recipientEnvelopeRoot",
-  );
-
-  if (normalizedVisibility === "public") {
-    if (normalizedContentHash === undefined) {
-      throw new Error("contentHash is required for public resource manifests");
-    }
-  } else {
-    if (normalizedCiphertextHash === undefined) {
-      throw new Error(
-        "ciphertextHash is required for protected and private resource manifests",
-      );
-    }
-    if (normalizedRecipientEnvelopeRoot === ZERO_BYTES32) {
-      throw new Error(
-        "recipientEnvelopeRoot must be non-zero for protected and private resource manifests",
-      );
-    }
-  }
-
-  return {
-    schemaVersion: RESOURCE_MANIFEST_V1_SCHEMA_VERSION,
-    orderId: normalizeNonZeroBytes32(manifest.orderId, "orderId"),
-    targetStageId: normalizeNonZeroBytes32(
-      manifest.targetStageId,
-      "targetStageId",
-    ),
-    resourceKey: normalizeNonZeroBytes32(manifest.resourceKey, "resourceKey"),
-    visibility: normalizedVisibility,
-    ...(normalizedContentHash !== undefined
-      ? { contentHash: normalizedContentHash }
-      : {}),
-    ...(normalizedCiphertextHash !== undefined
-      ? { ciphertextHash: normalizedCiphertextHash }
-      : {}),
-    storageCID: manifest.storageCID,
-    policyHash: normalizeNonZeroBytes32(manifest.policyHash, "policyHash"),
-    recipientEnvelopeRoot: normalizedRecipientEnvelopeRoot,
-    createdBy: normalizeAddress(manifest.createdBy, "createdBy"),
-    createdAt: manifest.createdAt,
-    ...(manifest.supersedes !== undefined
-      ? {
-          supersedes: normalizeNonZeroBytes32(
-            manifest.supersedes,
-            "supersedes",
-          ),
-        }
-      : {}),
-  };
-}
-
-function normalizeOptionalBytes32(
-  value: Hex | string | undefined,
-  fieldName: string,
-): Hex | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  return normalizeNonZeroBytes32(value, fieldName);
-}
 
 function normalizeNonZeroBytes32(value: Hex | string, fieldName: string): Hex {
   const normalized = normalizeBytes32(value, fieldName);
@@ -2704,24 +2422,6 @@ function normalizeNonZeroBytes32(value: Hex | string, fieldName: string): Hex {
     throw new Error(`${fieldName} must be non-zero`);
   }
   return normalized;
-}
-
-function assertAllowedResourceManifestKeys(manifest: ResourceManifestV1): void {
-  for (const key of Object.keys(manifest)) {
-    if (!ALLOWED_RESOURCE_MANIFEST_KEYS.has(key)) {
-      throw new Error(
-        `resource manifest field ${key} is not part of ResourceManifestV1`,
-      );
-    }
-  }
-}
-
-function isResourceVisibility(value: unknown): value is ResourceVisibility {
-  return value === "public" || value === "protected" || value === "private";
-}
-
-function hashCanonicalJson(domain: string, payload: unknown): Hex {
-  return keccak256(stringToHex(`${domain}:${canonicalJson(payload)}`));
 }
 
 /**
@@ -3304,13 +3004,17 @@ export {
   EMPTY_CAPABILITIES_ROOT,
   SIGNAL_CAPABILITY_RELATION_CURRENT_ORDER,
   SIGNAL_CAPABILITY_RELATION_TRIGGER_ORIGIN,
+  UVP_FILE_WRITER_V1,
   UVP_SELECTOR_BINDING_V1,
   UVP_SIGNAL_CAPABILITY_V1,
   capabilitiesRootOf,
   factAttribution,
+  fileWriterLeaf,
+  fileWriterProofFor,
   selectorBindingLeaf,
   selectorBindingProofFor,
   signalCapabilityLeaf,
+  type FileWriterTableEntry,
   type SignalCapabilityTableEntry,
   type StageSelectorBindingTableEntry,
 } from "./capabilities-root.js";

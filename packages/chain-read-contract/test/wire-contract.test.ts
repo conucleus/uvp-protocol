@@ -86,7 +86,26 @@ function internalOrder() {
     derivedSignals: {},
     stageMaterializations: {},
     stageExecutorOverlays: {},
-    stageResourceOverlays: {},
+    stageFiles: {
+      [STAGE_ID]: {
+        planId: PLAN_ID,
+        orderId: ORDER_ID,
+        targetStageId: STAGE_ID,
+        filesHash: HASH,
+        files: {
+          [HOOK_ID]: {
+            key: HOOK_ID,
+            contentHash: HASH,
+            handle: "ipfs://stage-file/1",
+            patchHash: HASH,
+            updatedAt: provenance(21n),
+            proof: proof(21n)
+          }
+        },
+        updatedAt: provenance(21n),
+        proof: proof(21n)
+      }
+    },
     hooks: {},
     tasks: {
       "task-1": {

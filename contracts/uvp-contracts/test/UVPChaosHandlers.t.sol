@@ -8,8 +8,10 @@ import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
+import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {DockMerkle} from "../src/libraries/DockMerkle.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
+import {FileOp, FilePatch} from "../src/interfaces/IUVPFileResourceModule.sol";
 
 interface ChaosVm {
     struct Log {
@@ -69,7 +71,7 @@ contract ChaosHandler {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.15");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.16");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
         "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
     );
@@ -77,7 +79,7 @@ contract ChaosHandler {
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
     );
     bytes32 private constant SIGNAL_FOR_TYPEHASH = keccak256(
-        "UVPStateMachineSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
+        "UVPStateMachineSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline,bytes32 filesDigest)"
     );
     bytes32 private constant EXECUTOR_PATCH_SIGNAL_ID =
         0xbbb1770c9313f4029a89e03f4719037cdad52864ab4da5f623bc7c8a0c489e97;
@@ -321,6 +323,7 @@ contract ChaosHandler {
         machine.setDockingModule(address(docking));
         machine.setPlanMetadataModule(address(metadata));
         machine.setOrderLinkModule(address(orderLink));
+        machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
         machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.freezeModules();
 
@@ -430,7 +433,7 @@ contract ChaosHandler {
         bytes32 idempotencyKey = keccak256(abi.encode("chaos.for.idem", seed));
         bytes32 structHash = keccak256(
             abi.encode(
-                SIGNAL_FOR_TYPEHASH, basePlanId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, deadline
+                SIGNAL_FOR_TYPEHASH, basePlanId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, deadline, bytes32(0)
             )
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(
@@ -450,7 +453,9 @@ contract ChaosHandler {
                     submitter,
                     deadline,
                     abi.encodePacked(r, s, v),
-                    _attributionFor(basePlanId, sourceId, signalId)
+                    _attributionFor(basePlanId, sourceId, signalId),
+                    bytes32(0),
+                    _emptyFilePatch()
                 )
             ),
             address(machine)
@@ -2585,6 +2590,11 @@ contract ChaosHandler {
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(SUBMITTER_PRIVATE_KEY, digest);
         return abi.encodePacked(r, s, v);
+    }
+
+    function _emptyFilePatch() private pure returns (FilePatch memory patch) {
+        patch.writerProof = new bytes32[](0);
+        patch.ops = new FileOp[](0);
     }
 
     function _attributionFor(bytes32 planId, bytes32 sourceId, bytes32 signalId)

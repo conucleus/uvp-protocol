@@ -51,6 +51,7 @@ export const KNOWN_FIELDS = {
     "sendSignals",
     "receiveSignals",
     "fileResources",
+    "fileWriters",
   ],
   sendSignalEntry: ["name", "validWhen"],
   executor: ["supplierType", "supplierID", "zhixuExecutorConfig", "selectableResource"],

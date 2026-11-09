@@ -22,7 +22,7 @@ const TX_HASH = `0x${"33".repeat(32)}` as Hex;
 
 const STATE_MACHINE_FIXTURE = JSON.parse(
   readFileSync(
-    new URL("../../../contracts/uvp-contracts/fixtures/uvp-state-machine.v0.17.json", import.meta.url),
+    new URL("../../../contracts/uvp-contracts/fixtures/uvp-state-machine.v0.18.json", import.meta.url),
     "utf8",
   ),
 ) as {

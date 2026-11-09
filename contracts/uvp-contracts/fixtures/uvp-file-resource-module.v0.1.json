@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "uvp-eth.contractAbiFixture.v2",
+  "contractName": "UVPFileResourceModule",
+  "abiVersion": "0.1",
+  "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPFileResourceModule.sol",
+  "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPFileResourceModule.sol/UVPFileResourceModule.json",
+  "compiler": {
+    "name": "solc",
+    "version": "0.8.24+commit.e11b9ed9"
+  },
+  "hashes": {
+    "abiHash": "0xe0fe925f30c011e98b9417e60ac4b0ff5f935d8c9249abad6a10a2989bf7b0ee",
+    "bytecodeHash": "0xfc77c1b64585ab779368418b228770d752d1719a7f76d676edd0eedc7fafd5fe",
+    "deployedBytecodeHash": "0x32aa37b7c1c8ae3a0f11643648cac7d3c7e6a642d25777ee2b4b96a169e19b0a",
+    "artifactHash": "0xc56c58c4d07bddd8259703e6042e6af52ffbe754b2bf31a2396dd7fc2a4496aa"
+  },
+  "events": {
+    "StageFileOpApplied": {
+      "signature": "StageFileOpApplied(bytes32,bytes32,bytes32,uint8,bytes32,bytes32,string)",
+      "topic": "0xd3e15cfb955ca78efe8c3ad6bb348afc3f5afaca3f1a7e9552e159a4acd2f28d"
+    },
+    "StageFilePatchApplied": {
+      "signature": "StageFilePatchApplied(bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32,uint256)",
+      "topic": "0x9c9e91715c306419f27f78608285750b6d3faec0a13604fa8800a5ee832a15f0"
+    }
+  },
+  "functions": {
+    "applyStageFilePatch": {
+      "signature": "applyStageFilePatch(bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]),address)",
+      "selector": "0xd426cf62"
+    },
+    "filePatchDigest": {
+      "signature": "filePatchDigest(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]))",
+      "selector": "0x7bb668f7"
+    },
+    "getStageFile": {
+      "signature": "getStageFile(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0xd11d6534"
+    },
+    "stageFilesHash": {
+      "signature": "stageFilesHash(bytes32,bytes32,bytes32)",
+      "selector": "0x9dffdd35"
+    },
+    "stateMachine": {
+      "signature": "stateMachine()",
+      "selector": "0x37b416d8"
+    }
+  }
+}

@@ -18,9 +18,10 @@ under this folder; repository-level deployment scripts live under
   timer, hook status, signed Plan publication, permissionless relaying, explicit
   order-level signal authorization, and trigger-order links.
 - `src/UVPStagePatchModule.sol`, `src/UVPDerivedSignalModule.sol`,
-  `src/UVPDockingModule.sol`, and `src/UVPStateMachineLens.sol`: protocol
-  modules configured by the core owner for patch, derived signal, docking, and
-  read-helper surfaces.
+  `src/UVPDockingModule.sol`, `src/UVPFileResourceModule.sol`, and
+  `src/UVPStateMachineLens.sol`: protocol modules configured by the core owner
+  for executor patch, derived signal, docking, stage file maps, and read-helper
+  surfaces.
 - `src/UVPDeploymentRegistry.sol`: on-chain cutover ledger for versioned
   state-machine redeployments. It records candidate, canary, active,
   deprecated, and retired deployments for new-order routing; it does not
@@ -28,7 +29,7 @@ under this folder; repository-level deployment scripts live under
 - `src/libraries/ECDSA.sol`: minimal signature recovery helper.
 - `src/libraries/UVPSignatures.sol`: shared signature struct used by relayed
   state-machine signal submission.
-- `fixtures/uvp-state-machine.v0.17.json` and module fixture JSON files:
+- `fixtures/uvp-state-machine.v0.18.json` and module fixture JSON files:
   pinned ABI/hash fixtures for the current core and module public interfaces.
 - `fixtures/uvp-identity-registry.v0.1.json`: pinned ABI/hash fixture for the
   identity registry public interface.
@@ -66,7 +67,8 @@ the TypeScript `statemachine` oracle.
 
 ## ABI Fixture
 
-`UVPStateMachine v0.15` treats these as public interfaces:
+`UVPStateMachine` (ABI fixture v0.18, EIP-712 domain version `0.16`)
+treats these as public interfaces:
 
 - its no-argument constructor;
 - one-time module configuration followed by irreversible `freezeModules`;
@@ -75,9 +77,10 @@ the TypeScript `statemachine` oracle.
   `triggerOrderFromOutsideFor` (one fact, one order — the id
   is `triggerOrderIdFor(planId, sourceId, signalId, payloadHash)`, callers no
   longer self-report it; the request carries a trailing `birthFactAttribution`
-  proof), `submitSignal` and `submitSignalFor` (both take trailing
-  `attribution`/`selectorBinding` proof arguments; an all-zero declaration
-  means "no claim", which keeps off-vocabulary facts legal), module
+  proof), `submitSignal` (msg.sender path, no file patch) and `submitSignalFor` (takes
+  the same trailing `attribution` proof plus `bytes32 filesDigest` and a
+  trailing `FilePatch filePatch`; `0.16` typed data signs `filesDigest`, and
+  `signalId == 0` means a pure file patch), module
   configuration, module-only writebacks (including the order-link writeback
   `triggerOrderFromSignalFromModule`), `DOMAIN_SEPARATOR`, `pokeTimer`,
   `getHookStatus`, `isSignalSubmitterAuthorized`, `getSignalAuthorization`,
@@ -88,13 +91,15 @@ the TypeScript `statemachine` oracle.
   stage-overlay view helpers, and trigger-link view helpers. The signed
   from-signal trigger entrypoint is `triggerOrderFromSignalFor` on
   `UVPOrderLinkModule` (order-link module fixture), not a core selector;
-- module function selectors for stage patch (the `applyStage*PatchFor`
-  entries carry `bindingProof` + `candidateProof` +
-  `executorAuthorizations` proof arguments), derived signal,
-  docking, and lens entrypoints/digest helpers/views, plus plan-metadata
-  module views `capabilitiesRoot`, `hasCapabilityVocabulary`,
-  `verifySignalCapability`, and `verifyStageSelectorBinding` (membership is
-  checked as field-recomputed leaves against caller-supplied Merkle proofs);
+- module function selectors for stage patch (executor half only: the
+  `applyStageExecutorPatchFor` entry carries `bindingProof` + `candidateProof`
+  + `executorAuthorizations` proof arguments), file resource (single
+  `applyStageFilePatch` entry gated on `msg.sender == stateMachine`),
+  derived signal, docking, and lens entrypoints/digest helpers/views, plus
+  plan-metadata module views `capabilitiesRoot`, `hasCapabilityVocabulary`,
+  `verifySignalCapability`, `verifyStageSelectorBinding`, and
+  `verifyFileWriter` (membership is checked as field-recomputed leaves against
+  caller-supplied Merkle proofs);
 - event topics for ownership, module configuration/freeze,
   `PlanCommitted` (carries `executorCandidatesRoot`), `PlanFinalized`,
   `PlanRegistered`, `PlanPublisherRecorded`, `OrderRegistered`,
@@ -109,8 +114,9 @@ the TypeScript `statemachine` oracle.
   order-link module event topics for
   `OrderLinked`; derived
   signal module event topics for `DerivedSignalSubmitted`; stage-patch module
-  (`UVPStagePatchModule`) event topics for `StageExecutorPatchApplied` and
-  `StageResourcePatchApplied`; and deployment
+  (`UVPStagePatchModule`) event topics for `StageExecutorPatchApplied`;
+  file resource module (`UVPFileResourceModule`) event topics for
+  `StageFilePatchApplied` and `StageFileOpApplied`; and deployment
   registry event topics for `DeploymentRegistered`, `DeploymentCanaryMarked`,
   `DeploymentActivated`, `DeploymentDeprecated`, and `DeploymentRetired`;
 - ABI hash, bytecode hash, deployed bytecode hash, canonical artifact hash, and
@@ -179,19 +185,21 @@ code do not silently drift away from the contract ABI.
    authorizations cannot be revoked by later patches (identical re-grants are
    absorbed), and prior `SignalSubmitted` events keep their original
    submitter. Timing gates read the contract-native per-stage count.
-9. A wallet authorized for `RESOURCE_PATCH_SIGNAL_ID` on a stage may apply an
-    independent resource-manifest patch through `UVPStagePatchModule` for a
-    target stage and resource key. The chain stores hashes, nonces, and manifest
-    URIs, not plaintext business documents. Contract time window: a resource
-    patch is only accepted until the target stage has received its first
-    signal, and the closure counts both attribution paths the state machine
-    treats identically — compiled (relation-0) capabilities AND
-    source==stage fallback facts (keys outside the declared vocabulary with
-    `sourceId == stageId`, counted via `sourceSignalCount`):
-    `applyStageResourcePatch` reverts `StageAlreadyHasSignal` from that moment
-    on, permanently (deliberate fail-closed immutability gate; a fallback fact
-    closes the window exactly like a compiled one). Docs that describe file
-    resources as replaceable or deletable must disclose this window.
+9. Stage file maps are owned by `UVPFileResourceModule` (configured as
+    `fileResourceModule()` before `freezeModules`). A stage's map is
+    `key -> (contentHash, handle)`: the chain stores a content hash and an
+    opaque bounded handle, never plaintext, and never resolves the handle.
+    Writes are first-class patch facts (`add` requires the key absent,
+    `replace`/`remove` require it present; strict, whole-patch atomic) carrying
+    a mandatory `baseHash` equal to the stage's current files version —
+    mismatch rejects the whole request, and there is no nonce (the projection
+    holds exactly one current value per key). Writes are authorized by the
+    target stage's `fileWriters` capability leaves (`UVP_FILE_WRITER_V1`) or by
+    the target stage's own active executor. A file patch may ride one business
+    signal in the same `0.16` signature, or stand alone as an empty signal
+    (`signalId == 0`); a pure file patch is not a business signal — it does not
+    increment business signal counts, does not evaluate hooks, and does not run
+    admission. There is no "stage has signal" gate for files.
 10. Docking is committed-route only, in two order modes. `new`
     (`openDockedOrder`): a local entrance hook that is Ready (`EMIT_READY`)
     plus a Merkle-proved `dockRoutesRoot` route lets a keeper open a child
@@ -255,7 +263,7 @@ second registration of the same `orderId` reverts with
 `planId` into their domain so derived order ids are plan-scoped by
 construction. Function signatures take a leading `planId` parameter, and the
 from-signal trigger request carries `originPlanId`. Event signatures are
-pinned in the v0.15 and module fixtures; indexers must consume the composite
+pinned in the v0.18 and module fixtures; indexers must consume the composite
 identity in every event and projection rather than treating `orderId` as
 globally unique.
 
@@ -278,7 +286,8 @@ Indexer and replay tooling should treat these event names as public interfaces:
 - `OrderForked`
 - `StageMaterialized`
 - `StageExecutorPatchApplied`
-- `StageResourcePatchApplied`
+- `StageFilePatchApplied`
+- `StageFileOpApplied`
 - `StageExecutorActivated`
 - `HookStatusChanged`
 - `HookReady`
@@ -290,8 +299,8 @@ The module fixtures add these public events:
   the order ids);
 - `DerivedSignalSubmitted` (derived-signal module; carries `fromPlanId` +
   `targetPlanId`);
-- `StageResourcePatchApplied` (stage-patch module; carries `planId`, aligned
-  with `StageExecutorPatchApplied`);
+- `StageFilePatchApplied` / `StageFileOpApplied` (file resource module;
+  patch-level and per-op records, replayed in log order);
 - `DockOpened`, `DockAttached`, `DockInputSubmitted`,
   `DockOutputSubmitted`, and `DockOutputSatisfied` (docking module);
 - decoding note for `DeploymentDeprecated` (deployment registry): the
