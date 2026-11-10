@@ -218,8 +218,7 @@ export const STATE_MACHINE_ABI = [
   "function triggerOrderIdFor(bytes32 planId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash) pure returns (bytes32)",
   "function orderLinkOrderIdFor(bytes32 planId,bytes32 originPlanId,bytes32 triggerOriginOrderId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash) pure returns (bytes32)",
   "function stageHasOrderTriggerHook(bytes32 planId,bytes32 stageId) view returns (bool)",
-  "function submitSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution)",
-  "function submitSignalFor(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline,bytes signature,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution,bytes32 filesDigest,(bytes32 targetStageId,bytes32 baseHash,bytes32 writerStageId,bytes32[] writerProof,(uint8 kind,bytes32 key,bytes32 contentHash,string handle)[] ops) filePatch)",
+  "function submitSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution,bytes32 filesDigest,(bytes32 targetStageId,bytes32 baseHash,bytes32 writerStageId,bytes32[] writerProof,(uint8 kind,bytes32 key,bytes32 contentHash,string handle)[] ops) filePatch)",
   "function submitSignalFromModule(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution)",
   "function submitDerivedSignalFromModule(bytes32 planId,bytes32 orderId,bytes32 fromPlanId,bytes32 fromOrderId,bytes32 stageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter)",
   "function createDockedOrderFromModule((bytes32 targetPlanId,bytes32 linkedOrderId,address creator,address relayer,bytes32 entranceHookId,bytes32 entranceStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) entranceAttribution) request)",
@@ -1073,20 +1072,6 @@ function normalizeSelectorBinding(
   };
 }
 
-export interface SubmitSignalForCallArgs {
-  readonly planId: Hex | string;
-  readonly orderId: Hex | string;
-  readonly sourceId: Hex | string;
-  readonly signalId: Hex | string;
-  readonly payloadHash: Hex | string;
-  readonly idempotencyKey: Hex | string;
-  readonly submitter: Address | string;
-  readonly deadline: bigint | number | string;
-  readonly signature: Hex | string;
-  readonly attribution: SignalAttributionPayload;
-  readonly filesDigest?: Hex | string;
-  readonly filePatch?: FilePatch;
-}
 
 export interface DerivedSignalRequestCallStruct {
   readonly fromPlanId: Hex;
@@ -1217,27 +1202,6 @@ export type TriggerOrderFromOutsideByAuthorizerCallConfig =
   SubmitSignalForCallConfig;
 export type TriggerOrderFromSignalForCallConfig = OrderLinkModuleCallConfig;
 
-export interface SubmitSignalForCall {
-  readonly address: Address;
-  readonly abi: typeof STATE_MACHINE_ABI;
-  readonly functionName: "submitSignalFor";
-  readonly args: readonly [
-    Hex,
-    Hex,
-    Hex,
-    Hex,
-    Hex,
-    Hex,
-    Address,
-    bigint,
-    Hex,
-    SignalAttributionCallStruct,
-    Hex,
-    FilePatchCallStruct,
-  ];
-  readonly data: Hex;
-  readonly chainId?: number;
-}
 
 export interface SubmitDerivedSignalForCall {
   readonly address: Address;
@@ -1794,58 +1758,6 @@ export async function recoverStageExecutorPatchSigner(
   return normalizeAddress(recovered, "recoveredStageExecutorPatchSigner");
 }
 
-
-export function buildSubmitSignalForCall(
-  config: SubmitSignalForCallConfig,
-  args: SubmitSignalForCallArgs,
-): SubmitSignalForCall {
-  const planId = normalizeBytes32(args.planId, "planId");
-  const orderId = normalizeBytes32(args.orderId, "orderId");
-  const normalizedArgs = [
-    planId,
-    orderId,
-    normalizeBytes32(args.sourceId, "sourceId"),
-    normalizeBytes32(args.signalId, "signalId"),
-    normalizeBytes32(args.payloadHash, "payloadHash"),
-    normalizeBytes32(args.idempotencyKey, "idempotencyKey"),
-    normalizeAddress(args.submitter, "submitter"),
-    normalizeUintBigInt(args.deadline, "deadline"),
-    normalizeHex(args.signature, "signature"),
-    normalizeSignalAttribution(args.attribution),
-    ...normalizeSubmitFiles(planId, orderId, args.filesDigest, args.filePatch),
-  ] as const satisfies readonly [
-    Hex,
-    Hex,
-    Hex,
-    Hex,
-    Hex,
-    Hex,
-    Address,
-    bigint,
-    Hex,
-    SignalAttributionCallStruct,
-    Hex,
-    FilePatchCallStruct,
-  ];
-
-  return {
-    address: normalizeAddress(
-      config.stateMachineAddress,
-      "stateMachineAddress",
-    ),
-    abi: STATE_MACHINE_ABI,
-    functionName: "submitSignalFor",
-    args: normalizedArgs,
-    data: encodeFunctionData({
-      abi: STATE_MACHINE_ABI,
-      functionName: "submitSignalFor",
-      args: normalizedArgs,
-    }),
-    ...(config.chainId !== undefined
-      ? { chainId: normalizeChainId(config.chainId) }
-      : {}),
-  };
-}
 
 export function buildSubmitDerivedSignalForCall(
   config: SubmitDerivedSignalForCallConfig,

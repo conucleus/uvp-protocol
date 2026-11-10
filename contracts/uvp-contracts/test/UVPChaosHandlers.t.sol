@@ -12,6 +12,7 @@ import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {DockMerkle} from "../src/libraries/DockMerkle.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 import {FileOp, FilePatch} from "../src/interfaces/IUVPFileResourceModule.sol";
+import {emptyFilePatch} from "./FilePatchTestHelpers.sol";
 
 interface ChaosVm {
     struct Log {
@@ -355,7 +356,7 @@ contract ChaosHandler {
                 keccak256(abi.encode("chaos.mill.shipped", i)),
                 keccak256(abi.encode("chaos.mill.shipped.idem", i)),
                 _noAttribution()
-            );
+            , bytes32(0), emptyFilePatch());
         }
         for (uint256 i = 0; i < FORK_PAYLOAD_COUNT; i++) {
             forkPayloads[i] = keccak256(abi.encode("chaos.fork.payload", i));
@@ -401,7 +402,7 @@ contract ChaosHandler {
                 keccak256(abi.encode("chaos.signal.payload", seed)),
                 keccak256(abi.encode("chaos.signal.idem", seed)),
                 _attributionFor(planId, sourceId, signalId)
-            );
+            , bytes32(0), emptyFilePatch());
         } else {
             _guarded(
                 abi.encodeCall(
@@ -414,7 +415,7 @@ contract ChaosHandler {
                         keccak256(abi.encode("chaos.signal.payload", seed)),
                         keccak256(abi.encode("chaos.signal.idem", seed)),
                         _attributionFor(planId, sourceId, signalId)
-                    )
+                    , bytes32(0), emptyFilePatch())
                 ),
                 address(machine)
             );
@@ -422,48 +423,7 @@ contract ChaosHandler {
         _afterAction();
     }
 
-    function submitSignalFor(uint256 seed) external {
-        require(bootstrapped, "chaos: not bootstrapped");
-        bytes32 orderId = _basePool(seed % (BASE_ORDER_COUNT + forkChildren.length));
-        (bytes32 sourceId, bytes32 signalId) = _baseSignalAt((seed >> 8) % BASE_SIGNAL_COUNT);
-        address submitter = vm.addr(SUBMITTER_PRIVATE_KEY);
-        uint256 variant = (seed >> 16) % 3;
-        uint256 deadline = variant == 2 ? block.timestamp - 1 : block.timestamp + 1 hours;
-        bytes32 payloadHash = keccak256(abi.encode("chaos.for.payload", seed));
-        bytes32 idempotencyKey = keccak256(abi.encode("chaos.for.idem", seed));
-        bytes32 structHash = keccak256(
-            abi.encode(
-                SIGNAL_FOR_TYPEHASH, basePlanId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, deadline, bytes32(0)
-            )
-        );
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
-            variant == 1 ? ROGUE_PRIVATE_KEY : SUBMITTER_PRIVATE_KEY,
-            keccak256(abi.encodePacked("\x19\x01", machine.DOMAIN_SEPARATOR(), structHash))
-        );
-        _guarded(
-            abi.encodeCall(
-                machine.submitSignalFor,
-                (
-                    basePlanId,
-                    orderId,
-                    sourceId,
-                    signalId,
-                    payloadHash,
-                    idempotencyKey,
-                    submitter,
-                    deadline,
-                    abi.encodePacked(r, s, v),
-                    _attributionFor(basePlanId, sourceId, signalId),
-                    bytes32(0),
-                    _emptyFilePatch()
-                )
-            ),
-            address(machine)
-        );
-        _afterAction();
-    }
-
-    function followGarmentProcess(uint256 seed) external {
+        function followGarmentProcess(uint256 seed) external {
         require(bootstrapped, "chaos: not bootstrapped");
         bytes32 orderId = _basePool(seed % (BASE_ORDER_COUNT + forkChildren.length));
         uint256 variant = (seed >> 12) % 4;
@@ -479,7 +439,7 @@ contract ChaosHandler {
                         keccak256(abi.encode("chaos.ladder.rework", orderId, seed)),
                         keccak256(abi.encode("chaos.ladder.rework.idem", orderId, seed)),
                         _attributionFor(basePlanId, SOURCE_SHOP, SIG_SEW_REWORK)
-                    )
+                    , bytes32(0), emptyFilePatch())
                 ),
                 address(machine)
             );
@@ -495,7 +455,7 @@ contract ChaosHandler {
                         keccak256(abi.encode("chaos.ladder.dispute", orderId, seed)),
                         keccak256(abi.encode("chaos.ladder.dispute.idem", orderId, seed)),
                         _attributionFor(basePlanId, SOURCE_SHOP, SIG_DISPUTE_RULED)
-                    )
+                    , bytes32(0), emptyFilePatch())
                 ),
                 address(machine)
             );
@@ -512,7 +472,7 @@ contract ChaosHandler {
                         keccak256(abi.encode("chaos.ladder.payload", orderId, signalId, seed)),
                         keccak256(abi.encode("chaos.ladder.idem", orderId, signalId, seed)),
                         _attributionFor(basePlanId, sourceId, signalId)
-                    )
+                    , bytes32(0), emptyFilePatch())
                 ),
                 address(machine)
             );
@@ -835,7 +795,7 @@ contract ChaosHandler {
                     keccak256(abi.encode("chaos.alt.payload", variant, seed)),
                     keccak256(abi.encode("chaos.alt.idem", variant, seed)),
                     _noAttribution()
-                )
+                , bytes32(0), emptyFilePatch())
             ),
             address(machine)
         );

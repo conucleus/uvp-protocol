@@ -12,6 +12,7 @@ import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
 import {DockMerkle} from "../src/libraries/DockMerkle.sol";
+import {emptyFilePatch} from "./FilePatchTestHelpers.sol";
 
 interface Vm {
     struct Log {
@@ -214,7 +215,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9101)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
+        , bytes32(0), emptyFilePatch());
         PreparedPatch memory prepared = _prepareRelayed(
             machine,
             PLAN_ID,
@@ -372,7 +373,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9102)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
+        , bytes32(0), emptyFilePatch());
     }
 
     function testPatchedExecutorCanSubmitStageSignalWhileStrangerCannot() public {
@@ -398,7 +399,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9103)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
+        , bytes32(0), emptyFilePatch());
         vm.prank(E3);
         machine.submitSignal(
             PLAN_ID,
@@ -408,7 +409,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9104)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
+        , bytes32(0), emptyFilePatch());
         (,,,, address submitter) = machine.getSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE);
         require(submitter == E3, "patched executor submission not recorded");
     }
@@ -427,7 +428,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9105)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
+        , bytes32(0), emptyFilePatch());
         PreparedPatch memory handoff = _prepareRelayed(
             machine,
             PLAN_ID,
@@ -448,7 +449,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9106)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
-        );
+        , bytes32(0), emptyFilePatch());
         (,,,, address reviewSubmitter) = machine.getSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW);
         require(reviewSubmitter == E1(), "old executor explicit auth not preserved");
 
@@ -470,7 +471,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9107)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
-        );
+        , bytes32(0), emptyFilePatch());
     }
 
     function testPatchWithEmptyAuthorizationSetLeavesNoSubmitLane() public {
@@ -500,7 +501,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9108)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
+        , bytes32(0), emptyFilePatch());
     }
 
     function testBirthStageExecutorPatchForbiddenEvenInsideCandidateSet() public {
@@ -555,7 +556,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9109)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
+        , bytes32(0), emptyFilePatch());
         PreparedPatch memory handoff1 = _prepareRelayed(
             machine,
             PLAN_ID,
@@ -633,7 +634,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9120)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
+        , bytes32(0), emptyFilePatch());
 
         vm.prank(CREATOR);
         vm.expectRevert(
@@ -682,7 +683,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9110)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
+        , bytes32(0), emptyFilePatch());
         vm.prank(E2());
         machine.submitSignal(
             PLAN_ID,
@@ -692,7 +693,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9111)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
-        );
+        , bytes32(0), emptyFilePatch());
         vm.prank(CREATOR);
         bytes32 ambiguousChild = machine.forkOrder(
             PLAN_ID,
@@ -742,7 +743,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9112)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
+        , bytes32(0), emptyFilePatch());
         vm.prank(E1());
         machine.submitSignal(
             PLAN_ID,
@@ -752,7 +753,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9113)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
-        );
+        , bytes32(0), emptyFilePatch());
         vm.prank(CREATOR);
         bytes32 cleanChild = machine.forkOrder(
             PLAN_ID,
@@ -795,7 +796,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9114)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
+        , bytes32(0), emptyFilePatch());
         vm.prank(E2());
         machine.submitSignal(
             PLAN_ID,
@@ -805,7 +806,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9115)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
-        );
+        , bytes32(0), emptyFilePatch());
         (,,, bool thirdAmbiguous) = machine.stageSignalState(PLAN_ID, thirdOrder, STAGE_AUDIT);
         require(thirdAmbiguous, "setup: expected ambiguity");
         PreparedPatch memory patchedHandoff = _prepareRelayed(
@@ -834,7 +835,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9121)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
+        , bytes32(0), emptyFilePatch());
 
         PreparedPatch memory impostor = _prepareRelayed(
             machine,
@@ -881,7 +882,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9116)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
+        , bytes32(0), emptyFilePatch());
 
         vm.prank(CREATOR);
         vm.expectRevert(
@@ -909,7 +910,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9117)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
-        );
+        , bytes32(0), emptyFilePatch());
         (uint256 finalCount,,,,) = _stageStateAbi(machine, ORDER_ID);
         require(finalCount == 2, "stage count mismatch");
     }
@@ -945,7 +946,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9118)),
             _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_EXTRA)
-        );
+        , bytes32(0), emptyFilePatch());
         (uint256 preCount,,,,) = _stageStateAbi(machine, ORDER_ID);
         require(preCount == 0, "rejected pre-assign fact must leave no state");
 
@@ -962,7 +963,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9118)),
             _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_EXTRA)
-        );
+        , bytes32(0), emptyFilePatch());
         (uint256 count,,,,) = _stageStateAbi(machine, ORDER_ID);
         require(count == 1, "attributed business fact not counted");
 
@@ -987,7 +988,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0xF001)),
             _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
 
         vm.prank(CREATOR);
         vm.expectRevert(
@@ -1021,7 +1022,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0xF001)),
             _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         vm.prank(E2());
         machine.submitSignal(
             PLAN_ID,
@@ -1031,7 +1032,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0xF002)),
             _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
 
         vm.prank(E1());
         vm.expectRevert(
@@ -1059,7 +1060,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0xF001)),
             _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         UVPStateMachine.ForkBirthFact[] memory facts = new UVPStateMachine.ForkBirthFact[](1);
         facts[0] = UVPStateMachine.ForkBirthFact({
             sourceId: SOURCE_BOOTSTRAP,
@@ -1098,7 +1099,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0xF001)),
             _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         vm.prank(E2());
         machine.submitSignal(
             PLAN_ID,
@@ -1108,7 +1109,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0xF002)),
             _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
 
         UVPStateMachine.ForkBirthFact[] memory facts = new UVPStateMachine.ForkBirthFact[](1);
         facts[0] = UVPStateMachine.ForkBirthFact({
@@ -1146,7 +1147,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0xF001)),
             _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
 
         vm.prank(E1());
         bytes32 first = _fork(
@@ -1194,7 +1195,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0xF001)),
             _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
 
         vm.recordLogs();
         vm.prank(E1());
@@ -1232,7 +1233,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0xF001)),
             _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         vm.prank(E2());
         machine.submitSignal(
             PLAN_ID,
@@ -1242,7 +1243,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0xF002)),
             _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
 
         vm.prank(E1());
         bytes32 child1 = _fork(
@@ -1353,7 +1354,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0xFC00)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
-        );
+        , bytes32(0), emptyFilePatch());
     }
 
     function _birthOrder(UVPStateMachine machine, address creator, bytes32 payloadHash)
@@ -1632,7 +1633,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0x9201)),
             _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP)
-        );
+        , bytes32(0), emptyFilePatch());
     }
 
     function _patch(uint256 nonce, address executor, bytes32 patchHash)
@@ -2205,7 +2206,7 @@ contract ExecutorChangeBlackBoxTest {
             PAYLOAD_HASH,
             bytes32(uint256(0xF001)),
             _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        );
+        , bytes32(0), emptyFilePatch());
     }
 
     function _signalHook(bytes32 hookId, bytes32 stageId, bytes32 hookName, bool isTrigger, bytes32 signalId)

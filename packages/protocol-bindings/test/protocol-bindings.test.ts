@@ -34,7 +34,6 @@ import {
   buildProductSubmitTypedData,
   buildStageExecutorPatchTypedData,
   buildSubmitDerivedSignalForCall,
-  buildSubmitSignalForCall,
   buildTriggerOrderFromOutsideForCall,
   buildTriggerOrderFromSignalForCall,
   buildTriggerOrderFromSignalTypedData,
@@ -569,89 +568,6 @@ describe("protocol bindings", () => {
     );
   });
 
-  it("builds submitSignalFor calls from the shared ABI", () => {
-    const signature = `0x${"aa".repeat(65)}` as const;
-    const capabilityProof = [payloadHash, idempotencyKey] as const;
-    const call = buildSubmitSignalForCall(
-      {
-        stateMachineAddress: verifyingContract,
-        chainId: 31337,
-      },
-      {
-        planId,
-        orderId,
-        sourceId,
-        signalId,
-        payloadHash,
-        idempotencyKey,
-        submitter,
-        deadline,
-        signature,
-        attribution: {
-          sourceId: `0x${sourceId.slice(2).toUpperCase()}`,
-          signalId,
-          stageId: targetStageId,
-          capabilityProof,
-        },
-      },
-    );
-
-    assert.equal(call.address, verifyingContract);
-    assert.equal(call.abi, STATE_MACHINE_ABI);
-    assert.equal(call.functionName, "submitSignalFor");
-    assert.deepEqual(call.args, [
-      planId,
-      orderId,
-      sourceId,
-      signalId,
-      payloadHash,
-      idempotencyKey,
-      submitter,
-      BigInt(deadline),
-      signature,
-      // attribution 归一化：大小写折叠 + proof 数组逐词 bytes32 校验。
-      { sourceId, signalId, stageId: targetStageId, capabilityProof: [...capabilityProof] },
-      zeroBytes32,
-      {
-        targetStageId: zeroBytes32,
-        baseHash: zeroBytes32,
-        writerStageId: zeroBytes32,
-        writerProof: [],
-        ops: [],
-      },
-    ]);
-    assert.match(call.data, /^0x[0-9a-f]+$/);
-    const decoded = decodeFunctionData({
-      abi: STATE_MACHINE_ABI,
-      data: call.data,
-    });
-    assert.equal(decoded.functionName, "submitSignalFor");
-    const decodedArgs = decoded.args as unknown as [
-      unknown,
-      unknown,
-      unknown,
-      unknown,
-      unknown,
-      unknown,
-      unknown,
-      unknown,
-      unknown,
-      { sourceId: `0x${string}`; capabilityProof: readonly `0x${string}`[] },
-      `0x${string}`,
-      { targetStageId: `0x${string}`; baseHash: `0x${string}`; writerStageId: `0x${string}`; writerProof: readonly `0x${string}`[]; ops: readonly unknown[] },
-    ];
-    assert.equal(decodedArgs[9].sourceId, sourceId);
-    assert.deepEqual(decodedArgs[9].capabilityProof, [...capabilityProof]);
-    assert.equal(decodedArgs[10], zeroBytes32);
-    assert.deepEqual(decodedArgs[11], {
-      targetStageId: zeroBytes32,
-      baseHash: zeroBytes32,
-      writerStageId: zeroBytes32,
-      writerProof: [],
-      ops: [],
-    });
-  });
-
   it("matches the shared capabilities-root golden vectors consumed by compiler and Foundry", () => {
     // 同源消费 packages/compiler/fixtures/capabilities-root/v1/vectors.json
     // （compiler 权威实现生成，Foundry 侧 CapabilitiesRootParity.t.sol 消费
@@ -796,51 +712,6 @@ describe("protocol bindings", () => {
       ),
       undefined,
     );
-  });
-
-  it("wires capability-tree proofs straight into submitSignalFor attribution args", () => {
-    const stageA = bytes32("a1");
-    const stageB = bytes32("a2");
-    const bindings = [
-      { selectorStageId: stageA, targetStageId: stageB },
-    ] as const;
-    const capabilities = [
-      { stageId: stageA, targetSourceId: sourceId, signalId, relation: 0 },
-    ] as const;
-    const attribution = factAttribution(bindings, capabilities, sourceId, signalId);
-    assert.ok(attribution);
-
-    const call = buildSubmitSignalForCall(
-      { stateMachineAddress: verifyingContract, chainId: 31337 },
-      {
-        planId,
-        orderId,
-        sourceId,
-        signalId,
-        payloadHash,
-        idempotencyKey,
-        submitter,
-        deadline,
-        signature: `0x${"aa".repeat(65)}` as const,
-        attribution: {
-          sourceId,
-          signalId,
-          stageId: attribution.stageId,
-          capabilityProof: attribution.capabilityProof,
-        },
-      },
-    );
-    assert.deepEqual(call.args[9], {
-      sourceId,
-      signalId,
-      stageId: stageA,
-      capabilityProof: attribution.capabilityProof,
-    });
-    const decoded = decodeFunctionData({
-      abi: STATE_MACHINE_ABI,
-      data: call.data,
-    });
-    assert.equal(decoded.functionName, "submitSignalFor");
   });
 
   it("builds triggerOrderFromSignalFor calls from the order-link module ABI", () => {

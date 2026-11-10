@@ -354,9 +354,6 @@ contract UVPStateMachine {
 
     bytes32 private constant _ORDER_LINK_ORDER_ID_DOMAIN = keccak256("uvp.order_link.order_id.v1");
     bytes32 public constant DOCK_ORDER_NAMESPACE_MASK = bytes32(uint256(1) << 255);
-    bytes32 private constant _SIGNAL_SUBMISSION_TYPEHASH = keccak256(
-        "UVPStateMachineSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline,bytes32 filesDigest)"
-    );
     bytes32 private constant _TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
     );
@@ -813,58 +810,26 @@ contract UVPStateMachine {
         bytes32 signalId,
         bytes32 payloadHash,
         bytes32 idempotencyKey,
-        FactAttribution calldata attribution
-    ) external {
-        _submitSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, msg.sender, attribution);
-    }
-
-    function submitSignalFor(
-        bytes32 planId,
-        bytes32 orderId,
-        bytes32 sourceId,
-        bytes32 signalId,
-        bytes32 payloadHash,
-        bytes32 idempotencyKey,
-        address submitter,
-        uint256 deadline,
-        bytes calldata signature,
         FactAttribution calldata attribution,
         bytes32 filesDigest,
         FilePatch calldata filePatch
     ) external {
-        if (block.timestamp > deadline) {
-            revert ExpiredSignalSignature(deadline);
-        }
-        if (submitter == address(0)) {
-            revert ZeroSubmitter();
-        }
-
-        address recoveredSigner = _recoverSignalSubmitter(
-            _signalSubmissionDigest(
-                planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, deadline, filesDigest
-            ),
-            signature
-        );
-        if (recoveredSigner != submitter) {
-            revert InvalidSignalSignature(submitter, recoveredSigner);
-        }
-
         if (signalId == bytes32(0)) {
             if (filePatch.ops.length == 0) {
                 revert FilePatchEmpty();
             }
-        } else {
-            bool inserted =
-                _submitSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, attribution);
-            if (!inserted) {
-                return;
-            }
-            if (filePatch.ops.length == 0 && filesDigest == bytes32(0)) {
-                return;
-            }
+            _applyFilePatch(planId, orderId, filesDigest, filePatch, msg.sender);
+            return;
         }
-
-        _applyFilePatch(planId, orderId, filesDigest, filePatch, submitter);
+        bool inserted =
+            _submitSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, msg.sender, attribution);
+        if (!inserted) {
+            return;
+        }
+        if (filePatch.ops.length == 0 && filesDigest == bytes32(0)) {
+            return;
+        }
+        _applyFilePatch(planId, orderId, filesDigest, filePatch, msg.sender);
     }
 
     function activateStageExecutorFromModule(
@@ -1480,34 +1445,6 @@ contract UVPStateMachine {
         return keccak256(
             abi.encode(_EIP712_DOMAIN_TYPEHASH, _EIP712_NAME_HASH, _EIP712_VERSION_HASH, block.chainid, address(this))
         );
-    }
-
-    function _signalSubmissionDigest(
-        bytes32 planId,
-        bytes32 orderId,
-        bytes32 sourceId,
-        bytes32 signalId,
-        bytes32 payloadHash,
-        bytes32 idempotencyKey,
-        address submitter,
-        uint256 deadline,
-        bytes32 filesDigest
-    ) private view returns (bytes32) {
-        bytes32 structHash = keccak256(
-            abi.encode(
-                _SIGNAL_SUBMISSION_TYPEHASH,
-                planId,
-                orderId,
-                sourceId,
-                signalId,
-                payloadHash,
-                idempotencyKey,
-                submitter,
-                deadline,
-                filesDigest
-            )
-        );
-        return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
     }
 
     function signalAuthorizationsHash(SignalAuthorization[] calldata authorizations) public pure returns (bytes32) {

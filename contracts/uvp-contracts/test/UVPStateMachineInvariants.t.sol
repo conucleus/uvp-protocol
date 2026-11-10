@@ -10,6 +10,7 @@ import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
+import {emptyFilePatch} from "./FilePatchTestHelpers.sol";
 
 interface InvariantVm {
     function addr(uint256 privateKey) external returns (address keyAddr);
@@ -172,7 +173,7 @@ contract Handler {
             keccak256(abi.encode("payload", seed)),
             keccak256(abi.encode("idem", seed)),
             _noAttribution()
-        ) {}
+        , bytes32(0), emptyFilePatch()) {}
             catch {}
         _observe();
     }

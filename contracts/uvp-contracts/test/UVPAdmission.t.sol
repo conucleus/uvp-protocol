@@ -10,6 +10,7 @@ import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
+import {emptyFilePatch} from "./FilePatchTestHelpers.sol";
 
 interface Vm {
     struct Log {
@@ -48,7 +49,7 @@ contract BatchSubmitter {
             UVPStateMachine.FactAttribution({
                 sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
             })
-        );
+        , bytes32(0), emptyFilePatch());
         machine.submitSignal(
             planId,
             orderId,
@@ -59,7 +60,7 @@ contract BatchSubmitter {
             UVPStateMachine.FactAttribution({
                 sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
             })
-        );
+        , bytes32(0), emptyFilePatch());
     }
 }
 
@@ -287,10 +288,10 @@ contract UVPAdmissionTest {
 
         machine.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         machine.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
 
         (bool exists,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(exists, "admitted fact missing");
@@ -311,7 +312,7 @@ contract UVPAdmissionTest {
         );
         machine.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
 
         (bool exists,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(!exists, "rejected emission must not record a fact");
@@ -345,7 +346,7 @@ contract UVPAdmissionTest {
         vm.warp(100);
         machine.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
 
         vm.warp(103);
         vm.expectRevert(
@@ -355,12 +356,12 @@ contract UVPAdmissionTest {
         );
         machine.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
 
         vm.warp(105);
         machine.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         (bool exists,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(exists, "admitted emission missing at anchored maturity");
     }
@@ -383,7 +384,7 @@ contract UVPAdmissionTest {
         _submitTriggerOrderFromOutside(machine, address(0));
         machine.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         (bool admitted,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(admitted, "double-vacuum tie must resolve value-Ready and admit");
 
@@ -403,7 +404,7 @@ contract UVPAdmissionTest {
         _submitTriggerOrderFromOutside(swapped, address(0));
         swapped.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         (bool admittedSwapped,,,,) = swapped.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(admittedSwapped, "double-vacuum tie outcome must be fold-order independent");
 
@@ -426,14 +427,14 @@ contract UVPAdmissionTest {
         vm.warp(100);
         asymmetric.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         asymmetric.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         vm.warp(101);
         asymmetric.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         (bool admittedAsym,,,,) = asymmetric.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(admittedAsym, "asymmetric-payload (0,0) tie must stay value-Ready and admit");
     }
@@ -443,23 +444,23 @@ contract UVPAdmissionTest {
         vm.warp(100);
         before.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         before.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         vm.warp(104);
         before.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
 
         UVPStateMachine atExpiry = _gatedMachine(5);
         vm.warp(100);
         atExpiry.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         atExpiry.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         vm.warp(105);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -468,7 +469,7 @@ contract UVPAdmissionTest {
         );
         atExpiry.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
     }
 
     function testDuplicateAbsorbsAfterWindowExpiry() public {
@@ -477,13 +478,13 @@ contract UVPAdmissionTest {
 
         machine.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         machine.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         machine.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
 
         vm.warp(1000);
         machine.submitSignal(
@@ -494,7 +495,7 @@ contract UVPAdmissionTest {
             bytes32(uint256(0x8004)),
             IDEMPOTENCY_KEY,
             _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
 
         (, bytes32 payloadHash,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(payloadHash == PAYLOAD_HASH, "absorbed retry overwrote the first write");
@@ -570,7 +571,7 @@ contract UVPAdmissionTest {
         uint256 gasBefore = gasleft();
         machine.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         uint256 spent = gasBefore - gasleft();
 
         require(spent <= 128_082 + 1_500, "no-admission submit overhead exceeds the constant budget");
@@ -581,33 +582,33 @@ contract UVPAdmissionTest {
         vm.warp(100);
         plain.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         uint256 gasBefore = gasleft();
         plain.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         uint256 plainSpent = gasBefore - gasleft();
 
         UVPStateMachine machine = _gatedTriggerMachine(5);
         vm.warp(100);
         machine.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         gasBefore = gasleft();
         machine.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         uint256 admissionSpent = gasBefore - gasleft();
 
         UVPStateMachine machineHour = _gatedTriggerMachine(1 hours);
         vm.warp(100);
         machineHour.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         gasBefore = gasleft();
         machineHour.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         uint256 hourSpent = gasBefore - gasleft();
 
         require(admissionSpent > plainSpent, "admission face must cost more than the ungated path");

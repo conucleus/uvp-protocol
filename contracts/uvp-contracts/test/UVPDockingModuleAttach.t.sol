@@ -11,6 +11,7 @@ import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
 import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {DockMerkle} from "../src/libraries/DockMerkle.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
+import {emptyFilePatch} from "./FilePatchTestHelpers.sol";
 
 interface AttachVm {
     function addr(uint256 privateKey) external returns (address keyAddr);
@@ -625,7 +626,7 @@ contract UVPDockingModuleAttachTest {
             bytes32(uint256(0xA11)),
             bytes32(uint256(0x1)),
             _factAttributionFor(targetPlanId, TARGET_INPUT_SOURCE, TARGET_INPUT_SIGNAL)
-        );
+        , bytes32(0), emptyFilePatch());
         bytes32 instance = _attachInstanceId(parentOrder, attachRouteHash, targetOrder);
         vm.prank(KEEPER);
         _expect(abi.encodeWithSelector(UVPDockingModule.DockInputConflict.selector, instance, amendInputBinding));
@@ -1191,7 +1192,7 @@ contract UVPDockingModuleAttachTest {
             PAYLOAD,
             bytes32(uint256(0x100 + _spawnNonce)),
             _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
         return orderId;
     }
 
@@ -1227,7 +1228,7 @@ contract UVPDockingModuleAttachTest {
             TARGET_FACT_PAYLOAD,
             bytes32(uint256(0x99)),
             _factAttributionFor(targetPlanId, TARGET_SOURCE, TARGET_SIGNAL)
-        );
+        , bytes32(0), emptyFilePatch());
     }
 
     function _assignControlExecutor(bytes32 targetOrder, address executor) private {

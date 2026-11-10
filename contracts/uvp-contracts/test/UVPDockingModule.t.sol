@@ -12,6 +12,7 @@ import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {DockMerkle} from "../src/libraries/DockMerkle.sol";
 import {ECDSA} from "../src/libraries/ECDSA.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
+import {emptyFilePatch} from "./FilePatchTestHelpers.sol";
 
 interface DockVm {
     struct NoArgs {
@@ -225,7 +226,7 @@ contract UVPDockingModuleTest {
             PAYLOAD,
             keccak256("intake.demand_accepted"),
             _factAttributionFor(targetPlanId, TARGET_INTAKE_SOURCE, TARGET_INTAKE_SIGNAL)
-        );
+        , bytes32(0), emptyFilePatch());
         (bool exists,,,,) = machine.getSignal(targetPlanId, linkedOrderId, TARGET_INTAKE_SOURCE, TARGET_INTAKE_SIGNAL);
         assertTrue(exists);
 
@@ -1518,7 +1519,7 @@ contract UVPDockingModuleTest {
         route.orderId = machine.triggerOrderIdFor(route.planId, PARENT_STAGE, SIGNAL_START, PAYLOAD);
         machine.submitSignal(
             route.planId, route.orderId, PARENT_STAGE, SIGNAL_EXEC, PAYLOAD, bytes32(uint256(0x78)), _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
 
         route.dockInstanceId = keccak256(
             abi.encode(
@@ -1613,7 +1614,7 @@ contract UVPDockingModuleTest {
         );
         machine.submitSignal(
             parentPlanId, PARENT_ORDER_ID, PARENT_STAGE, SIGNAL_EXEC, PAYLOAD, bytes32(uint256(0x77)), _noAttribution()
-        );
+        , bytes32(0), emptyFilePatch());
     }
 
     struct StageSelectorBinding {

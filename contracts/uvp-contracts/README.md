@@ -77,10 +77,9 @@ treats these as public interfaces:
   `triggerOrderFromOutsideFor` (one fact, one order — the id
   is `triggerOrderIdFor(planId, sourceId, signalId, payloadHash)`, callers no
   longer self-report it; the request carries a trailing `birthFactAttribution`
-  proof), `submitSignal` (msg.sender path, no file patch) and `submitSignalFor` (takes
-  the same trailing `attribution` proof plus `bytes32 filesDigest` and a
-  trailing `FilePatch filePatch`; `0.16` typed data signs `filesDigest`, and
-  `signalId == 0` means a pure file patch), module
+  proof) and `submitSignal` (msg.sender path, carrying the trailing
+  `attribution` proof plus `bytes32 filesDigest` and a trailing
+  `FilePatch filePatch`; `signalId == 0` means a pure file patch), module
   configuration, module-only writebacks (including the order-link writeback
   `triggerOrderFromSignalFromModule`), `DOMAIN_SEPARATOR`, `pokeTimer`,
   `getHookStatus`, `isSignalSubmitterAuthorized`, `getSignalAuthorization`,
@@ -150,10 +149,10 @@ code do not silently drift away from the contract ABI.
    contract recovers the business submitter, creates the order, writes explicit
    `SignalAuthorization[]` records, records the trigger fact, and materializes
    the ready trigger stage atomically.
-6. Only authorized submitter wallets can call `submitSignal` for their bound
-   `sourceId + signalId`. A gas relayer can use `submitSignalFor` with the
-   authorized submitter's EIP-712 signature; the recorded submitter remains the
-   business signer, not the relayer. External submissions are idempotent
+6. Only authorized submitter wallets/contracts can call `submitSignal` for
+   their bound `sourceId + signalId`; identity is `msg.sender`, so a contract
+   executor can be called by a relayer/keeper and still be the submitter.
+   External submissions are idempotent
    first-win: a fact already recorded for the order is absorbed silently
    instead of reverting (at-least-once retries must never be rejected by an
    expired admission window). Plans may declare an emission admission face
@@ -200,7 +199,7 @@ code do not silently drift away from the contract ABI.
     target stage's `fileWriters` capability leaves (`UVP_FILE_WRITER_V1`) and
     the writer stage's current active executor (the target stage for self);
     executor handoff changes write authority immediately. A file patch may ride one business
-    signal in the same `0.16` signature, or stand alone as an empty signal
+    signal in the same direct call, or stand alone as an empty signal
     (`signalId == 0`); a pure file patch is not a business signal — it does not
     increment business signal counts, does not evaluate hooks, and does not run
     admission. There is no "stage has signal" gate for files.

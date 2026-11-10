@@ -11,6 +11,7 @@ import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
+import {emptyFilePatch} from "./FilePatchTestHelpers.sol";
 
 interface CorpusVm {
     struct Log {
@@ -402,7 +403,7 @@ contract SemanticsReplayCorpusTest {
                     sig.payload,
                     keccak256(abi.encode(caseIdx, signalIdx)),
                     _noAttribution()
-                );
+                , bytes32(0), emptyFilePatch());
                 _markWritten(signalIdx);
             } else if (name == NAME_TIMER_POKED) {
                 _replayPoke(pokeCursor);
@@ -1278,7 +1279,7 @@ contract SemanticsReplayCorpusTest {
                 keccak256(abi.encode(caseIdx, "filter-signal", i)),
                 keccak256(abi.encode(caseIdx, "filter-signal-idem", i)),
                 _noAttribution()
-            );
+            , bytes32(0), emptyFilePatch());
         }
 
         vm.warp(nowSec);
@@ -1296,12 +1297,12 @@ contract SemanticsReplayCorpusTest {
                 );
                 machine.submitSignal(
                     planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution()
-                );
+                , bytes32(0), emptyFilePatch());
                 vm.warp(nowSec);
             }
             machine.submitSignal(
                 planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution()
-            );
+            , bytes32(0), emptyFilePatch());
             (bool exists, bytes32 payloadHash,,,) = machine.getSignal(planId, orderId, emitSource, emitSignal);
             require(exists && payloadHash == emitPayload, "admitted emission missing");
         } else if (stateHash == keccak256("wait")) {
@@ -1312,14 +1313,14 @@ contract SemanticsReplayCorpusTest {
             );
             machine.submitSignal(
                 planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution()
-            );
+            , bytes32(0), emptyFilePatch());
             (bool hasReadyAt, string memory readyAtRaw) = _tryString(json, string.concat(base, ".expect.readyAt"));
             require(hasReadyAt, "wait-state corpus case must pin readyAt");
             (, uint64 readyAt) = _requireTimestamp(readyAtRaw);
             vm.warp(readyAt);
             machine.submitSignal(
                 planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution()
-            );
+            , bytes32(0), emptyFilePatch());
             (bool exists,,,,) = machine.getSignal(planId, orderId, emitSource, emitSignal);
             require(exists, "emission must land at corpus readyAt");
         } else if (stateHash == keccak256("needs_more") || stateHash == keccak256("impossible")) {
@@ -1330,7 +1331,7 @@ contract SemanticsReplayCorpusTest {
             );
             machine.submitSignal(
                 planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution()
-            );
+            , bytes32(0), emptyFilePatch());
             (bool exists,,,,) = machine.getSignal(planId, orderId, emitSource, emitSignal);
             require(!exists, "rejected emission must not record a fact");
         } else {

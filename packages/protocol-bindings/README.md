@@ -15,11 +15,11 @@ pnpm --filter @uvp-eth/protocol-bindings build
 
 - Exposes core and module ABI constants (`UVP_STATE_MACHINE_ARTIFACT_ABI`,
   `STATE_MACHINE_ABI`, `FILE_RESOURCE_MODULE_ABI`, module call surfaces),
-  0.16 Product submit typed-data helpers, stage executor patch typed-data
+  stage executor patch typed-data
   helpers, `UVPZhixuRegistry/1` registry typed data
   (`ZhixuRecord`/`IdentityClaim` schema, builders, type hashes),
-  `submitSignalFor`, `applyStageExecutorPatchFor`, and file patch call
-  construction (`filePatchDigest`, `FileOp`/`FilePatch`), capability-tree
+  `submitSignal` (direct, including trailing `filesDigest`/`FilePatch`),
+  `applyStageExecutorPatchFor`, and file patch call construction (`filePatchDigest`, `FileOp`/`FilePatch`), capability-tree
   root/proof helpers, and address/bytes32 validation. Canonical JSON
   serialization and evidence hashing are owned by
   `@uvp-eth/canonical-json`.
@@ -87,13 +87,11 @@ pnpm --filter @uvp-eth/protocol-bindings build
   opaque UTF-8 reference, and `kind` is `0|1|2` (add/replace/remove) via
   `FILE_OP_KIND`.
 - `filePatchDigest(planId, orderId, filePatch)` is the canonical
-  `filesDigest` signed in the 0.16 `UVPStateMachineSignal` typed data:
+  `filesDigest` carried by the direct `submitSignal` call:
   `keccak256(abi.encode(keccak256("UVP_FILE_PATCH_V1"), planId, orderId,
   targetStageId, baseHash, writerStageId, ops))`; `writerProof` is a witness
   and is excluded. `EMPTY_FILE_PATCH` is the no-patch value.
-- `buildSubmitSignalForCall` appends `(bytes32 filesDigest,
-  FilePatch filePatch)`; omitting both produces the fileless form, and a
-  patch-bearing call is rejected unless `filesDigest` equals
-  `filePatchDigest` for the same plan/order/patch.
-- `PRODUCT_SUBMIT_DOMAIN_VERSION` is `0.16` and `UVPStateMachineSignal` ends
-  with `bytes32 filesDigest`.
+- Direct `submitSignal` calldata appends `(bytes32 filesDigest, FilePatch filePatch)`;
+  omitting both produces the fileless form, and a patch-bearing call is
+  rejected unless `filesDigest` equals `filePatchDigest` for the same
+  plan/order/patch.

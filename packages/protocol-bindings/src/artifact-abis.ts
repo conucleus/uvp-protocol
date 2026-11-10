@@ -2353,86 +2353,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             "internalType": "bytes32[]"
           }
         ]
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "submitSignalFor",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "sourceId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "signalId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "payloadHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "idempotencyKey",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "submitter",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "deadline",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "signature",
-        "type": "bytes",
-        "internalType": "bytes"
-      },
-      {
-        "name": "attribution",
-        "type": "tuple",
-        "internalType": "struct UVPStateMachine.FactAttribution",
-        "components": [
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "stageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "capabilityProof",
-            "type": "bytes32[]",
-            "internalType": "bytes32[]"
-          }
-        ]
       },
       {
         "name": "filesDigest",
@@ -4044,33 +3964,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "length",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InvalidSignature",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidSignatureS",
-    "inputs": [
-      {
-        "name": "s",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InvalidSignatureV",
-    "inputs": [
-      {
-        "name": "v",
-        "type": "uint8",
-        "internalType": "uint8"
       }
     ]
   },
