@@ -31,7 +31,6 @@ import {
   buildApplyStageExecutorPatchForCall,
   buildDerivedSignalTypedData,
   buildPlanCommitTypedData,
-  buildProductSubmitTypedData,
   buildStageExecutorPatchTypedData,
   buildSubmitDerivedSignalForCall,
   buildTriggerOrderFromOutsideForCall,
@@ -49,7 +48,6 @@ import {
   STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN,
   recoverDerivedSignalSigner,
   recoverPlanCommitSigner,
-  recoverProductSubmitSigner,
   recoverStageExecutorPatchSigner,
   recoverTriggerOrderFromSignalSigner,
 } from "../src/index.js";
@@ -286,78 +284,6 @@ describe("protocol bindings", () => {
         error instanceof UnsupportedChainTargetError &&
         error.target === "solana" &&
         /not implemented/.test(error.message),
-    );
-  });
-
-  it("builds stable Product submit typed data", () => {
-    const typedData = buildProductSubmitTypedData({
-      chainId: 31337,
-      verifyingContract,
-      planId,
-      orderId,
-      sourceId,
-      signalId,
-      payloadHash,
-      idempotencyKey,
-      submitter,
-      deadline,
-    });
-
-    assert.deepEqual(typedData, {
-      domain: {
-        name: "UVPStateMachine",
-        version: "0.16",
-        chainId: 31337,
-        verifyingContract,
-      },
-      types: {
-        UVPStateMachineSignal: [
-          { name: "planId", type: "bytes32" },
-          { name: "orderId", type: "bytes32" },
-          { name: "sourceId", type: "bytes32" },
-          { name: "signalId", type: "bytes32" },
-          { name: "payloadHash", type: "bytes32" },
-          { name: "idempotencyKey", type: "bytes32" },
-          { name: "submitter", type: "address" },
-          { name: "deadline", type: "uint256" },
-          { name: "filesDigest", type: "bytes32" },
-        ],
-      },
-      primaryType: "UVPStateMachineSignal",
-      message: {
-        planId,
-        orderId,
-        sourceId,
-        signalId,
-        payloadHash,
-        idempotencyKey,
-        submitter,
-        deadline,
-        filesDigest: zeroBytes32,
-      },
-    });
-  });
-
-  it("recovers a Product submit signer", async () => {
-    const typedData = buildProductSubmitTypedData({
-      chainId: 31337,
-      verifyingContract,
-      planId,
-      orderId,
-      sourceId,
-      signalId,
-      payloadHash,
-      idempotencyKey,
-      submitter,
-      deadline,
-    });
-    const signature = await account.signTypedData(
-      typedData as unknown as Parameters<typeof account.signTypedData>[0],
-    );
-
-    assert.equal(
-      await recoverProductSubmitSigner(typedData, signature),
-      submitter,
     );
   });
 
@@ -1044,52 +970,6 @@ const executorAuthorizations = [
         submitter: auth.submitter.toLowerCase(),
       })),
       executorAuthorizations,
-    );
-  });
-
-  it("rejects chain ids at and beyond the 64-bit FFI boundary", () => {
-    const base = {
-      verifyingContract,
-      planId,
-      orderId,
-      sourceId,
-      signalId,
-      payloadHash,
-      idempotencyKey,
-      submitter,
-      deadline,
-    };
-    // 负数 / 零 / 非整数拒绝。
-    assert.throws(
-      () => buildProductSubmitTypedData({ ...base, chainId: -1 }),
-      /chainId must be a positive integer/,
-    );
-    assert.throws(
-      () => buildProductSubmitTypedData({ ...base, chainId: 0 }),
-      /chainId must be a positive integer/,
-    );
-    assert.throws(
-      () => buildProductSubmitTypedData({ ...base, chainId: 31337.5 }),
-      /chainId must be a positive integer/,
-    );
-    // ≥ 2^64 显式拒绝（FFI 域保持 64 位）——number 面上不可精确表示，
-    // 但拒绝必须发生在入口而不是静默取整后放行。
-    assert.throws(
-      () => buildProductSubmitTypedData({ ...base, chainId: 2 ** 64 }),
-      /chainId must be < 2\^64/,
-    );
-    assert.throws(
-      () => buildProductSubmitTypedData({ ...base, chainId: 1e21 }),
-      /chainId must be < 2\^64/,
-    );
-    // 2^53 以上的整数（如 1e19 < 2^64）因无法精确表示同样拒绝。
-    assert.throws(
-      () => buildProductSubmitTypedData({ ...base, chainId: 1e19 }),
-      /chainId must be a safe integer/,
-    );
-    // 边界内正常放行。
-    assert.doesNotThrow(() =>
-      buildProductSubmitTypedData({ ...base, chainId: 31337 }),
     );
   });
 

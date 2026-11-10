@@ -540,29 +540,6 @@ export interface ProductSubmitTypedDataField {
   readonly type: string;
 }
 
-// UVPStateMachineSignal 签名绑定 (planId, orderId)。
-export const PRODUCT_SUBMIT_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] =
-  [
-    { name: "planId", type: "bytes32" },
-    { name: "orderId", type: "bytes32" },
-    { name: "sourceId", type: "bytes32" },
-    { name: "signalId", type: "bytes32" },
-    { name: "payloadHash", type: "bytes32" },
-    { name: "idempotencyKey", type: "bytes32" },
-    { name: "submitter", type: "address" },
-    { name: "deadline", type: "uint256" },
-    { name: "filesDigest", type: "bytes32" },
-  ];
-
-export const PRODUCT_SUBMIT_TYPE_HASH: Hex = keccak256(
-  stringToHex(
-    encodeTypedDataFields(
-      PRODUCT_SUBMIT_PRIMARY_TYPE,
-      PRODUCT_SUBMIT_TYPED_DATA_FIELDS,
-    ),
-  ),
-);
-
 export const PLAN_COMMIT_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] =
   [
     { name: "publisher", type: "address" },
@@ -961,23 +938,6 @@ export interface StageExecutorPatchTypedData {
   };
 }
 
-export interface BuildProductSubmitTypedDataInput {
-  readonly chainId: number;
-  readonly verifyingContract: Address | string;
-  /**
-   * 签名域并入 planId：submitSignal 按 (planId, orderId) 复合键锚定订单，
-   * 缺 planId 的签名过不了链上存在性校验，没有可接受的缺省形态。
-   */
-  readonly planId: Hex | string;
-  readonly orderId: Hex | string;
-  readonly sourceId: Hex | string;
-  readonly signalId: Hex | string;
-  readonly payloadHash: Hex | string;
-  readonly idempotencyKey: Hex | string;
-  readonly submitter: Address | string;
-  readonly deadline: string;
-  readonly filesDigest?: Hex | string;
-}
 
 export interface BuildPlanCommitTypedDataInput extends PlanCommitPayload {
   readonly chainId: number;
@@ -1461,40 +1421,6 @@ const EXECUTOR_PATCH_MODE_VALUE_SET = new Set<Hex>([
   EXECUTOR_PATCH_MODE_HANDOFF,
 ]);
 
-export function buildProductSubmitTypedData(
-  input: BuildProductSubmitTypedDataInput,
-): ProductSubmitTypedData {
-  return {
-    domain: {
-      name: PRODUCT_SUBMIT_DOMAIN_NAME,
-      version: PRODUCT_SUBMIT_DOMAIN_VERSION,
-      chainId: normalizeChainId(input.chainId),
-      verifyingContract: normalizeAddress(
-        input.verifyingContract,
-        "verifyingContract",
-      ),
-    },
-    types: {
-      UVPStateMachineSignal: PRODUCT_SUBMIT_TYPED_DATA_FIELDS,
-    },
-    primaryType: PRODUCT_SUBMIT_PRIMARY_TYPE,
-    message: {
-      planId: normalizeBytes32(input.planId, "planId"),
-      orderId: normalizeBytes32(input.orderId, "orderId"),
-      sourceId: normalizeBytes32(input.sourceId, "sourceId"),
-      signalId: normalizeBytes32(input.signalId, "signalId"),
-      payloadHash: normalizeBytes32(input.payloadHash, "payloadHash"),
-      idempotencyKey: normalizeBytes32(input.idempotencyKey, "idempotencyKey"),
-      submitter: normalizeAddress(input.submitter, "submitter"),
-      deadline: normalizeUintString(input.deadline, "deadline"),
-      filesDigest:
-        input.filesDigest === undefined
-          ? ZERO_BYTES32
-          : normalizeBytes32(input.filesDigest, "filesDigest"),
-    },
-  };
-}
-
 export function buildPlanCommitTypedData(
   input: BuildPlanCommitTypedDataInput,
 ): PlanCommitTypedData {
@@ -1673,20 +1599,6 @@ export function buildStageExecutorPatchTypedData(
   };
 }
 
-
-export async function recoverProductSubmitSigner(
-  typedData: ProductSubmitTypedData,
-  signature: Hex | string,
-): Promise<Address> {
-  const recovered = await recoverTypedDataAddress({
-    domain: typedData.domain,
-    types: typedData.types,
-    primaryType: typedData.primaryType,
-    message: typedData.message,
-    signature: normalizeHex(signature, "signature"),
-  } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
-  return normalizeAddress(recovered, "recoveredSubmitter");
-}
 
 export async function recoverPlanCommitSigner(
   typedData: PlanCommitTypedData,
