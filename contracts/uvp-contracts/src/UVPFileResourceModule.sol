@@ -38,7 +38,6 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
     uint256 private constant _MAX_FILE_OPS = 16;
     uint256 private constant _MAX_FILE_HANDLE_BYTES = 512;
     bytes32 private constant _DOMAIN_FILE_PATCH = keccak256("UVP_FILE_PATCH_V1");
-    bytes32 public constant FILE_PATCH_SIGNAL_ID = keccak256("uvp.file_patch.signal.v1");
 
     IUVPStateMachineCore public immutable stateMachine;
 
@@ -178,14 +177,13 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
         bytes32 writerStageId = filePatch.writerStageId;
         if (writerStageId == bytes32(0)) {
             writerStageId = filePatch.targetStageId;
-        } else {
-            bool capability = IUVPPlanMetadataModule(stateMachine.planMetadataModule())
-                .verifyFileWriter(planId, filePatch.targetStageId, writerStageId, filePatch.writerProof);
-            if (!capability) {
-                revert FileWriterUnauthorized(orderId, filePatch.targetStageId, filePatch.writerStageId, submitter);
-            }
+        } else if (
+            !IUVPPlanMetadataModule(stateMachine.planMetadataModule())
+                .verifyFileWriter(planId, filePatch.targetStageId, writerStageId, filePatch.writerProof)
+        ) {
+            revert FileWriterUnauthorized(orderId, filePatch.targetStageId, filePatch.writerStageId, submitter);
         }
-        if (!stateMachine.hasExplicitSignalAuthorization(planId, orderId, writerStageId, FILE_PATCH_SIGNAL_ID, submitter)) {
+        if (stateMachine.activeStageExecutor(planId, orderId, writerStageId) != submitter) {
             revert FileWriterUnauthorized(orderId, filePatch.targetStageId, filePatch.writerStageId, submitter);
         }
     }
