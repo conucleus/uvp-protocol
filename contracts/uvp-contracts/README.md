@@ -200,6 +200,8 @@ code do not silently drift away from the contract ABI.
     the existing `SignalAuthorization` table: a signal+file request reuses the
     business signal's row, and a pure file patch requires the reserved
     `FILE_WRITE_SIGNAL_ID` row on the writer stage (target stage for self).
+    With a business signal, `writerStageId == 0` resolves to the signal's stage,
+    not the target; a different target must pass its `fileWriters` allowlist.
     Static and dynamic executors are both just rows on that table;
     `activeStageExecutor` is not a file-write oracle. A file patch may ride one business
     signal in the same direct call, or stand alone as an empty signal

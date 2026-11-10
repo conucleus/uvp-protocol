@@ -4540,6 +4540,11 @@ export const FILE_RESOURCE_MODULE_ABI = [
         "internalType": "address"
       },
       {
+        "name": "signalStageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
         "name": "authSourceId",
         "type": "bytes32",
         "internalType": "bytes32"

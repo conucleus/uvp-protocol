@@ -64,6 +64,7 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
         bytes32 filesDigest,
         FilePatch calldata filePatch,
         address submitter,
+        bytes32 signalStageId,
         bytes32 authSourceId,
         bytes32 authSignalId,
         bool standalone
@@ -98,7 +99,9 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
             _validateOp(filePatch.ops[i]);
         }
 
-        _requireFileWriter(planId, orderId, filePatch, submitter, authSourceId, authSignalId, standalone);
+        _requireFileWriter(
+            planId, orderId, filePatch, submitter, signalStageId, authSourceId, authSignalId, standalone
+        );
 
         bytes32 previousFilesHash = _stageFilesHashes[planId][orderId][filePatch.targetStageId];
         if (filePatch.baseHash != previousFilesHash) {
@@ -180,18 +183,21 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
         bytes32 orderId,
         FilePatch calldata filePatch,
         address submitter,
+        bytes32 signalStageId,
         bytes32 authSourceId,
         bytes32 authSignalId,
         bool standalone
     ) private view {
         bytes32 writerStageId = filePatch.writerStageId;
         if (writerStageId == bytes32(0)) {
-            writerStageId = filePatch.targetStageId;
-        } else if (
-            !IUVPPlanMetadataModule(stateMachine.planMetadataModule())
-                .verifyFileWriter(planId, filePatch.targetStageId, writerStageId, filePatch.writerProof)
-        ) {
-            revert FileWriterUnauthorized(orderId, filePatch.targetStageId, filePatch.writerStageId, submitter);
+            writerStageId = signalStageId == bytes32(0) ? filePatch.targetStageId : signalStageId;
+        }
+        if (writerStageId != filePatch.targetStageId) {
+            bool capability = IUVPPlanMetadataModule(stateMachine.planMetadataModule())
+                .verifyFileWriter(planId, filePatch.targetStageId, writerStageId, filePatch.writerProof);
+            if (!capability) {
+                revert FileWriterUnauthorized(orderId, filePatch.targetStageId, filePatch.writerStageId, submitter);
+            }
         }
         if (standalone) {
             authSourceId = writerStageId;

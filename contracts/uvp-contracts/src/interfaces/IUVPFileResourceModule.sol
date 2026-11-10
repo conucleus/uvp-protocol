@@ -31,6 +31,7 @@ interface IUVPFileResourceModule {
         bytes32 filesDigest,
         FilePatch calldata filePatch,
         address submitter,
+        bytes32 signalStageId,
         bytes32 authSourceId,
         bytes32 authSignalId,
         bool standalone

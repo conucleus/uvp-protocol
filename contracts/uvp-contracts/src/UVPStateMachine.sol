@@ -819,10 +819,12 @@ contract UVPStateMachine {
                 revert FilePatchEmpty();
             }
             bytes32 writerStageId = filePatch.writerStageId == bytes32(0) ? filePatch.targetStageId : filePatch.writerStageId;
-            _applyFilePatch(planId, orderId, filesDigest, filePatch, msg.sender, writerStageId, bytes32(0), true);
+            _applyFilePatch(
+                planId, orderId, filesDigest, filePatch, msg.sender, bytes32(0), writerStageId, bytes32(0), true
+            );
             return;
         }
-        bool inserted =
+        (bool inserted, bytes32 signalStageId) =
             _submitSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, msg.sender, attribution);
         if (!inserted) {
             return;
@@ -830,7 +832,9 @@ contract UVPStateMachine {
         if (filePatch.ops.length == 0 && filesDigest == bytes32(0)) {
             return;
         }
-        _applyFilePatch(planId, orderId, filesDigest, filePatch, msg.sender, sourceId, signalId, false);
+        _applyFilePatch(
+            planId, orderId, filesDigest, filePatch, msg.sender, signalStageId, sourceId, signalId, false
+        );
     }
 
     function activateStageExecutorFromModule(
@@ -1135,7 +1139,7 @@ contract UVPStateMachine {
         bytes32 idempotencyKey,
         address submitter,
         FactAttribution calldata attribution
-    ) private returns (bool inserted) {
+    ) private returns (bool inserted, bytes32 sourceStageId) {
         if (sourceId == bytes32(0)) {
             revert ZeroSourceId();
         }
@@ -1150,14 +1154,14 @@ contract UVPStateMachine {
         if (!_isSignalSubmitterAuthorized(planId, orderId, sourceId, signalId, submitter)) {
             revert UnauthorizedSignalSubmitter(orderId, sourceId, signalId, submitter);
         }
-        bytes32 sourceStageId = _resolveSourceStage(planId, sourceId, signalId, attribution);
+        sourceStageId = _resolveSourceStage(planId, sourceId, signalId, attribution);
         _requireSourceStageReady(planId, orderId, sourceStageId);
         if (_hasSignal(planId, orderId, sourceId, signalId)) {
-            return false;
+            return (false, sourceStageId);
         }
         _requireSignalAdmission(planId, orderId, sourceId, signalId);
         _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false, sourceStageId);
-        return true;
+        return (true, sourceStageId);
     }
 
     function _applyFilePatch(
@@ -1166,6 +1170,7 @@ contract UVPStateMachine {
         bytes32 filesDigest,
         FilePatch calldata filePatch,
         address submitter,
+        bytes32 signalStageId,
         bytes32 authSourceId,
         bytes32 authSignalId,
         bool standalone
@@ -1185,13 +1190,14 @@ contract UVPStateMachine {
             mstore(add(ptr, 0x04), planId)
             mstore(add(ptr, 0x24), orderId)
             mstore(add(ptr, 0x44), filesDigest)
-            mstore(add(ptr, 0x64), 0x100)
+            mstore(add(ptr, 0x64), 0x120)
             mstore(add(ptr, 0x84), submitter)
-            mstore(add(ptr, 0xa4), authSourceId)
-            mstore(add(ptr, 0xc4), authSignalId)
-            mstore(add(ptr, 0xe4), standalone)
-            calldatacopy(add(ptr, 0x104), start, patchSize)
-            if iszero(call(gas(), module, 0, ptr, add(0x104, patchSize), 0, 0)) {
+            mstore(add(ptr, 0xa4), signalStageId)
+            mstore(add(ptr, 0xc4), authSourceId)
+            mstore(add(ptr, 0xe4), authSignalId)
+            mstore(add(ptr, 0x104), standalone)
+            calldatacopy(add(ptr, 0x124), start, patchSize)
+            if iszero(call(gas(), module, 0, ptr, add(0x124, patchSize), 0, 0)) {
                 returndatacopy(ptr, 0, returndatasize())
                 revert(ptr, returndatasize())
             }

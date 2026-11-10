@@ -170,6 +170,40 @@ contract UVPStateMachineFilePatchTest {
         require(machine.activeStageExecutor(planId, orderId, STAGE_AUDIT) == address(executor), "executor changed");
     }
 
+    function testSignalCannotWriteAnotherStageWithoutAllowlist() public {
+        _setUp();
+
+        FilePatch memory patch =
+            _addPatch(bytes32(0), FILE_KEY, FILE_CONTENT_HASH, "ipfs://uvp-eth/other-stage", 0, 0);
+        patch.targetStageId = STAGE_INIT;
+        bytes32 filesDigest = fileResourceModule.filePatchDigest(planId, orderId, patch);
+        UVPStateMachine.FactAttribution memory attribution = _attribution(SOURCE_FILE, SIGNAL_FILE, STAGE_AUDIT);
+
+        vm.prank(_writer());
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPFileResourceModule.FileWriterUnauthorized.selector,
+                orderId,
+                STAGE_INIT,
+                bytes32(0),
+                _writer()
+            )
+        );
+        machine.submitSignal(
+            planId,
+            orderId,
+            SOURCE_FILE,
+            SIGNAL_FILE,
+            PAYLOAD_HASH,
+            IDEMPOTENCY_KEY,
+            attribution,
+            filesDigest,
+            patch
+        );
+
+        require(!machine.hasSignal(planId, orderId, SOURCE_FILE, SIGNAL_FILE), "rejected patch recorded a signal");
+    }
+
     function testDuplicateBusinessSignalDoesNotReplayFilePatch() public {
         _setUp();
 

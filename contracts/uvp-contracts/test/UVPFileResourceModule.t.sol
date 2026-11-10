@@ -96,7 +96,7 @@ contract UVPFileResourceModuleTest {
             _singleOpPatch(currentFilesHash, bytes32(0), _add(KEY, CONTENT_HASH_2, "uvp://file/two"));
         bytes32 digest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, patch);
         vm.expectRevert(abi.encodeWithSelector(UVPFileResourceModule.FileKeyExists.selector, KEY));
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, TARGET_EXECUTOR, TARGET_STAGE, bytes32(0), true);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, TARGET_EXECUTOR, bytes32(0), TARGET_STAGE, bytes32(0), true);
     }
 
     function testReplaceAndRemoveRejectMissingKey() public {
@@ -104,12 +104,12 @@ contract UVPFileResourceModuleTest {
             _singleOpPatch(bytes32(0), bytes32(0), _replace(KEY, CONTENT_HASH_1, "uvp://file/one"));
         bytes32 replaceDigest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, replacePatch);
         vm.expectRevert(abi.encodeWithSelector(UVPFileResourceModule.FileKeyMissing.selector, KEY));
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, replaceDigest, replacePatch, TARGET_EXECUTOR, TARGET_STAGE, bytes32(0), true);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, replaceDigest, replacePatch, TARGET_EXECUTOR, bytes32(0), TARGET_STAGE, bytes32(0), true);
 
         FilePatch memory removePatch = _singleOpPatch(bytes32(0), bytes32(0), _remove(KEY));
         bytes32 removeDigest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, removePatch);
         vm.expectRevert(abi.encodeWithSelector(UVPFileResourceModule.FileKeyMissing.selector, KEY));
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, removeDigest, removePatch, TARGET_EXECUTOR, TARGET_STAGE, bytes32(0), true);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, removeDigest, removePatch, TARGET_EXECUTOR, bytes32(0), TARGET_STAGE, bytes32(0), true);
     }
 
     function testReplaceAndRemoveRewriteTheView() public {
@@ -147,7 +147,7 @@ contract UVPFileResourceModuleTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPFileResourceModule.FileBaseHashMismatch.selector, currentFilesHash, bytes32(0))
         );
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, staleDigest, stalePatch, TARGET_EXECUTOR, TARGET_STAGE, bytes32(0), true);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, staleDigest, stalePatch, TARGET_EXECUTOR, bytes32(0), TARGET_STAGE, bytes32(0), true);
     }
 
     function testFilesDigestMustMatchCanonicalPatch() public {
@@ -157,7 +157,7 @@ contract UVPFileResourceModuleTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPFileResourceModule.FileDigestMismatch.selector, expectedDigest, WRONG_DIGEST)
         );
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, WRONG_DIGEST, patch, TARGET_EXECUTOR, TARGET_STAGE, bytes32(0), true);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, WRONG_DIGEST, patch, TARGET_EXECUTOR, bytes32(0), TARGET_STAGE, bytes32(0), true);
     }
 
     function testDuplicatePatchIsAbsorbedWithoutStateOrLogs() public {
@@ -186,7 +186,7 @@ contract UVPFileResourceModuleTest {
                 UVPFileResourceModule.FileWriterUnauthorized.selector, ORDER_ID, TARGET_STAGE, bytes32(0), OUTSIDER
             )
         );
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, OUTSIDER, TARGET_STAGE, bytes32(0), true);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, OUTSIDER, bytes32(0), TARGET_STAGE, bytes32(0), true);
     }
 
     function testWriterStageRequiresCapabilityLeaf() public {
@@ -203,7 +203,7 @@ contract UVPFileResourceModuleTest {
                 WRITER_EXECUTOR
             )
         );
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, WRITER_EXECUTOR, WRITER_STAGE, bytes32(0), true);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, WRITER_EXECUTOR, bytes32(0), WRITER_STAGE, bytes32(0), true);
     }
 
     function testWriterStageCapabilityAuthorizesWriterExecutor() public {
@@ -219,6 +219,38 @@ contract UVPFileResourceModuleTest {
         require(exists && contentHash == CONTENT_HASH_1, "writer-stage patch not applied");
     }
 
+    function testSignalStageWriterRequiresTargetAllowlist() public {
+        FilePatch memory patch = _singleOpPatch(bytes32(0), bytes32(0), _add(KEY, CONTENT_HASH_1, "uvp://file/one"));
+        bytes32 digest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, patch);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UVPFileResourceModule.FileWriterUnauthorized.selector,
+                ORDER_ID,
+                TARGET_STAGE,
+                bytes32(0),
+                WRITER_EXECUTOR
+            )
+        );
+        _fileModule.applyStageFilePatch(
+            PLAN_ID, ORDER_ID, digest, patch, WRITER_EXECUTOR, WRITER_STAGE, WRITER_STAGE, bytes32(uint256(1)), false
+        );
+    }
+
+    function testSignalStageWriterWithTargetAllowlistSucceeds() public {
+        _metadata.finalizePlanMetadata(
+            PLAN_ID, _metadata.fileWriterLeaf(TARGET_STAGE, WRITER_STAGE), bytes32(0), bytes32(0)
+        );
+        FilePatch memory patch = _singleOpPatch(bytes32(0), bytes32(0), _add(KEY, CONTENT_HASH_1, "uvp://file/one"));
+        bytes32 digest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, patch);
+        _fileModule.applyStageFilePatch(
+            PLAN_ID, ORDER_ID, digest, patch, WRITER_EXECUTOR, WRITER_STAGE, WRITER_STAGE, bytes32(uint256(1)), false
+        );
+
+        (bool exists, bytes32 contentHash,,) = _fileModule.getStageFile(PLAN_ID, ORDER_ID, TARGET_STAGE, KEY);
+        require(exists && contentHash == CONTENT_HASH_1, "signal-stage writer patch not applied");
+    }
+
     function _apply(FilePatch memory patch, address submitter) private {
         bytes32 writerStage = patch.writerStageId == bytes32(0) ? TARGET_STAGE : patch.writerStageId;
         _fileModule.applyStageFilePatch(
@@ -227,6 +259,7 @@ contract UVPFileResourceModuleTest {
             _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, patch),
             patch,
             submitter,
+            bytes32(0),
             writerStage,
             bytes32(0),
             true
