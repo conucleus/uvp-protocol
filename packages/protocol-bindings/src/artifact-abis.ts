@@ -4450,6 +4450,19 @@ export const FILE_RESOURCE_MODULE_ABI = [
   },
   {
     "type": "function",
+    "name": "FILE_WRITE_SIGNAL_ID",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "applyStageFilePatch",
     "inputs": [
       {
@@ -4525,6 +4538,21 @@ export const FILE_RESOURCE_MODULE_ABI = [
         "name": "submitter",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "authSourceId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "authSignalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "standalone",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [],

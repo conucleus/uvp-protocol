@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xe0fe925f30c011e98b9417e60ac4b0ff5f935d8c9249abad6a10a2989bf7b0ee",
-    "bytecodeHash": "0xc98be976f0e44275961082511968cbcdcedefac750cbf5a08f0e873a8338300c",
-    "deployedBytecodeHash": "0xb1e1437eaf2c85650b2fb437de7efb782047bd457ebe64f9da69491429b0984d",
-    "artifactHash": "0xd087b06dafceec853906421cf2a8c1865a22572ff4bda72feaee512b5efa60bb"
+    "abiHash": "0x971ae696478c95a9f45e6b92c43651a638678bf5a2a68652ec1dfb8ae5364f81",
+    "bytecodeHash": "0xb2c48db6ac15bc0d95ac70b0f2d538b86d2a27da6b07b5acdf017bbe16e7ff6b",
+    "deployedBytecodeHash": "0x09f92b2b7f4867b1c9809ffe42ce4ed9c0070b1162d3c2a0297aa635b56c2aaf",
+    "artifactHash": "0xd4b42c2ee5838434f2a3580046f8c0aeae33d51b8c40275b66b040f5c85f4541"
   },
   "events": {
     "StageFileOpApplied": {
@@ -25,9 +25,13 @@
     }
   },
   "functions": {
+    "FILE_WRITE_SIGNAL_ID": {
+      "signature": "FILE_WRITE_SIGNAL_ID()",
+      "selector": "0xea6dcb3e"
+    },
     "applyStageFilePatch": {
-      "signature": "applyStageFilePatch(bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]),address)",
-      "selector": "0xd426cf62"
+      "signature": "applyStageFilePatch(bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]),address,bytes32,bytes32,bool)",
+      "selector": "0x742105b5"
     },
     "filePatchDigest": {
       "signature": "filePatchDigest(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]))",

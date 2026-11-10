@@ -37,11 +37,14 @@ contract UVPFileResourceModuleTest {
     UVPFileResourceModule private _fileModule;
     UVPPlanMetadataModule private _metadata;
     mapping(bytes32 stageId => address executor) private _activeExecutors;
+    mapping(bytes32 stageId => mapping(address submitter => bool)) private _fileWriteAuthorized;
 
     function setUp() public {
         _metadata = new UVPPlanMetadataModule(address(this));
         _fileModule = new UVPFileResourceModule(address(this));
         _activeExecutors[TARGET_STAGE] = TARGET_EXECUTOR;
+        _fileWriteAuthorized[TARGET_STAGE][TARGET_EXECUTOR] = true;
+        _fileWriteAuthorized[WRITER_STAGE][WRITER_EXECUTOR] = true;
     }
 
     function orderExists(bytes32, bytes32) external pure returns (bool) {
@@ -58,6 +61,14 @@ contract UVPFileResourceModuleTest {
 
     function activeStageExecutor(bytes32, bytes32, bytes32 stageId) external view returns (address) {
         return _activeExecutors[stageId];
+    }
+
+    function hasExplicitSignalAuthorization(bytes32, bytes32, bytes32 stageId, bytes32, address submitter)
+        external
+        view
+        returns (bool)
+    {
+        return _fileWriteAuthorized[stageId][submitter];
     }
 
 
@@ -85,7 +96,7 @@ contract UVPFileResourceModuleTest {
             _singleOpPatch(currentFilesHash, bytes32(0), _add(KEY, CONTENT_HASH_2, "uvp://file/two"));
         bytes32 digest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, patch);
         vm.expectRevert(abi.encodeWithSelector(UVPFileResourceModule.FileKeyExists.selector, KEY));
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, TARGET_EXECUTOR);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, TARGET_EXECUTOR, TARGET_STAGE, bytes32(0), true);
     }
 
     function testReplaceAndRemoveRejectMissingKey() public {
@@ -93,12 +104,12 @@ contract UVPFileResourceModuleTest {
             _singleOpPatch(bytes32(0), bytes32(0), _replace(KEY, CONTENT_HASH_1, "uvp://file/one"));
         bytes32 replaceDigest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, replacePatch);
         vm.expectRevert(abi.encodeWithSelector(UVPFileResourceModule.FileKeyMissing.selector, KEY));
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, replaceDigest, replacePatch, TARGET_EXECUTOR);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, replaceDigest, replacePatch, TARGET_EXECUTOR, TARGET_STAGE, bytes32(0), true);
 
         FilePatch memory removePatch = _singleOpPatch(bytes32(0), bytes32(0), _remove(KEY));
         bytes32 removeDigest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, removePatch);
         vm.expectRevert(abi.encodeWithSelector(UVPFileResourceModule.FileKeyMissing.selector, KEY));
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, removeDigest, removePatch, TARGET_EXECUTOR);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, removeDigest, removePatch, TARGET_EXECUTOR, TARGET_STAGE, bytes32(0), true);
     }
 
     function testReplaceAndRemoveRewriteTheView() public {
@@ -136,7 +147,7 @@ contract UVPFileResourceModuleTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPFileResourceModule.FileBaseHashMismatch.selector, currentFilesHash, bytes32(0))
         );
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, staleDigest, stalePatch, TARGET_EXECUTOR);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, staleDigest, stalePatch, TARGET_EXECUTOR, TARGET_STAGE, bytes32(0), true);
     }
 
     function testFilesDigestMustMatchCanonicalPatch() public {
@@ -146,7 +157,7 @@ contract UVPFileResourceModuleTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPFileResourceModule.FileDigestMismatch.selector, expectedDigest, WRONG_DIGEST)
         );
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, WRONG_DIGEST, patch, TARGET_EXECUTOR);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, WRONG_DIGEST, patch, TARGET_EXECUTOR, TARGET_STAGE, bytes32(0), true);
     }
 
     function testDuplicatePatchIsAbsorbedWithoutStateOrLogs() public {
@@ -167,7 +178,7 @@ contract UVPFileResourceModuleTest {
         require(exists && contentHash == CONTENT_HASH_1, "duplicate rewrote key");
     }
 
-    function testSelfWriterMustBeTargetStageExecutor() public {
+    function testSelfWriterRequiresFileWriteAuthorization() public {
         FilePatch memory patch = _singleOpPatch(bytes32(0), bytes32(0), _add(KEY, CONTENT_HASH_1, "uvp://file/one"));
         bytes32 digest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, patch);
         vm.expectRevert(
@@ -175,7 +186,7 @@ contract UVPFileResourceModuleTest {
                 UVPFileResourceModule.FileWriterUnauthorized.selector, ORDER_ID, TARGET_STAGE, bytes32(0), OUTSIDER
             )
         );
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, OUTSIDER);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, OUTSIDER, TARGET_STAGE, bytes32(0), true);
     }
 
     function testWriterStageRequiresCapabilityLeaf() public {
@@ -192,7 +203,7 @@ contract UVPFileResourceModuleTest {
                 WRITER_EXECUTOR
             )
         );
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, WRITER_EXECUTOR);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, WRITER_EXECUTOR, WRITER_STAGE, bytes32(0), true);
     }
 
     function testWriterStageCapabilityAuthorizesWriterExecutor() public {
@@ -209,8 +220,16 @@ contract UVPFileResourceModuleTest {
     }
 
     function _apply(FilePatch memory patch, address submitter) private {
+        bytes32 writerStage = patch.writerStageId == bytes32(0) ? TARGET_STAGE : patch.writerStageId;
         _fileModule.applyStageFilePatch(
-            PLAN_ID, ORDER_ID, _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, patch), patch, submitter
+            PLAN_ID,
+            ORDER_ID,
+            _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, patch),
+            patch,
+            submitter,
+            writerStage,
+            bytes32(0),
+            true
         );
     }
 

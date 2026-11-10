@@ -30,7 +30,10 @@ interface IUVPFileResourceModule {
         bytes32 orderId,
         bytes32 filesDigest,
         FilePatch calldata filePatch,
-        address submitter
+        address submitter,
+        bytes32 authSourceId,
+        bytes32 authSignalId,
+        bool standalone
     ) external;
 
     function getStageFile(bytes32 planId, bytes32 orderId, bytes32 targetStageId, bytes32 key)

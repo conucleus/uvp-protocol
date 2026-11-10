@@ -18,6 +18,7 @@ interface IUVPPlanMetadataModuleForStagePatch {
 bytes32 constant _EXECUTOR_CANDIDATE_LEAF_DOMAIN = keccak256("UVP_EXECUTOR_CANDIDATE_V1");
 
 contract UVPStagePatchModule {
+    bytes32 private constant _FILE_WRITE_SIGNAL_ID = keccak256("uvp.file_write.signal.v1");
     struct StageExecutorPatch {
         bytes32 selectorStageId;
         bytes32 targetStageId;
@@ -248,6 +249,7 @@ contract UVPStagePatchModule {
             );
         }
         _validateStageExecutorPatchMode(planId, orderId, patch, activePatch, previousExecutorSigner);
+        address previousExecutor = activePatch.executor;
         if (stateMachine.signalAuthorizationsHash(executorAuthorizations) != patch.authorizationsHash) {
             revert InvalidStageExecutorPatchSignature(selector, address(0));
         }
@@ -273,6 +275,18 @@ contract UVPStagePatchModule {
             patch.metadataURI
         );
         stateMachine.authorizeSignalSubmittersFromModule(planId, orderId, executorAuthorizations);
+        if (previousExecutor != address(0) && previousExecutor != patch.executor) {
+            IUVPStateMachineCore.SignalAuthorization[] memory revokes =
+                new IUVPStateMachineCore.SignalAuthorization[](1);
+            revokes[0] = IUVPStateMachineCore.SignalAuthorization({
+                sourceId: patch.targetStageId,
+                signalId: _FILE_WRITE_SIGNAL_ID,
+                submitter: previousExecutor,
+                role: bytes32(0),
+                metadataHash: bytes32(0)
+            });
+            stateMachine.revokeSignalSubmittersFromModule(planId, orderId, revokes);
+        }
     }
 
     function _validateStageExecutorPatch(

@@ -197,8 +197,11 @@ code do not silently drift away from the contract ABI.
     mismatch rejects the whole request, and there is no nonce (the projection
     holds exactly one current value per key). Writes are authorized by the
     target stage's `fileWriters` capability leaves (`UVP_FILE_WRITER_V1`) and
-    the writer stage's current active executor (the target stage for self);
-    executor handoff changes write authority immediately. A file patch may ride one business
+    the existing `SignalAuthorization` table: a signal+file request reuses the
+    business signal's row, and a pure file patch requires the reserved
+    `FILE_WRITE_SIGNAL_ID` row on the writer stage (target stage for self).
+    Static and dynamic executors are both just rows on that table;
+    `activeStageExecutor` is not a file-write oracle. A file patch may ride one business
     signal in the same direct call, or stand alone as an empty signal
     (`signalId == 0`); a pure file patch is not a business signal — it does not
     increment business signal counts, does not evaluate hooks, and does not run

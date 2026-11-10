@@ -818,7 +818,8 @@ contract UVPStateMachine {
             if (filePatch.ops.length == 0) {
                 revert FilePatchEmpty();
             }
-            _applyFilePatch(planId, orderId, filesDigest, filePatch, msg.sender);
+            bytes32 writerStageId = filePatch.writerStageId == bytes32(0) ? filePatch.targetStageId : filePatch.writerStageId;
+            _applyFilePatch(planId, orderId, filesDigest, filePatch, msg.sender, writerStageId, bytes32(0), true);
             return;
         }
         bool inserted =
@@ -829,7 +830,7 @@ contract UVPStateMachine {
         if (filePatch.ops.length == 0 && filesDigest == bytes32(0)) {
             return;
         }
-        _applyFilePatch(planId, orderId, filesDigest, filePatch, msg.sender);
+        _applyFilePatch(planId, orderId, filesDigest, filePatch, msg.sender, sourceId, signalId, false);
     }
 
     function activateStageExecutorFromModule(
@@ -1164,7 +1165,10 @@ contract UVPStateMachine {
         bytes32 orderId,
         bytes32 filesDigest,
         FilePatch calldata filePatch,
-        address submitter
+        address submitter,
+        bytes32 authSourceId,
+        bytes32 authSignalId,
+        bool standalone
     ) private {
         address module = fileResourceModule;
         if (module == address(0)) {
@@ -1181,10 +1185,13 @@ contract UVPStateMachine {
             mstore(add(ptr, 0x04), planId)
             mstore(add(ptr, 0x24), orderId)
             mstore(add(ptr, 0x44), filesDigest)
-            mstore(add(ptr, 0x64), 0xa0)
+            mstore(add(ptr, 0x64), 0x100)
             mstore(add(ptr, 0x84), submitter)
-            calldatacopy(add(ptr, 0xa4), start, patchSize)
-            if iszero(call(gas(), module, 0, ptr, add(0xa4, patchSize), 0, 0)) {
+            mstore(add(ptr, 0xa4), authSourceId)
+            mstore(add(ptr, 0xc4), authSignalId)
+            mstore(add(ptr, 0xe4), standalone)
+            calldatacopy(add(ptr, 0x104), start, patchSize)
+            if iszero(call(gas(), module, 0, ptr, add(0x104, patchSize), 0, 0)) {
                 returndatacopy(ptr, 0, returndatasize())
                 revert(ptr, returndatasize())
             }

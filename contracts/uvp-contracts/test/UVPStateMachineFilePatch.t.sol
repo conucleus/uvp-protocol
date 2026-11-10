@@ -370,9 +370,10 @@ contract UVPStateMachineFilePatchTest {
         newMachine.finalizePlan(planId);
 
         UVPStateMachine.SignalAuthorization[] memory authorizations =
-            new UVPStateMachine.SignalAuthorization[](2);
+            new UVPStateMachine.SignalAuthorization[](3);
         authorizations[0] = _authorization(SOURCE_BOOTSTRAP, SIGNAL_BOOTSTRAP_READY, birthSubmitter);
         authorizations[1] = _authorization(SOURCE_FILE, SIGNAL_FILE, executor);
+        authorizations[2] = _authorization(STAGE_AUDIT, fileResourceModule.FILE_WRITE_SIGNAL_ID(), executor);
         UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = UVPStateMachine.TriggerOrderFromOutsideRequest({
             planId: planId,
             creator: address(this),

@@ -52,6 +52,8 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
             => mapping(bytes32 orderId => mapping(bytes32 targetStageId => mapping(bytes32 patchHash => bool applied)))
     ) private _appliedPatchHashes;
 
+    bytes32 public constant FILE_WRITE_SIGNAL_ID = keccak256("uvp.file_write.signal.v1");
+
     constructor(address stateMachineAddress) {
         stateMachine = IUVPStateMachineCore(stateMachineAddress);
     }
@@ -61,7 +63,10 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
         bytes32 orderId,
         bytes32 filesDigest,
         FilePatch calldata filePatch,
-        address submitter
+        address submitter,
+        bytes32 authSourceId,
+        bytes32 authSignalId,
+        bool standalone
     ) external {
         if (msg.sender != address(stateMachine)) {
             revert UnauthorizedStateMachine(msg.sender);
@@ -93,7 +98,7 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
             _validateOp(filePatch.ops[i]);
         }
 
-        _requireFileWriter(planId, orderId, filePatch, submitter);
+        _requireFileWriter(planId, orderId, filePatch, submitter, authSourceId, authSignalId, standalone);
 
         bytes32 previousFilesHash = _stageFilesHashes[planId][orderId][filePatch.targetStageId];
         if (filePatch.baseHash != previousFilesHash) {
@@ -170,10 +175,15 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
         }
     }
 
-    function _requireFileWriter(bytes32 planId, bytes32 orderId, FilePatch calldata filePatch, address submitter)
-        private
-        view
-    {
+    function _requireFileWriter(
+        bytes32 planId,
+        bytes32 orderId,
+        FilePatch calldata filePatch,
+        address submitter,
+        bytes32 authSourceId,
+        bytes32 authSignalId,
+        bool standalone
+    ) private view {
         bytes32 writerStageId = filePatch.writerStageId;
         if (writerStageId == bytes32(0)) {
             writerStageId = filePatch.targetStageId;
@@ -183,7 +193,11 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
         ) {
             revert FileWriterUnauthorized(orderId, filePatch.targetStageId, filePatch.writerStageId, submitter);
         }
-        if (stateMachine.activeStageExecutor(planId, orderId, writerStageId) != submitter) {
+        if (standalone) {
+            authSourceId = writerStageId;
+            authSignalId = FILE_WRITE_SIGNAL_ID;
+        }
+        if (!stateMachine.hasExplicitSignalAuthorization(planId, orderId, authSourceId, authSignalId, submitter)) {
             revert FileWriterUnauthorized(orderId, filePatch.targetStageId, filePatch.writerStageId, submitter);
         }
     }
