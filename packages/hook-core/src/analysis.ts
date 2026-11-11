@@ -1,11 +1,11 @@
 import type { HookDependency, HookExpressionAst } from "./types.js";
 
 /**
- * 中立分析（uvp.zhixuAnalysis.v1）请求/响应类型：uvp-core 只做共享 DSL 校验与
+ * 中立分析（uvp.zhixuAnalysis.v2）请求/响应类型：uvp-core 只做共享 DSL 校验与
  * hook 解析，chain hook 装饰与 hook_plan shell 总装归链轨编译器。
  */
 
-export const ZHIXU_ANALYSIS_SCHEMA_VERSION = "uvp.zhixuAnalysis.v1" as const;
+export const ZHIXU_ANALYSIS_SCHEMA_VERSION = "uvp.zhixuAnalysis.v2" as const;
 
 export interface ZhixuAnalysisRequest {
   readonly definition: unknown;
@@ -26,17 +26,10 @@ export interface ZhixuAnalysisHook {
   readonly dependencies: readonly HookDependency[];
 }
 
-export interface ZhixuAnalysisEntryHook {
-  readonly rawExpression: string;
-  readonly normalizedExpression: string;
-  readonly ast: HookExpressionAst;
-  readonly dependencies: readonly HookDependency[];
-}
-
 export interface ZhixuAnalysisStage {
   readonly stageIdentifier: string;
   readonly source: string;
-  readonly mint: string | null;
+  readonly triggers: readonly string[];
   readonly executor: unknown;
   readonly selectedStages: readonly string[];
   readonly fileWriters: readonly string[];
@@ -50,8 +43,6 @@ export interface ZhixuAnalysis {
   readonly zhixuName: string;
   readonly platform: unknown;
   readonly stages: readonly ZhixuAnalysisStage[];
-  readonly implicitEntry: string | null;
-  readonly entryHook: ZhixuAnalysisEntryHook | null;
   readonly dockEntranceHookIds: readonly string[];
   readonly selectedStageBindings: readonly unknown[];
   readonly dockInterface: unknown;

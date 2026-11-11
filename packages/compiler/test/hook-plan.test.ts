@@ -152,7 +152,7 @@ function topologyZhixu(stages: readonly ZhixuStage[]): ZhixuDefinition {
 test("compiles internal HookPlan IR", () => {
   const plan = compileZhixuHookPlan(baseZhixu, demoManifest);
 
-  assert.equal(plan.schemaVersion, "uvp.hookPlan.v4");
+  assert.equal(plan.schemaVersion, "uvp.hookPlan.v5");
   const golden = commitmentGoldenCase("demo_zhixu_production_dock");
   assert.match(plan.zhixuId, /^zx-[0-9a-f]{32}$/);
   assert.equal(plan.zhixuId, golden.expected.uid);
@@ -303,7 +303,7 @@ test("validates HookPlan IR artifacts at the internal boundary", () => {
 
   assert.deepEqual(
     validateHookPlanArtifact(resign({ ...plan, schemaVersion: "wrong" })),
-    ["schemaVersion must be uvp.hookPlan.v4"]
+    ["schemaVersion must be uvp.hookPlan.v5"]
   );
   assert.deepEqual(
     validateHookPlanArtifact(
@@ -800,96 +800,6 @@ test("dependencyIndex ordering follows code-point (Rust byte) order for astral-p
   );
 });
 
-test("rejects invalid mint declarations", () => {
-  const invalid: ZhixuDefinition = {
-    ...baseZhixu,
-    spec: {
-      ...baseZhixu.spec,
-      stages: [{
-              name: "main",
-              source: "buyer",
-              mint: "per-order" as unknown as "per-fact",
-              executor: {
-                supplierType: "organization",
-                supplierID: "executor"
-              }
-            }]
-    }
-  };
-
-  assertCompilationIssues(invalid, [
-    /main.mint only supports per-fact: per-order/
-  ]);
-});
-
-test("mint stages accept single ANCHOR birth subscriptions and mark them order-trigger", () => {
-  const valid: ZhixuDefinition = {
-    ...baseZhixu,
-    spec: {
-      ...baseZhixu.spec,
-      stages: [
-        {
-          name: "gate",
-          source: "buyer",
-          receiveSignals: {
-            PLACE: "buyer::gate.seed"
-          },
-          sendSignals: [{ name: "ready" }, { name: "seed" }],
-          executor: {
-            supplierType: "organization",
-            supplierID: "feeder-org"
-          }
-        },
-        {
-          name: "main",
-          source: "runner",
-          mint: "per-fact",
-          receiveSignals: {
-            START: "::ANCHOR(@buyer::gate.ready)"
-          },
-          sendSignals: [{ name: "str" }, { name: "cmp" }],
-          executor: {
-            supplierType: "organization",
-            supplierID: "executor"
-          }
-        }
-      ]
-    }
-  };
-
-  const plan = compileZhixuHookPlan(valid, demoManifest);
-  const hook = plan.compiledHooks.find((item) => item.hookName === "START");
-  assert.ok(hook, "birth entry hook missing");
-  assert.equal(hook.orderTriggerKind, "mint");
-  assert.equal(hook.emitReady, true);
-});
-
-test("rejects plain birth entries on mint stages (subscription only)", () => {
-  const invalid: ZhixuDefinition = {
-    ...baseZhixu,
-    spec: {
-      ...baseZhixu.spec,
-      stages: [{
-              name: "main",
-              source: "buyer",
-              mint: "per-fact",
-              receiveSignals: {
-                START: "buyer::(main.ready & main.ack)"
-              },
-              sendSignals: [{ name: "ready" }, { name: "ack" }],
-              executor: {
-                supplierType: "organization",
-                supplierID: "executor"
-              }
-            }]
-    }
-  };
-
-  assertCompilationIssues(invalid, [
-    /main.receiveSignals.START: mint stage accepts ANCHOR\(@…\) subscription entries only; plain birth-entry hooks are retired/
-  ]);
-});
-
 test("accepts multi-anchor receive stages without an entry table", () => {
   const plan = compileZhixuHookPlanWithManifest({
     ...baseZhixu,
@@ -1035,9 +945,9 @@ test("rejects executor-less selected-stage chains at the materialization gate", 
       }
     ]),
     [
-      /a declares no receiveSignals and compiles to zero hooks/,
-      /b declares no receiveSignals and compiles to zero hooks/,
-      /c declares no receiveSignals and compiles to zero hooks/,
+      /a declares no receiveSignals and no trigger and compiles to zero hooks/,
+      /b declares no receiveSignals and no trigger and compiles to zero hooks/,
+      /c declares no receiveSignals and no trigger and compiles to zero hooks/,
     ]
   );
 

@@ -61,16 +61,6 @@ function compileConditionInstructions(
   switch (condition.kind) {
     case "signal":
       return [signalInstruction(source, condition.signalName)];
-    case "subscription":
-      if (options.orderTriggerKind === "none") {
-        throw new HookPlanCompilationError([
-          `on-chain HookPlan only supports subscription entries on order-trigger hooks `
-          + `(::ANCHOR(@${condition.source}::${condition.signal}) in stage "${source}"); `
-          + "non-birth subscriptions are cloud-side runtime deliveries "
-          + "(see uvp-core docs/specs/subscription-mint-spec.md)"
-        ]);
-      }
-      return [signalInstruction(condition.source, condition.signal)];
     case "not":
       return [
         ...compileConditionInstructions(condition.expr, source, stageIdentifier, options),

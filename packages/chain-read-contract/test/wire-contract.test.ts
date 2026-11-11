@@ -1,6 +1,7 @@
 // Pins the chain read wire contract: bigint fields serialize to decimal
-// strings, decoders round-trip a representative order/task/snapshot, and a
-// missing required group or malformed decimal is rejected with a typed error.
+// strings, decoders round-trip representative order/task/snapshot and
+// plan-admission/plan-trigger payloads, and a missing required group,
+// malformed decimal, or malformed trigger entry is rejected with a typed error.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
@@ -12,11 +13,13 @@ import {
   isChainOrderProjection,
   parseOrdersResponse,
   parsePlanAdmissionsResponse,
+  parsePlanTriggersResponse,
   parseSyncStateResponse,
   parseTaskResponse,
   parseSnapshotResponse,
   toWire,
   type ChainOrderProjection,
+  type ChainPlanTriggersResponse,
   type ChainProjectionSnapshot,
   type ChainSyncState,
   type ChainTaskProjection
@@ -320,6 +323,95 @@ describe("chain read wire contract", () => {
       }),
       (error: unknown) =>
         error instanceof ChainReadContractError && error.path === "admissions[0].stageIdentifier"
+    );
+  });
+
+  it("round-trips a plan trigger enumeration and rejects malformed trigger entries by path", () => {
+    const trigger = {
+      hookId: HOOK_ID,
+      stageIdentifier: "init",
+      stageId: STAGE_ID,
+      hookName: "trigger",
+      orderTriggerKind: "trigger" as const,
+      source: "registrar",
+      signalName: "init.trigger",
+      sourceId: HASH,
+      signalId: SIGNAL_ID
+    };
+    const dockEntrance = {
+      hookId: bytes32("4"),
+      stageIdentifier: "settled",
+      stageId: bytes32("5"),
+      hookName: "OPEN_ENTER",
+      orderTriggerKind: "dock" as const,
+      source: "atelier",
+      signalName: "settled.openEntrance",
+      sourceId: bytes32("6"),
+      signalId: bytes32("7")
+    };
+    const response: ChainPlanTriggersResponse = {
+      chainId: CHAIN_ID,
+      planId: PLAN_ID,
+      planHash: PLAN_HASH,
+      triggers: [trigger, dockEntrance]
+    };
+
+    assert.deepEqual(parsePlanTriggersResponse(response), response);
+    assert.deepEqual(
+      parsePlanTriggersResponse(response).triggers.map((entry) => entry.hookId),
+      [HOOK_ID, bytes32("4")]
+    );
+
+    assert.throws(
+      () => parsePlanTriggersResponse({ ...response, planHash: "0x1234" }),
+      (error: unknown) =>
+        error instanceof ChainReadContractError && error.path === "response.planHash"
+    );
+    assert.throws(
+      () => parsePlanTriggersResponse({ ...response, triggers: "not-an-array" }),
+      (error: unknown) =>
+        error instanceof ChainReadContractError && error.path === "response.triggers"
+    );
+    assert.throws(
+      () => parsePlanTriggersResponse({
+        ...response,
+        triggers: [{ ...trigger, orderTriggerKind: "bogus" }]
+      }),
+      (error: unknown) =>
+        error instanceof ChainReadContractError &&
+        error.path === "triggers[0].orderTriggerKind"
+    );
+    assert.throws(
+      () => parsePlanTriggersResponse({
+        ...response,
+        triggers: [{ ...trigger, hookId: "0x1234" }]
+      }),
+      (error: unknown) =>
+        error instanceof ChainReadContractError && error.path === "triggers[0].hookId"
+    );
+    assert.throws(
+      () => parsePlanTriggersResponse({
+        ...response,
+        triggers: [{ ...trigger, stageIdentifier: " " }]
+      }),
+      (error: unknown) =>
+        error instanceof ChainReadContractError && error.path === "triggers[0].stageIdentifier"
+    );
+    assert.throws(
+      () => parsePlanTriggersResponse({
+        ...response,
+        triggers: [{ ...trigger, source: "" }]
+      }),
+      (error: unknown) =>
+        error instanceof ChainReadContractError && error.path === "triggers[0].source"
+    );
+    assert.throws(
+      () => parsePlanTriggersResponse({
+        ...response,
+        triggers: [{ ...trigger, signalName: " " }]
+      }),
+      (error: unknown) =>
+        error instanceof ChainReadContractError && error.path === "triggers[0].signalName"
     );
   });
 });

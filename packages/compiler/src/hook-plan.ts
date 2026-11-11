@@ -289,7 +289,7 @@ function validateCompiledHooks(hooks: readonly unknown[]): readonly string[] {
     expectNonEmptyString(hook.hookName, `${prefix}.hookName`, issues);
     expectOneOf(
       hook.orderTriggerKind,
-      ["none", "mint", "dock"],
+      ["none", "trigger", "dock"],
       `${prefix}.orderTriggerKind`,
       issues,
     );

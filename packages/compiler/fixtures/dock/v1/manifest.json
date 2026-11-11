@@ -343,7 +343,7 @@
           }
         },
         "definitionRefHash": "0x333b710fc77c7d9e5a95cd5a259b984d782dd2a778871578faedfd180b1efe75",
-        "artifactHash": "0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4",
+        "artifactHash": "0x01674a26657ebbf07ed5d022a9890916d99577eef0651e1afa7eddc0735e1b4c",
         "published": true,
         "interfaces": [
           {
@@ -425,7 +425,7 @@
         ],
         "evmPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3",
         "chainPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3",
-        "cloudArtifactId": "artifact://0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4"
+        "cloudArtifactId": "artifact://0x01674a26657ebbf07ed5d022a9890916d99577eef0651e1afa7eddc0735e1b4c"
       }
     ]
   },
@@ -433,7 +433,7 @@
     "targetDefinitionRefHash": "0x333b710fc77c7d9e5a95cd5a259b984d782dd2a778871578faedfd180b1efe75",
     "parentDefinitionRefHash": "0x545ce758fb306fdc45bc708504bba0a35dca37b486ad75021cbee4be75ae9fe0",
     "targetPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3",
-    "targetArtifactHash": "0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4",
+    "targetArtifactHash": "0x01674a26657ebbf07ed5d022a9890916d99577eef0651e1afa7eddc0735e1b4c",
     "interfaceArtifact": {
       "schemaVersion": "uvp.dockInterfaceArtifact.v2",
       "definition": {
@@ -541,8 +541,8 @@
           "interfaceName": "production_service",
           "interfaceRoot": "0x59241571ea80dfeb54b1dd40f298c62a1045481f552de4c4341f8b2be59baaa7",
           "dockInterfaceRoot": "0xd6be0319e52c855c043b914d5b24cbb5ebda5f852ffe7ce1dd9c578b4a89a024",
-          "artifactHash": "0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4",
-          "cloudArtifactId": "artifact://0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4",
+          "artifactHash": "0x01674a26657ebbf07ed5d022a9890916d99577eef0651e1afa7eddc0735e1b4c",
+          "cloudArtifactId": "artifact://0x01674a26657ebbf07ed5d022a9890916d99577eef0651e1afa7eddc0735e1b4c",
           "evmPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3",
           "chainPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3"
         },
@@ -604,8 +604,8 @@
           "interfaceName": "production_evidence",
           "interfaceRoot": "0x0cef6a00b2457b36211fdd7fc9d35e494f42d7f2f6af87b2f209b8dd823e6f75",
           "dockInterfaceRoot": "0xd6be0319e52c855c043b914d5b24cbb5ebda5f852ffe7ce1dd9c578b4a89a024",
-          "artifactHash": "0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4",
-          "cloudArtifactId": "artifact://0xba5abfdf448401d31378ed9c89122134dfc58d779d75350f853b66cc69df71b4",
+          "artifactHash": "0x01674a26657ebbf07ed5d022a9890916d99577eef0651e1afa7eddc0735e1b4c",
+          "cloudArtifactId": "artifact://0x01674a26657ebbf07ed5d022a9890916d99577eef0651e1afa7eddc0735e1b4c",
           "evmPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3",
           "chainPlanId": "0xe0736f52afd6a325b50e24086df3421a1f6581b672b561acbb7da9b73c8811e3"
         },

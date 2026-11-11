@@ -74,7 +74,7 @@ contract SemanticsReplayCorpusTest {
         string corpusPlanIdHex;
         RawHook[] hooks;
         RawHook[] admissions;
-        bool hasMint;
+        bool hasTrigger;
         bool hasDock;
         bytes32 chainPlanId;
         bytes32 birthHookId;
@@ -515,7 +515,7 @@ contract SemanticsReplayCorpusTest {
             _collectHook(json, hookBase, plan.hooks[plan.hooks.length - 1]);
             uint8 flags = plan.hooks[plan.hooks.length - 1].flags;
             if (flags & FLAG_ORDER_TRIGGER_MINT != 0) {
-                plan.hasMint = true;
+                plan.hasTrigger = true;
             }
             if (flags & FLAG_ORDER_TRIGGER_DOCK != 0) {
                 plan.hasDock = true;
@@ -543,7 +543,7 @@ contract SemanticsReplayCorpusTest {
         require(bytes(hookName).length <= 31, "corpus hookName too long");
         hook.hookNameWord = bytes32(bytes(hookName));
         string memory triggerKind = vm.parseJsonString(json, string.concat(hookBase, ".orderTriggerKind"));
-        if (keccak256(bytes(triggerKind)) == keccak256("mint")) {
+        if (keccak256(bytes(triggerKind)) == keccak256("trigger")) {
             hook.flags |= FLAG_ORDER_TRIGGER_MINT;
         } else if (keccak256(bytes(triggerKind)) == keccak256("dock")) {
             hook.flags |= FLAG_ORDER_TRIGGER_DOCK;
@@ -605,7 +605,7 @@ contract SemanticsReplayCorpusTest {
         returns (bool rejected, bytes4 selector)
     {
         RawPlan storage plan = plans[planIdx];
-        bool needsBirthHook = !plan.hasMint && !plan.hasDock && _orderCountOnPlan(plan.corpusPlanId) > 0;
+        bool needsBirthHook = !plan.hasTrigger && !plan.hasDock && _orderCountOnPlan(plan.corpusPlanId) > 0;
         uint256 total = plan.hooks.length + plan.admissions.length + (needsBirthHook ? 1 : 0) + (variant ? 1 : 0);
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](total);
         uint256 cursor;
@@ -781,15 +781,15 @@ contract SemanticsReplayCorpusTest {
     function _birthOutside(uint256 caseIdx, uint256 orderIdx) private returns (bool) {
         OrderRow storage order = orders[orderIdx];
         RawPlan storage plan = _planByCorpusId(order.planId);
-        bytes32 triggerHookId = plan.hasMint ? _mintHookOf(plan) : plan.birthHookId;
-        bytes32 triggerStageId = plan.hasMint ? _hookStage(plan, _mintHookOf(plan)) : plan.birthStageId;
+        bytes32 triggerHookId = plan.hasTrigger ? _triggerHookOf(plan) : plan.birthHookId;
+        bytes32 triggerStageId = plan.hasTrigger ? _hookStage(plan, _triggerHookOf(plan)) : plan.birthStageId;
         bytes32 sourceId;
         bytes32 signalId;
         bytes32 payload;
         uint256 birthSignalIdx = type(uint256).max;
-        if (plan.hasMint) {
+        if (plan.hasTrigger) {
             birthSignalIdx = _firstSignalOf(order.planId, order.orderId);
-            require(birthSignalIdx != type(uint256).max, "mint-birth order has no birth fact");
+            require(birthSignalIdx != type(uint256).max, "trigger-birth order has no birth fact");
             SignalRow storage birth = signals[birthSignalIdx];
             sourceId = birth.sourceId;
             signalId = birth.signalId;
@@ -891,8 +891,8 @@ contract SemanticsReplayCorpusTest {
                 creator: ORDER_CREATOR,
                 triggerOriginOrderId: origin.chainOrderId,
                 originPlanId: origin.chainPlanId,
-                triggerHookId: _mintHookOf(childPlan),
-                triggerStageId: _hookStage(childPlan, _mintHookOf(childPlan)),
+                triggerHookId: _triggerHookOf(childPlan),
+                triggerStageId: _hookStage(childPlan, _triggerHookOf(childPlan)),
                 originSourceId: originSourceId,
                 originSignalId: originSignalId,
                 payloadHash: payload,
@@ -1457,7 +1457,7 @@ contract SemanticsReplayCorpusTest {
             delete plans[p].hooks;
             delete plans[p].admissions;
             plans[p].exists = false;
-            plans[p].hasMint = false;
+            plans[p].hasTrigger = false;
             plans[p].hasDock = false;
             plans[p].chainPlanId = bytes32(0);
             plans[p].birthHookId = bytes32(0);
@@ -1851,13 +1851,13 @@ contract SemanticsReplayCorpusTest {
         return _triggeredRowOf(planId, orderId) != type(uint256).max;
     }
 
-    function _mintHookOf(RawPlan storage plan) private view returns (bytes32) {
+    function _triggerHookOf(RawPlan storage plan) private view returns (bytes32) {
         for (uint256 h = 0; h < plan.hooks.length; h++) {
             if (plan.hooks[h].flags & FLAG_ORDER_TRIGGER_MINT != 0) {
                 return plan.hooks[h].hookId;
             }
         }
-        revert("plan has no mint hook");
+        revert("plan has no trigger hook");
     }
 
     function _dockHookOf(RawPlan storage plan) private view returns (RawHook storage) {

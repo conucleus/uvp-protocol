@@ -336,7 +336,7 @@ test("chain replay derives order-link birth facts from HookReady", () => {
             stageId,
             stageIdentifier: "birth-stage",
             hookName: "birth",
-            orderTriggerKind: "mint",
+            orderTriggerKind: "trigger",
             emitReady: true,
             instructions: [{ op: "SIGNAL", sourceId: srcId, signalId: sigId, signalKey: keyId }]
           }
@@ -452,7 +452,7 @@ test("chain replay exposes duplicated birth HookReady as a mismatch", () => {
             stageId,
             stageIdentifier: "birth-stage",
             hookName: "birth",
-            orderTriggerKind: "mint",
+            orderTriggerKind: "trigger",
             emitReady: true,
             instructions: [{ op: "SIGNAL", sourceId: srcId, signalId: sigId, signalKey: keyId }]
           }

@@ -305,6 +305,28 @@ export interface ChainPlanAdmissionsResponse {
   readonly admissions: readonly ChainPlanAdmission[];
 }
 
+export type ChainPlanTriggerKind = "trigger" | "dock";
+
+/** One order-trigger hook of the recorded plan artifact; `trigger` is the external birth line. */
+export interface ChainPlanTrigger {
+  readonly hookId: Hex;
+  readonly stageIdentifier: string;
+  readonly stageId: Hex;
+  readonly hookName: string;
+  readonly orderTriggerKind: ChainPlanTriggerKind;
+  readonly source: string;
+  readonly signalName: string;
+  readonly sourceId: Hex;
+  readonly signalId: Hex;
+}
+
+export interface ChainPlanTriggersResponse {
+  readonly chainId: number;
+  readonly planId: Hex;
+  readonly planHash: Hex;
+  readonly triggers: readonly ChainPlanTrigger[];
+}
+
 export type ChainDeploymentStatus =
   | "candidate"
   | "canary"

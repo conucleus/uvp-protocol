@@ -178,7 +178,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   const again = compileZhixuOnchainHookPlan(baseZhixu, demoManifest);
 
   assert.deepEqual(onchain, again);
-  assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v4");
+  assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v5");
   assert.equal(onchain.planId, sourcePlan.planId);
   assert.deepEqual(onchain.platform, sourcePlan.platform);
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
@@ -534,7 +534,7 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
   const args = toSolidityRegisterPlanArgs(onchain);
 
-  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v4");
+  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v5");
   assert.equal(args.sourcePlanId, onchain.planId);
   const { planHash: _storedPlanHash, ...artifactPayload } = onchain;
   assert.equal(args.artifactHash, hashOnchainPlanPayload(artifactPayload));
@@ -803,7 +803,7 @@ test("cross-stage dependency guard fires on deserialized artifacts and follows c
     name: string,
     stageIdentifier: string,
     stageId: string,
-    orderTriggerKind: "mint" | "none",
+    orderTriggerKind: "trigger" | "none",
   ) => ({
     hookId: keccak256Hex(`${stageIdentifier}#${name}`),
     stageId,
@@ -826,13 +826,13 @@ test("cross-stage dependency guard fires on deserialized artifacts and follows c
   });
   const sequentialHookLists = {
     accepted: [
-      hookOf("t1", "a", stageA, "mint"),
-      hookOf("t2", "b", stageB, "mint"),
+      hookOf("t1", "a", stageA, "trigger"),
+      hookOf("t2", "b", stageB, "trigger"),
       hookOf("w1", "a", stageA, "none"),
     ],
     rejected: [
       hookOf("w1", "a", stageA, "none"),
-      hookOf("t1", "b", stageB, "mint"),
+      hookOf("t1", "b", stageB, "trigger"),
     ],
   };
   const sequentialArtifact = (hooks: readonly ReturnType<typeof hookOf>[]) => ({
@@ -1029,7 +1029,7 @@ test("rejects invalid on-chain HookPlan artifact shapes", () => {
 
   assert.deepEqual(
     validateOnchainHookPlanArtifact({ ...onchain, schemaVersion: "wrong" }),
-    ["schemaVersion must be uvp.onchainHookPlan.v4"],
+    ["schemaVersion must be uvp.onchainHookPlan.v5"],
   );
   assert.match(
     validateOnchainHookPlanArtifact({
@@ -1117,89 +1117,6 @@ test("collects dock commitment shape violations as issues instead of throwing or
       "planHash must match the canonical on-chain HookPlan payload",
     ),
   );
-});
-
-test("rejects non-birth subscription receive hooks with the typed compilation error", () => {
-  for (const [hookName, expression] of [
-    ["START", "::ANCHOR(@buyer::assign.executor_selected)"]
-  ] as const) {
-    const zhixu: ZhixuDefinition = {
-      ...baseZhixu,
-      spec: {
-        ...baseZhixu.spec,
-        stages: baseZhixu.spec.stages.map((stage) =>
-          stage.name === "main"
-            ? {
-                ...stage,
-                receiveSignals: { [hookName]: expression },
-                executor: {
-                  supplierType: "organization",
-                  supplierID: "execution-org"
-                }
-              }
-            : stage
-        )
-      }
-    };
-
-    assert.throws(
-      () => compileOnchainHookPlan(compileZhixuHookPlan(zhixu, demoManifest)),
-      (error: unknown) =>
-        error instanceof HookPlanCompilationError &&
-        error.issues.some(
-          (issue) =>
-            /only supports subscription entries on order-trigger hooks/.test(issue) &&
-            /subscription-mint-spec\.md/.test(issue)
-        )
-    );
-  }
-});
-
-test("compiles mint birth subscriptions into order-trigger SIGNAL hooks", () => {
-  const zhixu: ZhixuDefinition = {
-    ...baseZhixu,
-    spec: {
-      ...baseZhixu.spec,
-      stages: [
-        ...baseZhixu.spec.stages,
-        {
-          name: "post",
-          source: "buyer",
-          receiveSignals: {
-            PUBLISH: "buyer::post.seed",
-          },
-          sendSignals: [{ name: "posted" }, { name: "seed" }],
-          executor: {
-            supplierType: "organization",
-            supplierID: "intake-exec",
-          },
-        },
-        {
-          name: "birth",
-          source: "fulfiller",
-          mint: "per-fact",
-          receiveSignals: {
-            BIRTH: "::ANCHOR(@buyer::post.posted)",
-          },
-          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
-          executor: {
-            supplierType: "organization",
-            supplierID: "fulfiller-exec",
-          },
-        }],
-    },
-  };
-
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(zhixu, demoManifest));
-  const hook = onchain.compiledHooks.find((item) => item.hookName === "BIRTH");
-  assert.ok(hook, "birth hook missing from compiled plan");
-  assert.equal(hook.orderTriggerKind, "mint");
-  assert.equal(hook.emitReady, true);
-  assert.equal(hook.instructions.length, 1);
-  const birth = hook.instructions[0] as OnchainSignalInstruction;
-  assert.equal(birth.op, "SIGNAL");
-  assert.equal(birth.sourceId, onchainSourceId("buyer"));
-  assert.equal(birth.signalId, onchainSignalId("post.posted"));
 });
 
 test("rejects empty instructions the way the contract reverts InvalidHook", () => {
@@ -1314,31 +1231,16 @@ test("flags stages whose hooks can never materialize on-chain", () => {
   const materializationIssues = (issues: readonly string[]): readonly string[] =>
     issues.filter((issue) => /no order-trigger or EMIT_READY hook/.test(issue));
 
-  const mintZhixu: ZhixuDefinition = {
+  const triggerZhixu: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
       stages: [
         ...baseZhixu.spec.stages,
         {
-          name: "post",
-          source: "buyer",
-          receiveSignals: {
-            PUBLISH: "buyer::post.seed",
-          },
-          sendSignals: [{ name: "posted" }, { name: "seed" }],
-          executor: {
-            supplierType: "organization",
-            supplierID: "intake-exec",
-          },
-        },
-        {
           name: "birth",
           source: "fulfiller",
-          mint: "per-fact",
-          receiveSignals: {
-            BIRTH: "::ANCHOR(@buyer::post.posted)",
-          },
+          trigger: ["str"],
           sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
           executor: {
             supplierType: "organization",
@@ -1347,10 +1249,10 @@ test("flags stages whose hooks can never materialize on-chain", () => {
         }],
     },
   };
-  const mintOnchain = compileOnchainHookPlan(
-    compileZhixuHookPlan(mintZhixu, demoManifest),
+  const triggerOnchain = compileOnchainHookPlan(
+    compileZhixuHookPlan(triggerZhixu, demoManifest),
   );
-  assert.deepEqual(materializationIssues(validateOnchainHookPlanArtifact(mintOnchain)), []);
+  assert.deepEqual(materializationIssues(validateOnchainHookPlanArtifact(triggerOnchain)), []);
 
   const baseOnchain = compileOnchainHookPlan(
     compileZhixuHookPlan(baseZhixu, demoManifest),
@@ -1459,7 +1361,7 @@ test("rejects stages that compile to zero hooks (materialization gate)", () => {
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
       zeroHookIssues(error.issues).length === 1 &&
-      /^stage assign declares no receiveSignals and compiles to zero hooks: the stage can never materialize on-chain \(materialization only happens via this stage's own order-trigger\/EMIT_READY hooks\) and its sendSignals have no hook to hang on — submitSignal requires the source stage to be materialized and reverts UnknownHook forever \(deadlock, no recovery path\); declare receiveSignals carrying a mint\/dock entrance or a static executor$/.test(
+      /^stage assign declares no receiveSignals and compiles to zero hooks: the stage can never materialize on-chain \(materialization only happens via this stage's own order-trigger\/EMIT_READY hooks\) and its sendSignals have no hook to hang on — submitSignal requires the source stage to be materialized and reverts UnknownHook forever \(deadlock, no recovery path\); declare a trigger signal, receiveSignals carrying a trigger\/dock entrance, or a static executor$/.test(
         zeroHookIssues(error.issues)[0] ?? "",
       ),
   );
@@ -1753,17 +1655,17 @@ test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
   );
   assert.deepEqual(silentTriggerIssues(validateOnchainHookPlanArtifact(baseOnchain)), []);
 
-  const silentMint: OnchainHookPlanArtifact = {
+  const silentTrigger: OnchainHookPlanArtifact = {
     ...baseOnchain,
     compiledHooks: baseOnchain.compiledHooks.map((hook) =>
       hook.stageIdentifier === "main" && hook.hookName === "START"
-        ? { ...hook, orderTriggerKind: "mint" as const, emitReady: false }
+        ? { ...hook, orderTriggerKind: "trigger" as const, emitReady: false }
         : hook,
     ),
   };
-  const mintIssues = silentTriggerIssues(validateOnchainHookPlanArtifact(silentMint));
-  assert.ok(mintIssues.length >= 1, "silent mint trigger must be flagged");
-  for (const issue of mintIssues) {
+  const triggerIssues = silentTriggerIssues(validateOnchainHookPlanArtifact(silentTrigger));
+  assert.ok(triggerIssues.length >= 1, "silent trigger birth must be flagged");
+  for (const issue of triggerIssues) {
     assert.match(
       issue,
       /hook main#.+ is an order trigger without emitReady; UVPStateMachine\.commitPlan reverts SilentOrderTriggerHook — the Rust compiler must always emit trigger flags with EMIT_READY$/,
@@ -1788,7 +1690,7 @@ test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
     ...silentSourcePlan,
     compiledHooks: silentSourcePlan.compiledHooks.map((hook) =>
       hook.stageIdentifier === "main" && hook.hookName === "START"
-        ? { ...hook, orderTriggerKind: "mint" as const, emitReady: false }
+        ? { ...hook, orderTriggerKind: "trigger" as const, emitReady: false }
         : hook,
     ),
   });
@@ -1835,7 +1737,7 @@ test("mirrors _validateHook DELAY/NOT/anchor rejection branches at the artifact 
   const triggerDelay = mutateHookInstructions(
     "START",
     [...timeoutInstructions.slice(0, 2)],
-    () => ({ orderTriggerKind: "mint" as const }),
+    () => ({ orderTriggerKind: "trigger" as const }),
   );
   const triggerDelayIssues = validateOnchainHookPlanArtifact(triggerDelay);
   assert.ok(
@@ -2589,7 +2491,7 @@ test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirr
   );
 });
 
-test("rejects mint birth stages without their own static executor route", () => {
+test("rejects trigger birth stages without their own static executor route", () => {
   const zhixu: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
@@ -2614,19 +2516,9 @@ test("rejects mint birth stages without their own static executor route", () => 
               : stage,
         ),
         {
-          name: "post",
-          source: "buyer",
-          receiveSignals: { PUBLISH: "buyer::post.seed" },
-          sendSignals: [{ name: "posted" }, { name: "seed" }],
-          executor: { supplierType: "organization", supplierID: "intake-exec" },
-        },
-        {
           name: "birth",
           source: "fulfiller",
-          mint: "per-fact",
-          receiveSignals: {
-            BIRTH: "::ANCHOR(@buyer::post.posted)",
-          },
+          trigger: ["str"],
           sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
           executor: { supplierType: "organization", supplierID: "fulfiller-exec" },
         },
@@ -2647,7 +2539,7 @@ test("rejects mint birth stages without their own static executor route", () => 
     (hook) => hook.stageIdentifier === "birth",
   );
   assert.ok(birthHook, "birth hook missing from compiled plan");
-  assert.equal(birthHook.orderTriggerKind, "mint");
+  assert.equal(birthHook.orderTriggerKind, "trigger");
   assert.ok(
     onchain.selectorBindings.some(
       (binding) => binding.targetStageIdentifier === "birth",
@@ -2677,11 +2569,11 @@ test("rejects mint birth stages without their own static executor route", () => 
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
       error.issues.some((issue) =>
-        /birth is a subscription\/birth stage \(mint order-trigger\) and requires its own static executor route/.test(
+        /birth is a trigger birth stage \(trigger order-trigger hook\) and requires its own static executor route/.test(
           issue,
         )
       ),
-    "compile preflight must reject a mint birth stage without its own executor route",
+    "compile preflight must reject a trigger birth stage without its own executor route",
   );
 
   const rehashed = (mutated: OnchainHookPlanArtifact): OnchainHookPlanArtifact => {
@@ -2708,61 +2600,15 @@ test("rejects mint birth stages without their own static executor route", () => 
   } as OnchainHookPlanArtifact);
   assert.ok(
     validateOnchainHookPlanArtifact(strippedOnchain).some((issue) =>
-      /birth is a subscription\/birth stage \(mint order-trigger\) and requires its own static executor route/.test(
+      /birth is a trigger birth stage \(trigger order-trigger hook\) and requires its own static executor route/.test(
         issue,
       )
     ),
-    "artifact boundary must reject a mint birth stage without its own executor route",
+    "artifact boundary must reject a trigger birth stage without its own executor route",
   );
 });
-test("duplicate birth-channel key is rejected at compile and deserialization boundaries (U2 mirror)", () => {
+test("duplicate dock entrance key is rejected at the artifact boundary (U2 mirror)", () => {
   const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
-  const startHook = sourcePlan.compiledHooks.find(
-    (hook) => hook.hookName === "START",
-  );
-  const placeHook = sourcePlan.compiledHooks.find(
-    (hook) => hook.hookName === "PLACE",
-  );
-  assert.ok(startHook && placeHook, "demo IR must expose START and PLACE hooks");
-  const sharedSignalName = startHook.dependencies[0]!.signalName;
-  const sharedSource = startHook.dependencies[0]!.source;
-  const mutatedHooks = sourcePlan.compiledHooks.map((hook) => {
-    if (hook !== startHook && hook !== placeHook) {
-      return hook;
-    }
-    if (hook === placeHook) {
-      return {
-        ...hook,
-        orderTriggerKind: "dock" as const,
-        emitReady: true,
-        ast: {
-          ...hook.ast,
-          condition: {
-            kind: "signal" as const,
-            source: sharedSource,
-            signalName: sharedSignalName,
-          },
-        },
-        dependencies: [
-          { ...hook.dependencies[0]!, source: sharedSource, signalName: sharedSignalName },
-        ],
-      };
-    }
-    return { ...hook, orderTriggerKind: "mint" as const, emitReady: true };
-  });
-  const resignd = resign({
-    ...sourcePlan,
-    compiledHooks: mutatedHooks,
-    dependencyIndex: rebuildDependencyIndex(mutatedHooks),
-  });
-  assert.throws(
-    () => compileOnchainHookPlan(resignd),
-    (error: unknown) =>
-      error instanceof HookPlanCompilationError &&
-      error.issues.some((issue) => /duplicate birth-channel key/.test(issue)),
-    "compile preflight must reject two order-trigger hooks sharing a birth key",
-  );
-
   const onchain = compileOnchainHookPlan(sourcePlan);
   const stageA = "0x" + "01".repeat(32);
   const stageB = "0x" + "02".repeat(32);
@@ -2792,7 +2638,7 @@ test("duplicate birth-channel key is rejected at compile and deserialization bou
     name: string,
     stageIdentifier: string,
     stageId: string,
-    orderTriggerKind: "mint" | "dock" | "none",
+    orderTriggerKind: "trigger" | "dock" | "none",
   ) => ({
     hookId: keccak256Hex(`${stageIdentifier}#${name}`),
     stageId,
@@ -2804,33 +2650,35 @@ test("duplicate birth-channel key is rejected at compile and deserialization bou
     instructions: instructionOf(),
     dependencies: [dep],
   });
-  const birthHooks = [
-    hookOf("mint_line", "a", stageA, "mint"),
-    hookOf("dock_line", "b", stageB, "dock"),
+  const dockHooks = [
+    hookOf("dock_line", "a", stageA, "dock"),
+    hookOf("dock_line_2", "b", stageB, "dock"),
     hookOf("watcher", "a", stageA, "none"),
   ];
   const issues = validateOnchainHookPlanArtifact({
     ...onchain,
-    compiledHooks: birthHooks,
-    dependencyIndex: { [sharedKey]: birthHooks.map((hook) => hook.hookId) },
+    compiledHooks: dockHooks,
+    dependencyIndex: { [sharedKey]: dockHooks.map((hook) => hook.hookId) },
   });
   assert.equal(
-    issues.filter((issue) => /duplicate birth-channel key/.test(issue)).length,
+    issues.filter((issue) => /duplicate dock entrance key/.test(issue)).length,
     1,
-    `expected exactly one birth-channel issue, got: ${issues.join("; ")}`,
+    `expected exactly one dock entrance issue, got: ${issues.join("; ")}`,
   );
 
-  const fanOutHooks = [
-    hookOf("mint_line", "a", stageA, "mint"),
-    hookOf("mint_line_2", "b", stageB, "mint"),
+  const triggerFanOutHooks = [
+    hookOf("trigger_line", "a", stageA, "trigger"),
+    hookOf("trigger_line_2", "b", stageB, "trigger"),
   ];
   const fanOutIssues = validateOnchainHookPlanArtifact({
     ...onchain,
-    compiledHooks: fanOutHooks,
-    dependencyIndex: { [sharedKey]: fanOutHooks.map((hook) => hook.hookId) },
+    compiledHooks: triggerFanOutHooks,
+    dependencyIndex: {
+      [sharedKey]: triggerFanOutHooks.map((hook) => hook.hookId),
+    },
   });
   assert.deepEqual(
-    fanOutIssues.filter((issue) => /duplicate birth-channel key/.test(issue)),
+    fanOutIssues.filter((issue) => /duplicate dock entrance key/.test(issue)),
     [],
   );
 });
@@ -2922,5 +2770,91 @@ test("capabilitiesRoot varies with table contents and pins empty tables to EMPTY
   assert.equal(
     withBinding.capabilitiesRoot,
     artifactCapabilitiesRoot(withBinding),
+  );
+});
+
+test("triggers are derived, not committed: boundary rejects tampering and planHash excludes them", () => {
+  const TRIGGER_ENUMERATION_ISSUE =
+    "triggers must enumerate every order-trigger hook of compiledHooks in canonical hook order, "
+    + "each entry derived from that hook's single positive dependency; a missing, surplus, reordered, "
+    + "or tampered entry is rejected";
+  const enumerationIssues = (
+    artifact: OnchainHookPlanArtifact,
+  ): readonly string[] =>
+    validateOnchainHookPlanArtifact(artifact).filter(
+      (issue) => issue === TRIGGER_ENUMERATION_ISSUE,
+    );
+
+  const triggerZhixu: ZhixuDefinition = {
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      stages: [
+        ...baseZhixu.spec.stages,
+        {
+          name: "birth",
+          source: "fulfiller",
+          trigger: ["str", "ack"],
+          sendSignals: [{ name: "str" }, { name: "ack" }, { name: "cmp" }],
+          executor: { supplierType: "organization", supplierID: "fulfiller-exec" },
+        },
+      ],
+    },
+  };
+  const onchain = compileOnchainHookPlan(
+    compileZhixuHookPlan(triggerZhixu, demoManifest),
+  );
+  assert.deepEqual(
+    onchain.triggers.map((trigger) => [
+      trigger.stageIdentifier,
+      trigger.hookName,
+      trigger.orderTriggerKind,
+    ]),
+    [
+      ["birth", "ack", "trigger"],
+      ["birth", "str", "trigger"],
+    ],
+  );
+  assert.deepEqual(enumerationIssues(onchain), []);
+
+  assert.equal(enumerationIssues({ ...onchain, triggers: [] }).length, 1);
+  assert.equal(
+    enumerationIssues({
+      ...onchain,
+      triggers: [...onchain.triggers].reverse(),
+    }).length,
+    1,
+  );
+  assert.equal(
+    enumerationIssues({
+      ...onchain,
+      triggers: onchain.triggers.map((trigger, index) =>
+        index === 0 ? { ...trigger, hookName: "tampered" } : trigger,
+      ),
+    }).length,
+    1,
+  );
+
+  const { planHash: _committed, ...payload } = onchain;
+  assert.equal(
+    hashOnchainPlanPayload({
+      ...payload,
+      triggers: onchain.triggers.map((trigger) => ({
+        ...trigger,
+        stageIdentifier: "tampered",
+      })),
+    }),
+    onchain.planHash,
+    "triggers are a derived read face and must not enter the planHash preimage",
+  );
+  assert.notEqual(
+    hashOnchainPlanPayload({
+      ...payload,
+      compiledHooks: payload.compiledHooks.map((hook, index) =>
+        index === 0 ? { ...hook, emitReady: !hook.emitReady } : hook,
+      ),
+    }),
+    onchain.planHash,
+    "the committed compiledHooks stay inside the planHash preimage",
   );
 });

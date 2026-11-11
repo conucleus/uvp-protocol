@@ -280,47 +280,6 @@ test("rejects the decaying veto outside the conjunction-operand position", () =>
   );
 });
 
-test("parses subscription entries with empty source header", () => {
-  const ast = parseHookExpression("::ANCHOR(@seller::ship.cmp)");
-
-  assert.equal(ast.source, "");
-  assert.deepEqual(ast.condition, {
-    kind: "subscription",
-    source: "seller",
-    signal: "ship.cmp"
-  });
-  assert.deepEqual(extractHookDependencies(ast), [
-    { kind: "positive", source: "seller", signalName: "ship.cmp" }
-  ]);
-});
-
-test("defers subscription entries to per-event delivery without expression verdict", () => {
-  const ast = parseHookExpression("::ANCHOR(@seller::ship.cmp)");
-
-  assert.deepEqual(evaluateHook(ast, index([]), at), { status: "init" });
-  assert.deepEqual(evaluateHook(ast, index([["seller", "ship.cmp", at]]), at), {
-    status: "init"
-  });
-});
-
-test("rejects non-canonical cross-source header forms", () => {
-  assert.throws(() => parseHookExpression("::OUTSIDE"), /retired in uvp\.semantic\.v1/);
-  assert.throws(() => parseHookExpression("buyer::OUTSOURCE"), /retired in uvp\.semantic\.v1/);
-  // 扇入类旧标头不在关键字清单内：没有退役清单条目，按
-  // 通用语法错误拒绝（与 uvp-core 解析器同口径）。词元按字节拼装，
-  // 保持全仓 hook 语境的零命中口径。
-  const retiredHeader = ["MER", "GE"].join("");
-  assert.throws(
-    () => parseHookExpression(`buyer::${retiredHeader}@(peer::a.b)`),
-    /signal reference must use stage\.signal/
-  );
-  assert.throws(() => parseHookExpression("::ANCHOR@(farmer.settle)"), /retired in uvp\.semantic\.v1/);
-  assert.throws(
-    () => parseHookExpression(`::${retiredHeader}@(seller::a.b, buyer::d.e)`),
-    /empty source is only allowed for ANCHOR/
-  );
-});
-
 test("rejects raw-less ASTs at adapter boundaries", () => {
   const ast = parseHookExpression("buyer::main.cmp");
   const rawLess = {

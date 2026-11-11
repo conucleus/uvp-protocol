@@ -215,10 +215,9 @@ library UVPPlanRegistration {
                 }
                 updatedCount += 1;
             } else {
-                bool inputIsDock = input.flags & HOOK_FLAG_ORDER_TRIGGER_DOCK != 0;
-                for (uint256 k = 0; k < dependents.length; k++) {
-                    if (inputIsTrigger && _isOrderTrigger(plan.hooks[dependents[k]].flags)) {
-                        if (inputIsDock || plan.hooks[dependents[k]].flags & HOOK_FLAG_ORDER_TRIGGER_DOCK != 0) {
+                if (input.flags & HOOK_FLAG_ORDER_TRIGGER_DOCK != 0) {
+                    for (uint256 k = 0; k < dependents.length; k++) {
+                        if (plan.hooks[dependents[k]].flags & HOOK_FLAG_ORDER_TRIGGER_DOCK != 0) {
                             revert UVPStateMachine.DuplicateBirthChannelKey(dependencyKey);
                         }
                     }
@@ -559,6 +558,7 @@ library UVPPlanRegistration {
         );
         L_requireNotDockNamespace(orderId);
 
+        L_requireBirthAdmission(_s, trigger.planId, orderId, trigger.sourceId, trigger.signalId);
         L_createOrder(_s, trigger.planId, orderId, trigger.creator, msg.sender);
         L_authorizeSignalSubmitters(_s, trigger.planId, orderId, authorizations);
         emit UVPStateMachine.OrderTriggered(
@@ -570,7 +570,6 @@ library UVPPlanRegistration {
             trigger.signalId,
             trigger.submitter
         );
-        L_requireSignalAdmission(_s, trigger.planId, orderId, trigger.sourceId, trigger.signalId);
         L_recordSignal(
             _s,
             trigger.planId,
@@ -626,6 +625,7 @@ library UVPPlanRegistration {
 
         bytes32 birthStageId =
             L_resolveSourceStage(_s, trigger.planId, trigger.sourceId, trigger.signalId, birthFactAttribution);
+        L_requireBirthAdmission(_s, trigger.planId, orderId, trigger.sourceId, trigger.signalId);
         L_createOrder(_s, trigger.planId, orderId, trigger.creator, msg.sender);
         L_authorizeSignalSubmitters(_s, trigger.planId, orderId, authorizations);
         emit UVPStateMachine.OrderTriggered(
@@ -637,7 +637,6 @@ library UVPPlanRegistration {
             trigger.signalId,
             msg.sender
         );
-        L_requireSignalAdmission(_s, trigger.planId, orderId, trigger.sourceId, trigger.signalId);
         L_recordSignal(
             _s,
             trigger.planId,
@@ -1115,14 +1114,14 @@ library UVPPlanRegistration {
         return rollingHash;
     }
 
-    function L_requireSignalAdmission(
+    function L_requireBirthAdmission(
         UVPStateMachine.SMState storage _s,
         bytes32 planId,
         bytes32 orderId,
         bytes32 sourceId,
         bytes32 signalId
     ) private view {
-        if (!_s.orders[planId][orderId].admissionsDeclared) {
+        if (!_s.plans[planId].admissionsDeclared) {
             return;
         }
         UVPStateMachine.StoredAdmission storage admission = _s.plans[planId].admissions[L_signalKey(sourceId, signalId)];

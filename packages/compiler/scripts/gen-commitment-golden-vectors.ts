@@ -156,7 +156,7 @@ function buildDefinitionCase(
   );
   const args: SolidityRegisterPlanArgs = toSolidityRegisterPlanArgs(onchain);
   const hooks = goldenHooks(args.hooks);
-  const { planHash: _onchainHash, birthChannel: _birthChannel, ...onchainPayload } = onchain;
+  const { planHash: _onchainHash, triggers: _triggers, ...onchainPayload } = onchain;
   return {
     name,
     note,
@@ -241,7 +241,7 @@ const sharedKeyOrderZhixu: ZhixuDefinition = {
   },
 };
 
-const mintBirthZhixu: ZhixuDefinition = {
+const triggerBirthZhixu: ZhixuDefinition = {
   apiVersion: "uvp/v0",
   kind: "Zhixu",
   metadata: { name: "demo_zhixu" },
@@ -273,8 +273,7 @@ const mintBirthZhixu: ZhixuDefinition = {
       {
         name: "birth",
         source: "fulfiller",
-        mint: "per-fact",
-        receiveSignals: { BIRTH: "::ANCHOR(@buyer::post.posted)" },
+        trigger: ["str"],
         sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
         executor: { supplierType: "organization", supplierID: "fulfiller-exec" },
       },
@@ -348,8 +347,7 @@ const birthZhixu: ZhixuDefinition = {
       {
         name: "main",
         source: "buyer",
-        mint: "per-fact",
-        receiveSignals: { ON_DEAL: "::ANCHOR(@trading::deal.closed)" },
+        trigger: ["str"],
         sendSignals: [{ name: "str" }, { name: "cmp" }],
         executor: { supplierType: "organization", supplierID: "birth-org" },
       },
@@ -427,7 +425,7 @@ const cases: readonly CommitmentGoldenCase[] = [
   ),
   buildDefinitionCase(
     "candidates_blackbox_birth",
-    "出生（mint）阶段形态 + deal 候选（出生阶段执行者终生不可变）",
+    "出生（trigger）阶段形态 + deal 候选（出生阶段执行者终生不可变）",
     {
       definition: birthZhixu,
       executorCandidates: [
@@ -451,9 +449,9 @@ const cases: readonly CommitmentGoldenCase[] = [
     { definition: sharedKeyOrderZhixu },
   ),
   buildDefinitionCase(
-    "mint_birth_subscription",
-    "出生订阅（::ANCHOR）编译为 mint 触发 SIGNAL 钩子的多阶段形态",
-    { definition: mintBirthZhixu },
+    "trigger_birth_definition",
+    "trigger 信号编译为 order-trigger SIGNAL 钩子（MINT 位）的多阶段形态",
+    { definition: triggerBirthZhixu },
   ),
 ];
 

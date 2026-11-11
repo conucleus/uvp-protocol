@@ -22,7 +22,7 @@
               "signalKey": "0x0000000000000000000000000000000000000000000000000000000000002000"
             }
           ],
-          "orderTriggerKind": "mint",
+          "orderTriggerKind": "trigger",
           "emitReady": true
         },
         {
@@ -38,7 +38,7 @@
               "signalKey": "0x0000000000000000000000000000000000000000000000000000000000002001"
             }
           ],
-          "orderTriggerKind": "mint",
+          "orderTriggerKind": "trigger",
           "emitReady": true
         },
         {

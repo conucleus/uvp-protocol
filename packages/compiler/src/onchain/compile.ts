@@ -13,7 +13,7 @@ import {
   birthStageStaticExecutorIssues,
   crossStageDependencyIssues,
   declaredStageIdentifiers,
-  duplicateBirthChannelKeyIssues,
+  duplicateDockEntranceKeyIssues,
   silentOrderTriggerIssues,
   unmaterializableStageIssues,
   validateOnchainCompiledAdmissions,
@@ -21,7 +21,7 @@ import {
 } from "./validate/hooks.js";
 import { planDependencyCountIssues } from "./validate/limits.js";
 import { duplicateCurrentOrderFactKeyIssues } from "./validate/capabilities.js";
-import { onchainBirthChannelOf } from "./birth-channel.js";
+import { onchainPlanTriggersOf } from "./triggers.js";
 import { capabilitiesRootOf } from "./capabilities-root.js";
 import { compileStageFileWriters } from "./file-writers.js";
 import {
@@ -144,7 +144,7 @@ export function compileOnchainHookPlan(
     ),
   );
   const silentTriggerIssues = silentOrderTriggerIssues(compiledHooks);
-  const duplicateBirthKeyIssues = duplicateBirthChannelKeyIssues(compiledHooks);
+  const duplicateDockEntranceIssues = duplicateDockEntranceKeyIssues(compiledHooks);
   const dependencyCountIssues = planDependencyCountIssues(compiledHooks);
   const currentOrderFactKeyIssues = duplicateCurrentOrderFactKeyIssues(
     hookPlanArtifact.signalCapabilities.map((capability) => ({
@@ -179,7 +179,7 @@ export function compileOnchainHookPlan(
     ...materializationIssues,
     ...birthStageExecutorIssues,
     ...silentTriggerIssues,
-    ...duplicateBirthKeyIssues,
+    ...duplicateDockEntranceIssues,
     ...dependencyCountIssues,
     ...currentOrderFactKeyIssues,
     ...dockTrackIssues,
@@ -249,6 +249,7 @@ export function compileOnchainHookPlan(
     solidityFileWriterBindings,
   );
   const executorCandidatesRoot = executorCandidatesRootOf(executorCandidateList);
+  const triggers = onchainPlanTriggersOf(compiledHooks);
   const payload = {
     schemaVersion: ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
     planId: hookPlanArtifact.planId,
@@ -257,6 +258,7 @@ export function compileOnchainHookPlan(
     platform: hookPlanArtifact.platform,
     sourcePlanHash: hookPlanArtifact.planHash,
     compiledHooks,
+    triggers,
     dependencyIndex,
     executorRoutes,
     dockInterface: hookPlanArtifact.dockInterface,
@@ -275,10 +277,8 @@ export function compileOnchainHookPlan(
     executorCandidatesRoot,
   };
 
-  const birthChannel = onchainBirthChannelOf(compiledHooks);
   return {
     ...payload,
-    ...(birthChannel === undefined ? {} : { birthChannel }),
     planHash: hashOnchainPlanPayload(payload),
   };
 }

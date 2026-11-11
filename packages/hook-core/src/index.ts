@@ -22,7 +22,6 @@ export {
 export {
   ZHIXU_ANALYSIS_SCHEMA_VERSION,
   type ZhixuAnalysis,
-  type ZhixuAnalysisEntryHook,
   type ZhixuAnalysisHook,
   type ZhixuAnalysisRequest,
   type ZhixuAnalysisSendSignal,

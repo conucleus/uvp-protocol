@@ -3,7 +3,6 @@ export type SignalName = string;
 
 export type HookConditionAst =
   | SignalConditionAst
-  | SubscriptionConditionAst
   | NotConditionAst
   | AndConditionAst
   | OrConditionAst
@@ -18,17 +17,6 @@ export interface HookExpressionAst {
 export interface SignalConditionAst {
   readonly kind: "signal";
   readonly signalName: SignalName;
-}
-
-/**
- * Subscription entry `::ANCHOR(@source::stage.signal)`: empty source
- * header, delivered per contributing event, no expression verdict. Field name
- * mirrors uvp-hook-dsl `expr_to_ts_value` (`signal`, not `signalName`).
- */
-export interface SubscriptionConditionAst {
-  readonly kind: "subscription";
-  readonly source: HookSource;
-  readonly signal: SignalName;
 }
 
 export interface NotConditionAst {

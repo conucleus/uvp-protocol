@@ -38,7 +38,7 @@ export function solidityHookFlags(
   emitReady: boolean,
 ): number {
   let flags = 0;
-  if (orderTriggerKind === "mint") {
+  if (orderTriggerKind === "trigger") {
     flags |= HOOK_FLAG_ORDER_TRIGGER_MINT;
   }
   if (orderTriggerKind === "dock") {

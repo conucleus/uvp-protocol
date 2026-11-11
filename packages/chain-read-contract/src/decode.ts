@@ -20,6 +20,9 @@ import type {
   ChainPlanAdmission,
   ChainPlanAdmissionsResponse,
   ChainPlanProjection,
+  ChainPlanTrigger,
+  ChainPlanTriggerKind,
+  ChainPlanTriggersResponse,
   ChainProjectionSnapshot,
   ChainProof,
   ChainProvenance,
@@ -62,6 +65,7 @@ const DEPLOYMENT_STATUSES: readonly ChainDeploymentStatus[] = [
   "unknown"
 ];
 const DOCK_MODES: readonly ChainDockMode[] = ["new", "existing"];
+const PLAN_TRIGGER_KINDS: readonly ChainPlanTriggerKind[] = ["trigger", "dock"];
 const SYNC_STATUSES: readonly ChainSyncStatus[] = ["indexed", "syncing", "stale", "rebuilding", "degraded"];
 const REBUILD_STATUSES: readonly ChainRebuildStatus[] = ["idle", "running", "completed", "failed"];
 const SUBMIT_SIGNAL_SOURCES: readonly ChainSubmitSignal["source"][] = ["plan_capability", "authorization"];
@@ -766,6 +770,31 @@ function decodePlanAdmissionWire(value: unknown, path: string): ChainPlanAdmissi
   requireNonEmptyString(record, "stageIdentifier", path);
   requireNonEmptyString(record, "signalName", path);
   return value as ChainPlanAdmission;
+}
+
+export function parsePlanTriggersResponse(body: unknown): ChainPlanTriggersResponse {
+  const record = wireRecord(body, "response");
+  requireNumber(record, "chainId", "response");
+  requireBytes32(record, "planId", "response");
+  requireBytes32(record, "planHash", "response");
+  const triggers = decodeArray(record["triggers"], "response.triggers");
+  triggers.forEach((trigger, index) => {
+    decodePlanTriggerWire(trigger, `triggers[${index}]`);
+  });
+  return body as ChainPlanTriggersResponse;
+}
+
+function decodePlanTriggerWire(value: unknown, path: string): ChainPlanTrigger {
+  const record = wireRecord(value, path);
+  for (const field of ["hookId", "stageId", "sourceId", "signalId"] as const) {
+    requireBytes32(record, field, path);
+  }
+  requireNonEmptyString(record, "stageIdentifier", path);
+  requireNonEmptyString(record, "hookName", path);
+  requireEnum(record, "orderTriggerKind", path, PLAN_TRIGGER_KINDS);
+  requireNonEmptyString(record, "source", path);
+  requireNonEmptyString(record, "signalName", path);
+  return value as ChainPlanTrigger;
 }
 
 

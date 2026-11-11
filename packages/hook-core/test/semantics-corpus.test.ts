@@ -87,7 +87,6 @@ interface SignalFact {
 
 interface CoreParseHookOutput {
   readonly source: string;
-  readonly mode: string;
   readonly runtimeCondition: string;
   readonly normalizedExpression: string;
   readonly dependencies: readonly HookDependency[];
@@ -149,7 +148,6 @@ test("uvp-core N-API parses hook semantic corpus", async () => {
     }) as CoreParseHookOutput;
 
     assert.equal(output.source, item.expect.source, item.name);
-    assert.equal(output.mode, item.expect.mode, item.name);
     assert.equal(output.runtimeCondition, item.expect.runtimeCondition, item.name);
     assert.equal(output.normalizedExpression, item.expect.normalizedExpression, item.name);
     assert.deepEqual(output.dependencies, item.expect.dependencies, item.name);

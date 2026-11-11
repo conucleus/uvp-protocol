@@ -1,8 +1,8 @@
 export const COMPILER_NAME = "uvp-eth-compiler" as const;
 export const COMPILER_VERSION = "0.1.0" as const;
-export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v4" as const;
+export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v5" as const;
 export const ONCHAIN_HOOK_PLAN_SCHEMA_VERSION =
-  "uvp.onchainHookPlan.v4" as const;
+  "uvp.onchainHookPlan.v5" as const;
 export const DOCK_INTERFACE_ARTIFACT_SCHEMA_VERSION =
   "uvp.dockInterfaceArtifact.v2" as const;
 export const DOCK_ROUTE_SCHEMA_VERSION = "uvp.dockRoute.v4" as const;
@@ -52,7 +52,7 @@ export interface ZhixuPlatform {
 export interface ZhixuStage {
   readonly name: string;
   readonly source: string;
-  readonly mint?: "per-fact";
+  readonly trigger?: readonly string[];
   readonly executor?: ExecuteConfigs;
   readonly selectedStages?: readonly string[];
   readonly sendSignals?: readonly ZhixuSendSignal[];
@@ -293,9 +293,19 @@ export interface HookPlanArtifact {
   readonly planHash: HexString;
 }
 
-export type OrderTriggerKind = "none" | "mint" | "dock";
+export type OrderTriggerKind = "none" | "trigger" | "dock";
 
-export type BirthChannel = "entry" | "mint" | "dock";
+export interface OnchainPlanTrigger {
+  readonly hookId: HexString;
+  readonly stageIdentifier: string;
+  readonly stageId: HexString;
+  readonly hookName: string;
+  readonly orderTriggerKind: Exclude<OrderTriggerKind, "none">;
+  readonly source: string;
+  readonly signalName: string;
+  readonly sourceId: HexString;
+  readonly signalId: HexString;
+}
 
 export interface CompiledHookPlanHook {
   readonly hookId: string;
@@ -470,6 +480,7 @@ export interface OnchainHookPlanArtifact {
   readonly platform: ZhixuPlatform;
   readonly sourcePlanHash: HexString;
   readonly compiledHooks: readonly OnchainCompiledHook[];
+  readonly triggers: readonly OnchainPlanTrigger[];
   readonly dependencyIndex: Record<HexString, readonly HexString[]>;
   readonly executorRoutes: readonly OnchainExecutorRoute[];
   readonly dockInterface: DockInterfaceArtifactV2 | null;
@@ -484,7 +495,6 @@ export interface OnchainHookPlanArtifact {
   readonly admissions: readonly OnchainCompiledAdmission[];
   readonly executorCandidates: readonly OnchainExecutorCandidate[];
   readonly executorCandidatesRoot: HexString;
-  readonly birthChannel?: BirthChannel;
   readonly planHash: HexString;
 }
 

@@ -57,9 +57,9 @@ describe("generated artifact ABI bindings", () => {
     assert.equal(HOOK_FLAG_ORDER_TRIGGER_MINT, 1);
     assert.equal(HOOK_FLAG_ORDER_TRIGGER_DOCK, 2);
     assert.equal(HOOK_FLAG_EMIT_READY, 4);
-    // 编译器产物恒为 trigger|EMIT_READY：mint=5 / dock=6。
+    // 编译器产物恒为 trigger|EMIT_READY：trigger=5 / dock=6。
     assert.equal(
-      buildCompactHookFlags({ orderTriggerKind: "mint", emitReady: true }),
+      buildCompactHookFlags({ orderTriggerKind: "trigger", emitReady: true }),
       5,
     );
     assert.equal(

@@ -22,11 +22,10 @@ import {
   expectHexHash,
   expectLiteral,
   expectNonEmptyString,
-  expectOneOf,
   isHexHash,
   isRecord,
 } from "../shape.js";
-import { onchainBirthChannelIssues } from "../birth-channel.js";
+import { onchainPlanTriggerIssues } from "../triggers.js";
 import {
   duplicateCurrentOrderFactKeyIssues,
   validateOnchainExecutorRoutes,
@@ -36,7 +35,7 @@ import {
 import {
   birthStageStaticExecutorIssues,
   declaredStageIdentifiers,
-  duplicateBirthChannelKeyIssues,
+  duplicateDockEntranceKeyIssues,
   silentOrderTriggerIssues,
   unmaterializableStageIssues,
   validateOnchainCompiledAdmissions,
@@ -77,6 +76,7 @@ const ONCHAIN_ARTIFACT_FIELDS: readonly string[] = [
   "platform",
   "sourcePlanHash",
   "compiledHooks",
+  "triggers",
   "dependencyIndex",
   "executorRoutes",
   "dockInterface",
@@ -91,7 +91,6 @@ const ONCHAIN_ARTIFACT_FIELDS: readonly string[] = [
   "admissions",
   "executorCandidates",
   "executorCandidatesRoot",
-  "birthChannel",
   "planHash",
 ];
 
@@ -227,14 +226,6 @@ export function validateOnchainHookPlanArtifact(
     issues.push("executorCandidates must be an array");
   }
   expectHexHash(value.executorCandidatesRoot, "executorCandidatesRoot", issues);
-  if (value.birthChannel !== undefined) {
-    expectOneOf(
-      value.birthChannel,
-      ["entry", "mint", "dock"],
-      "birthChannel",
-      issues,
-    );
-  }
 
   if (compiledHooks) {
     issues.push(
@@ -292,9 +283,9 @@ export function validateOnchainHookPlanArtifact(
     issues.push(
       ...birthStageStaticExecutorIssues(compiledHooks, executorRoutes ?? []),
     );
-    issues.push(...duplicateBirthChannelKeyIssues(compiledHooks));
+    issues.push(...duplicateDockEntranceKeyIssues(compiledHooks));
     issues.push(...planDependencyCountIssues(compiledHooks as readonly OnchainCompiledHook[]));
-    issues.push(...onchainBirthChannelIssues(value));
+    issues.push(...onchainPlanTriggerIssues(value));
   }
 
   if (executorRoutes) {
@@ -389,6 +380,7 @@ export function validateOnchainHookPlanArtifact(
         platform: value.platform,
         sourcePlanHash: value.sourcePlanHash,
         compiledHooks: value.compiledHooks,
+        triggers: value.triggers,
         dependencyIndex: value.dependencyIndex,
         executorRoutes: value.executorRoutes,
         dockInterface: value.dockInterface,
@@ -677,6 +669,7 @@ function isPlanHashRecomputable(
     isPlatform(value.platform) &&
     isHexHash(value.sourcePlanHash) &&
     Array.isArray(value.compiledHooks) &&
+    Array.isArray(value.triggers) &&
     isHexArrayRecord(value.dependencyIndex) &&
     Array.isArray(value.executorRoutes) &&
     Array.isArray(value.selectorBindings) &&

@@ -45,7 +45,7 @@ export const KNOWN_FIELDS = {
   stage: [
     "name",
     "source",
-    "mint",
+    "trigger",
     "executor",
     "selectedStages",
     "sendSignals",
@@ -161,6 +161,18 @@ function assertZhixuDefinitionShape(
       `${stagePath}.receiveSignals`,
       sourceName,
     );
+    if (stage.trigger !== undefined) {
+      if (
+        !Array.isArray(stage.trigger) ||
+        stage.trigger.some(
+          (signal: unknown) => typeof signal !== "string" || signal.trim() === "",
+        )
+      ) {
+        throw new ZhixuLoadError(
+          `${sourceName}.${stagePath}.trigger must be an array of non-empty signal names`,
+        );
+      }
+    }
     if (stage.sendSignals !== undefined) {
       if (!Array.isArray(stage.sendSignals)) {
         throw new ZhixuLoadError(`${sourceName}.${stagePath}.sendSignals must be an array`);

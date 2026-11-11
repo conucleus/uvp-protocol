@@ -1,35 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compileZhixuHookPlan, type ZhixuDefinition } from "../src/index.js";
+import {
+  compileZhixuHookPlan,
+  compileZhixuOnchainHookPlan,
+  compileZhixuRegisterPlanArgs,
+  HookPlanCompilationError,
+  type ZhixuDefinition,
+} from "../src/index.js";
 import { DOCK_ROUTE_SCHEMA_VERSION } from "../src/types/index.js";
 import { resolutionManifestFor } from "./dock-demo.js";
 
 /**
- * 链轨 hook_plan lowering 的 1:1 迁移（uvp-core tests.rs 链半）：entry hook
+ * 链轨 hook_plan lowering 的 1:1 迁移（uvp-core tests.rs 链半）：trigger hook
  * 合成、hook 装饰（orderTriggerKind/emitReady/route）、dependencyIndex、
  * executorRoutes 与 dock shell 形状。共享校验、负例、capabilities/admissions
  * 归 uvp-core analyze，不在本文件重复。
  */
-
-function implicitEntryDefinition(): ZhixuDefinition {
-  return {
-    apiVersion: "uvp/v0",
-    kind: "Zhixu",
-    metadata: { name: "implicit_entry" },
-    spec: {
-      platform: { type: "evm" },
-      nucleation: { id: "entry-core" },
-      stages: [
-        {
-          name: "entry",
-          source: "customer",
-          sendSignals: [{ name: "str" }, { name: "cmp" }],
-          executor: { supplierType: "organization", supplierID: "journey-executor" },
-        },
-      ],
-    },
-  };
-}
 
 function targetPaymentDefinition(): ZhixuDefinition {
   return {
@@ -133,36 +119,6 @@ function parentSettlementDefinition(targetUid: string): ZhixuDefinition {
   };
 }
 
-test("implicit entry stage lowers to a mint order-trigger hook", () => {
-  const plan = compileZhixuHookPlan(implicitEntryDefinition());
-  const triggerHooks = plan.compiledHooks.filter(
-    (hook) => hook.orderTriggerKind !== "none",
-  );
-  assert.equal(triggerHooks.length, 1, "exactly one order-trigger hook");
-  const hook = plan.compiledHooks.find((candidate) => candidate.hookId === "entry#str");
-  assert.ok(hook, "the synthesized entry hook carries the stage#str identity");
-  assert.equal(hook.kind, "receive");
-  assert.equal(hook.stageIdentifier, "entry");
-  assert.equal(hook.hookName, "str");
-  assert.equal(hook.orderTriggerKind, "mint");
-  assert.equal(hook.emitReady, true);
-  assert.equal(hook.rawExpression, "customer::entry.str");
-  assert.equal(hook.normalizedExpression, "customer::entry.str");
-  assert.deepEqual(hook.ast, {
-    raw: "customer::entry.str",
-    source: "customer",
-    condition: { kind: "signal", signalName: "entry.str" },
-  });
-  assert.deepEqual(hook.dependencies, [
-    { kind: "positive", source: "customer", signalName: "entry.str" },
-  ]);
-  assert.equal(hook.route?.stageIdentifier, "entry");
-  assert.equal(hook.route?.executor.supplierID, "journey-executor");
-  assert.deepEqual(plan.dependencyIndex, {
-    "customer::entry.str": ["entry#str"],
-  });
-});
-
 test("dock interfaces and entrance hooks compile to the chain decoration", () => {
   const plan = compileZhixuHookPlan(targetPaymentDefinition());
   const dockInterface = plan.dockInterface;
@@ -212,7 +168,7 @@ test("linked parent keeps the dock shell and omits linked executor routes", () =
   assert.ok(targetUid, "the resolution manifest carries the published target uid");
   const plan = compileZhixuHookPlan(parentSettlementDefinition(targetUid), manifest);
 
-  assert.equal(plan.schemaVersion, "uvp.hookPlan.v4");
+  assert.equal(plan.schemaVersion, "uvp.hookPlan.v5");
   assert.equal(plan.zhixuName, "settlement");
   assert.ok(
     !plan.compiledHooks.some((hook) => hook.hookId.startsWith("signalMap.")),
@@ -248,5 +204,147 @@ test("linked parent keeps the dock shell and omits linked executor routes", () =
       ["err", "failed"],
       ["str", "started"],
     ],
+  );
+});
+
+function triggerDefinition(): ZhixuDefinition {
+  return {
+    apiVersion: "uvp/v0",
+    kind: "Zhixu",
+    metadata: { name: "trigger_entry" },
+    spec: {
+      platform: { type: "cloud" },
+      nucleation: { id: "entry-core" },
+      stages: [
+        {
+          name: "entry",
+          source: "customer",
+          trigger: ["str", "ack"],
+          receiveSignals: { PLACE: "customer::entry.seed" },
+          sendSignals: [{ name: "str" }, { name: "ack" }, { name: "seed" }],
+          executor: {
+            supplierType: "organization",
+            supplierID: "journey-executor",
+          },
+        },
+      ],
+    },
+  };
+}
+
+test("trigger signals lower to order-trigger hooks alongside receive hooks", () => {
+  const onchain = compileZhixuOnchainHookPlan(triggerDefinition());
+  assert.deepEqual(
+    onchain.triggers.map((trigger) => [
+      trigger.stageIdentifier,
+      trigger.hookName,
+      trigger.orderTriggerKind,
+      trigger.source,
+      trigger.signalName,
+    ]),
+    [
+      ["entry", "ack", "trigger", "customer", "entry.ack"],
+      ["entry", "str", "trigger", "customer", "entry.str"],
+    ],
+  );
+  for (const trigger of onchain.triggers) {
+    const hook = onchain.compiledHooks.find(
+      (candidate) =>
+        candidate.stageIdentifier === trigger.stageIdentifier &&
+        candidate.hookName === trigger.hookName,
+    );
+    assert.ok(hook, `missing compiled trigger hook ${trigger.stageIdentifier}#${trigger.hookName}`);
+    assert.deepEqual(
+      hook.instructions.map((instruction) => instruction.op),
+      ["SIGNAL"],
+    );
+    assert.equal(hook.emitReady, true);
+    assert.deepEqual(
+      hook.dependencies.map((dependency) => [
+        dependency.kind,
+        dependency.source,
+        dependency.signalName,
+      ]),
+      [["positive", "customer", trigger.signalName]],
+    );
+  }
+  const receiveHook = onchain.compiledHooks.find(
+    (candidate) =>
+      candidate.stageIdentifier === "entry" && candidate.hookName === "PLACE",
+  );
+  assert.equal(receiveHook?.orderTriggerKind, "none");
+  assert.equal(receiveHook?.emitReady, true);
+
+  const triggerArgs = compileZhixuRegisterPlanArgs(triggerDefinition());
+  assert.equal(
+    triggerArgs.hooks.filter(
+      (hook) => hook.kind === "receive" && hook.flags === 5,
+    ).length,
+    2,
+    "every trigger signal registers with MINT|EMIT_READY flags",
+  );
+
+  const dockOnchain = compileZhixuOnchainHookPlan(targetPaymentDefinition());
+  assert.deepEqual(
+    dockOnchain.triggers.map((trigger) => [
+      trigger.stageIdentifier,
+      trigger.hookName,
+      trigger.orderTriggerKind,
+    ]),
+    [
+      ["control", "DOCK_CANCEL", "dock"],
+      ["init", "DOCK_EXECUTE", "dock"],
+    ],
+  );
+  const dockArgs = compileZhixuRegisterPlanArgs(targetPaymentDefinition());
+  assert.equal(
+    dockArgs.hooks.filter((hook) => hook.kind === "receive" && hook.flags === 6)
+      .length,
+    2,
+    "dock entrances register with DOCK|EMIT_READY flags",
+  );
+
+  const target = targetPaymentDefinition();
+  const manifest = resolutionManifestFor(target);
+  const targetUid = manifest.definitions[0]?.zhixu;
+  assert.ok(targetUid, "the resolution manifest carries the published target uid");
+  const linked = compileZhixuOnchainHookPlan(
+    parentSettlementDefinition(targetUid),
+    manifest,
+  );
+  assert.deepEqual(linked.triggers, []);
+});
+
+test("trigger signals cannot reuse a receiveSignals channel name", () => {
+  const colliding: ZhixuDefinition = {
+    ...triggerDefinition(),
+    spec: {
+      ...triggerDefinition().spec,
+      stages: [
+        {
+          name: "entry",
+          source: "customer",
+          trigger: ["ack"],
+          receiveSignals: { ack: "customer::entry.seed" },
+          sendSignals: [{ name: "ack" }, { name: "seed" }],
+          executor: {
+            supplierType: "organization",
+            supplierID: "journey-executor",
+          },
+        },
+      ],
+    },
+  };
+  assert.throws(
+    () => compileZhixuHookPlan(colliding),
+    (error: unknown) =>
+      error instanceof HookPlanCompilationError &&
+      error.issues.some(
+        (issue) =>
+          issue ===
+          'trigger signal entry.ack of stage entry collides with the receiveSignals channel "ack": '
+            + "the synthesized order-trigger hook and the receive hook would share hookId "
+            + "<stage>#<channel>, and artifact hook ids are unique",
+      ),
   );
 });

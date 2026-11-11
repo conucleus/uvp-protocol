@@ -3335,38 +3335,6 @@ contract UVPStateMachineTest {
         });
     }
 
-    function testCommitPlanRejectsSharedBirthChannelKeyAcrossMintAndDock() public {
-        UVPStateMachine machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
-        hooks[0] = _signalHook(HOOK_INIT, STAGE_INIT, HOOK_NAME_TRIGGER, true, SIGNAL_TRIGGER);
-        hooks[1] = _hookWithFlags(
-            HOOK_ALT_MINT,
-            STAGE_ALT,
-            HOOK_NAME_ORDER_START,
-            uint8(FLAG_ORDER_TRIGGER_DOCK | FLAG_EMIT_READY),
-            _signalInstructions(SIGNAL_TRIGGER),
-            _deps(SIGNAL_TRIGGER)
-        );
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStateMachine.DuplicateBirthChannelKey.selector,
-                keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_TRIGGER))
-            )
-        );
-        _commitPlan(machine, hooks, new StageSelectorBinding[](0), new SignalCapability[](0));
-    }
-
-    function testMintFanOutMayShareBirthChannelKey() public {
-        UVPStateMachine machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
-        hooks[0] = _signalHook(HOOK_INIT, STAGE_INIT, HOOK_NAME_TRIGGER, true, SIGNAL_TRIGGER);
-        hooks[1] = _signalHook(HOOK_ALT_MINT, STAGE_ALT, HOOK_NAME_ORDER_START, true, SIGNAL_TRIGGER);
-
-        bytes32 planId = _registerPlan(machine, hooks, new StageSelectorBinding[](0), new SignalCapability[](0));
-        require(machine.planExists(planId), "mint fan-out plan not registered");
-    }
-
     function testCommitPlanRejectsSharedBirthChannelKeyWithinDockChannel() public {
         UVPStateMachine machine = _newMachine();
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
@@ -3382,36 +3350,6 @@ contract UVPStateMachineTest {
             HOOK_ALT_MINT,
             STAGE_ALT,
             HOOK_NAME_ORDER_START,
-            uint8(FLAG_ORDER_TRIGGER_DOCK | FLAG_EMIT_READY),
-            _signalInstructions(SIGNAL_TRIGGER),
-            _deps(SIGNAL_TRIGGER)
-        );
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStateMachine.DuplicateBirthChannelKey.selector,
-                keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_TRIGGER))
-            )
-        );
-        _commitPlan(machine, hooks, new StageSelectorBinding[](0), new SignalCapability[](0));
-    }
-
-    function testCommitPlanRejectsBirthChannelKeyHiddenByLeadingWatcher() public {
-        UVPStateMachine machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](3);
-        hooks[0] = _hookWithFlags(
-            HOOK_NON_TRIGGER,
-            STAGE_INIT,
-            HOOK_NAME_TRIGGER,
-            uint8(0),
-            _signalInstructions(SIGNAL_TRIGGER),
-            _deps(SIGNAL_TRIGGER)
-        );
-        hooks[1] = _signalHook(HOOK_INIT, STAGE_INIT, HOOK_NAME_ORDER_START, true, SIGNAL_TRIGGER);
-        hooks[2] = _hookWithFlags(
-            HOOK_ALT_MINT,
-            STAGE_INIT,
-            HOOK_NAME_INIT_DONE,
             uint8(FLAG_ORDER_TRIGGER_DOCK | FLAG_EMIT_READY),
             _signalInstructions(SIGNAL_TRIGGER),
             _deps(SIGNAL_TRIGGER)

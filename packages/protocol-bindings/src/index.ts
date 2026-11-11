@@ -501,23 +501,24 @@ export {
   UVP_STATE_MACHINE_ARTIFACT_ABI,
 } from "./artifact-abis.js";
 
-export type OrderTriggerKind = "mint" | "dock";
+export type OrderTriggerKind = "none" | "trigger" | "dock";
 
 export interface CompactHookFlagsInput {
-  /** 出生订阅语义：mint=出生订阅上链（SIGNAL 指令），dock=docking 入口。 */
+  /** 出生语义：trigger=trigger 信号出生钩子（SIGNAL 指令），dock=docking 入口。 */
   readonly orderTriggerKind?: OrderTriggerKind | null;
   /** Ready 事件外发口径：order-trigger hook 必须携带，watcher 可选。 */
   readonly emitReady?: boolean;
 }
 
-// CompactHook.flags 位标志口径：1=ORDER_TRIGGER_MINT，2=ORDER_TRIGGER_DOCK，
-// 4=EMIT_READY；位值由生成代码钉住合约常量，MINT/DOCK 互斥由合约注册边界
-// 校验（InvalidHook），trigger 缺 EMIT_READY 由 SilentOrderTriggerHook 拒绝。
+// CompactHook.flags 位标志口径：1=ORDER_TRIGGER_MINT（trigger 出生钩子复用），
+// 2=ORDER_TRIGGER_DOCK，4=EMIT_READY；位值由生成代码钉住合约常量，
+// MINT/DOCK 互斥由合约注册边界校验（InvalidHook），trigger 缺 EMIT_READY 由
+// SilentOrderTriggerHook 拒绝。
 export function buildCompactHookFlags(
   input: CompactHookFlagsInput = {},
 ): number {
   let flags = 0;
-  if (input.orderTriggerKind === "mint") {
+  if (input.orderTriggerKind === "trigger") {
     flags |= HOOK_FLAG_ORDER_TRIGGER_MINT;
   }
   if (input.orderTriggerKind === "dock") {

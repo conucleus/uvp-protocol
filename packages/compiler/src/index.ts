@@ -151,7 +151,6 @@ export {
 } from "./types/index.js";
 export type {
   Address,
-  BirthChannel,
   CompiledHookPlanAdmission,
   DockInterfaceArtifactInterface,
   DockInterfaceArtifactPortInput,
@@ -180,6 +179,7 @@ export type {
   OnchainHookDependency,
   OnchainHookInstruction,
   OnchainHookPlanArtifact,
+  OnchainPlanTrigger,
   OnchainJoinInstruction,
   OnchainSignalCapability,
   OnchainSignalInstruction,

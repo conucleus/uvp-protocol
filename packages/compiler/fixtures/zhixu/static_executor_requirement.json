@@ -59,8 +59,8 @@
           "name": "pool",
           "source": "buyer",
           "receiveSignals": {
-            "MATCH_SELLER": "::ANCHOR(@seller::listing.cmp)",
-            "MATCH_BUYER": "::ANCHOR(@buyer::intent.cmp)"
+            "MATCH_SELLER": "seller::listing.cmp",
+            "MATCH_BUYER": "buyer::intent.cmp"
           },
           "sendSignals": [
             {

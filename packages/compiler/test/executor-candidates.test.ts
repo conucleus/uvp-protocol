@@ -78,10 +78,7 @@ const birthZhixu: ZhixuDefinition = {
       {
         name: "main",
         source: "slot_a",
-        mint: "per-fact",
-        receiveSignals: {
-          ON_DEAL: "::ANCHOR(@trading::deal.closed)",
-        },
+        trigger: ["str"],
         sendSignals: [{ name: "str" }, { name: "cmp" }],
         executor: { supplierType: "organization", supplierID: "birth-org" },
       },

@@ -119,7 +119,7 @@ function validateOnchainCompiledHooks(
     expectOneOf(hook.kind, ["receive"], `${prefix}.kind`, issues);
     expectOneOf(
       hook.orderTriggerKind,
-      ["none", "mint", "dock"],
+      ["none", "trigger", "dock"],
       `${prefix}.orderTriggerKind`,
       issues,
     );
@@ -864,7 +864,8 @@ function unmaterializableStageIssues(
         + "this stage's own order-trigger/EMIT_READY hooks) and its sendSignals have "
         + "no hook to hang on — submitSignal requires the source stage to be "
         + "materialized and reverts UnknownHook forever (deadlock, no recovery path); "
-        + "declare receiveSignals carrying a mint/dock entrance or a static executor",
+        + "declare a trigger signal, receiveSignals carrying a trigger/dock entrance, "
+        + "or a static executor",
     );
   }
   return issues;
@@ -943,39 +944,32 @@ function crossStageDependencyIssues(hooks: readonly unknown[]): readonly string[
   return issues;
 }
 
-function duplicateBirthChannelKeyIssues(hooks: readonly unknown[]): readonly string[] {
+function duplicateDockEntranceKeyIssues(hooks: readonly unknown[]): readonly string[] {
   const issues: string[] = [];
-  const birthKeyOwner = new Map<string, { label: string; dock: boolean }>();
+  const dockKeyOwner = new Map<string, string>();
   for (const hook of hooks) {
     if (
       !isRecord(hook) ||
-      typeof hook.orderTriggerKind !== "string" ||
-      hook.orderTriggerKind === "none" ||
+      hook.orderTriggerKind !== "dock" ||
       !Array.isArray(hook.dependencies)
     ) {
       continue;
     }
     const label = `${String(hook.stageIdentifier)}#${String(hook.hookName)}`;
-    const isDock = hook.orderTriggerKind === "dock";
     for (const dependency of hook.dependencies) {
       if (!isOnchainHookDependency(dependency)) {
         continue;
       }
-      const owner = birthKeyOwner.get(dependency.signalKey);
-      if (owner !== undefined && (isDock || owner.dock)) {
+      const owner = dockKeyOwner.get(dependency.signalKey);
+      if (owner !== undefined) {
         issues.push(
-          `duplicate birth-channel key ${dependency.signalKey}: order-trigger hooks ${owner.label} and ${label} share it `
-            + (isDock !== owner.dock
-              ? "across the mint and dock birth channels"
-              : "across two dock entrances whose keys are pinned per route")
-            + "; one birth fact must drive exactly one birth line per channel context "
+          `duplicate dock entrance key ${dependency.signalKey}: order-trigger hooks ${owner} and ${label} share it; `
+            + "a dock entrance key is pinned per route, so one birth fact cannot drive two dock entrances "
             + "(contract commitPlan reverts DuplicateBirthChannelKey)",
         );
         continue;
       }
-      if (owner === undefined) {
-        birthKeyOwner.set(dependency.signalKey, { label, dock: isDock });
-      }
+      dockKeyOwner.set(dependency.signalKey, label);
     }
   }
   return issues;
@@ -1051,7 +1045,7 @@ function birthStageStaticExecutorIssues(
   for (const hook of hooks) {
     if (
       !isRecord(hook) ||
-      hook.orderTriggerKind !== "mint" ||
+      hook.orderTriggerKind !== "trigger" ||
       typeof hook.stageIdentifier !== "string"
     ) {
       continue;
@@ -1062,8 +1056,8 @@ function birthStageStaticExecutorIssues(
     }
     reported.add(stageIdentifier);
     issues.push(
-      `stage ${stageIdentifier} is a subscription/birth stage (mint order-trigger) and requires its own static executor route; `
-        + "selectedStages reachability cannot bind it because subscription stages reject runtime executor patches "
+      `stage ${stageIdentifier} is a trigger birth stage (trigger order-trigger hook) and requires its own static executor route; `
+        + "trigger stages reject zhixu delegation and runtime executor patches "
         + "— the Rust compiler must reject this shape",
     );
   }
@@ -1077,7 +1071,7 @@ export {
   declaredStageIdentifiers,
   silentOrderTriggerIssues,
   crossStageDependencyIssues,
-  duplicateBirthChannelKeyIssues,
+  duplicateDockEntranceKeyIssues,
   validateOnchainDependencyIndex,
   birthStageStaticExecutorIssues,
 };
