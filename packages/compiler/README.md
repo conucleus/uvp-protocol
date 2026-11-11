@@ -5,17 +5,21 @@ Zhixu compiler for deterministic EVM state-machine artifacts.
 This module compiles UVP DSL directly into deterministic on-chain artifacts.
 The public protocol output is `OnchainHookPlanArtifact` and the registration
 args for the two-step `UVPStateMachine.commitPlan` + `finalizePlan` flow.
-`HookPlanArtifact` is compiler-internal IR.
+`HookPlanArtifact` is compiler-internal IR (`uvp.hookPlan.v5`); the public
+`OnchainHookPlanArtifact` schema is `uvp.onchainHookPlan.v5`.
 
 ## Inputs
 
 - `apiVersion: uvp/v0`, `kind: Zhixu` YAML/JSON definitions;
-- Hook DSL expressions under `receiveSignals`;
-- the neutral `analyze` result from uvp-core (`uvp.zhixuAnalysis.v1`): shared
-  definition validation (including the chain target's implicit-entry
-  recognition/rejection and stage materialization gate), parsed hooks/AST, entry
-  hook, signal capabilities, composed admissions, and dock state — the single
-  source for DSL shape/dock/admission validation;
+- Hook DSL expressions under `receiveSignals`, plus each stage's optional
+  `trigger` signal set: a subset of the stage's `sendSignals` that births an
+  order when submitted with an empty order id. Trigger sets are fixed
+  at compile time and enter the definition identity;
+- the neutral `analyze` result from uvp-core (`uvp.zhixuAnalysis.v2`): shared
+  definition validation (including the chain target's trigger-set validation
+  and stage materialization gate), parsed hooks/AST, the normalized per-stage
+  trigger names, signal capabilities, composed admissions, and dock state — the
+  single source for DSL shape/dock/admission validation;
 - selected-stage executor bindings and supplier `signalMap` data;
 - the target-side `spec.dockInterface` and, for a `supplierType=zhixu`
   route, a `uvp.dock.resolution.v2` resolution manifest (chain-track
@@ -35,6 +39,8 @@ args for the two-step `UVPStateMachine.commitPlan` + `finalizePlan` flow.
   Solidity registration args and the committed `dockRoutesRoot` /
   `dockInterfaceRoot`;
 - stable hook, stage, source, signal, dependency, and route ids;
+- the plan-level `triggers[]` enumeration of the order-trigger hooks (see
+  Triggers);
 - on-chain selector bindings for order-level executor overlay authority;
 - golden fixtures for compiler, contract, uvp-client, and replay tests.
   Dock commitments are computed by this package (the chain-track hash-layer
@@ -55,6 +61,7 @@ args for the two-step `UVPStateMachine.commitPlan` + `finalizePlan` flow.
 The supported compiler surface is the chain artifact path:
 
 - `receiveSignals` hook parsing;
+- `trigger` signal lowering into order-trigger hooks;
 - `selectedStages` binding validation;
 - static executor route extraction;
 - `supplierType=zhixu` `signalMap` compilation and same-source validation.
@@ -65,8 +72,8 @@ through `selectedStages` from a stage that does name a fixed executor. Selector
 loops or selector chains with no fixed executor anchor are rejected. On top of
 the closure rule, the materialization gate is evaluated by uvp-core `analyze`
 (shared validation for the chain target): every declared stage must compile at
-least one hook with a materialization bit (mint/dock order trigger or a static
-executor's EMIT_READY receive hook) — an executor-less selected stage is
+least one hook with a materialization bit (trigger/dock order trigger or a
+static executor's EMIT_READY receive hook) — an executor-less selected stage is
 therefore rejected even when it is reachable, because on-chain stages
 materialize only through their own hooks. This package consumes that result;
 `src/onchain/validate/hooks.ts` only re-asserts the compiled hook shape at the
@@ -74,15 +81,15 @@ on-chain artifact boundary (a boundary check, not a second implementation of the
 definition-level gate). The contract `commitPlan` check is the separate
 registration boundary for hand-built plans.
 
-The hook_plan shell lowering itself (entry hook synthesis from analyze's parsed
-entry hook, order-trigger/emit-ready/route decoration, `dependencyIndex`,
-`executorRoutes`, `selectedStageBindings`, and shell assembly) lives in
-`src/hook-plan/lower.ts`. Entry recognition/rejection and the materialization
-gate are not re-implemented here: they are part of uvp-core `analyze`'s shared
-validation, and `signalCapabilities`/EvmStrict admissions are consumed from the
-same analysis. This package consumes analyze issues and parsed ASTs verbatim and
-must not re-implement shape/dock/admission/DSL validation or rewrite its error
-text.
+The hook_plan shell lowering itself (one order-trigger hook per normalized
+`stage.triggers[]` entry, order-trigger/emit-ready/route decoration,
+`dependencyIndex`, `executorRoutes`, `selectedStageBindings`, and shell
+assembly) lives in `src/hook-plan/lower.ts`. Trigger-set validation
+(membership/duplicates/static executor and the materialization gate) is not
+re-implemented here: it is part of uvp-core `analyze`'s shared validation, and
+`signalCapabilities`/EvmStrict admissions are consumed from the same analysis.
+This package consumes analyze issues and parsed ASTs verbatim and must not
+re-implement shape/dock/admission/DSL validation or rewrite its error text.
 
 Do not execute hooks in this module. Runtime evaluation belongs in
 `hook-core`/`statemachine`.
@@ -116,17 +123,19 @@ pnpm --filter @uvp-eth/compiler typecheck
   (assembles the shell from the neutral uvp-core `analyze` result and the
   lowering module, then commits dock/plan hashes).
 - `src/hook-plan/lower.ts`: chain hook_plan lowering implemented by this package —
-  entry hook synthesis from analyze's parsed entry hook,
+  one synthesized order-trigger hook per analyze-reported trigger signal,
   `orderTriggerKind`/`emitReady`/route decoration, dependency index, and
   executor routes; it consumes uvp-core `analyze` (shared validation, including
-  entry/materialization checks, plus parsed hooks/entry hook/capabilities/
-  admissions) and does not re-implement shape/dock/admission/DSL validation.
+  trigger-set/materialization checks, plus parsed hooks/trigger names/
+  capabilities/admissions) and does not re-implement shape/dock/admission/DSL
+  validation.
 - `src/onchain/`: public Zhixu-to-on-chain artifact compiler and Solidity
   registration input builder (`compile.ts` pipeline, `validate/` boundary
   checks, `canonical/` ordering, `hash/` commitments,
-  `solidity/registration.ts` calldata assembly, and
+  `solidity/registration.ts` calldata assembly,
   `onchain/capabilities-root.ts` — the authoritative capability-tree
-  implementation).
+  implementation, and `onchain/triggers.ts` — the single trigger-enumeration
+  derivation shared by the compile pipeline and the artifact boundary).
 - `src/zhixu-loader.ts`: YAML/JSON loader for `apiVersion: uvp/v0`,
   `kind: Zhixu` definitions.
 - `src/canonical.ts`: canonical JSON normalization used before hashing.
@@ -137,7 +146,8 @@ pnpm --filter @uvp-eth/compiler typecheck
   `platform.provider=eth`, and `platform.network=base`.
 - `test/hash.test.ts`: hash vector and canonicalization tests.
 - `test/hook-plan.test.ts`: internal IR hash stability, dependency index,
-  trigger, selected-stage, and peer-Zhixu signal-map validation tests.
+  trigger-hook lowering, selected-stage, and peer-Zhixu signal-map validation
+  tests.
 
 ## Public Output
 
@@ -148,13 +158,15 @@ Use these root-package entrypoints:
 - `toSolidityRegisterPlanArgs(onchainHookPlanArtifact)`.
 
 `compileZhixuOnchainHookPlan(zhixu)` emits schema
-`uvp.onchainHookPlan.v4`. It:
+`uvp.onchainHookPlan.v5`. It:
 
 - emits stable `planId` and `planHash`;
 - carries target `platform` from Zhixu YAML as a protocol field
   (`type=blockchain`, `provider=eth`, optional `network=base` for the EVM
   track; omitted `network` keeps the current default path);
 - replaces hook expressions with postfix instruction arrays;
+- enumerates every order-trigger hook in `triggers[]`, one entry per hook with
+  `orderTriggerKind` `"trigger"` or `"dock"` (see Triggers);
 - indexes dependencies by packed signal key;
 - exposes executor routes through route references;
 - carries `dockInterface`, resolved `dockRoutes`, and their committed roots;
@@ -170,7 +182,10 @@ Use these root-package entrypoints:
   `stageFileWriters` — into a single `capabilitiesRoot` (domain-separated
   leaves mixed into one sorted paired Merkle tree; empty tables pin
   `keccak256("")`), and includes the tables in the canonical on-chain
-  `planHash`.
+  `planHash`;
+- compiles each trigger signal's `validWhen` into the `admissions` section as a
+  standalone CompactHook entry (flag 8) so the birth path can evaluate it in the
+  empty-order context.
 
 Stable ids use raw Keccak-256:
 
@@ -186,37 +201,58 @@ recomputes ids, validates instruction stack shape, verifies `dependencyIndex`,
 and verifies `planHash`. `toSolidityRegisterPlanArgs(value)` strips audit labels
 and returns a deterministic data shape for the Solidity registration ABI.
 
-## Birth Channel
+## Triggers
 
-`OnchainHookPlanArtifact.birthChannel` is a derived, read-only field:
-`entry` | `mint` | `dock`. It describes the plan's birth line from the
-canonical-order first order-trigger hook and that hook's positive dependency:
+`OnchainHookPlanArtifact.triggers` enumerates every order-trigger hook in
+`compiledHooks`, one entry per hook with `orderTriggerKind !== "none"`, in the
+artifact's canonical hook order (`stageIdentifier`, then `hookName`, then
+`hookId`):
 
-- a dependency on the hook's own `<stageIdentifier>.str` fact
-  (`dependency.signalName === "<stageIdentifier>.str"` and
-  `dependency.sourceId === keccak256(dependency.source)`) is the implicit
-  `entry` channel;
-- every other order trigger keeps its `mint`/`dock` channel;
-- a plan without an order-trigger hook omits the field.
+| field | meaning |
+|---|---|
+| `hookId` | `keccak256(stageIdentifier#hookName)`; the value the contract receives as `triggerHookId` |
+| `stageIdentifier` / `stageId` | owning stage (`stageId = keccak256(stageIdentifier)`) |
+| `hookName` | hook-local name; a trigger hook is named after its trigger signal |
+| `orderTriggerKind` | `"trigger"` for a trigger-signal birth line, `"dock"` for a dock entrance |
+| `source` / `signalName` | the birth fact's source class and two-part `<stageIdentifier>.<signal>` name |
+| `sourceId` / `signalId` | `keccak256(source)` / `keccak256(stage.signal)` |
 
-The derivation reads committed artifact fields only; it does not consult
-`signalCapabilities`.
+A `stage.triggers[]` entry lowers to exactly one hook with
+`orderTriggerKind: "trigger"`, `emitReady: true`, a single `SIGNAL`
+instruction, and one positive dependency on
+`<source>::<stageIdentifier>.<signal>`; that dependency's
+`(sourceId, signalId)` is the birth fact. Trigger stages require a static
+non-zhixu executor, and their ordinary `receiveSignals` hooks keep
+`orderTriggerKind: "none"` and coexist with the trigger hooks. A plan may
+declare several trigger signals and several trigger stages, and may carry dock
+entrances in the same enumeration.
 
-The field is not part of the `planHash` preimage — `hashOnchainPlanPayload`
-strips it, so the commitment covers the submitted payload only — and the
-Solidity registration args do not carry it. `assertOnchainHookPlanArtifact`
-recomputes the channel from `compiledHooks` and rejects a tampered, missing, or
-surplus value. The artifact schema stays `uvp.onchainHookPlan.v4`; there is no
-version bump and no compatibility shim. Artifacts recorded before the field
-existed are rejected when re-validated, while stored read paths that do not
-re-assert the artifact keep working.
+A trigger signal's `validWhen` is compiled into the artifact's `admissions`
+section as its own CompactHook entry (`flags = HOOK_FLAG_ADMISSION`): a birth
+submission runs that admission check in the empty-order context before the
+order is created, and the contract reverts `SignalAdmissionRejected` when it
+fails.
+
+`triggers` is a derived read face over committed hooks, not a commitment of its
+own: `hashOnchainPlanPayload` excludes it, so the `planHash` covers exactly the
+submitted payload minus this enumeration, and the Solidity registration args
+carry no trigger field. `assertOnchainHookPlanArtifact` recomputes the
+enumeration from `compiledHooks` and rejects a missing, surplus, reordered, or
+tampered entry. Hook identity — including the trigger bit — stays inside
+`hooksHash`.
 
 ## Solidity Alignment
 
 The current state-machine alignment is `toSolidityRegisterPlanArgs()`:
 
 - `planId` and `planHash` are the state-machine plan identity;
-- `hooks` map to `UVPStateMachine.CompactHook`;
+- `hooks` map to `UVPStateMachine.CompactHook`; hook flags are
+  `ORDER_TRIGGER_MINT` for `orderTriggerKind: "trigger"`,
+  `ORDER_TRIGGER_DOCK` for `"dock"`, `EMIT_READY`, and
+  `HOOK_FLAG_ADMISSION` for admission entries;
+- a `"trigger"` entry in `triggers[]` is the outside-birth entry: the caller
+  passes its `hookId` as `triggerHookId`, plus `stageId`, `sourceId`, and
+  `signalId`, to `triggerOrderFromOutsideFor`;
 - `selectorBindings` map to `UVPStateMachine.StageSelectorBinding` and
   `stageFileWriters` to `UVPPlanMetadataModule.fileWriterLeaf`;
 - `capabilitiesRoot` is the domain-separated leaf-mixed Merkle root over

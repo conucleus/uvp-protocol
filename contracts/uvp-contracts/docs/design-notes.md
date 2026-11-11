@@ -28,8 +28,9 @@
 ### 1.2 防线的当前形态（源码原位约束的展开）
 
 - **签名不背书调用方自选的订单号**：`_TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH`
-  的摘要不包含 orderId——订单 id 由合约从事实纯函数派生，签名只对事实
-  承诺（一事一单）。
+  的摘要不包含 orderId——订单 id 由合约从事实纯函数派生（一事一单）；
+  签名信封另行承诺 `triggerHookId`/`triggerStageId` 的出生线显式选择与
+  `authorizationsHash`，调用方不能事后改选出生线。
 - **派生域结构性隔离**：
   - outside-trigger 派生域 `triggerOrderIdFor`：恒清 dock 命名空间位；
   - order-link 派生域 `orderLinkOrderIdFor`：以独立哈希域
@@ -120,8 +121,9 @@ StateMachine 存储。attach 前已成立的目标输出由此自然回填（回
 
 ### 2.5 出生通道词表闸的不对称（有意裁决，勿当 bug 修）
 
-mint 出生（`triggerOrderFromOutsideFor`）要求出生事实在目标 plan 的
-能力词表内（成员资格由调用方携 proof 自证）；dock 出生
+trigger 出生（`triggerOrderFromOutsideFor` 签名入口 /
+`triggerOrderFromOutsideByAuthorizer` 合约出生提交者直接入口）要求出生事实
+在目标 plan 的能力词表内（成员资格由调用方携 proof 自证）；dock 出生
 （`createDockedOrderFromModule`）无词表闸。不对称的理由：词表闸防的是
 "调用方自选词表外事实免证落库"，而 dock 出生没有自选面——entrance
 事实键取自 committed route 的 input 绑定叶（端口叶/接口承诺钉死），

@@ -29,8 +29,10 @@ under this folder; repository-level deployment scripts live under
 - `src/libraries/ECDSA.sol`: minimal signature recovery helper.
 - `src/libraries/UVPSignatures.sol`: shared signature struct used by relayed
   state-machine signal submission.
-- `fixtures/uvp-state-machine.v0.18.json` and module fixture JSON files:
-  pinned ABI/hash fixtures for the current core and module public interfaces.
+- `fixtures/uvp-state-machine.v0.18.json`,
+  `fixtures/uvp-plan-registration.v0.5.json`, and module fixture JSON files:
+  pinned ABI/hash fixtures for the current core, linked-library, and module
+  public interfaces.
 - `fixtures/uvp-identity-registry.v0.1.json`: pinned ABI/hash fixture for the
   identity registry public interface.
 - `test/`: dependency-free Solidity tests.
@@ -76,7 +78,9 @@ treats these as public interfaces:
   single-argument `finalizePlan(bytes32)`, derived-order-id
   `triggerOrderFromOutsideFor` (one fact, one order — the id
   is `triggerOrderIdFor(planId, sourceId, signalId, payloadHash)`, callers no
-  longer self-report it; the request carries a trailing `birthFactAttribution`
+  longer self-report it; `triggerHookId` + `triggerStageId` explicitly select
+  one trigger birth line and must name a MINT-flagged hook of that stage; the
+  request carries a trailing `birthFactAttribution`
   proof) and `submitSignal` (msg.sender path, carrying the trailing
   `attribution` proof plus `bytes32 filesDigest` and a trailing
   `FilePatch filePatch`; `signalId == 0` means a pure file patch), module
@@ -121,6 +125,14 @@ treats these as public interfaces:
 - ABI hash, bytecode hash, deployed bytecode hash, canonical artifact hash, and
   solc version.
 
+Trigger birth leaves the ABI surface unchanged: only the linked
+`UVPPlanRegistration` library bytecode differs, so
+`uvp-plan-registration.v0.5.json` keeps `abiVersion 0.5` with refreshed
+bytecode/deployed-bytecode/artifact hashes, while
+`uvp-state-machine.v0.18.json` and every module fixture stay unchanged. No
+selector, event, error, or EIP-712 typehash changes; `SignalAdmissionRejected`
+and `DuplicateBirthChannelKey` keep their existing signatures.
+
 Changing any of those values requires an explicit fixture update and adapter
 review. The verifier is deliberately strict so watcher, replay, and deployment
 code do not silently drift away from the contract ABI.
@@ -143,12 +155,19 @@ code do not silently drift away from the contract ABI.
    Order and finalized Plan metadata is immutable. Note on naming: the
    `planExists(planId)` view returns "exists AND finalized" — a committed but
    not yet finalized plan returns `false` (the ABI is frozen; consumers use it
-   as the "can mint/derive here" gate, for which the two-step middle state must
+   as the "can birth/derive here" gate, for which the two-step middle state must
    read false).
-5. Any relayer submits a signed trigger-order request. The
-   contract recovers the business submitter, creates the order, writes explicit
-   `SignalAuthorization[]` records, records the trigger fact, and materializes
-   the ready trigger stage atomically.
+5. Any relayer submits a signed trigger-order request. A plan may carry several
+   trigger birth lines: each `stage.trigger` signal compiles to one order-trigger
+   hook carrying the reused `ORDER_TRIGGER_MINT` bit, and the request selects one
+   line explicitly with `triggerHookId` + `triggerStageId` (the hook must carry
+   the MINT flag and belong to that stage). After the signature and plan /
+   birth-authorizer checks, the contract evaluates the selected trigger signal's
+   admission instruction plan in an empty order context; only if admitted does it
+   create the order, write explicit `SignalAuthorization[]` records, record the
+   trigger fact, and materialize the ready trigger stage atomically. A rejected
+   admission reverts `SignalAdmissionRejected(orderId, sourceId, signalId)`
+   before the order exists. The plan keeps one plan-wide `birthAuthorizer`.
 6. Only authorized submitter wallets/contracts can call `submitSignal` for
    their bound `sourceId + signalId`; identity is `msg.sender`, so a contract
    executor can be called by a relayer/keeper and still be the submitter.
@@ -156,15 +175,18 @@ code do not silently drift away from the contract ABI.
    first-win: a fact already recorded for the order is absorbed silently
    instead of reverting (at-least-once retries must never be rejected by an
    expired admission window). Plans may declare an emission admission face
-   (`CompactHook` flag 8, compiled from `sendSignals[].validWhen`): when the
-   plan commits one for the submitted fact key, the contract evaluates its
-   instruction plan over the pre-state at `block.timestamp` and reverts the
-   typed `SignalAdmissionRejected(orderId, sourceId, signalId)` unless the
+   (`CompactHook` flag 8, compiled from `sendSignals[].validWhen`, trigger
+   signals included): when the plan commits one for the submitted fact key, the
+   contract evaluates its instruction plan over the pre-state at
+   `block.timestamp` and reverts the typed
+   `SignalAdmissionRejected(orderId, sourceId, signalId)` unless the
    verdict is Ready — nothing is recorded, no hooks advance. Internal
    producers (dock deliveries/backfill, module signal mirrors, derived
    signals) stay below this chokepoint; outside birth
-   (`triggerOrderFromOutsideFor`) is screened with an empty pre-state, so a
-   positive-anchored admission naturally rejects there.
+   (`triggerOrderFromOutsideFor` / `triggerOrderFromOutsideByAuthorizer`)
+   evaluates the trigger signal's admission instruction plan in an empty-order
+   context before the order exists, so a positive-anchored admission rejects
+   there — birth writes do not bypass admission.
 7. A wallet authorized for `EXECUTOR_PATCH_SIGNAL_ID` on a stage may apply an
    order-level executor patch through `UVPStagePatchModule` for a registered
    stage-to-target binding. The order creator may act as selector without that
@@ -218,7 +240,7 @@ code do not silently drift away from the contract ABI.
     otherwise), so for a `new` dock there is no non-entrance input to relay —
     `submitDockedInput` is a pure idempotent replay surface for them.
     `existing` (`attachDockedOrder`, abiVersion 4.4): peer-attaches a
-    committed route to an already-existing target order without minting a
+    committed route to an already-existing target order without creating a
     child (O(1) effects). Establishment requires target-order consent — the
     target order creator, its incumbent stage executor (anchored at the
     request's `targetStageId`), or a target-plan-publisher EIP-712 attach
@@ -250,7 +272,7 @@ code do not silently drift away from the contract ABI.
     origin source stage, or as an authorized submitter of the exact origin
     fact (`hasTriggerOriginConsent`). A foreign plan mirroring the origin
     plan's public capability declarations without that standing cannot
-    register the link nor mint the derived order.
+    register the link nor create the derived order.
 12. The state machine evaluates compact hook instructions, emits
     `HookStatusChanged`, `HookReady`, and `TimerPoked`, and can be replayed from
     events by `statemachine` and `chain-services`.
@@ -334,16 +356,25 @@ first-writer-wins signals, explicit signal submitter authorization, hook statuse
 negative signals can cancel hooks before the off-chain execution layer acts on
 readiness.
 
-Order-trigger (`mint`/`dock`) hooks are birth-line anchors and are evaluated
-only inside the order's own birth transaction (the outside-trigger birth write
-of the birth fact, or the dock entrance write asserted by
+Order-trigger hooks are birth-line anchors. A trigger hook carries
+`ORDER_TRIGGER_MINT` (the bit is reused for trigger signals) and one `SIGNAL`
+instruction over its stage-qualified birth fact; a dock entrance hook carries
+`ORDER_TRIGGER_DOCK`. A plan may declare multiple trigger hooks, and the birth
+caller selects one explicitly with `triggerHookId` + `triggerStageId`; the
+selected hook must carry the MINT flag, belong to that stage, and be Ready
+after the birth fact is written. Order-trigger hooks are evaluated only inside
+the order's own birth transaction (the outside-trigger birth write of the birth
+fact, or the dock entrance write asserted by
 `_requireDockTriggerHookReady`). Normal signal submissions — including dock
 output writebacks and derived-signal writes — never evaluate order-trigger
 hooks: submitting another birth line's fact inside an order born from a
-different fact cannot push that line's mint hook to `Ready`, materialize its
-birth stage, or emit `HookReady` on that order (grammar §7.2: a birth fact
-arrival serves only the minting of its own unique order). Non-trigger hooks
-(`EMIT_READY` watchers and plain watchers) are evaluated as before.
+different fact cannot push that line's hook to `Ready`, materialize its birth
+stage, or emit `HookReady` on that order (grammar §7.2: a birth fact arrival
+serves only the birth of its own unique order). Registration keeps dock
+entrance uniqueness: two `ORDER_TRIGGER_DOCK` hooks may not share a dependency
+key (revert `DuplicateBirthChannelKey`); trigger hooks are not birth-key
+deduplicated, with trigger signal uniqueness owned by the compiler. Non-trigger
+hooks (`EMIT_READY` watchers and plain watchers) are evaluated as before.
 
 Per-stage counting note (UB-2): every signal write path resolves the fact's
 owning stage (proof-carried attribution first, `source==stage` fallback for

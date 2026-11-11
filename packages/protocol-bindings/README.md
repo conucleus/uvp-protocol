@@ -23,6 +23,9 @@ pnpm --filter @uvp-eth/protocol-bindings build
   root/proof helpers, and address/bytes32 validation. Canonical JSON
   serialization and evidence hashing are owned by
   `@uvp-eth/canonical-json`.
+- Trigger birth helpers: `OrderTriggerKind`/`buildCompactHookFlags`,
+  `buildTriggerOrderFromOutsideTypedData`, the two
+  `buildTriggerOrderFromOutside*Call` encoders, and `deriveTriggerOrderId`.
 - Does not import Node-only modules, read env vars, hold private keys, run
   watchers, request wallet signatures, or submit transactions.
 - The test suite consumes the shared capabilities-root golden vectors from
@@ -31,6 +34,31 @@ pnpm --filter @uvp-eth/protocol-bindings build
   suite). The coupling is a deliberate directory-layout contract, not a
   package dependency; moving that fixture requires updating all three
   consumers together.
+
+## Trigger Birth Bindings
+
+- `OrderTriggerKind` is `"none" | "trigger" | "dock"`.
+  `buildCompactHookFlags` folds it into the compact-hook flag word:
+  `"trigger"` → `HOOK_FLAG_ORDER_TRIGGER_MINT` (the MINT bit is reused for
+  trigger signals), `"dock"` → `HOOK_FLAG_ORDER_TRIGGER_DOCK`, plus
+  `HOOK_FLAG_EMIT_READY` when the hook must emit ready. Flags are committed
+  through the plan's `hooksHash`; they are not an ABI field.
+- `buildTriggerOrderFromOutsideTypedData` builds
+  `UVPStateMachineTriggerOrderFromOutside` typed data under the product-submit
+  domain (`UVPStateMachine`, version `0.16`). `triggerHookId` +
+  `triggerStageId` explicitly select one trigger birth line among the plan's
+  order-trigger hooks; the signed message also covers `authorizationsHash`.
+- `buildTriggerOrderFromOutsideForCall` encodes the relayer-submitted signed
+  birth entry; `buildTriggerOrderFromOutsideByAuthorizerCall` encodes the
+  contract `birthAuthorizer` direct entry, which carries no signature.
+- `deriveTriggerOrderId(planId, sourceId, signalId, payloadHash)` mirrors the
+  on-chain `triggerOrderIdFor`: `keccak256(abi.encode(planId, sourceId,
+  signalId, payloadHash))` with the dock-order namespace bit cleared.
+- The trigger-birth surface keeps the contract ABI unchanged: the
+  state-machine ABI fixture stays v0.18 and the linked-library fixture
+  `uvp-plan-registration.v0.5.json` keeps `abiVersion 0.5` with refreshed
+  hashes. `SignalAdmissionRejected` and `DuplicateBirthChannelKey` keep their
+  existing signatures.
 
 ## Capability Tree Helpers
 
