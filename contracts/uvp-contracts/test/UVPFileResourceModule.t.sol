@@ -208,9 +208,7 @@ contract UVPFileResourceModuleTest {
 
     function testWriterStageCapabilityAuthorizesWriterExecutor() public {
         _activeExecutors[WRITER_STAGE] = WRITER_EXECUTOR;
-        _metadata.finalizePlanMetadata(
-            PLAN_ID, _metadata.fileWriterLeaf(TARGET_STAGE, WRITER_STAGE), bytes32(0), bytes32(0)
-        );
+        _metadata.finalizePlanMetadata(PLAN_ID, _metadata.fileWriterLeaf(TARGET_STAGE, WRITER_STAGE));
         FilePatch memory patch = _singleOpPatch(bytes32(0), WRITER_STAGE, _add(KEY, CONTENT_HASH_1, "uvp://file/one"));
 
         _apply(patch, WRITER_EXECUTOR);
@@ -238,9 +236,7 @@ contract UVPFileResourceModuleTest {
     }
 
     function testSignalStageWriterWithTargetAllowlistSucceeds() public {
-        _metadata.finalizePlanMetadata(
-            PLAN_ID, _metadata.fileWriterLeaf(TARGET_STAGE, WRITER_STAGE), bytes32(0), bytes32(0)
-        );
+        _metadata.finalizePlanMetadata(PLAN_ID, _metadata.fileWriterLeaf(TARGET_STAGE, WRITER_STAGE));
         FilePatch memory patch = _singleOpPatch(bytes32(0), bytes32(0), _add(KEY, CONTENT_HASH_1, "uvp://file/one"));
         bytes32 digest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, patch);
         _fileModule.applyStageFilePatch(

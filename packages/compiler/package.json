@@ -1,6 +1,6 @@
 {
   "name": "@uvp-eth/compiler",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Deterministic EVM artifact compiler for Zhixu HookPlan state-machine definitions.",
@@ -18,7 +18,6 @@
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
-    "generate:dock-fixtures": "tsx scripts/gen-dock-fixtures.ts",
     "generate:capabilities-root-fixtures": "tsx scripts/gen-capabilities-root-fixtures.ts",
     "generate:commitment-golden-vectors": "tsx scripts/gen-commitment-golden-vectors.ts"
   },

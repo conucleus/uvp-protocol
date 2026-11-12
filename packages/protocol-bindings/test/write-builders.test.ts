@@ -28,8 +28,6 @@ const registration: PlanRegistrationArgs = {
   planHash: bytes32("02"),
   hooksHash: bytes32("03"),
   capabilitiesRoot: bytes32("04"),
-  dockRoutesRoot: bytes32("05"),
-  dockInterfaceRoot: bytes32("06"),
   executorCandidatesRoot: bytes32("07"),
   hooks: [{
     hookId: bytes32("0a"),
@@ -87,7 +85,7 @@ describe("plan registration builders", () => {
     assert.equal(typedData.primaryType, PLAN_COMMIT_PRIMARY_TYPE);
     assert.deepEqual(typedData.domain, {
       name: "UVPStateMachine",
-      version: "0.16",
+      version: "0.17",
       chainId: 31337,
       verifyingContract: STATE_MACHINE,
     });

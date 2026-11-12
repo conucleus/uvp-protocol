@@ -58,7 +58,7 @@ export interface ChainOracleHook {
   readonly stageId: HexString;
   readonly stageIdentifier: string;
   readonly hookName: string;
-  readonly orderTriggerKind: "none" | "trigger" | "dock";
+  readonly orderTriggerKind: "none" | "trigger";
   readonly emitReady: boolean;
   readonly instructions: readonly ChainOracleInstruction[];
 }

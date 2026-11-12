@@ -1,5 +1,5 @@
 import { concat, keccak256 } from "viem";
-import { keccakWord, merkleProof, merkleRoot } from "../dock.js";
+import { keccakWord, merkleProof, merkleRoot } from "../merkle.js";
 import type {
   ExecutorCandidateInput,
   HexString,

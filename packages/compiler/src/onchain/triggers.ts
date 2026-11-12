@@ -65,7 +65,7 @@ function onchainPlanTriggerIssues(
   for (const hook of hooks) {
     if (
       !isRecord(hook) ||
-      (hook.orderTriggerKind !== "trigger" && hook.orderTriggerKind !== "dock")
+      hook.orderTriggerKind !== "trigger"
     ) {
       continue;
     }

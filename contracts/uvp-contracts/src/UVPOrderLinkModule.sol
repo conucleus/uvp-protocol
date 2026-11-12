@@ -211,7 +211,7 @@ contract UVPOrderLinkModule {
         bytes32 r;
         bytes32 s;
         uint8 v;
-        assembly {
+        assembly ("memory-safe") {
             r := calldataload(signature.offset)
             s := calldataload(add(signature.offset, 0x20))
             v := byte(0, calldataload(add(signature.offset, 0x40)))
@@ -220,7 +220,7 @@ contract UVPOrderLinkModule {
     }
 
     function _writeWord(bytes memory encoded, uint256 offset, bytes32 value) private pure {
-        assembly {
+        assembly ("memory-safe") {
             mstore(add(add(encoded, 0x20), offset), value)
         }
     }

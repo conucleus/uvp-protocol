@@ -16,6 +16,7 @@ import {
   selectorBindingLeaf as sourceSelectorBindingLeaf,
   selectorBindingProof,
   signalCapabilityLeaf as sourceSignalCapabilityLeaf,
+  signalCapabilityProof,
 } from "@uvp-eth/compiler/browser";
 import { isHex, type Hex } from "viem";
 
@@ -103,6 +104,26 @@ export function factAttribution(
     normalizeCapabilities(signalCapabilities),
     normalizeWord(sourceId, "sourceId"),
     normalizeWord(signalId, "signalId"),
+    normalizeFileWriters(fileWriterBindings),
+  );
+}
+
+export function signalCapabilityProofFor(
+  selectorBindings: readonly StageSelectorBindingTableEntry[],
+  signalCapabilities: readonly SignalCapabilityTableEntry[],
+  stageId: Hex | string,
+  targetSourceId: Hex | string,
+  signalId: Hex | string,
+  relation: 0 | 1 = SIGNAL_CAPABILITY_RELATION_CURRENT_ORDER,
+  fileWriterBindings: readonly FileWriterTableEntry[] = [],
+): readonly Hex[] | undefined {
+  return signalCapabilityProof(
+    normalizeBindings(selectorBindings),
+    normalizeCapabilities(signalCapabilities),
+    normalizeWord(stageId, "stageId"),
+    normalizeWord(targetSourceId, "targetSourceId"),
+    normalizeWord(signalId, "signalId"),
+    relation,
     normalizeFileWriters(fileWriterBindings),
   );
 }

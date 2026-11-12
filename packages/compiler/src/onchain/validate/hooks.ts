@@ -35,6 +35,7 @@ const COMPILED_HOOK_FIELDS: readonly string[] = [
   "kind",
   "orderTriggerKind",
   "emitReady",
+  "dockExecutor",
   "instructions",
   "dependencies",
   "routeRef",
@@ -119,11 +120,29 @@ function validateOnchainCompiledHooks(
     expectOneOf(hook.kind, ["receive"], `${prefix}.kind`, issues);
     expectOneOf(
       hook.orderTriggerKind,
-      ["none", "trigger", "dock"],
+      ["none", "trigger"],
       `${prefix}.orderTriggerKind`,
       issues,
     );
     expectBoolean(hook.emitReady, `${prefix}.emitReady`, issues);
+    expectBoolean(hook.dockExecutor, `${prefix}.dockExecutor`, issues);
+    if (hook.dockExecutor === true) {
+      if (hook.orderTriggerKind !== "none") {
+        issues.push(
+          `${prefix} is a dock stage hook and must not carry an order-trigger bit (the contract's dock executor flag only decorates receive hooks)`,
+        );
+      }
+      if (hook.emitReady !== true) {
+        issues.push(
+          `${prefix} is a dock stage hook without EMIT_READY; a dock stage materializes only through its own emit-ready hooks, so the flag would be unreachable`,
+        );
+      }
+      if (hook.routeRef !== undefined) {
+        issues.push(
+          `${prefix} is a dock stage hook and must not carry an executor route; the dock executor is selected once through the stage executor patch (dkid)`,
+        );
+      }
+    }
 
     if (
       typeof hook.stageIdentifier === "string" &&
@@ -864,8 +883,7 @@ function unmaterializableStageIssues(
         + "this stage's own order-trigger/EMIT_READY hooks) and its sendSignals have "
         + "no hook to hang on — submitSignal requires the source stage to be "
         + "materialized and reverts UnknownHook forever (deadlock, no recovery path); "
-        + "declare a trigger signal, receiveSignals carrying a trigger/dock entrance, "
-        + "or a static executor",
+        + "declare a trigger signal, receiveSignals, or a static executor",
     );
   }
   return issues;
@@ -944,33 +962,33 @@ function crossStageDependencyIssues(hooks: readonly unknown[]): readonly string[
   return issues;
 }
 
-function duplicateDockEntranceKeyIssues(hooks: readonly unknown[]): readonly string[] {
+function dockStageRouteIssues(
+  hooks: readonly unknown[],
+  executorRoutes: readonly unknown[],
+): readonly string[] {
   const issues: string[] = [];
-  const dockKeyOwner = new Map<string, string>();
+  const routedStages = new Set<string>();
+  for (const route of executorRoutes) {
+    if (isRecord(route) && typeof route.stageIdentifier === "string") {
+      routedStages.add(route.stageIdentifier);
+    }
+  }
+  const reported = new Set<string>();
   for (const hook of hooks) {
     if (
       !isRecord(hook) ||
-      hook.orderTriggerKind !== "dock" ||
-      !Array.isArray(hook.dependencies)
+      hook.dockExecutor !== true ||
+      typeof hook.stageIdentifier !== "string" ||
+      !routedStages.has(hook.stageIdentifier) ||
+      reported.has(hook.stageIdentifier)
     ) {
       continue;
     }
-    const label = `${String(hook.stageIdentifier)}#${String(hook.hookName)}`;
-    for (const dependency of hook.dependencies) {
-      if (!isOnchainHookDependency(dependency)) {
-        continue;
-      }
-      const owner = dockKeyOwner.get(dependency.signalKey);
-      if (owner !== undefined) {
-        issues.push(
-          `duplicate dock entrance key ${dependency.signalKey}: order-trigger hooks ${owner} and ${label} share it; `
-            + "a dock entrance key is pinned per route, so one birth fact cannot drive two dock entrances "
-            + "(contract commitPlan reverts DuplicateBirthChannelKey)",
-        );
-        continue;
-      }
-      dockKeyOwner.set(dependency.signalKey, label);
-    }
+    reported.add(hook.stageIdentifier);
+    issues.push(
+      `dock stage ${hook.stageIdentifier} must not carry an executor route; `
+        + "its executor is selected once through the stage executor patch (dkid), so a plan-level route would pin the wrong executor",
+    );
   }
   return issues;
 }
@@ -1057,7 +1075,7 @@ function birthStageStaticExecutorIssues(
     reported.add(stageIdentifier);
     issues.push(
       `stage ${stageIdentifier} is a trigger birth stage (trigger order-trigger hook) and requires its own static executor route; `
-        + "trigger stages reject zhixu delegation and runtime executor patches "
+        + "trigger stages reject dock delegation and runtime executor patches "
         + "— the Rust compiler must reject this shape",
     );
   }
@@ -1071,7 +1089,7 @@ export {
   declaredStageIdentifiers,
   silentOrderTriggerIssues,
   crossStageDependencyIssues,
-  duplicateDockEntranceKeyIssues,
+  dockStageRouteIssues,
   validateOnchainDependencyIndex,
   birthStageStaticExecutorIssues,
 };

@@ -38,6 +38,14 @@ interface IUVPStateMachineCore {
         bytes32[] proof;
     }
 
+    struct WindowInstruction {
+        uint8 op;
+        bytes32 sourceId;
+        bytes32 signalId;
+        uint16 arity;
+        uint64 delaySeconds;
+    }
+
     function hasTriggerOriginConsent(
         bytes32 originPlanId,
         bytes32 originOrderId,
@@ -72,11 +80,6 @@ interface IUVPStateMachineCore {
         bytes32 orderId,
         SignalAuthorization[] calldata authorizations
     ) external;
-    function authorizeDockedSignalsFromModule(
-        bytes32 planId,
-        bytes32 orderId,
-        SignalAuthorization[] calldata authorizations
-    ) external;
     function signalAuthorizationsHash(SignalAuthorization[] calldata authorizations) external pure returns (bytes32);
     function stageSignalState(bytes32 planId, bytes32 orderId, bytes32 stageId)
         external
@@ -102,36 +105,20 @@ interface IUVPStateMachineCore {
     function planPublisher(bytes32 planId) external view returns (address);
     function sourceSignalCount(bytes32 planId, bytes32 orderId, bytes32 sourceId) external view returns (uint256);
 
-    struct DockEntranceRequest {
-        bytes32 targetPlanId;
-        bytes32 linkedOrderId;
-        address creator;
-        address relayer;
-        bytes32 entranceHookId;
-        bytes32 entranceStageId;
-        bytes32 sourceId;
-        bytes32 signalId;
-        bytes32 payloadHash;
-        bytes32 idempotencyKey;
-        address submitter;
-        SignalAuthorization[] authorizations;
-        FactAttribution entranceAttribution;
-    }
+    function dockRegistry() external view returns (address);
 
-    struct DockInputFact {
-        bytes32 planId;
-        bytes32 orderId;
-        bytes32 sourceId;
-        bytes32 signalId;
-        bytes32 payloadHash;
-        bytes32 idempotencyKey;
-        address submitter;
-        FactAttribution attribution;
-    }
+    function stageHasDockExecutorHook(bytes32 planId, bytes32 stageId) external view returns (bool);
 
-    function createDockedOrderFromModule(DockEntranceRequest calldata request) external;
+    function evaluateDockWindow(
+        bytes32 planId,
+        bytes32 orderId,
+        WindowInstruction[] calldata instructions
+    ) external view returns (bool satisfied, uint64 dueInSeconds);
 
-    function recordDockedInputFromModule(DockInputFact calldata fact) external;
+    function isSignalAdmissionSatisfied(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId)
+        external
+        view
+        returns (bool);
 
     function planHookFlags(bytes32 planId, bytes32 hookId) external view returns (uint8);
 
@@ -149,7 +136,7 @@ interface IUVPStateMachineCore {
 
     function stageHasOrderTriggerHook(bytes32 planId, bytes32 stageId) external view returns (bool);
 
-    function submitSignalFromModule(
+    function submitDockOutputSignalFromModule(
         bytes32 planId,
         bytes32 orderId,
         bytes32 sourceId,
@@ -158,7 +145,7 @@ interface IUVPStateMachineCore {
         bytes32 idempotencyKey,
         address submitter,
         FactAttribution calldata attribution
-    ) external;
+    ) external returns (bool submitted);
     function submitDerivedSignalFromModule(
         bytes32 planId,
         bytes32 orderId,

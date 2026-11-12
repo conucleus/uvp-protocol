@@ -263,7 +263,7 @@ contract UVPDerivedSignalModule {
         bytes32 r;
         bytes32 s;
         uint8 v;
-        assembly {
+        assembly ("memory-safe") {
             r := calldataload(signature.offset)
             s := calldataload(add(signature.offset, 0x20))
             v := byte(0, calldataload(add(signature.offset, 0x40)))

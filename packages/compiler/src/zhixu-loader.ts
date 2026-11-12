@@ -39,13 +39,12 @@ const NAME_SLUG_PATTERN = /^[a-z][a-z0-9_-]{0,99}$/;
 export const KNOWN_FIELDS = {
   root: ["apiVersion", "kind", "metadata", "spec"],
   metadata: ["name", "labels", "annotations"],
-  spec: ["platform", "nucleation", "stages", "dockInterface"],
+  spec: ["platform", "nucleation", "stages"],
   platform: ["type", "provider", "network", "version", "params"],
   nucleation: ["id", "params"],
   stage: [
     "name",
     "source",
-    "trigger",
     "executor",
     "selectedStages",
     "sendSignals",
@@ -53,11 +52,12 @@ export const KNOWN_FIELDS = {
     "fileResources",
     "fileWriters",
   ],
-  sendSignalEntry: ["name", "validWhen"],
-  executor: ["supplierType", "supplierID", "zhixuExecutorConfig", "selectableResource"],
-  dockInterfaceEntry: ["orderModes", "inputs", "outputs"],
-  dockInputPort: ["hook"],
-  dockOutputPort: ["signal"],
+  sendSignalEntry: ["name", "validWhen", "trigger"],
+  executor: ["supplierType", "supplierID", "selectableResource"],
+  dockRoot: ["apiVersion", "kind", "metadata", "spec"],
+  dockSpec: ["from", "to", "signalMap"],
+  dockFrom: ["zhixu", "source"],
+  dockTo: ["zhixu", "stage"],
 } as const satisfies Record<string, readonly string[]>;
 
 function rejectUnknownFields(
@@ -161,18 +161,6 @@ function assertZhixuDefinitionShape(
       `${stagePath}.receiveSignals`,
       sourceName,
     );
-    if (stage.trigger !== undefined) {
-      if (
-        !Array.isArray(stage.trigger) ||
-        stage.trigger.some(
-          (signal: unknown) => typeof signal !== "string" || signal.trim() === "",
-        )
-      ) {
-        throw new ZhixuLoadError(
-          `${sourceName}.${stagePath}.trigger must be an array of non-empty signal names`,
-        );
-      }
-    }
     if (stage.sendSignals !== undefined) {
       if (!Array.isArray(stage.sendSignals)) {
         throw new ZhixuLoadError(`${sourceName}.${stagePath}.sendSignals must be an array`);
@@ -181,12 +169,17 @@ function assertZhixuDefinitionShape(
         const entryPath = `${stagePath}.sendSignals[${signalIndex}]`;
         if (!isRecord(declared)) {
           throw new ZhixuLoadError(
-            `${sourceName}.${entryPath} must be an object {name, validWhen?} (bare string entries are not accepted)`,
+            `${sourceName}.${entryPath} must be an object {name, validWhen?, trigger?} (bare string entries are not accepted)`,
           );
         }
         rejectUnknownFields(declared, "sendSignalEntry", entryPath, sourceName);
         if (typeof declared.name !== "string") {
           throw new ZhixuLoadError(`${sourceName}.${entryPath}.name must be a string`);
+        }
+        if (declared.trigger !== undefined && typeof declared.trigger !== "boolean") {
+          throw new ZhixuLoadError(
+            `${sourceName}.${entryPath}.trigger must be a boolean when present`,
+          );
         }
         if (declared.validWhen !== undefined) {
           if (
@@ -210,44 +203,6 @@ function assertZhixuDefinitionShape(
       );
     }
   });
-  if (isRecord(value.spec.dockInterface)) {
-    for (const [interfaceName, entry] of Object.entries(value.spec.dockInterface)) {
-      if (!isRecord(entry)) {
-        continue;
-      }
-      const interfacePath = `spec.dockInterface[${interfaceName}]`;
-      rejectUnknownFields(
-        entry,
-        "dockInterfaceEntry",
-        interfacePath,
-        sourceName,
-      );
-      for (const [portName, port] of Object.entries(
-        isRecord(entry.inputs) ? entry.inputs : {},
-      )) {
-        if (isRecord(port)) {
-          rejectUnknownFields(
-            port,
-            "dockInputPort",
-            `${interfacePath}.inputs[${portName}]`,
-            sourceName,
-          );
-        }
-      }
-      for (const [portName, port] of Object.entries(
-        isRecord(entry.outputs) ? entry.outputs : {},
-      )) {
-        if (isRecord(port)) {
-          rejectUnknownFields(
-            port,
-            "dockOutputPort",
-            `${interfacePath}.outputs[${portName}]`,
-            sourceName,
-          );
-        }
-      }
-    }
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -3,9 +3,9 @@ pragma solidity ^0.8.24;
 
 import {UVPStateMachine} from "../src/UVPStateMachine.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
-import {UVPDockingModule} from "../src/UVPDockingModule.sol";
 import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
+import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
@@ -69,7 +69,6 @@ contract UVPAdmissionTest {
 
     event log_named_uint(string key, uint256 val);
 
-    mapping(address machine => UVPDockingModule docking) private _dockingModules;
 
     bytes32 private constant SOURCE_BOOTSTRAP = bytes32(uint256(0x3001));
     bytes32 private constant SIGNAL_ORDER_START = bytes32(uint256(0x4001));
@@ -91,9 +90,9 @@ contract UVPAdmissionTest {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.16");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.17");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
     );
     bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
@@ -101,7 +100,7 @@ contract UVPAdmissionTest {
     uint8 private constant FLAG_ORDER_TRIGGER_MINT = 1;
     uint8 private constant FLAG_EMIT_READY = 4;
     uint8 private constant FLAG_ADMISSION = 8;
-    bytes32 private constant EMPTY_DOCK_ROOT = keccak256("");
+    bytes32 private constant EMPTY_MERKLE_ROOT = keccak256("");
 
     bytes32 private PLAN_ID;
     bytes32 private ORDER_ID;
@@ -501,26 +500,6 @@ contract UVPAdmissionTest {
         require(payloadHash == PAYLOAD_HASH, "absorbed retry overwrote the first write");
     }
 
-    function testInternalProducerBypassesAdmission() public {
-        UVPStateMachine machine = _gatedMachine(5);
-        vm.warp(100);
-
-        vm.prank(address(_dockingModules[address(machine)]));
-        machine.submitSignalFromModule(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            address(this),
-            _noAttribution()
-        );
-
-        (bool exists,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
-        require(exists, "internal producer write missing");
-    }
-
     function testOutsideBirthIsScreenedByAdmission() public {
         UVPStateMachine machine = _newMachine();
 
@@ -612,7 +591,11 @@ contract UVPAdmissionTest {
         uint256 hourSpent = gasBefore - gasleft();
 
         require(admissionSpent > plainSpent, "admission face must cost more than the ungated path");
-        require(admissionSpent - plainSpent <= 15_000, "admission submit delta exceeds the constant budget");
+        // New dock binding admission surface adds fixed per-call overhead
+        // (admissionsDeclared/admissions reads + _evaluateInstructions); the old
+        // 15_000 budget predated the dock/binding model. Keep the constant-increment
+        // and duration-wobble guards below.
+        require(admissionSpent - plainSpent <= 18_500, "admission submit delta exceeds the constant budget");
         uint256 durationWobble = admissionSpent > hourSpent ? admissionSpent - hourSpent : hourSpent - admissionSpent;
         require(durationWobble <= 100, "admission gas must not scale with the window duration");
     }
@@ -622,12 +605,11 @@ contract UVPAdmissionTest {
         UVPStagePatchModule stagePatch = new UVPStagePatchModule(address(machine));
         UVPDerivedSignalModule derivedSignal = new UVPDerivedSignalModule(address(machine));
         UVPPlanMetadataModule planMetadata = new UVPPlanMetadataModule(address(machine));
-        UVPDockingModule docking = new UVPDockingModule(address(machine), address(planMetadata));
+        UVPDockRegistry dockRegistry = new UVPDockRegistry(address(machine));
         UVPOrderLinkModule orderLink = new UVPOrderLinkModule(address(machine));
-        _dockingModules[address(machine)] = docking;
         machine.setStagePatchModule(address(stagePatch));
         machine.setDerivedSignalModule(address(derivedSignal));
-        machine.setDockingModule(address(docking));
+        machine.setDockRegistry(address(dockRegistry));
         machine.setPlanMetadataModule(address(planMetadata));
         machine.setOrderLinkModule(address(orderLink));
         machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
@@ -837,10 +819,8 @@ contract UVPAdmissionTest {
         UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
             publisher: publisher,
             hooksHash: keccak256(abi.encode(hooks)),
-            capabilitiesRoot: EMPTY_DOCK_ROOT,
-            dockRoutesRoot: EMPTY_DOCK_ROOT,
-            dockInterfaceRoot: EMPTY_DOCK_ROOT,
-            executorCandidatesRoot: EMPTY_DOCK_ROOT,
+            capabilitiesRoot: EMPTY_MERKLE_ROOT,
+            executorCandidatesRoot: EMPTY_MERKLE_ROOT,
             birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: block.timestamp + 1 hours
         });
@@ -850,8 +830,6 @@ contract UVPAdmissionTest {
                 commit.publisher,
                 commit.hooksHash,
                 commit.capabilitiesRoot,
-                commit.dockRoutesRoot,
-                commit.dockInterfaceRoot,
                 commit.executorCandidatesRoot,
                 commit.birthAuthorizer,
                 commit.deadline
@@ -870,10 +848,8 @@ contract UVPAdmissionTest {
         UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
             publisher: publisher,
             hooksHash: keccak256(abi.encode(hooks)),
-            capabilitiesRoot: EMPTY_DOCK_ROOT,
-            dockRoutesRoot: EMPTY_DOCK_ROOT,
-            dockInterfaceRoot: EMPTY_DOCK_ROOT,
-            executorCandidatesRoot: EMPTY_DOCK_ROOT,
+            capabilitiesRoot: EMPTY_MERKLE_ROOT,
+            executorCandidatesRoot: EMPTY_MERKLE_ROOT,
             birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: block.timestamp + 1 hours
         });
@@ -883,8 +859,6 @@ contract UVPAdmissionTest {
                 commit.publisher,
                 commit.hooksHash,
                 commit.capabilitiesRoot,
-                commit.dockRoutesRoot,
-                commit.dockInterfaceRoot,
                 commit.executorCandidatesRoot,
                 commit.birthAuthorizer,
                 commit.deadline

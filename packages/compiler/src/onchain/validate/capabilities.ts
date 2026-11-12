@@ -52,11 +52,13 @@ const SIGNAL_CAPABILITY_FIELDS: readonly string[] = [
   "capabilityHash",
 ];
 
-const SUPPLIER_TYPES: readonly string[] = ["individual", "organization", "zhixu"];
+const SUPPLIER_TYPES: readonly string[] = ["individual", "organization", "dock"];
+
+const PLAN_EXECUTOR_TYPES: readonly string[] = ["individual", "organization"];
 
 const FILE_TYPES: readonly string[] = ["local", "http", "txcloud", "plain_text"];
 
-export { SUPPLIER_TYPES, FILE_TYPES };
+export { SUPPLIER_TYPES, PLAN_EXECUTOR_TYPES, FILE_TYPES };
 
 function duplicateCurrentOrderFactKeyIssues(
   capabilities: readonly {
@@ -109,10 +111,11 @@ function validateOnchainExecutorRoutes(
     expectNonEmptyString(route.executorType, `${prefix}.executorType`, issues);
     if (
       typeof route.executorType === "string" &&
-      !SUPPLIER_TYPES.includes(route.executorType)
+      !PLAN_EXECUTOR_TYPES.includes(route.executorType)
     ) {
       issues.push(
-        `${prefix}.executorType must be one of ${SUPPLIER_TYPES.join("|")} (case-sensitive), received ${JSON.stringify(route.executorType)}`,
+        `${prefix}.executorType must be one of ${PLAN_EXECUTOR_TYPES.join("|")} (case-sensitive), received ${JSON.stringify(route.executorType)}; `
+          + "a dock stage's executor is selected once through the stage executor patch (dkid) and never becomes a plan route",
       );
     }
     if (typeof route.executorId === "string" && route.executorId.trim().length === 0) {

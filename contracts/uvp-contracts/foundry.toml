@@ -8,15 +8,14 @@ solc_version = "0.8.24"
 # 升级会静默改变默认目标，冻结 fixture 的 bytecodeHash 随之整体漂移。
 evm_version = "cancun"
 optimizer = true
+gas_limit = 4294967296
 optimizer_runs = 200
-# Dock v2 的 openDockedOrder 校验链需要较多栈槽（允许拆结构或启用
-# IR）；开启 via_ir 以容纳完整验证路径。
+# 求值栈机与模块入口需要较深栈槽；开启 via_ir 以容纳完整验证路径。
 via_ir = true
 bytecode_hash = "none"
 ffi = false
-# The dock parity gate reads the canonical TS-generated manifest from the
-# packages/compiler fixtures in this repo; keep one fixture source instead of
-# a Solidity copy that can silently drift.
+# Commitment golden vectors and the semantics corpus are read from the sibling
+# fixtures; keep one fixture source instead of a Solidity copy that can drift.
 allow_paths = ["../../packages/compiler", "../../../uvp-core/fixtures"]
 
 [[profile.default.fs_permissions]]

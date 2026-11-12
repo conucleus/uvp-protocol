@@ -18,7 +18,7 @@ contract CommitmentGoldenVectorsTest {
     string private constant HOOK_PLAN_HASH_DOMAIN = "uvp:hook-plan-artifact:v1";
     string private constant ONCHAIN_PLAN_HASH_DOMAIN = "uvp:onchain-hook-plan-artifact:v1";
 
-    uint256 private constant CASE_COUNT = 10;
+    uint256 private constant CASE_COUNT = 7;
     uint256 private constant REGISTER_HOOKS_VECTOR_COUNT = 1;
 
     function _fixture() private view returns (string memory) {
@@ -32,7 +32,7 @@ contract CommitmentGoldenVectorsTest {
         string memory fixture = _fixture();
         require(
             keccak256(bytes(vm.parseJsonString(fixture, ".schemaVersion")))
-                == keccak256(bytes("uvp.commitmentGoldenVectors.v1")),
+                == keccak256(bytes("uvp.commitmentGoldenVectors.v3")),
             "commitment golden vectors schemaVersion drifted"
         );
     }
@@ -99,18 +99,6 @@ contract CommitmentGoldenVectorsTest {
         _assertCaseMatches(6);
     }
 
-    function testCase7Matches() public {
-        _assertCaseMatches(7);
-    }
-
-    function testCase8Matches() public {
-        _assertCaseMatches(8);
-    }
-
-    function testCase9Matches() public {
-        _assertCaseMatches(9);
-    }
-
     function _assertCaseMatches(uint256 caseIndex) private {
         require(caseIndex < CASE_COUNT, "commitment golden case out of range");
         string memory fixture = _fixture();
@@ -129,8 +117,6 @@ contract CommitmentGoldenVectorsTest {
         bytes32 runtimePlanHash = machine.planRuntimeHash(
             hooksHash,
             vm.parseJsonBytes32(fixture, string.concat(base, ".expected.capabilitiesRoot")),
-            vm.parseJsonBytes32(fixture, string.concat(base, ".expected.dockRoutesRoot")),
-            vm.parseJsonBytes32(fixture, string.concat(base, ".expected.dockInterfaceRoot")),
             vm.parseJsonBytes32(fixture, string.concat(base, ".expected.executorCandidatesRoot"))
         );
         require(

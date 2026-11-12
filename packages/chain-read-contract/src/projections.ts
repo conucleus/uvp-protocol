@@ -270,8 +270,6 @@ export interface ChainPlanProjection {
   readonly publisher?: Address;
   readonly hooksHash?: Hex;
   readonly capabilitiesRoot?: Hex;
-  readonly dockRoutesRoot?: Hex;
-  readonly dockInterfaceRoot?: Hex;
   readonly executorCandidatesRoot?: Hex;
   readonly birthAuthorizer?: Address;
   readonly committedAt?: ChainProvenance;
@@ -305,7 +303,7 @@ export interface ChainPlanAdmissionsResponse {
   readonly admissions: readonly ChainPlanAdmission[];
 }
 
-export type ChainPlanTriggerKind = "trigger" | "dock";
+export type ChainPlanTriggerKind = "trigger";
 
 /** One order-trigger hook of the recorded plan artifact; `trigger` is the external birth line. */
 export interface ChainPlanTrigger {
@@ -363,55 +361,122 @@ export interface ChainContractGovernanceProjection {
   readonly frozenProof?: ChainProof;
 }
 
-export type ChainDockMode = "new" | "existing";
+/** Wire schema label for the static Dock projection (`uvp.dock.v1`). */
+export const DOCK_SCHEMA_VERSION = "uvp.dock.v1" as const;
 
-export interface ChainDockInputDelivery {
-  readonly inputBindingHash: Hex;
-  readonly localPlanId: Hex;
-  readonly localOrderId: Hex;
-  readonly targetPlanId: Hex;
-  readonly linkedOrderId: Hex;
-  readonly targetSignalId: Hex;
-  readonly payloadHash: Hex;
-  readonly submitter: Address;
-  readonly deliveredAt: ChainProvenance;
+/**
+ * Wire schema label for the binding read face (`uvp.dockBinding.v1`): a binding
+ * is derived from the selected dkid, the `dock_link` payload file record, and
+ * the poke evaluation; there is no link status row.
+ */
+export const DOCK_BINDING_SCHEMA_VERSION = "uvp.dockBinding.v1" as const;
+
+export interface ChainDockAtom {
+  readonly source: string;
+  readonly sourceId: Hex;
+  readonly stage: string;
+  readonly stageId: Hex;
+  readonly signal: string;
+  readonly signalId: Hex;
+  readonly targetOrderRelation: ChainSignalTargetRelation;
+}
+
+export type ChainDockConditionAst =
+  | { readonly kind: "signal"; readonly signalName: string }
+  | { readonly kind: "not"; readonly expr: ChainDockConditionAst }
+  | { readonly kind: "and"; readonly terms: readonly ChainDockConditionAst[] }
+  | { readonly kind: "or"; readonly terms: readonly ChainDockConditionAst[] }
+  | {
+      readonly kind: "delay";
+      readonly expr: ChainDockConditionAst;
+      readonly durationSeconds: number;
+      readonly rawDuration: string;
+    };
+
+export interface ChainDockExpressionAst {
+  readonly raw: string;
+  readonly source: string;
+  readonly condition: ChainDockConditionAst;
+}
+
+export interface ChainDockDependency {
+  readonly kind: "positive" | "negative" | "timer";
+  readonly source: string;
+  readonly signalName: string;
+  readonly delaySeconds?: number;
+}
+
+export interface ChainDockOutput {
+  readonly signal: string;
+  readonly signalId: Hex;
+  readonly sourceId: Hex;
+  readonly stageId: Hex;
+  readonly targetOrderRelation: ChainSignalTargetRelation;
+  readonly rawExpression: string;
+  readonly ast: ChainDockExpressionAst;
+  readonly dependencies: readonly ChainDockDependency[];
+  readonly atoms: readonly ChainDockAtom[];
+}
+
+export interface ChainDock {
+  readonly dkid: string;
+  readonly docHash: Hex;
+  readonly from: {
+    readonly zhixu: string;
+    readonly source: string;
+    readonly sourceId: Hex;
+  };
+  readonly to: {
+    readonly zhixu: string;
+    readonly stage: string;
+    readonly stageId: Hex;
+    readonly source: string;
+    readonly sourceId: Hex;
+  };
+  readonly signalMap: readonly ChainDockOutput[];
+  readonly registeredAt: ChainProvenance;
   readonly proof: ChainProof;
 }
 
-export interface ChainDockOutputDelivery {
-  readonly outputBindingHash: Hex;
-  readonly localPlanId: Hex;
-  readonly localOrderId: Hex;
-  readonly targetPlanId: Hex;
-  readonly linkedOrderId: Hex;
-  readonly targetSignalId: Hex;
-  readonly localSignalId: Hex;
-  readonly payloadHash: Hex;
-  readonly submitter: Address;
-  readonly deliveredAt: ChainProvenance;
-  readonly proof: ChainProof;
+export interface ChainDockFactRef {
+  readonly order_id?: Hex;
+  readonly source?: string;
+  readonly stage_identifier?: string;
+  readonly signal?: string;
+  readonly label?: string;
 }
 
-export interface ChainDockProjection {
-  readonly dockInstanceId: Hex;
-  readonly chainId: number;
-  readonly stateMachineAddress: Address;
-  readonly mode: ChainDockMode;
-  readonly localPlanId: Hex;
-  readonly localOrderId: Hex;
-  readonly routeId: Hex;
-  readonly routeHash: Hex;
-  readonly interfaceNameId: Hex;
-  readonly targetPlanId: Hex;
-  readonly linkedOrderId: Hex;
-  readonly depth: number;
-  readonly opener?: Address;
-  readonly attacher?: Address;
-  readonly inputDeliveries: Readonly<Record<string, ChainDockInputDelivery>>;
-  readonly outputDeliveries: Readonly<Record<string, ChainDockOutputDelivery>>;
-  readonly openedAt: ChainProvenance;
-  readonly updatedAt: ChainProvenance;
-  readonly proof: ChainProof;
+export type ChainDockBindingRef = ChainProvenance | ChainDockFactRef;
+
+export interface ChainDockBindingWindow {
+  readonly satisfied: boolean;
+  readonly opened_by?: ChainDockBindingRef | null;
+  readonly closed_by?: ChainDockBindingRef | null;
+  readonly delay_seconds?: number;
+}
+
+export interface ChainDockBindingOutput {
+  readonly signal: string;
+  readonly a_window?: ChainDockBindingWindow | null;
+  readonly b_window?: ChainDockBindingWindow | null;
+  readonly emitted: boolean;
+  readonly emitted_by?: ChainDockBindingRef | null;
+  readonly emitted_binding_id?: Hex;
+}
+
+export interface ChainDockBinding {
+  readonly binding_id: Hex;
+  readonly dkid: string;
+  readonly from_zhixu_id: string;
+  readonly from_source: string;
+  readonly from_order_id: Hex;
+  readonly to_zhixu_id: string;
+  readonly to_stage_identifier: string;
+  readonly to_order_id: Hex;
+  readonly selected_by?: ChainDockBindingRef | null;
+  readonly pending?: boolean;
+  readonly outputs: readonly ChainDockBindingOutput[];
+  readonly proof?: ChainProof;
 }
 
 /** Complete rebuildable order projection snapshot; every nested block number is a decimal string. */
@@ -424,15 +489,12 @@ export interface ChainProjectionSnapshot {
   readonly contractGovernance: Readonly<Record<string, ChainContractGovernanceProjection>>;
   readonly stateMachinePlans: Readonly<Record<string, ChainPlanProjection>>;
   readonly stateMachineOrders: Readonly<Record<string, ChainOrderProjection>>;
-  readonly stateMachineDocks: Readonly<Record<string, ChainDockProjection>>;
-  readonly stateMachineDocksByTargetOrder: Readonly<Record<string, readonly string[]>>;
-  readonly stateMachineOrderDockChainDepth: Readonly<Record<string, number>>;
+  readonly stateMachineDocks: Readonly<Record<string, ChainDock>>;
+  readonly stateMachineDockBindings: Readonly<Record<string, ChainDockBinding>>;
   readonly stateMachineTasks: Readonly<Record<string, ChainTaskProjection>>;
   readonly lastEvent?: ChainProvenance;
   readonly unresolvedModuleOrderEventCount?: number;
-  readonly unresolvedDockEventCount?: number;
   readonly unresolvedStageActivationEventCount?: number;
-  readonly unresolvedDockTargetDeploymentCount?: number;
   readonly capabilityEnrichmentMismatchCount?: number;
   readonly unknownEventCount?: number;
 }
@@ -459,9 +521,7 @@ export interface ChainRebuildMetadata {
 
 export interface ChainSyncDiagnosticsCounts {
   readonly unresolvedModuleOrderEventCount: number;
-  readonly unresolvedDockEventCount: number;
   readonly unresolvedStageActivationEventCount: number;
-  readonly unresolvedDockTargetDeploymentCount: number;
   readonly unresolvedIdentityRevokeEventCount: number;
   readonly capabilityEnrichmentMismatchCount: number;
   readonly unknownEventCount: number;

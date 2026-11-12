@@ -3,17 +3,14 @@ import {
   compileZhixuHookPlan,
   HookPlanCompilationError,
 } from "../hook-plan.js";
-import { interfaceRootOf, merkleRoot } from "../dock.js";
 import {
   OnchainHookPlanArtifactValidationError,
-  onchainDockTrackIssues,
-  onchainUnresolvedRouteIssues,
 } from "./validate/artifact.js";
 import {
   birthStageStaticExecutorIssues,
   crossStageDependencyIssues,
   declaredStageIdentifiers,
-  duplicateDockEntranceKeyIssues,
+  dockStageRouteIssues,
   silentOrderTriggerIssues,
   unmaterializableStageIssues,
   validateOnchainCompiledAdmissions,
@@ -60,7 +57,6 @@ import { toSolidityRegisterPlanArgs } from "./solidity/registration.js";
 import {
   ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
   type CompiledHookPlanAdmission,
-  type DockResolutionManifest,
   type ExecutorCandidateInput,
   type HookPlanArtifact,
   type OnchainCompiledAdmission,
@@ -89,6 +85,7 @@ export function compileOnchainHookPlan(
       kind: hook.kind,
       orderTriggerKind: hook.orderTriggerKind,
       emitReady: hook.emitReady,
+      dockExecutor: hook.dockExecutor,
       instructions: compileHookInstructions(hook.ast, hook.stageIdentifier, {
         orderTriggerKind: hook.orderTriggerKind,
       }),
@@ -103,7 +100,6 @@ export function compileOnchainHookPlan(
   const declaredStages = declaredStageIdentifiers(
     hookPlanArtifact.signalCapabilities.map((capability) => capability.stageIdentifier),
     Object.keys(hookPlanArtifact.executorRoutes),
-    hookPlanArtifact.dockRoutes.map((route) => route.local.stageIdentifier),
     hookPlanArtifact.selectedStageBindings.flatMap((binding) => [
       binding.selectorStageIdentifier,
       binding.targetStageIdentifier,
@@ -123,6 +119,15 @@ export function compileOnchainHookPlan(
       ) {
         return `executor candidate stage "${candidate.stageIdentifier}" carries an order-trigger hook; birth-stage executors are immutable and cannot be per-order patch targets`;
       }
+      if (
+        compiledHooks.some(
+          (hook) =>
+            hook.stageIdentifier === candidate.stageIdentifier &&
+            hook.dockExecutor,
+        )
+      ) {
+        return `executor candidate stage "${candidate.stageIdentifier}" is a dock stage; its executor is selected once through the stage executor patch (dkid), never as a plan candidate`;
+      }
       if (!isExecutorAddress(candidate.executor)) {
         return `executor candidate for stage "${candidate.stageIdentifier}" must be a non-zero 20-byte address, received ${JSON.stringify(candidate.executor)}`;
       }
@@ -133,18 +138,9 @@ export function compileOnchainHookPlan(
   const crossStageIssues = crossStageDependencyIssues(compiledHooks);
   const materializationIssues = unmaterializableStageIssues(
     compiledHooks,
-    declaredStageIdentifiers(
-      hookPlanArtifact.signalCapabilities.map((capability) => capability.stageIdentifier),
-      Object.keys(hookPlanArtifact.executorRoutes),
-      hookPlanArtifact.dockRoutes.map((route) => route.local.stageIdentifier),
-      hookPlanArtifact.selectedStageBindings.flatMap((binding) => [
-        binding.selectorStageIdentifier,
-        binding.targetStageIdentifier,
-      ]),
-    ),
+    declaredStages,
   );
   const silentTriggerIssues = silentOrderTriggerIssues(compiledHooks);
-  const duplicateDockEntranceIssues = duplicateDockEntranceKeyIssues(compiledHooks);
   const dependencyCountIssues = planDependencyCountIssues(compiledHooks);
   const currentOrderFactKeyIssues = duplicateCurrentOrderFactKeyIssues(
     hookPlanArtifact.signalCapabilities.map((capability) => ({
@@ -153,13 +149,10 @@ export function compileOnchainHookPlan(
       signalId: onchainSignalId(capability.targetSignalName),
     })),
   );
-  const dockTrackIssues = onchainDockTrackIssues(hookPlanArtifact.dockRoutes);
-  const unresolvedTrackIssues = onchainUnresolvedRouteIssues(
-    hookPlanArtifact.unresolvedDockRoutes,
-  );
   const executorRoutes = Object.values(hookPlanArtifact.executorRoutes)
     .map(compileExecutorRoute)
     .sort(compareExecutorRoutes);
+  const dockRouteIssues = dockStageRouteIssues(compiledHooks, executorRoutes);
   const birthStageExecutorIssues = birthStageStaticExecutorIssues(
     compiledHooks,
     executorRoutes,
@@ -179,11 +172,9 @@ export function compileOnchainHookPlan(
     ...materializationIssues,
     ...birthStageExecutorIssues,
     ...silentTriggerIssues,
-    ...duplicateDockEntranceIssues,
     ...dependencyCountIssues,
     ...currentOrderFactKeyIssues,
-    ...dockTrackIssues,
-    ...unresolvedTrackIssues,
+    ...dockRouteIssues,
     ...hookShapeIssues,
     ...admissionShapeIssues,
     ...executorCandidateIssues,
@@ -206,29 +197,6 @@ export function compileOnchainHookPlan(
     hookPlanArtifact.source,
     new Set(compiledHooks.map((hook) => hook.stageIdentifier)),
   );
-  const dockRoutes = hookPlanArtifact.dockRoutes;
-  const unresolvedDockRoutes =
-    hookPlanArtifact.unresolvedDockRoutes !== undefined &&
-    hookPlanArtifact.unresolvedDockRoutes.length > 0
-      ? hookPlanArtifact.unresolvedDockRoutes
-      : undefined;
-  const recomputedRoutesRoot = merkleRoot([
-    ...dockRoutes.map((route) => route.routeHash),
-    ...(unresolvedDockRoutes ?? []).map((route) => route.routeHash),
-  ]);
-  if (recomputedRoutesRoot !== hookPlanArtifact.dockRoutesRoot) {
-    throw new OnchainHookPlanArtifactValidationError([
-      "dockRoutesRoot does not match the recomputed root over dock route hashes",
-    ]);
-  }
-  if (hookPlanArtifact.dockInterface !== null) {
-    const recomputedInterfaceRoot = interfaceRootOf(hookPlanArtifact.dockInterface);
-    if (recomputedInterfaceRoot !== hookPlanArtifact.dockInterfaceRoot) {
-      throw new OnchainHookPlanArtifactValidationError([
-        "dockInterfaceRoot does not match the recomputed root over interface leaves",
-      ]);
-    }
-  }
   const soliditySelectorBindings = selectorBindings.map((binding) => ({
     selectorStageId: binding.selectorStageId,
     targetStageId: binding.targetStageId,
@@ -261,13 +229,6 @@ export function compileOnchainHookPlan(
     triggers,
     dependencyIndex,
     executorRoutes,
-    dockInterface: hookPlanArtifact.dockInterface,
-    dockRoutes,
-    ...(unresolvedDockRoutes === undefined
-      ? {}
-      : { unresolvedDockRoutes }),
-    dockRoutesRoot: hookPlanArtifact.dockRoutesRoot,
-    dockInterfaceRoot: hookPlanArtifact.dockInterfaceRoot,
     capabilitiesRoot,
     selectorBindings,
     signalCapabilities,
@@ -285,11 +246,10 @@ export function compileOnchainHookPlan(
 
 export function compileZhixuOnchainHookPlan(
   definition: ZhixuDefinition,
-  resolutionManifest?: DockResolutionManifest,
   executorCandidates?: readonly ExecutorCandidateInput[],
 ): OnchainHookPlanArtifact {
   return compileOnchainHookPlan(
-    compileZhixuHookPlan(definition, resolutionManifest),
+    compileZhixuHookPlan(definition),
     executorCandidates,
   );
 }
@@ -338,10 +298,9 @@ function compileSignalAdmissions(
 
 export function compileZhixuRegisterPlanArgs(
   definition: ZhixuDefinition,
-  resolutionManifest?: DockResolutionManifest,
   executorCandidates?: readonly ExecutorCandidateInput[],
 ): SolidityRegisterPlanArgs {
   return toSolidityRegisterPlanArgs(
-    compileZhixuOnchainHookPlan(definition, resolutionManifest, executorCandidates),
+    compileZhixuOnchainHookPlan(definition, executorCandidates),
   );
 }

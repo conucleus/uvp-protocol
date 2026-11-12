@@ -7,18 +7,15 @@ import {
   type HookPlanArtifact,
   type ZhixuPlatform,
   type ZhixuDefinition,
-  type DockResolutionManifest,
 } from "./types/index.js";
-import { validateDockCommitments, validateUnresolvedDockRouteDeclarations } from "./dock-validation.js";
 import { compareByCodePoint } from "@uvp-eth/canonical-json";
 import { hashCanonical } from "./hash.js";
 import {
   assembleChainTrackHookPlan,
   hookPlanPayloadForHash,
   planIdOf,
-  prepareDockResolution,
   HOOK_PLAN_HASH_DOMAIN,
-} from "./dock-commitments.js";
+} from "./hook-plan/assemble.js";
 import { lowerHookPlanShell } from "./hook-plan/lower.js";
 
 export class HookPlanCompilationError extends Error {
@@ -48,30 +45,15 @@ export function compareCanonicalKey(left: string, right: string): number {
 
 export function compileZhixuHookPlan(
   definition: ZhixuDefinition,
-  resolutionManifest?: DockResolutionManifest,
 ): HookPlanArtifact {
   const issues = validateZhixuShape(definition);
   if (issues.length > 0) {
     throw new HookPlanCompilationError(issues);
   }
 
-  let resolution;
-  if (resolutionManifest !== undefined) {
-    try {
-      resolution = prepareDockResolution(resolutionManifest);
-    } catch (error) {
-      throw new HookPlanCompilationError([
-        error instanceof Error ? error.message : String(error)
-      ]);
-    }
-  }
-
   let analysis: ZhixuAnalysis;
   try {
-    analysis = analyzeWithUvpCore({
-      definition,
-      ...(resolution === undefined ? {} : { dockTargets: resolution.neutral }),
-    });
+    analysis = analyzeWithUvpCore({ definition });
   } catch (error) {
     throw new HookPlanCompilationError([
       error instanceof Error ? error.message : String(error)
@@ -83,7 +65,6 @@ export function compileZhixuHookPlan(
     artifact = assembleChainTrackHookPlan(
       definition,
       lowerHookPlanShell(analysis),
-      resolution,
     );
   } catch (error) {
     throw new HookPlanCompilationError([
@@ -107,11 +88,6 @@ const HOOK_PLAN_ARTIFACT_FIELDS: readonly string[] = [
   "compiledHooks",
   "dependencyIndex",
   "executorRoutes",
-  "dockInterface",
-  "dockRoutes",
-  "unresolvedDockRoutes",
-  "dockRoutesRoot",
-  "dockInterfaceRoot",
   "selectedStageBindings",
   "signalCapabilities",
   "admissions",
@@ -191,20 +167,6 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
   if (!isRecord(value.executorRoutes)) {
     issues.push("executorRoutes must be an object");
   }
-  if (!Array.isArray(value.dockRoutes)) {
-    issues.push("dockRoutes must be an array");
-  }
-  if (value.unresolvedDockRoutes !== undefined) {
-    issues.push(
-      ...validateUnresolvedDockRouteDeclarations(
-        value.unresolvedDockRoutes,
-        "unresolvedDockRoutes",
-      ),
-    );
-  }
-  expectHexHash(value.dockRoutesRoot as unknown, "dockRoutesRoot", issues);
-  expectHexHash(value.dockInterfaceRoot as unknown, "dockInterfaceRoot", issues);
-  issues.push(...validateDockCommitments(value));
   if (!Array.isArray(value.selectedStageBindings)) {
     issues.push("selectedStageBindings must be an array");
   }
@@ -230,6 +192,10 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
       }
       if (!isRecord(route.executor)) {
         issues.push(`executorRoutes.${routeKey}.executor must be an object`);
+      } else if (route.executor.supplierType === "dock") {
+        issues.push(
+          `executorRoutes.${routeKey} must not carry a dock executor; a dock stage's executor is selected once through the stage executor patch (dkid), not as a plan route`,
+        );
       }
     }
   }
@@ -289,11 +255,27 @@ function validateCompiledHooks(hooks: readonly unknown[]): readonly string[] {
     expectNonEmptyString(hook.hookName, `${prefix}.hookName`, issues);
     expectOneOf(
       hook.orderTriggerKind,
-      ["none", "trigger", "dock"],
+      ["none", "trigger"],
       `${prefix}.orderTriggerKind`,
       issues,
     );
     expectBoolean(hook.emitReady, `${prefix}.emitReady`, issues);
+    expectBoolean(hook.dockExecutor, `${prefix}.dockExecutor`, issues);
+    if (hook.dockExecutor === true) {
+      if (hook.orderTriggerKind !== "none") {
+        issues.push(`${prefix} is a dock stage hook and must not carry an order-trigger bit`);
+      }
+      if (hook.emitReady !== true) {
+        issues.push(
+          `${prefix} is a dock stage hook without EMIT_READY; a dock stage materializes only through its own emit-ready hooks, so the flag would be unreachable`,
+        );
+      }
+      if (hook.route !== undefined) {
+        issues.push(
+          `${prefix} is a dock stage hook and must not carry an executor route; the dock executor is selected once through the stage executor patch (dkid)`,
+        );
+      }
+    }
     expectNonEmptyString(hook.rawExpression, `${prefix}.rawExpression`, issues);
     expectNonEmptyString(hook.normalizedExpression, `${prefix}.normalizedExpression`, issues);
     if (!isRecord(hook.ast)) {
@@ -645,8 +627,4 @@ function expectOneOf(
   if (typeof value !== "string" || !allowed.includes(value)) {
     issues.push(`${fieldName} must be one of ${allowed.join(", ")}`);
   }
-}
-
-function assertNever(value: never): never {
-  throw new Error(`unexpected value: ${String(value)}`);
 }

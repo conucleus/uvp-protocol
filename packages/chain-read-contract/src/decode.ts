@@ -5,9 +5,14 @@ import { ChainReadContractError } from "./errors.js";
 import type {
   ChainContractGovernanceProjection,
   ChainDeploymentProjection,
-  ChainDockInputDelivery,
-  ChainDockOutputDelivery,
-  ChainDockProjection,
+  ChainDock,
+  ChainDockAtom,
+  ChainDockBinding,
+  ChainDockBindingOutput,
+  ChainDockBindingRef,
+  ChainDockBindingWindow,
+  ChainDockFactRef,
+  ChainDockOutput,
   ChainDerivedSignal,
   ChainExecutorCandidate,
   ChainHook,
@@ -46,7 +51,6 @@ import type {
   ChainTaskStatus,
   ChainTimelineEvent,
   ChainDeploymentStatus,
-  ChainDockMode,
 } from "./projections.js";
 
 type WireRecord = Record<string, unknown>;
@@ -64,8 +68,7 @@ const DEPLOYMENT_STATUSES: readonly ChainDeploymentStatus[] = [
   "retired",
   "unknown"
 ];
-const DOCK_MODES: readonly ChainDockMode[] = ["new", "existing"];
-const PLAN_TRIGGER_KINDS: readonly ChainPlanTriggerKind[] = ["trigger", "dock"];
+const PLAN_TRIGGER_KINDS: readonly ChainPlanTriggerKind[] = ["trigger"];
 const SYNC_STATUSES: readonly ChainSyncStatus[] = ["indexed", "syncing", "stale", "rebuilding", "degraded"];
 const REBUILD_STATUSES: readonly ChainRebuildStatus[] = ["idle", "running", "completed", "failed"];
 const SUBMIT_SIGNAL_SOURCES: readonly ChainSubmitSignal["source"][] = ["plan_capability", "authorization"];
@@ -437,8 +440,6 @@ export function decodePlanWire(value: unknown, path = "plan"): ChainPlanProjecti
   optionalString(record, "publisher", path);
   optionalString(record, "hooksHash", path);
   optionalString(record, "capabilitiesRoot", path);
-  optionalString(record, "dockRoutesRoot", path);
-  optionalString(record, "dockInterfaceRoot", path);
   optionalString(record, "executorCandidatesRoot", path);
   optionalString(record, "birthAuthorizer", path);
   optionalProvenance(record, "committedAt", path);
@@ -513,77 +514,190 @@ export function decodeContractGovernanceWire(
   return value as ChainContractGovernanceProjection;
 }
 
-export function decodeDockInputDeliveryWire(
+export function decodeDockAtomWire(
   value: unknown,
-  path = "dockInputDelivery"
-): ChainDockInputDelivery {
+  path = "dockAtom"
+): ChainDockAtom {
   const record = wireRecord(value, path);
-  for (const field of [
-    "inputBindingHash",
-    "localPlanId",
-    "localOrderId",
-    "targetPlanId",
-    "linkedOrderId",
-    "targetSignalId",
-    "payloadHash",
-    "submitter"
-  ] as const) {
+  for (const field of ["source", "sourceId", "stage", "stageId", "signal", "signalId"] as const) {
     requireString(record, field, path);
   }
-  decodeProvenanceWire(record["deliveredAt"], `${path}.deliveredAt`);
-  decodeProofWire(record["proof"], `${path}.proof`);
-  return value as ChainDockInputDelivery;
+  requireEnum(record, "targetOrderRelation", path, SIGNAL_TARGET_RELATIONS);
+  return value as ChainDockAtom;
 }
 
-export function decodeDockOutputDeliveryWire(
-  value: unknown,
-  path = "dockOutputDelivery"
-): ChainDockOutputDelivery {
+export function decodeDockAstWire(value: unknown, path = "dockAst"): void {
   const record = wireRecord(value, path);
-  for (const field of [
-    "outputBindingHash",
-    "localPlanId",
-    "localOrderId",
-    "targetPlanId",
-    "linkedOrderId",
-    "targetSignalId",
-    "localSignalId",
-    "payloadHash",
-    "submitter"
-  ] as const) {
-    requireString(record, field, path);
-  }
-  decodeProvenanceWire(record["deliveredAt"], `${path}.deliveredAt`);
-  decodeProofWire(record["proof"], `${path}.proof`);
-  return value as ChainDockOutputDelivery;
+  requireString(record, "raw", path);
+  requireString(record, "source", path);
+  decodeDockConditionWire(record["condition"], `${path}.condition`);
 }
 
-export function decodeDockWire(value: unknown, path = "dock"): ChainDockProjection {
+function decodeDockConditionWire(value: unknown, path: string): void {
   const record = wireRecord(value, path);
-  requireString(record, "dockInstanceId", path);
-  requireNumber(record, "chainId", path);
-  requireString(record, "stateMachineAddress", path);
-  requireEnum(record, "mode", path, DOCK_MODES);
+  requireEnum(record, "kind", path, ["signal", "not", "and", "or", "delay"] as const);
+  switch (record["kind"]) {
+    case "signal":
+      requireString(record, "signalName", path);
+      return;
+    case "not":
+      decodeDockConditionWire(record["expr"], `${path}.expr`);
+      return;
+    case "and":
+    case "or":
+      decodeArray(record["terms"], `${path}.terms`).forEach((term, index) => {
+        decodeDockConditionWire(term, `${path}.terms[${index}]`);
+      });
+      return;
+    case "delay":
+      decodeDockConditionWire(record["expr"], `${path}.expr`);
+      requireNumber(record, "durationSeconds", path);
+      requireString(record, "rawDuration", path);
+      return;
+    default:
+      return;
+  }
+}
+
+export function decodeDockDependencyWire(value: unknown, path = "dockDependency"): void {
+  const record = wireRecord(value, path);
+  requireEnum(record, "kind", path, ["positive", "negative", "timer"] as const);
+  requireString(record, "source", path);
+  requireString(record, "signalName", path);
+  if (record["delaySeconds"] !== undefined) {
+    requireNumber(record, "delaySeconds", path);
+  }
+}
+
+export function decodeDockOutputWire(
+  value: unknown,
+  path = "dockOutput"
+): ChainDockOutput {
+  const record = wireRecord(value, path);
+  for (const field of ["signal", "signalId", "sourceId", "stageId", "rawExpression"] as const) {
+    requireString(record, field, path);
+  }
+  requireEnum(record, "targetOrderRelation", path, SIGNAL_TARGET_RELATIONS);
+  decodeDockAstWire(record["ast"], `${path}.ast`);
+  decodeArray(record["dependencies"], `${path}.dependencies`).forEach((dependency, index) => {
+    decodeDockDependencyWire(dependency, `${path}.dependencies[${index}]`);
+  });
+  decodeArray(record["atoms"], `${path}.atoms`).forEach((atom, index) => {
+    decodeDockAtomWire(atom, `${path}.atoms[${index}]`);
+  });
+  return value as ChainDockOutput;
+}
+
+export function decodeDockWire(value: unknown, path = "dock"): ChainDock {
+  const record = wireRecord(value, path);
+  requireString(record, "dkid", path);
+  requireString(record, "docHash", path);
+  for (const side of ["from", "to"] as const) {
+    const sideRecord = wireRecord(record[side], `${path}.${side}`);
+    for (const field of ["zhixu", "source", "sourceId"] as const) {
+      requireString(sideRecord, field, `${path}.${side}`);
+    }
+  }
+  const toRecord = wireRecord(record["to"], `${path}.to`);
+  for (const field of ["stage", "stageId"] as const) {
+    requireString(toRecord, field, `${path}.to`);
+  }
+  decodeArray(record["signalMap"], `${path}.signalMap`).forEach((output, index) => {
+    decodeDockOutputWire(output, `${path}.signalMap[${index}]`);
+  });
+  decodeProvenanceWire(record["registeredAt"], `${path}.registeredAt`);
+  decodeProofWire(record["proof"], `${path}.proof`);
+  return value as ChainDock;
+}
+
+export function decodeDockBindingRefWire(
+  value: unknown,
+  path = "dockBindingRef"
+): ChainDockBindingRef {
+  const record = wireRecord(value, path);
+  if (record["chainId"] !== undefined || record["blockNumber"] !== undefined) {
+    decodeProvenanceWire(value, path);
+    return value as ChainProvenance;
+  }
+  for (const field of ["order_id", "source", "stage_identifier", "signal", "label"] as const) {
+    optionalString(record, field, path);
+  }
+  return value as ChainDockFactRef;
+}
+
+export function decodeDockBindingWindowWire(
+  value: unknown,
+  path = "dockBindingWindow"
+): ChainDockBindingWindow {
+  const record = wireRecord(value, path);
+  requireBoolean(record, "satisfied", path);
+  if (record["opened_by"] !== undefined && record["opened_by"] !== null) {
+    decodeDockBindingRefWire(record["opened_by"], `${path}.opened_by`);
+  }
+  if (record["closed_by"] !== undefined && record["closed_by"] !== null) {
+    decodeDockBindingRefWire(record["closed_by"], `${path}.closed_by`);
+  }
+  optionalNumber(record, "delay_seconds", path);
+  return value as ChainDockBindingWindow;
+}
+
+export function decodeDockBindingOutputWire(
+  value: unknown,
+  path = "dockBindingOutput",
+  pending = false,
+): ChainDockBindingOutput {
+  const record = wireRecord(value, path);
+  requireString(record, "signal", path);
+  for (const windowField of ["a_window", "b_window"] as const) {
+    const windowValue = record[windowField];
+    if (windowValue === undefined || windowValue === null) {
+      if (!pending) {
+        throw new ChainReadContractError(
+          `${path}.${windowField}`,
+          "must be an object (only pending bindings may omit the live window)",
+        );
+      }
+      continue;
+    }
+    decodeDockBindingWindowWire(windowValue, `${path}.${windowField}`);
+  }
+  requireBoolean(record, "emitted", path);
+  if (record["emitted_by"] !== undefined && record["emitted_by"] !== null) {
+    decodeDockBindingRefWire(record["emitted_by"], `${path}.emitted_by`);
+  }
+  optionalString(record, "emitted_binding_id", path);
+  return value as ChainDockBindingOutput;
+}
+
+export function decodeDockBindingWire(
+  value: unknown,
+  path = "dockBinding"
+): ChainDockBinding {
+  const record = wireRecord(value, path);
   for (const field of [
-    "localPlanId",
-    "localOrderId",
-    "routeId",
-    "routeHash",
-    "interfaceNameId",
-    "targetPlanId",
-    "linkedOrderId"
+    "binding_id",
+    "dkid",
+    "from_zhixu_id",
+    "from_source",
+    "from_order_id",
+    "to_zhixu_id",
+    "to_stage_identifier",
+    "to_order_id"
   ] as const) {
     requireString(record, field, path);
   }
-  requireNumber(record, "depth", path);
-  optionalString(record, "opener", path);
-  optionalString(record, "attacher", path);
-  decodeRecordMap(record["inputDeliveries"], `${path}.inputDeliveries`, decodeDockInputDeliveryWire);
-  decodeRecordMap(record["outputDeliveries"], `${path}.outputDeliveries`, decodeDockOutputDeliveryWire);
-  decodeProvenanceWire(record["openedAt"], `${path}.openedAt`);
-  decodeProvenanceWire(record["updatedAt"], `${path}.updatedAt`);
-  decodeProofWire(record["proof"], `${path}.proof`);
-  return value as ChainDockProjection;
+  if (record["selected_by"] !== undefined && record["selected_by"] !== null) {
+    decodeDockBindingRefWire(record["selected_by"], `${path}.selected_by`);
+  }
+  optionalBoolean(record, "pending", path);
+  const pending = record["pending"] === true;
+  decodeArray(record["outputs"], `${path}.outputs`).forEach((output, index) => {
+    decodeDockBindingOutputWire(output, `${path}.outputs[${index}]`, pending);
+  });
+  if (record["proof"] !== undefined) {
+    decodeProofWire(record["proof"], `${path}.proof`);
+  }
+  return value as ChainDockBinding;
 }
 
 export function decodeSnapshotWire(
@@ -603,8 +717,7 @@ export function decodeSnapshotWire(
     "stateMachinePlans",
     "stateMachineOrders",
     "stateMachineDocks",
-    "stateMachineDocksByTargetOrder",
-    "stateMachineOrderDockChainDepth",
+    "stateMachineDockBindings",
     "stateMachineTasks"
   ] as const) {
     wireRecord(record[field], `${path}.${field}`);
@@ -614,9 +727,7 @@ export function decodeSnapshotWire(
   }
   for (const field of [
     "unresolvedModuleOrderEventCount",
-    "unresolvedDockEventCount",
     "unresolvedStageActivationEventCount",
-    "unresolvedDockTargetDeploymentCount",
     "capabilityEnrichmentMismatchCount",
     "unknownEventCount"
   ] as const) {
@@ -654,9 +765,7 @@ export function decodeSyncDiagnosticsCountsWire(
   const record = wireRecord(value, path);
   for (const field of [
     "unresolvedModuleOrderEventCount",
-    "unresolvedDockEventCount",
     "unresolvedStageActivationEventCount",
-    "unresolvedDockTargetDeploymentCount",
     "unresolvedIdentityRevokeEventCount",
     "capabilityEnrichmentMismatchCount",
     "unknownEventCount",
@@ -870,6 +979,12 @@ function optionalNumber(record: WireRecord, field: string, path: string): void {
   const value = record[field];
   if (value !== undefined && (typeof value !== "number" || !Number.isFinite(value))) {
     throw new ChainReadContractError(`${path}.${field}`, "must be a finite number when present");
+  }
+}
+
+function requireBoolean(record: WireRecord, field: string, path: string): void {
+  if (typeof record[field] !== "boolean") {
+    throw new ChainReadContractError(`${path}.${field}`, "must be a boolean");
   }
 }
 

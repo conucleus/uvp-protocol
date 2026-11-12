@@ -54,7 +54,7 @@ This mode does not model HTTP dispatchers, client-side watcher delivery, escrow,
 funding, or payment adapters. A successful delivery is never interpreted as
 business completion; the only completion input is a submitted business signal.
 
-Docked Zhixu runtime is an explicit prototype surface. Store docking sandbox
-signal maps are not enough for this package to claim linked Zhixu replay until
-linked order facts and mapped signals are represented in replay input and proof
-projection.
+Dock execution is modeled on the same order: a dock stage receives signals
+through its own hooks, and selecting a static Dock dkid is a stage executor
+patch rather than a separate replay event. Trigger-origin order links
+(OrderLinked, UVPOrderLinkModule) remain their own replay event.

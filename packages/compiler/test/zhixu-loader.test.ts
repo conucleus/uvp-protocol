@@ -145,7 +145,7 @@ test("rejects unknown fields at every structural level", () => {
     ],
     [
       "apiVersion: uvp/v0\nkind: Zhixu\nmetadata:\n  name: probe\nspec:\n  stages: []\n  platfrom: {type: cloud}\n",
-      /spec: unknown field `platfrom` — accepted fields are platform, nucleation, stages, dockInterface/,
+      /spec: unknown field `platfrom` — accepted fields are platform, nucleation, stages/,
     ],
     [
       [
@@ -180,25 +180,7 @@ test("rejects unknown fields at every structural level", () => {
         "            supplierID: org-1",
         "            suplierID: org-1",
       ].join("\n"),
-      /executor: unknown field `suplierID` — accepted fields are supplierType, supplierID, zhixuExecutorConfig, selectableResource/,
-    ],
-    [
-      [
-        "apiVersion: uvp/v0",
-        "kind: Zhixu",
-        "metadata:",
-        "  name: probe",
-        "spec:",
-        "  platform: {type: cloud}",
-        "  nucleation: {id: core}",
-        "  stages: []",
-        "  dockInterface:",
-        "    svc:",
-        "      orderModes: [new]",
-        "      inputs:",
-        "        execute: {hook: work#RUN, extra: 1}",
-      ].join("\n"),
-      /inputs\[execute\]: unknown field `extra` — accepted fields are hook/,
+      /executor: unknown field `suplierID` — accepted fields are supplierType, supplierID, selectableResource/,
     ],
   ];
   for (const [yaml, anchor] of cases) {

@@ -1,4 +1,4 @@
-import { keccakWords, merkleProof, merkleRoot } from "../dock.js";
+import { keccakWords, merkleProof, merkleRoot } from "../merkle.js";
 import type {
   HexString,
   OnchainHookPlanArtifact,

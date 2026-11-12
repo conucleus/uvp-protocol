@@ -9,13 +9,26 @@ This package is the single owner of the chain read wire field names and JSON
 value types. It defines no chain runtime, storage, or business rules:
 
 - projection DTOs for orders, tasks, plans, deployments, modules, governance,
-  docks, sync state, and the full projection snapshot;
+  docks, dock bindings, sync state, and the full projection snapshot;
+- `ChainDock` (`uvp.dock.v1`) is the static Dock registry projection
+  (`dkid`, `docHash`, from/to identities, each output's Hook DSL AST +
+  dependencies + atoms, registration provenance);
+- `ChainDockBinding` (`uvp.dockBinding.v1`) is derived from the selected dkid,
+  the `dock_link` payload file record, and poke evaluation: `binding_id`,
+  from/to identities, optional `selected_by` fact reference, optional
+  `pending` (a newer `dock_link` file patch has not been poked yet), and
+  per-output A/B windows + emission (`emitted_binding_id` when the fact came
+  from another binding). A `pending: true` row carries no live windows
+  (`a_window`/`b_window` omitted or null); non-pending rows require them. There is no payload hash/generation and no link
+  status field. Windows reference the fact that opened/closed them
+  (`ChainProvenance` on chain, `ChainDockFactRef` on cloud) plus an optional
+  `delay_seconds`; there is no wall-clock timestamp;
 - plan capability table DTOs carried on `ChainPlanProjection`;
 - plan admission DTOs for `/chain/plans/:planId/:planHash/admissions`;
 - plan trigger DTOs for `/chain/plans/:planId/:planHash/triggers`: each
   `ChainPlanTrigger` mirrors one order-trigger hook of the recorded plan
-  artifact (`orderTriggerKind` `trigger` or `dock`, plus hookId, stage/signal
-  identity), in artifact order;
+  artifact (`orderTriggerKind` `trigger`, plus hookId, stage/signal identity),
+  in artifact order; dock stages carry a hook flag, not a trigger kind;
 - the serialization rule that every bigint field is a decimal string
   (`toWire`/`Wire<T>`);
 - runtime guards, decoders, response-envelope parsers, and the typed
@@ -25,6 +38,15 @@ value types. It defines no chain runtime, storage, or business rules:
 `toWire` and types `/chain/*` responses with these DTOs; `@uvp-eth/uvp-client/chain-read`
 reads the same DTOs over HTTP and revives block numbers to bigint, and the used-car
 backend's projection store consumes that view. Indexer-internal projection types stay in chain-services.
+
+## Snapshot keys
+
+`ChainProjectionSnapshot` carries `stateMachineDocks` (static Dock registry by
+`dkid`) and `stateMachineDockBindings` (bindings by `binding_id`; one A order
+maps to one binding id). The old dynamic
+dock-instance keys (`stateMachineDocksByTargetOrder`,
+`stateMachineOrderDockChainDepth`), the old Link rows, and the two dock diagnostics
+(`unresolvedDockEventCount`, `unresolvedDockTargetDeploymentCount`) are gone.
 
 ## Gates
 

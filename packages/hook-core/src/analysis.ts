@@ -1,16 +1,14 @@
 import type { HookDependency, HookExpressionAst } from "./types.js";
 
 /**
- * 中立分析（uvp.zhixuAnalysis.v2）请求/响应类型：uvp-core 只做共享 DSL 校验与
+ * 中立分析（uvp.zhixuAnalysis.v3）请求/响应类型：uvp-core 只做共享 DSL 校验与
  * hook 解析，chain hook 装饰与 hook_plan shell 总装归链轨编译器。
  */
 
-export const ZHIXU_ANALYSIS_SCHEMA_VERSION = "uvp.zhixuAnalysis.v2" as const;
+export const ZHIXU_ANALYSIS_SCHEMA_VERSION = "uvp.zhixuAnalysis.v4" as const;
 
 export interface ZhixuAnalysisRequest {
   readonly definition: unknown;
-  readonly dockTargets?: unknown;
-  readonly allowUnresolved?: boolean;
 }
 
 export interface ZhixuAnalysisSendSignal {
@@ -26,11 +24,17 @@ export interface ZhixuAnalysisHook {
   readonly dependencies: readonly HookDependency[];
 }
 
+export interface ZhixuAnalysisExecutor {
+  readonly supplierType: "individual" | "organization" | "dock";
+  readonly supplierID?: string;
+  readonly selectableResource?: Readonly<Record<string, unknown>>;
+}
+
 export interface ZhixuAnalysisStage {
   readonly stageIdentifier: string;
   readonly source: string;
   readonly triggers: readonly string[];
-  readonly executor: unknown;
+  readonly executor: ZhixuAnalysisExecutor | null;
   readonly selectedStages: readonly string[];
   readonly fileWriters: readonly string[];
   readonly fileResources: Readonly<Record<string, unknown>>;
@@ -43,11 +47,7 @@ export interface ZhixuAnalysis {
   readonly zhixuName: string;
   readonly platform: unknown;
   readonly stages: readonly ZhixuAnalysisStage[];
-  readonly dockEntranceHookIds: readonly string[];
   readonly selectedStageBindings: readonly unknown[];
-  readonly dockInterface: unknown;
-  readonly dockRoutes: readonly unknown[];
-  readonly unresolvedDockRoutes: readonly unknown[];
   readonly signalCapabilities: readonly unknown[];
   readonly admissions: readonly unknown[];
 }

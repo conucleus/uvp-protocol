@@ -9,10 +9,18 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalJson } from "@uvp-eth/canonical-json";
 import {
+  extractHookDependencies,
+  parseHookExpression,
+  type HookDependency,
+  type HookExpressionAst,
+} from "@uvp-eth/hook-core";
+import {
   compileZhixuHookPlan,
   compileZhixuOnchainHookPlan,
   definitionUid,
+  dockIdentity,
   hashSolidityRegisterHooks,
+  keccak256Hex,
   toSolidityRegisterPlanArgs,
   type ExecutorCandidateInput,
   type SolidityRegisterHookArg,
@@ -20,13 +28,8 @@ import {
   type SolidityRegisterPlanArgs,
   type ZhixuDefinition,
 } from "../src/index.js";
-import { hookPlanPayloadForHash } from "../src/dock-commitments.js";
-import type { DockResolutionManifest, HexString } from "../src/types/index.js";
-import {
-  dockProductionTargetDefinition,
-  dockSourcingParentDefinition,
-  resolutionManifestFor,
-} from "../test/dock-demo.js";
+import { hookPlanPayloadForHash } from "../src/hook-plan/assemble.js";
+import type { HexString } from "../src/types/index.js";
 import { commitmentRegisterHooksArgs } from "../test/commitment-golden.js";
 
 interface UidVector {
@@ -58,7 +61,6 @@ interface CommitmentGoldenCase {
   readonly note: string;
   readonly input: {
     readonly definition: ZhixuDefinition;
-    readonly dockManifest?: DockResolutionManifest;
     readonly executorCandidates?: readonly ExecutorCandidateInput[];
     readonly hooks: readonly GoldenHook[];
   };
@@ -78,9 +80,56 @@ interface CommitmentGoldenCase {
     readonly runtimePlanHash: string;
     readonly hooksHash: string;
     readonly capabilitiesRoot: string;
-    readonly dockRoutesRoot: string;
-    readonly dockInterfaceRoot: string;
     readonly executorCandidatesRoot: string;
+  };
+}
+
+interface DockAtomVector {
+  readonly source: string;
+  readonly sourceId: HexString;
+  readonly stage: string;
+  readonly stageId: HexString;
+  readonly signal: string;
+  readonly signalId: HexString;
+  readonly targetOrderRelation: 0;
+}
+
+interface DockOutputVector {
+  readonly signal: string;
+  readonly signalId: HexString;
+  readonly sourceId: HexString;
+  readonly stageId: HexString;
+  readonly targetOrderRelation: 0;
+  readonly rawExpression: string;
+  readonly ast: HookExpressionAst;
+  readonly dependencies: readonly HookDependency[];
+  readonly atoms: readonly DockAtomVector[];
+}
+
+interface DockVector {
+  readonly name: string;
+  readonly note: string;
+  readonly input: {
+    readonly dock: unknown;
+    readonly from: ZhixuDefinition;
+    readonly to: ZhixuDefinition;
+  };
+  readonly expected: {
+    readonly dkid: string;
+    readonly docHash: HexString;
+    readonly from: {
+      readonly zhixu: string;
+      readonly source: string;
+      readonly sourceId: HexString;
+    };
+    readonly to: {
+      readonly zhixu: string;
+      readonly stage: string;
+      readonly stageId: HexString;
+      readonly source: string;
+      readonly sourceId: HexString;
+    };
+    readonly outputs: readonly DockOutputVector[];
   };
 }
 
@@ -147,11 +196,9 @@ function buildDefinitionCase(
   note: string,
   input: Omit<CommitmentGoldenCase["input"], "hooks">,
 ): CommitmentGoldenCase {
-  const manifest = input.dockManifest;
-  const plan = compileZhixuHookPlan(input.definition, manifest);
+  const plan = compileZhixuHookPlan(input.definition);
   const onchain = compileZhixuOnchainHookPlan(
     input.definition,
-    manifest,
     input.executorCandidates,
   );
   const args: SolidityRegisterPlanArgs = toSolidityRegisterPlanArgs(onchain);
@@ -173,53 +220,10 @@ function buildDefinitionCase(
       runtimePlanHash: args.planHash,
       hooksHash: args.hooksHash,
       capabilitiesRoot: args.capabilitiesRoot,
-      dockRoutesRoot: args.dockRoutesRoot,
-      dockInterfaceRoot: args.dockInterfaceRoot,
       executorCandidatesRoot: args.executorCandidatesRoot,
     },
   };
 }
-
-const demoManifest = resolutionManifestFor(dockProductionTargetDefinition());
-
-const demoZhixu: ZhixuDefinition = {
-  apiVersion: "uvp/v0",
-  kind: "Zhixu",
-  metadata: { name: "demo_zhixu" },
-  spec: {
-    platform: { type: "cloud" },
-    nucleation: { id: "core" },
-    stages: [
-      {
-        name: "assign",
-        source: "buyer",
-        selectedStages: ["main"],
-        receiveSignals: { PLACE: "buyer::assign.seed" },
-        sendSignals: [{ name: "executor_selected" }, { name: "seed" }],
-        executor: { supplierType: "organization", supplierID: "selector-org" },
-      },
-      {
-        name: "main",
-        source: "buyer",
-        receiveSignals: {
-          START: "buyer::assign.executor_selected",
-          TIMEOUT: "buyer::(assign.executor_selected +5s) & ~main.cmp",
-        },
-        sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
-        executor: {
-          supplierType: "zhixu",
-          zhixuExecutorConfig: {
-            target: { zhixu: demoManifest.definitions[0]!.zhixu },
-            interface: "production_service",
-            order: { mode: "new" },
-            inputMap: { START: "execute" },
-            signalMap: { str: "started", cmp: "completed" },
-          },
-        },
-      },
-    ],
-  },
-};
 
 const sharedKeyOrderZhixu: ZhixuDefinition = {
   apiVersion: "uvp/v0",
@@ -273,8 +277,7 @@ const triggerBirthZhixu: ZhixuDefinition = {
       {
         name: "birth",
         source: "fulfiller",
-        trigger: ["str"],
-        sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
+        sendSignals: [{ name: "str", trigger: true }, { name: "cmp" }, { name: "err" }],
         executor: { supplierType: "organization", supplierID: "fulfiller-exec" },
       },
     ],
@@ -347,8 +350,7 @@ const birthZhixu: ZhixuDefinition = {
       {
         name: "main",
         source: "buyer",
-        trigger: ["str"],
-        sendSignals: [{ name: "str" }, { name: "cmp" }],
+        sendSignals: [{ name: "str", trigger: true }, { name: "cmp" }],
         executor: { supplierType: "organization", supplierID: "birth-org" },
       },
       {
@@ -389,24 +391,6 @@ const uidVectors: readonly UidVector[] = [
 ];
 
 const cases: readonly CommitmentGoldenCase[] = [
-  buildDefinitionCase(
-    "friction_wheel_production_target",
-    "dock demo 目标定义（双具名接口发布方，无 zhixu 执行者）",
-    { definition: dockProductionTargetDefinition() },
-  ),
-  buildDefinitionCase(
-    "sourcing_parent_static_dock",
-    "dock demo 父定义：new 模式生产委托 + existing 模式既有事实引用各一条 route（dockRoutesRoot 非空叶）",
-    {
-      definition: dockSourcingParentDefinition(demoManifest.definitions[0]!.zhixu),
-      dockManifest: demoManifest,
-    },
-  ),
-  buildDefinitionCase(
-    "demo_zhixu_production_dock",
-    "onchain-hook-plan / hook-plan 基座定义：main 以 zhixu 执行器委托 production_service[new]（mode=new 出生锚 + selectedStages 绑定表非空）",
-    { definition: demoZhixu, dockManifest: demoManifest },
-  ),
   buildDefinitionCase(
     "candidates_blackbox_two_stage",
     "候选集黑盒双阶段基座（blockchain/eth 平台，无候选集输入）",
@@ -520,11 +504,162 @@ const registerHooksVectors: readonly RegisterHooksVector[] = [
   },
 ];
 
+const dockFromDefinition: ZhixuDefinition = {
+  apiVersion: "uvp/v0",
+  kind: "Zhixu",
+  metadata: { name: "atelier_production" },
+  spec: {
+    platform: { type: "blockchain", provider: "eth" },
+    nucleation: { id: "atelier-core" },
+    stages: [
+      {
+        name: "produce",
+        source: "atelier",
+        receiveSignals: { START: "atelier::produce.seed" },
+        sendSignals: [{ name: "str" }, { name: "err" }, { name: "seed" }],
+        executor: { supplierType: "organization", supplierID: "atelier-exec" },
+      },
+      {
+        name: "settle",
+        source: "atelier",
+        receiveSignals: { CLOSE: "atelier::settle.close" },
+        sendSignals: [{ name: "cmp" }, { name: "close" }],
+        executor: { supplierType: "organization", supplierID: "atelier-exec" },
+      },
+    ],
+  },
+};
+
+const dockToDefinition: ZhixuDefinition = {
+  apiVersion: "uvp/v0",
+  kind: "Zhixu",
+  metadata: { name: "acceptor_intake" },
+  spec: {
+    platform: { type: "blockchain", provider: "eth" },
+    nucleation: { id: "acceptor-core" },
+    stages: [
+      {
+        name: "accept",
+        source: "acceptor",
+        receiveSignals: { CHECK: "acceptor::accept.check" },
+        sendSignals: [{ name: "accepted" }, { name: "shipped" }, { name: "check" }],
+        executor: { supplierType: "dock" },
+      },
+      {
+        name: "gate",
+        source: "acceptor",
+        receiveSignals: { OPEN: "acceptor::gate.open" },
+        sendSignals: [{ name: "open" }],
+        executor: { supplierType: "organization", supplierID: "acceptor-exec" },
+      },
+    ],
+  },
+};
+
+function dockVector(
+  name: string,
+  note: string,
+  signalMap: Readonly<Record<string, string>>,
+): DockVector {
+  const fromUid = definitionUid(dockFromDefinition);
+  const toUid = definitionUid(dockToDefinition);
+  const dock = {
+    apiVersion: "uvp/v0",
+    kind: "Dock",
+    metadata: { name: "atelier_to_acceptor" },
+    spec: {
+      from: { zhixu: fromUid, source: "atelier" },
+      to: { zhixu: toUid, stage: "accept" },
+      signalMap,
+    },
+  };
+  const identity = dockIdentity(dock);
+  const parsedOf = (expression: string) => {
+    const ast = parseHookExpression(`atelier::${expression}`);
+    return { ast, dependencies: extractHookDependencies(ast) };
+  };
+  const atomsOf = (dependencies: readonly HookDependency[]): readonly DockAtomVector[] =>
+    [...new Set(dependencies.map((dependency) => dependency.signalName))]
+      .sort()
+      .map((atom) => {
+        const [stage, signal] = atom.split(".") as [string, string];
+        return {
+          source: "atelier",
+          sourceId: keccak256Hex("atelier"),
+          stage,
+          stageId: keccak256Hex(stage),
+          signal,
+          signalId: keccak256Hex(atom),
+          targetOrderRelation: 0 as const,
+        };
+      });
+  return {
+    name,
+    note,
+    input: {
+      dock,
+      from: dockFromDefinition,
+      to: dockToDefinition,
+    },
+    expected: {
+      dkid: identity.dkid,
+      docHash: identity.docHash,
+      from: {
+        zhixu: fromUid,
+        source: "atelier",
+        sourceId: keccak256Hex("atelier"),
+      },
+      to: {
+        zhixu: toUid,
+        stage: "accept",
+        stageId: keccak256Hex("accept"),
+        source: "acceptor",
+        sourceId: keccak256Hex("acceptor"),
+      },
+      outputs: Object.entries(signalMap)
+        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+        .map(([signal, expression]) => {
+          const parsed = parsedOf(expression);
+          return {
+            signal,
+            signalId: keccak256Hex(`accept.${signal}`),
+            sourceId: keccak256Hex("acceptor"),
+            stageId: keccak256Hex("accept"),
+            targetOrderRelation: 0 as const,
+            rawExpression: expression,
+            ast: parsed.ast,
+            dependencies: parsed.dependencies,
+            atoms: atomsOf(parsed.dependencies),
+          };
+        }),
+    },
+  };
+}
+
+const dockVectors: readonly DockVector[] = [
+  dockVector(
+    "dock_atom_and_conjunction",
+    "Dock ids + AST/dependencies 跨语言钉：单输出 AND 两原子 + 负向 atom",
+    { accepted: "produce.str & settle.cmp & ~produce.err" },
+  ),
+  dockVector(
+    "dock_multi_output_disjunction",
+    "同一 Dock 多输出与 OR/延时表达式：每输出自己的 signalId/AST/dependencies，原子集按码点序",
+    { accepted: "produce.str | settle.cmp", shipped: "produce.str & ~(produce.err +5s)" },
+  ),
+  dockVector(
+    "dock_atom_positive_delay",
+    "正向 +T：AST 为 delay，dependencies 出 positive+timer(delaySeconds)",
+    { accepted: "produce.str & (settle.cmp +5s)" },
+  ),
+];
+
 const fixture = {
-  schemaVersion: "uvp.commitmentGoldenVectors.v1",
+  schemaVersion: "uvp.commitmentGoldenVectors.v3",
   note: "承诺面（uid/planHash/hooksHash）跨语言金向量：TS compiler（链轨权威，generate:commitment-golden-vectors 生成）、Rust uvp-ir（derive_definition_uid 逐格消费 uid，preimages 两格经自身 canonicalize + 域分隔 keccak 复算）、Foundry CommitmentGoldenVectors.t.sol（按格重建 CompactHook[] 重算 hooksHash 并经 UVPStateMachine.planRuntimeHash 复算 runtimePlanHash；preimages 两格按域分隔 + keccak 复算）三方对同一份文件对拍。改本文件必须同跑三侧测试。",
   uidVectors,
   cases,
+  dockVectors,
   registerHooksVectors,
 };
 

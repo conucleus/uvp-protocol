@@ -15,83 +15,83 @@
     "artifactHash": "0x77739a90d37c6ebd5f1e1aba9d3c7f7591f4392e9fdd781ecd4ce8bf90743341"
   },
   "events": {
-    "OwnershipTransferred": {
-      "signature": "OwnershipTransferred(address,address)",
-      "topic": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
-    },
-    "DeploymentRegistered": {
-      "signature": "DeploymentRegistered(bytes32,address,bytes32,bytes32,uint64,string)",
-      "topic": "0x195bfb1346f47a6204b881331dd35f42cff65f72e29a4cb734439096d5a4f963"
+    "DeploymentActivated": {
+      "signature": "DeploymentActivated(bytes32,bytes32,bytes32,string)",
+      "topic": "0x6d34241898d03f000c7a1369fd2d9a6bf6f464ebfacf8865bbb9d7efc483c68b"
     },
     "DeploymentCanaryMarked": {
       "signature": "DeploymentCanaryMarked(bytes32,bytes32,string)",
       "topic": "0xfb08f40b1f7a84d2b3a142e167d8cad66dddacb8bf3460cee0d175b8a97c1dfc"
     },
-    "DeploymentActivated": {
-      "signature": "DeploymentActivated(bytes32,bytes32,bytes32,string)",
-      "topic": "0x6d34241898d03f000c7a1369fd2d9a6bf6f464ebfacf8865bbb9d7efc483c68b"
-    },
     "DeploymentDeprecated": {
       "signature": "DeploymentDeprecated(bytes32,bytes32,string)",
       "topic": "0x88ef895076c73550d7d82c1f8e8c0a12a8c7a142db88cec245422ab049efa90d"
     },
+    "DeploymentRegistered": {
+      "signature": "DeploymentRegistered(bytes32,address,bytes32,bytes32,uint64,string)",
+      "topic": "0x195bfb1346f47a6204b881331dd35f42cff65f72e29a4cb734439096d5a4f963"
+    },
     "DeploymentRetired": {
       "signature": "DeploymentRetired(bytes32,bytes32,string)",
       "topic": "0x20bd10c06edc495b8b8242ca42ed513ff2eb5a06621ddee6d240897908c434ea"
+    },
+    "OwnershipTransferred": {
+      "signature": "OwnershipTransferred(address,address)",
+      "topic": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
     }
   },
   "functions": {
-    "owner": {
-      "signature": "owner()",
-      "selector": "0x8da5cb5b"
-    },
-    "transferOwnership": {
-      "signature": "transferOwnership(address)",
-      "selector": "0xf2fde38b"
-    },
-    "registerDeployment": {
-      "signature": "registerDeployment(bytes32,address,bytes32,bytes32,uint64,string)",
-      "selector": "0x8b54cc4d"
-    },
-    "markCanary": {
-      "signature": "markCanary(bytes32,bytes32,string)",
-      "selector": "0x60926b0b"
-    },
     "activateDeployment": {
       "signature": "activateDeployment(bytes32,bytes32,string)",
       "selector": "0x472ff335"
-    },
-    "deprecateDeployment": {
-      "signature": "deprecateDeployment(bytes32,bytes32,string)",
-      "selector": "0xd7bba969"
-    },
-    "retireDeployment": {
-      "signature": "retireDeployment(bytes32,bytes32,string)",
-      "selector": "0xc89108c9"
     },
     "activeDeploymentId": {
       "signature": "activeDeploymentId()",
       "selector": "0xdfba66f0"
     },
-    "deploymentExists": {
-      "signature": "deploymentExists(bytes32)",
-      "selector": "0xbd6d32c5"
-    },
     "deploymentCount": {
       "signature": "deploymentCount()",
       "selector": "0x4c36f10d"
+    },
+    "deploymentExists": {
+      "signature": "deploymentExists(bytes32)",
+      "selector": "0xbd6d32c5"
     },
     "deploymentIdAt": {
       "signature": "deploymentIdAt(uint256)",
       "selector": "0xe2ed158f"
     },
-    "getDeployment": {
-      "signature": "getDeployment(bytes32)",
-      "selector": "0x8fc7bdc6"
+    "deprecateDeployment": {
+      "signature": "deprecateDeployment(bytes32,bytes32,string)",
+      "selector": "0xd7bba969"
     },
     "getActiveDeployment": {
       "signature": "getActiveDeployment()",
       "selector": "0xd4d74813"
+    },
+    "getDeployment": {
+      "signature": "getDeployment(bytes32)",
+      "selector": "0x8fc7bdc6"
+    },
+    "markCanary": {
+      "signature": "markCanary(bytes32,bytes32,string)",
+      "selector": "0x60926b0b"
+    },
+    "owner": {
+      "signature": "owner()",
+      "selector": "0x8da5cb5b"
+    },
+    "registerDeployment": {
+      "signature": "registerDeployment(bytes32,address,bytes32,bytes32,uint64,string)",
+      "selector": "0x8b54cc4d"
+    },
+    "retireDeployment": {
+      "signature": "retireDeployment(bytes32,bytes32,string)",
+      "selector": "0xc89108c9"
+    },
+    "transferOwnership": {
+      "signature": "transferOwnership(address)",
+      "selector": "0xf2fde38b"
     }
   }
 }

@@ -1,5 +1,4 @@
-import { validateDockCommitments, validateUnresolvedDockRouteDeclarations } from "../../dock-validation.js";
-import { planIdOf } from "../../dock-commitments.js";
+import { planIdOf } from "../../hook-plan/assemble.js";
 import { hashOnchainPlanPayload } from "../hash/plan.js";
 import { capabilitiesRootOf } from "../capabilities-root.js";
 import {
@@ -35,7 +34,7 @@ import {
 import {
   birthStageStaticExecutorIssues,
   declaredStageIdentifiers,
-  duplicateDockEntranceKeyIssues,
+  dockStageRouteIssues,
   silentOrderTriggerIssues,
   unmaterializableStageIssues,
   validateOnchainCompiledAdmissions,
@@ -55,7 +54,7 @@ import {
 
 /**
  * OnchainHookPlanArtifact 反序列化边界校验：封闭字段集、逐段形状/承诺
- * 校验编排与 planHash 重算；dock 承诺复用根 dock-validation.ts。
+ * 校验编排与 planHash 重算。
  */
 
 export class OnchainHookPlanArtifactValidationError extends Error {
@@ -79,11 +78,6 @@ const ONCHAIN_ARTIFACT_FIELDS: readonly string[] = [
   "triggers",
   "dependencyIndex",
   "executorRoutes",
-  "dockInterface",
-  "dockRoutes",
-  "unresolvedDockRoutes",
-  "dockRoutesRoot",
-  "dockInterfaceRoot",
   "capabilitiesRoot",
   "selectorBindings",
   "signalCapabilities",
@@ -146,32 +140,8 @@ export function validateOnchainHookPlanArtifact(
       );
     }
   }
-  if (!Array.isArray(value.dockRoutes)) {
-    issues.push("dockRoutes must be an array");
-  }
-  if (
-    value.unresolvedDockRoutes !== undefined &&
-    !Array.isArray(value.unresolvedDockRoutes)
-  ) {
-    issues.push("unresolvedDockRoutes must be an array when present");
-  }
-  expectHexHash(value.dockRoutesRoot, "dockRoutesRoot", issues);
-  expectHexHash(value.dockInterfaceRoot, "dockInterfaceRoot", issues);
   expectHexHash(value.capabilitiesRoot, "capabilitiesRoot", issues);
-  issues.push(...validateDockCommitments(value));
   issues.push(...capabilitiesRootCommitmentIssues(value));
-  if (Array.isArray(value.dockRoutes)) {
-    issues.push(...onchainDockTrackIssues(value.dockRoutes));
-  }
-  if (Array.isArray(value.unresolvedDockRoutes)) {
-    issues.push(
-      ...validateUnresolvedDockRouteDeclarations(
-        value.unresolvedDockRoutes,
-        "unresolvedDockRoutes",
-      ),
-      ...onchainUnresolvedRouteIssues(value.unresolvedDockRoutes),
-    );
-  }
 
   const compiledHooks = Array.isArray(value.compiledHooks)
     ? value.compiledHooks
@@ -254,14 +224,6 @@ export function validateOnchainHookPlanArtifact(
                 ? route.stageIdentifier
                 : undefined,
             ),
-          (Array.isArray(value.dockRoutes) ? value.dockRoutes : []).map(
-            (route) =>
-              isRecord(route) &&
-              isRecord(route.local) &&
-              typeof route.local.stageIdentifier === "string"
-                ? route.local.stageIdentifier
-                : undefined,
-          ),
           (selectorBindings ?? []).flatMap((binding) =>
             isRecord(binding)
               ? [
@@ -283,7 +245,9 @@ export function validateOnchainHookPlanArtifact(
     issues.push(
       ...birthStageStaticExecutorIssues(compiledHooks, executorRoutes ?? []),
     );
-    issues.push(...duplicateDockEntranceKeyIssues(compiledHooks));
+    issues.push(
+      ...dockStageRouteIssues(compiledHooks, executorRoutes ?? []),
+    );
     issues.push(...planDependencyCountIssues(compiledHooks as readonly OnchainCompiledHook[]));
     issues.push(...onchainPlanTriggerIssues(value));
   }
@@ -383,14 +347,6 @@ export function validateOnchainHookPlanArtifact(
         triggers: value.triggers,
         dependencyIndex: value.dependencyIndex,
         executorRoutes: value.executorRoutes,
-        dockInterface: value.dockInterface,
-        dockRoutes: value.dockRoutes,
-        ...(Array.isArray(value.unresolvedDockRoutes) &&
-        value.unresolvedDockRoutes.length > 0
-          ? { unresolvedDockRoutes: value.unresolvedDockRoutes }
-          : {}),
-        dockRoutesRoot: value.dockRoutesRoot,
-        dockInterfaceRoot: value.dockInterfaceRoot,
         capabilitiesRoot: value.capabilitiesRoot,
         selectorBindings: value.selectorBindings,
         signalCapabilities: value.signalCapabilities,
@@ -421,41 +377,6 @@ export function assertOnchainHookPlanArtifact(
   if (issues.length > 0) {
     throw new OnchainHookPlanArtifactValidationError(issues);
   }
-}
-
-function onchainDockTrackIssues(routes: readonly unknown[]): readonly string[] {
-  const issues: string[] = [];
-  for (const [index, route] of routes.entries()) {
-    if (!isRecord(route)) {
-      continue;
-    }
-    const stageIdentifier =
-      (isRecord(route.local) &&
-        typeof route.local.stageIdentifier === "string" &&
-        route.local.stageIdentifier) ||
-      `dockRoutes[${index}]`;
-    if (
-      route.orderMode === "new" &&
-      (Array.isArray(route.inputBindings) ? route.inputBindings.length : 0) !== 1
-    ) {
-      issues.push(
-        `DOCK_BINDING_COUNT_INVALID: dock route ${stageIdentifier} uses order mode "new" and must declare exactly one input binding (the birth anchor), found ` +
-          (Array.isArray(route.inputBindings) ? route.inputBindings.length : 0),
-      );
-    }
-    const target = route.target;
-    if (
-      !isRecord(target) ||
-      typeof target.zhixuUid !== "string" ||
-      target.zhixuUid.trim().length === 0
-    ) {
-      issues.push(
-        `dock route ${stageIdentifier} has no statically linked target block; ` +
-          "a dynamic (null) route must be carried in unresolvedDockRoutes (its route leaf is already frozen into dockRoutesRoot via the candidate-root target slot), never in dockRoutes",
-      );
-    }
-  }
-  return issues;
 }
 
 function capabilitiesRootCommitmentIssues(
@@ -629,29 +550,17 @@ function executorCandidateCommitmentIssues(
         `executor candidate stage ${stageLabel} carries an order-trigger hook; birth-stage executors are immutable and cannot be per-order patch targets`,
       );
     }
-  }
-  return issues;
-}
-
-function onchainUnresolvedRouteIssues(
-  routes: readonly unknown[] | undefined,
-): readonly string[] {
-  if (!Array.isArray(routes)) {
-    return [];
-  }
-  const issues: string[] = [];
-  for (const [index, route] of routes.entries()) {
-    if (!isRecord(route) || route.orderMode !== "new") {
-      continue;
-    }
-    const stageIdentifier =
-      (typeof route.stageIdentifier === "string" && route.stageIdentifier) ||
-      `unresolvedDockRoutes[${index}]`;
-    issues.push(
-      `UNRESOLVED_DOCK_MODE: unresolved dock route ${stageIdentifier} declares order mode "new"; ` +
-        "the chain terminal state has no dynamic consumer for new-mode routes — " +
-        'openDockedOrder recomputes the static target slot only and attachDockedOrder (the dynamic path) pins order mode "existing"',
+    const dockStage = compiledHooks.some(
+      (hook) =>
+        isRecord(hook) &&
+        hook.stageId === candidate.stageId &&
+        hook.dockExecutor === true,
     );
+    if (dockStage) {
+      issues.push(
+        `executor candidate stage ${stageLabel} is a dock stage; its executor is selected once through the stage executor patch (dkid), never as a plan candidate`,
+      );
+    }
   }
   return issues;
 }
@@ -678,12 +587,6 @@ function isPlanHashRecomputable(
     Array.isArray(value.admissions) &&
     Array.isArray(value.executorCandidates) &&
     isHexHash(value.executorCandidatesRoot) &&
-    Array.isArray(value.dockRoutes) &&
-    (value.unresolvedDockRoutes === undefined ||
-      Array.isArray(value.unresolvedDockRoutes)) &&
-    (value.dockInterface === null || isRecord(value.dockInterface)) &&
-    isHexHash(value.dockRoutesRoot) &&
-    isHexHash(value.dockInterfaceRoot) &&
     isHexHash(value.capabilitiesRoot) &&
     isHexHash(value.planHash)
   );
@@ -716,5 +619,3 @@ function isPlatform(value: unknown): value is ZhixuPlatform {
         Object.values(value.params).every((item) => typeof item === "string")))
   );
 }
-
-export { onchainDockTrackIssues, onchainUnresolvedRouteIssues };

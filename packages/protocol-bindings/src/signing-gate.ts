@@ -17,7 +17,7 @@
 // - connectedAddress（浏览器钱包当前地址）与签名者一致（可选，兼容
 //   executor-kit 私钥路径）。
 
-/** 签名者字段在 message 中的键名；默认 "submitter"，dock permit 类信封为 "selector"。 */
+/** 签名者字段在 message 中的键名；默认 "submitter"，selector 类信封为 "selector"。 */
 export type TypedDataSignerField = "submitter" | "selector" | (string & {});
 
 /** 签名前校验的预期集合；除 primaryType/domainName/submitter 外均可选。 */

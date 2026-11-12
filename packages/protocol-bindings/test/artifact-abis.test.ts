@@ -23,7 +23,6 @@ import {
   buildCompactHookFlags,
   FILE_RESOURCE_MODULE_ABI,
   HOOK_FLAG_EMIT_READY,
-  HOOK_FLAG_ORDER_TRIGGER_DOCK,
   HOOK_FLAG_ORDER_TRIGGER_MINT,
   SIGNAL_SUBMITTED_ABI,
   SIGNAL_SUBMITTED_TOPIC,
@@ -55,16 +54,11 @@ const fileResourceModuleArtifactAvailable = existsSync(
 describe("generated artifact ABI bindings", () => {
   it("keeps CompactHook flag bits pinned to the contract constants", () => {
     assert.equal(HOOK_FLAG_ORDER_TRIGGER_MINT, 1);
-    assert.equal(HOOK_FLAG_ORDER_TRIGGER_DOCK, 2);
     assert.equal(HOOK_FLAG_EMIT_READY, 4);
-    // 编译器产物恒为 trigger|EMIT_READY：trigger=5 / dock=6。
+    // 编译器产物恒为 trigger|EMIT_READY：trigger=5。
     assert.equal(
       buildCompactHookFlags({ orderTriggerKind: "trigger", emitReady: true }),
       5,
-    );
-    assert.equal(
-      buildCompactHookFlags({ orderTriggerKind: "dock", emitReady: true }),
-      6,
     );
     assert.equal(buildCompactHookFlags({ emitReady: true }), 4);
     assert.equal(buildCompactHookFlags(), 0);

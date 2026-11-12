@@ -3,9 +3,9 @@ pragma solidity ^0.8.24;
 
 import {UVPStateMachine} from "../src/UVPStateMachine.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
-import {UVPDockingModule} from "../src/UVPDockingModule.sol";
 import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
+import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
@@ -47,15 +47,15 @@ contract Handler {
     bytes32 private constant ROLE_BOOTSTRAP = bytes32(uint256(0xa001));
     bytes32 private constant AUTH_METADATA_HASH = bytes32(uint256(0xa002));
     address private constant ORDER_CREATOR = address(uint160(0xc0de));
-    bytes32 private constant EMPTY_DOCK_ROOT = keccak256("");
+    bytes32 private constant EMPTY_MERKLE_ROOT = keccak256("");
     uint8 private constant FLAG_ORDER_TRIGGER_MINT = 1;
     uint8 private constant FLAG_EMIT_READY = 4;
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.16");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.17");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
     );
     bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
@@ -88,11 +88,11 @@ contract Handler {
         UVPStagePatchModule stagePatch = new UVPStagePatchModule(address(machine));
         UVPDerivedSignalModule derivedSignal = new UVPDerivedSignalModule(address(machine));
         UVPPlanMetadataModule planMetadata = new UVPPlanMetadataModule(address(machine));
-        UVPDockingModule docking = new UVPDockingModule(address(machine), address(planMetadata));
+        UVPDockRegistry dockRegistry = new UVPDockRegistry(address(machine));
         UVPOrderLinkModule orderLink = new UVPOrderLinkModule(address(machine));
         machine.setStagePatchModule(address(stagePatch));
         machine.setDerivedSignalModule(address(derivedSignal));
-        machine.setDockingModule(address(docking));
+        machine.setDockRegistry(address(dockRegistry));
         machine.setPlanMetadataModule(address(planMetadata));
         machine.setOrderLinkModule(address(orderLink));
         machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
@@ -270,10 +270,8 @@ contract Handler {
         UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
             publisher: publisher,
             hooksHash: keccak256(abi.encode(hooks)),
-            capabilitiesRoot: EMPTY_DOCK_ROOT,
-            dockRoutesRoot: EMPTY_DOCK_ROOT,
-            dockInterfaceRoot: EMPTY_DOCK_ROOT,
-            executorCandidatesRoot: EMPTY_DOCK_ROOT,
+            capabilitiesRoot: EMPTY_MERKLE_ROOT,
+            executorCandidatesRoot: EMPTY_MERKLE_ROOT,
             birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: type(uint256).max
         });
@@ -283,8 +281,6 @@ contract Handler {
                 commit.publisher,
                 commit.hooksHash,
                 commit.capabilitiesRoot,
-                commit.dockRoutesRoot,
-                commit.dockInterfaceRoot,
                 commit.executorCandidatesRoot,
                 commit.birthAuthorizer,
                 commit.deadline

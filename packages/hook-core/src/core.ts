@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import {
+  analyzeDock,
   compile,
   evaluateHook,
   parseHook,
@@ -136,6 +137,16 @@ export function analyzeWithUvpCore(
 ): ZhixuAnalysis {
   ensureCompatible();
   return compile({ ...request, target: "analyze" }) as ZhixuAnalysis;
+}
+
+export interface AnalyzeDockRequest {
+  readonly dock: unknown;
+  readonly published: readonly unknown[];
+}
+
+export function analyzeDockWithUvpCore(request: AnalyzeDockRequest): unknown {
+  ensureCompatible();
+  return analyzeDock(request);
 }
 
 export function evaluateHookWithUvpCore(request: unknown): unknown {

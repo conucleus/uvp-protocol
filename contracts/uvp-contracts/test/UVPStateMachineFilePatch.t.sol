@@ -4,15 +4,15 @@ pragma solidity ^0.8.24;
 import {UVPStateMachine} from "../src/UVPStateMachine.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
-import {UVPDockingModule} from "../src/UVPDockingModule.sol";
 import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
+import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 import {FileOp, FileOpKind, FilePatch} from "../src/interfaces/IUVPFileResourceModule.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
-import {DockMerkle} from "../src/libraries/DockMerkle.sol";
+import {MerkleCommitment} from "../src/libraries/MerkleCommitment.sol";
 import {emptyFilePatch} from "./FilePatchTestHelpers.sol";
 
 /// Core 0.16 file-patch entry: splice forwarding, duplicate-signal absorption,
@@ -70,7 +70,7 @@ contract UVPStateMachineFilePatchTest {
     uint8 private constant FLAG_EMIT_READY = 4;
 
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
     );
     bytes32 private constant SIGNAL_SUBMISSION_TYPEHASH = keccak256(
         "UVPStateMachineSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline,bytes32 filesDigest)"
@@ -330,12 +330,12 @@ contract UVPStateMachineFilePatchTest {
         UVPStagePatchModule newStagePatch = new UVPStagePatchModule(address(newMachine));
         UVPDerivedSignalModule newDerivedSignal = new UVPDerivedSignalModule(address(newMachine));
         UVPPlanMetadataModule newPlanMetadata = new UVPPlanMetadataModule(address(newMachine));
-        UVPDockingModule newDocking = new UVPDockingModule(address(newMachine), address(newPlanMetadata));
+        UVPDockRegistry newDockRegistry = new UVPDockRegistry(address(newMachine));
         UVPOrderLinkModule newOrderLink = new UVPOrderLinkModule(address(newMachine));
         UVPFileResourceModule newFileModule = new UVPFileResourceModule(address(newMachine));
         newMachine.setStagePatchModule(address(newStagePatch));
         newMachine.setDerivedSignalModule(address(newDerivedSignal));
-        newMachine.setDockingModule(address(newDocking));
+        newMachine.setDockRegistry(address(newDockRegistry));
         newMachine.setPlanMetadataModule(address(newPlanMetadata));
         newMachine.setOrderLinkModule(address(newOrderLink));
         newMachine.setLens(address(new UVPStateMachineLens(address(newMachine))));
@@ -374,10 +374,8 @@ contract UVPStateMachineFilePatchTest {
         UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
             publisher: vm.addr(PUBLISHER_PRIVATE_KEY),
             hooksHash: keccak256(abi.encode(hooks)),
-            capabilitiesRoot: DockMerkle.root(leaves),
-            dockRoutesRoot: DockMerkle.EMPTY_ROOT,
-            dockInterfaceRoot: DockMerkle.EMPTY_ROOT,
-            executorCandidatesRoot: DockMerkle.root(candidateLeaves),
+            capabilitiesRoot: MerkleCommitment.root(leaves),
+            executorCandidatesRoot: MerkleCommitment.root(candidateLeaves),
             birthAuthorizer: birthSubmitter,
             deadline: block.timestamp + 1 hours
         });
@@ -391,8 +389,6 @@ contract UVPStateMachineFilePatchTest {
                         commit.publisher,
                         commit.hooksHash,
                         commit.capabilitiesRoot,
-                        commit.dockRoutesRoot,
-                        commit.dockInterfaceRoot,
                         commit.executorCandidatesRoot,
                         commit.birthAuthorizer,
                         commit.deadline

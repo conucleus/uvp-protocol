@@ -3,15 +3,9 @@ pragma solidity ^0.8.24;
 
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
 import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
-import {DockMerkle} from "./libraries/DockMerkle.sol";
+import {MerkleCommitment} from "./libraries/MerkleCommitment.sol";
 
 contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
-    struct PlanMetadata {
-        bytes32 capabilitiesRoot;
-        bytes32 dockRoutesRoot;
-        bytes32 dockInterfaceRoot;
-    }
-
     error PlanMetadataAlreadyFinalized(bytes32 planId);
     error UnauthorizedStateMachine(address caller);
     error UnknownPlan();
@@ -23,32 +17,23 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
 
     bytes32 private constant _DOMAIN_SIGNAL_CAPABILITY = keccak256("UVP_SIGNAL_CAPABILITY_V1");
     bytes32 private constant _DOMAIN_SELECTOR_BINDING = keccak256("UVP_SELECTOR_BINDING_V1");
-    bytes32 private constant _DOMAIN_DOCK_INTERFACE = keccak256("UVP_DOCK_INTERFACE_V2");
     bytes32 private constant _DOMAIN_FILE_WRITER = keccak256("UVP_FILE_WRITER_V1");
 
-    mapping(bytes32 planId => PlanMetadata metadata) private _metadata;
+    mapping(bytes32 planId => bytes32 capabilitiesRoot) private _capabilitiesRoots;
     mapping(bytes32 planId => bool finalized) public planMetadataFinalized;
 
     constructor(address stateMachineAddress) {
         stateMachine = IUVPStateMachineCore(stateMachineAddress);
     }
 
-    function finalizePlanMetadata(
-        bytes32 planId,
-        bytes32 newCapabilitiesRoot,
-        bytes32 routesRoot,
-        bytes32 interfaceRoot
-    ) external {
+    function finalizePlanMetadata(bytes32 planId, bytes32 newCapabilitiesRoot) external {
         if (msg.sender != address(stateMachine)) {
             revert UnauthorizedStateMachine(msg.sender);
         }
         if (planMetadataFinalized[planId]) {
             revert PlanMetadataAlreadyFinalized(planId);
         }
-        PlanMetadata storage metadata = _metadata[planId];
-        metadata.capabilitiesRoot = newCapabilitiesRoot;
-        metadata.dockRoutesRoot = routesRoot;
-        metadata.dockInterfaceRoot = interfaceRoot;
+        _capabilitiesRoots[planId] = newCapabilitiesRoot;
         planMetadataFinalized[planId] = true;
     }
 
@@ -70,50 +55,12 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
 
     function capabilitiesRoot(bytes32 planId) external view returns (bytes32) {
         _requireKnownPlan(planId);
-        return _metadata[planId].capabilitiesRoot;
-    }
-
-    function dockRoutesRoot(bytes32 planId) external view returns (bytes32) {
-        _requireKnownPlan(planId);
-        return _metadata[planId].dockRoutesRoot;
-    }
-
-    function dockInterfaceRoot(bytes32 planId) external view returns (bytes32) {
-        _requireKnownPlan(planId);
-        return _metadata[planId].dockInterfaceRoot;
+        return _capabilitiesRoots[planId];
     }
 
     function hasCapabilityVocabulary(bytes32 planId) external view returns (bool) {
         _requireKnownPlan(planId);
-        return _metadata[planId].capabilitiesRoot != DockMerkle.EMPTY_ROOT;
-    }
-
-    function verifyDockRoute(bytes32 planId, bytes32 leaf, bytes32[] calldata proof) external view returns (bool) {
-        _requireKnownPlan(planId);
-        return DockMerkle.verify(_metadata[planId].dockRoutesRoot, leaf, proof);
-    }
-
-    function verifyDockInterfacePort(
-        bytes32 planId,
-        bytes32 definitionUidId,
-        bytes32 interfaceNameId,
-        uint8 orderModesWord,
-        bytes32 inputsRoot,
-        bytes32 outputsRoot,
-        bytes32[] calldata proof
-    ) external view returns (bool) {
-        _requireKnownPlan(planId);
-        bytes32 interfaceLeaf = keccak256(
-            abi.encode(
-                _DOMAIN_DOCK_INTERFACE,
-                definitionUidId,
-                interfaceNameId,
-                uint256(orderModesWord),
-                inputsRoot,
-                outputsRoot
-            )
-        );
-        return DockMerkle.verify(_metadata[planId].dockInterfaceRoot, interfaceLeaf, proof);
+        return _capabilitiesRoots[planId] != MerkleCommitment.EMPTY_ROOT;
     }
 
     function verifySignalCapability(
@@ -126,7 +73,7 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     ) external view returns (bool) {
         _requireKnownPlan(planId);
         bytes32 leaf = signalCapabilityLeaf(stageId, targetSourceId, signalId, relation);
-        return DockMerkle.verify(_metadata[planId].capabilitiesRoot, leaf, proof);
+        return MerkleCommitment.verify(_capabilitiesRoots[planId], leaf, proof);
     }
 
     function verifyStageSelectorBinding(
@@ -137,7 +84,7 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     ) external view returns (bool) {
         _requireKnownPlan(planId);
         bytes32 leaf = selectorBindingLeaf(selectorStageId, targetStageId);
-        return DockMerkle.verify(_metadata[planId].capabilitiesRoot, leaf, proof);
+        return MerkleCommitment.verify(_capabilitiesRoots[planId], leaf, proof);
     }
 
     function verifyFileWriter(bytes32 planId, bytes32 targetStageId, bytes32 writerStageId, bytes32[] calldata proof)
@@ -147,7 +94,7 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     {
         _requireKnownPlan(planId);
         bytes32 leaf = fileWriterLeaf(targetStageId, writerStageId);
-        return DockMerkle.verify(_metadata[planId].capabilitiesRoot, leaf, proof);
+        return MerkleCommitment.verify(_capabilitiesRoots[planId], leaf, proof);
     }
 
     function _requireKnownPlan(bytes32 planId) private view {

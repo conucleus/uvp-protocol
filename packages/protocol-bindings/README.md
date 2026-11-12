@@ -14,7 +14,9 @@ pnpm --filter @uvp-eth/protocol-bindings build
 ## Boundary
 
 - Exposes core and module ABI constants (`UVP_STATE_MACHINE_ARTIFACT_ABI`,
-  `STATE_MACHINE_ABI`, `FILE_RESOURCE_MODULE_ABI`, module call surfaces),
+  `STATE_MACHINE_ABI`, `FILE_RESOURCE_MODULE_ABI`, `DOCK_REGISTRY_ABI`,
+  module call surfaces — including the stage-patch dock selection/binding poke/output
+  events),
   stage executor patch typed-data
   helpers, `UVPZhixuRegistry/1` registry typed data
   (`ZhixuRecord`/`IdentityClaim` schema, builders, type hashes),
@@ -37,12 +39,13 @@ pnpm --filter @uvp-eth/protocol-bindings build
 
 ## Trigger Birth Bindings
 
-- `OrderTriggerKind` is `"none" | "trigger" | "dock"`.
+- `OrderTriggerKind` is `"none" | "trigger"`.
   `buildCompactHookFlags` folds it into the compact-hook flag word:
   `"trigger"` → `HOOK_FLAG_ORDER_TRIGGER_MINT` (the MINT bit is reused for
-  trigger signals), `"dock"` → `HOOK_FLAG_ORDER_TRIGGER_DOCK`, plus
-  `HOOK_FLAG_EMIT_READY` when the hook must emit ready. Flags are committed
-  through the plan's `hooksHash`; they are not an ABI field.
+  trigger signals), plus `HOOK_FLAG_EMIT_READY` when the hook must emit ready.
+  Dock stages are not an order-trigger kind: the compiler marks their hooks
+  with `HOOK_FLAG_DOCK_EXECUTOR`. Flags are committed through the plan's
+  `hooksHash`; they are not an ABI field.
 - `buildTriggerOrderFromOutsideTypedData` builds
   `UVPStateMachineTriggerOrderFromOutside` typed data under the product-submit
   domain (`UVPStateMachine`, version `0.16`). `triggerHookId` +
@@ -53,12 +56,31 @@ pnpm --filter @uvp-eth/protocol-bindings build
   contract `birthAuthorizer` direct entry, which carries no signature.
 - `deriveTriggerOrderId(planId, sourceId, signalId, payloadHash)` mirrors the
   on-chain `triggerOrderIdFor`: `keccak256(abi.encode(planId, sourceId,
-  signalId, payloadHash))` with the dock-order namespace bit cleared.
-- The trigger-birth surface keeps the contract ABI unchanged: the
-  state-machine ABI fixture stays v0.18 and the linked-library fixture
-  `uvp-plan-registration.v0.5.json` keeps `abiVersion 0.5` with refreshed
-  hashes. `SignalAdmissionRejected` and `DuplicateBirthChannelKey` keep their
-  existing signatures.
+  signalId, payloadHash))` with the reserved top namespace bit cleared.
+- The trigger-birth surface keeps the contract ABI aligned with the current
+  batch: the state-machine fixture is `uvp-state-machine.v0.19.json` and the
+  linked-library fixture is `uvp-plan-registration.v0.6.json`.
+  `SignalAdmissionRejected` and `DuplicateBirthChannelKey` keep their existing
+  signatures.
+
+## Dock Write Surface
+
+- `DOCK_REGISTRY_ABI` / `DOCK_REGISTRY_CONTRACT_NAME` pin the static
+  `UVPDockRegistry` artifact; `registerDock` stores from/to plan+source+stage,
+  `docHash`, per-output `WindowInstruction[]` (op Signal/Not/And/Or/Delay),
+  atoms, and per-atom/per-output capability proofs.
+- `buildRegisterDockCall` and `buildRegisterDockCallFromArtifact` encode the
+  registration call; missing per-atom/per-output proofs are derived from the
+  plan capability tables (single-source leaf/proof helpers above).
+- `selectStageDockExecutor` / `For` builders select a dkid once;
+  `buildStageDockExecutorSelectionTypedData` builds the selector EIP-712
+  payload (`UVPStagePatchModule`, version `0.4`), and
+  `recoverStageDockExecutorSelectionSigner` recovers it.
+- `buildPokeDockBindingCall` encodes `pokeDockBinding` (payload content, A
+  order id, per-output capability proofs); `dockBindingId` mirrors the
+  contract binding-id preimage (7 words, no payload hash).
+- `DOCK_PAYLOAD_FILE_KEY` / `DOCK_BINDING_ID_DOMAIN` are the contract
+  constants; `STAGE_PATCH_MODULE_ABI` carries the binding/poke/output events.
 
 ## Capability Tree Helpers
 

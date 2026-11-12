@@ -12,11 +12,11 @@ contract BirthAuthorizerForwarder {
     fallback() external {
         (bool ok, bytes memory data) = stateMachine.call(msg.data);
         if (!ok) {
-            assembly {
+            assembly ("memory-safe") {
                 revert(add(data, 0x20), mload(data))
             }
         }
-        assembly {
+        assembly ("memory-safe") {
             return(add(data, 0x20), mload(data))
         }
     }

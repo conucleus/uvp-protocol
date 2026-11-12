@@ -1,21 +1,7 @@
 import assert from "node:assert/strict";
-import {
-  dockDemoResolutionManifest,
-  dockDemoTargetUid,
-  dockProductionTargetDefinition,
-} from "./dock-demo.js";
-import {
-  EMPTY_MERKLE_ROOT,
-  definitionUid,
-  verifyMerkleProof,
-  dockCandidateLeaf,
-  dockRouteId,
-  merkleRoot,
-  routeHash,
-  stageKey,
-  ZERO_WORD,
-} from "../src/dock.js";
 import test from "node:test";
+import { EMPTY_MERKLE_ROOT, verifyMerkleProof } from "../src/merkle.js";
+import { definitionUid } from "../src/identity.js";
 import { canonicalJson } from "@uvp-eth/canonical-json";
 import {
   assertOnchainHookPlanArtifact,
@@ -35,7 +21,7 @@ import {
   compareCanonicalKey,
   HookPlanCompilationError,
 } from "../src/hook-plan.js";
-import { hookPlanHashOf } from "../src/dock-commitments.js";
+import { hookPlanHashOf } from "../src/hook-plan/assemble.js";
 import { compileOnchainHookPlan } from "../src/onchain/compile.js";
 import { hashOnchainPlanPayload } from "../src/onchain/hash/plan.js";
 import {
@@ -62,9 +48,6 @@ import {
   commitmentRegisterHooksArgs,
   commitmentRegisterHooksVector,
 } from "./commitment-golden.js";
-
-const demoManifest = dockDemoResolutionManifest();
-const goldenDemo = commitmentGoldenCase("demo_zhixu_production_dock");
 
 function resign<A extends { planHash: string }>(artifact: A): A {
   return {
@@ -111,18 +94,6 @@ function rebuildDependencyIndex(
   );
 }
 
-function compileZhixuHookPlanWithManifest(
-  definition: ZhixuDefinition,
-): ReturnType<typeof compileZhixuHookPlan> {
-  return compileZhixuHookPlan(definition, demoManifest);
-}
-
-function compileZhixuOnchainHookPlanWithManifest(
-  definition: ZhixuDefinition,
-): ReturnType<typeof compileZhixuOnchainHookPlan> {
-  return compileZhixuOnchainHookPlan(definition, demoManifest);
-}
-
 const baseZhixu: ZhixuDefinition = {
   apiVersion: "uvp/v0",
   kind: "Zhixu",
@@ -159,33 +130,27 @@ const baseZhixu: ZhixuDefinition = {
         },
         sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
         executor: {
-          supplierType: "zhixu",
-          zhixuExecutorConfig: {
-            target: { zhixu: dockDemoTargetUid() },
-            interface: "production_service",
-            order: { mode: "new" },
-            inputMap: { START: "execute" },
-            signalMap: { str: "started", cmp: "completed" },
-          },
+          supplierType: "organization",
+          supplierID: "work-org",
         },
       }],
   },
 };
 
 test("compiles a stable compact on-chain HookPlan artifact", () => {
-  const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  const sourcePlan = compileZhixuHookPlan(baseZhixu);
   const onchain = compileOnchainHookPlan(sourcePlan);
-  const again = compileZhixuOnchainHookPlan(baseZhixu, demoManifest);
+  const again = compileZhixuOnchainHookPlan(baseZhixu);
 
   assert.deepEqual(onchain, again);
-  assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v5");
+  assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v7");
   assert.equal(onchain.planId, sourcePlan.planId);
   assert.deepEqual(onchain.platform, sourcePlan.platform);
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
-  assert.equal(onchain.planHash, goldenDemo.expected.onchainPlanHash);
+  const { planHash: _onchainPlanHash, ...onchainPayload } = onchain;
+  assert.equal(onchain.planHash, hashOnchainPlanPayload(onchainPayload));
   assert.deepEqual(onchain.executorCandidates, []);
   assert.equal(onchain.executorCandidatesRoot, EMPTY_MERKLE_ROOT);
-  assert.equal(onchain.capabilitiesRoot, goldenDemo.expected.capabilitiesRoot);
   assert.equal(
     onchain.capabilitiesRoot,
     capabilitiesRootOf(
@@ -233,10 +198,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
       ["main", "buyer", "main.cmp", "current"],
     ],
   );
-  assert.deepEqual(
-    onchain.compiledHooks.map((hook) => hook.hookId),
-    goldenDemo.input.hooks.map((hook) => hook.hookId),
-  );
+  assert.equal(onchain.compiledHooks.length, 3);
   assert.equal(
     onchain.compiledHooks[1]?.hookId,
     keccak256Hex("main#START"),
@@ -263,7 +225,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
 });
 
 test("compiles Hook AST nodes to stable on-chain instruction arrays", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
   const timeoutHook = onchain.compiledHooks.find(
     (hook) => hook.hookName === "TIMEOUT",
   );
@@ -322,7 +284,7 @@ test("compiles Hook AST nodes to stable on-chain instruction arrays", () => {
     },
   };
   const orHook = compileOnchainHookPlan(
-    compileZhixuHookPlan(orZhixu, demoManifest),
+    compileZhixuHookPlan(orZhixu),
   ).compiledHooks.find((hook) => hook.hookName === "ALT");
 
   assert.deepEqual(
@@ -333,7 +295,7 @@ test("compiles Hook AST nodes to stable on-chain instruction arrays", () => {
 });
 
 test("builds a stable on-chain dependency index and route references", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
 
   assert.deepEqual(onchain.dependencyIndex, {
     "0x25414fc8fc1bb291d8a071f2578468f9e877eb0d5a9feca914c77e8371f87d2f": [
@@ -350,11 +312,15 @@ test("builds a stable on-chain dependency index and route references", () => {
 
   assert.deepEqual(
     onchain.executorRoutes.map((route) => route.routeId),
-    ["0x35f6e55806e8018d555e976995705fa96f202a0a8499a801846c3d0c8d83c1e4"],
+    [
+      "0x35f6e55806e8018d555e976995705fa96f202a0a8499a801846c3d0c8d83c1e4",
+      "0xfa7857664e818ab16d79e0890e6b5fbf7c53c02c666c2b19329fe7942cbc443e",
+    ],
   );
   assert.equal(
-    onchain.compiledHooks.find((hook) => hook.hookName === "START")?.routeRef,
-    undefined,
+    onchain.compiledHooks.find((hook) => hook.hookName === "START")?.routeRef
+      ?.routeId,
+    "0xfa7857664e818ab16d79e0890e6b5fbf7c53c02c666c2b19329fe7942cbc443e",
   );
 });
 
@@ -381,7 +347,7 @@ test("dependencyIndex hookIds follow calldata order, not keccak order (oracle pa
         }],
     },
   };
-  const onchain = compileZhixuOnchainHookPlanWithManifest(zhixu);
+  const onchain = compileZhixuOnchainHookPlan(zhixu);
   const seedKey = onchainSignalKey(
     onchainSourceId("buyer"),
     onchainSignalId("stage.seed"),
@@ -422,7 +388,7 @@ test("dependencyIndex hookIds follow calldata order, not keccak order (oracle pa
 });
 
 test("rejects a repinned capabilitiesRoot that drifts from the capability tables", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
 
   const { planHash: _storedHash, ...payload } = onchain;
   const tampered = {
@@ -466,8 +432,8 @@ test("compiles fileWriters into artifact leaves and the capabilities root", () =
       ),
     },
   };
-  const without = compileZhixuOnchainHookPlan(baseZhixu, demoManifest);
-  const withWriters = compileZhixuOnchainHookPlan(withFileWriters, demoManifest);
+  const without = compileZhixuOnchainHookPlan(baseZhixu);
+  const withWriters = compileZhixuOnchainHookPlan(withFileWriters);
 
   assert.deepEqual(without.stageFileWriters, []);
   const [binding] = withWriters.stageFileWriters;
@@ -531,10 +497,10 @@ test("compiles fileWriters into artifact leaves and the capabilities root", () =
 });
 
 test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
   const args = toSolidityRegisterPlanArgs(onchain);
 
-  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v5");
+  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v7");
   assert.equal(args.sourcePlanId, onchain.planId);
   const { planHash: _storedPlanHash, ...artifactPayload } = onchain;
   assert.equal(args.artifactHash, hashOnchainPlanPayload(artifactPayload));
@@ -549,10 +515,8 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
   assert.equal(args.dependencyIndex.length, 3);
   assert.deepEqual(
     args.executorRoutes.map((route) => route.executorId),
-    ["selector-org"],
+    ["selector-org", "work-org"],
   );
-  assert.match(args.dockRoutesRoot, /^0x[0-9a-f]{64}$/);
-  assert.notEqual(args.dockRoutesRoot, EMPTY_MERKLE_ROOT);
   assert.deepEqual(args.selectorBindings, [
     {
       selectorStageId: keccak256Hex("assign"),
@@ -566,7 +530,7 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
 });
 
 test("includes selector bindings in on-chain plan hash", () => {
-  const withBinding = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  const withBinding = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
   const withoutSelectedStages: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
@@ -578,7 +542,7 @@ test("includes selector bindings in on-chain plan hash", () => {
     },
   };
   const withoutBinding = compileOnchainHookPlan(
-    compileZhixuHookPlan(withoutSelectedStages, demoManifest),
+    compileZhixuHookPlan(withoutSelectedStages),
   );
 
   assert.deepEqual(withoutBinding.selectorBindings, []);
@@ -587,7 +551,7 @@ test("includes selector bindings in on-chain plan hash", () => {
 
 test("capability tables feed the capabilitiesRoot and the runtime plan hash", () => {
   const withBinding = toSolidityRegisterPlanArgs(
-    compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest)),
+    compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu)),
   );
   const withoutBinding = toSolidityRegisterPlanArgs(
     compileOnchainHookPlan(
@@ -602,7 +566,6 @@ test("capability tables feed the capabilitiesRoot and the runtime plan hash", ()
             })),
           },
         },
-        demoManifest,
       ),
     ),
   );
@@ -675,7 +638,7 @@ test("hooksHash frozen vector pins the zero-word instruction fill cross-language
 test("commitment golden vectors pin uid/planHash/hooksHash from the shared fixture", () => {
   const vectors = commitmentGoldenVectors();
   assert.equal(vectors.uidVectors.length, 1);
-  assert.equal(vectors.cases.length, 10);
+  assert.equal(vectors.cases.length, 7);
   assert.equal(vectors.registerHooksVectors.length, 1);
 
   for (const vector of vectors.uidVectors) {
@@ -687,11 +650,10 @@ test("commitment golden vectors pin uid/planHash/hooksHash from the shared fixtu
   }
 
   for (const golden of vectors.cases) {
-    const { definition, dockManifest, executorCandidates } = golden.input;
-    const plan = compileZhixuHookPlan(definition, dockManifest);
+    const { definition, executorCandidates } = golden.input;
+    const plan = compileZhixuHookPlan(definition);
     const onchain = compileZhixuOnchainHookPlan(
       definition,
-      dockManifest,
       executorCandidates,
     );
     const args = toSolidityRegisterPlanArgs(onchain);
@@ -702,8 +664,6 @@ test("commitment golden vectors pin uid/planHash/hooksHash from the shared fixtu
     assert.equal(args.planHash, golden.expected.runtimePlanHash, `${golden.name}: runtime planHash`);
     assert.equal(args.hooksHash, golden.expected.hooksHash, `${golden.name}: hooksHash`);
     assert.equal(args.capabilitiesRoot, golden.expected.capabilitiesRoot, `${golden.name}: capabilitiesRoot`);
-    assert.equal(onchain.dockRoutesRoot, golden.expected.dockRoutesRoot, `${golden.name}: dockRoutesRoot`);
-    assert.equal(onchain.dockInterfaceRoot, golden.expected.dockInterfaceRoot, `${golden.name}: dockInterfaceRoot`);
     assert.equal(onchain.executorCandidatesRoot, golden.expected.executorCandidatesRoot, `${golden.name}: executorCandidatesRoot`);
 
     assert.equal(args.hooks.length, golden.counts.hooks, `${golden.name}: counts.hooks`);
@@ -747,7 +707,7 @@ test("commitment golden vectors pin uid/planHash/hooksHash from the shared fixtu
 });
 
 test("cross-stage dependency guard fires on deserialized artifacts and follows contract order", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
 
   const sharedKey = onchainSignalKey(
     onchainSourceId("buyer"),
@@ -918,7 +878,7 @@ test("compiles capability tables beyond gas caps into a verifiable capabilitiesR
     ),
   );
 
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
   const template = onchain.signalCapabilities[0];
   assert.ok(template);
   const expanded = Array.from({ length: 400 }, (_, index) => {
@@ -979,7 +939,7 @@ test("compiles capability tables beyond gas caps into a verifiable capabilitiesR
 });
 
 test("rejects cross-stage current-order fact key duplication (E16 mirror)", () => {
-  const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  const sourcePlan = compileZhixuHookPlan(baseZhixu);
   const fact = sourcePlan.signalCapabilities[0]!;
   const otherStage =
     sourcePlan.signalCapabilities.find(
@@ -1005,7 +965,7 @@ test("rejects cross-stage current-order fact key duplication (E16 mirror)", () =
 });
 
 test("rejects duplicate on-chain selector bindings", () => {
-  const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  const sourcePlan = compileZhixuHookPlan(baseZhixu);
 
   const duplicated = {
     ...sourcePlan,
@@ -1025,11 +985,11 @@ test("rejects duplicate on-chain selector bindings", () => {
 });
 
 test("rejects invalid on-chain HookPlan artifact shapes", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
 
   assert.deepEqual(
     validateOnchainHookPlanArtifact({ ...onchain, schemaVersion: "wrong" }),
-    ["schemaVersion must be uvp.onchainHookPlan.v5"],
+    ["schemaVersion must be uvp.onchainHookPlan.v7"],
   );
   assert.match(
     validateOnchainHookPlanArtifact({
@@ -1063,64 +1023,8 @@ test("rejects invalid on-chain HookPlan artifact shapes", () => {
   );
 });
 
-test("collects dock commitment shape violations as issues instead of throwing or pinning defaults", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
-
-  const strip = (field: string): Record<string, unknown> => {
-    const { [field]: _removed, ...rest } = {
-      ...onchain,
-    } as Record<string, unknown>;
-    return rest;
-  };
-
-  const badRoutesIssues = validateOnchainHookPlanArtifact({
-    ...onchain,
-    dockRoutes: { "0x50": [] },
-  } as unknown as OnchainHookPlanArtifact);
-  assert.ok(
-    badRoutesIssues.includes("dockRoutes must be an array"),
-    `expected dockRoutes shape issue, got: ${badRoutesIssues.join("; ")}`,
-  );
-
-  const missingRoutesRootIssues = validateOnchainHookPlanArtifact(
-    strip("dockRoutesRoot"),
-  );
-  assert.ok(
-    missingRoutesRootIssues.includes(
-      "dockRoutesRoot must be a lowercase 32-byte hex hash",
-    ),
-  );
-  assert.ok(
-    !missingRoutesRootIssues.includes(
-      "planHash must match the canonical on-chain HookPlan payload",
-    ),
-    "planHash must not be recomputed while dockRoutesRoot is missing",
-  );
-
-  assert.ok(
-    validateOnchainHookPlanArtifact({
-      ...onchain,
-      dockInterfaceRoot: "0xdeadbeef",
-    }).includes("dockInterfaceRoot must be a lowercase 32-byte hex hash"),
-  );
-
-  const missingInterfaceIssues = validateOnchainHookPlanArtifact(
-    strip("dockInterface"),
-  );
-  assert.ok(
-    missingInterfaceIssues.includes(
-      "artifact.dockInterface must be an object or null",
-    ),
-  );
-  assert.ok(
-    !missingInterfaceIssues.includes(
-      "planHash must match the canonical on-chain HookPlan payload",
-    ),
-  );
-});
-
 test("rejects empty instructions the way the contract reverts InvalidHook", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
   assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
 
   assert.match(
@@ -1136,7 +1040,7 @@ test("rejects empty instructions the way the contract reverts InvalidHook", () =
 });
 
 test("rejects empty dependency keys the way the contract reverts InvalidHook", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
   assert.doesNotThrow(() => toSolidityRegisterPlanArgs(onchain));
 
   const withEmptyDependencies = {
@@ -1161,7 +1065,7 @@ test("rejects empty dependency keys the way the contract reverts InvalidHook", (
 });
 
 test("rejects DELAY seconds beyond the 30-day contract bound", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
   const withDelay = (
     delaySeconds: number
   ): OnchainHookPlanArtifact => ({
@@ -1220,7 +1124,7 @@ test("rejects a dependency key shared across stages", () => {
   };
 
   assert.throws(
-    () => compileOnchainHookPlan(compileZhixuHookPlan(sharedZhixu, demoManifest)),
+    () => compileOnchainHookPlan(compileZhixuHookPlan(sharedZhixu)),
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
       error.issues.some((issue) => /shared across stages/.test(issue))
@@ -1240,8 +1144,7 @@ test("flags stages whose hooks can never materialize on-chain", () => {
         {
           name: "birth",
           source: "fulfiller",
-          trigger: ["str"],
-          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
+          sendSignals: [{ name: "str", trigger: true }, { name: "cmp" }, { name: "err" }],
           executor: {
             supplierType: "organization",
             supplierID: "fulfiller-exec",
@@ -1250,24 +1153,14 @@ test("flags stages whose hooks can never materialize on-chain", () => {
     },
   };
   const triggerOnchain = compileOnchainHookPlan(
-    compileZhixuHookPlan(triggerZhixu, demoManifest),
+    compileZhixuHookPlan(triggerZhixu),
   );
   assert.deepEqual(materializationIssues(validateOnchainHookPlanArtifact(triggerOnchain)), []);
 
   const baseOnchain = compileOnchainHookPlan(
-    compileZhixuHookPlan(baseZhixu, demoManifest),
+    compileZhixuHookPlan(baseZhixu),
   );
   assert.deepEqual(materializationIssues(validateOnchainHookPlanArtifact(baseOnchain)), []);
-
-  const dockOnchain: OnchainHookPlanArtifact = {
-    ...baseOnchain,
-    compiledHooks: baseOnchain.compiledHooks.map((hook) =>
-      hook.stageIdentifier === "main"
-        ? { ...hook, orderTriggerKind: "dock" as const }
-        : hook,
-    ),
-  };
-  assert.deepEqual(materializationIssues(validateOnchainHookPlanArtifact(dockOnchain)), []);
 
   const watcherOnly: OnchainHookPlanArtifact = {
     ...baseOnchain,
@@ -1288,7 +1181,7 @@ test("flags stages whose hooks can never materialize on-chain", () => {
     );
   }
 
-  const watcherSourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  const watcherSourcePlan = compileZhixuHookPlan(baseZhixu);
   const mutatedSourcePlan = {
     ...watcherSourcePlan,
     compiledHooks: watcherSourcePlan.compiledHooks.map((hook) =>
@@ -1316,7 +1209,7 @@ test("rejects stages that compile to zero hooks (materialization gate)", () => {
     issues.filter((issue) =>
       /declares no receiveSignals and compiles to zero hooks/.test(issue),
     );
-  const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  const sourcePlan = compileZhixuHookPlan(baseZhixu);
   const onchain = compileOnchainHookPlan(sourcePlan);
 
   const placeHook = onchain.compiledHooks.find(
@@ -1361,7 +1254,7 @@ test("rejects stages that compile to zero hooks (materialization gate)", () => {
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
       zeroHookIssues(error.issues).length === 1 &&
-      /^stage assign declares no receiveSignals and compiles to zero hooks: the stage can never materialize on-chain \(materialization only happens via this stage's own order-trigger\/EMIT_READY hooks\) and its sendSignals have no hook to hang on — submitSignal requires the source stage to be materialized and reverts UnknownHook forever \(deadlock, no recovery path\); declare a trigger signal, receiveSignals carrying a trigger\/dock entrance, or a static executor$/.test(
+      /^stage assign declares no receiveSignals and compiles to zero hooks: the stage can never materialize on-chain \(materialization only happens via this stage's own order-trigger\/EMIT_READY hooks\) and its sendSignals have no hook to hang on — submitSignal requires the source stage to be materialized and reverts UnknownHook forever \(deadlock, no recovery path\); declare a trigger signal, receiveSignals, or a static executor$/.test(
         zeroHookIssues(error.issues)[0] ?? "",
       ),
   );
@@ -1382,276 +1275,12 @@ test("rejects stages that compile to zero hooks (materialization gate)", () => {
   );
 });
 
-test("dock entrance hooks materialize their stage (CORE-8 materialization gate)", () => {
-  const materializationIssues = (issues: readonly string[]): readonly string[] =>
-    issues.filter((issue) =>
-      /no order-trigger or EMIT_READY hook|compiles to zero hooks/.test(issue),
-    );
-
-  const targetOnchain = compileZhixuOnchainHookPlan(
-    dockProductionTargetDefinition(),
-  );
-  const entranceHook = targetOnchain.compiledHooks.find(
-    (hook) => hook.stageIdentifier === "intake",
-  );
-  assert.equal(entranceHook?.hookName, "EXECUTE");
-  assert.equal(entranceHook?.orderTriggerKind, "dock");
-  assert.equal(entranceHook?.emitReady, true);
-  assert.deepEqual(
-    materializationIssues(validateOnchainHookPlanArtifact(targetOnchain)),
-    [],
-  );
-});
-
-function dynamicExistingZhixu(target: { zhixu: string } | null): ZhixuDefinition {
-  return {
-    ...baseZhixu,
-    spec: {
-      ...baseZhixu.spec,
-      stages: baseZhixu.spec.stages.map((stage) =>
-        stage.name !== "main"
-          ? stage
-          : {
-              ...stage,
-              receiveSignals: {
-                START: "buyer::assign.executor_selected",
-              },
-              executor: {
-                supplierType: "zhixu" as const,
-                zhixuExecutorConfig: {
-                  target,
-                  interface: "production_evidence",
-                  order: { mode: "existing" as const },
-                  signalMap: { cmp: "scrap_declared" },
-                },
-              },
-            },
-      ),
-    },
-  };
-}
-
-test("carries existing-mode dock routes on the on-chain track (UVPDockingModule 4.4)", () => {
-  const existingZhixu = dynamicExistingZhixu({ zhixu: dockDemoTargetUid() });
-
-  const onchain = compileZhixuOnchainHookPlan(existingZhixu, demoManifest);
-  assert.equal(onchain.dockRoutes.length, 1);
-  const route = onchain.dockRoutes[0]!;
-  assert.equal(route.orderMode, "existing");
-  assert.equal(route.inputBindings.length, 0);
-  assert.equal(route.inputBindingsRoot, EMPTY_MERKLE_ROOT);
-  assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
-  assert.doesNotThrow(() => toSolidityRegisterPlanArgs(onchain));
-
-  assert.notEqual(
-    routeHash({
-      localDefinitionRefHash: route.local.definitionRefHash,
-      targetDefinitionRefHash: route.target.definitionRefHash,
-      targetPlanId: route.target.chainPlanId,
-      interfaceName: route.target.interfaceName,
-      orderMode: "new",
-      inputBindingsRoot: route.inputBindingsRoot,
-      outputBindingsRoot: route.outputBindingsRoot,
-    }),
-    route.routeHash,
-  );
-  assert.equal(route.routeHash, onchain.dockRoutesRoot);
-});
-
-test("dynamic (null-target) routes never ride in dockRoutes (smuggling gate)", () => {
-  const onchain = compileOnchainHookPlan(
-    compileZhixuHookPlan(baseZhixu, demoManifest),
-  );
-  const unresolved = structuredClone(onchain) as OnchainHookPlanArtifact & {
-    dockRoutes: Array<Record<string, unknown>>;
-  };
-  (unresolved.dockRoutes[0] as Record<string, unknown>).target = null;
-  const { planHash: _stale, ...payload } = unresolved;
-  void _stale;
-  const issues = validateOnchainHookPlanArtifact({
-    ...payload,
-    planHash: hashOnchainPlanPayload(payload as never),
-  } as unknown as OnchainHookPlanArtifact);
-  assert.ok(
-    issues.some((issue) =>
-      /no statically linked target block/.test(issue) &&
-      /must be carried in unresolvedDockRoutes/.test(issue),
-    ),
-    issues.join("; "),
-  );
-});
-
-test("carries dynamic-selection (target:null) routes as unresolvedDockRoutes with candidate commitments", () => {
-  const dynamicZhixu = dynamicExistingZhixu(null);
-  const onchain = compileZhixuOnchainHookPlan(dynamicZhixu, demoManifest);
-  assert.equal(onchain.dockRoutes.length, 0);
-  const unresolved = onchain.unresolvedDockRoutes ?? [];
-  assert.equal(unresolved.length, 1);
-  const route = unresolved[0]!;
-  assert.equal(route.schemaVersion, "uvp.dockRoute.unresolved.v1");
-  assert.equal(route.stageIdentifier, "main");
-  assert.equal(route.orderMode, "existing");
-  assert.equal(route.interfaceName, "production_evidence");
-  assert.deepEqual(
-    route.outputBindings.map((binding) => [binding.signal, binding.port]),
-    [["cmp", "scrap_declared"]],
-  );
-
-  const manifestEntry = demoManifest.definitions[0]!;
-  assert.equal(route.candidates.length, 1);
-  assert.equal(route.candidates[0]?.zhixuName, manifestEntry.definition.metadata.name);
-  assert.equal(route.candidates[0]?.zhixuUid, manifestEntry.zhixu);
-  assert.equal(route.candidates[0]?.definitionRefHash, manifestEntry.definitionRefHash);
-
-  const expectedRouteId = dockRouteId(
-    route.localDefinitionRefHash,
-    stageKey("main"),
-  );
-  assert.equal(route.routeId, expectedRouteId);
-  const expectedCandidatesRoot = merkleRoot([
-    dockCandidateLeaf({
-      routeId: expectedRouteId,
-      targetDefinitionRefHash: manifestEntry.definitionRefHash,
-      targetPlanId: manifestEntry.chainPlanId!,
-      interfaceName: "production_evidence",
-    }),
-  ]);
-  assert.equal(route.candidatesRoot, expectedCandidatesRoot);
-  assert.equal(
-    route.routeHash,
-    routeHash({
-      localDefinitionRefHash: route.localDefinitionRefHash,
-      targetDefinitionRefHash: expectedCandidatesRoot,
-      targetPlanId: ZERO_WORD,
-      interfaceName: "production_evidence",
-      orderMode: "existing",
-      inputBindingsRoot: EMPTY_MERKLE_ROOT,
-      outputBindingsRoot: EMPTY_MERKLE_ROOT,
-    }),
-  );
-
-  assert.equal(onchain.dockRoutesRoot, merkleRoot([route.routeHash]));
-  assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
-  assert.doesNotThrow(() => toSolidityRegisterPlanArgs(onchain));
-});
-
-test("rejects dynamic-selection routes declaring order mode new (chain terminal state)", () => {
-  const dynamicNew = structuredClone(baseZhixu) as ZhixuDefinition & {
-    spec: { stages: Array<{ executor?: { zhixuExecutorConfig?: { target: { zhixu: string } | null } } }> };
-  };
-  dynamicNew.spec.stages[1]!.executor!.zhixuExecutorConfig!.target = null;
-  assert.throws(
-    () => compileZhixuOnchainHookPlan(dynamicNew as unknown as ZhixuDefinition, demoManifest),
-    (error: unknown) => {
-      assert.ok(error instanceof HookPlanCompilationError);
-      const issues = error.issues.join("; ");
-      assert.match(issues, /UNRESOLVED_DOCK_MODE/);
-      assert.match(issues, /main/);
-      assert.match(issues, /order mode "new"/);
-      return true;
-    },
-  );
-
-  const accepted = compileZhixuOnchainHookPlan(
-    dynamicExistingZhixu(null),
-    demoManifest,
-  );
-  const entry = accepted.unresolvedDockRoutes![0]!;
-  const forgedRouteHash = routeHash({
-    localDefinitionRefHash: entry.localDefinitionRefHash,
-    targetDefinitionRefHash: entry.candidatesRoot,
-    targetPlanId: ZERO_WORD,
-    interfaceName: entry.interfaceName,
-    orderMode: "new",
-    inputBindingsRoot: EMPTY_MERKLE_ROOT,
-    outputBindingsRoot: EMPTY_MERKLE_ROOT,
-  });
-  const forged = {
-    ...accepted,
-    unresolvedDockRoutes: [
-      { ...entry, orderMode: "new" as const, routeHash: forgedRouteHash },
-    ],
-    dockRoutesRoot: merkleRoot([forgedRouteHash]),
-  };
-  const { planHash: _staleHash, ...forgedPayload } = forged;
-  void _staleHash;
-  const issues = validateOnchainHookPlanArtifact({
-    ...forgedPayload,
-    planHash: hashOnchainPlanPayload(forgedPayload as never),
-  } as unknown as OnchainHookPlanArtifact);
-  assert.ok(
-    issues.some((issue) => /UNRESOLVED_DOCK_MODE/.test(issue)),
-    issues.join("; "),
-  );
-});
-
-test("rejects forged candidate lists and swapped dynamic leaves at the artifact boundary", () => {
-  const onchain = compileZhixuOnchainHookPlan(
-    dynamicExistingZhixu(null),
-    demoManifest,
-  );
-
-  const forgedCandidate = structuredClone(onchain);
-  (forgedCandidate.unresolvedDockRoutes![0]!.candidates[0] as {
-    definitionRefHash: `0x${string}`;
-  }).definitionRefHash = `0x${"ab".repeat(32)}`;
-  const candidateIssues = validateOnchainHookPlanArtifact(forgedCandidate);
-  assert.ok(
-    candidateIssues.some((issue) =>
-      /candidatesRoot must match the recomputed merkle root over candidate leaves/.test(
-        issue,
-      ),
-    ),
-    candidateIssues.join("; "),
-  );
-
-  const swappedLeaf = structuredClone(onchain);
-  (swappedLeaf.unresolvedDockRoutes![0] as { routeHash: `0x${string}` })
-    .routeHash = `0x${"cd".repeat(32)}`;
-  const leafIssues = validateOnchainHookPlanArtifact(swappedLeaf);
-  assert.ok(
-    leafIssues.some((issue) =>
-      /routeHash must match the recomputed dynamic-route preimage/.test(issue),
-    ),
-    leafIssues.join("; "),
-  );
-  assert.ok(
-    leafIssues.some((issue) =>
-      /dockRoutesRoot must match the recomputed root over dock route hashes/.test(
-        issue,
-      ),
-    ),
-    leafIssues.join("; "),
-  );
-});
-
-test("rejects an explicit empty unresolvedDockRoutes list (closed field set)", () => {
-  const onchain = compileZhixuOnchainHookPlan(
-    dynamicExistingZhixu(null),
-    demoManifest,
-  );
-  assert.ok(onchain.unresolvedDockRoutes?.length === 1);
-  const emptied = { ...onchain, unresolvedDockRoutes: [] };
-  const { planHash: _staleHash, ...payload } = emptied;
-  void _staleHash;
-  const issues = validateOnchainHookPlanArtifact({
-    ...payload,
-    planHash: hashOnchainPlanPayload(payload as never),
-  } as unknown as OnchainHookPlanArtifact);
-  assert.ok(
-    issues.some((issue) =>
-      /unresolvedDockRoutes must not be an empty array/.test(issue),
-    ),
-    issues.join("; "),
-  );
-});
-
 test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
   const silentTriggerIssues = (issues: readonly string[]): readonly string[] =>
     issues.filter((issue) => /order trigger without emitReady/.test(issue));
 
   const baseOnchain = compileOnchainHookPlan(
-    compileZhixuHookPlan(baseZhixu, demoManifest),
+    compileZhixuHookPlan(baseZhixu),
   );
   assert.deepEqual(silentTriggerIssues(validateOnchainHookPlanArtifact(baseOnchain)), []);
 
@@ -1672,20 +1301,7 @@ test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
     );
   }
 
-  const silentDock: OnchainHookPlanArtifact = {
-    ...baseOnchain,
-    compiledHooks: baseOnchain.compiledHooks.map((hook) =>
-      hook.stageIdentifier === "main" && hook.hookName === "START"
-        ? { ...hook, orderTriggerKind: "dock" as const, emitReady: false }
-        : hook,
-    ),
-  };
-  assert.ok(
-    silentTriggerIssues(validateOnchainHookPlanArtifact(silentDock)).length >= 1,
-    "silent dock trigger must be flagged",
-  );
-
-  const silentSourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
+  const silentSourcePlan = compileZhixuHookPlan(baseZhixu);
   const mutatedSilentPlan = resign({
     ...silentSourcePlan,
     compiledHooks: silentSourcePlan.compiledHooks.map((hook) =>
@@ -1706,7 +1322,7 @@ test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
 
 test("mirrors _validateHook DELAY/NOT/anchor rejection branches at the artifact boundary", () => {
   const baseOnchain = compileOnchainHookPlan(
-    compileZhixuHookPlan(baseZhixu, demoManifest),
+    compileZhixuHookPlan(baseZhixu),
   );
   const rehashed = (artifact: OnchainHookPlanArtifact): OnchainHookPlanArtifact => {
     const { planHash: _stale, ...payload } = artifact;
@@ -1790,7 +1406,7 @@ test("mirrors _validateHook DELAY/NOT/anchor rejection branches at the artifact 
 
 test("admits the decaying veto at the conjunction slot and mirrors its position gates", () => {
   const baseOnchain = compileOnchainHookPlan(
-    compileZhixuHookPlan(baseZhixu, demoManifest),
+    compileZhixuHookPlan(baseZhixu),
   );
   const rehashed = (artifact: OnchainHookPlanArtifact): OnchainHookPlanArtifact => {
     const { planHash: _stale, ...payload } = artifact;
@@ -1886,7 +1502,7 @@ test("compiles the decaying veto DSL form through the full on-chain pipeline", (
   execution.receiveSignals!.TIMEOUT =
     "buyer::main.cmp & ~(assign.executor_selected +5s)";
 
-  const onchain = compileZhixuOnchainHookPlan(vetoZhixu, demoManifest);
+  const onchain = compileZhixuOnchainHookPlan(vetoZhixu);
   const timeoutHook = onchain.compiledHooks.find((hook) => hook.hookName === "TIMEOUT")!;
   assert.deepEqual(
     timeoutHook.instructions.map((instruction) => instruction.op),
@@ -1899,18 +1515,31 @@ test("compiles the decaying veto DSL form through the full on-chain pipeline", (
 });
 
 test("rejects DELAY on order-trigger conditions at the compile boundary (producer side)", () => {
-  const targetPlan = compileZhixuHookPlan(
-    dockProductionTargetDefinition(),
-    demoManifest,
+  const triggerZhixu: ZhixuDefinition = {
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      stages: [
+        ...baseZhixu.spec.stages,
+        {
+          name: "birth",
+          source: "fulfiller",
+          sendSignals: [{ name: "str", trigger: true }, { name: "cmp" }],
+          executor: {
+            supplierType: "organization",
+            supplierID: "fulfiller-exec",
+          },
+        }],
+    },
+  };
+  const triggerPlan = compileZhixuHookPlan(triggerZhixu);
+  const triggerHook = triggerPlan.compiledHooks.find(
+    (hook) => hook.orderTriggerKind === "trigger",
   );
-  const triggerHook = targetPlan.compiledHooks.find(
-    (hook) => hook.stageIdentifier === "intake" && hook.hookName === "EXECUTE",
-  );
-  assert.ok(triggerHook, "target fixture must expose the dock entrance trigger hook");
-  assert.equal(triggerHook.orderTriggerKind, "dock");
+  assert.ok(triggerHook, "the trigger fixture must expose its birth hook");
   const delayed = resign({
-    ...targetPlan,
-    compiledHooks: targetPlan.compiledHooks.map((hook) =>
+    ...triggerPlan,
+    compiledHooks: triggerPlan.compiledHooks.map((hook) =>
       hook === triggerHook
         ? {
             ...hook,
@@ -1925,7 +1554,7 @@ test("rejects DELAY on order-trigger conditions at the compile boundary (produce
             },
           }
         : hook,
-    ) as typeof targetPlan.compiledHooks,
+    ) as typeof triggerPlan.compiledHooks,
   });
   assert.throws(
     () => compileOnchainHookPlan(delayed),
@@ -1933,7 +1562,7 @@ test("rejects DELAY on order-trigger conditions at the compile boundary (produce
       assert.ok(error instanceof HookPlanCompilationError);
       assert.match(
         error.issues.join("; "),
-        /order-trigger hook \(dock\) must not contain DELAY/,
+        /order-trigger hook \(trigger\) must not contain DELAY/,
       );
       return true;
     },
@@ -1941,7 +1570,7 @@ test("rejects DELAY on order-trigger conditions at the compile boundary (produce
 });
 
 test("rejects supplierType outside the closed enum at the on-chain compile boundary", () => {
-  const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
+  const hookPlan = compileZhixuHookPlan(baseZhixu);
   const mutated = resign({
     ...hookPlan,
     executorRoutes: {
@@ -1954,14 +1583,14 @@ test("rejects supplierType outside the closed enum at the on-chain compile bound
         },
       },
     },
-  } as typeof hookPlan);
+  } as unknown as typeof hookPlan);
   assert.throws(
     () => compileOnchainHookPlan(mutated),
     (error: unknown) => {
       assert.ok(error instanceof HookPlanCompilationError);
       assert.match(
         error.issues.join("; "),
-        /supplierType must be one of individual\|organization\|zhixu \(case-sensitive\), received "Organization"/,
+        /supplierType must be one of individual\|organization\|dock \(case-sensitive\), received "Organization"/,
       );
       return true;
     },
@@ -1969,8 +1598,8 @@ test("rejects supplierType outside the closed enum at the on-chain compile bound
 });
 
 test("rejects whitespace-padded supplierType at the on-chain compile boundary", () => {
-  const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
-  for (const supplierType of [" organization ", "zhixu ", "\tindividual"]) {
+  const hookPlan = compileZhixuHookPlan(baseZhixu);
+  for (const supplierType of [" organization ", "individual "]) {
     const mutated = resign({
       ...hookPlan,
       executorRoutes: {
@@ -1991,7 +1620,7 @@ test("rejects whitespace-padded supplierType at the on-chain compile boundary", 
         assert.match(
           error.issues.join("; "),
           new RegExp(
-            `supplierType must be one of individual\\|organization\\|zhixu \\(case-sensitive\\), received ${JSON.stringify(supplierType).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+            `supplierType must be one of individual\\|organization\\|dock \\(case-sensitive\\), received ${JSON.stringify(supplierType).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
           ),
         );
         return true;
@@ -2021,9 +1650,9 @@ test("rejects selectableResource fileType outside the closed enum at the on-chai
       ],
     },
   };
-  compileOnchainHookPlan(compileZhixuHookPlanWithManifest(withSelectableZhixu));
+  compileOnchainHookPlan(compileZhixuHookPlan(withSelectableZhixu));
 
-  const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
+  const hookPlan = compileZhixuHookPlan(baseZhixu);
   for (const fileType of ["tx_cloud", " local", "http "]) {
     const mutated = resign({
       ...hookPlan,
@@ -2056,7 +1685,7 @@ test("rejects selectableResource fileType outside the closed enum at the on-chai
 });
 
 test("rejects fileResources fileType outside the closed enum at the on-chain compile boundary", () => {
-  const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
+  const hookPlan = compileZhixuHookPlan(baseZhixu);
   const route = hookPlan.executorRoutes["assign"]!;
   const mutated = resign({
     ...hookPlan,
@@ -2084,7 +1713,7 @@ test("rejects fileResources fileType outside the closed enum at the on-chain com
 });
 
 test("rejects non-map file-resource shapes at the on-chain compile boundary", () => {
-  const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
+  const hookPlan = compileZhixuHookPlan(baseZhixu);
   const mutateExecutor = (
     selectableResource: unknown,
   ): Parameters<typeof compileOnchainHookPlan>[0] =>
@@ -2156,7 +1785,7 @@ test("rejects non-map file-resource shapes at the on-chain compile boundary", ()
 
 test("artifact boundary enforces the executorType closed enum and non-empty executorId", () => {
   const onchain = compileOnchainHookPlan(
-    compileZhixuHookPlanWithManifest(baseZhixu),
+    compileZhixuHookPlan(baseZhixu),
   );
   const route = onchain.executorRoutes[0]!;
   const rehashed = (mutated: OnchainHookPlanArtifact): OnchainHookPlanArtifact => {
@@ -2182,20 +1811,20 @@ test("artifact boundary enforces the executorType closed enum and non-empty exec
   );
   assert.ok(
     issues.some((issue) =>
-      /executorType must be one of individual\|organization\|zhixu \(case-sensitive\), received "Vendor"/.test(
+      /executorType must be one of individual\|organization \(case-sensitive\), received "Vendor"/.test(
         issue,
       ),
     ),
     issues.join("; "),
   );
-  for (const executorType of [" organization ", "zhixu ", "\tindividual"]) {
+  for (const executorType of [" organization ", "dock ", "\tindividual"]) {
     const paddedIssues = validateOnchainHookPlanArtifact(
       mutateRoute({ executorType }),
     );
     assert.ok(
       paddedIssues.some((issue) =>
         new RegExp(
-          `executorType must be one of individual\\|organization\\|zhixu \\(case-sensitive\\), received ${JSON.stringify(executorType).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+          `executorType must be one of individual\\|organization \\(case-sensitive\\), received ${JSON.stringify(executorType).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
         ).test(issue),
       ),
       `executorType=${JSON.stringify(executorType)}: ${paddedIssues.join("; ")}`,
@@ -2221,7 +1850,7 @@ test("artifact boundary enforces the executorType closed enum and non-empty exec
 });
 
 test("compile boundary rejects whitespace-only executor.supplierID", () => {
-  const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
+  const hookPlan = compileZhixuHookPlan(baseZhixu);
   const mutated = resign({
     ...hookPlan,
     executorRoutes: {
@@ -2249,7 +1878,7 @@ test("compile boundary rejects whitespace-only executor.supplierID", () => {
 });
 
 test("compile boundary mirrors _validateHook shape gates before producing artifacts", () => {
-  const hookPlan = compileZhixuHookPlanWithManifest(baseZhixu);
+  const hookPlan = compileZhixuHookPlan(baseZhixu);
   const timeoutHook = hookPlan.compiledHooks.find(
     (hook) => hook.hookName === "TIMEOUT",
   );
@@ -2300,8 +1929,6 @@ test("compile boundary mirrors _validateHook shape gates before producing artifa
     compiledHooks: [],
     dependencyIndex: {},
     executorRoutes: {},
-    dockRoutes: [],
-    dockRoutesRoot: EMPTY_MERKLE_ROOT,
     selectedStageBindings: [],
     signalCapabilities: [],
   } as typeof hookPlan);
@@ -2320,7 +1947,7 @@ test("compile boundary mirrors _validateHook shape gates before producing artifa
 
 test("artifact boundary rejects compiledHooks arrays that break the canonical order", () => {
   const onchain = compileOnchainHookPlan(
-    compileZhixuHookPlanWithManifest(baseZhixu),
+    compileZhixuHookPlan(baseZhixu),
   );
   const reversed = [...onchain.compiledHooks].reverse();
   const index = new Map<string, string[]>();
@@ -2357,7 +1984,7 @@ test("artifact boundary rejects compiledHooks arrays that break the canonical or
 
 test("collects non-canonicalizable planHash payloads as issues instead of throwing (L8)", () => {
   const onchain = compileOnchainHookPlan(
-    compileZhixuHookPlan(baseZhixu, demoManifest),
+    compileZhixuHookPlan(baseZhixu),
   );
   const poisoned = structuredClone(onchain) as unknown as {
     compiledHooks: Array<{
@@ -2377,7 +2004,7 @@ test("collects non-canonicalizable planHash payloads as issues instead of throwi
 
 test("rejects undeclared extra fields on on-chain HookPlan artifacts (L9)", () => {
   const onchain = compileOnchainHookPlan(
-    compileZhixuHookPlan(baseZhixu, demoManifest),
+    compileZhixuHookPlan(baseZhixu),
   );
   const issues = validateOnchainHookPlanArtifact({
     ...onchain,
@@ -2407,7 +2034,7 @@ test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirr
     },
   };
   const onchain = compileOnchainHookPlan(
-    compileZhixuHookPlan(zhixu, demoManifest),
+    compileZhixuHookPlan(zhixu),
   );
   assert.ok(onchain.admissions.length > 0, "fixture must carry an admission entry");
 
@@ -2518,8 +2145,7 @@ test("rejects trigger birth stages without their own static executor route", () 
         {
           name: "birth",
           source: "fulfiller",
-          trigger: ["str"],
-          sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
+          sendSignals: [{ name: "str", trigger: true }, { name: "cmp" }, { name: "err" }],
           executor: { supplierType: "organization", supplierID: "fulfiller-exec" },
         },
         {
@@ -2533,7 +2159,7 @@ test("rejects trigger birth stages without their own static executor route", () 
     },
   };
 
-  const ir = compileZhixuHookPlan(zhixu, demoManifest);
+  const ir = compileZhixuHookPlan(zhixu);
   const onchain = compileOnchainHookPlan(ir);
   const birthHook = onchain.compiledHooks.find(
     (hook) => hook.stageIdentifier === "birth",
@@ -2607,84 +2233,8 @@ test("rejects trigger birth stages without their own static executor route", () 
     "artifact boundary must reject a trigger birth stage without its own executor route",
   );
 });
-test("duplicate dock entrance key is rejected at the artifact boundary (U2 mirror)", () => {
-  const sourcePlan = compileZhixuHookPlan(baseZhixu, demoManifest);
-  const onchain = compileOnchainHookPlan(sourcePlan);
-  const stageA = "0x" + "01".repeat(32);
-  const stageB = "0x" + "02".repeat(32);
-  const sharedKey = onchainSignalKey(
-    onchainSourceId("buyer"),
-    onchainSignalId("buyer::shared.birth"),
-  );
-  const dep = {
-    kind: "positive",
-    source: "buyer",
-    signalName: "buyer::shared.birth",
-    sourceId: onchainSourceId("buyer"),
-    signalId: onchainSignalId("buyer::shared.birth"),
-    signalKey: sharedKey,
-  };
-  const instructionOf = () => [
-    {
-      op: "SIGNAL",
-      source: "buyer",
-      signalName: "buyer::shared.birth",
-      sourceId: dep.sourceId,
-      signalId: dep.signalId,
-      signalKey: sharedKey,
-    },
-  ];
-  const hookOf = (
-    name: string,
-    stageIdentifier: string,
-    stageId: string,
-    orderTriggerKind: "trigger" | "dock" | "none",
-  ) => ({
-    hookId: keccak256Hex(`${stageIdentifier}#${name}`),
-    stageId,
-    stageIdentifier,
-    hookName: name,
-    kind: "receive",
-    orderTriggerKind,
-    emitReady: orderTriggerKind !== "none",
-    instructions: instructionOf(),
-    dependencies: [dep],
-  });
-  const dockHooks = [
-    hookOf("dock_line", "a", stageA, "dock"),
-    hookOf("dock_line_2", "b", stageB, "dock"),
-    hookOf("watcher", "a", stageA, "none"),
-  ];
-  const issues = validateOnchainHookPlanArtifact({
-    ...onchain,
-    compiledHooks: dockHooks,
-    dependencyIndex: { [sharedKey]: dockHooks.map((hook) => hook.hookId) },
-  });
-  assert.equal(
-    issues.filter((issue) => /duplicate dock entrance key/.test(issue)).length,
-    1,
-    `expected exactly one dock entrance issue, got: ${issues.join("; ")}`,
-  );
-
-  const triggerFanOutHooks = [
-    hookOf("trigger_line", "a", stageA, "trigger"),
-    hookOf("trigger_line_2", "b", stageB, "trigger"),
-  ];
-  const fanOutIssues = validateOnchainHookPlanArtifact({
-    ...onchain,
-    compiledHooks: triggerFanOutHooks,
-    dependencyIndex: {
-      [sharedKey]: triggerFanOutHooks.map((hook) => hook.hookId),
-    },
-  });
-  assert.deepEqual(
-    fanOutIssues.filter((issue) => /duplicate dock entrance key/.test(issue)),
-    [],
-  );
-});
-
 test("hook dependencies must mirror the SIGNAL atom key set (contract mirror)", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu, demoManifest));
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
   const watcher = onchain.compiledHooks.find(
     (hook) => hook.orderTriggerKind === "none" && hook.dependencies.length === 1,
   );
@@ -2735,7 +2285,7 @@ test("capabilitiesRoot varies with table contents and pins empty tables to EMPTY
   assert.equal(capabilitiesRootOf([], []), EMPTY_MERKLE_ROOT);
 
   const withBinding = compileOnchainHookPlan(
-    compileZhixuHookPlan(baseZhixu, demoManifest),
+    compileZhixuHookPlan(baseZhixu),
   );
   const withoutBinding = compileOnchainHookPlan(
     compileZhixuHookPlan(
@@ -2749,7 +2299,6 @@ test("capabilitiesRoot varies with table contents and pins empty tables to EMPTY
           })),
         },
       },
-      demoManifest,
     ),
   );
   assert.deepEqual(withoutBinding.selectorBindings, []);
@@ -2794,15 +2343,14 @@ test("triggers are derived, not committed: boundary rejects tampering and planHa
         {
           name: "birth",
           source: "fulfiller",
-          trigger: ["str", "ack"],
-          sendSignals: [{ name: "str" }, { name: "ack" }, { name: "cmp" }],
+          sendSignals: [{ name: "str", trigger: true }, { name: "ack", trigger: true }, { name: "cmp" }],
           executor: { supplierType: "organization", supplierID: "fulfiller-exec" },
         },
       ],
     },
   };
   const onchain = compileOnchainHookPlan(
-    compileZhixuHookPlan(triggerZhixu, demoManifest),
+    compileZhixuHookPlan(triggerZhixu),
   );
   assert.deepEqual(
     onchain.triggers.map((trigger) => [

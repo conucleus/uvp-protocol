@@ -9,34 +9,13 @@ interface IUVPPlanMetadataModule {
     function selectorBindingLeaf(bytes32 selectorStageId, bytes32 targetStageId) external pure returns (bytes32);
     function fileWriterLeaf(bytes32 targetStageId, bytes32 writerStageId) external pure returns (bytes32);
 
-    function finalizePlanMetadata(
-        bytes32 planId,
-        bytes32 capabilitiesRoot,
-        bytes32 dockRoutesRoot,
-        bytes32 dockInterfaceRoot
-    ) external;
+    function finalizePlanMetadata(bytes32 planId, bytes32 capabilitiesRoot) external;
 
     function capabilitiesRoot(bytes32 planId) external view returns (bytes32);
-
-    function dockRoutesRoot(bytes32 planId) external view returns (bytes32);
-
-    function dockInterfaceRoot(bytes32 planId) external view returns (bytes32);
 
     /// @return vocabulary 非空能力树（root != EMPTY_ROOT）即 true。零
     ///         capability 的手工 plan 词表闸全线放行的判定依据。
     function hasCapabilityVocabulary(bytes32 planId) external view returns (bool);
-
-    function verifyDockRoute(bytes32 planId, bytes32 leaf, bytes32[] calldata proof) external view returns (bool);
-
-    function verifyDockInterfacePort(
-        bytes32 planId,
-        bytes32 definitionUidId,
-        bytes32 interfaceNameId,
-        uint8 orderModesWord,
-        bytes32 inputsRoot,
-        bytes32 outputsRoot,
-        bytes32[] calldata proof
-    ) external view returns (bool);
 
     function verifySignalCapability(
         bytes32 planId,

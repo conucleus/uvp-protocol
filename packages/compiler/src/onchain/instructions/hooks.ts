@@ -130,6 +130,11 @@ function compileExecutorRoute(
       `executor route "${route.stageIdentifier}" supplierType must be one of ${SUPPLIER_TYPES.join("|")} (case-sensitive), received ${JSON.stringify(supplierType)}`,
     ]);
   }
+  if (supplierType === "dock") {
+    throw new HookPlanCompilationError([
+      `executor route "${route.stageIdentifier}" is a dock stage; a dock stage's executor is selected once through the stage executor patch (dkid) and never becomes a plan route`,
+    ]);
+  }
   const assertFileResources = (
     resources: unknown,
     label: string,

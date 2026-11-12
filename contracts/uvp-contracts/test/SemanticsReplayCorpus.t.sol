@@ -3,9 +3,9 @@ pragma solidity ^0.8.24;
 
 import {UVPStateMachine} from "../src/UVPStateMachine.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
-import {UVPDockingModule} from "../src/UVPDockingModule.sol";
 import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
+import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
@@ -47,7 +47,7 @@ contract SemanticsReplayCorpusTest {
     uint256 private constant MAX_ORDERS = 2;
     uint256 private constant MAX_SIGNALS = 8;
     uint256 private constant MAX_POKES = 2;
-    uint256 private constant REPLAY_CASE_COUNT = 26;
+    uint256 private constant REPLAY_CASE_COUNT = 24;
     uint256 private constant FILTER_CASE_COUNT = 8;
 
     struct RawInstr {
@@ -75,7 +75,6 @@ contract SemanticsReplayCorpusTest {
         RawHook[] hooks;
         RawHook[] admissions;
         bool hasTrigger;
-        bool hasDock;
         bytes32 chainPlanId;
         bytes32 birthHookId;
         bytes32 birthStageId;
@@ -125,7 +124,7 @@ contract SemanticsReplayCorpusTest {
     }
 
     UVPStateMachine private machine;
-    UVPDockingModule private docking;
+    UVPDockRegistry private dockRegistry;
     UVPOrderLinkModule private orderLink;
     string private corpusJson;
 
@@ -157,17 +156,16 @@ contract SemanticsReplayCorpusTest {
     bytes32 private constant ROLE_BOOTSTRAP = bytes32(uint256(0xa001));
     bytes32 private constant AUTH_METADATA_HASH = bytes32(uint256(0xa002));
     address private constant ORDER_CREATOR = address(uint160(0xc0de));
-    bytes32 private constant EMPTY_DOCK_ROOT = keccak256("");
+    bytes32 private constant EMPTY_MERKLE_ROOT = keccak256("");
     uint8 private constant FLAG_ORDER_TRIGGER_MINT = 1;
-    uint8 private constant FLAG_ORDER_TRIGGER_DOCK = 2;
     uint8 private constant FLAG_EMIT_READY = 4;
     uint8 private constant FLAG_ADMISSION = 8;
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.16");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.17");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 dockRoutesRoot,bytes32 dockInterfaceRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
     );
     bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
@@ -278,14 +276,6 @@ contract SemanticsReplayCorpusTest {
         _runReplayCase(23);
     }
 
-    function testReplayCase24() public {
-        _runReplayCase(24);
-    }
-
-    function testReplayCase25() public {
-        _runReplayCase(25);
-    }
-
     function testReplayCorpusCaseCountIsPinned() public {
         _loadCorpus();
         for (uint256 i = 0; i < REPLAY_CASE_COUNT; i++) {
@@ -373,9 +363,6 @@ contract SemanticsReplayCorpusTest {
                 if (_orderHasTriggeredRow(order.planId, order.orderId) && firstSignal == type(uint256).max) {
                     _birthOrderLink(caseIdx, orderIdx);
                     order.born = true;
-                } else if (plan.hasDock) {
-                    _birthDockOrder(caseIdx, orderIdx, firstSignal);
-                    order.born = true;
                 } else if (!_birthOutside(caseIdx, orderIdx)) {
                     gateBlocked = true;
                     require(
@@ -414,8 +401,6 @@ contract SemanticsReplayCorpusTest {
         CorpusVm.Log[] memory logs = vm.getRecordedLogs();
         if (gateBlocked) {
             require(mismatchReasonHash == 0, "gate-blocked corpus case is not a poison-stream case");
-        } else if (mismatchReasonHash == keccak256("missing-observed")) {
-            _assertDockBirthAtomic(logs);
         } else {
             (bool hasErrorContains,) = _tryString(json, _casePath(caseIdx, ".expect.errorContains"));
             if (!hasErrorContains) {
@@ -517,9 +502,6 @@ contract SemanticsReplayCorpusTest {
             if (flags & FLAG_ORDER_TRIGGER_MINT != 0) {
                 plan.hasTrigger = true;
             }
-            if (flags & FLAG_ORDER_TRIGGER_DOCK != 0) {
-                plan.hasDock = true;
-            }
         }
         for (uint256 a = 0; a < MAX_ADMISSIONS; a++) {
             string memory admBase = string.concat(planBase, ".admissions[", _toString(a), "]");
@@ -545,8 +527,6 @@ contract SemanticsReplayCorpusTest {
         string memory triggerKind = vm.parseJsonString(json, string.concat(hookBase, ".orderTriggerKind"));
         if (keccak256(bytes(triggerKind)) == keccak256("trigger")) {
             hook.flags |= FLAG_ORDER_TRIGGER_MINT;
-        } else if (keccak256(bytes(triggerKind)) == keccak256("dock")) {
-            hook.flags |= FLAG_ORDER_TRIGGER_DOCK;
         }
         if (vm.parseJsonBool(json, string.concat(hookBase, ".emitReady"))) {
             hook.flags |= FLAG_EMIT_READY;
@@ -605,7 +585,7 @@ contract SemanticsReplayCorpusTest {
         returns (bool rejected, bytes4 selector)
     {
         RawPlan storage plan = plans[planIdx];
-        bool needsBirthHook = !plan.hasTrigger && !plan.hasDock && _orderCountOnPlan(plan.corpusPlanId) > 0;
+        bool needsBirthHook = !plan.hasTrigger && _orderCountOnPlan(plan.corpusPlanId) > 0;
         uint256 total = plan.hooks.length + plan.admissions.length + (needsBirthHook ? 1 : 0) + (variant ? 1 : 0);
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](total);
         uint256 cursor;
@@ -743,10 +723,8 @@ contract SemanticsReplayCorpusTest {
         UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
             publisher: publisher,
             hooksHash: keccak256(abi.encode(hooks)),
-            capabilitiesRoot: EMPTY_DOCK_ROOT,
-            dockRoutesRoot: EMPTY_DOCK_ROOT,
-            dockInterfaceRoot: EMPTY_DOCK_ROOT,
-            executorCandidatesRoot: EMPTY_DOCK_ROOT,
+            capabilitiesRoot: EMPTY_MERKLE_ROOT,
+            executorCandidatesRoot: EMPTY_MERKLE_ROOT,
             birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: type(uint256).max
         });
@@ -756,8 +734,6 @@ contract SemanticsReplayCorpusTest {
                 commit.publisher,
                 commit.hooksHash,
                 commit.capabilitiesRoot,
-                commit.dockRoutesRoot,
-                commit.dockInterfaceRoot,
                 commit.executorCandidatesRoot,
                 commit.birthAuthorizer,
                 commit.deadline
@@ -825,48 +801,6 @@ contract SemanticsReplayCorpusTest {
             require(reason.length >= 4, "birth reverted without selector");
             require(bytes4(reason) == UVPStateMachine.InvalidTriggerHook.selector, "unexpected corpus birth rejection");
             return false;
-        }
-    }
-
-    function _birthDockOrder(uint256 caseIdx, uint256 orderIdx, uint256 signalIdx) private {
-        OrderRow storage order = orders[orderIdx];
-        RawPlan storage plan = _planByCorpusId(order.planId);
-        RawHook storage entrance = _dockHookOf(plan);
-        bytes32 sourceId;
-        bytes32 signalId;
-        bytes32 payload;
-        if (signalIdx != type(uint256).max) {
-            SignalRow storage entranceFact = signals[signalIdx];
-            sourceId = entranceFact.sourceId;
-            signalId = entranceFact.signalId;
-            payload = entranceFact.payload;
-        } else {
-            sourceId = entrance.instrs[0].sourceId;
-            signalId = entrance.instrs[0].signalId;
-            payload = keccak256(abi.encode(caseIdx, "dock-entrance"));
-        }
-        bytes32 linkedOrderId = bytes32(uint256(keccak256(bytes(order.orderId))) | (uint256(1) << 255));
-        UVPStateMachine.DockEntranceRequest memory request = UVPStateMachine.DockEntranceRequest({
-            targetPlanId: order.chainPlanId,
-            linkedOrderId: linkedOrderId,
-            creator: ORDER_CREATOR,
-            relayer: address(this),
-            entranceHookId: entrance.hookId,
-            entranceStageId: entrance.stageId,
-            sourceId: sourceId,
-            signalId: signalId,
-            payloadHash: payload,
-            idempotencyKey: keccak256(abi.encode(caseIdx, "dock", orderIdx)),
-            submitter: address(this),
-            authorizations: _authorizationsForOrder(orderIdx),
-            entranceAttribution: _noAttribution()
-        });
-        vm.warp(order.registeredAt);
-        vm.prank(address(docking));
-        machine.createDockedOrderFromModule(request);
-        order.chainOrderId = linkedOrderId;
-        if (signalIdx != type(uint256).max) {
-            _markWritten(signalIdx);
         }
     }
 
@@ -1071,24 +1005,6 @@ contract SemanticsReplayCorpusTest {
             require(exists, "written corpus signal missing");
             require(payloadHash == sig.payload, "first-write payload was overwritten");
         }
-    }
-
-    function _assertDockBirthAtomic(CorpusVm.Log[] memory logs) private {
-        bool sawSubmitted;
-        bool sawReady;
-        for (uint256 i = 0; i < logs.length; i++) {
-            CorpusVm.Log memory log = logs[i];
-            if (log.topics.length == 0) {
-                continue;
-            }
-            if (log.topics[0] == TOPIC_SIGNAL_SUBMITTED) {
-                sawSubmitted = true;
-            }
-            if (log.topics[0] == TOPIC_HOOK_READY && log.topics.length > 3 && corpusHookIds[log.topics[3]]) {
-                sawReady = true;
-            }
-        }
-        require(sawSubmitted && sawReady, "dock entrance fact and HookReady must be atomic");
     }
 
     bytes32 private constant FILTER_FORM_A =
@@ -1370,10 +1286,8 @@ contract SemanticsReplayCorpusTest {
         UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
             publisher: publisher,
             hooksHash: keccak256(abi.encode(hooks)),
-            capabilitiesRoot: EMPTY_DOCK_ROOT,
-            dockRoutesRoot: EMPTY_DOCK_ROOT,
-            dockInterfaceRoot: EMPTY_DOCK_ROOT,
-            executorCandidatesRoot: EMPTY_DOCK_ROOT,
+            capabilitiesRoot: EMPTY_MERKLE_ROOT,
+            executorCandidatesRoot: EMPTY_MERKLE_ROOT,
             birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: type(uint256).max
         });
@@ -1383,8 +1297,6 @@ contract SemanticsReplayCorpusTest {
                 commit.publisher,
                 commit.hooksHash,
                 commit.capabilitiesRoot,
-                commit.dockRoutesRoot,
-                commit.dockInterfaceRoot,
                 commit.executorCandidatesRoot,
                 commit.birthAuthorizer,
                 commit.deadline
@@ -1409,11 +1321,11 @@ contract SemanticsReplayCorpusTest {
         UVPStagePatchModule stagePatch = new UVPStagePatchModule(address(newMachine));
         UVPDerivedSignalModule derivedSignal = new UVPDerivedSignalModule(address(newMachine));
         UVPPlanMetadataModule planMetadata = new UVPPlanMetadataModule(address(newMachine));
-        docking = new UVPDockingModule(address(newMachine), address(planMetadata));
+        dockRegistry = new UVPDockRegistry(address(newMachine));
         orderLink = new UVPOrderLinkModule(address(newMachine));
         newMachine.setStagePatchModule(address(stagePatch));
         newMachine.setDerivedSignalModule(address(derivedSignal));
-        newMachine.setDockingModule(address(docking));
+        newMachine.setDockRegistry(address(dockRegistry));
         newMachine.setPlanMetadataModule(address(planMetadata));
         newMachine.setOrderLinkModule(address(orderLink));
         newMachine.setFileResourceModule(address(new UVPFileResourceModule(address(newMachine))));
@@ -1441,7 +1353,7 @@ contract SemanticsReplayCorpusTest {
 
     function _sha256(bytes memory input) private view returns (bytes32 digest) {
         bool ok;
-        assembly {
+        assembly ("memory-safe") {
             let out := mload(0x40)
             ok := staticcall(gas(), 2, add(input, 32), mload(input), out, 32)
             digest := mload(out)
@@ -1458,7 +1370,6 @@ contract SemanticsReplayCorpusTest {
             delete plans[p].admissions;
             plans[p].exists = false;
             plans[p].hasTrigger = false;
-            plans[p].hasDock = false;
             plans[p].chainPlanId = bytes32(0);
             plans[p].birthHookId = bytes32(0);
             plans[p].birthStageId = bytes32(0);
@@ -1858,15 +1769,6 @@ contract SemanticsReplayCorpusTest {
             }
         }
         revert("plan has no trigger hook");
-    }
-
-    function _dockHookOf(RawPlan storage plan) private view returns (RawHook storage) {
-        for (uint256 h = 0; h < plan.hooks.length; h++) {
-            if (plan.hooks[h].flags & FLAG_ORDER_TRIGGER_DOCK != 0) {
-                return plan.hooks[h];
-            }
-        }
-        revert("plan has no dock hook");
     }
 
     function _hookStage(RawPlan storage plan, bytes32 hookId) private view returns (bytes32) {

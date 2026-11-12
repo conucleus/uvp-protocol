@@ -6,7 +6,7 @@ import type {
   SolidityRegisterPlanArgs,
   ZhixuDefinition,
 } from "../src/index.js";
-import type { DockResolutionManifest, HexString } from "../src/types/index.js";
+import type { HexString } from "../src/types/index.js";
 
 /**
  * 承诺面金向量（uvp-core/fixtures/commitments/golden-vectors.v1.json）的
@@ -35,7 +35,6 @@ export interface CommitmentGoldenCase {
   readonly note: string;
   readonly input: {
     readonly definition: ZhixuDefinition;
-    readonly dockManifest?: DockResolutionManifest;
     readonly executorCandidates?: readonly ExecutorCandidateInput[];
     readonly hooks: readonly CommitmentGoldenHook[];
   };
@@ -55,8 +54,6 @@ export interface CommitmentGoldenCase {
     readonly runtimePlanHash: string;
     readonly hooksHash: string;
     readonly capabilitiesRoot: string;
-    readonly dockRoutesRoot: string;
-    readonly dockInterfaceRoot: string;
     readonly executorCandidatesRoot: string;
   };
 }
@@ -100,7 +97,7 @@ export function commitmentGoldenVectors(): CommitmentGoldenVectors {
     const parsed = JSON.parse(
       readFileSync(COMMITMENT_GOLDEN_VECTORS_PATH, "utf8"),
     ) as CommitmentGoldenVectors;
-    if (parsed.schemaVersion !== "uvp.commitmentGoldenVectors.v1") {
+    if (parsed.schemaVersion !== "uvp.commitmentGoldenVectors.v3") {
       throw new Error(
         `commitment golden vectors schemaVersion drifted: ${parsed.schemaVersion}`,
       );

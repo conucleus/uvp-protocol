@@ -6,7 +6,7 @@ import type {
   ZhixuAnalysisHook,
   ZhixuAnalysisStage,
 } from "@uvp-eth/hook-core";
-import type { HookPlanShell } from "../dock-commitments.js";
+import type { HookPlanShell } from "./assemble.js";
 import {
   HOOK_PLAN_SCHEMA_VERSION,
   type CompiledHookPlanAdmission,
@@ -14,9 +14,6 @@ import {
   type ExecuteConfigs,
   type FileResourceLike,
   type HookPlanExecutorRoute,
-  type NeutralDockRoute,
-  type NeutralInterfaceDeclaration,
-  type NeutralUnresolvedDockRoute,
   type OrderTriggerKind,
   type SelectedStageBinding,
   type SignalCapability,
@@ -24,16 +21,13 @@ import {
 
 /**
  * Chain hook_plan shell 总装：analyze 只给共享校验与 hook 解析结果，本模块按
- * stage.triggers 的每个信号合成一条 order-trigger hook，并补 emit-ready/route
- * 装饰与 dependencyIndex/executorRoutes，输出 hookPlan.v5 shell 形态。
+ * stage.triggers 的每个信号合成一条 order-trigger hook，并补 emit-ready/route/
+ * dock executor 装饰与 dependencyIndex/executorRoutes，输出 hookPlan.v6 shell 形态。
  */
 
 export interface LoweredHookPlanShell extends HookPlanShell {
   readonly compiledHooks: readonly CompiledHookPlanHook[];
   readonly executorRoutes: Record<string, HookPlanExecutorRoute>;
-  readonly dockRoutes: readonly NeutralDockRoute[];
-  readonly dockInterface?: readonly NeutralInterfaceDeclaration[];
-  readonly unresolvedDockRoutes?: readonly NeutralUnresolvedDockRoute[];
   readonly selectedStageBindings: readonly SelectedStageBinding[];
   readonly signalCapabilities: readonly SignalCapability[];
   readonly admissions: readonly CompiledHookPlanAdmission[];
@@ -49,7 +43,7 @@ export function lowerHookPlanShell(
   for (const stage of analysis.stages) {
     const route = executorRouteOf(stage);
     const receiveHooks = orderedStageHooks(stage).map((hook) =>
-      compileReceiveHook(stage, route, analysis, hook),
+      compileReceiveHook(stage, route, hook),
     );
     const receiveHookNames = new Set(
       receiveHooks.map((hook) => hook.hookName),
@@ -87,21 +81,6 @@ export function lowerHookPlanShell(
     compiledHooks,
     dependencyIndex,
     executorRoutes,
-    ...(analysis.dockInterface === null ||
-    analysis.dockInterface === undefined
-      ? {}
-      : {
-          dockInterface:
-            analysis.dockInterface as readonly NeutralInterfaceDeclaration[],
-        }),
-    dockRoutes: analysis.dockRoutes as readonly NeutralDockRoute[],
-    ...(analysis.unresolvedDockRoutes === undefined ||
-    analysis.unresolvedDockRoutes.length === 0
-      ? {}
-      : {
-          unresolvedDockRoutes:
-            analysis.unresolvedDockRoutes as readonly NeutralUnresolvedDockRoute[],
-        }),
     selectedStageBindings:
       analysis.selectedStageBindings as readonly SelectedStageBinding[],
     signalCapabilities:
@@ -128,22 +107,17 @@ function stageHookId(stage: ZhixuAnalysisStage, hook: ZhixuAnalysisHook): string
 function compileReceiveHook(
   stage: ZhixuAnalysisStage,
   route: HookPlanExecutorRoute | undefined,
-  analysis: ZhixuAnalysis,
   hook: ZhixuAnalysisHook,
 ): CompiledHookPlanHook {
-  const hookId = stageHookId(stage, hook);
-  const orderTriggerKind: OrderTriggerKind = analysis.dockEntranceHookIds.includes(
-    hookId,
-  )
-    ? "dock"
-    : "none";
+  const orderTriggerKind: OrderTriggerKind = "none";
   return {
-    hookId,
+    hookId: stageHookId(stage, hook),
     kind: "receive",
     stageIdentifier: stage.stageIdentifier,
     hookName: hook.hookName,
     orderTriggerKind,
-    emitReady: orderTriggerKind !== "none" || stage.executor !== null,
+    emitReady: stage.executor !== null && stage.executor !== undefined,
+    dockExecutor: isDockExecutor(stage.executor),
     rawExpression: hook.rawExpression,
     normalizedExpression: hook.normalizedExpression,
     ast: hook.ast,
@@ -182,6 +156,7 @@ function compileTriggerHook(
     hookName,
     orderTriggerKind: "trigger",
     emitReady: true,
+    dockExecutor: false,
     rawExpression,
     normalizedExpression: rawExpression,
     ast,
@@ -215,7 +190,7 @@ function executorRouteOf(
   if (executor === null || executor === undefined) {
     return undefined;
   }
-  if (isZhixuExecutor(executor)) {
+  if (isDockExecutor(executor)) {
     return undefined;
   }
   const fileResources = stage.fileResources;
@@ -228,10 +203,10 @@ function executorRouteOf(
   };
 }
 
-function isZhixuExecutor(executor: unknown): boolean {
+function isDockExecutor(executor: unknown): boolean {
   return (
     typeof executor === "object" &&
     executor !== null &&
-    (executor as { readonly supplierType?: unknown }).supplierType === "zhixu"
+    (executor as { readonly supplierType?: unknown }).supplierType === "dock"
   );
 }

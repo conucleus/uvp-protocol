@@ -78,8 +78,7 @@ const birthZhixu: ZhixuDefinition = {
       {
         name: "main",
         source: "slot_a",
-        trigger: ["str"],
-        sendSignals: [{ name: "str" }, { name: "cmp" }],
+        sendSignals: [{ name: "str", trigger: true }, { name: "cmp" }],
         executor: { supplierType: "organization", supplierID: "birth-org" },
       },
       {
@@ -98,7 +97,7 @@ test("compile attaches normalized candidates and shifts the artifact commitment"
   assert.deepEqual(bare.executorCandidates, []);
   assert.equal(bare.executorCandidatesRoot, EMPTY_MERKLE_ROOT);
 
-  const withCandidates = compileZhixuOnchainHookPlan(candidateZhixu, undefined, [
+  const withCandidates = compileZhixuOnchainHookPlan(candidateZhixu, [
     { stageIdentifier: "main", executor: WALLET_B },
     { stageIdentifier: "main", executor: WALLET_A },
     { stageIdentifier: "main", executor: WALLET_A_CHECKSUMMED },
@@ -122,7 +121,7 @@ test("compile rejects candidates for undeclared stages, birth stages, and bad ad
   const ir = compileZhixuHookPlan(candidateZhixu);
   assert.throws(
     () =>
-      compileZhixuOnchainHookPlan(candidateZhixu, undefined, [
+      compileZhixuOnchainHookPlan(candidateZhixu, [
         { stageIdentifier: "no_such_task.stage", executor: WALLET_A },
       ]),
     (error: unknown) =>
@@ -155,7 +154,7 @@ test("compile rejects candidates for undeclared stages, birth stages, and bad ad
 });
 
 test("artifact boundary rejects a tampered candidates root", () => {
-  const withCandidates = compileZhixuOnchainHookPlan(candidateZhixu, undefined, [
+  const withCandidates = compileZhixuOnchainHookPlan(candidateZhixu, [
     { stageIdentifier: "main", executor: WALLET_A },
   ]);
   const tampered = {

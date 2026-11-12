@@ -2,13 +2,12 @@
 pragma solidity ^0.8.24;
 
 import {ECDSA} from "./libraries/ECDSA.sol";
-import {DockMerkle} from "./libraries/DockMerkle.sol";
+import {MerkleCommitment} from "./libraries/MerkleCommitment.sol";
 import {UVPSignatures} from "./libraries/UVPSignatures.sol";
 import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 import {UVPStateMachine} from "./UVPStateMachine.sol";
 import {
     _HOOK_FLAG_ORDER_TRIGGER_MINT as HOOK_FLAG_ORDER_TRIGGER_MINT,
-    _HOOK_FLAG_ORDER_TRIGGER_DOCK as HOOK_FLAG_ORDER_TRIGGER_DOCK,
     _HOOK_FLAG_EMIT_READY as HOOK_FLAG_EMIT_READY,
     _HOOK_FLAG_ADMISSION as HOOK_FLAG_ADMISSION,
     _MAX_HOOK_DELAY_SECONDS as MAX_HOOK_DELAY_SECONDS,
@@ -54,17 +53,13 @@ library UVPPlanRegistration {
             revert UVPStateMachine.InvalidPlanSignature(commit.publisher, recoveredSigner);
         }
 
-        bytes32 dockRoutesRoot = _orEmptyDockRoot(commit.dockRoutesRoot);
-        bytes32 dockInterfaceRoot = _orEmptyDockRoot(commit.dockInterfaceRoot);
-        bytes32 capabilitiesRoot = _orEmptyDockRoot(commit.capabilitiesRoot);
+        bytes32 capabilitiesRoot = _orEmptyRoot(commit.capabilitiesRoot);
         bytes32 executorCandidatesRoot = _executorCandidatesRoot(executorCandidates);
-        bytes32 committedCandidatesRoot = _orEmptyDockRoot(commit.executorCandidatesRoot);
+        bytes32 committedCandidatesRoot = _orEmptyRoot(commit.executorCandidatesRoot);
         if (executorCandidatesRoot != committedCandidatesRoot) {
             revert UVPStateMachine.ExecutorCandidatesRootMismatch(committedCandidatesRoot, executorCandidatesRoot);
         }
-        bytes32 runtimePlanHash = planRuntimeHash(
-            commit.hooksHash, capabilitiesRoot, dockRoutesRoot, dockInterfaceRoot, executorCandidatesRoot
-        );
+        bytes32 runtimePlanHash = planRuntimeHash(commit.hooksHash, capabilitiesRoot, executorCandidatesRoot);
         planId = planIdFor(commit.publisher, runtimePlanHash);
         UVPStateMachine.Plan storage plan = _plans[planId];
         if (plan.committed) {
@@ -73,8 +68,6 @@ library UVPPlanRegistration {
         plan.planHash = runtimePlanHash;
         plan.hooksHash = commit.hooksHash;
         plan.capabilitiesRoot = capabilitiesRoot;
-        plan.dockRoutesRoot = dockRoutesRoot;
-        plan.dockInterfaceRoot = dockInterfaceRoot;
         plan.executorCandidatesRoot = executorCandidatesRoot;
         plan.publisher = commit.publisher;
         plan.birthAuthorizer = commit.birthAuthorizer;
@@ -114,16 +107,14 @@ library UVPPlanRegistration {
             commit.hooksHash,
             capabilitiesRoot,
             hooks.length,
-            dockRoutesRoot,
-            dockInterfaceRoot,
             executorCandidatesRoot,
             commit.birthAuthorizer
         );
         emit UVPStateMachine.PlanPublisherRecorded(planId, commit.publisher);
     }
 
-    function _orEmptyDockRoot(bytes32 root) private pure returns (bytes32) {
-        return root == bytes32(0) ? DockMerkle.EMPTY_ROOT : root;
+    function _orEmptyRoot(bytes32 root) private pure returns (bytes32) {
+        return root == bytes32(0) ? MerkleCommitment.EMPTY_ROOT : root;
     }
 
     function _executorCandidatesRoot(UVPStateMachine.ExecutorCandidate[] calldata executorCandidates)
@@ -139,7 +130,7 @@ library UVPPlanRegistration {
                 )
             );
         }
-        return DockMerkle.root(leaves);
+        return MerkleCommitment.root(leaves);
     }
 
     function finalizePlan(
@@ -157,7 +148,7 @@ library UVPPlanRegistration {
 
         plan.finalized = true;
         IUVPPlanMetadataModule(planMetadataModule)
-            .finalizePlanMetadata(planId, plan.capabilitiesRoot, plan.dockRoutesRoot, plan.dockInterfaceRoot);
+            .finalizePlanMetadata(planId, plan.capabilitiesRoot);
 
         emit UVPStateMachine.PlanFinalized(planId, plan.planHash, plan.capabilitiesRoot);
         emit UVPStateMachine.PlanRegistered(planId, plan.planHash, plan.hookIds.length);
@@ -173,12 +164,6 @@ library UVPPlanRegistration {
             return seenCount;
         }
         _validateInstructions(input, false);
-        if (
-            input.flags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK)
-                == (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK)
-        ) {
-            revert UVPStateMachine.InvalidHook();
-        }
         if (_isOrderTrigger(input.flags) && input.flags & HOOK_FLAG_EMIT_READY == 0) {
             revert UVPStateMachine.SilentOrderTriggerHook(input.hookId);
         }
@@ -215,13 +200,6 @@ library UVPPlanRegistration {
                 }
                 updatedCount += 1;
             } else {
-                if (input.flags & HOOK_FLAG_ORDER_TRIGGER_DOCK != 0) {
-                    for (uint256 k = 0; k < dependents.length; k++) {
-                        if (plan.hooks[dependents[k]].flags & HOOK_FLAG_ORDER_TRIGGER_DOCK != 0) {
-                            revert UVPStateMachine.DuplicateBirthChannelKey(dependencyKey);
-                        }
-                    }
-                }
                 bool triggerOnly = inputIsTrigger;
                 for (uint256 k = 0; k < dependents.length; k++) {
                     if (!_isOrderTrigger(plan.hooks[dependents[k]].flags)) {
@@ -439,7 +417,7 @@ library UVPPlanRegistration {
     }
 
     function _isOrderTrigger(uint8 flags) private pure returns (bool) {
-        return flags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK) != 0;
+        return flags & HOOK_FLAG_ORDER_TRIGGER_MINT != 0;
     }
 
     function _hookCanMaterializeStage(uint8 flags) private pure returns (bool) {
@@ -453,8 +431,6 @@ library UVPPlanRegistration {
                 commit.publisher,
                 commit.hooksHash,
                 commit.capabilitiesRoot,
-                commit.dockRoutesRoot,
-                commit.dockInterfaceRoot,
                 commit.executorCandidatesRoot,
                 commit.birthAuthorizer,
                 commit.deadline
@@ -471,7 +447,7 @@ library UVPPlanRegistration {
         bytes32 r;
         bytes32 s;
         uint8 v;
-        assembly {
+        assembly ("memory-safe") {
             r := calldataload(signature.offset)
             s := calldataload(add(signature.offset, 0x20))
             v := byte(0, calldataload(add(signature.offset, 0x40)))
@@ -482,19 +458,10 @@ library UVPPlanRegistration {
     function planRuntimeHash(
         bytes32 hooksHash,
         bytes32 capabilitiesRoot,
-        bytes32 dockRoutesRoot,
-        bytes32 dockInterfaceRoot,
         bytes32 executorCandidatesRoot
     ) private pure returns (bytes32) {
         return keccak256(
-            abi.encode(
-                _PLAN_RUNTIME_HASH_DOMAIN,
-                hooksHash,
-                capabilitiesRoot,
-                dockRoutesRoot,
-                dockInterfaceRoot,
-                executorCandidatesRoot
-            )
+            abi.encode(_PLAN_RUNTIME_HASH_DOMAIN, hooksHash, capabilitiesRoot, executorCandidatesRoot)
         );
     }
 
@@ -556,7 +523,6 @@ library UVPPlanRegistration {
             uint256(keccak256(abi.encode(trigger.planId, trigger.sourceId, trigger.signalId, trigger.payloadHash)))
                 & ~(uint256(1) << 255)
         );
-        L_requireNotDockNamespace(orderId);
 
         L_requireBirthAdmission(_s, trigger.planId, orderId, trigger.sourceId, trigger.signalId);
         L_createOrder(_s, trigger.planId, orderId, trigger.creator, msg.sender);
@@ -724,8 +690,6 @@ library UVPPlanRegistration {
             originFactAttributions
         );
 
-        L_requireNotDockNamespace(trigger.orderId);
-
         L_createOrder(_s, trigger.planId, trigger.orderId, trigger.creator, relayer);
         L_authorizeSignalSubmitters(_s, trigger.planId, trigger.orderId, authorizations);
         emit UVPStateMachine.OrderTriggered(
@@ -775,7 +739,6 @@ library UVPPlanRegistration {
         }
 
         forkedOrderId = L_forkOrderIdFor(planId, parentOrderId, forkPayloadHash);
-        L_requireNotDockNamespace(forkedOrderId);
         L_createOrder(_s, planId, forkedOrderId, parentOrder.creator, initiator);
         _s.orders[planId][forkedOrderId].parentOrderId = parentOrderId;
         L_authorizeSignalSubmitters(_s, planId, forkedOrderId, authorizations);
@@ -861,7 +824,7 @@ library UVPPlanRegistration {
     }
 
     function L_isOrderTrigger(uint8 flags) private pure returns (bool) {
-        return flags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK) != 0;
+        return flags & HOOK_FLAG_ORDER_TRIGGER_MINT != 0;
     }
 
     function L_isPlanStage(UVPStateMachine.SMState storage _s, bytes32 planId, bytes32 stageId)
@@ -1273,7 +1236,7 @@ library UVPPlanRegistration {
         }
 
         if (nextStatus == UVPStateMachine.HookStatus.Ready && !runtime.readyEmitted) {
-            if (hook.flags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_ORDER_TRIGGER_DOCK | HOOK_FLAG_EMIT_READY) != 0) {
+            if (hook.flags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_EMIT_READY) != 0) {
                 runtime.readyEmitted = true;
                 L_materializeStage(_s, planId, orderId, hook.stageId, hookId, triggerSourceId, triggerSignalId);
                 emit UVPStateMachine.HookReady(planId, orderId, hookId, hook.stageId, hook.hookName);
@@ -1636,12 +1599,6 @@ library UVPPlanRegistration {
         }
     }
 
-    function L_requireNotDockNamespace(bytes32 orderId) private pure {
-        if (uint256(orderId) & (uint256(1) << 255) != 0) {
-            revert UVPStateMachine.InvalidDockOrderNamespace(orderId);
-        }
-    }
-
     function L_orderLinkOrderIdFor(
         bytes32 planId,
         bytes32 originPlanId,
@@ -1700,7 +1657,7 @@ library UVPPlanRegistration {
     }
 
     function L_writeWord(bytes memory encoded, uint256 offset, bytes32 value) private pure {
-        assembly {
+        assembly ("memory-safe") {
             mstore(add(add(encoded, 0x20), offset), value)
         }
     }
@@ -1717,7 +1674,7 @@ library UVPPlanRegistration {
         bytes32 r;
         bytes32 s;
         uint8 v;
-        assembly {
+        assembly ("memory-safe") {
             r := calldataload(signature.offset)
             s := calldataload(add(signature.offset, 0x20))
             v := byte(0, calldataload(add(signature.offset, 0x40)))

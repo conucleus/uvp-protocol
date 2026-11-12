@@ -286,7 +286,7 @@ test("sendSignals entries are a closed key set at the loader boundary", () => {
     () => parseZhixuDefinition(loaderCaseZhixu(["cmp"])),
     (error: unknown) =>
       error instanceof ZhixuLoadError &&
-      /must be an object \{name, validWhen\?\}/.test(error.message),
+      /must be an object \{name, validWhen\?, trigger\?\}/.test(error.message),
   );
 
   assert.throws(

@@ -36,8 +36,7 @@ spec:
       # 出生阶段（trigger）：空 oid + trigger 信号即建单
       # （triggerOrderFromOutsideFor）；该信号编译为 order-trigger 出生钩子
       # （MINT 位，emitReady=true），出生事实为 registrar::init.trigger。
-      trigger: [trigger]
-      sendSignals: [{ name: "trigger" }, { name: "str" }, { name: "cmp" }, { name: "err" }]
+      sendSignals: [{ name: "trigger", trigger: true }, { name: "str" }, { name: "cmp" }, { name: "err" }]
       fileResources:
         update_spec:
           fileType: local

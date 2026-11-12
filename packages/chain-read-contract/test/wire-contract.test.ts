@@ -186,14 +186,11 @@ function internalSnapshot() {
     },
     stateMachineOrders: { [ORDER_ID]: order },
     stateMachineDocks: {},
-    stateMachineDocksByTargetOrder: {},
-    stateMachineOrderDockChainDepth: {},
+    stateMachineDockBindings: {},
     stateMachineTasks: { [order.tasks["task-1"]!.taskId]: order.tasks["task-1"]! },
     lastEvent: provenance(15n),
     unresolvedModuleOrderEventCount: 0,
-    unresolvedDockEventCount: 2,
     unresolvedStageActivationEventCount: 0,
-    unresolvedDockTargetDeploymentCount: 0,
     capabilityEnrichmentMismatchCount: 0,
     unknownEventCount: 0
   };
@@ -338,28 +335,17 @@ describe("chain read wire contract", () => {
       sourceId: HASH,
       signalId: SIGNAL_ID
     };
-    const dockEntrance = {
-      hookId: bytes32("4"),
-      stageIdentifier: "settled",
-      stageId: bytes32("5"),
-      hookName: "OPEN_ENTER",
-      orderTriggerKind: "dock" as const,
-      source: "atelier",
-      signalName: "settled.openEntrance",
-      sourceId: bytes32("6"),
-      signalId: bytes32("7")
-    };
     const response: ChainPlanTriggersResponse = {
       chainId: CHAIN_ID,
       planId: PLAN_ID,
       planHash: PLAN_HASH,
-      triggers: [trigger, dockEntrance]
+      triggers: [trigger]
     };
 
     assert.deepEqual(parsePlanTriggersResponse(response), response);
     assert.deepEqual(
       parsePlanTriggersResponse(response).triggers.map((entry) => entry.hookId),
-      [HOOK_ID, bytes32("4")]
+      [HOOK_ID]
     );
 
     assert.throws(

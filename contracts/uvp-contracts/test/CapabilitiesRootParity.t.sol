@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
-import {DockMerkle} from "../src/libraries/DockMerkle.sol";
+import {MerkleCommitment} from "../src/libraries/MerkleCommitment.sol";
 
 interface CapabilitiesRootVm {
     function projectRoot() external view returns (string memory);
@@ -91,7 +91,7 @@ contract CapabilitiesRootParityTest {
             rawLeaves[cursor++] = leafValue;
         }
 
-        require(DockMerkle.root(rawLeaves) == rootValue, "capabilities-root golden root mismatch");
+        require(MerkleCommitment.root(rawLeaves) == rootValue, "capabilities-root golden root mismatch");
 
         bytes32[] memory uniqueLeaves = new bytes32[](uniqueCount);
         for (uint256 i = 0; i < uniqueCount; i++) {
@@ -101,7 +101,7 @@ contract CapabilitiesRootParityTest {
                 require(uniqueLeaves[i - 1] < uniqueLeaves[i], "capabilities-root golden leaves not strictly ascending");
             }
         }
-        require(DockMerkle.root(uniqueLeaves) == rootValue, "capabilities-root golden unique-leaf root mismatch");
+        require(MerkleCommitment.root(uniqueLeaves) == rootValue, "capabilities-root golden unique-leaf root mismatch");
     }
 
     function _assertLeafAndProof(
@@ -116,7 +116,7 @@ contract CapabilitiesRootParityTest {
         for (uint256 i = 0; i < proofLength; i++) {
             proof[i] = vm.parseJsonBytes32(fixture, string.concat(expectedBase, ".proof[", toString(i), "]"));
         }
-        require(DockMerkle.verify(rootValue, leafValue, proof), "proof does not verify against root");
+        require(MerkleCommitment.verify(rootValue, leafValue, proof), "proof does not verify against root");
     }
 
     function toString(uint256 value) private pure returns (string memory) {

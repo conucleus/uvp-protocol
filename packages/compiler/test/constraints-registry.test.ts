@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { compileOnchainHookPlan } from "../src/onchain/compile.js";
-import { hookPlanHashOf } from "../src/dock-commitments.js";
+import { hookPlanHashOf } from "../src/hook-plan/assemble.js";
 import type { HookPlanArtifact } from "../src/types/index.js";
 import {
   compileZhixuHookPlan,

@@ -24,20 +24,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "DOCKING_MODULE_ID",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "DOCK_ORDER_NAMESPACE_MASK",
+    "name": "DOCK_REGISTRY_MODULE_ID",
     "inputs": [],
     "outputs": [
       {
@@ -89,7 +76,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "HOOK_FLAG_EMIT_READY",
+    "name": "HOOK_FLAG_DOCK_EXECUTOR",
     "inputs": [],
     "outputs": [
       {
@@ -102,7 +89,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "HOOK_FLAG_ORDER_TRIGGER_DOCK",
+    "name": "HOOK_FLAG_EMIT_READY",
     "inputs": [],
     "outputs": [
       {
@@ -356,56 +343,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "authorizeDockedSignalsFromModule",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "authorizations",
-        "type": "tuple[]",
-        "internalType": "struct UVPStateMachine.SignalAuthorization[]",
-        "components": [
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "submitter",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "role",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "metadataHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          }
-        ]
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "authorizeSignalSubmittersFromModule",
     "inputs": [
       {
@@ -475,16 +412,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
           },
           {
             "name": "capabilitiesRoot",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "dockRoutesRoot",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "dockInterfaceRoot",
             "type": "bytes32",
             "internalType": "bytes32"
           },
@@ -603,135 +530,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "createDockedOrderFromModule",
-    "inputs": [
-      {
-        "name": "request",
-        "type": "tuple",
-        "internalType": "struct UVPStateMachine.DockEntranceRequest",
-        "components": [
-          {
-            "name": "targetPlanId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "linkedOrderId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "creator",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "relayer",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "entranceHookId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "entranceStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "payloadHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "idempotencyKey",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "submitter",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "authorizations",
-            "type": "tuple[]",
-            "internalType": "struct UVPStateMachine.SignalAuthorization[]",
-            "components": [
-              {
-                "name": "sourceId",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "signalId",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "submitter",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "role",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "metadataHash",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              }
-            ]
-          },
-          {
-            "name": "entranceAttribution",
-            "type": "tuple",
-            "internalType": "struct UVPStateMachine.FactAttribution",
-            "components": [
-              {
-                "name": "sourceId",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "signalId",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "stageId",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "capabilityProof",
-                "type": "bytes32[]",
-                "internalType": "bytes32[]"
-              }
-            ]
-          }
-        ]
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "derivedSignalModule",
     "inputs": [],
     "outputs": [
@@ -745,13 +543,74 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "dockingModule",
+    "name": "dockRegistry",
     "inputs": [],
     "outputs": [
       {
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "evaluateDockWindow",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "instructions",
+        "type": "tuple[]",
+        "internalType": "struct IUVPStateMachineCore.WindowInstruction[]",
+        "components": [
+          {
+            "name": "op",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "sourceId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "signalId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "arity",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "delaySeconds",
+            "type": "uint64",
+            "internalType": "uint64"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "satisfied",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "dueInSeconds",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "stateMutability": "view"
@@ -1252,6 +1111,40 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
+    "name": "isSignalAdmissionSatisfied",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "sourceId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "signalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isSignalSubmitterAuthorized",
     "inputs": [
       {
@@ -1563,30 +1456,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "planDockRoots",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "dockRoutesRoot",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "dockInterfaceRoot",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "planExecutorCandidatesRoot",
     "inputs": [
       {
@@ -1814,16 +1683,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "bytes32"
       },
       {
-        "name": "dockRoutesRoot",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "dockInterfaceRoot",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
         "name": "executorCandidatesRoot",
         "type": "bytes32",
         "internalType": "bytes32"
@@ -1856,83 +1715,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "hookId",
         "type": "bytes32",
         "internalType": "bytes32"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "recordDockedInputFromModule",
-    "inputs": [
-      {
-        "name": "fact",
-        "type": "tuple",
-        "internalType": "struct UVPStateMachine.DockInputFact",
-        "components": [
-          {
-            "name": "planId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "orderId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "payloadHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "idempotencyKey",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "submitter",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "attribution",
-            "type": "tuple",
-            "internalType": "struct UVPStateMachine.FactAttribution",
-            "components": [
-              {
-                "name": "sourceId",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "signalId",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "stageId",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "capabilityProof",
-                "type": "bytes32[]",
-                "internalType": "bytes32[]"
-              }
-            ]
-          }
-        ]
       }
     ],
     "outputs": [],
@@ -2003,7 +1785,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "setDockingModule",
+    "name": "setDockRegistry",
     "inputs": [
       {
         "name": "moduleAddress",
@@ -2156,6 +1938,30 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
+    "name": "stageHasDockExecutorHook",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "stageHasOrderTriggerHook",
     "inputs": [
       {
@@ -2295,6 +2101,82 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
+    "name": "submitDockOutputSignalFromModule",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "sourceId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "signalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "payloadHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "idempotencyKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "submitter",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "attribution",
+        "type": "tuple",
+        "internalType": "struct UVPStateMachine.FactAttribution",
+        "components": [
+          {
+            "name": "sourceId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "signalId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "stageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "capabilityProof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "submitted",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "submitSignal",
     "inputs": [
       {
@@ -2410,76 +2292,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
                 "internalType": "string"
               }
             ]
-          }
-        ]
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "submitSignalFromModule",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "sourceId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "signalId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "payloadHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "idempotencyKey",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "submitter",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "attribution",
-        "type": "tuple",
-        "internalType": "struct UVPStateMachine.FactAttribution",
-        "components": [
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "stageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "capabilityProof",
-            "type": "bytes32[]",
-            "internalType": "bytes32[]"
           }
         ]
       }
@@ -3245,18 +3057,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "uint256"
       },
       {
-        "name": "dockRoutesRoot",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "dockInterfaceRoot",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
         "name": "executorCandidatesRoot",
         "type": "bytes32",
         "indexed": false,
@@ -3683,17 +3483,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "DuplicateBirthChannelKey",
-    "inputs": [
-      {
-        "name": "signalKey",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "EmptyPlan",
     "inputs": []
   },
@@ -3813,17 +3602,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     "type": "error",
     "name": "IncompleteModuleConfiguration",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidDockOrderNamespace",
-    "inputs": [
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
   },
   {
     "type": "error",
@@ -4993,6 +4771,710 @@ export const FILE_RESOURCE_MODULE_ABI = [
   }
 ] as const;
 
+export const DOCK_REGISTRY_CONTRACT_NAME = "UVPDockRegistry" as const;
+export const DOCK_REGISTRY_ABI = [
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "stateMachineAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "dockExists",
+    "inputs": [
+      {
+        "name": "dkid",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "dockOutputCount",
+    "inputs": [
+      {
+        "name": "dkid",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getDock",
+    "inputs": [
+      {
+        "name": "dkid",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "fromPlanId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "fromSourceId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "toPlanId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "toStageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "toSourceId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "docHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "publisher",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "exists",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getDockOutput",
+    "inputs": [
+      {
+        "name": "dkid",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "outputIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "signalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "relation",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "atoms",
+        "type": "tuple[]",
+        "internalType": "struct IUVPDockRegistry.DockAtom[]",
+        "components": [
+          {
+            "name": "stageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "signalId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "relation",
+            "type": "uint8",
+            "internalType": "uint8"
+          }
+        ]
+      },
+      {
+        "name": "window",
+        "type": "tuple[]",
+        "internalType": "struct IUVPStateMachineCore.WindowInstruction[]",
+        "components": [
+          {
+            "name": "op",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "sourceId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "signalId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "arity",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "delaySeconds",
+            "type": "uint64",
+            "internalType": "uint64"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "registerDock",
+    "inputs": [
+      {
+        "name": "fromPlanId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "fromSourceId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "toPlanId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "toStageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "toSourceId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "docHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "outputs",
+        "type": "tuple[]",
+        "internalType": "struct IUVPDockRegistry.DockOutputInput[]",
+        "components": [
+          {
+            "name": "signalId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "relation",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "atoms",
+            "type": "tuple[]",
+            "internalType": "struct IUVPDockRegistry.DockAtomInput[]",
+            "components": [
+              {
+                "name": "stageId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "signalId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "relation",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "capabilityProof",
+                "type": "bytes32[]",
+                "internalType": "bytes32[]"
+              }
+            ]
+          },
+          {
+            "name": "window",
+            "type": "tuple[]",
+            "internalType": "struct IUVPStateMachineCore.WindowInstruction[]",
+            "components": [
+              {
+                "name": "op",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "sourceId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "signalId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "arity",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "delaySeconds",
+                "type": "uint64",
+                "internalType": "uint64"
+              }
+            ]
+          },
+          {
+            "name": "capabilityProof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "dkid",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "stateMachine",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IUVPStateMachineCore"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "DockRegistered",
+    "inputs": [
+      {
+        "name": "dkid",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "fromPlanId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "toPlanId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "fromSourceId",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "toStageId",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "toSourceId",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "docHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "publisher",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "outputs",
+        "type": "tuple[]",
+        "indexed": false,
+        "internalType": "struct IUVPDockRegistry.DockOutput[]",
+        "components": [
+          {
+            "name": "signalId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "relation",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "atoms",
+            "type": "tuple[]",
+            "internalType": "struct IUVPDockRegistry.DockAtom[]",
+            "components": [
+              {
+                "name": "stageId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "signalId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "relation",
+                "type": "uint8",
+                "internalType": "uint8"
+              }
+            ]
+          },
+          {
+            "name": "window",
+            "type": "tuple[]",
+            "internalType": "struct IUVPStateMachineCore.WindowInstruction[]",
+            "components": [
+              {
+                "name": "op",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "sourceId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "signalId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "arity",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "delaySeconds",
+                "type": "uint64",
+                "internalType": "uint64"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "DockAlreadyRegistered",
+    "inputs": [
+      {
+        "name": "dkid",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockAtomCapabilityNotFound",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "signalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockAtomDuplicate",
+    "inputs": [
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "signalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockAtomKeyZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DockAtomUnreferenced",
+    "inputs": [
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "signalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockCapabilityVocabularyMissing",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockDocHashZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DockFromPlanUnknown",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockOutputCapabilityNotFound",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "signalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockOutputDuplicate",
+    "inputs": [
+      {
+        "name": "signalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockOutputsEmpty",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DockRelationInvalid",
+    "inputs": [
+      {
+        "name": "relation",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockSignalAtomMissing",
+    "inputs": [
+      {
+        "name": "signalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockToPlanUnknown",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockTooManyAtoms",
+    "inputs": [
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockTooManyInstructions",
+    "inputs": [
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockTooManyOutputs",
+    "inputs": [
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockWindowDelayInvalid",
+    "inputs": [
+      {
+        "name": "delaySeconds",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockWindowEmpty",
+    "inputs": [
+      {
+        "name": "outputIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockWindowInvalid",
+    "inputs": [
+      {
+        "name": "outputIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockWindowSourceMismatch",
+    "inputs": [
+      {
+        "name": "outputIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "sourceId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockZeroInput",
+    "inputs": []
+  }
+] as const;
+
 export const HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
-export const HOOK_FLAG_ORDER_TRIGGER_DOCK = 2;
 export const HOOK_FLAG_EMIT_READY = 4;
+export const HOOK_FLAG_ADMISSION = 8;
+export const HOOK_FLAG_DOCK_EXECUTOR = 16;

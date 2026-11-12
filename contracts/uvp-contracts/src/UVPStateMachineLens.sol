@@ -16,46 +16,39 @@ interface IUVPStagePatchModuleLens {
             uint256 patchNonce,
             string memory metadataURI
         );
-}
 
-interface IUVPDockingModuleLens {
-    function getActiveDock(bytes32 dockInstanceId)
+    function getActiveStageDockSelection(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
+        external
+        view
+        returns (bool exists, bytes32 dockId, bytes32 fromPlanId, bytes32 fromOrderId);
+
+    function getStageDockBinding(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 targetStageId,
+        bytes32 fromOrderId
+    )
         external
         view
         returns (
-            bytes32 localPlanId,
-            bytes32 localOrderId,
-            bytes32 localStageId,
-            bytes32 routeId,
-            bytes32 routeHash,
-            bytes32 targetPlanId,
-            bytes32 linkedOrderId,
-            bytes32 interfaceNameId,
-            uint8 depth,
-            bool exists
+            bool selected,
+            bool current,
+            bytes32 dockId,
+            address executor,
+            bytes32 fromPlanId,
+            bytes32 bindingId
         );
 
-    function getDockInputBinding(bytes32 dockInstanceId, bytes32 inputBindingHash)
+    function dockOutputWindow(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 targetStageId,
+        bytes32 fromOrderId,
+        uint256 outputIndex
+    )
         external
         view
-        returns (bytes32 localHookId, bytes32 portKey, bytes32 targetSourceId, bytes32 targetSignalId, bool exists);
-
-    function getDockOutputBinding(bytes32 dockInstanceId, bytes32 outputBindingHash)
-        external
-        view
-        returns (
-            bytes32 localSourceId,
-            bytes32 localSignalId,
-            bytes32 portKey,
-            bytes32 targetSourceId,
-            bytes32 targetSignalId,
-            bool exists
-        );
-
-    function dockInputDelivered(bytes32 dockInstanceId, bytes32 inputBindingHash) external view returns (bool);
-    function dockOutputDelivered(bytes32 dockInstanceId, bytes32 outputBindingHash) external view returns (bool);
-    function dockByLocalRoute(bytes32 localRouteInstanceKey) external view returns (bytes32);
-    function dockByTargetOrder(bytes32 targetEndpointKey) external view returns (bytes32);
+        returns (bool current, bool aSatisfied, uint64 aDueInSeconds, bool bSatisfied, bool emitted);
 }
 
 interface IUVPPlanMetadataModuleLens {
@@ -97,7 +90,6 @@ interface IUVPOrderLinkModuleLens {
 
 interface IUVPStateMachineModuleDirectory {
     function stagePatchModule() external view returns (address);
-    function dockingModule() external view returns (address);
     function planMetadataModule() external view returns (address);
     function orderLinkModule() external view returns (address);
 }
@@ -128,59 +120,49 @@ contract UVPStateMachineLens {
             .getActiveStageExecutorPatch(planId, orderId, targetStageId);
     }
 
-    function getActiveDock(bytes32 dockInstanceId)
+    function getActiveStageDockSelection(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
+        external
+        view
+        returns (bool exists, bytes32 dockId, bytes32 fromPlanId, bytes32 fromOrderId)
+    {
+        return IUVPStagePatchModuleLens(_moduleDirectory.stagePatchModule())
+            .getActiveStageDockSelection(planId, orderId, targetStageId);
+    }
+
+    function getStageDockBinding(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 targetStageId,
+        bytes32 fromOrderId
+    )
         external
         view
         returns (
-            bytes32 localPlanId,
-            bytes32 localOrderId,
-            bytes32 localStageId,
-            bytes32 routeId,
-            bytes32 routeHash,
-            bytes32 targetPlanId,
-            bytes32 linkedOrderId,
-            bytes32 interfaceNameId,
-            uint8 depth,
-            bool exists
+            bool selected,
+            bool current,
+            bytes32 dockId,
+            address executor,
+            bytes32 fromPlanId,
+            bytes32 bindingId
         )
     {
-        return IUVPDockingModuleLens(_moduleDirectory.dockingModule()).getActiveDock(dockInstanceId);
+        return IUVPStagePatchModuleLens(_moduleDirectory.stagePatchModule())
+            .getStageDockBinding(planId, orderId, targetStageId, fromOrderId);
     }
 
-    function getDockInputBinding(bytes32 dockInstanceId, bytes32 inputBindingHash)
+    function dockOutputWindow(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 targetStageId,
+        bytes32 fromOrderId,
+        uint256 outputIndex
+    )
         external
         view
-        returns (bytes32 localHookId, bytes32 portKey, bytes32 targetSourceId, bytes32 targetSignalId, bool exists)
+        returns (bool current, bool aSatisfied, uint64 aDueInSeconds, bool bSatisfied, bool emitted)
     {
-        return IUVPDockingModuleLens(_moduleDirectory.dockingModule())
-            .getDockInputBinding(dockInstanceId, inputBindingHash);
-    }
-
-    function getDockOutputBinding(bytes32 dockInstanceId, bytes32 outputBindingHash)
-        external
-        view
-        returns (
-            bytes32 localSourceId,
-            bytes32 localSignalId,
-            bytes32 portKey,
-            bytes32 targetSourceId,
-            bytes32 targetSignalId,
-            bool exists
-        )
-    {
-        return IUVPDockingModuleLens(_moduleDirectory.dockingModule())
-            .getDockOutputBinding(dockInstanceId, outputBindingHash);
-    }
-
-    function dockInputDelivered(bytes32 dockInstanceId, bytes32 inputBindingHash) external view returns (bool) {
-        return
-            IUVPDockingModuleLens(_moduleDirectory.dockingModule()).dockInputDelivered(dockInstanceId, inputBindingHash);
-    }
-
-    function dockOutputDelivered(bytes32 dockInstanceId, bytes32 outputBindingHash) external view returns (bool) {
-        return
-            IUVPDockingModuleLens(_moduleDirectory.dockingModule())
-                .dockOutputDelivered(dockInstanceId, outputBindingHash);
+        return IUVPStagePatchModuleLens(_moduleDirectory.stagePatchModule())
+            .dockOutputWindow(planId, orderId, targetStageId, fromOrderId, outputIndex);
     }
 
     function planCapabilitiesRoot(bytes32 planId) external view returns (bytes32) {

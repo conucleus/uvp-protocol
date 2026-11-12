@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-library DockMerkle {
+library MerkleCommitment {
     bytes32 public constant EMPTY_ROOT = keccak256("");
 
     function root(bytes32[] memory leaves) internal pure returns (bytes32) {
@@ -59,7 +59,7 @@ library DockMerkle {
                 }
             }
         }
-        assembly {
+        assembly ("memory-safe") {
             mstore(leaves, length)
         }
     }
