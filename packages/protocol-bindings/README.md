@@ -41,14 +41,13 @@ pnpm --filter @uvp-eth/protocol-bindings build
 
 - `OrderTriggerKind` is `"none" | "trigger"`.
   `buildCompactHookFlags` folds it into the compact-hook flag word:
-  `"trigger"` → `HOOK_FLAG_ORDER_TRIGGER_MINT` (the MINT bit is reused for
-  trigger signals), plus `HOOK_FLAG_EMIT_READY` when the hook must emit ready.
-  Dock stages are not an order-trigger kind: the compiler marks their hooks
-  with `HOOK_FLAG_DOCK_EXECUTOR`. Flags are committed through the plan's
-  `hooksHash`; they are not an ABI field.
+  `"trigger"` → `HOOK_FLAG_ORDER_TRIGGER_MINT`, plus `HOOK_FLAG_EMIT_READY`
+  when the hook must emit ready. The compiler marks dock-stage hooks with
+  `HOOK_FLAG_DOCK_EXECUTOR`. Flags are committed through the plan's
+  `hooksHash`.
 - `buildTriggerOrderFromOutsideTypedData` builds
   `UVPStateMachineTriggerOrderFromOutside` typed data under the product-submit
-  domain (`UVPStateMachine`, version `0.16`). `triggerHookId` +
+  domain (`UVPStateMachine`, version `0.17`). `triggerHookId` +
   `triggerStageId` explicitly select one trigger birth line among the plan's
   order-trigger hooks; the signed message also covers `authorizationsHash`.
 - `buildTriggerOrderFromOutsideForCall` encodes the relayer-submitted signed
@@ -57,11 +56,10 @@ pnpm --filter @uvp-eth/protocol-bindings build
 - `deriveTriggerOrderId(planId, sourceId, signalId, payloadHash)` mirrors the
   on-chain `triggerOrderIdFor`: `keccak256(abi.encode(planId, sourceId,
   signalId, payloadHash))` with the reserved top namespace bit cleared.
-- The trigger-birth surface keeps the contract ABI aligned with the current
-  batch: the state-machine fixture is `uvp-state-machine.v0.19.json` and the
-  linked-library fixture is `uvp-plan-registration.v0.6.json`.
-  `SignalAdmissionRejected` and `DuplicateBirthChannelKey` keep their existing
-  signatures.
+- The trigger-birth surface pins the state-machine fixture
+  `uvp-state-machine.v0.19.json` and the linked-library fixture
+  `uvp-plan-registration.v0.6.json`; birth admission rejects with
+  `SignalAdmissionRejected`.
 
 ## Dock Write Surface
 
@@ -92,12 +90,13 @@ pnpm --filter @uvp-eth/protocol-bindings build
   on-chain leaf formulas: `keccak256(abi.encode(keccak256(domain), …words))`
   with the `UVP_SIGNAL_CAPABILITY_V1` / `UVP_SELECTOR_BINDING_V1` /
   `UVP_FILE_WRITER_V1` domain separators.
-- `capabilitiesRootOf` builds the sorted-pairing tree root over both tables
+- `capabilitiesRootOf` builds the sorted-pairing tree root over the capability
+  tables (signal capabilities, selector bindings, file writers)
   (dedup + sort, `keccak256(min ‖ max)` per level, odd tail leaf promoted,
   empty tables normalize to `EMPTY_CAPABILITIES_ROOT = keccak256("")`).
 - `factAttribution` returns the owning stage plus its capability proof for a
   `(sourceId, signalId)` fact (relation `0` capability); wire it straight into
-  `buildSubmitSignalForCall`'s `attribution` argument.
+  the direct `submitSignal` call's `attribution` argument.
 - `selectorBindingProofFor` returns the selector stage plus its binding proof
   for a bound target stage; wire it into the `selectorBinding` argument.
 - `fileWriterProofFor` returns the capability proof for a
@@ -107,11 +106,10 @@ pnpm --filter @uvp-eth/protocol-bindings build
 ## Stage Executor Patch Helpers
 
 - Exported mode constants mirror the contract constants:
-  `EXECUTOR_PATCH_MODE_ASSIGN`, `EXECUTOR_PATCH_MODE_HANDOFF`, and
-  `EXECUTOR_PATCH_MODE_REPLACEMENT`.
+  `EXECUTOR_PATCH_MODE_ASSIGN` and `EXECUTOR_PATCH_MODE_HANDOFF`.
 - `buildStageExecutorPatchTypedData` builds
-  `UVPStagePatchModuleStageExecutorPatch` EIP-712 typed data for `assign`,
-  `handoff`, and `replacement` payloads. The payload includes `mode`,
+  `UVPStagePatchModuleStageExecutorPatch` EIP-712 typed data for `assign` and
+  `handoff` payloads. The payload includes `mode`,
   `previousExecutor`, `approvalSourceId`, and `approvalSignalId`.
 - `recoverStageExecutorPatchSigner` recovers either the selector wallet or the
   previous executor wallet from a signature over the same executor patch typed

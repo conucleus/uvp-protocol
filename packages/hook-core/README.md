@@ -11,12 +11,10 @@ It does not know about databases, Solidity, escrow, Kafka, or funding adapters.
 - Cross-source facts are consumed via the unified subscription entry
   `::ANCHOR(@source::stage.signal)` (empty source header). Delivery is
   per contributing event with full provenance; aggregation/pairing is the
-  subscribing executor's decision. Stage `mint: per-fact` declares per-fact
-  order birth (birth stages accept subscription entries only).
-- The non-canonical forms `::OUTSIDE@`, `::ANCHOR@` (header
-  form), and `OUTSOURCE`, plus the stage `trigger` entry table and
-  `externalSignals`, are rejected by the parser in uvp.semantic.v1.
-- Signal references must use `stage.signal`.
+  subscribing executor's decision. Order birth is declared by
+  `sendSignals[].trigger: true` (birth stages accept subscription entries only).
+- Signal references use `stage.signal`; subscription entries use the unified
+  `::ANCHOR(...)` header form.
 - Runtime signal indexes are first-writer-wins by `source::signalName`.
 - Negative conditions are monotonic: once `~A` sees `A`, the hook evaluates to
   `cxl`, even if another positive anchor has not arrived yet.

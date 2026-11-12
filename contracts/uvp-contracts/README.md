@@ -159,10 +159,11 @@ code do not silently drift away from the contract ABI.
    as the "can birth/derive here" gate, for which the two-step middle state must
    read false).
 5. Any relayer submits a signed trigger-order request. A plan may carry several
-   trigger birth lines: each `stage.trigger` signal compiles to one order-trigger
-   hook carrying the reused `ORDER_TRIGGER_MINT` bit, and the request selects one
-   line explicitly with `triggerHookId` + `triggerStageId` (the hook must carry
-   the MINT flag and belong to that stage). After the signature and plan /
+   trigger birth lines: each signal declared with `sendSignals[].trigger: true`
+   compiles to one order-trigger hook carrying the reused `ORDER_TRIGGER_MINT`
+   bit, and the request selects one line explicitly with `triggerHookId` +
+   `triggerStageId` (the hook must carry the order-trigger flag and belong to
+   that stage). After the signature and plan /
    birth-authorizer checks, the contract evaluates the selected trigger signal's
    admission instruction plan in an empty order context; only if admitted does it
    create the order, write explicit `SignalAuthorization[]` records, record the
