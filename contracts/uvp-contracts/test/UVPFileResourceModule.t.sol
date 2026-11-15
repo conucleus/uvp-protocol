@@ -36,15 +36,12 @@ contract UVPFileResourceModuleTest {
 
     UVPFileResourceModule private _fileModule;
     UVPPlanMetadataModule private _metadata;
-    mapping(bytes32 stageId => address executor) private _activeExecutors;
-    mapping(bytes32 stageId => mapping(address submitter => bool)) private _fileWriteAuthorized;
+    mapping(bytes32 stageId => address executor) private _effectiveExecutors;
 
     function setUp() public {
         _metadata = new UVPPlanMetadataModule(address(this));
         _fileModule = new UVPFileResourceModule(address(this));
-        _activeExecutors[TARGET_STAGE] = TARGET_EXECUTOR;
-        _fileWriteAuthorized[TARGET_STAGE][TARGET_EXECUTOR] = true;
-        _fileWriteAuthorized[WRITER_STAGE][WRITER_EXECUTOR] = true;
+        _effectiveExecutors[TARGET_STAGE] = TARGET_EXECUTOR;
     }
 
     function orderExists(bytes32, bytes32) external pure returns (bool) {
@@ -59,25 +56,20 @@ contract UVPFileResourceModuleTest {
         return true;
     }
 
-    function activeStageExecutor(bytes32, bytes32, bytes32 stageId) external view returns (address) {
-        return _activeExecutors[stageId];
-    }
-
-    function hasExplicitSignalAuthorization(bytes32, bytes32, bytes32 stageId, bytes32, address submitter)
+    function isEffectiveStageExecutor(bytes32, bytes32, bytes32 stageId, address executor)
         external
         view
         returns (bool)
     {
-        return _fileWriteAuthorized[stageId][submitter];
+        return _effectiveExecutors[stageId] == executor;
     }
-
 
     function planMetadataModule() external view returns (address) {
         return address(_metadata);
     }
 
     function testAddStoresContentHashHandleAndPatchHash() public {
-        _apply(_singleOpPatch(bytes32(0), bytes32(0), _add(KEY, CONTENT_HASH_1, "uvp://file/one")), TARGET_EXECUTOR);
+        _apply(_singleOpPatch(bytes32(0), bytes32(0), _add(KEY, CONTENT_HASH_1, "uvp://file/one")), TARGET_EXECUTOR, 0);
 
         (bool exists, bytes32 contentHash, string memory handle, bytes32 patchHash) =
             _fileModule.getStageFile(PLAN_ID, ORDER_ID, TARGET_STAGE, KEY);
@@ -89,14 +81,14 @@ contract UVPFileResourceModuleTest {
     }
 
     function testAddRejectsExistingKey() public {
-        _apply(_singleOpPatch(bytes32(0), bytes32(0), _add(KEY, CONTENT_HASH_1, "uvp://file/one")), TARGET_EXECUTOR);
+        _apply(_singleOpPatch(bytes32(0), bytes32(0), _add(KEY, CONTENT_HASH_1, "uvp://file/one")), TARGET_EXECUTOR, 0);
         bytes32 currentFilesHash = _fileModule.stageFilesHash(PLAN_ID, ORDER_ID, TARGET_STAGE);
 
         FilePatch memory patch =
             _singleOpPatch(currentFilesHash, bytes32(0), _add(KEY, CONTENT_HASH_2, "uvp://file/two"));
         bytes32 digest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, patch);
         vm.expectRevert(abi.encodeWithSelector(UVPFileResourceModule.FileKeyExists.selector, KEY));
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, TARGET_EXECUTOR, bytes32(0), TARGET_STAGE, bytes32(0), true);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, TARGET_EXECUTOR, bytes32(0));
     }
 
     function testReplaceAndRemoveRejectMissingKey() public {
@@ -104,20 +96,20 @@ contract UVPFileResourceModuleTest {
             _singleOpPatch(bytes32(0), bytes32(0), _replace(KEY, CONTENT_HASH_1, "uvp://file/one"));
         bytes32 replaceDigest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, replacePatch);
         vm.expectRevert(abi.encodeWithSelector(UVPFileResourceModule.FileKeyMissing.selector, KEY));
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, replaceDigest, replacePatch, TARGET_EXECUTOR, bytes32(0), TARGET_STAGE, bytes32(0), true);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, replaceDigest, replacePatch, TARGET_EXECUTOR, bytes32(0));
 
         FilePatch memory removePatch = _singleOpPatch(bytes32(0), bytes32(0), _remove(KEY));
         bytes32 removeDigest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, removePatch);
         vm.expectRevert(abi.encodeWithSelector(UVPFileResourceModule.FileKeyMissing.selector, KEY));
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, removeDigest, removePatch, TARGET_EXECUTOR, bytes32(0), TARGET_STAGE, bytes32(0), true);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, removeDigest, removePatch, TARGET_EXECUTOR, bytes32(0));
     }
 
     function testReplaceAndRemoveRewriteTheView() public {
-        _apply(_singleOpPatch(bytes32(0), bytes32(0), _add(KEY, CONTENT_HASH_1, "uvp://file/one")), TARGET_EXECUTOR);
+        _apply(_singleOpPatch(bytes32(0), bytes32(0), _add(KEY, CONTENT_HASH_1, "uvp://file/one")), TARGET_EXECUTOR, 0);
 
         bytes32 firstFilesHash = _fileModule.stageFilesHash(PLAN_ID, ORDER_ID, TARGET_STAGE);
         _apply(
-            _singleOpPatch(firstFilesHash, bytes32(0), _replace(KEY, CONTENT_HASH_2, "uvp://file/two")), TARGET_EXECUTOR
+            _singleOpPatch(firstFilesHash, bytes32(0), _replace(KEY, CONTENT_HASH_2, "uvp://file/two")), TARGET_EXECUTOR, 0
         );
         (bool replaced, bytes32 replacedHash, string memory replacedHandle,) =
             _fileModule.getStageFile(PLAN_ID, ORDER_ID, TARGET_STAGE, KEY);
@@ -126,7 +118,7 @@ contract UVPFileResourceModuleTest {
         require(keccak256(bytes(replacedHandle)) == keccak256(bytes("uvp://file/two")), "replaced handle");
 
         bytes32 secondFilesHash = _fileModule.stageFilesHash(PLAN_ID, ORDER_ID, TARGET_STAGE);
-        _apply(_singleOpPatch(secondFilesHash, bytes32(0), _remove(KEY)), TARGET_EXECUTOR);
+        _apply(_singleOpPatch(secondFilesHash, bytes32(0), _remove(KEY)), TARGET_EXECUTOR, 0);
         (bool existsAfterRemove, bytes32 removedHash, string memory removedHandle,) =
             _fileModule.getStageFile(PLAN_ID, ORDER_ID, TARGET_STAGE, KEY);
         require(!existsAfterRemove, "remove kept key alive");
@@ -138,7 +130,7 @@ contract UVPFileResourceModuleTest {
     }
 
     function testBaseHashMustMatchCurrentFilesHash() public {
-        _apply(_singleOpPatch(bytes32(0), bytes32(0), _add(KEY, CONTENT_HASH_1, "uvp://file/one")), TARGET_EXECUTOR);
+        _apply(_singleOpPatch(bytes32(0), bytes32(0), _add(KEY, CONTENT_HASH_1, "uvp://file/one")), TARGET_EXECUTOR, 0);
         bytes32 currentFilesHash = _fileModule.stageFilesHash(PLAN_ID, ORDER_ID, TARGET_STAGE);
 
         FilePatch memory stalePatch =
@@ -147,7 +139,7 @@ contract UVPFileResourceModuleTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPFileResourceModule.FileBaseHashMismatch.selector, currentFilesHash, bytes32(0))
         );
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, staleDigest, stalePatch, TARGET_EXECUTOR, bytes32(0), TARGET_STAGE, bytes32(0), true);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, staleDigest, stalePatch, TARGET_EXECUTOR, bytes32(0));
     }
 
     function testFilesDigestMustMatchCanonicalPatch() public {
@@ -157,16 +149,16 @@ contract UVPFileResourceModuleTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPFileResourceModule.FileDigestMismatch.selector, expectedDigest, WRONG_DIGEST)
         );
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, WRONG_DIGEST, patch, TARGET_EXECUTOR, bytes32(0), TARGET_STAGE, bytes32(0), true);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, WRONG_DIGEST, patch, TARGET_EXECUTOR, bytes32(0));
     }
 
     function testDuplicatePatchIsAbsorbedWithoutStateOrLogs() public {
         FilePatch memory patch = _singleOpPatch(bytes32(0), bytes32(0), _add(KEY, CONTENT_HASH_1, "uvp://file/one"));
-        _apply(patch, TARGET_EXECUTOR);
+        _apply(patch, TARGET_EXECUTOR, 0);
         bytes32 appliedFilesHash = _fileModule.stageFilesHash(PLAN_ID, ORDER_ID, TARGET_STAGE);
 
         vm.recordLogs();
-        _apply(patch, TARGET_EXECUTOR);
+        _apply(patch, TARGET_EXECUTOR, 0);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         require(logs.length == 0, "duplicate re-emitted events");
@@ -178,7 +170,7 @@ contract UVPFileResourceModuleTest {
         require(exists && contentHash == CONTENT_HASH_1, "duplicate rewrote key");
     }
 
-    function testSelfWriterRequiresFileWriteAuthorization() public {
+    function testNonEffectiveExecutorCannotWriteTargetStage() public {
         FilePatch memory patch = _singleOpPatch(bytes32(0), bytes32(0), _add(KEY, CONTENT_HASH_1, "uvp://file/one"));
         bytes32 digest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, patch);
         vm.expectRevert(
@@ -186,11 +178,11 @@ contract UVPFileResourceModuleTest {
                 UVPFileResourceModule.FileWriterUnauthorized.selector, ORDER_ID, TARGET_STAGE, bytes32(0), OUTSIDER
             )
         );
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, OUTSIDER, bytes32(0), TARGET_STAGE, bytes32(0), true);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, OUTSIDER, bytes32(0));
     }
 
     function testWriterStageRequiresCapabilityLeaf() public {
-        _activeExecutors[WRITER_STAGE] = WRITER_EXECUTOR;
+        _effectiveExecutors[WRITER_STAGE] = WRITER_EXECUTOR;
         FilePatch memory patch = _singleOpPatch(bytes32(0), WRITER_STAGE, _add(KEY, CONTENT_HASH_1, "uvp://file/one"));
         bytes32 digest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, patch);
 
@@ -203,21 +195,22 @@ contract UVPFileResourceModuleTest {
                 WRITER_EXECUTOR
             )
         );
-        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, WRITER_EXECUTOR, bytes32(0), WRITER_STAGE, bytes32(0), true);
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, WRITER_EXECUTOR, bytes32(0));
     }
 
     function testWriterStageCapabilityAuthorizesWriterExecutor() public {
-        _activeExecutors[WRITER_STAGE] = WRITER_EXECUTOR;
+        _effectiveExecutors[WRITER_STAGE] = WRITER_EXECUTOR;
         _metadata.finalizePlanMetadata(PLAN_ID, _metadata.fileWriterLeaf(TARGET_STAGE, WRITER_STAGE));
         FilePatch memory patch = _singleOpPatch(bytes32(0), WRITER_STAGE, _add(KEY, CONTENT_HASH_1, "uvp://file/one"));
 
-        _apply(patch, WRITER_EXECUTOR);
+        _apply(patch, WRITER_EXECUTOR, 0);
 
         (bool exists, bytes32 contentHash,,) = _fileModule.getStageFile(PLAN_ID, ORDER_ID, TARGET_STAGE, KEY);
         require(exists && contentHash == CONTENT_HASH_1, "writer-stage patch not applied");
     }
 
-    function testSignalStageWriterRequiresTargetAllowlist() public {
+    function testSignalStageWriterRequiresCapabilityLeaf() public {
+        _effectiveExecutors[WRITER_STAGE] = WRITER_EXECUTOR;
         FilePatch memory patch = _singleOpPatch(bytes32(0), bytes32(0), _add(KEY, CONTENT_HASH_1, "uvp://file/one"));
         bytes32 digest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, patch);
 
@@ -230,35 +223,28 @@ contract UVPFileResourceModuleTest {
                 WRITER_EXECUTOR
             )
         );
-        _fileModule.applyStageFilePatch(
-            PLAN_ID, ORDER_ID, digest, patch, WRITER_EXECUTOR, WRITER_STAGE, WRITER_STAGE, bytes32(uint256(1)), false
-        );
+        _fileModule.applyStageFilePatch(PLAN_ID, ORDER_ID, digest, patch, WRITER_EXECUTOR, WRITER_STAGE);
     }
 
-    function testSignalStageWriterWithTargetAllowlistSucceeds() public {
+    function testSignalStageWriterWithCapabilitySucceeds() public {
+        _effectiveExecutors[WRITER_STAGE] = WRITER_EXECUTOR;
         _metadata.finalizePlanMetadata(PLAN_ID, _metadata.fileWriterLeaf(TARGET_STAGE, WRITER_STAGE));
         FilePatch memory patch = _singleOpPatch(bytes32(0), bytes32(0), _add(KEY, CONTENT_HASH_1, "uvp://file/one"));
-        bytes32 digest = _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, patch);
-        _fileModule.applyStageFilePatch(
-            PLAN_ID, ORDER_ID, digest, patch, WRITER_EXECUTOR, WRITER_STAGE, WRITER_STAGE, bytes32(uint256(1)), false
-        );
+
+        _apply(patch, WRITER_EXECUTOR, WRITER_STAGE);
 
         (bool exists, bytes32 contentHash,,) = _fileModule.getStageFile(PLAN_ID, ORDER_ID, TARGET_STAGE, KEY);
         require(exists && contentHash == CONTENT_HASH_1, "signal-stage writer patch not applied");
     }
 
-    function _apply(FilePatch memory patch, address submitter) private {
-        bytes32 writerStage = patch.writerStageId == bytes32(0) ? TARGET_STAGE : patch.writerStageId;
+    function _apply(FilePatch memory patch, address submitter, bytes32 signalStageId) private {
         _fileModule.applyStageFilePatch(
             PLAN_ID,
             ORDER_ID,
             _fileModule.filePatchDigest(PLAN_ID, ORDER_ID, patch),
             patch,
             submitter,
-            bytes32(0),
-            writerStage,
-            bytes32(0),
-            true
+            signalStageId
         );
     }
 

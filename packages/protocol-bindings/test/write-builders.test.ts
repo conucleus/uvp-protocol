@@ -28,7 +28,7 @@ const registration: PlanRegistrationArgs = {
   planHash: bytes32("02"),
   hooksHash: bytes32("03"),
   capabilitiesRoot: bytes32("04"),
-  executorCandidatesRoot: bytes32("07"),
+  executorBindingsRoot: bytes32("07"),
   hooks: [{
     hookId: bytes32("0a"),
     stageId: bytes32("0b"),
@@ -41,7 +41,10 @@ const registration: PlanRegistrationArgs = {
     ],
     dependencyKeys: [bytes32("0f")],
   }],
-  executorCandidates: [{ stageId: bytes32("10"), executor: PUBLISHER }],
+  executorBindings: [
+    { stageId: bytes32("10"), supplierId: bytes32("11"), kind: 0 },
+    { stageId: bytes32("10"), supplierId: bytes32("12"), kind: 1 },
+  ],
 };
 
 describe("plan registration builders", () => {
@@ -62,18 +65,31 @@ describe("plan registration builders", () => {
     const decoded = decodeFunctionData({ abi: STATE_MACHINE_ABI, data: call.data });
     assert.equal(decoded.functionName, "commitPlan");
     assert.ok(decoded.args);
-    const [commit, hooks, candidates, signature] = decoded.args as readonly [
-      { readonly publisher: string; readonly deadline: bigint; readonly hooksHash: string; readonly birthAuthorizer: string },
+    const [commit, hooks, bindings, signature] = decoded.args as readonly [
+      {
+        readonly publisher: string;
+        readonly deadline: bigint;
+        readonly hooksHash: string;
+        readonly executorBindingsRoot: string;
+        readonly birthAuthorizer: string;
+      },
       readonly { readonly instructions: readonly { readonly op: number }[] }[],
-      readonly { readonly executor: string }[],
+      readonly { readonly supplierId: string; readonly kind: number }[],
       string,
     ];
     assert.equal(commit.publisher, PUBLISHER);
     assert.equal(commit.deadline, 1_700_000_000n);
     assert.equal(commit.hooksHash, registration.hooksHash);
+    assert.equal(commit.executorBindingsRoot, registration.executorBindingsRoot);
     assert.equal(commit.birthAuthorizer, PUBLISHER);
     assert.deepEqual(hooks[0]?.instructions.map((instruction) => instruction.op), [0, 2, 4]);
-    assert.equal(candidates[0]?.executor, PUBLISHER);
+    assert.deepEqual(
+      bindings.map((binding) => [binding.supplierId, binding.kind]),
+      [
+        [registration.executorBindings[0]!.supplierId, 0],
+        [registration.executorBindings[1]!.supplierId, 1],
+      ],
+    );
     assert.equal(signature, SIGNATURE);
   });
 
@@ -85,13 +101,17 @@ describe("plan registration builders", () => {
     assert.equal(typedData.primaryType, PLAN_COMMIT_PRIMARY_TYPE);
     assert.deepEqual(typedData.domain, {
       name: "UVPStateMachine",
-      version: "0.17",
+      version: "0.18",
       chainId: 31337,
       verifyingContract: STATE_MACHINE,
     });
     assert.equal(typedData.message.publisher, PUBLISHER);
     assert.equal(typedData.message.hooksHash, registration.hooksHash);
     assert.equal(typedData.message.capabilitiesRoot, registration.capabilitiesRoot);
+    assert.equal(
+      typedData.message.executorBindingsRoot,
+      registration.executorBindingsRoot,
+    );
     assert.equal(typedData.message.birthAuthorizer, PUBLISHER);
     assert.equal(typedData.message.deadline, "1700000000");
   });
@@ -119,13 +139,6 @@ describe("plan registration builders", () => {
       submitter: PUBLISHER,
       deadline: 1_700_000_000n,
     };
-    const authorizations = [{
-      sourceId: bytes32("17"),
-      signalId: bytes32("18"),
-      submitter: PUBLISHER,
-      role: bytes32("00"),
-      metadataHash: bytes32("00"),
-    }];
     const birthFactAttribution = {
       sourceId: bytes32("13"),
       signalId: bytes32("14"),
@@ -136,18 +149,19 @@ describe("plan registration builders", () => {
       ...trigger,
       chainId: 31337,
       verifyingContract: STATE_MACHINE,
-      authorizations,
     });
     assert.equal(typedData.primaryType, "UVPStateMachineTriggerOrderFromOutside");
+    assert.equal("authorizationsHash" in typedData.message, false);
 
     const call = buildTriggerOrderFromOutsideForCall(
       { stateMachineAddress: STATE_MACHINE, chainId: 31337 },
-      { ...trigger, authorizations, signature: SIGNATURE, birthFactAttribution },
+      { ...trigger, signature: SIGNATURE, birthFactAttribution },
     );
     const decoded = decodeFunctionData({ abi: STATE_MACHINE_ABI, data: call.data });
     assert.equal(decoded.functionName, "triggerOrderFromOutsideFor");
     assert.ok(decoded.args);
-    assert.equal(decoded.args[2], SIGNATURE);
+    assert.equal(decoded.args[1], SIGNATURE);
+    assert.deepEqual(decoded.args[2], birthFactAttribution);
     assert.equal((decoded.args[0] as { readonly planId: string }).planId, registration.planId);
   });
 });

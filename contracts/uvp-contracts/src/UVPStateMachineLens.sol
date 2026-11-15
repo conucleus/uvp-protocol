@@ -2,26 +2,9 @@
 pragma solidity ^0.8.24;
 
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
+import {IUVPDockRegistry} from "./interfaces/IUVPDockRegistry.sol";
 
 interface IUVPStagePatchModuleLens {
-    function getActiveStageExecutorPatch(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
-        external
-        view
-        returns (
-            bool exists,
-            address executor,
-            bytes32 role,
-            bytes32 executorMetadataHash,
-            bytes32 patchHash,
-            uint256 patchNonce,
-            string memory metadataURI
-        );
-
-    function getActiveStageDockSelection(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
-        external
-        view
-        returns (bool exists, bytes32 dockId, bytes32 fromPlanId, bytes32 fromOrderId);
-
     function getStageDockBinding(
         bytes32 planId,
         bytes32 orderId,
@@ -34,6 +17,7 @@ interface IUVPStagePatchModuleLens {
             bool selected,
             bool current,
             bytes32 dockId,
+            bytes32 supplierId,
             address executor,
             bytes32 fromPlanId,
             bytes32 bindingId
@@ -103,30 +87,40 @@ contract UVPStateMachineLens {
         _moduleDirectory = IUVPStateMachineModuleDirectory(stateMachineAddress);
     }
 
+    function effectiveStageExecutor(bytes32 planId, bytes32 orderId, bytes32 stageId)
+        external
+        view
+        returns (bytes32 supplierId, address executor)
+    {
+        return stateMachine.effectiveStageExecutor(planId, orderId, stageId);
+    }
+
     function getActiveStageExecutorPatch(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
         external
         view
-        returns (
-            bool exists,
-            address executor,
-            bytes32 role,
-            bytes32 executorMetadataHash,
-            bytes32 patchHash,
-            uint256 patchNonce,
-            string memory metadataURI
-        )
+        returns (bool exists, bytes32 supplierId, address executor, uint256 patchNonce, bytes32 dockId)
     {
-        return IUVPStagePatchModuleLens(_moduleDirectory.stagePatchModule())
-            .getActiveStageExecutorPatch(planId, orderId, targetStageId);
+        (supplierId, patchNonce, dockId) = stateMachine.activeStageExecutorPatch(planId, orderId, targetStageId);
+        exists = supplierId != bytes32(0);
+        if (exists) {
+            (, executor) = stateMachine.effectiveStageExecutor(planId, orderId, targetStageId);
+        }
+    }
+
+    function _dockFromPlanId(bytes32 dockId) private view returns (bytes32 fromPlanId) {
+        (fromPlanId,,,,,,,) = IUVPDockRegistry(stateMachine.dockRegistry()).getDock(dockId);
     }
 
     function getActiveStageDockSelection(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
         external
         view
-        returns (bool exists, bytes32 dockId, bytes32 fromPlanId, bytes32 fromOrderId)
+        returns (bool exists, bytes32 dockId, bytes32 fromPlanId, bytes32 supplierId)
     {
-        return IUVPStagePatchModuleLens(_moduleDirectory.stagePatchModule())
-            .getActiveStageDockSelection(planId, orderId, targetStageId);
+        (supplierId,, dockId) = stateMachine.activeStageExecutorPatch(planId, orderId, targetStageId);
+        exists = supplierId != bytes32(0) && dockId != bytes32(0);
+        if (exists) {
+            fromPlanId = _dockFromPlanId(dockId);
+        }
     }
 
     function getStageDockBinding(
@@ -141,6 +135,7 @@ contract UVPStateMachineLens {
             bool selected,
             bool current,
             bytes32 dockId,
+            bytes32 supplierId,
             address executor,
             bytes32 fromPlanId,
             bytes32 bindingId
@@ -167,6 +162,18 @@ contract UVPStateMachineLens {
 
     function planCapabilitiesRoot(bytes32 planId) external view returns (bytes32) {
         return IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule()).capabilitiesRoot(planId);
+    }
+
+    function planExecutorBindingsRoot(bytes32 planId) external view returns (bytes32) {
+        return stateMachine.planExecutorBindingsRoot(planId);
+    }
+
+    function planStageHasDynamicExecutor(bytes32 planId, bytes32 stageId) external view returns (bool) {
+        return stateMachine.planStageHasDynamicExecutor(planId, stageId);
+    }
+
+    function planStageIsCandidate(bytes32 planId, bytes32 stageId) external view returns (bool) {
+        return stateMachine.planStageIsCandidate(planId, stageId);
     }
 
     function planHasCapabilityVocabulary(bytes32 planId) external view returns (bool) {

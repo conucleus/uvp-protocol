@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "uvp-eth.contractAbiFixture.v2",
+  "contractName": "UVPSupplierRegistry",
+  "abiVersion": "0.1",
+  "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPSupplierRegistry.sol",
+  "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPSupplierRegistry.sol/UVPSupplierRegistry.json",
+  "compiler": {
+    "name": "solc",
+    "version": "0.8.24+commit.e11b9ed9"
+  },
+  "hashes": {
+    "abiHash": "0x40e30c2cf29a8b73d7699a29074035c7e459c35cd2c652d1a37ff4539b30bb49",
+    "bytecodeHash": "0x43a45b8d05ac0bf142e439537a905ff4e21e56ba14e5fcfc19603e5436353a70",
+    "deployedBytecodeHash": "0x1427379c28c42b3d933b146121f1bddb9286b235d0d802cc16130c7b904f00f4",
+    "artifactHash": "0x0528ae532dea02de4adee17cee993d505c488f2d6a99e497064dd340c732531d"
+  },
+  "events": {
+    "OwnershipTransferred": {
+      "signature": "OwnershipTransferred(address,address)",
+      "topic": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
+    },
+    "SupplierExecutorRotated": {
+      "signature": "SupplierExecutorRotated(bytes32,address,address)",
+      "topic": "0x83f0b78259df8d0c497d8f0a2c134ccfe2e088a9cbed15b97c044067e422a39e"
+    },
+    "SupplierRegistered": {
+      "signature": "SupplierRegistered(bytes32,address)",
+      "topic": "0xe959a2a3b6952a320e8b6f1ea0438f6c1e7155cca819495f5e3e566abfbabf37"
+    },
+    "SupplierRegistrarSet": {
+      "signature": "SupplierRegistrarSet(address,bool)",
+      "topic": "0x2ebb1be4b3e457f1e827f1518bbeb0c849feec5c021fd7a1496482eab7f651c8"
+    },
+    "SupplierRevoked": {
+      "signature": "SupplierRevoked(bytes32,address)",
+      "topic": "0x8e13b71d35d4021e769ee263e47801c9dc713c6886f35b3ab04ba01ae72a52b2"
+    }
+  },
+  "functions": {
+    "executorOf": {
+      "signature": "executorOf(bytes32)",
+      "selector": "0x5fe523d4"
+    },
+    "isRegisteredSupplier": {
+      "signature": "isRegisteredSupplier(bytes32)",
+      "selector": "0x0f3cd30a"
+    },
+    "owner": {
+      "signature": "owner()",
+      "selector": "0x8da5cb5b"
+    },
+    "registerSupplier": {
+      "signature": "registerSupplier(bytes32,address)",
+      "selector": "0x37ca9d8c"
+    },
+    "revokeSupplier": {
+      "signature": "revokeSupplier(bytes32)",
+      "selector": "0x035bac62"
+    },
+    "rotateSupplierExecutor": {
+      "signature": "rotateSupplierExecutor(bytes32,address)",
+      "selector": "0x95b713ee"
+    },
+    "setRegistrar": {
+      "signature": "setRegistrar(address,bool)",
+      "selector": "0xc1bf1dcf"
+    },
+    "supplierOf": {
+      "signature": "supplierOf(address)",
+      "selector": "0xf761160b"
+    },
+    "transferOwnership": {
+      "signature": "transferOwnership(address)",
+      "selector": "0xf2fde38b"
+    }
+  }
+}

@@ -24,7 +24,8 @@ import type {
 
 /**
  * hook 族校验：compiledHooks 形状与 _validateHook 栈机镜像、依赖形状、
- * 阶段物化门、跨阶段依赖门与依赖索引重算（两个边界共用）。
+ * 阶段物化门、跨阶段依赖门、dynamic/dock/route 互斥与依赖索引重算
+ * （两个边界共用）。
  */
 
 const COMPILED_HOOK_FIELDS: readonly string[] = [
@@ -36,6 +37,7 @@ const COMPILED_HOOK_FIELDS: readonly string[] = [
   "orderTriggerKind",
   "emitReady",
   "dockExecutor",
+  "dynamicExecutor",
   "instructions",
   "dependencies",
   "routeRef",
@@ -88,6 +90,8 @@ function validateOnchainCompiledHooks(
 ): readonly string[] {
   const issues: string[] = [];
   const hookIds = new Set<string>();
+  const dynamicByStage = new Map<string, boolean>();
+  const mixedDynamicStages = new Set<string>();
   const routeIds = new Set(
     executorRoutes
       .filter(isRecord)
@@ -126,6 +130,47 @@ function validateOnchainCompiledHooks(
     );
     expectBoolean(hook.emitReady, `${prefix}.emitReady`, issues);
     expectBoolean(hook.dockExecutor, `${prefix}.dockExecutor`, issues);
+    expectBoolean(hook.dynamicExecutor, `${prefix}.dynamicExecutor`, issues);
+    if (hook.dynamicExecutor === true) {
+      if (hook.orderTriggerKind !== "none") {
+        issues.push(
+          `${prefix} is a dynamic-executor hook and must not carry an order-trigger bit; birth executors are fixed at plan time`,
+        );
+      }
+      if (hook.dockExecutor === true) {
+        issues.push(
+          `${prefix} cannot be both a dynamic-executor and a dock-executor hook; dock executors are selected once through the stage executor patch`,
+        );
+      }
+      if (hook.emitReady !== true) {
+        issues.push(
+          `${prefix} is a dynamic-executor hook without EMIT_READY; a dynamic stage materializes only through its own emit-ready hooks`,
+        );
+      }
+      if (hook.routeRef !== undefined) {
+        issues.push(
+          `${prefix} is a dynamic-executor hook and must not carry an executor route; the supplier is assigned per order through the stage executor patch`,
+        );
+      }
+    }
+    if (
+      typeof hook.stageId === "string" &&
+      typeof hook.dynamicExecutor === "boolean"
+    ) {
+      const current = dynamicByStage.get(hook.stageId);
+      if (current === undefined) {
+        dynamicByStage.set(hook.stageId, hook.dynamicExecutor);
+      } else if (
+        current !== hook.dynamicExecutor &&
+        !mixedDynamicStages.has(hook.stageId)
+      ) {
+        mixedDynamicStages.add(hook.stageId);
+        issues.push(
+          `stage ${String(hook.stageIdentifier)} mixes dynamic-executor hooks with non-dynamic hooks `
+            + "(UVPStateMachine.commitPlan collects the per-stage dynamic set from hook flags and reverts InconsistentDynamicExecutorFlag)",
+        );
+      }
+    }
     if (hook.dockExecutor === true) {
       if (hook.orderTriggerKind !== "none") {
         issues.push(
@@ -993,6 +1038,40 @@ function dockStageRouteIssues(
   return issues;
 }
 
+function dynamicStageRouteIssues(
+  hooks: readonly unknown[],
+  executorRoutes: readonly unknown[],
+): readonly string[] {
+  const issues: string[] = [];
+  const dynamicStages = new Set<string>();
+  for (const hook of hooks) {
+    if (
+      isRecord(hook) &&
+      hook.dynamicExecutor === true &&
+      typeof hook.stageIdentifier === "string"
+    ) {
+      dynamicStages.add(hook.stageIdentifier);
+    }
+  }
+  const reported = new Set<string>();
+  for (const route of executorRoutes) {
+    if (
+      !isRecord(route) ||
+      typeof route.stageIdentifier !== "string" ||
+      !dynamicStages.has(route.stageIdentifier) ||
+      reported.has(route.stageIdentifier)
+    ) {
+      continue;
+    }
+    reported.add(route.stageIdentifier);
+    issues.push(
+      `dynamic executor stage ${route.stageIdentifier} must not carry an executor route; `
+        + "a dynamic stage has no plan-default supplier, so a route would pin an executor the plan never binds",
+    );
+  }
+  return issues;
+}
+
 function validateOnchainDependencyIndex(
   hooks: readonly unknown[],
   dependencyIndex: Record<string, readonly string[]>,
@@ -1092,4 +1171,5 @@ export {
   dockStageRouteIssues,
   validateOnchainDependencyIndex,
   birthStageStaticExecutorIssues,
+  dynamicStageRouteIssues,
 };

@@ -22,11 +22,14 @@ import { toEventHash, type Abi, type AbiEvent } from "viem";
 import {
   buildCompactHookFlags,
   FILE_RESOURCE_MODULE_ABI,
+  HOOK_FLAG_DOCK_EXECUTOR,
+  HOOK_FLAG_DYNAMIC_EXECUTOR,
   HOOK_FLAG_EMIT_READY,
   HOOK_FLAG_ORDER_TRIGGER_MINT,
   SIGNAL_SUBMITTED_ABI,
   SIGNAL_SUBMITTED_TOPIC,
   STATE_MACHINE_ABI,
+  SUPPLIER_REGISTRY_ABI,
   UVP_STATE_MACHINE_ARTIFACT_ABI,
 } from "../src/index.js";
 
@@ -39,6 +42,10 @@ const fileResourceModuleArtifactPath = resolve(
   packageDir,
   "../../contracts/uvp-contracts/out/UVPFileResourceModule.sol/UVPFileResourceModule.json",
 );
+const supplierRegistryArtifactPath = resolve(
+  packageDir,
+  "../../contracts/uvp-contracts/out/UVPSupplierRegistry.sol/UVPSupplierRegistry.json",
+);
 
 interface FoundryArtifact {
   readonly abi: Abi;
@@ -50,17 +57,27 @@ const artifactAvailable = existsSync(artifactPath);
 const fileResourceModuleArtifactAvailable = existsSync(
   fileResourceModuleArtifactPath,
 );
+const supplierRegistryArtifactAvailable = existsSync(
+  supplierRegistryArtifactPath,
+);
 
 describe("generated artifact ABI bindings", () => {
   it("keeps CompactHook flag bits pinned to the contract constants", () => {
     assert.equal(HOOK_FLAG_ORDER_TRIGGER_MINT, 1);
     assert.equal(HOOK_FLAG_EMIT_READY, 4);
+    assert.equal(HOOK_FLAG_DOCK_EXECUTOR, 16);
+    assert.equal(HOOK_FLAG_DYNAMIC_EXECUTOR, 32);
     // 编译器产物恒为 trigger|EMIT_READY：trigger=5。
     assert.equal(
       buildCompactHookFlags({ orderTriggerKind: "trigger", emitReady: true }),
       5,
     );
     assert.equal(buildCompactHookFlags({ emitReady: true }), 4);
+    assert.equal(buildCompactHookFlags({ dockExecutor: true }), 16);
+    assert.equal(
+      buildCompactHookFlags({ emitReady: true, dynamicExecutor: true }),
+      36,
+    );
     assert.equal(buildCompactHookFlags(), 0);
   });
 
@@ -89,6 +106,16 @@ describe("generated artifact ABI bindings", () => {
       await readFile(artifactPath, "utf8"),
     ) as FoundryArtifact;
     assert.deepEqual(UVP_STATE_MACHINE_ARTIFACT_ABI, artifact.abi);
+  });
+
+  it("mirrors the supplier registry forge artifact ABI verbatim", async (t) => {
+    if (!supplierRegistryArtifactAvailable) {
+      return t.skip("forge artifacts not built");
+    }
+    const artifact = JSON.parse(
+      await readFile(supplierRegistryArtifactPath, "utf8"),
+    ) as FoundryArtifact;
+    assert.deepEqual(SUPPLIER_REGISTRY_ABI, artifact.abi);
   });
 
   it("mirrors the full file resource module forge artifact ABI verbatim", async (t) => {

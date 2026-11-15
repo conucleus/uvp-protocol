@@ -9,6 +9,8 @@ import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
+import {UVPSupplierRegistry} from "../src/UVPSupplierRegistry.sol";
+import {MerkleCommitment} from "../src/libraries/MerkleCommitment.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
 import {emptyFilePatch} from "./FilePatchTestHelpers.sol";
 
@@ -70,37 +72,40 @@ contract UVPAdmissionTest {
     event log_named_uint(string key, uint256 val);
 
 
-    bytes32 private constant SOURCE_BOOTSTRAP = bytes32(uint256(0x3001));
+    bytes32 private constant STAGE_INIT = bytes32(uint256(0x5001));
+    bytes32 private constant SOURCE_BOOTSTRAP = STAGE_INIT;
     bytes32 private constant SIGNAL_ORDER_START = bytes32(uint256(0x4001));
     bytes32 private constant SIGNAL_TRIGGER = bytes32(uint256(0x4002));
     bytes32 private constant SIGNAL_ANCHOR = bytes32(uint256(0x4008));
     bytes32 private constant SIGNAL_CANCEL = bytes32(uint256(0x4009));
-    bytes32 private constant STAGE_INIT = bytes32(uint256(0x5001));
     bytes32 private constant HOOK_ORDER_START = bytes32(uint256(0x6000));
     bytes32 private constant HOOK_INIT = bytes32(uint256(0x6001));
     bytes32 private constant HOOK_NAME_TRIGGER = bytes32(uint256(0x7001));
     bytes32 private constant HOOK_NAME_ORDER_START = bytes32(uint256(0x7005));
     bytes32 private constant PAYLOAD_HASH = bytes32(uint256(0x8001));
     bytes32 private constant IDEMPOTENCY_KEY = bytes32(uint256(0x9001));
-    bytes32 private constant ROLE_BOOTSTRAP = bytes32(uint256(0xa001));
-    bytes32 private constant AUTH_METADATA_HASH = bytes32(uint256(0xa002));
     address private constant ORDER_CREATOR = address(uint160(0xc0de));
     uint256 private constant SUBMITTER_PRIVATE_KEY = 0xa11ce;
     uint256 private constant PUBLISHER_PRIVATE_KEY = 0xc0ffee;
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.17");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.18");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorBindingsRoot,address birthAuthorizer,uint256 deadline)"
     );
     bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
-        "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
+        "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
     );
     uint8 private constant FLAG_ORDER_TRIGGER_MINT = 1;
     uint8 private constant FLAG_EMIT_READY = 4;
     uint8 private constant FLAG_ADMISSION = 8;
     bytes32 private constant EMPTY_MERKLE_ROOT = keccak256("");
+    bytes32 private constant EXECUTOR_BINDING_LEAF_DOMAIN = keccak256("UVP_EXECUTOR_BINDING_V2");
+
+    mapping(address machine => UVPSupplierRegistry) private _registries;
+    mapping(address machine => mapping(address executor => bytes32 supplierId)) private _suppliers;
+    mapping(address machine => mapping(bytes32 stageId => address executor)) private _stageExecutors;
 
     bytes32 private PLAN_ID;
     bytes32 private ORDER_ID;
@@ -145,8 +150,7 @@ contract UVPAdmissionTest {
         instructions[1] = _delay(30);
         instructions[2] = _delay(30);
         hooks[0] = _admissionHook(SIGNAL_TRIGGER, instructions);
-        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
-        _commitOnly(machine, hooks);
+        _commitOnly(machine, hooks, UVPStateMachine.InvalidInstruction.selector);
     }
 
     function testAdmissionRejectsUnanchoredDelayOperand() public {
@@ -157,8 +161,7 @@ contract UVPAdmissionTest {
         instructions[1] = _not();
         instructions[2] = _delay(30);
         hooks[0] = _admissionHook(SIGNAL_TRIGGER, instructions);
-        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
-        _commitOnly(machine, hooks);
+        _commitOnly(machine, hooks, UVPStateMachine.InvalidInstruction.selector);
     }
 
     function testAdmissionBareDecayingVetoRootStillRegisters() public {
@@ -185,8 +188,7 @@ contract UVPAdmissionTest {
         instructions[2] = _not();
         instructions[3] = _not();
 
-        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
-        _commitOnly(machine, _withOrderStart(_admissionOnly(instructions)));
+        _commitOnly(machine, _withOrderStart(_admissionOnly(instructions)), UVPStateMachine.InvalidInstruction.selector);
     }
 
     function testAdmissionDelayBoundsAreRejectedAtCommit() public {
@@ -195,14 +197,12 @@ contract UVPAdmissionTest {
         UVPStateMachine.Instruction[] memory zero = new UVPStateMachine.Instruction[](2);
         zero[0] = _signal(SIGNAL_CANCEL);
         zero[1] = _delay(0);
-        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
-        _commitOnly(machine, _withOrderStart(_admissionOnly(zero)));
+        _commitOnly(machine, _withOrderStart(_admissionOnly(zero)), UVPStateMachine.InvalidInstruction.selector);
 
         UVPStateMachine.Instruction[] memory over = new UVPStateMachine.Instruction[](2);
         over[0] = _signal(SIGNAL_CANCEL);
         over[1] = _delay(30 days + 1 seconds);
-        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.HookDelayTooLong.selector, 30 days + 1 seconds));
-        _commitOnly(machine, _withOrderStart(_admissionOnly(over)));
+        _commitOnly(machine, _withOrderStart(_admissionOnly(over)), abi.encodeWithSelector(UVPStateMachine.HookDelayTooLong.selector, 30 days + 1 seconds));
     }
 
     function testAdmissionRootNotSingleIsRejectedAtCommit() public {
@@ -211,8 +211,7 @@ contract UVPAdmissionTest {
         UVPStateMachine.Instruction[] memory two = new UVPStateMachine.Instruction[](2);
         two[0] = _signal(SIGNAL_ANCHOR);
         two[1] = _signal(SIGNAL_CANCEL);
-        vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
-        _commitOnly(machine, _withOrderStart(_admissionOnly(two)));
+        _commitOnly(machine, _withOrderStart(_admissionOnly(two)), UVPStateMachine.InvalidInstruction.selector);
     }
 
     function testAdmissionDependencyKeyMismatchIsRejectedAtCommit() public {
@@ -228,8 +227,7 @@ contract UVPAdmissionTest {
         UVPStateMachine.CompactHook[] memory hooks = _withOrderStart(_admissionOnly(instructions));
         hooks[1].dependencyKeys = _deps3(SIGNAL_ANCHOR, SIGNAL_CANCEL, SIGNAL_TRIGGER);
 
-        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.HookDependencyKeyMismatch.selector, hooks[1].hookId));
-        _commitOnly(machine, hooks);
+        _commitOnly(machine, hooks, abi.encodeWithSelector(UVPStateMachine.HookDependencyKeyMismatch.selector, hooks[1].hookId));
     }
 
     function testAdmissionChimeraFlagsAreRejectedAtCommit() public {
@@ -243,8 +241,7 @@ contract UVPAdmissionTest {
         hooks[1] = _admissionHook(SIGNAL_TRIGGER, instructions);
         hooks[1].flags = uint8(FLAG_ADMISSION | FLAG_EMIT_READY);
 
-        vm.expectRevert(UVPStateMachine.InvalidHook.selector);
-        _commitOnly(machine, hooks);
+        _commitOnly(machine, hooks, UVPStateMachine.InvalidHook.selector);
     }
 
     function testDuplicateAdmissionIsRejectedAtCommit() public {
@@ -262,8 +259,7 @@ contract UVPAdmissionTest {
         hooks[1] = _admissionHook(SIGNAL_TRIGGER, instructions);
         hooks[2] = _admissionHook(SIGNAL_TRIGGER, instructions);
 
-        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.AdmissionAlreadyRegistered.selector, hooks[1].hookId));
-        _commitOnly(machine, hooks);
+        _commitOnly(machine, hooks, abi.encodeWithSelector(UVPStateMachine.AdmissionAlreadyRegistered.selector, hooks[1].hookId));
     }
 
     function testAdmissionOnlyStageIsRejectedAsNotMaterializable() public {
@@ -277,8 +273,7 @@ contract UVPAdmissionTest {
             _signalHook(HOOK_ORDER_START, bytes32(uint256(0x5f01)), HOOK_NAME_ORDER_START, true, SIGNAL_ORDER_START);
         hooks[1] = _admissionHook(SIGNAL_TRIGGER, instructions);
 
-        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.StageNotMaterializable.selector, STAGE_INIT));
-        _commitOnly(machine, hooks);
+        _commitOnly(machine, hooks, abi.encodeWithSelector(UVPStateMachine.StageNotMaterializable.selector, STAGE_INIT));
     }
 
     function testAdmittedSignalRecordsFactAndRunsHooks() public {
@@ -340,7 +335,7 @@ contract UVPAdmissionTest {
         }
         hooks[base.length] = _admissionHook(SIGNAL_TRIGGER, instructions);
         _registerPlan(machine, hooks);
-        _submitTriggerOrderFromOutside(machine, address(0));
+        _submitTriggerOrderFromOutside(machine);
 
         vm.warp(100);
         machine.submitSignal(
@@ -380,7 +375,7 @@ contract UVPAdmissionTest {
         }
         hooks[base.length] = _admissionHook(SIGNAL_TRIGGER, instructions);
         _registerPlan(machine, hooks);
-        _submitTriggerOrderFromOutside(machine, address(0));
+        _submitTriggerOrderFromOutside(machine);
         machine.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         , bytes32(0), emptyFilePatch());
@@ -400,7 +395,7 @@ contract UVPAdmissionTest {
         }
         swappedHooks[base.length] = _admissionHook(SIGNAL_TRIGGER, swappedInstrs);
         _registerPlan(swapped, swappedHooks);
-        _submitTriggerOrderFromOutside(swapped, address(0));
+        _submitTriggerOrderFromOutside(swapped);
         swapped.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
         , bytes32(0), emptyFilePatch());
@@ -422,7 +417,7 @@ contract UVPAdmissionTest {
         }
         asymHooks[base.length] = _admissionHook(SIGNAL_TRIGGER, asymInstrs);
         _registerPlan(asymmetric, asymHooks);
-        _submitTriggerOrderFromOutside(asymmetric, address(0));
+        _submitTriggerOrderFromOutside(asymmetric);
         vm.warp(100);
         asymmetric.submitSignal(
             PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
@@ -512,17 +507,15 @@ contract UVPAdmissionTest {
         bytes32 planId = _registerPlan(machine, hooks);
         PLAN_ID = planId;
 
-        UVPStateMachine.SignalAuthorization[] memory authorizations = _authorizationsFor(address(this), address(0));
         UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = _outsideTriggerRequest();
-        bytes memory signature =
-            _triggerOrderFromOutsideSignature(machine, trigger, authorizations, SUBMITTER_PRIVATE_KEY);
+        bytes memory signature = _triggerOrderFromOutsideSignature(machine, trigger, SUBMITTER_PRIVATE_KEY);
 
         vm.expectRevert(
             abi.encodeWithSelector(
                 UVPStateMachine.SignalAdmissionRejected.selector, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START
             )
         );
-        machine.triggerOrderFromOutsideFor(trigger, authorizations, signature, _noAttribution());
+        machine.triggerOrderFromOutsideFor(trigger, signature, _noAttribution());
     }
 
     function testMultiSignalTxWithIneligibleEmissionRevertsEntirely() public {
@@ -602,19 +595,27 @@ contract UVPAdmissionTest {
 
     function _newMachine() private returns (UVPStateMachine machine) {
         machine = new UVPStateMachine();
-        UVPStagePatchModule stagePatch = new UVPStagePatchModule(address(machine));
-        UVPDerivedSignalModule derivedSignal = new UVPDerivedSignalModule(address(machine));
-        UVPPlanMetadataModule planMetadata = new UVPPlanMetadataModule(address(machine));
-        UVPDockRegistry dockRegistry = new UVPDockRegistry(address(machine));
-        UVPOrderLinkModule orderLink = new UVPOrderLinkModule(address(machine));
-        machine.setStagePatchModule(address(stagePatch));
-        machine.setDerivedSignalModule(address(derivedSignal));
-        machine.setDockRegistry(address(dockRegistry));
-        machine.setPlanMetadataModule(address(planMetadata));
-        machine.setOrderLinkModule(address(orderLink));
+        UVPSupplierRegistry registry = new UVPSupplierRegistry();
+        _registries[address(machine)] = registry;
+        machine.setStagePatchModule(address(new UVPStagePatchModule(address(machine))));
+        machine.setDerivedSignalModule(address(new UVPDerivedSignalModule(address(machine))));
+        machine.setDockRegistry(address(new UVPDockRegistry(address(machine))));
+        machine.setPlanMetadataModule(address(new UVPPlanMetadataModule(address(machine))));
+        machine.setOrderLinkModule(address(new UVPOrderLinkModule(address(machine))));
         machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
         machine.setLens(address(new UVPStateMachineLens(address(machine))));
+        machine.setSupplierRegistry(address(registry));
         machine.freezeModules();
+    }
+
+    function _supplierFor(UVPStateMachine machine, address executor) private returns (bytes32 supplierId) {
+        supplierId = _suppliers[address(machine)][executor];
+        if (supplierId != bytes32(0)) {
+            return supplierId;
+        }
+        supplierId = keccak256(abi.encode("admission.supplier", executor));
+        _registries[address(machine)].registerSupplier(supplierId, executor);
+        _suppliers[address(machine)][executor] = supplierId;
     }
 
     function _gatedMachine(uint64 delaySeconds) private returns (UVPStateMachine machine) {
@@ -630,14 +631,17 @@ contract UVPAdmissionTest {
         returns (UVPStateMachine machine)
     {
         machine = _newMachine();
+        if (extraSubmitter != address(0)) {
+            _stageExecutors[address(machine)][STAGE_INIT] = extraSubmitter;
+        }
         _registerPlan(machine, _admissionPlan(delaySeconds, watcherIsTrigger));
-        _submitTriggerOrderFromOutside(machine, extraSubmitter);
+        _submitTriggerOrderFromOutside(machine);
     }
 
     function _plainMachine() private returns (UVPStateMachine machine) {
         machine = _newMachine();
         _registerPlan(machine, _basePlan(true));
-        _submitTriggerOrderFromOutside(machine, address(0));
+        _submitTriggerOrderFromOutside(machine);
     }
 
     function _admissionPlan(uint64 delaySeconds, bool watcherIsTrigger)
@@ -815,41 +819,63 @@ contract UVPAdmissionTest {
         private
         returns (bytes32 planId)
     {
-        address publisher = vm.addr(PUBLISHER_PRIVATE_KEY);
-        UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
-            publisher: publisher,
-            hooksHash: keccak256(abi.encode(hooks)),
-            capabilitiesRoot: EMPTY_MERKLE_ROOT,
-            executorCandidatesRoot: EMPTY_MERKLE_ROOT,
-            birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
-            deadline: block.timestamp + 1 hours
-        });
-        bytes32 structHash = keccak256(
-            abi.encode(
-                PLAN_COMMIT_TYPEHASH,
-                commit.publisher,
-                commit.hooksHash,
-                commit.capabilitiesRoot,
-                commit.executorCandidatesRoot,
-                commit.birthAuthorizer,
-                commit.deadline
-            )
-        );
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _stateMachineDomainSeparator(machine), structHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(PUBLISHER_PRIVATE_KEY, digest);
-        planId =
-            machine.commitPlan(commit, hooks, new UVPStateMachine.ExecutorCandidate[](0), _packedSignature(v, r, s));
+        planId = _commitPlan(machine, hooks);
         machine.finalizePlan(planId);
         PLAN_ID = planId;
+        ORDER_ID = bytes32(
+            uint256(keccak256(abi.encode(PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, PAYLOAD_HASH)))
+                & ~uint256(1 << 255)
+        );
     }
 
     function _commitOnly(UVPStateMachine machine, UVPStateMachine.CompactHook[] memory hooks) private {
-        address publisher = vm.addr(PUBLISHER_PRIVATE_KEY);
-        UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
-            publisher: publisher,
+        _commitOnly(machine, hooks, new bytes(0));
+    }
+
+    function _commitOnly(
+        UVPStateMachine machine,
+        UVPStateMachine.CompactHook[] memory hooks,
+        bytes4 expectedRevert
+    ) private {
+        _commitOnly(machine, hooks, abi.encodeWithSelector(expectedRevert));
+    }
+
+    function _commitOnly(
+        UVPStateMachine machine,
+        UVPStateMachine.CompactHook[] memory hooks,
+        bytes memory expectedRevert
+    ) private {
+        (UVPStateMachine.PlanCommit memory commit, UVPStateMachine.ExecutorBinding[] memory bindings, bytes memory signature) =
+            _buildCommit(machine, hooks);
+        if (expectedRevert.length != 0) {
+            vm.expectRevert(expectedRevert);
+        }
+        machine.commitPlan(commit, hooks, bindings, signature);
+    }
+
+    function _commitPlan(UVPStateMachine machine, UVPStateMachine.CompactHook[] memory hooks)
+        private
+        returns (bytes32 planId)
+    {
+        (UVPStateMachine.PlanCommit memory commit, UVPStateMachine.ExecutorBinding[] memory bindings, bytes memory signature) =
+            _buildCommit(machine, hooks);
+        planId = machine.commitPlan(commit, hooks, bindings, signature);
+    }
+
+    function _buildCommit(UVPStateMachine machine, UVPStateMachine.CompactHook[] memory hooks)
+        private
+        returns (
+            UVPStateMachine.PlanCommit memory commit,
+            UVPStateMachine.ExecutorBinding[] memory bindings,
+            bytes memory signature
+        )
+    {
+        bindings = _autoBindings(machine, hooks);
+        commit = UVPStateMachine.PlanCommit({
+            publisher: vm.addr(PUBLISHER_PRIVATE_KEY),
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: EMPTY_MERKLE_ROOT,
-            executorCandidatesRoot: EMPTY_MERKLE_ROOT,
+            executorBindingsRoot: _bindingsRoot(bindings),
             birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: block.timestamp + 1 hours
         });
@@ -859,22 +885,67 @@ contract UVPAdmissionTest {
                 commit.publisher,
                 commit.hooksHash,
                 commit.capabilitiesRoot,
-                commit.executorCandidatesRoot,
+                commit.executorBindingsRoot,
                 commit.birthAuthorizer,
                 commit.deadline
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _stateMachineDomainSeparator(machine), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PUBLISHER_PRIVATE_KEY, digest);
-        machine.commitPlan(commit, hooks, new UVPStateMachine.ExecutorCandidate[](0), _packedSignature(v, r, s));
+        signature = _packedSignature(v, r, s);
     }
 
-    function _submitTriggerOrderFromOutside(UVPStateMachine machine, address extraSubmitter) private {
-        UVPStateMachine.SignalAuthorization[] memory authorizations = _authorizationsFor(address(this), extraSubmitter);
+    function _autoBindings(UVPStateMachine machine, UVPStateMachine.CompactHook[] memory hooks)
+        private
+        returns (UVPStateMachine.ExecutorBinding[] memory bindings)
+    {
+        bytes32[] memory stages = new bytes32[](hooks.length);
+        uint256 stageCount;
+        for (uint256 i = 0; i < hooks.length; i++) {
+            if (hooks[i].flags == FLAG_ADMISSION) {
+                continue;
+            }
+            bool seen;
+            for (uint256 j = 0; j < stageCount; j++) {
+                if (stages[j] == hooks[i].stageId) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) {
+                stages[stageCount++] = hooks[i].stageId;
+            }
+        }
+        bindings = new UVPStateMachine.ExecutorBinding[](stageCount);
+        for (uint256 i = 0; i < stageCount; i++) {
+            address executor = _stageExecutors[address(machine)][stages[i]];
+            if (executor == address(0)) {
+                executor = address(this);
+            }
+            bindings[i] = UVPStateMachine.ExecutorBinding({
+                stageId: stages[i],
+                supplierId: _supplierFor(machine, executor),
+                kind: 0
+            });
+        }
+    }
+
+    function _bindingsRoot(UVPStateMachine.ExecutorBinding[] memory bindings) private pure returns (bytes32) {
+        bytes32[] memory leaves = new bytes32[](bindings.length);
+        for (uint256 i = 0; i < bindings.length; i++) {
+            leaves[i] = keccak256(
+                abi.encodePacked(
+                    EXECUTOR_BINDING_LEAF_DOMAIN, bindings[i].stageId, bindings[i].supplierId, bindings[i].kind
+                )
+            );
+        }
+        return MerkleCommitment.root(leaves);
+    }
+
+    function _submitTriggerOrderFromOutside(UVPStateMachine machine) private {
         UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = _outsideTriggerRequest();
-        bytes memory signature =
-            _triggerOrderFromOutsideSignature(machine, trigger, authorizations, SUBMITTER_PRIVATE_KEY);
-        machine.triggerOrderFromOutsideFor(trigger, authorizations, signature, _noAttribution());
+        bytes memory signature = _triggerOrderFromOutsideSignature(machine, trigger, SUBMITTER_PRIVATE_KEY);
+        machine.triggerOrderFromOutsideFor(trigger, signature, _noAttribution());
     }
 
     function _outsideTriggerRequest() private returns (UVPStateMachine.TriggerOrderFromOutsideRequest memory) {
@@ -896,58 +967,11 @@ contract UVPAdmissionTest {
         });
     }
 
-    function _authorizationsFor(address submitter, address extra)
-        private
-        pure
-        returns (UVPStateMachine.SignalAuthorization[] memory authorizations)
-    {
-        bytes32[4] memory signalIds = [SIGNAL_ORDER_START, SIGNAL_TRIGGER, SIGNAL_ANCHOR, SIGNAL_CANCEL];
-        uint256 perSubmitter = 4;
-        uint256 count = extra == address(0) ? perSubmitter : perSubmitter * 2;
-        authorizations = new UVPStateMachine.SignalAuthorization[](count);
-        for (uint256 i = 0; i < perSubmitter; i++) {
-            authorizations[i] = _authorization(signalIds[i], submitter);
-        }
-        if (extra != address(0)) {
-            for (uint256 i = 0; i < perSubmitter; i++) {
-                authorizations[perSubmitter + i] = _authorization(signalIds[i], extra);
-            }
-        }
-    }
-
-    function _authorization(bytes32 signalId, address submitter)
-        private
-        pure
-        returns (UVPStateMachine.SignalAuthorization memory)
-    {
-        return UVPStateMachine.SignalAuthorization({
-            sourceId: SOURCE_BOOTSTRAP,
-            signalId: signalId,
-            submitter: submitter,
-            role: ROLE_BOOTSTRAP,
-            metadataHash: AUTH_METADATA_HASH
-        });
-    }
-
     function _triggerOrderFromOutsideSignature(
         UVPStateMachine machine,
         UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger,
-        UVPStateMachine.SignalAuthorization[] memory authorizations,
         uint256 submitterPrivateKey
     ) private returns (bytes memory) {
-        bytes32 rollingHash = keccak256(abi.encode(authorizations.length));
-        for (uint256 i = 0; i < authorizations.length; i++) {
-            rollingHash = keccak256(
-                abi.encode(
-                    rollingHash,
-                    authorizations[i].sourceId,
-                    authorizations[i].signalId,
-                    authorizations[i].submitter,
-                    authorizations[i].role,
-                    authorizations[i].metadataHash
-                )
-            );
-        }
         bytes32 structHash = keccak256(
             abi.encode(
                 TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH,
@@ -959,7 +983,6 @@ contract UVPAdmissionTest {
                 trigger.signalId,
                 trigger.payloadHash,
                 trigger.idempotencyKey,
-                rollingHash,
                 trigger.submitter,
                 trigger.deadline
             )

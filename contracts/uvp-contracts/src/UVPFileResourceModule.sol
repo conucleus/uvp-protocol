@@ -52,8 +52,6 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
             => mapping(bytes32 orderId => mapping(bytes32 targetStageId => mapping(bytes32 patchHash => bool applied)))
     ) private _appliedPatchHashes;
 
-    bytes32 public constant FILE_WRITE_SIGNAL_ID = keccak256("uvp.file_write.signal.v1");
-
     constructor(address stateMachineAddress) {
         stateMachine = IUVPStateMachineCore(stateMachineAddress);
     }
@@ -64,10 +62,7 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
         bytes32 filesDigest,
         FilePatch calldata filePatch,
         address submitter,
-        bytes32 signalStageId,
-        bytes32 authSourceId,
-        bytes32 authSignalId,
-        bool standalone
+        bytes32 signalStageId
     ) external {
         if (msg.sender != address(stateMachine)) {
             revert UnauthorizedStateMachine(msg.sender);
@@ -99,9 +94,7 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
             _validateOp(filePatch.ops[i]);
         }
 
-        _requireFileWriter(
-            planId, orderId, filePatch, submitter, signalStageId, authSourceId, authSignalId, standalone
-        );
+        _requireFileWriter(planId, orderId, filePatch, submitter, signalStageId);
 
         bytes32 previousFilesHash = _stageFilesHashes[planId][orderId][filePatch.targetStageId];
         if (filePatch.baseHash != previousFilesHash) {
@@ -183,10 +176,7 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
         bytes32 orderId,
         FilePatch calldata filePatch,
         address submitter,
-        bytes32 signalStageId,
-        bytes32 authSourceId,
-        bytes32 authSignalId,
-        bool standalone
+        bytes32 signalStageId
     ) private view {
         bytes32 writerStageId = filePatch.writerStageId;
         if (writerStageId == bytes32(0)) {
@@ -199,11 +189,7 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
                 revert FileWriterUnauthorized(orderId, filePatch.targetStageId, filePatch.writerStageId, submitter);
             }
         }
-        if (standalone) {
-            authSourceId = writerStageId;
-            authSignalId = FILE_WRITE_SIGNAL_ID;
-        }
-        if (!stateMachine.hasExplicitSignalAuthorization(planId, orderId, authSourceId, authSignalId, submitter)) {
+        if (!stateMachine.isEffectiveStageExecutor(planId, orderId, writerStageId, submitter)) {
             revert FileWriterUnauthorized(orderId, filePatch.targetStageId, filePatch.writerStageId, submitter);
         }
     }

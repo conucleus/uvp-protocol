@@ -25,6 +25,24 @@ export {
 export { onchainSignalId, onchainSourceId } from "./onchain/hash/route.js";
 
 export {
+  EXECUTOR_BINDING_KIND_CANDIDATE,
+  EXECUTOR_BINDING_KIND_DEFAULT,
+  EXECUTOR_BINDING_LEAF_DOMAIN,
+  executorBindingLeaf,
+  executorBindingProof,
+  executorBindingsRootOf,
+  MAX_EXECUTOR_BINDINGS,
+  onchainSupplierId,
+  SUPPLIER_ID_DOMAIN,
+} from "./onchain/executor-bindings.js";
+
+export type {
+  ExecutorBinding,
+  ExecutorBindingInput,
+  ExecutorBindingKind,
+} from "./types/index.js";
+
+export {
   DOCK_WINDOW_OP,
   dockWindowInstructionsOf,
 } from "./dock-artifact.js";

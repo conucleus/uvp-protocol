@@ -9,7 +9,12 @@ This package is the single owner of the chain read wire field names and JSON
 value types. It defines no chain runtime, storage, or business rules:
 
 - projection DTOs for orders, tasks, plans, deployments, modules, governance,
-  docks, dock bindings, sync state, and the full projection snapshot;
+  docks, dock bindings, supplier registry bindings, sync state, and the full
+  projection snapshot; plan DTOs carry `executorBindingsRoot` +
+  `executorBindings` (default/candidate) and `dynamicExecutorStages`; order
+  stage-executor overlays carry the active `supplierId`/`patchNonce` and the
+  registry-resolved `effectiveExecutor`, and signals carry the `relayer`
+  wallet next to the business `submitter`;
 - `ChainDock` (`uvp.dock.v1`) is the static Dock registry projection
   (`dkid`, `docHash`, from/to identities, each output's Hook DSL AST +
   dependencies + atoms, registration provenance);
@@ -42,11 +47,19 @@ backend's projection store consumes that view. Indexer-internal projection types
 ## Snapshot keys
 
 `ChainProjectionSnapshot` carries `stateMachineDocks` (static Dock registry by
-`dkid`) and `stateMachineDockBindings` (bindings by `binding_id`; one A order
-maps to one binding id). The old dynamic
+`dkid`), `stateMachineDockBindings` (bindings by `binding_id`; one A order
+maps to one binding id), and `stateMachineSuppliers` (SupplierRegistry
+bindings by `supplierId`, including the rotation/revocation provenance; revoked
+suppliers keep their last executor and revocation proof). The old dynamic
 dock-instance keys (`stateMachineDocksByTargetOrder`,
 `stateMachineOrderDockChainDepth`), the old Link rows, and the two dock diagnostics
 (`unresolvedDockEventCount`, `unresolvedDockTargetDeploymentCount`) are gone.
+
+Order projections no longer carry the former `authorizations` map or any
+`SignalAuthorization` row: signal submission rights are the effective stage
+executor resolved from the plan binding plus the supplier registry, so task
+assignments surface `assigneeSupplierId`/`assigneeExecutor` instead of the
+removed role/metadata fields.
 
 ## Gates
 

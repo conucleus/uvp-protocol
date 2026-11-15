@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStateMachineLens",
-  "abiVersion": "0.6",
+  "abiVersion": "0.7",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStateMachineLens.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStateMachineLens.sol/UVPStateMachineLens.json",
   "compiler": {
@@ -9,16 +9,20 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x9e1e0fb7ec7d114c85c0ca7a538427c3cdb3c36e98f3c9ef5a5816cace374b82",
-    "bytecodeHash": "0xeddd3c6b3f98b69d81158fe7d2ec5d551c3fa4306292f6f7fedf8653be5a0b8b",
-    "deployedBytecodeHash": "0x8b9513e9e3bb72e581c1e95b14c7d4f5f09798564c428f397a79d9acb5ea8765",
-    "artifactHash": "0x209d876c9a103c9dbe9ddc9647915c7a5820c971608fdb04d16badff27bf8c1d"
+    "abiHash": "0xb17a2ba13c876fbc28b13c31bdc164b2fef2eda3dcc7a374243039cd2f6e2ea2",
+    "bytecodeHash": "0xff7a895e44b4b79c8be486ac00a369af130d37f43784bf8d2ecddd7b0c28decb",
+    "deployedBytecodeHash": "0x99ded971e10b65c1958a6c8643e3b0ad7126db888a34474d4b7dc87ac170bd2c",
+    "artifactHash": "0x9aa0a351d0c6fec6abc4df8cc7f86c0b16f6b2e79c6791a59a4dc101f7f78b88"
   },
   "events": {},
   "functions": {
     "dockOutputWindow": {
       "signature": "dockOutputWindow(bytes32,bytes32,bytes32,bytes32,uint256)",
       "selector": "0xf3e1b066"
+    },
+    "effectiveStageExecutor": {
+      "signature": "effectiveStageExecutor(bytes32,bytes32,bytes32)",
+      "selector": "0xa19612b3"
     },
     "getActiveStageDockSelection": {
       "signature": "getActiveStageDockSelection(bytes32,bytes32,bytes32)",
@@ -40,9 +44,21 @@
       "signature": "planCapabilitiesRoot(bytes32)",
       "selector": "0xbee3def7"
     },
+    "planExecutorBindingsRoot": {
+      "signature": "planExecutorBindingsRoot(bytes32)",
+      "selector": "0x4e9d221a"
+    },
     "planHasCapabilityVocabulary": {
       "signature": "planHasCapabilityVocabulary(bytes32)",
       "selector": "0x21f86098"
+    },
+    "planStageHasDynamicExecutor": {
+      "signature": "planStageHasDynamicExecutor(bytes32,bytes32)",
+      "selector": "0xec1ae007"
+    },
+    "planStageIsCandidate": {
+      "signature": "planStageIsCandidate(bytes32,bytes32)",
+      "selector": "0xe459fd30"
     },
     "stateMachine": {
       "signature": "stateMachine()",

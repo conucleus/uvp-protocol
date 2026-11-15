@@ -26,17 +26,19 @@ import type {
  * CompactHook flags 与各哈希的 ABI 编码冻结口径。
  */
 
-const PLAN_RUNTIME_HASH_DOMAIN = "uvp.plan.runtime.v5";
+const PLAN_RUNTIME_HASH_DOMAIN = "uvp.plan.runtime.v6";
 
 export const HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
 export const HOOK_FLAG_EMIT_READY = 4;
 export const HOOK_FLAG_ADMISSION = 8;
 export const HOOK_FLAG_DOCK_EXECUTOR = 16;
+export const HOOK_FLAG_DYNAMIC_EXECUTOR = 32;
 
 export function solidityHookFlags(
   orderTriggerKind: OrderTriggerKind,
   emitReady: boolean,
   dockExecutor: boolean,
+  dynamicExecutor: boolean,
 ): number {
   let flags = 0;
   if (orderTriggerKind === "trigger") {
@@ -47,6 +49,9 @@ export function solidityHookFlags(
   }
   if (dockExecutor) {
     flags |= HOOK_FLAG_DOCK_EXECUTOR;
+  }
+  if (dynamicExecutor) {
+    flags |= HOOK_FLAG_DYNAMIC_EXECUTOR;
   }
   return flags;
 }
@@ -76,6 +81,7 @@ export function toSolidityRegisterPlanArgs(
           hook.orderTriggerKind,
           hook.emitReady,
           hook.dockExecutor,
+          hook.dynamicExecutor,
         ),
         instructions: hook.instructions.map(toSolidityInstructionArg),
         dependencyKeys,
@@ -126,13 +132,13 @@ export function toSolidityRegisterPlanArgs(
   const planHash = keccak256(
     encodeAbiParameters(
       parseAbiParameters(
-        "bytes32 domain, bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 executorCandidatesRoot",
+        "bytes32 domain, bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 executorBindingsRoot",
       ),
       [
         keccak256(stringToHex(PLAN_RUNTIME_HASH_DOMAIN)),
         hooksHash,
         capabilitiesRoot,
-        artifact.executorCandidatesRoot,
+        artifact.executorBindingsRoot,
       ],
     ),
   ) as HexString;
@@ -145,7 +151,7 @@ export function toSolidityRegisterPlanArgs(
     artifactHash: artifact.planHash,
     hooksHash,
     capabilitiesRoot,
-    executorCandidatesRoot: artifact.executorCandidatesRoot,
+    executorBindingsRoot: artifact.executorBindingsRoot,
     hooks,
     dependencyIndex: Object.entries(artifact.dependencyIndex)
       .sort(([left], [right]) => compareCanonicalKey(left, right))
@@ -162,9 +168,10 @@ export function toSolidityRegisterPlanArgs(
       resourcesHash: route.resourcesHash,
       routeHash: route.routeHash,
     })),
-    executorCandidates: artifact.executorCandidates.map((candidate) => ({
-      stageId: candidate.stageId,
-      executor: candidate.executor,
+    executorBindings: artifact.executorBindings.map((binding) => ({
+      stageId: binding.stageId,
+      supplierId: binding.supplierId,
+      kind: binding.kind,
     })),
     selectorBindings,
     signalCapabilities,

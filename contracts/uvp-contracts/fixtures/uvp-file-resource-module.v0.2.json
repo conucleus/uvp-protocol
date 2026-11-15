@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPFileResourceModule",
-  "abiVersion": "0.1",
+  "abiVersion": "0.2",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPFileResourceModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPFileResourceModule.sol/UVPFileResourceModule.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xc3f8d103641fdac09c2cd91f2e1716c852800b2c672f614b56b58b0bd0845b54",
-    "bytecodeHash": "0xa80d2ebf328227dac3e3855f7a6aea51677690545aa68f44a8a4180682179c0b",
-    "deployedBytecodeHash": "0x3fa211821f2701c5ecf8b999dea6bab77a6fb37ec4d8fe06c0cdcb4273bb83c3",
-    "artifactHash": "0x905e61ac25743533ed5566a106745fc024be3bab4fdb34d489be6107188f6382"
+    "abiHash": "0x2c3385a2c71b0ce51b5c239a9eed54023c3ce80a2a3a6551216a189653aa8630",
+    "bytecodeHash": "0xa88134c7bd2fae2f3e01fa9b7cd6934d521ed1619f1986faa181e2ae7307db5a",
+    "deployedBytecodeHash": "0x577604122bb5c4fc99cc4baa8d5592dc7e95ce965d735a75523c472b9d2fff40",
+    "artifactHash": "0x018c137bc11c70d535319fc869efda9c673461ff43720596b294fe6ac36e4e44"
   },
   "events": {
     "StageFileOpApplied": {
@@ -25,13 +25,9 @@
     }
   },
   "functions": {
-    "FILE_WRITE_SIGNAL_ID": {
-      "signature": "FILE_WRITE_SIGNAL_ID()",
-      "selector": "0xea6dcb3e"
-    },
     "applyStageFilePatch": {
-      "signature": "applyStageFilePatch(bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]),address,bytes32,bytes32,bytes32,bool)",
-      "selector": "0x167ac910"
+      "signature": "applyStageFilePatch(bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]),address,bytes32)",
+      "selector": "0x64646535"
     },
     "filePatchDigest": {
       "signature": "filePatchDigest(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]))",

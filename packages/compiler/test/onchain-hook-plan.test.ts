@@ -6,8 +6,10 @@ import { canonicalJson } from "@uvp-eth/canonical-json";
 import {
   assertOnchainHookPlanArtifact,
   compileZhixuOnchainHookPlan,
+  executorBindingsRootOf,
   hashSolidityRegisterHooks,
   keccak256Hex,
+  onchainSupplierId,
   onchainSelectorBindingHash,
   OnchainHookPlanArtifactValidationError,
   toSolidityRegisterPlanArgs,
@@ -143,14 +145,21 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   const again = compileZhixuOnchainHookPlan(baseZhixu);
 
   assert.deepEqual(onchain, again);
-  assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v7");
+  assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v8");
   assert.equal(onchain.planId, sourcePlan.planId);
   assert.deepEqual(onchain.platform, sourcePlan.platform);
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
   const { planHash: _onchainPlanHash, ...onchainPayload } = onchain;
   assert.equal(onchain.planHash, hashOnchainPlanPayload(onchainPayload));
-  assert.deepEqual(onchain.executorCandidates, []);
-  assert.equal(onchain.executorCandidatesRoot, EMPTY_MERKLE_ROOT);
+  assert.equal(onchain.executorBindings.length, 2);
+  assert.deepEqual(
+    onchain.executorBindings.map((binding) => binding.kind),
+    [0, 0],
+  );
+  assert.equal(
+    onchain.executorBindingsRoot,
+    executorBindingsRootOf(onchain.executorBindings),
+  );
   assert.equal(
     onchain.capabilitiesRoot,
     capabilitiesRootOf(
@@ -500,7 +509,7 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
   const args = toSolidityRegisterPlanArgs(onchain);
 
-  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v7");
+  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v8");
   assert.equal(args.sourcePlanId, onchain.planId);
   const { planHash: _storedPlanHash, ...artifactPayload } = onchain;
   assert.equal(args.artifactHash, hashOnchainPlanPayload(artifactPayload));
@@ -517,6 +526,19 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
     args.executorRoutes.map((route) => route.executorId),
     ["selector-org", "work-org"],
   );
+  assert.deepEqual(args.executorBindings, [
+    {
+      stageId: keccak256Hex("assign"),
+      supplierId: onchainSupplierId("selector-org"),
+      kind: 0,
+    },
+    {
+      stageId: keccak256Hex("main"),
+      supplierId: onchainSupplierId("work-org"),
+      kind: 0,
+    },
+  ]);
+  assert.equal(args.executorBindingsRoot, onchain.executorBindingsRoot);
   assert.deepEqual(args.selectorBindings, [
     {
       selectorStageId: keccak256Hex("assign"),
@@ -664,7 +686,25 @@ test("commitment golden vectors pin uid/planHash/hooksHash from the shared fixtu
     assert.equal(args.planHash, golden.expected.runtimePlanHash, `${golden.name}: runtime planHash`);
     assert.equal(args.hooksHash, golden.expected.hooksHash, `${golden.name}: hooksHash`);
     assert.equal(args.capabilitiesRoot, golden.expected.capabilitiesRoot, `${golden.name}: capabilitiesRoot`);
-    assert.equal(onchain.executorCandidatesRoot, golden.expected.executorCandidatesRoot, `${golden.name}: executorCandidatesRoot`);
+    assert.equal(
+      onchain.executorBindingsRoot,
+      golden.expected.executorBindingsRoot,
+      `${golden.name}: executorBindingsRoot`,
+    );
+    assert.deepEqual(
+      onchain.executorBindings.map((binding) => ({
+        stageId: binding.stageId,
+        supplierId: binding.supplierId,
+        kind: binding.kind,
+      })),
+      golden.expected.executorBindings,
+      `${golden.name}: executorBindings`,
+    );
+    assert.deepEqual(
+      args.executorBindings,
+      golden.expected.executorBindings,
+      `${golden.name}: register-args executorBindings`,
+    );
 
     assert.equal(args.hooks.length, golden.counts.hooks, `${golden.name}: counts.hooks`);
     assert.deepEqual(
@@ -989,7 +1029,7 @@ test("rejects invalid on-chain HookPlan artifact shapes", () => {
 
   assert.deepEqual(
     validateOnchainHookPlanArtifact({ ...onchain, schemaVersion: "wrong" }),
-    ["schemaVersion must be uvp.onchainHookPlan.v7"],
+    ["schemaVersion must be uvp.onchainHookPlan.v8"],
   );
   assert.match(
     validateOnchainHookPlanArtifact({
@@ -2110,6 +2150,9 @@ test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirr
   );
   assert.ok(
     issuesOf((a) => a.signalCapabilities[0]).includes(closureIssue("signalCapabilities[0]")),
+  );
+  assert.ok(
+    issuesOf((a) => a.executorBindings[0]).includes(closureIssue("executorBindings[0]")),
   );
 
   assert.deepEqual(

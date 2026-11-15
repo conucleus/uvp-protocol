@@ -2,14 +2,6 @@
 pragma solidity ^0.8.24;
 
 interface IUVPStateMachineCore {
-    struct SignalAuthorization {
-        bytes32 sourceId;
-        bytes32 signalId;
-        address submitter;
-        bytes32 role;
-        bytes32 metadataHash;
-    }
-
     struct TriggerOrderFromSignalRequest {
         bytes32 orderId;
         bytes32 planId;
@@ -46,6 +38,8 @@ interface IUVPStateMachineCore {
         uint64 delaySeconds;
     }
 
+    function supplierRegistry() external view returns (address);
+
     function hasTriggerOriginConsent(
         bytes32 originPlanId,
         bytes32 originOrderId,
@@ -54,55 +48,77 @@ interface IUVPStateMachineCore {
         address party,
         FactAttribution calldata originAttribution
     ) external view returns (bool);
-    function activeStageExecutor(bytes32 planId, bytes32 orderId, bytes32 targetStageId) external view returns (address);
-    function activeStageExecutorNonce(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
+
+    function effectiveStageSupplier(bytes32 planId, bytes32 orderId, bytes32 stageId) external view returns (bytes32);
+
+    function effectiveStageExecutor(bytes32 planId, bytes32 orderId, bytes32 stageId)
         external
         view
-        returns (uint256);
+        returns (bytes32 supplierId, address executor);
+
+    function isEffectiveStageExecutor(bytes32 planId, bytes32 orderId, bytes32 stageId, address executor)
+        external
+        view
+        returns (bool);
+
+    function activeStageExecutorPatch(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
+        external
+        view
+        returns (bytes32 supplierId, uint256 patchNonce, bytes32 dockId);
+
     function activateStageExecutorFromModule(
         bytes32 planId,
         bytes32 orderId,
         bytes32 targetStageId,
-        address executor,
-        bytes32 role,
-        bytes32 executorMetadataHash,
-        bytes32 patchHash,
-        uint256 patchNonce,
-        string calldata metadataURI
+        bytes32 supplierId,
+        uint256 patchNonce
     ) external;
-    function authorizeSignalSubmittersFromModule(
+
+    function activateStageDockExecutorFromModule(
         bytes32 planId,
         bytes32 orderId,
-        SignalAuthorization[] calldata authorizations
+        bytes32 targetStageId,
+        bytes32 supplierId,
+        bytes32 dockId,
+        uint256 patchNonce
     ) external;
-    function revokeSignalSubmittersFromModule(
-        bytes32 planId,
-        bytes32 orderId,
-        SignalAuthorization[] calldata authorizations
-    ) external;
-    function signalAuthorizationsHash(SignalAuthorization[] calldata authorizations) external pure returns (bytes32);
+
+    function planExecutorBindingsRoot(bytes32 planId) external view returns (bytes32);
+
+    function planStageDefaultSupplier(bytes32 planId, bytes32 stageId) external view returns (bytes32);
+
+    function planStageHasDynamicExecutor(bytes32 planId, bytes32 stageId) external view returns (bool);
+
+    function planStageIsCandidate(bytes32 planId, bytes32 stageId) external view returns (bool);
+
     function stageSignalState(bytes32 planId, bytes32 orderId, bytes32 stageId)
         external
         view
         returns (uint256 count, address lastSubmitter, uint64 lastAt, bool ambiguous);
-    function planExecutorCandidatesRoot(bytes32 planId) external view returns (bytes32);
-    function hasExplicitSignalAuthorization(
-        bytes32 planId,
-        bytes32 orderId,
-        bytes32 sourceId,
-        bytes32 signalId,
-        address submitter
-    ) external view returns (bool);
-    function hasSignal(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId) external view returns (bool);
+
+    function hasSignal(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId)
+        external
+        view
+        returns (bool);
+
     function lastSignalSubmitter(bytes32 planId, bytes32 orderId, bytes32 sourceId) external view returns (address);
+
     function orderCreator(bytes32 planId, bytes32 orderId) external view returns (address);
+
     function orderExists(bytes32 planId, bytes32 orderId) external view returns (bool);
+
     function orderLinkModule() external view returns (address);
+
     function isPlanStage(bytes32 planId, bytes32 stageId) external view returns (bool);
+
     function planExists(bytes32 planId) external view returns (bool);
+
     function planMetadataModule() external view returns (address);
+
     function fileResourceModule() external view returns (address);
+
     function planPublisher(bytes32 planId) external view returns (address);
+
     function sourceSignalCount(bytes32 planId, bytes32 orderId, bytes32 sourceId) external view returns (uint256);
 
     function dockRegistry() external view returns (address);
@@ -146,6 +162,7 @@ interface IUVPStateMachineCore {
         address submitter,
         FactAttribution calldata attribution
     ) external returns (bool submitted);
+
     function submitDerivedSignalFromModule(
         bytes32 planId,
         bytes32 orderId,
@@ -158,12 +175,13 @@ interface IUVPStateMachineCore {
         bytes32 idempotencyKey,
         address submitter
     ) external;
+
     function triggerOrderFromSignalFromModule(
         TriggerOrderFromSignalRequest calldata trigger,
-        SignalAuthorization[] calldata authorizations,
         address relayer,
         FactAttribution[] calldata originFactAttributions
     ) external;
+
     function getSignal(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId)
         external
         view

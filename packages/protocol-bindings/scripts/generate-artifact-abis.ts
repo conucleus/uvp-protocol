@@ -31,6 +31,10 @@ const dockRegistryArtifactPath = resolve(
   contractsDir,
   "out/UVPDockRegistry.sol/UVPDockRegistry.json",
 );
+const supplierRegistryArtifactPath = resolve(
+  contractsDir,
+  "out/UVPSupplierRegistry.sol/UVPSupplierRegistry.json",
+);
 // Single declaration point shared by UVPStateMachine and the linked
 // UVPPlanRegistration library; the flags bit values are not recoverable
 // from the artifact ABI alone.
@@ -48,6 +52,7 @@ const flagConstants: readonly FlagConstantSpec[] = [
   { name: "_HOOK_FLAG_EMIT_READY" },
   { name: "_HOOK_FLAG_ADMISSION" },
   { name: "_HOOK_FLAG_DOCK_EXECUTOR" },
+  { name: "_HOOK_FLAG_DYNAMIC_EXECUTOR" },
 ];
 
 const signalSubmittedEventName = "SignalSubmitted";
@@ -62,6 +67,9 @@ async function main(): Promise<void> {
   ) as FoundryArtifact;
   const dockRegistryArtifact = JSON.parse(
     await readFile(dockRegistryArtifactPath, "utf8"),
+  ) as FoundryArtifact;
+  const supplierRegistryArtifact = JSON.parse(
+    await readFile(supplierRegistryArtifactPath, "utf8"),
   ) as FoundryArtifact;
 
   const abiJson = JSON.stringify(artifact.abi, null, 2);
@@ -101,6 +109,9 @@ export const FILE_RESOURCE_MODULE_ABI = ${JSON.stringify(fileResourceModuleArtif
 
 export const DOCK_REGISTRY_CONTRACT_NAME = "UVPDockRegistry" as const;
 export const DOCK_REGISTRY_ABI = ${JSON.stringify(dockRegistryArtifact.abi, null, 2)} as const;
+
+export const SUPPLIER_REGISTRY_CONTRACT_NAME = "UVPSupplierRegistry" as const;
+export const SUPPLIER_REGISTRY_ABI = ${JSON.stringify(supplierRegistryArtifact.abi, null, 2)} as const;
 
 ${flagLines.join("\n")}
 `;

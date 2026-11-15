@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPOrderLinkModule",
-  "abiVersion": "0.3",
+  "abiVersion": "0.4",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPOrderLinkModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPOrderLinkModule.sol/UVPOrderLinkModule.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x44ea7c3bb2723863f9b09f661df2c9cd3360ce09ccc77376466df924027e0a63",
-    "bytecodeHash": "0x45933395db4fb2fa4be7d1ee2ad577fee852f6c5c3a86e351afcba2b0d1de667",
-    "deployedBytecodeHash": "0xda4ffe3152d5af95c3949731ea9b61f9db3bd84f8346949d55b27bee5059f8fe",
-    "artifactHash": "0x899323cba6870983698ab7137d690ec2168a1cc3b5477953adc387e3116bbc34"
+    "abiHash": "0x1996c87019392c74e0221ff8a54e78b98eebdf88acf4ebb6bc4536f7b448fa6a",
+    "bytecodeHash": "0x61728975ea849f9955ab0d0e5f529927f87c6afb001523655cc1c8d1d81e78bb",
+    "deployedBytecodeHash": "0xe5e64688632f946cb98f45a9f9dbd6498afd3cd21906951e1b45045364c378c6",
+    "artifactHash": "0x919cd4c40fc0aabd7aff45f18151ac4bd3f747bb498239c308ba015aa468f46c"
   },
   "events": {
     "OrderLinked": {
@@ -37,10 +37,6 @@
       "signature": "getTriggerOriginLink(bytes32,bytes32)",
       "selector": "0x94e59116"
     },
-    "signalAuthorizationsHash": {
-      "signature": "signalAuthorizationsHash((bytes32,bytes32,address,bytes32,bytes32)[])",
-      "selector": "0x9d6b224d"
-    },
     "stateMachine": {
       "signature": "stateMachine()",
       "selector": "0x37b416d8"
@@ -50,12 +46,12 @@
       "selector": "0x6c4da396"
     },
     "triggerOrderFromSignalDigest": {
-      "signature": "triggerOrderFromSignalDigest((bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),bytes32)",
-      "selector": "0x5f9c34b3"
+      "signature": "triggerOrderFromSignalDigest((bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256))",
+      "selector": "0xc3ba159b"
     },
     "triggerOrderFromSignalFor": {
-      "signature": "triggerOrderFromSignalFor((bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),(bytes32,bytes32,address,bytes32,bytes32)[],bytes,(bytes32,bytes32,bytes32,bytes32[])[])",
-      "selector": "0x9f79ccff"
+      "signature": "triggerOrderFromSignalFor((bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),bytes,(bytes32,bytes32,bytes32,bytes32[])[])",
+      "selector": "0x0f4f0317"
     }
   }
 }

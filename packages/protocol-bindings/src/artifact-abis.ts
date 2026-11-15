@@ -89,6 +89,19 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
+    "name": "HOOK_FLAG_DYNAMIC_EXECUTOR",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "HOOK_FLAG_EMIT_READY",
     "inputs": [],
     "outputs": [
@@ -122,6 +135,19 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_EXECUTOR_BINDINGS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -232,6 +258,57 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
+    "name": "SUPPLIER_REGISTRY_MODULE_ID",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "activateStageDockExecutorFromModule",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "targetStageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "dockId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "patchNonce",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "activateStageExecutorFromModule",
     "inputs": [
       {
@@ -250,22 +327,42 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "bytes32"
       },
       {
-        "name": "executor",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "role",
+        "name": "supplierId",
         "type": "bytes32",
         "internalType": "bytes32"
       },
       {
-        "name": "executorMetadataHash",
+        "name": "patchNonce",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "activeStageExecutorPatch",
+    "inputs": [
+      {
+        "name": "planId",
         "type": "bytes32",
         "internalType": "bytes32"
       },
       {
-        "name": "patchHash",
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "targetStageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "supplierId",
         "type": "bytes32",
         "internalType": "bytes32"
       },
@@ -275,121 +372,12 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "uint256"
       },
       {
-        "name": "metadataURI",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "activeStageExecutor",
-    "inputs": [
-      {
-        "name": "planId",
+        "name": "dockId",
         "type": "bytes32",
         "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "targetStageId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "activeStageExecutorNonce",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "targetStageId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "authorizeSignalSubmittersFromModule",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "authorizations",
-        "type": "tuple[]",
-        "internalType": "struct UVPStateMachine.SignalAuthorization[]",
-        "components": [
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "submitter",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "role",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "metadataHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          }
-        ]
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -416,7 +404,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             "internalType": "bytes32"
           },
           {
-            "name": "executorCandidatesRoot",
+            "name": "executorBindingsRoot",
             "type": "bytes32",
             "internalType": "bytes32"
           },
@@ -497,9 +485,9 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         ]
       },
       {
-        "name": "executorCandidates",
+        "name": "bindings",
         "type": "tuple[]",
-        "internalType": "struct UVPStateMachine.ExecutorCandidate[]",
+        "internalType": "struct UVPStateMachine.ExecutorBinding[]",
         "components": [
           {
             "name": "stageId",
@@ -507,9 +495,14 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             "internalType": "bytes32"
           },
           {
-            "name": "executor",
-            "type": "address",
-            "internalType": "address"
+            "name": "supplierId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "kind",
+            "type": "uint8",
+            "internalType": "uint8"
           }
         ]
       },
@@ -550,6 +543,69 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "effectiveStageExecutor",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "executor",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "effectiveStageSupplier",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -696,38 +752,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             "internalType": "bytes32"
           }
         ]
-      },
-      {
-        "name": "authorizations",
-        "type": "tuple[]",
-        "internalType": "struct UVPStateMachine.SignalAuthorization[]",
-        "components": [
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "submitter",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "role",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "metadataHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          }
-        ]
       }
     ],
     "outputs": [
@@ -870,94 +894,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "getSignalAuthorization",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "sourceId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "signalId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "submitter",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "exists",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "role",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "metadataHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "hasExplicitSignalAuthorization",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "sourceId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "signalId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "submitter",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "hasSignal",
     "inputs": [
       {
@@ -1087,6 +1023,40 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
+    "name": "isEffectiveStageExecutor",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "executor",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isPlanStage",
     "inputs": [
       {
@@ -1132,45 +1102,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "signalId",
         "type": "bytes32",
         "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isSignalSubmitterAuthorized",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "sourceId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "signalId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "submitter",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "outputs": [
@@ -1456,7 +1387,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "planExecutorCandidatesRoot",
+    "name": "planExecutorBindingsRoot",
     "inputs": [
       {
         "name": "planId",
@@ -1683,7 +1614,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "bytes32"
       },
       {
-        "name": "executorCandidatesRoot",
+        "name": "executorBindingsRoot",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -1696,6 +1627,78 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
       }
     ],
     "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "planStageDefaultSupplier",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "planStageHasDynamicExecutor",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "planStageIsCandidate",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1715,56 +1718,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "hookId",
         "type": "bytes32",
         "internalType": "bytes32"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "revokeSignalSubmittersFromModule",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "authorizations",
-        "type": "tuple[]",
-        "internalType": "struct UVPStateMachine.SignalAuthorization[]",
-        "components": [
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "submitter",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "role",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "metadataHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          }
-        ]
       }
     ],
     "outputs": [],
@@ -1863,49 +1816,16 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "signalAuthorizationsHash",
+    "name": "setSupplierRegistry",
     "inputs": [
       {
-        "name": "authorizations",
-        "type": "tuple[]",
-        "internalType": "struct UVPStateMachine.SignalAuthorization[]",
-        "components": [
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "submitter",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "role",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "metadataHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          }
-        ]
+        "name": "moduleAddress",
+        "type": "address",
+        "internalType": "address"
       }
     ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "pure"
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -2301,6 +2221,158 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
+    "name": "submitSignalFor",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "sourceId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "signalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "payloadHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "idempotencyKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "attribution",
+        "type": "tuple",
+        "internalType": "struct UVPStateMachine.FactAttribution",
+        "components": [
+          {
+            "name": "sourceId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "signalId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "stageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "capabilityProof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
+      },
+      {
+        "name": "filesDigest",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "filePatch",
+        "type": "tuple",
+        "internalType": "struct FilePatch",
+        "components": [
+          {
+            "name": "targetStageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "baseHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "writerStageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "writerProof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          },
+          {
+            "name": "ops",
+            "type": "tuple[]",
+            "internalType": "struct FileOp[]",
+            "components": [
+              {
+                "name": "kind",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "key",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "contentHash",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "handle",
+                "type": "string",
+                "internalType": "string"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "submitter",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "deadline",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "signature",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "supplierRegistry",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "transferOwnership",
     "inputs": [
       {
@@ -2365,38 +2437,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             "name": "deadline",
             "type": "uint256",
             "internalType": "uint256"
-          }
-        ]
-      },
-      {
-        "name": "authorizations",
-        "type": "tuple[]",
-        "internalType": "struct UVPStateMachine.SignalAuthorization[]",
-        "components": [
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "submitter",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "role",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "metadataHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
           }
         ]
       },
@@ -2489,38 +2529,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             "name": "deadline",
             "type": "uint256",
             "internalType": "uint256"
-          }
-        ]
-      },
-      {
-        "name": "authorizations",
-        "type": "tuple[]",
-        "internalType": "struct UVPStateMachine.SignalAuthorization[]",
-        "components": [
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "submitter",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "role",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "metadataHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
           }
         ]
       },
@@ -2633,38 +2641,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             "name": "deadline",
             "type": "uint256",
             "internalType": "uint256"
-          }
-        ]
-      },
-      {
-        "name": "authorizations",
-        "type": "tuple[]",
-        "internalType": "struct UVPStateMachine.SignalAuthorization[]",
-        "components": [
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "submitter",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "role",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "metadataHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
           }
         ]
       },
@@ -3057,7 +3033,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "uint256"
       },
       {
-        "name": "executorCandidatesRoot",
+        "name": "executorBindingsRoot",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
@@ -3187,96 +3163,16 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "address"
       },
       {
+        "name": "relayer",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
         "name": "factStageId",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "SignalSubmitterAuthorized",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "sourceId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "signalId",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "submitter",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
-        "name": "role",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "metadataHash",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "SignalSubmitterRevoked",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "sourceId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "signalId",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "submitter",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -3304,19 +3200,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "bytes32"
       },
       {
-        "name": "executor",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
-        "name": "role",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "metadataHash",
+        "name": "supplierId",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
@@ -3326,12 +3210,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
-      },
-      {
-        "name": "metadataURI",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
       }
     ],
     "anonymous": false
@@ -3472,6 +3350,28 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
+    "name": "CandidateExecutorBindingForbiddenForStage",
+    "inputs": [
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "CandidateExecutorBindingRequiresDefault",
+    "inputs": [
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "CrossStageDependency",
     "inputs": [
       {
@@ -3483,12 +3383,44 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
+    "name": "DuplicateExecutorBinding",
+    "inputs": [
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "kind",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "EmptyPlan",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "ExecutorCandidatesRootMismatch",
+    "name": "ExecutorBindingForbiddenForStage",
+    "inputs": [
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ExecutorBindingsRootMismatch",
     "inputs": [
       {
         "name": "expectedRoot",
@@ -3602,6 +3534,39 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     "type": "error",
     "name": "IncompleteModuleConfiguration",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InconsistentDynamicExecutorFlag",
+    "inputs": [
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidEIP1271Signature",
+    "inputs": [
+      {
+        "name": "submitter",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidExecutorBindingKind",
+    "inputs": [
+      {
+        "name": "kind",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ]
   },
   {
     "type": "error",
@@ -3720,7 +3685,18 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "InvalidSignalSignature",
+    "name": "InvalidSignalSignatureLength",
+    "inputs": [
+      {
+        "name": "length",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidSignalSubmitterSignature",
     "inputs": [
       {
         "name": "expectedSigner",
@@ -3736,12 +3712,28 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "InvalidSignalSignatureLength",
+    "name": "InvalidSignature",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidSignatureS",
     "inputs": [
       {
-        "name": "length",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "s",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidSignatureV",
+    "inputs": [
+      {
+        "name": "v",
+        "type": "uint8",
+        "internalType": "uint8"
       }
     ]
   },
@@ -3845,10 +3837,10 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "SignalSubmitterAlreadyAuthorized",
+    "name": "SignalStageUnknown",
     "inputs": [
       {
-        "name": "orderId",
+        "name": "planId",
         "type": "bytes32",
         "internalType": "bytes32"
       },
@@ -3861,11 +3853,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "signalId",
         "type": "bytes32",
         "internalType": "bytes32"
-      },
-      {
-        "name": "submitter",
-        "type": "address",
-        "internalType": "address"
       }
     ]
   },
@@ -3935,6 +3922,22 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
+    "name": "SupplierNotRegistered",
+    "inputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "SupplierRegistryNotConfigured",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "TimerNotDue",
     "inputs": []
   },
@@ -3947,6 +3950,17 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     "type": "error",
     "name": "TooManyDependencies",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooManyExecutorBindings",
+    "inputs": [
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -3997,32 +4011,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
       },
       {
         "name": "initiator",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "UnauthorizedSignalSubmitter",
-    "inputs": [
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "sourceId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "signalId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "submitter",
         "type": "address",
         "internalType": "address"
       }
@@ -4103,6 +4091,22 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
+    "name": "UnknownPlanStage",
+    "inputs": [
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ZeroDockId",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ZeroOrderCreator",
     "inputs": []
   },
@@ -4114,11 +4118,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   {
     "type": "error",
     "name": "ZeroOwner",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ZeroPatchHash",
     "inputs": []
   },
   {
@@ -4138,12 +4137,12 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "ZeroStageExecutor",
+    "name": "ZeroSubmitter",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "ZeroSubmitter",
+    "name": "ZeroSupplierId",
     "inputs": []
   },
   {
@@ -4203,6 +4202,12 @@ export const SIGNAL_SUBMITTED_ABI = [
         "internalType": "address"
       },
       {
+        "name": "relayer",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
         "name": "factStageId",
         "type": "bytes32",
         "indexed": false,
@@ -4212,7 +4217,7 @@ export const SIGNAL_SUBMITTED_ABI = [
     "anonymous": false
   }
 ] as const;
-export const SIGNAL_SUBMITTED_TOPIC = "0x4a223dcfd5862d1c1c699ffb1525d1cbba6736d251b8d2c185f43797017d00e6" as Hex;
+export const SIGNAL_SUBMITTED_TOPIC = "0xb91dd9284f04ad9b78d623f2f98c5518b48265a68a2160df5d1acf72c18da6a6" as Hex;
 
 export const FILE_RESOURCE_MODULE_ABI = [
   {
@@ -4225,19 +4230,6 @@ export const FILE_RESOURCE_MODULE_ABI = [
       }
     ],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "FILE_WRITE_SIGNAL_ID",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -4321,21 +4313,6 @@ export const FILE_RESOURCE_MODULE_ABI = [
         "name": "signalStageId",
         "type": "bytes32",
         "internalType": "bytes32"
-      },
-      {
-        "name": "authSourceId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "authSignalId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "standalone",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -5474,7 +5451,331 @@ export const DOCK_REGISTRY_ABI = [
   }
 ] as const;
 
+export const SUPPLIER_REGISTRY_CONTRACT_NAME = "UVPSupplierRegistry" as const;
+export const SUPPLIER_REGISTRY_ABI = [
+  {
+    "type": "constructor",
+    "inputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "executorOf",
+    "inputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isRegisteredSupplier",
+    "inputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "owner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "registerSupplier",
+    "inputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "executor",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "revokeSupplier",
+    "inputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "rotateSupplierExecutor",
+    "inputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "newExecutor",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setRegistrar",
+    "inputs": [
+      {
+        "name": "registrar",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "allowed",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "supplierOf",
+    "inputs": [
+      {
+        "name": "executor",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "transferOwnership",
+    "inputs": [
+      {
+        "name": "newOwner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "OwnershipTransferred",
+    "inputs": [
+      {
+        "name": "previousOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SupplierExecutorRotated",
+    "inputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "previousExecutor",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newExecutor",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SupplierRegistered",
+    "inputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "executor",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SupplierRegistrarSet",
+    "inputs": [
+      {
+        "name": "registrar",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "allowed",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SupplierRevoked",
+    "inputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "executor",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "ExecutorAlreadyBound",
+    "inputs": [
+      {
+        "name": "executor",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotOwner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotRegistrar",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SupplierAlreadyRegistered",
+    "inputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnknownSupplier",
+    "inputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ZeroExecutor",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroOwner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroSupplierId",
+    "inputs": []
+  }
+] as const;
+
 export const HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
 export const HOOK_FLAG_EMIT_READY = 4;
 export const HOOK_FLAG_ADMISSION = 8;
 export const HOOK_FLAG_DOCK_EXECUTOR = 16;
+export const HOOK_FLAG_DYNAMIC_EXECUTOR = 32;

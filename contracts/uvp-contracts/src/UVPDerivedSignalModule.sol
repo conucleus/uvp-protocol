@@ -41,7 +41,7 @@ contract UVPDerivedSignalModule {
     bytes32 private constant _EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _EIP712_NAME_HASH = keccak256("UVPDerivedSignalModule");
-    bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.6");
+    bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.7");
     bytes32 private constant _DERIVED_SIGNAL_TYPEHASH = keccak256(
         "UVPDerivedSignalModuleSignal(bytes32 fromPlanId,bytes32 fromOrderId,bytes32 fromStageId,bytes32 targetPlanId,bytes32 targetOrderId,bytes32 targetSourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
     );
@@ -227,15 +227,10 @@ contract UVPDerivedSignalModule {
                 }
             }
         }
-        if (
-            stateMachine.activeStageExecutor(request.fromPlanId, request.fromOrderId, request.fromStageId) != submitter
-                && !stateMachine.hasExplicitSignalAuthorization(
-                    request.targetPlanId, request.targetOrderId, request.targetSourceId, request.signalId, submitter
-                )
-        ) {
-            revert UnauthorizedSignalSubmitter(
-                request.targetOrderId, request.targetSourceId, request.signalId, submitter
-            );
+        if (!stateMachine.isEffectiveStageExecutor(
+                request.fromPlanId, request.fromOrderId, request.fromStageId, submitter
+            )) {
+            revert UnauthorizedSignalSubmitter(request.fromOrderId, request.targetSourceId, request.signalId, submitter);
         }
     }
 

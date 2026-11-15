@@ -4,12 +4,10 @@ import {
   HookPlanCompilationError,
 } from "../hook-plan.js";
 import {
-  OnchainHookPlanArtifactValidationError,
-} from "./validate/artifact.js";
-import {
   birthStageStaticExecutorIssues,
   crossStageDependencyIssues,
   declaredStageIdentifiers,
+  dynamicStageRouteIssues,
   dockStageRouteIssues,
   silentOrderTriggerIssues,
   unmaterializableStageIssues,
@@ -22,10 +20,12 @@ import { onchainPlanTriggersOf } from "./triggers.js";
 import { capabilitiesRootOf } from "./capabilities-root.js";
 import { compileStageFileWriters } from "./file-writers.js";
 import {
-  executorCandidatesRootOf,
-  isExecutorAddress,
-  normalizeExecutorCandidates,
-} from "./executor-candidates.js";
+  EXECUTOR_BINDING_KIND_CANDIDATE,
+  EXECUTOR_BINDING_KIND_DEFAULT,
+  executorBindingSetIssues,
+  executorBindingsRootOf,
+  resolveExecutorBindings,
+} from "./executor-bindings.js";
 import {
   canonicalOrderIssues,
   admissionOrderKey,
@@ -54,12 +54,16 @@ import {
   compileDependency,
 } from "./instructions/dependencies.js";
 import { toSolidityRegisterPlanArgs } from "./solidity/registration.js";
+import { isRecord } from "./shape.js";
 import {
   ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
   type CompiledHookPlanAdmission,
+  type ExecutorBindingInput,
   type ExecutorCandidateInput,
   type HookPlanArtifact,
   type OnchainCompiledAdmission,
+  type OnchainCompiledHook,
+  type OnchainExecutorRoute,
   type OnchainHookPlanArtifact,
   type SignalCapability,
   type SolidityRegisterPlanArgs,
@@ -86,6 +90,7 @@ export function compileOnchainHookPlan(
       orderTriggerKind: hook.orderTriggerKind,
       emitReady: hook.emitReady,
       dockExecutor: hook.dockExecutor,
+      dynamicExecutor: hook.dynamicExecutor,
       instructions: compileHookInstructions(hook.ast, hook.stageIdentifier, {
         orderTriggerKind: hook.orderTriggerKind,
       }),
@@ -105,36 +110,16 @@ export function compileOnchainHookPlan(
       binding.targetStageIdentifier,
     ]),
   );
-  const executorCandidateIssues: readonly string[] = (executorCandidates ?? []).map(
-    (candidate) => {
-      if (!declaredStages.has(candidate.stageIdentifier)) {
-        return `executor candidate stage "${candidate.stageIdentifier}" is not a stage declared in this plan`;
-      }
-      if (
-        compiledHooks.some(
-          (hook) =>
-            hook.stageIdentifier === candidate.stageIdentifier &&
-            hook.orderTriggerKind !== "none",
-        )
-      ) {
-        return `executor candidate stage "${candidate.stageIdentifier}" carries an order-trigger hook; birth-stage executors are immutable and cannot be per-order patch targets`;
-      }
-      if (
-        compiledHooks.some(
-          (hook) =>
-            hook.stageIdentifier === candidate.stageIdentifier &&
-            hook.dockExecutor,
-        )
-      ) {
-        return `executor candidate stage "${candidate.stageIdentifier}" is a dock stage; its executor is selected once through the stage executor patch (dkid), never as a plan candidate`;
-      }
-      if (!isExecutorAddress(candidate.executor)) {
-        return `executor candidate for stage "${candidate.stageIdentifier}" must be a non-zero 20-byte address, received ${JSON.stringify(candidate.executor)}`;
-      }
-      return "";
-    },
-  ).filter((issue) => issue.length > 0);
-
+  const executorRoutes = Object.values(hookPlanArtifact.executorRoutes)
+    .map(compileExecutorRoute)
+    .sort(compareExecutorRoutes);
+  const candidates = executorCandidates ?? [];
+  const executorCandidateIssues = validateExecutorCandidates(
+    compiledHooks,
+    executorRoutes,
+    declaredStages,
+    candidates,
+  );
   const crossStageIssues = crossStageDependencyIssues(compiledHooks);
   const materializationIssues = unmaterializableStageIssues(
     compiledHooks,
@@ -149,10 +134,8 @@ export function compileOnchainHookPlan(
       signalId: onchainSignalId(capability.targetSignalName),
     })),
   );
-  const executorRoutes = Object.values(hookPlanArtifact.executorRoutes)
-    .map(compileExecutorRoute)
-    .sort(compareExecutorRoutes);
   const dockRouteIssues = dockStageRouteIssues(compiledHooks, executorRoutes);
+  const dynamicRouteIssues = dynamicStageRouteIssues(compiledHooks, executorRoutes);
   const birthStageExecutorIssues = birthStageStaticExecutorIssues(
     compiledHooks,
     executorRoutes,
@@ -167,6 +150,11 @@ export function compileOnchainHookPlan(
     ...validateOnchainCompiledAdmissions(admissions),
     ...canonicalOrderIssues(admissions, admissionOrderKey, "admissions"),
   ];
+  const executorBindings = resolveExecutorBindings(
+    executorBindingInputsOf(executorRoutes, candidates),
+    onchainStageId,
+  );
+  const bindingSetIssues = executorBindingSetIssues(executorBindings);
   const preflightIssues = [
     ...crossStageIssues,
     ...materializationIssues,
@@ -175,17 +163,16 @@ export function compileOnchainHookPlan(
     ...dependencyCountIssues,
     ...currentOrderFactKeyIssues,
     ...dockRouteIssues,
+    ...dynamicRouteIssues,
     ...hookShapeIssues,
     ...admissionShapeIssues,
     ...executorCandidateIssues,
+    ...bindingSetIssues,
   ];
   if (preflightIssues.length > 0) {
     throw new HookPlanCompilationError(preflightIssues);
   }
-  const executorCandidateList = normalizeExecutorCandidates(
-    executorCandidates ?? [],
-    (stageIdentifier) => onchainStageId(stageIdentifier),
-  );
+  const executorBindingsRoot = executorBindingsRootOf(executorBindings);
   const dependencyIndex = buildOnchainDependencyIndex(compiledHooks);
   const selectorBindings = compileSelectorBindings(
     hookPlanArtifact.selectedStageBindings,
@@ -216,7 +203,6 @@ export function compileOnchainHookPlan(
     soliditySignalCapabilities,
     solidityFileWriterBindings,
   );
-  const executorCandidatesRoot = executorCandidatesRootOf(executorCandidateList);
   const triggers = onchainPlanTriggersOf(compiledHooks);
   const payload = {
     schemaVersion: ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
@@ -234,8 +220,8 @@ export function compileOnchainHookPlan(
     signalCapabilities,
     stageFileWriters,
     admissions,
-    executorCandidates: executorCandidateList,
-    executorCandidatesRoot,
+    executorBindings,
+    executorBindingsRoot,
   };
 
   return {
@@ -252,6 +238,106 @@ export function compileZhixuOnchainHookPlan(
     compileZhixuHookPlan(definition),
     executorCandidates,
   );
+}
+
+function executorBindingInputsOf(
+  executorRoutes: readonly OnchainExecutorRoute[],
+  candidates: readonly unknown[],
+): readonly ExecutorBindingInput[] {
+  const defaults: ExecutorBindingInput[] = executorRoutes.map((route) => ({
+    stageIdentifier: route.stageIdentifier,
+    supplierID: route.executorId,
+    kind: EXECUTOR_BINDING_KIND_DEFAULT,
+  }));
+  const candidateBindings = candidates.flatMap<ExecutorBindingInput>((candidate) => {
+    if (!isRecord(candidate)) {
+      return [];
+    }
+    const stageIdentifier = candidate.stageIdentifier;
+    const supplierID = candidate.supplierID;
+    if (
+      typeof stageIdentifier !== "string" ||
+      stageIdentifier.trim().length === 0 ||
+      typeof supplierID !== "string" ||
+      supplierID.trim().length === 0
+    ) {
+      return [];
+    }
+    return [{
+      stageIdentifier,
+      supplierID,
+      kind: EXECUTOR_BINDING_KIND_CANDIDATE,
+    }];
+  });
+  return [...defaults, ...candidateBindings];
+}
+
+function validateExecutorCandidates(
+  hooks: readonly OnchainCompiledHook[],
+  executorRoutes: readonly OnchainExecutorRoute[],
+  declaredStages: ReadonlySet<string>,
+  candidates: readonly unknown[],
+): readonly string[] {
+  const issues: string[] = [];
+  const routedStages = new Set(executorRoutes.map((route) => route.stageIdentifier));
+  for (const [index, candidate] of candidates.entries()) {
+    if (!isRecord(candidate)) {
+      issues.push(
+        `executorCandidates[${index}] must be an object with stageIdentifier and supplierID`,
+      );
+      continue;
+    }
+    const stageIdentifier = candidate.stageIdentifier;
+    const supplierID = candidate.supplierID;
+    if (
+      typeof stageIdentifier !== "string" ||
+      stageIdentifier.trim().length === 0
+    ) {
+      issues.push(
+        `executorCandidates[${index}].stageIdentifier must be a non-empty stage name`,
+      );
+      continue;
+    }
+    if (typeof supplierID !== "string" || supplierID.trim().length === 0) {
+      issues.push(
+        `executor candidate for stage "${stageIdentifier}" must carry a non-empty supplierID, received ${JSON.stringify(supplierID)}`,
+      );
+      continue;
+    }
+    if (!declaredStages.has(stageIdentifier)) {
+      issues.push(
+        `executor candidate stage "${stageIdentifier}" is not a stage declared in this plan`,
+      );
+      continue;
+    }
+    const stageHooks = hooks.filter(
+      (hook) => hook.stageIdentifier === stageIdentifier,
+    );
+    if (stageHooks.some((hook) => hook.orderTriggerKind !== "none")) {
+      issues.push(
+        `executor candidate stage "${stageIdentifier}" carries an order-trigger hook; birth-stage executors are immutable and cannot be per-order patch targets`,
+      );
+      continue;
+    }
+    if (stageHooks.some((hook) => hook.dockExecutor)) {
+      issues.push(
+        `executor candidate stage "${stageIdentifier}" is a dock stage; its executor is selected once through the stage executor patch (dkid), never as a plan candidate`,
+      );
+      continue;
+    }
+    if (stageHooks.some((hook) => hook.dynamicExecutor)) {
+      issues.push(
+        `executor candidate stage "${stageIdentifier}" is a dynamic stage; its supplier is assigned per order through the stage executor patch and never carries a plan candidate binding`,
+      );
+      continue;
+    }
+    if (!routedStages.has(stageIdentifier)) {
+      issues.push(
+        `executor candidate stage "${stageIdentifier}" has no static executor route; only fixed/candidate/birth stages carry plan executor bindings`,
+      );
+    }
+  }
+  return issues;
 }
 
 function compileSignalAdmissions(

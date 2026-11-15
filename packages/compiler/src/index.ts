@@ -73,6 +73,7 @@ export {
 export {
   HOOK_FLAG_ADMISSION,
   HOOK_FLAG_DOCK_EXECUTOR,
+  HOOK_FLAG_DYNAMIC_EXECUTOR,
   HOOK_FLAG_EMIT_READY,
   HOOK_FLAG_ORDER_TRIGGER_MINT,
   solidityHookFlags,
@@ -99,12 +100,17 @@ export {
   validateOnchainStageFileWriters,
 } from "./onchain/file-writers.js";
 export {
-  EXECUTOR_CANDIDATE_LEAF_DOMAIN,
-  executorCandidateLeaf,
-  executorCandidateProof,
-  executorCandidatesRootOf,
-  isExecutorAddress,
-} from "./onchain/executor-candidates.js";
+  EXECUTOR_BINDING_KIND_CANDIDATE,
+  EXECUTOR_BINDING_KIND_DEFAULT,
+  EXECUTOR_BINDING_LEAF_DOMAIN,
+  executorBindingLeaf,
+  executorBindingProof,
+  executorBindingsRootOf,
+  MAX_EXECUTOR_BINDINGS,
+  onchainSupplierId,
+  resolveExecutorBindings,
+  SUPPLIER_ID_DOMAIN,
+} from "./onchain/executor-bindings.js";
 export {
   COMPILER_NAME,
   COMPILER_VERSION,
@@ -116,6 +122,9 @@ export type {
   CompiledHookPlanAdmission,
   CompiledHookPlanHook,
   ExecuteConfigs,
+  ExecutorBinding,
+  ExecutorBindingKind,
+  ExecutorBindingInput,
   ExecutorCandidateInput,
   FileResourceLike,
   HexString,
@@ -125,7 +134,6 @@ export type {
   OnchainCompiledAdmission,
   OnchainCompiledHook,
   OnchainDelayInstruction,
-  OnchainExecutorCandidate,
   OnchainExecutorRoute,
   OnchainExecutorRouteRef,
   OnchainHookDependency,
@@ -143,7 +151,7 @@ export type {
   SignalCapability,
   SignalTargetOrderRelation,
   SolidityRegisterDependencyIndexArg,
-  SolidityRegisterExecutorCandidateArg,
+  SolidityRegisterExecutorBindingArg,
   SolidityRegisterExecutorRouteArg,
   SolidityRegisterFileWriterBindingArg,
   SolidityRegisterHookArg,

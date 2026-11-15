@@ -243,6 +243,8 @@ export function assertHookPlanArtifact(value: unknown): asserts value is HookPla
 function validateCompiledHooks(hooks: readonly unknown[]): readonly string[] {
   const issues: string[] = [];
   const hookIds = new Set<string>();
+  const dynamicByStage = new Map<string, boolean>();
+  const mixedDynamicStages = new Set<string>();
   for (const [index, hook] of hooks.entries()) {
     if (!isRecord(hook)) {
       issues.push(`compiledHooks[${index}] must be an object`);
@@ -261,6 +263,29 @@ function validateCompiledHooks(hooks: readonly unknown[]): readonly string[] {
     );
     expectBoolean(hook.emitReady, `${prefix}.emitReady`, issues);
     expectBoolean(hook.dockExecutor, `${prefix}.dockExecutor`, issues);
+    expectBoolean(hook.dynamicExecutor, `${prefix}.dynamicExecutor`, issues);
+    if (hook.dynamicExecutor === true) {
+      if (hook.orderTriggerKind !== "none") {
+        issues.push(
+          `${prefix} is a dynamic-executor hook and must not carry an order-trigger bit; birth executors are fixed at plan time`,
+        );
+      }
+      if (hook.dockExecutor === true) {
+        issues.push(
+          `${prefix} cannot be both a dynamic-executor and a dock-executor hook`,
+        );
+      }
+      if (hook.emitReady !== true) {
+        issues.push(
+          `${prefix} is a dynamic-executor hook without EMIT_READY; a dynamic stage materializes only through its own emit-ready hooks`,
+        );
+      }
+      if (hook.route !== undefined) {
+        issues.push(
+          `${prefix} is a dynamic-executor hook and must not carry an executor route; the supplier is assigned per order through the stage executor patch`,
+        );
+      }
+    }
     if (hook.dockExecutor === true) {
       if (hook.orderTriggerKind !== "none") {
         issues.push(`${prefix} is a dock stage hook and must not carry an order-trigger bit`);
@@ -299,6 +324,21 @@ function validateCompiledHooks(hooks: readonly unknown[]): readonly string[] {
       hook.hookId !== `${hook.stageIdentifier}#${hook.hookName}`
     ) {
       issues.push(`${prefix}.hookId must equal stageIdentifier#hookName`);
+    }
+    if (
+      typeof hook.stageIdentifier === "string" &&
+      typeof hook.dynamicExecutor === "boolean"
+    ) {
+      const current = dynamicByStage.get(hook.stageIdentifier);
+      if (current === undefined) {
+        dynamicByStage.set(hook.stageIdentifier, hook.dynamicExecutor);
+      } else if (current !== hook.dynamicExecutor && !mixedDynamicStages.has(hook.stageIdentifier)) {
+        mixedDynamicStages.add(hook.stageIdentifier);
+        issues.push(
+          `stage ${hook.stageIdentifier} mixes dynamic-executor hooks with non-dynamic hooks; `
+            + "the contract collects the per-stage dynamic set from hook flags and reverts InconsistentDynamicExecutorFlag",
+        );
+      }
     }
     if (hook.route !== undefined) {
       if (!isRecord(hook.route)) {

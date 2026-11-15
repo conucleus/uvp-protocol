@@ -7,7 +7,7 @@ import {
 } from "../src/index.js";
 
 /**
- * 链轨 hook_plan 语料（uvp-core fixtures 的 1:1 迁移）：11 个 target=hook_plan
+ * 链轨 hook_plan 语料（uvp-core fixtures 的 1:1 迁移）：10 个 target=hook_plan
  * fixture 的成功侧在这里断言 shell 形状（platform/hookIds/dependency 计数）；
  * 负例与 capabilities/admissions 归 uvp-core analyze 的共享校验，不在 TS 侧
  * 重复钉，corpus 清单本身作为迁移覆盖的账本。
@@ -72,11 +72,32 @@ test("hook_plan fixture corpus stays at 10 (9 zhixu + 1 evm)", () => {
     (entry) => entry.fixture.expect.errorContains === undefined,
   );
   assert.deepEqual(names(negatives), [
-    "onchain_watcher_only_stage_rejected.json",
+    "onchain_trigger_non_static_rejected.json",
     "onchain_zero_hook_stage_rejected.json",
     "static_executor_missing_rejected.json",
   ]);
   assert.equal(executable.length, 7);
+});
+
+test("the dynamic stage fixture lowers to emit-ready dynamic hooks without a route", () => {
+  const entry = loadCorpus().find(
+    (candidate) => candidate.file === "onchain_dynamic_stage_accepted.json",
+  );
+  assert.ok(entry, "the mirrored uvp-core dynamic fixture must stay in the corpus");
+  const plan = compileZhixuHookPlan(entry.fixture.input);
+  const mainHooks = plan.compiledHooks.filter(
+    (hook) => hook.stageIdentifier === "main",
+  );
+  assert.equal(mainHooks.length, 1);
+  assert.equal(mainHooks[0]?.dynamicExecutor, true);
+  assert.equal(mainHooks[0]?.emitReady, true);
+  assert.equal(mainHooks[0]?.route, undefined);
+  assert.equal(plan.executorRoutes["main"], undefined);
+  const anchorHook = plan.compiledHooks.find(
+    (hook) => hook.stageIdentifier === "assign",
+  );
+  assert.equal(anchorHook?.dynamicExecutor, false);
+  assert.ok(anchorHook?.route);
 });
 
 test("hook_plan success fixtures compile to the migrated shell expectations", () => {

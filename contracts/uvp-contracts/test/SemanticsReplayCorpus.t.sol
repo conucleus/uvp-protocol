@@ -9,6 +9,8 @@ import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
+import {UVPSupplierRegistry} from "../src/UVPSupplierRegistry.sol";
+import {MerkleCommitment} from "../src/libraries/MerkleCommitment.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 import {emptyFilePatch} from "./FilePatchTestHelpers.sol";
@@ -126,6 +128,10 @@ contract SemanticsReplayCorpusTest {
     UVPStateMachine private machine;
     UVPDockRegistry private dockRegistry;
     UVPOrderLinkModule private orderLink;
+    UVPSupplierRegistry private registry;
+    bytes32 private testSupplierId;
+    mapping(bytes32 chainPlanId => bytes32[] sortedLeaves) private planCapabilityLeaves;
+    mapping(bytes32 chainPlanId => bytes32 stageId) private planBirthStages;
     string private corpusJson;
 
     EventRow[MAX_EVENTS] private events;
@@ -153,8 +159,6 @@ contract SemanticsReplayCorpusTest {
 
     uint256 private constant PUBLISHER_PRIVATE_KEY = 0xc0ffee;
     uint256 private constant SUBMITTER_PRIVATE_KEY = 0xa11ce;
-    bytes32 private constant ROLE_BOOTSTRAP = bytes32(uint256(0xa001));
-    bytes32 private constant AUTH_METADATA_HASH = bytes32(uint256(0xa002));
     address private constant ORDER_CREATOR = address(uint160(0xc0de));
     bytes32 private constant EMPTY_MERKLE_ROOT = keccak256("");
     uint8 private constant FLAG_ORDER_TRIGGER_MINT = 1;
@@ -163,15 +167,15 @@ contract SemanticsReplayCorpusTest {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.17");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.18");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorBindingsRoot,address birthAuthorizer,uint256 deadline)"
     );
     bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
-        "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
+        "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
     );
     bytes32 private constant TOPIC_SIGNAL_SUBMITTED =
-        keccak256("SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32)");
+        keccak256("SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,address,bytes32)");
     bytes32 private constant TOPIC_HOOK_STATUS_CHANGED =
         keccak256("HookStatusChanged(bytes32,bytes32,bytes32,uint8,uint8,uint64)");
     bytes32 private constant TOPIC_HOOK_READY = keccak256("HookReady(bytes32,bytes32,bytes32,bytes32,bytes32)");
@@ -179,6 +183,8 @@ contract SemanticsReplayCorpusTest {
     bytes32 private constant NAME_SIGNAL_SUBMITTED = keccak256("SignalSubmitted");
     bytes32 private constant NAME_TIMER_POKED = keccak256("TimerPoked");
     bytes32 private constant NAME_ORDER_TRIGGERED = keccak256("OrderTriggered");
+    bytes32 private constant SIGNAL_CAPABILITY_LEAF_DOMAIN = keccak256("UVP_SIGNAL_CAPABILITY_V1");
+    bytes32 private constant EXECUTOR_BINDING_LEAF_DOMAIN = keccak256("UVP_EXECUTOR_BINDING_V2");
 
     function testReplayCase00() public {
         _runReplayCase(0);
@@ -389,7 +395,7 @@ contract SemanticsReplayCorpusTest {
                     sig.signalId,
                     sig.payload,
                     keccak256(abi.encode(caseIdx, signalIdx)),
-                    _noAttribution()
+                    _attributionFor(order.chainPlanId, sig.sourceId, sig.signalId)
                 , bytes32(0), emptyFilePatch());
                 _markWritten(signalIdx);
             } else if (name == NAME_TIMER_POKED) {
@@ -624,12 +630,211 @@ contract SemanticsReplayCorpusTest {
             });
             cursor += 1;
         }
-        (bytes32 planId, bytes4 revertSelector) = _commitHooks(hooks);
+        bytes32 birthStage = plan.hasTrigger ? _hookStage(plan, _triggerHookOf(plan)) : plan.birthStageId;
+        bytes32[] memory leaves = _planCapabilityLeaves(caseIdx, planIdx, plan, hooks, birthStage, variant);
+        bytes32 capabilitiesRoot = MerkleCommitment.root(leaves);
+        UVPStateMachine.ExecutorBinding[] memory bindings = _bindingsForHooks(hooks);
+        (bytes32 planId, bytes4 revertSelector) = _commitHooks(hooks, capabilitiesRoot, bindings);
         if (planId == bytes32(0)) {
             return (true, revertSelector);
         }
         plans[planIdx].chainPlanId = planId;
+        planCapabilityLeaves[planId] = _sortedUnique(leaves);
+        planBirthStages[planId] = birthStage;
         return (false, 0);
+    }
+
+    function _planCapabilityLeaves(
+        uint256 caseIdx,
+        uint256 planIdx,
+        RawPlan storage plan,
+        UVPStateMachine.CompactHook[] memory hooks,
+        bytes32 birthStage,
+        bool variant
+    ) private view returns (bytes32[] memory leaves) {
+        bytes32[] memory scratch = new bytes32[]((MAX_HOOKS + 3) * MAX_INSTR + MAX_SIGNALS + 4);
+        uint256 count;
+        for (uint256 h = 0; h < hooks.length; h++) {
+            for (uint256 i = 0; i < hooks[h].instructions.length; i++) {
+                if (hooks[h].instructions[i].op != uint8(UVPStateMachine.InstructionOp.Signal)) {
+                    continue;
+                }
+                count = _pushLeaf(
+                    scratch, count, birthStage, hooks[h].instructions[i].sourceId, hooks[h].instructions[i].signalId
+                );
+            }
+        }
+        for (uint256 s = 0; s < signalCount; s++) {
+            SignalRow storage row = signals[s];
+            if (row.planId != plan.corpusPlanId) {
+                continue;
+            }
+            count = _pushLeaf(scratch, count, birthStage, row.sourceId, row.signalId);
+        }
+        if (!plan.hasTrigger) {
+            count = _pushLeaf(
+                scratch,
+                count,
+                birthStage,
+                keccak256(abi.encode("corpus.birth.source", caseIdx, plan.corpusPlanId)),
+                keccak256(abi.encode("corpus.birth.signal", caseIdx, plan.corpusPlanId))
+            );
+        }
+        if (variant) {
+            count = _pushLeaf(
+                scratch,
+                count,
+                birthStage,
+                keccak256(abi.encode("corpus.variant.signal", caseIdx, planIdx)),
+                keccak256(abi.encode("corpus.variant.signal.id", caseIdx, planIdx))
+            );
+        }
+        leaves = new bytes32[](count);
+        for (uint256 i = 0; i < count; i++) {
+            leaves[i] = scratch[i];
+        }
+    }
+
+    function _pushLeaf(bytes32[] memory scratch, uint256 count, bytes32 stageId, bytes32 sourceId, bytes32 signalId)
+        private
+        pure
+        returns (uint256)
+    {
+        if (sourceId == bytes32(0) || signalId == bytes32(0)) {
+            return count;
+        }
+        bytes32 leaf = _capabilityLeaf(stageId, sourceId, signalId, 0);
+        for (uint256 i = 0; i < count; i++) {
+            if (scratch[i] == leaf) {
+                return count;
+            }
+        }
+        scratch[count] = leaf;
+        return count + 1;
+    }
+
+    function _capabilityLeaf(bytes32 stageId, bytes32 sourceId, bytes32 signalId, uint8 relation)
+        private
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(SIGNAL_CAPABILITY_LEAF_DOMAIN, stageId, sourceId, signalId, uint256(relation)));
+    }
+
+    function _bindingsForHooks(UVPStateMachine.CompactHook[] memory hooks)
+        private
+        view
+        returns (UVPStateMachine.ExecutorBinding[] memory bindings)
+    {
+        bytes32[] memory stages = new bytes32[](hooks.length);
+        uint256 stageCount;
+        for (uint256 i = 0; i < hooks.length; i++) {
+            if (hooks[i].flags == FLAG_ADMISSION) {
+                continue;
+            }
+            bool seen;
+            for (uint256 j = 0; j < stageCount; j++) {
+                if (stages[j] == hooks[i].stageId) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) {
+                stages[stageCount++] = hooks[i].stageId;
+            }
+        }
+        bindings = new UVPStateMachine.ExecutorBinding[](stageCount);
+        for (uint256 i = 0; i < stageCount; i++) {
+            bindings[i] =
+                UVPStateMachine.ExecutorBinding({stageId: stages[i], supplierId: testSupplierId, kind: 0});
+        }
+    }
+
+    function _bindingsRoot(UVPStateMachine.ExecutorBinding[] memory bindings) private pure returns (bytes32) {
+        bytes32[] memory leaves = new bytes32[](bindings.length);
+        for (uint256 i = 0; i < bindings.length; i++) {
+            leaves[i] = keccak256(
+                abi.encodePacked(
+                    EXECUTOR_BINDING_LEAF_DOMAIN, bindings[i].stageId, bindings[i].supplierId, bindings[i].kind
+                )
+            );
+        }
+        return MerkleCommitment.root(leaves);
+    }
+
+    function _attributionFor(bytes32 planId, bytes32 sourceId, bytes32 signalId)
+        private
+        view
+        returns (UVPStateMachine.FactAttribution memory attribution)
+    {
+        attribution.sourceId = sourceId;
+        attribution.signalId = signalId;
+        bytes32[] storage stored = planCapabilityLeaves[planId];
+        if (stored.length == 0) {
+            return attribution;
+        }
+        bytes32[] memory sorted = new bytes32[](stored.length);
+        for (uint256 i = 0; i < stored.length; i++) {
+            sorted[i] = stored[i];
+        }
+        bytes32 stageId = planBirthStages[planId];
+        bytes32 leaf = _capabilityLeaf(stageId, sourceId, signalId, 0);
+        for (uint256 i = 0; i < sorted.length; i++) {
+            if (sorted[i] == leaf) {
+                attribution.stageId = stageId;
+                attribution.capabilityProof = _merkleProofFor(sorted, leaf);
+                return attribution;
+            }
+        }
+        return attribution;
+    }
+
+    function _attributionsForPlan(bytes32 planId) private view returns (UVPStateMachine.FactAttribution[] memory out) {
+        bytes32 corpusPlanId = _planIdOfChain(planId);
+        bytes32[] memory sources = new bytes32[](MAX_SIGNALS * 2);
+        bytes32[] memory signalIdsOfPlan = new bytes32[](MAX_SIGNALS * 2);
+        uint256 count;
+        for (uint256 s = 0; s < signalCount; s++) {
+            SignalRow storage row = signals[s];
+            if (row.planId != corpusPlanId) {
+                continue;
+            }
+            if (row.sourceId == bytes32(0) || row.signalId == bytes32(0)) {
+                continue;
+            }
+            sources[count] = row.sourceId;
+            signalIdsOfPlan[count] = row.signalId;
+            count += 1;
+        }
+        out = new UVPStateMachine.FactAttribution[](count);
+        for (uint256 i = 0; i < count; i++) {
+            out[i] = _attributionFor(planId, sources[i], signalIdsOfPlan[i]);
+        }
+    }
+
+    function _toCoreAttributions(UVPStateMachine.FactAttribution[] memory input)
+        private
+        pure
+        returns (IUVPStateMachineCore.FactAttribution[] memory out)
+    {
+        out = new IUVPStateMachineCore.FactAttribution[](input.length);
+        for (uint256 i = 0; i < input.length; i++) {
+            out[i] = IUVPStateMachineCore.FactAttribution({
+                sourceId: input[i].sourceId,
+                signalId: input[i].signalId,
+                stageId: input[i].stageId,
+                capabilityProof: input[i].capabilityProof
+            });
+        }
+    }
+
+    function _planIdOfChain(bytes32 chainPlanId) private view returns (bytes32) {
+        for (uint256 p = 0; p < planCount; p++) {
+            if (plans[p].chainPlanId == chainPlanId) {
+                return plans[p].corpusPlanId;
+            }
+        }
+        return bytes32(0);
     }
 
     function _resolveHook(RawHook storage hook) private returns (UVPStateMachine.CompactHook memory) {
@@ -715,16 +920,17 @@ contract SemanticsReplayCorpusTest {
         });
     }
 
-    function _commitHooks(UVPStateMachine.CompactHook[] memory hooks)
-        private
-        returns (bytes32 planId, bytes4 revertSelector)
-    {
+    function _commitHooks(
+        UVPStateMachine.CompactHook[] memory hooks,
+        bytes32 capabilitiesRoot,
+        UVPStateMachine.ExecutorBinding[] memory bindings
+    ) private returns (bytes32 planId, bytes4 revertSelector) {
         address publisher = vm.addr(PUBLISHER_PRIVATE_KEY);
         UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
             publisher: publisher,
             hooksHash: keccak256(abi.encode(hooks)),
-            capabilitiesRoot: EMPTY_MERKLE_ROOT,
-            executorCandidatesRoot: EMPTY_MERKLE_ROOT,
+            capabilitiesRoot: capabilitiesRoot,
+            executorBindingsRoot: _bindingsRoot(bindings),
             birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: type(uint256).max
         });
@@ -734,18 +940,14 @@ contract SemanticsReplayCorpusTest {
                 commit.publisher,
                 commit.hooksHash,
                 commit.capabilitiesRoot,
-                commit.executorCandidatesRoot,
+                commit.executorBindingsRoot,
                 commit.birthAuthorizer,
                 commit.deadline
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _stateMachineDomainSeparator(), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PUBLISHER_PRIVATE_KEY, digest);
-        try machine.commitPlan(
-            commit, hooks, new UVPStateMachine.ExecutorCandidate[](0), _packedSignature(v, r, s)
-        ) returns (
-            bytes32 committed
-        ) {
+        try machine.commitPlan(commit, hooks, bindings, _packedSignature(v, r, s)) returns (bytes32 committed) {
             machine.finalizePlan(committed);
             return (committed, 0);
         } catch (bytes memory reason) {
@@ -789,9 +991,9 @@ contract SemanticsReplayCorpusTest {
             submitter: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: type(uint256).max
         });
-        UVPStateMachine.SignalAuthorization[] memory authorizations = _authorizationsForOrder(orderIdx);
-        bytes memory signature = _outsideTriggerSignature(trigger, authorizations);
-        try machine.triggerOrderFromOutsideFor(trigger, authorizations, signature, _noAttribution()) {
+        UVPStateMachine.FactAttribution memory attribution = _attributionFor(order.chainPlanId, sourceId, signalId);
+        bytes memory signature = _outsideTriggerSignature(trigger);
+        try machine.triggerOrderFromOutsideFor(trigger, signature, attribution) {
             order.chainOrderId = machine.triggerOrderIdFor(order.chainPlanId, sourceId, signalId, payload);
             if (birthSignalIdx != type(uint256).max) {
                 _markWritten(birthSignalIdx);
@@ -834,12 +1036,11 @@ contract SemanticsReplayCorpusTest {
                 submitter: vm.addr(SUBMITTER_PRIVATE_KEY),
                 deadline: type(uint256).max
             });
-        IUVPStateMachineCore.SignalAuthorization[] memory noAuths = new IUVPStateMachineCore.SignalAuthorization[](0);
-        bytes32 digest = orderLink.triggerOrderFromSignalDigest(trigger, orderLink.signalAuthorizationsHash(noAuths));
+        bytes32 digest = orderLink.triggerOrderFromSignalDigest(trigger);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(SUBMITTER_PRIVATE_KEY, digest);
         vm.warp(child.registeredAt);
         orderLink.triggerOrderFromSignalFor(
-            trigger, noAuths, _packedSignature(v, r, s), new IUVPStateMachineCore.FactAttribution[](0)
+            trigger, _packedSignature(v, r, s), _toCoreAttributions(_attributionsForPlan(origin.chainPlanId))
         );
         child.chainOrderId = trigger.orderId;
     }
@@ -1156,16 +1357,20 @@ contract SemanticsReplayCorpusTest {
             instructions: admissionInstrs,
             dependencyKeys: _depsOf(admissionInstrs)
         });
-        (bytes32 planId, bytes4 planRevert) = _commitHooks(hooks);
-        require(planId != bytes32(0) && planRevert == 0, "filter corpus plan must register");
-
-        UVPStateMachine.SignalAuthorization[] memory authorizations =
-            new UVPStateMachine.SignalAuthorization[](signalNameCount + 2);
-        authorizations[0] = _authorization(birthSource, birthSignal, address(this));
-        authorizations[1] = _authorization(emitSource, emitSignal, address(this));
+        bytes32[] memory filterLeaves = new bytes32[](signalNameCount + 2);
+        filterLeaves[0] = _capabilityLeaf(birthStage, birthSource, birthSignal, 0);
+        filterLeaves[1] = _capabilityLeaf(birthStage, emitSource, emitSignal, 0);
         for (uint256 i = 0; i < signalNameCount; i++) {
-            authorizations[2 + i] = _authorization(_filterSource(), _filterSignal(signalNames[i]), address(this));
+            filterLeaves[2 + i] = _capabilityLeaf(birthStage, _filterSource(), _filterSignal(signalNames[i]), 0);
         }
+        UVPStateMachine.ExecutorBinding[] memory filterBindings = new UVPStateMachine.ExecutorBinding[](1);
+        filterBindings[0] = UVPStateMachine.ExecutorBinding({stageId: birthStage, supplierId: testSupplierId, kind: 0});
+        (bytes32 planId, bytes4 planRevert) =
+            _commitHooks(hooks, MerkleCommitment.root(filterLeaves), filterBindings);
+        require(planId != bytes32(0) && planRevert == 0, "filter corpus plan must register");
+        planCapabilityLeaves[planId] = _sortedUnique(filterLeaves);
+        planBirthStages[planId] = birthStage;
+
         UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = UVPStateMachine.TriggerOrderFromOutsideRequest({
             planId: planId,
             creator: ORDER_CREATOR,
@@ -1178,8 +1383,8 @@ contract SemanticsReplayCorpusTest {
             submitter: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: type(uint256).max
         });
-        bytes memory signature = _outsideTriggerSignature(trigger, authorizations);
-        machine.triggerOrderFromOutsideFor(trigger, authorizations, signature, _noAttribution());
+        bytes memory signature = _outsideTriggerSignature(trigger);
+        machine.triggerOrderFromOutsideFor(trigger, signature, _attributionFor(planId, birthSource, birthSignal));
         bytes32 orderId = machine.triggerOrderIdFor(planId, birthSource, birthSignal, trigger.payloadHash);
 
         for (uint256 i = 0; i < signalNameCount; i++) {
@@ -1194,7 +1399,7 @@ contract SemanticsReplayCorpusTest {
                 _filterSignal(signalNames[i]),
                 keccak256(abi.encode(caseIdx, "filter-signal", i)),
                 keccak256(abi.encode(caseIdx, "filter-signal-idem", i)),
-                _noAttribution()
+                _attributionFor(planId, _filterSource(), _filterSignal(signalNames[i]))
             , bytes32(0), emptyFilePatch());
         }
 
@@ -1212,12 +1417,12 @@ contract SemanticsReplayCorpusTest {
                     )
                 );
                 machine.submitSignal(
-                    planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution()
+                    planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _attributionFor(planId, emitSource, emitSignal)
                 , bytes32(0), emptyFilePatch());
                 vm.warp(nowSec);
             }
             machine.submitSignal(
-                planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution()
+                planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _attributionFor(planId, emitSource, emitSignal)
             , bytes32(0), emptyFilePatch());
             (bool exists, bytes32 payloadHash,,,) = machine.getSignal(planId, orderId, emitSource, emitSignal);
             require(exists && payloadHash == emitPayload, "admitted emission missing");
@@ -1228,14 +1433,14 @@ contract SemanticsReplayCorpusTest {
                 )
             );
             machine.submitSignal(
-                planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution()
+                planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _attributionFor(planId, emitSource, emitSignal)
             , bytes32(0), emptyFilePatch());
             (bool hasReadyAt, string memory readyAtRaw) = _tryString(json, string.concat(base, ".expect.readyAt"));
             require(hasReadyAt, "wait-state corpus case must pin readyAt");
             (, uint64 readyAt) = _requireTimestamp(readyAtRaw);
             vm.warp(readyAt);
             machine.submitSignal(
-                planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution()
+                planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _attributionFor(planId, emitSource, emitSignal)
             , bytes32(0), emptyFilePatch());
             (bool exists,,,,) = machine.getSignal(planId, orderId, emitSource, emitSignal);
             require(exists, "emission must land at corpus readyAt");
@@ -1246,7 +1451,7 @@ contract SemanticsReplayCorpusTest {
                 )
             );
             machine.submitSignal(
-                planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _noAttribution()
+                planId, orderId, emitSource, emitSignal, emitPayload, bytes32(uint256(1)), _attributionFor(planId, emitSource, emitSignal)
             , bytes32(0), emptyFilePatch());
             (bool exists,,,,) = machine.getSignal(planId, orderId, emitSource, emitSignal);
             require(!exists, "rejected emission must not record a fact");
@@ -1282,12 +1487,16 @@ contract SemanticsReplayCorpusTest {
             instructions: admissionInstrs,
             dependencyKeys: _depsOf(admissionInstrs)
         });
-        address publisher = vm.addr(PUBLISHER_PRIVATE_KEY);
+        bytes32[] memory leaves = new bytes32[](2);
+        leaves[0] = _capabilityLeaf(birthStage, birthSource, birthSignal, 0);
+        leaves[1] = _capabilityLeaf(birthStage, emitSource, emitSignal, 0);
+        UVPStateMachine.ExecutorBinding[] memory bindings = new UVPStateMachine.ExecutorBinding[](1);
+        bindings[0] = UVPStateMachine.ExecutorBinding({stageId: birthStage, supplierId: testSupplierId, kind: 0});
         UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
-            publisher: publisher,
+            publisher: vm.addr(PUBLISHER_PRIVATE_KEY),
             hooksHash: keccak256(abi.encode(hooks)),
-            capabilitiesRoot: EMPTY_MERKLE_ROOT,
-            executorCandidatesRoot: EMPTY_MERKLE_ROOT,
+            capabilitiesRoot: MerkleCommitment.root(leaves),
+            executorBindingsRoot: _bindingsRoot(bindings),
             birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: type(uint256).max
         });
@@ -1297,7 +1506,7 @@ contract SemanticsReplayCorpusTest {
                 commit.publisher,
                 commit.hooksHash,
                 commit.capabilitiesRoot,
-                commit.executorCandidatesRoot,
+                commit.executorBindingsRoot,
                 commit.birthAuthorizer,
                 commit.deadline
             )
@@ -1305,7 +1514,7 @@ contract SemanticsReplayCorpusTest {
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _stateMachineDomainSeparator(), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PUBLISHER_PRIVATE_KEY, digest);
         vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
-        machine.commitPlan(commit, hooks, new UVPStateMachine.ExecutorCandidate[](0), _packedSignature(v, r, s));
+        machine.commitPlan(commit, hooks, bindings, _packedSignature(v, r, s));
     }
 
     function _filterSource() private pure returns (bytes32) {
@@ -1318,6 +1527,9 @@ contract SemanticsReplayCorpusTest {
 
     function _newCaseMachine() private returns (UVPStateMachine newMachine) {
         newMachine = new UVPStateMachine();
+        registry = new UVPSupplierRegistry();
+        testSupplierId = keccak256("corpus.supplier");
+        registry.registerSupplier(testSupplierId, address(this));
         UVPStagePatchModule stagePatch = new UVPStagePatchModule(address(newMachine));
         UVPDerivedSignalModule derivedSignal = new UVPDerivedSignalModule(address(newMachine));
         UVPPlanMetadataModule planMetadata = new UVPPlanMetadataModule(address(newMachine));
@@ -1330,6 +1542,7 @@ contract SemanticsReplayCorpusTest {
         newMachine.setOrderLinkModule(address(orderLink));
         newMachine.setFileResourceModule(address(new UVPFileResourceModule(address(newMachine))));
         newMachine.setLens(address(new UVPStateMachineLens(address(newMachine))));
+        newMachine.setSupplierRegistry(address(registry));
         newMachine.freezeModules();
     }
 
@@ -1542,70 +1755,80 @@ contract SemanticsReplayCorpusTest {
         }
     }
 
-    function _authorization(bytes32 sourceId, bytes32 signalId, address submitter)
-        private
-        pure
-        returns (UVPStateMachine.SignalAuthorization memory)
-    {
-        return UVPStateMachine.SignalAuthorization({
-            sourceId: sourceId,
-            signalId: signalId,
-            submitter: submitter,
-            role: ROLE_BOOTSTRAP,
-            metadataHash: AUTH_METADATA_HASH
-        });
-    }
-
-    function _authorizationsForOrder(uint256 orderIdx)
-        private
-        view
-        returns (UVPStateMachine.SignalAuthorization[] memory)
-    {
-        OrderRow storage order = orders[orderIdx];
-        UVPStateMachine.SignalAuthorization[] memory scratch = new UVPStateMachine.SignalAuthorization[](signalCount);
-        uint256 distinct;
-        for (uint256 s = 0; s < signalCount; s++) {
-            SignalRow storage sig = signals[s];
-            if (!sig.exists || sig.planId != order.planId || !_eq(sig.orderId, order.orderId)) {
-                continue;
-            }
-            bool seen;
-            for (uint256 j = 0; j < distinct; j++) {
-                if (scratch[j].sourceId == sig.sourceId && scratch[j].signalId == sig.signalId) {
-                    seen = true;
+    function _sortedUnique(bytes32[] memory raw) private pure returns (bytes32[] memory) {
+        bytes32[] memory sorted = new bytes32[](raw.length);
+        uint256 count;
+        for (uint256 i = 0; i < raw.length; i++) {
+            bool duplicate;
+            for (uint256 j = 0; j < count; j++) {
+                if (sorted[j] == raw[i]) {
+                    duplicate = true;
                     break;
                 }
             }
-            if (!seen) {
-                scratch[distinct] = _authorization(sig.sourceId, sig.signalId, address(this));
-                distinct += 1;
+            if (!duplicate) {
+                sorted[count++] = raw[i];
             }
         }
-        UVPStateMachine.SignalAuthorization[] memory authorizations =
-            new UVPStateMachine.SignalAuthorization[](distinct);
-        for (uint256 i = 0; i < distinct; i++) {
-            authorizations[i] = scratch[i];
+        for (uint256 i = 1; i < count; i++) {
+            bytes32 key = sorted[i];
+            uint256 j = i;
+            while (j > 0 && sorted[j - 1] > key) {
+                sorted[j] = sorted[j - 1];
+                j -= 1;
+            }
+            sorted[j] = key;
         }
-        return authorizations;
+        bytes32[] memory exact = new bytes32[](count);
+        for (uint256 i = 0; i < count; i++) {
+            exact[i] = sorted[i];
+        }
+        return exact;
     }
 
-    function _outsideTriggerSignature(
-        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger,
-        UVPStateMachine.SignalAuthorization[] memory authorizations
-    ) private returns (bytes memory) {
-        bytes32 rollingHash = keccak256(abi.encode(authorizations.length));
-        for (uint256 i = 0; i < authorizations.length; i++) {
-            rollingHash = keccak256(
-                abi.encode(
-                    rollingHash,
-                    authorizations[i].sourceId,
-                    authorizations[i].signalId,
-                    authorizations[i].submitter,
-                    authorizations[i].role,
-                    authorizations[i].metadataHash
-                )
-            );
+    function _pairOf(bytes32 left, bytes32 right) private pure returns (bytes32) {
+        return left <= right ? keccak256(abi.encodePacked(left, right)) : keccak256(abi.encodePacked(right, left));
+    }
+
+    function _merkleProofFor(bytes32[] memory sorted, bytes32 leaf) private pure returns (bytes32[] memory proof) {
+        uint256 index = type(uint256).max;
+        for (uint256 i = 0; i < sorted.length; i++) {
+            if (sorted[i] == leaf) {
+                index = i;
+                break;
+            }
         }
+        require(index != type(uint256).max, "corpus: leaf not in tree");
+        bytes32[] memory buffer = new bytes32[](64);
+        uint256 count;
+        bytes32[] memory level = sorted;
+        while (level.length > 1) {
+            uint256 sibling = index ^ 1;
+            if (sibling < level.length) {
+                buffer[count++] = level[sibling];
+            }
+            uint256 nextLength = (level.length + 1) / 2;
+            bytes32[] memory next = new bytes32[](nextLength);
+            uint256 cursor;
+            for (uint256 i = 0; i + 1 < level.length; i += 2) {
+                next[cursor++] = _pairOf(level[i], level[i + 1]);
+            }
+            if (level.length % 2 == 1) {
+                next[cursor] = level[level.length - 1];
+            }
+            level = next;
+            index /= 2;
+        }
+        proof = new bytes32[](count);
+        for (uint256 i = 0; i < count; i++) {
+            proof[i] = buffer[i];
+        }
+    }
+
+    function _outsideTriggerSignature(UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger)
+        private
+        returns (bytes memory)
+    {
         bytes32 structHash = keccak256(
             abi.encode(
                 TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH,
@@ -1617,7 +1840,6 @@ contract SemanticsReplayCorpusTest {
                 trigger.signalId,
                 trigger.payloadHash,
                 trigger.idempotencyKey,
-                rollingHash,
                 trigger.submitter,
                 trigger.deadline
             )

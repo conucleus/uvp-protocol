@@ -22,7 +22,8 @@ import {
 /**
  * Chain hook_plan shell 总装：analyze 只给共享校验与 hook 解析结果，本模块按
  * stage.triggers 的每个信号合成一条 order-trigger hook，并补 emit-ready/route/
- * dock executor 装饰与 dependencyIndex/executorRoutes，输出 hookPlan.v6 shell 形态。
+ * dock/dynamic executor 装饰与 dependencyIndex/executorRoutes，输出 hookPlan.v8
+ * shell 形态。
  */
 
 export interface LoweredHookPlanShell extends HookPlanShell {
@@ -116,8 +117,9 @@ function compileReceiveHook(
     stageIdentifier: stage.stageIdentifier,
     hookName: hook.hookName,
     orderTriggerKind,
-    emitReady: stage.executor !== null && stage.executor !== undefined,
+    emitReady: true,
     dockExecutor: isDockExecutor(stage.executor),
+    dynamicExecutor: stage.executor === null || stage.executor === undefined,
     rawExpression: hook.rawExpression,
     normalizedExpression: hook.normalizedExpression,
     ast: hook.ast,
@@ -157,6 +159,7 @@ function compileTriggerHook(
     orderTriggerKind: "trigger",
     emitReady: true,
     dockExecutor: false,
+    dynamicExecutor: false,
     rawExpression,
     normalizedExpression: rawExpression,
     ast,

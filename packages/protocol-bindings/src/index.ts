@@ -54,17 +54,6 @@ const TRIGGER_ORDER_FROM_OUTSIDE_FOR_ABI_ENTRY = [
           { name: "deadline", type: "uint256" },
         ],
       },
-      {
-        name: "authorizations",
-        type: "tuple[]",
-        components: [
-          { name: "sourceId", type: "bytes32" },
-          { name: "signalId", type: "bytes32" },
-          { name: "submitter", type: "address" },
-          { name: "role", type: "bytes32" },
-          { name: "metadataHash", type: "bytes32" },
-        ],
-      },
       { name: "signature", type: "bytes" },
       {
         name: "birthFactAttribution",
@@ -99,17 +88,6 @@ const TRIGGER_ORDER_FROM_OUTSIDE_BY_AUTHORIZER_ABI_ENTRY = [
           { name: "payloadHash", type: "bytes32" },
           { name: "idempotencyKey", type: "bytes32" },
           { name: "deadline", type: "uint256" },
-        ],
-      },
-      {
-        name: "authorizations",
-        type: "tuple[]",
-        components: [
-          { name: "sourceId", type: "bytes32" },
-          { name: "signalId", type: "bytes32" },
-          { name: "submitter", type: "address" },
-          { name: "role", type: "bytes32" },
-          { name: "metadataHash", type: "bytes32" },
         ],
       },
       {
@@ -151,17 +129,6 @@ const TRIGGER_ORDER_FROM_SIGNAL_FROM_MODULE_ABI_ENTRY = [
           { name: "deadline", type: "uint256" },
         ],
       },
-      {
-        name: "authorizations",
-        type: "tuple[]",
-        components: [
-          { name: "sourceId", type: "bytes32" },
-          { name: "signalId", type: "bytes32" },
-          { name: "submitter", type: "address" },
-          { name: "role", type: "bytes32" },
-          { name: "metadataHash", type: "bytes32" },
-        ],
-      },
       { name: "relayer", type: "address" },
       {
         name: "originFactAttributions",
@@ -185,19 +152,17 @@ export const STATE_MACHINE_ABI = [
   "event HookReady(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed hookId,bytes32 stageId,bytes32 hookName)",
   "event HookStatusChanged(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed hookId,uint8 previousStatus,uint8 newStatus,uint64 dueAt)",
   "event TimerPoked(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed hookId,uint64 dueAt)",
-  "event SignalSubmitted(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,bytes32 factStageId)",
-  "event PlanCommitted(bytes32 indexed planId,bytes32 indexed planHash,address indexed publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,uint256 hookCount,bytes32 executorCandidatesRoot,address birthAuthorizer)",
+  "event SignalSubmitted(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,address relayer,bytes32 factStageId)",
+  "event PlanCommitted(bytes32 indexed planId,bytes32 indexed planHash,address indexed publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,uint256 hookCount,bytes32 executorBindingsRoot,address birthAuthorizer)",
   "event PlanFinalized(bytes32 indexed planId,bytes32 indexed planHash,bytes32 capabilitiesRoot)",
   "event PlanRegistered(bytes32 indexed planId,bytes32 planHash,uint256 hookCount)",
   "event PlanPublisherRecorded(bytes32 indexed planId,address indexed publisher)",
   "event OrderRegistered(bytes32 indexed orderId,bytes32 indexed planId)",
   "event OrderMaterialized(bytes32 indexed orderId,bytes32 indexed planId,bytes32 indexed stageId)",
   "event OrderRelayerRecorded(bytes32 indexed planId,bytes32 orderId,address indexed relayer,address creator)",
-  "event SignalSubmitterAuthorized(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)",
-  "event SignalSubmitterRevoked(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed sourceId,bytes32 signalId,address submitter)",
   "event StageMaterialized(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed stageId,bytes32 triggerHookId,bytes32 sourceId,bytes32 signalId)",
   "event OrderTriggered(bytes32 indexed orderId,bytes32 indexed planId,bytes32 indexed triggerStageId,bytes32 triggerHookId,bytes32 sourceId,bytes32 signalId,address submitter)",
-  "event StageExecutorActivated(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,address executor,bytes32 role,bytes32 metadataHash,uint256 patchNonce,string metadataURI)",
+  "event StageExecutorActivated(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 supplierId,uint256 patchNonce)",
   "event OrderForked(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed parentOrderId,bytes32 approvalSourceId,bytes32 approvalSignalId,address initiator,bytes32 forkPayloadHash,bytes32[] replayedFactKeys)",
   "function owner() view returns (address)",
   "function stagePatchModule() view returns (address)",
@@ -206,6 +171,7 @@ export const STATE_MACHINE_ABI = [
   "function orderLinkModule() view returns (address)",
   "function fileResourceModule() view returns (address)",
   "function lens() view returns (address)",
+  "function supplierRegistry() view returns (address)",
   "function modulesFrozen() view returns (bool)",
   "function moduleSetHash() view returns (bytes32)",
   "function transferOwnership(address newOwner)",
@@ -216,26 +182,36 @@ export const STATE_MACHINE_ABI = [
   "function setOrderLinkModule(address moduleAddress)",
   "function setLens(address moduleAddress)",
   "function setFileResourceModule(address moduleAddress)",
+  "function setSupplierRegistry(address moduleAddress)",
   "function freezeModules()",
-  "function commitPlan((address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline) commit,(bytes32 hookId,bytes32 stageId,bytes32 hookName,uint8 flags,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks,(bytes32 stageId,address executor)[] executorCandidates,bytes signature) returns (bytes32 planId)",
+  "function commitPlan((address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorBindingsRoot,address birthAuthorizer,uint256 deadline) commit,(bytes32 hookId,bytes32 stageId,bytes32 hookName,uint8 flags,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks,(bytes32 stageId,bytes32 supplierId,uint8 kind)[] bindings,bytes signature) returns (bytes32 planId)",
   "function finalizePlan(bytes32 planId)",
-  "function planRuntimeHash(bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorCandidatesRoot) pure returns (bytes32)",
-  "function planIdFor(address publisher,bytes32 planHash) pure returns (bytes32)",
+  "function planRuntimeHash(bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorBindingsRoot) pure returns (bytes32)",
+  "function planIdFor(address publisher,bytes32 runtimePlanHash) pure returns (bytes32)",
   "function triggerOrderIdFor(bytes32 planId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash) pure returns (bytes32)",
   "function orderLinkOrderIdFor(bytes32 planId,bytes32 originPlanId,bytes32 triggerOriginOrderId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash) pure returns (bytes32)",
   "function stageHasOrderTriggerHook(bytes32 planId,bytes32 stageId) view returns (bool)",
   "function submitSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution,bytes32 filesDigest,(bytes32 targetStageId,bytes32 baseHash,bytes32 writerStageId,bytes32[] writerProof,(uint8 kind,bytes32 key,bytes32 contentHash,string handle)[] ops) filePatch)",
+  "function submitSignalFor(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution,bytes32 filesDigest,(bytes32 targetStageId,bytes32 baseHash,bytes32 writerStageId,bytes32[] writerProof,(uint8 kind,bytes32 key,bytes32 contentHash,string handle)[] ops) filePatch,address submitter,uint256 deadline,bytes signature)",
   "function submitDerivedSignalFromModule(bytes32 planId,bytes32 orderId,bytes32 fromPlanId,bytes32 fromOrderId,bytes32 stageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter)",
   "function planHookFlags(bytes32 planId,bytes32 hookId) view returns (uint8)",
   "function planHookStageId(bytes32 planId,bytes32 hookId) view returns (bytes32)",
   "function planBirthAuthorizer(bytes32 planId) view returns (address)",
-  "function activateStageExecutorFromModule(bytes32 planId,bytes32 orderId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 patchHash,uint256 patchNonce,string metadataURI)",
-  "function forkOrder(bytes32 planId,bytes32 parentOrderId,bytes32 forkPayloadHash,bytes32 approvalSourceId,bytes32 approvalSignalId,(bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey)[] birthFacts,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations) returns (bytes32 forkedOrderId)",
+  "function activateStageExecutorFromModule(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 supplierId,uint256 patchNonce)",
+  "function activateStageDockExecutorFromModule(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 supplierId,bytes32 dockId,uint256 patchNonce)",
+  "function forkOrder(bytes32 planId,bytes32 parentOrderId,bytes32 forkPayloadHash,bytes32 approvalSourceId,bytes32 approvalSignalId,(bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey)[] birthFacts) returns (bytes32 forkedOrderId)",
   "function forkOrderIdFor(bytes32 planId,bytes32 parentOrderId,bytes32 forkPayloadHash) pure returns (bytes32)",
-  "function authorizeSignalSubmittersFromModule(bytes32 planId,bytes32 orderId,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations)",
   "function stageSignalState(bytes32 planId,bytes32 orderId,bytes32 stageId) view returns (uint256 count,address lastSubmitter,uint64 lastAt,bool ambiguous)",
   "function orderParent(bytes32 planId,bytes32 orderId) view returns (bytes32)",
-  "function planExecutorCandidatesRoot(bytes32 planId) view returns (bytes32)",
+  "function planExecutorBindingsRoot(bytes32 planId) view returns (bytes32)",
+  "function planStageDefaultSupplier(bytes32 planId,bytes32 stageId) view returns (bytes32)",
+  "function planStageHasDynamicExecutor(bytes32 planId,bytes32 stageId) view returns (bool)",
+  "function planStageIsCandidate(bytes32 planId,bytes32 stageId) view returns (bool)",
+  "function isPlanStage(bytes32 planId,bytes32 stageId) view returns (bool)",
+  "function effectiveStageSupplier(bytes32 planId,bytes32 orderId,bytes32 stageId) view returns (bytes32)",
+  "function effectiveStageExecutor(bytes32 planId,bytes32 orderId,bytes32 stageId) view returns (bytes32 supplierId,address executor)",
+  "function isEffectiveStageExecutor(bytes32 planId,bytes32 orderId,bytes32 stageId,address executor) view returns (bool)",
+  "function activeStageExecutorPatch(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bytes32 supplierId,uint256 patchNonce,bytes32 dockId)",
   "function SIGNAL_TARGET_CURRENT_ORDER() view returns (uint8)",
   "function SIGNAL_TARGET_TRIGGER_ORIGIN() view returns (uint8)",
   "function DERIVED_SIGNAL_MODULE_ID() view returns (bytes32)",
@@ -243,21 +219,25 @@ export const STATE_MACHINE_ABI = [
   "function FILE_RESOURCE_MODULE_ID() view returns (bytes32)",
   "function HOOK_FLAG_ADMISSION() view returns (uint8)",
   "function HOOK_FLAG_DOCK_EXECUTOR() view returns (uint8)",
+  "function HOOK_FLAG_DYNAMIC_EXECUTOR() view returns (uint8)",
   "function HOOK_FLAG_EMIT_READY() view returns (uint8)",
   "function HOOK_FLAG_ORDER_TRIGGER_MINT() view returns (uint8)",
   "function LENS_MODULE_ID() view returns (bytes32)",
+  "function MAX_EXECUTOR_BINDINGS() view returns (uint256)",
   "function MAX_HOOK_DELAY_SECONDS() view returns (uint64)",
   "function MAX_PLAN_DEPENDENCIES() view returns (uint256)",
   "function ORDER_LINK_MODULE_ID() view returns (bytes32)",
   "function PLAN_METADATA_MODULE_ID() view returns (bytes32)",
   "function STAGE_PATCH_MODULE_ID() view returns (bytes32)",
-  "function sourceSignalCount(bytes32 planId,bytes32 orderId,bytes32 sourceId) view returns (uint256 count)",
-  "function lastSignalSubmitter(bytes32 planId,bytes32 orderId,bytes32 sourceId) view returns (address submitter)",
+  "function SUPPLIER_REGISTRY_MODULE_ID() view returns (bytes32)",
+  "function sourceSignalCount(bytes32 planId,bytes32 orderId,bytes32 sourceId) view returns (uint256)",
+  "function lastSignalSubmitter(bytes32 planId,bytes32 orderId,bytes32 sourceId) view returns (address)",
   "function hasSourceSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId) view returns (bool)",
   "function hasTriggerOriginConsent(bytes32 originPlanId,bytes32 originOrderId,bytes32 originSourceId,bytes32 originSignalId,address party,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) originAttribution) view returns (bool)",
   "function stageHasDockExecutorHook(bytes32 planId,bytes32 stageId) view returns (bool)",
   "function submitDockOutputSignalFromModule(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution) returns (bool submitted)",
   "function evaluateDockWindow(bytes32 planId,bytes32 orderId,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions) view returns (bool satisfied,uint64 dueInSeconds)",
+  "function isSignalAdmissionSatisfied(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId) view returns (bool)",
   "function DOMAIN_SEPARATOR() view returns (bytes32)",
   "function planExists(bytes32 planId) view returns (bool)",
   "function planCommitted(bytes32 planId) view returns (bool)",
@@ -267,13 +247,9 @@ export const STATE_MACHINE_ABI = [
   "function orderRelayer(bytes32 planId,bytes32 orderId) view returns (address)",
   "function orderCreator(bytes32 planId,bytes32 orderId) view returns (address)",
   "function orderExists(bytes32 planId,bytes32 orderId) view returns (bool)",
-  "function hasExplicitSignalAuthorization(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,address submitter) view returns (bool)",
-  "function isSignalSubmitterAuthorized(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,address submitter) view returns (bool)",
-  "function getSignalAuthorization(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,address submitter) view returns (bool exists,bytes32 role,bytes32 metadataHash)",
   "function hasSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId) view returns (bool)",
   "function getSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId) view returns (bool exists,bytes32 payloadHash,bytes32 idempotencyKey,uint64 submittedAt,address submitter)",
   "function getHookStatus(bytes32 planId,bytes32 orderId,bytes32 hookId) view returns (uint8 status,uint64 dueAt,bool readyEmitted)",
-  "function activeStageExecutor(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (address)",
   "function pokeTimer(bytes32 planId,bytes32 orderId,bytes32 hookId)",
   "function planHookDependsOn(bytes32 planId,bytes32 hookId,bytes32 sourceId,bytes32 signalId) view returns (bool)",
   ]),
@@ -307,17 +283,6 @@ const TRIGGER_ORDER_FROM_SIGNAL_FOR_ABI_ENTRY = [
           { name: "deadline", type: "uint256" },
         ],
       },
-      {
-        name: "authorizations",
-        type: "tuple[]",
-        components: [
-          { name: "sourceId", type: "bytes32" },
-          { name: "signalId", type: "bytes32" },
-          { name: "submitter", type: "address" },
-          { name: "role", type: "bytes32" },
-          { name: "metadataHash", type: "bytes32" },
-        ],
-      },
       { name: "signature", type: "bytes" },
       {
         name: "originFactAttributions",
@@ -338,8 +303,7 @@ export const ORDER_LINK_MODULE_ABI = [
   "event OrderLinked(bytes32 indexed triggeredOrderId,bytes32 indexed triggerOriginOrderId,bytes32 indexed triggerStageId,bytes32 planId,bytes32 originPlanId,bytes32 originSourceId,bytes32 originSignalId)",
   "function targetOrderRelation(bytes32 fromPlanId,bytes32 fromOrderId,bytes32 targetPlanId,bytes32 targetOrderId) view returns (uint8)",
   "function getTriggerOriginLink(bytes32 planId,bytes32 triggeredOrderId) view returns (bool exists,bytes32 triggerOriginOrderId,bytes32 triggerOriginPlanId,bytes32 originSourceId,bytes32 originSignalId,bytes32 triggerStageId)",
-  "function signalAuthorizationsHash((bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] authorizations) pure returns (bytes32)",
-  "function triggerOrderFromSignalDigest((bytes32 orderId,bytes32 planId,address creator,bytes32 triggerOriginOrderId,bytes32 originPlanId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) trigger,bytes32 authorizationsHash) view returns (bytes32)",
+  "function triggerOrderFromSignalDigest((bytes32 orderId,bytes32 planId,address creator,bytes32 triggerOriginOrderId,bytes32 originPlanId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline) trigger) view returns (bytes32)",
   ]),
   ...TRIGGER_ORDER_FROM_SIGNAL_FOR_ABI_ENTRY,
 ] as const;
@@ -358,15 +322,9 @@ const APPLY_STAGE_EXECUTOR_PATCH_FOR_ABI_ENTRY = [
         components: [
           { name: "selectorStageId", type: "bytes32" },
           { name: "targetStageId", type: "bytes32" },
-          { name: "executor", type: "address" },
-          { name: "role", type: "bytes32" },
-          { name: "executorMetadataHash", type: "bytes32" },
-          { name: "mode", type: "bytes32" },
-          { name: "previousExecutor", type: "address" },
-          { name: "authorizationsHash", type: "bytes32" },
-          { name: "patchHash", type: "bytes32" },
+          { name: "supplierId", type: "bytes32" },
+          { name: "previousSupplierId", type: "bytes32" },
           { name: "patchNonce", type: "uint256" },
-          { name: "metadataURI", type: "string" },
         ],
       },
       { name: "selector", type: "address" },
@@ -382,17 +340,6 @@ const APPLY_STAGE_EXECUTOR_PATCH_FOR_ABI_ENTRY = [
         ],
       },
       { name: "candidateProof", type: "bytes32[]" },
-      {
-        name: "executorAuthorizations",
-        type: "tuple[]",
-        components: [
-          { name: "sourceId", type: "bytes32" },
-          { name: "signalId", type: "bytes32" },
-          { name: "submitter", type: "address" },
-          { name: "role", type: "bytes32" },
-          { name: "metadataHash", type: "bytes32" },
-        ],
-      },
     ],
   },
 ] as const;
@@ -401,21 +348,8 @@ const STAGE_DOCK_EXECUTOR_SELECTION_COMPONENTS = [
   { name: "selectorStageId", type: "bytes32" },
   { name: "targetStageId", type: "bytes32" },
   { name: "dockId", type: "bytes32" },
-  { name: "executor", type: "address" },
-  { name: "role", type: "bytes32" },
-  { name: "executorMetadataHash", type: "bytes32" },
-  { name: "authorizationsHash", type: "bytes32" },
-  { name: "patchHash", type: "bytes32" },
+  { name: "supplierId", type: "bytes32" },
   { name: "patchNonce", type: "uint256" },
-  { name: "metadataURI", type: "string" },
-] as const;
-
-const STAGE_DOCK_AUTHORIZATION_COMPONENTS = [
-  { name: "sourceId", type: "bytes32" },
-  { name: "signalId", type: "bytes32" },
-  { name: "submitter", type: "address" },
-  { name: "role", type: "bytes32" },
-  { name: "metadataHash", type: "bytes32" },
 ] as const;
 
 const STAGE_SELECTOR_BINDING_PROOF_COMPONENT = {
@@ -437,11 +371,6 @@ const SELECT_STAGE_DOCK_EXECUTOR_ABI_ENTRY = [
       { name: "orderId", type: "bytes32" },
       { name: "selection", type: "tuple", components: STAGE_DOCK_EXECUTOR_SELECTION_COMPONENTS },
       STAGE_SELECTOR_BINDING_PROOF_COMPONENT,
-      {
-        name: "executorAuthorizations",
-        type: "tuple[]",
-        components: STAGE_DOCK_AUTHORIZATION_COMPONENTS,
-      },
     ],
   },
 ] as const;
@@ -459,35 +388,23 @@ const SELECT_STAGE_DOCK_EXECUTOR_FOR_ABI_ENTRY = [
       { name: "deadline", type: "uint256" },
       { name: "selectorSignature", type: "bytes" },
       STAGE_SELECTOR_BINDING_PROOF_COMPONENT,
-      {
-        name: "executorAuthorizations",
-        type: "tuple[]",
-        components: STAGE_DOCK_AUTHORIZATION_COMPONENTS,
-      },
     ],
   },
 ] as const;
 
 export const STAGE_PATCH_MODULE_ABI = [
   ...parseAbi([
-  "event StageExecutorPatchApplied(bytes32 indexed orderId,bytes32 indexed selectorStageId,bytes32 indexed targetStageId,bytes32 planId,address selector,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 authorizationsHash,bytes32 patchHash,uint256 patchNonce,string metadataURI)",
-  "event StageDockExecutorSelected(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 dockId,bytes32 fromPlanId,address executor,address selector,bytes32 patchHash,uint256 patchNonce,string metadataURI)",
-  "event DockBindingPoked(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 dockId,bytes32 bindingId,bytes32 fromPlanId,bytes32 fromOrderId,address executor,uint256 emittedCount)",
-  "event DockOutputSubmitted(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 bindingId,uint256 outputIndex,bytes32 signalId,address executor)",
-  "function EXECUTOR_PATCH_SIGNAL_ID() view returns (bytes32)",
-  "function EXECUTOR_PATCH_MODE_ASSIGN() view returns (bytes32)",
-  "function EXECUTOR_PATCH_MODE_HANDOFF() view returns (bytes32)",
+  "event StageExecutorPatchApplied(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed selectorStageId,bytes32 targetStageId,address selector,bytes32 supplierId,bytes32 previousSupplierId,uint256 patchNonce)",
+  "event StageDockExecutorSelected(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 dockId,bytes32 fromPlanId,bytes32 supplierId,address selector,uint256 patchNonce)",
+  "event DockBindingPoked(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 dockId,bytes32 bindingId,bytes32 fromPlanId,bytes32 fromOrderId,bytes32 supplierId,uint256 emittedCount)",
+  "event DockOutputSubmitted(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 bindingId,uint256 outputIndex,bytes32 signalId,bytes32 supplierId)",
   "function DOCK_PAYLOAD_FILE_KEY() view returns (bytes32)",
   "function DOCK_BINDING_ID_DOMAIN() view returns (bytes32)",
-  "function applyStageExecutorPatch(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 authorizationsHash,bytes32 patchHash,uint256 patchNonce,string metadataURI) patch,(bytes32 selectorStageId,bytes32[] proof) bindingProof,bytes32[] candidateProof,(bytes32 sourceId,bytes32 signalId,address submitter,bytes32 role,bytes32 metadataHash)[] executorAuthorizations)",
-  "function stageExecutorPatchDigest(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 mode,address previousExecutor,bytes32 authorizationsHash,bytes32 patchHash,uint256 patchNonce,string metadataURI) patch,address selector,uint256 deadline) view returns (bytes32)",
-  "function getActiveStageExecutorPatch(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bool exists,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 patchHash,uint256 patchNonce,string metadataURI)",
-  "function activeStageExecutor(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (address)",
-  "function orderStageExecutorPatchNonce(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (uint256)",
-  "function stageDockExecutorSelectionDigest(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 dockId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 authorizationsHash,bytes32 patchHash,uint256 patchNonce,string metadataURI) selection,address selector,uint256 deadline) view returns (bytes32)",
+  "function applyStageExecutorPatch(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 supplierId,bytes32 previousSupplierId,uint256 patchNonce) patch,(bytes32 selectorStageId,bytes32[] proof) bindingProof,bytes32[] candidateProof)",
+  "function stageExecutorPatchDigest(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 supplierId,bytes32 previousSupplierId,uint256 patchNonce) patch,address selector,uint256 deadline) view returns (bytes32)",
+  "function stageDockExecutorSelectionDigest(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 dockId,bytes32 supplierId,uint256 patchNonce) selection,address selector,uint256 deadline) view returns (bytes32)",
   "function pokeDockBinding(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes dockPayload,bytes32 fromOrderId,bytes32[][] outputCapabilityProofs) returns (uint256 emittedCount)",
-  "function getActiveStageDockSelection(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bool exists,bytes32 dockId,bytes32 fromPlanId,address executor)",
-  "function getStageDockBinding(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 fromOrderId) view returns (bool selected,bool current,bytes32 dockId,address executor,bytes32 fromPlanId,bytes32 bindingId)",
+  "function getStageDockBinding(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 fromOrderId) view returns (bool selected,bool current,bytes32 dockId,bytes32 supplierId,address executor,bytes32 fromPlanId,bytes32 bindingId)",
   "function dockOutputWindow(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 fromOrderId,uint256 outputIndex) view returns (bool current,bool aSatisfied,uint64 aDueInSeconds,bool bSatisfied,bool emitted)",
   ]),
   ...APPLY_STAGE_EXECUTOR_PATCH_FOR_ABI_ENTRY,
@@ -505,39 +422,45 @@ export const DERIVED_SIGNAL_MODULE_ABI = parseAbi([
 
 export const STATE_MACHINE_LENS_ABI = parseAbi([
   "function stateMachine() view returns (address)",
-  "function getActiveStageExecutorPatch(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bool exists,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 patchHash,uint256 patchNonce,string metadataURI)",
+  "function effectiveStageExecutor(bytes32 planId,bytes32 orderId,bytes32 stageId) view returns (bytes32 supplierId,address executor)",
+  "function getActiveStageExecutorPatch(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bool exists,bytes32 supplierId,address executor,uint256 patchNonce,bytes32 dockId)",
   "function planCapabilitiesRoot(bytes32 planId) view returns (bytes32)",
+  "function planExecutorBindingsRoot(bytes32 planId) view returns (bytes32)",
+  "function planStageHasDynamicExecutor(bytes32 planId,bytes32 stageId) view returns (bool)",
+  "function planStageIsCandidate(bytes32 planId,bytes32 stageId) view returns (bool)",
   "function planHasCapabilityVocabulary(bytes32 planId) view returns (bool)",
   "function verifySignalCapability(bytes32 planId,bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 relation,bytes32[] proof) view returns (bool)",
   "function verifyStageSelectorBinding(bytes32 planId,bytes32 selectorStageId,bytes32 targetStageId,bytes32[] proof) view returns (bool)",
   "function targetOrderRelation(bytes32 fromPlanId,bytes32 fromOrderId,bytes32 targetPlanId,bytes32 targetOrderId) view returns (uint8)",
   "function getTriggerOriginLink(bytes32 planId,bytes32 triggeredOrderId) view returns (bool exists,bytes32 triggerOriginOrderId,bytes32 triggerOriginPlanId,bytes32 originSourceId,bytes32 originSignalId,bytes32 triggerStageId)",
-  "function getActiveStageDockSelection(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bool exists,bytes32 dockId,bytes32 fromPlanId,bytes32 fromOrderId)",
-  "function getStageDockBinding(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 fromOrderId) view returns (bool selected,bool current,bytes32 dockId,address executor,bytes32 fromPlanId,bytes32 bindingId)",
+  "function getActiveStageDockSelection(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bool exists,bytes32 dockId,bytes32 fromPlanId,bytes32 supplierId)",
+  "function getStageDockBinding(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 fromOrderId) view returns (bool selected,bool current,bytes32 dockId,bytes32 supplierId,address executor,bytes32 fromPlanId,bytes32 bindingId)",
   "function dockOutputWindow(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 fromOrderId,uint256 outputIndex) view returns (bool current,bool aSatisfied,uint64 aDueInSeconds,bool bSatisfied,bool emitted)",
 ]);
 
 export const PRODUCT_SUBMIT_DOMAIN_NAME = "UVPStateMachine";
-export const PRODUCT_SUBMIT_DOMAIN_VERSION = "0.17";
-export const PRODUCT_SUBMIT_PRIMARY_TYPE = "UVPStateMachineSignal";
+export const PRODUCT_SUBMIT_DOMAIN_VERSION = "0.18";
+export const SIGNAL_SUBMISSION_PRIMARY_TYPE =
+  "UVPStateMachineSignalSubmission";
 export const PLAN_COMMIT_PRIMARY_TYPE = "UVPStateMachinePlanCommit";
 export const TRIGGER_ORDER_FROM_OUTSIDE_PRIMARY_TYPE =
   "UVPStateMachineTriggerOrderFromOutside";
 export const ORDER_LINK_DOMAIN_NAME = "UVPOrderLinkModule";
-export const ORDER_LINK_DOMAIN_VERSION = "0.8";
+export const ORDER_LINK_DOMAIN_VERSION = "0.9";
 export const TRIGGER_ORDER_FROM_SIGNAL_PRIMARY_TYPE =
   "UVPOrderLinkModuleTriggerOrderFromSignal";
 export const DERIVED_SIGNAL_DOMAIN_NAME = "UVPDerivedSignalModule";
-export const DERIVED_SIGNAL_DOMAIN_VERSION = "0.6";
+export const DERIVED_SIGNAL_DOMAIN_VERSION = "0.7";
 export const DERIVED_SIGNAL_PRIMARY_TYPE = "UVPDerivedSignalModuleSignal";
 export const STAGE_EXECUTOR_PATCH_DOMAIN_NAME = "UVPStagePatchModule";
-export const STAGE_EXECUTOR_PATCH_DOMAIN_VERSION = "0.4";
+export const STAGE_EXECUTOR_PATCH_DOMAIN_VERSION = "0.5";
 export const STAGE_EXECUTOR_PATCH_PRIMARY_TYPE =
   "UVPStagePatchModuleStageExecutorPatch";
 export const STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN =
-  "uvp:stage-executor-patch-payload:v1";
+  "uvp:stage-executor-patch-payload:v2";
 import {
   HOOK_FLAG_DOCK_EXECUTOR,
+  HOOK_FLAG_DYNAMIC_EXECUTOR,
   HOOK_FLAG_EMIT_READY,
   HOOK_FLAG_ORDER_TRIGGER_MINT,
 } from "./artifact-abis.js";
@@ -547,10 +470,13 @@ export {
   FILE_RESOURCE_MODULE_ABI,
   HOOK_FLAG_ADMISSION,
   HOOK_FLAG_DOCK_EXECUTOR,
+  HOOK_FLAG_DYNAMIC_EXECUTOR,
   HOOK_FLAG_EMIT_READY,
   HOOK_FLAG_ORDER_TRIGGER_MINT,
   SIGNAL_SUBMITTED_ABI,
   SIGNAL_SUBMITTED_TOPIC,
+  SUPPLIER_REGISTRY_ABI,
+  SUPPLIER_REGISTRY_CONTRACT_NAME,
   UVP_STATE_MACHINE_ARTIFACT_ABI,
 } from "./artifact-abis.js";
 
@@ -559,15 +485,17 @@ export type OrderTriggerKind = "none" | "trigger";
 export interface CompactHookFlagsInput {
   /** 出生语义：trigger=trigger 信号出生钩子（SIGNAL 指令）。 */
   readonly orderTriggerKind?: OrderTriggerKind | null;
-  /** Ready 事件外发口径：order-trigger hook 必须携带，watcher 可选。 */
+  /** Ready 事件外发口径：dynamic 阶段必须携带，order-trigger hook 必须携带。 */
   readonly emitReady?: boolean;
   /** dock stage 标记：链上 stage patch 用它判断该 stage 允许 dock 执行者。 */
   readonly dockExecutor?: boolean;
+  /** dynamic 执行者阶段标记：无 plan binding，selector 运行期指派。 */
+  readonly dynamicExecutor?: boolean;
 }
 
 // CompactHook.flags 位标志口径：1=ORDER_TRIGGER_MINT（trigger 出生钩子复用），
-// 4=EMIT_READY；位值由生成代码钉住合约常量，trigger 缺 EMIT_READY 由
-// SilentOrderTriggerHook 拒绝。
+// 4=EMIT_READY，16=DOCK_EXECUTOR，32=DYNAMIC_EXECUTOR；位值由生成代码钉住
+// 合约常量，trigger 缺 EMIT_READY 由 SilentOrderTriggerHook 拒绝。
 export function buildCompactHookFlags(
   input: CompactHookFlagsInput = {},
 ): number {
@@ -581,14 +509,11 @@ export function buildCompactHookFlags(
   if (input.dockExecutor) {
     flags |= HOOK_FLAG_DOCK_EXECUTOR;
   }
+  if (input.dynamicExecutor) {
+    flags |= HOOK_FLAG_DYNAMIC_EXECUTOR;
+  }
   return flags;
 }
-export const EXECUTOR_PATCH_MODE_ASSIGN = stringToHex("assign", {
-  size: 32,
-}) as Hex;
-export const EXECUTOR_PATCH_MODE_HANDOFF = stringToHex("handoff", {
-  size: 32,
-}) as Hex;
 
 export interface ProductSubmitTypedDataField {
   readonly name: string;
@@ -600,8 +525,22 @@ export const PLAN_COMMIT_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField
     { name: "publisher", type: "address" },
     { name: "hooksHash", type: "bytes32" },
     { name: "capabilitiesRoot", type: "bytes32" },
-    { name: "executorCandidatesRoot", type: "bytes32" },
+    { name: "executorBindingsRoot", type: "bytes32" },
     { name: "birthAuthorizer", type: "address" },
+    { name: "deadline", type: "uint256" },
+  ];
+
+export const SIGNAL_SUBMISSION_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] =
+  [
+    { name: "planId", type: "bytes32" },
+    { name: "orderId", type: "bytes32" },
+    { name: "sourceId", type: "bytes32" },
+    { name: "signalId", type: "bytes32" },
+    { name: "payloadHash", type: "bytes32" },
+    { name: "idempotencyKey", type: "bytes32" },
+    { name: "filesDigest", type: "bytes32" },
+    { name: "attributionHash", type: "bytes32" },
+    { name: "submitter", type: "address" },
     { name: "deadline", type: "uint256" },
   ];
 
@@ -615,7 +554,6 @@ export const TRIGGER_ORDER_FROM_OUTSIDE_TYPED_DATA_FIELDS: readonly ProductSubmi
     { name: "signalId", type: "bytes32" },
     { name: "payloadHash", type: "bytes32" },
     { name: "idempotencyKey", type: "bytes32" },
-    { name: "authorizationsHash", type: "bytes32" },
     { name: "submitter", type: "address" },
     { name: "deadline", type: "uint256" },
   ];
@@ -633,7 +571,6 @@ export const TRIGGER_ORDER_FROM_SIGNAL_TYPED_DATA_FIELDS: readonly ProductSubmit
     { name: "originSignalId", type: "bytes32" },
     { name: "payloadHash", type: "bytes32" },
     { name: "idempotencyKey", type: "bytes32" },
-    { name: "authorizationsHash", type: "bytes32" },
     { name: "submitter", type: "address" },
     { name: "deadline", type: "uint256" },
   ];
@@ -660,15 +597,9 @@ export const STAGE_EXECUTOR_PATCH_TYPED_DATA_FIELDS: readonly ProductSubmitTyped
     { name: "orderId", type: "bytes32" },
     { name: "selectorStageId", type: "bytes32" },
     { name: "targetStageId", type: "bytes32" },
-    { name: "executor", type: "address" },
-    { name: "role", type: "bytes32" },
-    { name: "executorMetadataHash", type: "bytes32" },
-    { name: "mode", type: "bytes32" },
-    { name: "previousExecutor", type: "address" },
-    { name: "authorizationsHash", type: "bytes32" },
-    { name: "patchHash", type: "bytes32" },
+    { name: "supplierId", type: "bytes32" },
+    { name: "previousSupplierId", type: "bytes32" },
     { name: "patchNonce", type: "uint256" },
-    { name: "metadataURI", type: "string" },
     { name: "selector", type: "address" },
     { name: "deadline", type: "uint256" },
   ];
@@ -740,7 +671,7 @@ export function filePatchDigest(
   );
 }
 
-export interface ProductSubmitTypedData {
+export interface SignalSubmissionTypedData {
   readonly domain: {
     readonly name: typeof PRODUCT_SUBMIT_DOMAIN_NAME;
     readonly version: typeof PRODUCT_SUBMIT_DOMAIN_VERSION;
@@ -748,9 +679,9 @@ export interface ProductSubmitTypedData {
     readonly verifyingContract: Address;
   };
   readonly types: {
-    readonly UVPStateMachineSignal: readonly ProductSubmitTypedDataField[];
+    readonly UVPStateMachineSignalSubmission: readonly ProductSubmitTypedDataField[];
   };
-  readonly primaryType: typeof PRODUCT_SUBMIT_PRIMARY_TYPE;
+  readonly primaryType: typeof SIGNAL_SUBMISSION_PRIMARY_TYPE;
   readonly message: {
     readonly planId: Hex;
     readonly orderId: Hex;
@@ -758,10 +689,28 @@ export interface ProductSubmitTypedData {
     readonly signalId: Hex;
     readonly payloadHash: Hex;
     readonly idempotencyKey: Hex;
+    readonly filesDigest: Hex;
+    readonly attributionHash: Hex;
     readonly submitter: Address;
     readonly deadline: string;
-    readonly filesDigest: Hex;
   };
+}
+
+export type ProductSubmitTypedData = SignalSubmissionTypedData;
+
+// submitSignalFor 的 EIP-712 承诺面：attribution 的摘要（attributionHash）
+// 进签名，完整 attribution 由 relayer 随 calldata 提交并链上重算比对。
+export interface SignalSubmissionPayload {
+  readonly planId: Hex | string;
+  readonly orderId: Hex | string;
+  readonly sourceId: Hex | string;
+  readonly signalId: Hex | string;
+  readonly payloadHash: Hex | string;
+  readonly idempotencyKey: Hex | string;
+  readonly filesDigest: Hex | string;
+  readonly attribution: SignalAttributionPayload;
+  readonly submitter: Address | string;
+  readonly deadline: bigint | number | string;
 }
 
 // PlanCommit 的能力承诺面是 capabilitiesRoot（空表归一化为
@@ -771,8 +720,8 @@ export interface PlanCommitPayload {
   readonly publisher: Address | string;
   readonly hooksHash: Hex | string;
   readonly capabilitiesRoot: Hex | string;
-  /** 执行者候选集树根（UB-36②③）：空集归一化为 EMPTY_ROOT。 */
-  readonly executorCandidatesRoot: Hex | string;
+  /** 执行者绑定树根（default/candidate 叶，空集归一化为 EMPTY_ROOT）。 */
+  readonly executorBindingsRoot: Hex | string;
   /**
    * 出生授权者（0.15 承诺域）：outside 出生提交的唯一被授权 submitter，
    * 只进 commit digest 与存储，不进 planRuntimeHash。零地址 = 关闭 outside
@@ -792,18 +741,18 @@ export interface PlanCommitTypedData {
     readonly publisher: Address;
     readonly hooksHash: Hex;
     readonly capabilitiesRoot: Hex;
-    readonly executorCandidatesRoot: Hex;
+    readonly executorBindingsRoot: Hex;
     readonly birthAuthorizer: Address;
     readonly deadline: string;
   };
 }
 
-export interface SignalAuthorizationPayload {
-  readonly sourceId: Hex | string;
-  readonly signalId: Hex | string;
-  readonly submitter: Address | string;
-  readonly role: Hex | string;
-  readonly metadataHash: Hex | string;
+export type ExecutorBindingKind = 0 | 1;
+
+export interface ExecutorBinding {
+  readonly stageId: Hex | string;
+  readonly supplierId: Hex | string;
+  readonly kind: ExecutorBindingKind;
 }
 
 // 一事一单：orderId 由合约 triggerOrderIdFor(planId, sourceId,
@@ -904,7 +853,6 @@ export interface TriggerOrderFromOutsideTypedData {
     readonly signalId: Hex;
     readonly payloadHash: Hex;
     readonly idempotencyKey: Hex;
-    readonly authorizationsHash: Hex;
     readonly submitter: Address;
     readonly deadline: string;
   };
@@ -933,7 +881,6 @@ export interface TriggerOrderFromSignalTypedData {
     readonly originSignalId: Hex;
     readonly payloadHash: Hex;
     readonly idempotencyKey: Hex;
-    readonly authorizationsHash: Hex;
     readonly submitter: Address;
     readonly deadline: string;
   };
@@ -942,20 +889,12 @@ export interface TriggerOrderFromSignalTypedData {
 export interface StageExecutorPatchPayload {
   readonly selectorStageId: Hex | string;
   readonly targetStageId: Hex | string;
-  readonly executor: Address | string;
-  readonly role: Hex | string;
-  readonly executorMetadataHash: Hex | string;
-  readonly mode: Hex | string;
-  readonly previousExecutor: Address | string;
-  /** patch 生效时对新城执行者写入的授权集哈希（UB-36①，进 EIP-712 摘要）。 */
-  readonly authorizationsHash: Hex | string;
+  readonly supplierId: Hex | string;
+  readonly previousSupplierId: Hex | string;
   readonly patchNonce: bigint | number | string;
-  readonly metadataURI: string;
 }
 
-export interface StageExecutorPatchCallPatch extends StageExecutorPatchPayload {
-  readonly patchHash: Hex | string;
-}
+export type StageExecutorPatchCallPatch = StageExecutorPatchPayload;
 
 export interface StageExecutorPatchTypedData {
   readonly domain: {
@@ -973,15 +912,9 @@ export interface StageExecutorPatchTypedData {
     readonly orderId: Hex;
     readonly selectorStageId: Hex;
     readonly targetStageId: Hex;
-    readonly executor: Address;
-    readonly role: Hex;
-    readonly executorMetadataHash: Hex;
-    readonly mode: Hex;
-    readonly previousExecutor: Address;
-    readonly authorizationsHash: Hex;
-    readonly patchHash: Hex;
+    readonly supplierId: Hex;
+    readonly previousSupplierId: Hex;
     readonly patchNonce: string;
-    readonly metadataURI: string;
     readonly selector: Address;
     readonly deadline: string;
   };
@@ -997,18 +930,22 @@ export interface BuildTriggerOrderFromOutsideTypedDataInput
   extends TriggerOrderFromOutsidePayload {
   readonly chainId: number;
   readonly verifyingContract: Address | string;
-  readonly authorizations: readonly SignalAuthorizationPayload[];
 }
 
 export interface BuildTriggerOrderFromSignalTypedDataInput
   extends TriggerOrderFromSignalPayload {
   readonly chainId: number;
   readonly verifyingContract: Address | string;
-  readonly authorizations: readonly SignalAuthorizationPayload[];
 }
 
 export interface BuildDerivedSignalTypedDataInput
   extends DerivedSignalPayload {
+  readonly chainId: number;
+  readonly verifyingContract: Address | string;
+}
+
+export interface BuildSignalSubmissionTypedDataInput
+  extends SignalSubmissionPayload {
   readonly chainId: number;
   readonly verifyingContract: Address | string;
 }
@@ -1146,7 +1083,6 @@ function normalizeDerivedSignalProofs(
 
 export interface TriggerOrderFromOutsideForCallArgs
   extends TriggerOrderFromOutsidePayload {
-  readonly authorizations: readonly SignalAuthorizationPayload[];
   readonly signature: Hex | string;
   /** 出生事实的属主自证（stageId=0 表示不主张，由合约按词表回退解析）。 */
   readonly birthFactAttribution: SignalAttributionPayload;
@@ -1154,13 +1090,11 @@ export interface TriggerOrderFromOutsideForCallArgs
 
 export interface TriggerOrderFromOutsideByAuthorizerCallArgs
   extends TriggerOrderFromOutsideByAuthorizerPayload {
-  readonly authorizations: readonly SignalAuthorizationPayload[];
   readonly birthFactAttribution: SignalAttributionPayload;
 }
 
 export interface TriggerOrderFromSignalForCallArgs
   extends TriggerOrderFromSignalPayload {
-  readonly authorizations: readonly SignalAuthorizationPayload[];
   readonly signature: Hex | string;
   /** 触发源单事实的属主自证列表（stageId=0 项表示不主张）。 */
   readonly originFactAttributions: readonly SignalAttributionPayload[];
@@ -1175,10 +1109,23 @@ export interface ApplyStageExecutorPatchForCallArgs {
   readonly selectorSignature: Hex | string;
   readonly previousExecutorSignature: Hex | string;
   readonly bindingProof: SelectorBindingPayload;
-  /** 候选集成员证明（UB-36②③）。 */
+  /** 候选集成员证明（candidate 阶段可用；dynamic 阶段空数组）。 */
   readonly candidateProof: readonly (Hex | string)[];
-  /** patch 生效时对新城执行者写入的显式授权集（UB-36①）。 */
-  readonly executorAuthorizations: readonly SignalAuthorizationPayload[];
+}
+
+export interface SubmitSignalForCallArgs {
+  readonly planId: Hex | string;
+  readonly orderId: Hex | string;
+  readonly sourceId: Hex | string;
+  readonly signalId: Hex | string;
+  readonly payloadHash: Hex | string;
+  readonly idempotencyKey: Hex | string;
+  readonly attribution: SignalAttributionPayload;
+  readonly filesDigest?: Hex | string;
+  readonly filePatch?: FilePatch;
+  readonly submitter: Address | string;
+  readonly deadline: bigint | number | string;
+  readonly signature: Hex | string;
 }
 
 
@@ -1225,20 +1172,26 @@ export interface SubmitDerivedSignalForCall {
   readonly chainId?: number;
 }
 
-export type SignalAuthorizationCallTuple = readonly [
-  Hex,
-  Hex,
-  Address,
-  Hex,
-  Hex,
-];
-
-export interface SignalAuthorizationCallStruct {
-  readonly sourceId: Hex;
-  readonly signalId: Hex;
-  readonly submitter: Address;
-  readonly role: Hex;
-  readonly metadataHash: Hex;
+export interface SignalSubmissionForCall {
+  readonly address: Address;
+  readonly abi: typeof STATE_MACHINE_ABI;
+  readonly functionName: "submitSignalFor";
+  readonly args: readonly [
+    Hex,
+    Hex,
+    Hex,
+    Hex,
+    Hex,
+    Hex,
+    SignalAttributionCallStruct,
+    Hex,
+    FilePatchCallStruct,
+    Address,
+    bigint,
+    Hex,
+  ];
+  readonly data: Hex;
+  readonly chainId?: number;
 }
 
 export type TriggerOrderFromOutsideCallTuple = readonly [
@@ -1304,7 +1257,6 @@ export interface TriggerOrderFromOutsideForCall {
   readonly functionName: "triggerOrderFromOutsideFor";
   readonly args: readonly [
     TriggerOrderFromOutsideCallTuple,
-    readonly SignalAuthorizationCallTuple[],
     Hex,
     SignalAttributionCallStruct,
   ];
@@ -1318,7 +1270,6 @@ export interface TriggerOrderFromOutsideByAuthorizerCall {
   readonly functionName: "triggerOrderFromOutsideByAuthorizer";
   readonly args: readonly [
     TriggerOrderFromOutsideByAuthorizerCallTuple,
-    readonly SignalAuthorizationCallTuple[],
     SignalAttributionCallStruct,
   ];
   readonly data: Hex;
@@ -1331,7 +1282,6 @@ export interface TriggerOrderFromSignalForCall {
   readonly functionName: "triggerOrderFromSignalFor";
   readonly args: readonly [
     TriggerOrderFromSignalCallStruct,
-    readonly SignalAuthorizationCallStruct[],
     Hex,
     readonly SignalAttributionCallStruct[],
   ];
@@ -1342,15 +1292,9 @@ export interface TriggerOrderFromSignalForCall {
 export type StageExecutorPatchCallTuple = readonly [
   Hex,
   Hex,
-  Address,
-  Hex,
-  Hex,
-  Hex,
-  Address,
   Hex,
   Hex,
   bigint,
-  string,
 ];
 
 export interface ApplyStageExecutorPatchForCall {
@@ -1367,7 +1311,6 @@ export interface ApplyStageExecutorPatchForCall {
     Hex,
     SelectorBindingCallStruct,
     readonly Hex[],
-    readonly SignalAuthorizationCallStruct[],
   ];
   readonly data: Hex;
   readonly chainId?: number;
@@ -1378,7 +1321,6 @@ export interface ApplyStageExecutorPatchForCall {
 
 const BYTES32_RE = /^0x[a-fA-F0-9]{64}$/;
 const ZERO_BYTES32 = `0x${"0".repeat(64)}` as Hex;
-const ZERO_ADDRESS = `0x${"0".repeat(40)}` as Address;
 
 export const EMPTY_FILE_PATCH: FilePatch = {
   targetStageId: ZERO_BYTES32,
@@ -1459,15 +1401,6 @@ function normalizeSubmitFiles(
   return [digest, patch];
 }
 
-const EXECUTOR_PATCH_MODE_BY_NAME: Readonly<Record<string, Hex>> = {
-  assign: EXECUTOR_PATCH_MODE_ASSIGN,
-  handoff: EXECUTOR_PATCH_MODE_HANDOFF,
-};
-const EXECUTOR_PATCH_MODE_VALUE_SET = new Set<Hex>([
-  EXECUTOR_PATCH_MODE_ASSIGN,
-  EXECUTOR_PATCH_MODE_HANDOFF,
-]);
-
 export function buildPlanCommitTypedData(
   input: BuildPlanCommitTypedDataInput,
 ): PlanCommitTypedData {
@@ -1492,8 +1425,78 @@ export function buildPlanCommitTypedData(
         input.capabilitiesRoot,
         "capabilitiesRoot",
       ),
-      executorCandidatesRoot: normalizeBytes32(input.executorCandidatesRoot, "executorCandidatesRoot"),
+      executorBindingsRoot: normalizeBytes32(
+        input.executorBindingsRoot,
+        "executorBindingsRoot",
+      ),
       birthAuthorizer: normalizeAddress(input.birthAuthorizer, "birthAuthorizer"),
+      deadline: normalizeUintString(input.deadline, "deadline"),
+    },
+  };
+}
+
+export const FACT_ATTRIBUTION_TYPEHASH = keccak256(
+  stringToHex(
+    "FactAttribution(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof)",
+  ),
+);
+
+export function factAttributionHash(
+  attribution: SignalAttributionPayload,
+): Hex {
+  const normalized = normalizeSignalAttribution(attribution);
+  return keccak256(
+    encodeAbiParameters(
+      [
+        { name: "typehash", type: "bytes32" },
+        { name: "sourceId", type: "bytes32" },
+        { name: "signalId", type: "bytes32" },
+        { name: "stageId", type: "bytes32" },
+        { name: "capabilityProofHash", type: "bytes32" },
+      ],
+      [
+        FACT_ATTRIBUTION_TYPEHASH,
+        normalized.sourceId,
+        normalized.signalId,
+        normalized.stageId,
+        keccak256(
+          encodeAbiParameters(
+            [{ name: "capabilityProof", type: "bytes32[]" }],
+            [normalized.capabilityProof],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+export function buildSignalSubmissionTypedData(
+  input: BuildSignalSubmissionTypedDataInput,
+): SignalSubmissionTypedData {
+  return {
+    domain: {
+      name: PRODUCT_SUBMIT_DOMAIN_NAME,
+      version: PRODUCT_SUBMIT_DOMAIN_VERSION,
+      chainId: normalizeChainId(input.chainId),
+      verifyingContract: normalizeAddress(
+        input.verifyingContract,
+        "verifyingContract",
+      ),
+    },
+    types: {
+      UVPStateMachineSignalSubmission: SIGNAL_SUBMISSION_TYPED_DATA_FIELDS,
+    },
+    primaryType: SIGNAL_SUBMISSION_PRIMARY_TYPE,
+    message: {
+      planId: normalizeBytes32(input.planId, "planId"),
+      orderId: normalizeBytes32(input.orderId, "orderId"),
+      sourceId: normalizeBytes32(input.sourceId, "sourceId"),
+      signalId: normalizeBytes32(input.signalId, "signalId"),
+      payloadHash: normalizeBytes32(input.payloadHash, "payloadHash"),
+      idempotencyKey: normalizeBytes32(input.idempotencyKey, "idempotencyKey"),
+      filesDigest: normalizeBytes32(input.filesDigest, "filesDigest"),
+      attributionHash: factAttributionHash(input.attribution),
+      submitter: normalizeAddress(input.submitter, "submitter"),
       deadline: normalizeUintString(input.deadline, "deadline"),
     },
   };
@@ -1527,7 +1530,6 @@ export function buildTriggerOrderFromOutsideTypedData(
       signalId: trigger[5],
       payloadHash: trigger[6],
       idempotencyKey: trigger[7],
-      authorizationsHash: hashSignalAuthorizations(input.authorizations),
       submitter: trigger[8],
       deadline: trigger[9].toString(10),
     },
@@ -1565,7 +1567,6 @@ export function buildTriggerOrderFromSignalTypedData(
       originSignalId: trigger[8],
       payloadHash: trigger[9],
       idempotencyKey: trigger[10],
-      authorizationsHash: hashSignalAuthorizations(input.authorizations),
       submitter: trigger[11],
       deadline: trigger[12].toString(10),
     },
@@ -1629,15 +1630,9 @@ export function buildStageExecutorPatchTypedData(
       orderId: normalizeBytes32(input.orderId, "orderId"),
       selectorStageId: patch[0],
       targetStageId: patch[1],
-      executor: patch[2],
-      role: patch[3],
-      executorMetadataHash: patch[4],
-      mode: patch[5],
-      previousExecutor: patch[6],
-      authorizationsHash: patch[7],
-      patchHash: patch[8],
-      patchNonce: patch[9].toString(10),
-      metadataURI: patch[10],
+      supplierId: patch[2],
+      previousSupplierId: patch[3],
+      patchNonce: patch[4].toString(10),
       selector: normalizeAddress(input.selector, "selector"),
       deadline: normalizeUintString(input.deadline, "deadline"),
     },
@@ -1715,6 +1710,20 @@ export async function recoverStageExecutorPatchSigner(
   return normalizeAddress(recovered, "recoveredStageExecutorPatchSigner");
 }
 
+export async function recoverSignalSubmissionSigner(
+  typedData: SignalSubmissionTypedData,
+  signature: Hex | string,
+): Promise<Address> {
+  const recovered = await recoverTypedDataAddress({
+    domain: typedData.domain,
+    types: typedData.types,
+    primaryType: typedData.primaryType,
+    message: typedData.message,
+    signature: normalizeHex(signature, "signature"),
+  } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
+  return normalizeAddress(recovered, "recoveredSignalSubmitter");
+}
+
 
 export function buildSubmitDerivedSignalForCall(
   config: SubmitDerivedSignalForCallConfig,
@@ -1759,7 +1768,6 @@ export function buildTriggerOrderFromOutsideForCall(
 ): TriggerOrderFromOutsideForCall {
   const normalizedArgs = [
     normalizeTriggerOrderFromOutside(args),
-    args.authorizations.map(normalizeSignalAuthorization),
     normalizeHex(args.signature, "signature"),
     normalizeSignalAttribution(args.birthFactAttribution),
   ] as const;
@@ -1789,7 +1797,6 @@ export function buildTriggerOrderFromOutsideByAuthorizerCall(
 ): TriggerOrderFromOutsideByAuthorizerCall {
   const normalizedArgs = [
     normalizeTriggerOrderFromOutsideByAuthorizer(args),
-    args.authorizations.map(normalizeSignalAuthorization),
     normalizeSignalAttribution(args.birthFactAttribution),
   ] as const;
 
@@ -1819,7 +1826,6 @@ export function buildTriggerOrderFromSignalForCall(
   const trigger = normalizeTriggerOrderFromSignalStruct(args);
   const normalizedArgs = [
     trigger,
-    args.authorizations.map(normalizeSignalAuthorizationStruct),
     normalizeHex(args.signature, "signature"),
     args.originFactAttributions.map(normalizeSignalAttribution),
   ] as const;
@@ -1859,7 +1865,6 @@ export function buildApplyStageExecutorPatchForCall(
     args.candidateProof.map((word, index) =>
       normalizeBytes32(word, `candidateProof[${index}]`),
     ),
-    args.executorAuthorizations.map(normalizeSignalAuthorizationStruct),
   ] as const;
 
   return {
@@ -1881,6 +1886,59 @@ export function buildApplyStageExecutorPatchForCall(
   };
 }
 
+export function buildSubmitSignalForCall(
+  config: SubmitSignalForCallConfig,
+  args: SubmitSignalForCallArgs,
+): SignalSubmissionForCall {
+  const planId = normalizeNonZeroBytes32(args.planId, "planId");
+  const orderId = normalizeNonZeroBytes32(args.orderId, "orderId");
+  const [filesDigest, filePatch] = normalizeSubmitFiles(
+    planId,
+    orderId,
+    args.filesDigest,
+    args.filePatch,
+  );
+  const sourceIdNormalized = normalizeBytes32(args.sourceId, "sourceId");
+  const signalIdNormalized = normalizeBytes32(args.signalId, "signalId");
+  if (signalIdNormalized === ZERO_BYTES32 && filePatch.ops.length === 0) {
+    throw new Error(
+      "submitSignalFor file-only submission requires a file patch with ops",
+    );
+  }
+  const normalizedArgs = [
+    planId,
+    orderId,
+    sourceIdNormalized,
+    signalIdNormalized,
+    normalizeBytes32(args.payloadHash, "payloadHash"),
+    normalizeBytes32(args.idempotencyKey, "idempotencyKey"),
+    normalizeSignalAttribution(args.attribution),
+    filesDigest,
+    filePatch,
+    normalizeAddress(args.submitter, "submitter"),
+    normalizeUintBigInt(args.deadline, "deadline"),
+    normalizeHex(args.signature, "signature"),
+  ] as const;
+
+  return {
+    address: normalizeAddress(
+      config.stateMachineAddress,
+      "stateMachineAddress",
+    ),
+    abi: STATE_MACHINE_ABI,
+    functionName: "submitSignalFor",
+    args: normalizedArgs,
+    data: encodeFunctionData({
+      abi: STATE_MACHINE_ABI,
+      functionName: "submitSignalFor",
+      args: normalizedArgs as never,
+    }),
+    ...(config.chainId !== undefined
+      ? { chainId: normalizeChainId(config.chainId) }
+      : {}),
+  };
+}
+
 export function hashStageExecutorPatchPayload(
   payload: StageExecutorPatchPayload,
 ): Hex {
@@ -1893,33 +1951,21 @@ export function hashStageExecutorPatchPayload(
         { name: "domain", type: "bytes32" },
         { name: "selectorStageId", type: "bytes32" },
         { name: "targetStageId", type: "bytes32" },
-        { name: "executor", type: "address" },
-        { name: "role", type: "bytes32" },
-        { name: "executorMetadataHash", type: "bytes32" },
-        { name: "mode", type: "bytes32" },
-        { name: "previousExecutor", type: "address" },
-        { name: "authorizationsHash", type: "bytes32" },
+        { name: "supplierId", type: "bytes32" },
+        { name: "previousSupplierId", type: "bytes32" },
         { name: "patchNonce", type: "uint256" },
-        { name: "metadataURI", type: "string" },
       ],
       [
         keccak256(stringToHex(STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN)),
         normalized.selectorStageId,
         normalized.targetStageId,
-        normalized.executor,
-        normalized.role,
-        normalized.executorMetadataHash,
-        normalized.mode,
-        normalized.previousExecutor,
-        normalized.authorizationsHash,
+        normalized.supplierId,
+        normalized.previousSupplierId,
         BigInt(normalized.patchNonce),
-        normalized.metadataURI,
       ],
     ),
   );
 }
-
-
 
 /**
  * 一事一单：outside 触发订单 id 的派生公式——镜像
@@ -1985,41 +2031,6 @@ export function deriveOrderLinkOrderId(
   return toHex(derived, { size: 32 }) as Hex;
 }
 
-export function hashSignalAuthorizations(
-  authorizations: readonly SignalAuthorizationPayload[],
-): Hex {
-  let rollingHash = keccak256(
-    encodeAbiParameters(
-      [{ name: "length", type: "uint256" }],
-      [BigInt(authorizations.length)],
-    ),
-  );
-  for (const authorization of authorizations) {
-    const normalized = normalizeSignalAuthorization(authorization);
-    rollingHash = keccak256(
-      encodeAbiParameters(
-        [
-          { name: "rollingHash", type: "bytes32" },
-          { name: "sourceId", type: "bytes32" },
-          { name: "signalId", type: "bytes32" },
-          { name: "submitter", type: "address" },
-          { name: "role", type: "bytes32" },
-          { name: "metadataHash", type: "bytes32" },
-        ],
-        [
-          rollingHash,
-          normalized[0],
-          normalized[1],
-          normalized[2],
-          normalized[3],
-          normalized[4],
-        ],
-      ),
-    );
-  }
-  return rollingHash;
-}
-
 // 地址/字节规范化双形态（下游比较键与展示/签名场景的单源）：
 // - normalizeAddress：宽松 40-hex 校验 + 统一小写输出——比较键/存储键的
 //   权威形态（viem getAddress 先小写再重算 EIP-55、不验证输入大小写，
@@ -2066,49 +2077,6 @@ function normalizeHex(value: Hex | string, fieldName: string): Hex {
     throw new Error(`${fieldName} must be a 0x-prefixed hex string`);
   }
   return value as Hex;
-}
-
-function normalizeStageExecutorPatchMode(value: Hex | string): Hex {
-  if (typeof value === "string") {
-    const namedMode = EXECUTOR_PATCH_MODE_BY_NAME[value.trim().toLowerCase()];
-    if (namedMode !== undefined) {
-      return namedMode;
-    }
-  }
-
-  const normalized = normalizeBytes32(value, "mode");
-  if (!EXECUTOR_PATCH_MODE_VALUE_SET.has(normalized)) {
-    throw new Error("mode must be assign or handoff");
-  }
-  return normalized;
-}
-
-function normalizeSignalAuthorization(
-  authorization: SignalAuthorizationPayload,
-): SignalAuthorizationCallTuple {
-  return [
-    // 零字闸镜像：UVPStateMachine._authorizeSignalSubmitter 对
-    // sourceId==0 revert ZeroSourceId（sourceId==0 的事实键绕过
-    // _signalStageId，等于签出一扇永久豁免门）——与 signalId 同口径拒绝。
-    normalizeNonZeroBytes32(authorization.sourceId, "authorization.sourceId"),
-    normalizeNonZeroBytes32(authorization.signalId, "authorization.signalId"),
-    normalizeAddress(authorization.submitter, "authorization.submitter"),
-    normalizeBytes32(authorization.role, "authorization.role"),
-    normalizeBytes32(authorization.metadataHash, "authorization.metadataHash"),
-  ] as const;
-}
-
-function normalizeSignalAuthorizationStruct(
-  authorization: SignalAuthorizationPayload,
-): SignalAuthorizationCallStruct {
-  const tuple = normalizeSignalAuthorization(authorization);
-  return {
-    sourceId: tuple[0],
-    signalId: tuple[1],
-    submitter: tuple[2],
-    role: tuple[3],
-    metadataHash: tuple[4],
-  };
 }
 
 function normalizeTriggerOrderFromOutside(
@@ -2212,25 +2180,12 @@ function normalizeDerivedSignalRequest(
 function normalizeStageExecutorPatch(
   patch: StageExecutorPatchCallPatch,
 ): StageExecutorPatchCallTuple {
-  if (typeof patch.metadataURI !== "string") {
-    throw new Error("metadataURI must be a string");
-  }
-  const executor = normalizeAddress(patch.executor, "executor");
-  if (executor === ZERO_ADDRESS) {
-    throw new Error("executor must be non-zero");
-  }
   return [
     normalizeNonZeroBytes32(patch.selectorStageId, "selectorStageId"),
     normalizeNonZeroBytes32(patch.targetStageId, "targetStageId"),
-    executor,
-    normalizeBytes32(patch.role, "role"),
-    normalizeBytes32(patch.executorMetadataHash, "executorMetadataHash"),
-    normalizeStageExecutorPatchMode(patch.mode),
-    normalizeAddress(patch.previousExecutor, "previousExecutor"),
-    normalizeBytes32(patch.authorizationsHash, "authorizationsHash"),
-    normalizeNonZeroBytes32(patch.patchHash, "patchHash"),
+    normalizeNonZeroBytes32(patch.supplierId, "supplierId"),
+    normalizeBytes32(patch.previousSupplierId, "previousSupplierId"),
     normalizeUintBigInt(patch.patchNonce, "patchNonce"),
-    patch.metadataURI,
   ] as const;
 }
 
@@ -2239,22 +2194,10 @@ function normalizeStageExecutorPatchPayload(
 ): {
   readonly selectorStageId: Hex;
   readonly targetStageId: Hex;
-  readonly executor: Address;
-  readonly role: Hex;
-  readonly executorMetadataHash: Hex;
-  readonly mode: Hex;
-  readonly previousExecutor: Address;
-  readonly authorizationsHash: Hex;
+  readonly supplierId: Hex;
+  readonly previousSupplierId: Hex;
   readonly patchNonce: string;
-  readonly metadataURI: string;
 } {
-  if (typeof payload.metadataURI !== "string") {
-    throw new Error("metadataURI must be a string");
-  }
-  const executor = normalizeAddress(payload.executor, "executor");
-  if (executor === ZERO_ADDRESS) {
-    throw new Error("executor must be non-zero");
-  }
   return {
     selectorStageId: normalizeNonZeroBytes32(
       payload.selectorStageId,
@@ -2264,23 +2207,12 @@ function normalizeStageExecutorPatchPayload(
       payload.targetStageId,
       "targetStageId",
     ),
-    executor,
-    role: normalizeBytes32(payload.role, "role"),
-    executorMetadataHash: normalizeBytes32(
-      payload.executorMetadataHash,
-      "executorMetadataHash",
-    ),
-    mode: normalizeStageExecutorPatchMode(payload.mode),
-    previousExecutor: normalizeAddress(
-      payload.previousExecutor,
-      "previousExecutor",
-    ),
-    authorizationsHash: normalizeBytes32(
-      payload.authorizationsHash,
-      "authorizationsHash",
+    supplierId: normalizeNonZeroBytes32(payload.supplierId, "supplierId"),
+    previousSupplierId: normalizeBytes32(
+      payload.previousSupplierId,
+      "previousSupplierId",
     ),
     patchNonce: normalizeUintString(payload.patchNonce, "patchNonce"),
-    metadataURI: payload.metadataURI,
   };
 }
 
@@ -2404,9 +2336,10 @@ export interface PlanRegistrationHook {
   readonly routeId?: Hex | string;
 }
 
-export interface PlanRegistrationExecutorCandidate {
+export interface PlanRegistrationExecutorBinding {
   readonly stageId: Hex | string;
-  readonly executor: Address | string;
+  readonly supplierId: Hex | string;
+  readonly kind: ExecutorBindingKind;
 }
 
 export interface PlanRegistrationArgs {
@@ -2414,18 +2347,18 @@ export interface PlanRegistrationArgs {
   readonly planHash: Hex | string;
   readonly hooksHash: Hex | string;
   readonly capabilitiesRoot: Hex | string;
-  readonly executorCandidatesRoot: Hex | string;
+  readonly executorBindingsRoot: Hex | string;
   readonly hooks: readonly PlanRegistrationHook[];
-  readonly executorCandidates: readonly PlanRegistrationExecutorCandidate[];
+  readonly executorBindings: readonly PlanRegistrationExecutorBinding[];
 }
 
 export interface PlanRegistrationSource {
   readonly planHash: Hex | string;
   readonly hooksHash: Hex | string;
   readonly capabilitiesRoot: Hex | string;
-  readonly executorCandidatesRoot: Hex | string;
+  readonly executorBindingsRoot: Hex | string;
   readonly hooks: readonly PlanRegistrationHook[];
-  readonly executorCandidates: readonly PlanRegistrationExecutorCandidate[];
+  readonly executorBindings: readonly PlanRegistrationExecutorBinding[];
 }
 
 export interface StateMachineCallConfig {
@@ -2450,9 +2383,9 @@ export function planRegistrationArgs(
     planHash: source.planHash,
     hooksHash: source.hooksHash,
     capabilitiesRoot: source.capabilitiesRoot,
-    executorCandidatesRoot: source.executorCandidatesRoot,
+    executorBindingsRoot: source.executorBindingsRoot,
     hooks: source.hooks,
-    executorCandidates: source.executorCandidates,
+    executorBindings: source.executorBindings,
   };
 }
 
@@ -2474,9 +2407,15 @@ interface PlanCommitTuple {
   readonly publisher: Address;
   readonly hooksHash: Hex;
   readonly capabilitiesRoot: Hex;
-  readonly executorCandidatesRoot: Hex;
+  readonly executorBindingsRoot: Hex;
   readonly birthAuthorizer: Address;
   readonly deadline: bigint;
+}
+
+interface ExecutorBindingCallStruct {
+  readonly stageId: Hex;
+  readonly supplierId: Hex;
+  readonly kind: ExecutorBindingKind;
 }
 
 interface PlanCommitHookTuple {
@@ -2507,7 +2446,7 @@ export function buildPlanCommitTypedDataFor(
     publisher: commit.publisher,
     hooksHash: commit.hooksHash,
     capabilitiesRoot: commit.capabilitiesRoot,
-    executorCandidatesRoot: commit.executorCandidatesRoot,
+    executorBindingsRoot: commit.executorBindingsRoot,
     birthAuthorizer: commit.birthAuthorizer,
     deadline: commit.deadline,
   });
@@ -2521,14 +2460,18 @@ export function buildPlanCommitCall(
   const commit = planCommitTuple(config, args);
   const signature = normalizePlanSignature(args.signature);
   const hooks = encodePlanRegistrationHooks(args.registration.hooks);
-  const executorCandidates = args.registration.executorCandidates.map((candidate) => ({
-    stageId: normalizeBytes32(candidate.stageId, "executorCandidates[].stageId"),
-    executor: normalizeAddressChecksummed(candidate.executor, "executorCandidates[].executor"),
+  const bindings = args.registration.executorBindings.map((binding) => ({
+    stageId: normalizeBytes32(binding.stageId, "executorBindings[].stageId"),
+    supplierId: normalizeBytes32(
+      binding.supplierId,
+      "executorBindings[].supplierId",
+    ),
+    kind: normalizeExecutorBindingKind(binding.kind),
   }));
   const data = encodeFunctionData({
     abi: STATE_MACHINE_ABI,
     functionName: "commitPlan",
-    args: [commit, hooks, executorCandidates, signature],
+    args: [commit, hooks, bindings, signature],
   });
   return planCallObject(address, "commitPlan", data, config.chainId);
 }
@@ -2583,9 +2526,9 @@ function planCommitTuple(
     publisher,
     hooksHash: normalizeBytes32(args.registration.hooksHash, "hooksHash"),
     capabilitiesRoot: normalizeBytes32(args.registration.capabilitiesRoot, "capabilitiesRoot"),
-    executorCandidatesRoot: normalizeBytes32(
-      args.registration.executorCandidatesRoot,
-      "executorCandidatesRoot",
+    executorBindingsRoot: normalizeBytes32(
+      args.registration.executorBindingsRoot,
+      "executorBindingsRoot",
     ),
     birthAuthorizer: args.birthAuthorizer === undefined
       ? publisher
@@ -2644,6 +2587,13 @@ function planTypedDataChainId(chainId: number | undefined): number {
 function normalizePlanArity(value: number): number {
   if (!Number.isSafeInteger(value) || value < 0 || value > 0xffff) {
     throw new Error("instructions[].arity must be a uint16-safe integer");
+  }
+  return value;
+}
+
+function normalizeExecutorBindingKind(value: number): ExecutorBindingKind {
+  if (value !== 0 && value !== 1) {
+    throw new Error("executorBindings[].kind must be 0 (default) or 1 (candidate)");
   }
   return value;
 }
@@ -2858,7 +2808,7 @@ export const STAGE_DOCK_EXECUTOR_SELECTION_PRIMARY_TYPE =
   "UVPStagePatchModuleStageDockExecutorSelection";
 export const STAGE_DOCK_EXECUTOR_SELECTION_TYPEHASH = keccak256(
   stringToHex(
-    "UVPStagePatchModuleStageDockExecutorSelection(bytes32 planId,bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,bytes32 dockId,address executor,bytes32 role,bytes32 executorMetadataHash,bytes32 authorizationsHash,bytes32 patchHash,uint256 patchNonce,string metadataURI,address selector,uint256 deadline)",
+    "UVPStagePatchModuleStageDockExecutorSelection(bytes32 planId,bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,bytes32 dockId,bytes32 supplierId,uint256 patchNonce,address selector,uint256 deadline)",
   ),
 ) as Hex;
 
@@ -2869,13 +2819,8 @@ export const STAGE_DOCK_EXECUTOR_SELECTION_TYPED_DATA_FIELDS: readonly ProductSu
     { name: "selectorStageId", type: "bytes32" },
     { name: "targetStageId", type: "bytes32" },
     { name: "dockId", type: "bytes32" },
-    { name: "executor", type: "address" },
-    { name: "role", type: "bytes32" },
-    { name: "executorMetadataHash", type: "bytes32" },
-    { name: "authorizationsHash", type: "bytes32" },
-    { name: "patchHash", type: "bytes32" },
+    { name: "supplierId", type: "bytes32" },
     { name: "patchNonce", type: "uint256" },
-    { name: "metadataURI", type: "string" },
     { name: "selector", type: "address" },
     { name: "deadline", type: "uint256" },
   ];
@@ -2922,38 +2867,21 @@ export interface StageDockExecutorSelectionPayload {
   readonly selectorStageId: Hex | string;
   readonly targetStageId: Hex | string;
   readonly dockId: Hex | string;
-  readonly executor: Address | string;
-  readonly role: Hex | string;
-  readonly executorMetadataHash: Hex | string;
-  readonly authorizationsHash: Hex | string;
-  readonly patchHash: Hex | string;
+  readonly supplierId: Hex | string;
   readonly patchNonce: bigint | number | string;
-  readonly metadataURI: string;
 }
 
 export interface StageDockExecutorSelectionCallStruct {
   readonly selectorStageId: Hex;
   readonly targetStageId: Hex;
   readonly dockId: Hex;
-  readonly executor: Address;
-  readonly role: Hex;
-  readonly executorMetadataHash: Hex;
-  readonly authorizationsHash: Hex;
-  readonly patchHash: Hex;
+  readonly supplierId: Hex;
   readonly patchNonce: bigint;
-  readonly metadataURI: string;
 }
 
 function normalizeStageDockExecutorSelection(
   selection: StageDockExecutorSelectionPayload,
 ): StageDockExecutorSelectionCallStruct {
-  if (typeof selection.metadataURI !== "string") {
-    throw new Error("metadataURI must be a string");
-  }
-  const executor = normalizeAddress(selection.executor, "executor");
-  if (executor === ZERO_ADDRESS) {
-    throw new Error("executor must be non-zero");
-  }
   return {
     selectorStageId: normalizeNonZeroBytes32(
       selection.selectorStageId,
@@ -2964,19 +2892,8 @@ function normalizeStageDockExecutorSelection(
       "targetStageId",
     ),
     dockId: normalizeNonZeroBytes32(dockIdWord(selection.dockId), "dockId"),
-    executor,
-    role: normalizeBytes32(selection.role, "role"),
-    executorMetadataHash: normalizeBytes32(
-      selection.executorMetadataHash,
-      "executorMetadataHash",
-    ),
-    authorizationsHash: normalizeBytes32(
-      selection.authorizationsHash,
-      "authorizationsHash",
-    ),
-    patchHash: normalizeNonZeroBytes32(selection.patchHash, "patchHash"),
+    supplierId: normalizeNonZeroBytes32(selection.supplierId, "supplierId"),
     patchNonce: normalizeUintBigInt(selection.patchNonce, "patchNonce"),
-    metadataURI: selection.metadataURI,
   };
 }
 
@@ -2997,13 +2914,8 @@ export interface StageDockExecutorSelectionTypedData {
     readonly selectorStageId: Hex;
     readonly targetStageId: Hex;
     readonly dockId: Hex;
-    readonly executor: Address;
-    readonly role: Hex;
-    readonly executorMetadataHash: Hex;
-    readonly authorizationsHash: Hex;
-    readonly patchHash: Hex;
+    readonly supplierId: Hex;
     readonly patchNonce: string;
-    readonly metadataURI: string;
     readonly selector: Address;
     readonly deadline: string;
   };
@@ -3044,13 +2956,8 @@ export function buildStageDockExecutorSelectionTypedData(
       selectorStageId: selection.selectorStageId,
       targetStageId: selection.targetStageId,
       dockId: selection.dockId,
-      executor: selection.executor,
-      role: selection.role,
-      executorMetadataHash: selection.executorMetadataHash,
-      authorizationsHash: selection.authorizationsHash,
-      patchHash: selection.patchHash,
+      supplierId: selection.supplierId,
       patchNonce: selection.patchNonce.toString(10),
-      metadataURI: selection.metadataURI,
       selector: normalizeAddress(input.selector, "selector"),
       deadline: normalizeUintString(input.deadline, "deadline"),
     },
@@ -3076,7 +2983,6 @@ export interface SelectStageDockExecutorCallArgs {
   readonly orderId: Hex | string;
   readonly selection: StageDockExecutorSelectionPayload;
   readonly bindingProof: SelectorBindingPayload;
-  readonly executorAuthorizations: readonly SignalAuthorizationPayload[];
 }
 
 export interface SelectStageDockExecutorCall {
@@ -3101,7 +3007,6 @@ export function buildSelectStageDockExecutorCall(
     normalizeNonZeroBytes32(args.orderId, "orderId"),
     normalizeStageDockExecutorSelection(args.selection),
     normalizeSelectorBinding(args.bindingProof),
-    args.executorAuthorizations.map(normalizeSignalAuthorizationStruct),
   ] as const;
   return {
     address,
@@ -3151,7 +3056,6 @@ export function buildSelectStageDockExecutorForCall(
     normalizeUintBigInt(args.deadline, "deadline"),
     normalizeHex(args.signature, "signature"),
     normalizeSelectorBinding(args.bindingProof),
-    args.executorAuthorizations.map(normalizeSignalAuthorizationStruct),
   ] as const;
   return {
     address,

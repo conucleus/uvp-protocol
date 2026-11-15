@@ -9,9 +9,12 @@ import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
+import {FilePatch} from "../src/interfaces/IUVPFileResourceModule.sol";
+import {UVPSupplierRegistry} from "../src/UVPSupplierRegistry.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
 import {MerkleCommitment} from "../src/libraries/MerkleCommitment.sol";
+import {_EXECUTOR_BINDING_LEAF_DOMAIN} from "../src/UVPStateMachineConstants.sol";
 import {emptyFilePatch} from "./FilePatchTestHelpers.sol";
 
 interface Vm {
@@ -32,1876 +35,857 @@ interface Vm {
 }
 
 contract ExecutorChangeBlackBoxTest {
-    struct StageSelectorBinding {
-        bytes32 selectorStageId;
-        bytes32 targetStageId;
-    }
-
-    struct SignalCapability {
-        bytes32 stageId;
-        bytes32 targetSourceId;
-        bytes32 signalId;
-        uint8 targetOrderRelation;
-    }
-
     struct PreparedPatch {
         UVPStagePatchModule.StageExecutorPatch patch;
+        IUVPStateMachineCore.SelectorBindingProof bindingProof;
+        bytes32[] candidateProof;
         address selector;
         uint256 deadline;
         bytes selectorSignature;
         bytes previousExecutorSignature;
-        IUVPStateMachineCore.SelectorBindingProof bindingProof;
-        bytes32[] candidateProof;
-        IUVPStateMachineCore.SignalAuthorization[] authorizations;
     }
 
     Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
-    mapping(address machine => UVPStagePatchModule) private _stagePatchModules;
-    bytes32 private PLAN_ID;
-    bytes32 private ORDER_ID;
-
     bytes32 private constant SOURCE_BOOTSTRAP = bytes32(uint256(0x3001));
+    bytes32 private constant SOURCE_DYN = bytes32(uint256(0x3002));
     bytes32 private constant SIGNAL_ORDER_START = bytes32(uint256(0x4000));
     bytes32 private constant SIGNAL_INIT_CMP = bytes32(uint256(0x4002));
+    bytes32 private constant SIGNAL_FIXED_READY = bytes32(uint256(0x4003));
+    bytes32 private constant SIGNAL_DYN_READY = bytes32(uint256(0x4004));
     bytes32 private constant SIGNAL_STAGE_DONE = bytes32(uint256(0x4005));
     bytes32 private constant SIGNAL_STAGE_REVIEW = bytes32(uint256(0x4006));
-    bytes32 private constant SIGNAL_AUDIT_PASS = bytes32(uint256(0x4003));
-    bytes32 private constant SIGNAL_EXTRA = bytes32(uint256(0x4007));
-    bytes32 private constant EXECUTOR_PATCH_SIGNAL_ID =
-        0xbbb1770c9313f4029a89e03f4719037cdad52864ab4da5f623bc7c8a0c489e97;
-    bytes32 private constant EXECUTOR_PATCH_MODE_ASSIGN = bytes32("assign");
-    bytes32 private constant EXECUTOR_PATCH_MODE_HANDOFF = bytes32("handoff");
+    bytes32 private constant SIGNAL_DYN = bytes32(uint256(0x4007));
     bytes32 private constant STAGE_INIT = bytes32(uint256(0x5001));
     bytes32 private constant STAGE_AUDIT = bytes32(uint256(0x5002));
-    bytes32 private constant HOOK_ORDER_START = bytes32(uint256(0x6000));
+    bytes32 private constant STAGE_FIXED = bytes32(uint256(0x5003));
+    bytes32 private constant STAGE_DYN = bytes32(uint256(0x5004));
+    bytes32 private constant HOOK_BIRTH = bytes32(uint256(0x6000));
     bytes32 private constant HOOK_AUDIT = bytes32(uint256(0x6001));
-    bytes32 private constant HOOK_NAME_ORDER_START = bytes32(uint256(0x7005));
-    bytes32 private constant HOOK_NAME_INIT_DONE = bytes32(uint256(0x7002));
+    bytes32 private constant HOOK_FIXED = bytes32(uint256(0x6002));
+    bytes32 private constant HOOK_DYN = bytes32(uint256(0x6003));
+    bytes32 private constant HOOK_NAME_BIRTH = bytes32(uint256(0x7005));
+    bytes32 private constant HOOK_NAME_AUDIT = bytes32(uint256(0x7006));
+    bytes32 private constant HOOK_NAME_FIXED = bytes32(uint256(0x7007));
+    bytes32 private constant HOOK_NAME_DYN = bytes32(uint256(0x7008));
     bytes32 private constant PAYLOAD_HASH = bytes32(uint256(0x8001));
+    bytes32 private constant PAYLOAD_HASH_2 = bytes32(uint256(0x8002));
     bytes32 private constant IDEMPOTENCY_KEY = bytes32(uint256(0x9001));
-    bytes32 private constant ROLE_EXECUTOR = bytes32(uint256(0xa003));
-    bytes32 private constant EXECUTOR_METADATA_HASH = bytes32(uint256(0xa004));
-    bytes32 private constant PATCH_HASH = bytes32(uint256(0xa006));
-    bytes32 private constant PATCH_HASH_2 = bytes32(uint256(0xa007));
-    address private constant CREATOR = address(uint160(0xc0de));
-    address private constant STRANGER = address(uint160(0xbad));
-    address private constant E3 = address(uint160(0x33));
-    uint256 private constant SELECTOR_PRIVATE_KEY = 0xa11ce;
-    uint256 private constant EXECUTOR1_PRIVATE_KEY = 0xb0b;
-    uint256 private constant EXECUTOR2_PRIVATE_KEY = 0xb0c;
-    uint256 private constant PUBLISHER_PRIVATE_KEY = 0xc0ffee;
+    bytes32 private constant IDEMPOTENCY_KEY_2 = bytes32(uint256(0x9002));
+    bytes32 private constant SUPPLIER_SELECTOR = bytes32(uint256(0x5101));
+    bytes32 private constant SUPPLIER_DEFAULT = bytes32(uint256(0x5102));
+    bytes32 private constant SUPPLIER_FIXED = bytes32(uint256(0x5103));
+    bytes32 private constant SUPPLIER_CAND1 = bytes32(uint256(0x5104));
+    bytes32 private constant SUPPLIER_CAND2 = bytes32(uint256(0x5105));
+    bytes32 private constant SUPPLIER_CAND3 = bytes32(uint256(0x5106));
+    bytes32 private constant SUPPLIER_DYN = bytes32(uint256(0x5107));
+
     uint8 private constant FLAG_ORDER_TRIGGER_MINT = 1;
     uint8 private constant FLAG_EMIT_READY = 4;
-    bytes32 private constant EMPTY_MERKLE_ROOT = keccak256("");
-    bytes32 private constant EIP712_DOMAIN_TYPEHASH =
-        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
-    bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.17");
-    bytes32 private constant EXECUTOR_CANDIDATE_LEAF_DOMAIN = keccak256("UVP_EXECUTOR_CANDIDATE_V1");
-    bytes32 private constant SIGNAL_CAPABILITY_LEAF_DOMAIN = keccak256("UVP_SIGNAL_CAPABILITY_V1");
-    bytes32 private constant SELECTOR_BINDING_LEAF_DOMAIN = keccak256("UVP_SELECTOR_BINDING_V1");
+    uint8 private constant FLAG_DYNAMIC_EXECUTOR = 32;
+
+    uint256 private constant SELECTOR_PRIVATE_KEY = 0xa11ce;
+    uint256 private constant DEFAULT_PRIVATE_KEY = 0xb0e;
+    uint256 private constant FIXED_PRIVATE_KEY = 0xb0f;
+    uint256 private constant CAND1_PRIVATE_KEY = 0xb0b;
+    uint256 private constant CAND2_PRIVATE_KEY = 0xb0c;
+    uint256 private constant CAND3_PRIVATE_KEY = 0xb0d;
+    uint256 private constant DYN_PRIVATE_KEY = 0xb10;
+    uint256 private constant PUBLISHER_PRIVATE_KEY = 0xc0ffee;
+
+    address private constant CREATOR = address(uint160(0xc0de));
+    address private constant STRANGER = address(uint160(0xbad));
+
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorCandidatesRoot,address birthAuthorizer,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorBindingsRoot,address birthAuthorizer,uint256 deadline)"
     );
     bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
-        "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
+        "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
     );
 
-    struct CapabilityTables {
-        StageSelectorBinding[] bindings;
-        SignalCapability[] capabilities;
-        bytes32[] sortedLeaves;
-        bytes32[] candidateLeaves;
+    UVPStateMachine private machine;
+    UVPStagePatchModule private stagePatch;
+    UVPSupplierRegistry private suppliers;
+    UVPPlanMetadataModule private metadata;
+    UVPFileResourceModule private files;
+    bytes32 private planId;
+    bytes32 private orderId;
+    bytes32[] private capabilityLeaves;
+    bytes32[] private bindingLeaves;
+
+    function setUp() public {
+        _deployStack();
+        _commitAndBirth();
     }
 
-    mapping(address machine => mapping(bytes32 planId => CapabilityTables tables)) private _capabilityTables;
+    function testCandidateProofMustMatchStageSupplierAndStageType() public {
+        UVPStagePatchModule.StageExecutorPatch memory patch =
+            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 1);
 
-    function testCandidateGateRejectsCrossStageProofMixing() public {
-        UVPStateMachine machine = _patchMachineReady();
-        IUVPStateMachineCore.SignalAuthorization[] memory auths =
-            _executorAuthorizationsFor(machine, PLAN_ID, STAGE_AUDIT, E1());
-        UVPStagePatchModule.StageExecutorPatch memory patch = _withAuthHash(_patch(1, E1(), PATCH_HASH), auths);
-        bytes32[] memory initStageProof = _candidateProofFor(machine, PLAN_ID, STAGE_INIT, E1());
-        require(initStageProof.length != 0, "test setup: init stage leaf missing");
+        _expectPatchRevert(
+            abi.encodeWithSelector(
+                UVPStagePatchModule.StageExecutorNotCandidate.selector, planId, orderId, STAGE_AUDIT, SUPPLIER_CAND1
+            ),
+            patch,
+            _bindingProof(STAGE_AUDIT),
+            new bytes32[](0)
+        );
+        _expectPatchRevert(
+            abi.encodeWithSelector(
+                UVPStagePatchModule.StageExecutorNotCandidate.selector, planId, orderId, STAGE_AUDIT, SUPPLIER_CAND1
+            ),
+            patch,
+            _bindingProof(STAGE_AUDIT),
+            _candidateProof(SUPPLIER_CAND2)
+        );
 
-        vm.prank(CREATOR);
+        _applyDirect(patch, _bindingProof(STAGE_AUDIT), _candidateProof(SUPPLIER_CAND1));
+        (bytes32 supplierId, uint256 patchNonce, bytes32 dockId) =
+            machine.activeStageExecutorPatch(planId, orderId, STAGE_AUDIT);
+        require(supplierId == SUPPLIER_CAND1 && patchNonce == 1 && dockId == bytes32(0), "candidate patch not applied");
+        (bytes32 effectiveSupplierId, address effectiveExecutor) =
+            machine.effectiveStageExecutor(planId, orderId, STAGE_AUDIT);
+        require(effectiveSupplierId == SUPPLIER_CAND1 && effectiveExecutor == _cand1(), "effective executor wrong");
+    }
+
+    function testFixedAndBirthStagePatchesForbidden() public {
+        UVPStagePatchModule.StageExecutorPatch memory fixedPatch =
+            _patch(STAGE_FIXED, SUPPLIER_FIXED, bytes32(0), 1);
+        _expectPatchRevert(
+            abi.encodeWithSelector(
+                UVPStagePatchModule.StageExecutorPatchForbiddenOnFixedStage.selector, orderId, STAGE_FIXED
+            ),
+            fixedPatch,
+            IUVPStateMachineCore.SelectorBindingProof({selectorStageId: STAGE_INIT, proof: new bytes32[](0)}),
+            new bytes32[](0)
+        );
+
+        UVPStagePatchModule.StageExecutorPatch memory birthPatch =
+            _patch(STAGE_INIT, SUPPLIER_SELECTOR, bytes32(0), 1);
+        _expectPatchRevert(
+            abi.encodeWithSelector(
+                UVPStagePatchModule.StageExecutorPatchForbiddenOnBirthStage.selector, orderId, STAGE_INIT
+            ),
+            birthPatch,
+            IUVPStateMachineCore.SelectorBindingProof({selectorStageId: STAGE_INIT, proof: new bytes32[](0)}),
+            new bytes32[](0)
+        );
+    }
+
+    function testSelectorMustBeEffectiveExecutorAndOrderCreatorHasNoBypass() public {
+        UVPStagePatchModule.StageExecutorPatch memory patch =
+            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 1);
+
+        IUVPStateMachineCore.SelectorBindingProof memory selectorProof = _bindingProof(STAGE_AUDIT);
+        bytes32[] memory candidateProof = _candidateProof(SUPPLIER_CAND1);
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.StageExecutorNotCandidate.selector, PLAN_ID, ORDER_ID, STAGE_AUDIT, E1()
+                UVPStagePatchModule.UnauthorizedStageExecutorPatchSelector.selector, orderId, STAGE_INIT, CREATOR
             )
         );
-        _stagePatch(machine)
-            .applyStageExecutorPatch(
-                PLAN_ID, ORDER_ID, patch, _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT), initStageProof, auths
-            );
-    }
-
-    function testCandidateOfDifferentStageRejected() public {
-        UVPStateMachine machine = _patchMachineReady();
-        IUVPStateMachineCore.SignalAuthorization[] memory auths =
-            _executorAuthorizationsFor(machine, PLAN_ID, STAGE_AUDIT, E1());
-        UVPStagePatchModule.StageExecutorPatch memory patch = _withAuthHash(_patch(1, E1(), PATCH_HASH), auths);
-
         vm.prank(CREATOR);
+        stagePatch.applyStageExecutorPatch(planId, orderId, patch, selectorProof, candidateProof);
+
+        PreparedPatch memory prepared = _prepareWithSelector(patch, _cand1(), CAND1_PRIVATE_KEY);
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.StageExecutorNotCandidate.selector, PLAN_ID, ORDER_ID, STAGE_AUDIT, E1()
+                UVPStagePatchModule.UnauthorizedStageExecutorPatchSelector.selector, orderId, STAGE_INIT, _cand1()
             )
         );
-        _stagePatch(machine)
-            .applyStageExecutorPatch(
-                PLAN_ID, ORDER_ID, patch, _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT), new bytes32[](0), auths
-            );
+        _sendRelayed(prepared);
     }
 
-    function testCandidateTreeDedupKeepsRootAndProofEquivalence() public {
-        UVPStateMachine.ExecutorCandidate[] memory duplicates = new UVPStateMachine.ExecutorCandidate[](5);
-        duplicates[0] = UVPStateMachine.ExecutorCandidate({stageId: STAGE_AUDIT, executor: E1()});
-        duplicates[1] = UVPStateMachine.ExecutorCandidate({stageId: STAGE_AUDIT, executor: E1()});
-        duplicates[2] = UVPStateMachine.ExecutorCandidate({stageId: STAGE_AUDIT, executor: E2()});
-        duplicates[3] = UVPStateMachine.ExecutorCandidate({stageId: STAGE_AUDIT, executor: E2()});
-        duplicates[4] = UVPStateMachine.ExecutorCandidate({stageId: STAGE_INIT, executor: E1()});
-        UVPStateMachine.ExecutorCandidate[] memory deduped = new UVPStateMachine.ExecutorCandidate[](3);
-        deduped[0] = duplicates[0];
-        deduped[1] = duplicates[2];
-        deduped[2] = duplicates[4];
+    function testSelectorBindingProofMustMatch() public {
+        UVPStagePatchModule.StageExecutorPatch memory patch =
+            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 1);
 
-        bytes32 duplicateRoot = MerkleCommitment.root(_executorCandidateLeaves(duplicates));
-        bytes32 dedupedRoot = MerkleCommitment.root(_executorCandidateLeaves(deduped));
-        require(duplicateRoot == dedupedRoot, "duplicate entries changed candidate root");
-
-        UVPStateMachine machine = _newMachine();
-        _registerPlanWithCandidates(
-            machine, _patchHooks(), _selectorBindings(), _patchCapabilities(), PUBLISHER_PRIVATE_KEY, duplicates
+        _expectPatchRevert(
+            abi.encodeWithSelector(
+                UVPStagePatchModule.StageSelectorBindingNotFound.selector, planId, STAGE_INIT, STAGE_AUDIT
+            ),
+            patch,
+            IUVPStateMachineCore.SelectorBindingProof({selectorStageId: STAGE_AUDIT, proof: new bytes32[](0)}),
+            _candidateProof(SUPPLIER_CAND1)
         );
-        _submitBirth(machine, CREATOR, _overlayAuthorizations());
-        _materializeAuditStage(machine, ORDER_ID);
-        require(machine.planExecutorCandidatesRoot(PLAN_ID) == dedupedRoot, "committed root mismatch");
-
-        vm.prank(CREATOR);
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
-        require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E1(), "dedup proof patch failed");
+        _expectPatchRevert(
+            abi.encodeWithSelector(
+                UVPStagePatchModule.StageSelectorBindingNotFound.selector, planId, STAGE_INIT, STAGE_AUDIT
+            ),
+            patch,
+            IUVPStateMachineCore.SelectorBindingProof({selectorStageId: STAGE_INIT, proof: new bytes32[](0)}),
+            _candidateProof(SUPPLIER_CAND1)
+        );
     }
 
-    function testEmptyCandidateSetRejectsAssignAndHandoffEvenForCreator() public {
-        UVPStateMachine machine = _newMachine();
-        _registerPlanWithCandidates(
-            machine,
-            _patchHooks(),
-            _selectorBindings(),
-            _patchCapabilities(),
-            PUBLISHER_PRIVATE_KEY,
-            new UVPStateMachine.ExecutorCandidate[](0)
+    function testAssignThenHandoffLifecycle() public {
+        _applyDirect(
+            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 1),
+            _bindingProof(STAGE_AUDIT),
+            _candidateProof(SUPPLIER_CAND1)
         );
-        require(machine.planExecutorCandidatesRoot(PLAN_ID) == MerkleCommitment.EMPTY_ROOT, "empty set must yield EMPTY_ROOT");
-        _submitBirth(machine, CREATOR, _overlayAuthorizations());
-        _materializeAuditStage(machine, ORDER_ID);
+        _submit(STAGE_AUDIT, STAGE_AUDIT, SIGNAL_STAGE_DONE, _cand1());
 
-        vm.prank(CREATOR);
+        _expectPatchRevert(
+            abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, orderId, STAGE_AUDIT),
+            _patch(STAGE_AUDIT, SUPPLIER_CAND2, bytes32(0), 2),
+            _bindingProof(STAGE_AUDIT),
+            _candidateProof(SUPPLIER_CAND2)
+        );
+
+        _expectPatchRevert(
+            abi.encodeWithSelector(
+                UVPStagePatchModule.StageExecutorPatchPreviousSupplierMismatch.selector,
+                orderId,
+                STAGE_AUDIT,
+                SUPPLIER_CAND1,
+                SUPPLIER_DEFAULT
+            ),
+            _patch(STAGE_AUDIT, SUPPLIER_CAND2, SUPPLIER_DEFAULT, 2),
+            _bindingProof(STAGE_AUDIT),
+            _candidateProof(SUPPLIER_CAND2)
+        );
+
+        _expectPatchRevert(
+            abi.encodeWithSelector(
+                UVPStagePatchModule.InvalidStageExecutorPatchSignature.selector, _cand1(), address(0)
+            ),
+            _patch(STAGE_AUDIT, SUPPLIER_CAND2, SUPPLIER_CAND1, 2),
+            _bindingProof(STAGE_AUDIT),
+            _candidateProof(SUPPLIER_CAND2)
+        );
+
+        PreparedPatch memory wrongSigner = _prepare(_patch(STAGE_AUDIT, SUPPLIER_CAND2, SUPPLIER_CAND1, 2));
+        wrongSigner.previousExecutorSignature =
+            _signatureOver(DEFAULT_PRIVATE_KEY, _digestFor(orderId, wrongSigner.patch, wrongSigner.selector, wrongSigner.deadline));
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.StageExecutorNotCandidate.selector, PLAN_ID, ORDER_ID, STAGE_AUDIT, E1()
+                UVPStagePatchModule.InvalidStageExecutorPatchSignature.selector, _cand1(), _default()
             )
         );
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
+        _sendRelayed(wrongSigner);
 
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
+        PreparedPatch memory handoff = _prepare(_patch(STAGE_AUDIT, SUPPLIER_CAND2, SUPPLIER_CAND1, 2));
+        handoff.previousExecutorSignature =
+            _signatureOver(CAND1_PRIVATE_KEY, _digestFor(orderId, handoff.patch, handoff.selector, handoff.deadline));
+        _sendRelayed(handoff);
+        (bytes32 supplierId, uint256 patchNonce,) = machine.activeStageExecutorPatch(planId, orderId, STAGE_AUDIT);
+        require(supplierId == SUPPLIER_CAND2 && patchNonce == 2, "handoff not applied");
+
+        _submit(STAGE_AUDIT, STAGE_AUDIT, SIGNAL_STAGE_REVIEW, _cand2());
+        (,,,, address submitter) = machine.getSignal(planId, orderId, STAGE_AUDIT, SIGNAL_STAGE_REVIEW);
+        require(submitter == _cand2(), "handoff executor submit not recorded");
+    }
+
+    function testPatchNonceMustIncrease() public {
+        _applyDirect(
+            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 2),
+            _bindingProof(STAGE_AUDIT),
+            _candidateProof(SUPPLIER_CAND1)
+        );
+        _expectPatchRevert(
+            abi.encodeWithSelector(
+                UVPStagePatchModule.StageExecutorPatchNonceNotIncreasing.selector, orderId, STAGE_AUDIT, 2, 2
+            ),
+            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 2),
+            _bindingProof(STAGE_AUDIT),
+            _candidateProof(SUPPLIER_CAND1)
+        );
+    }
+
+    function testDynamicStagePatchSkipsCandidateProofAndRequiresAssignment() public {
+        _submitExpectRevert(
+            abi.encodeWithSelector(UVPStateMachine.StageExecutorNotAssigned.selector, orderId, STAGE_DYN),
+            SOURCE_DYN,
+            STAGE_DYN,
+            SIGNAL_DYN,
+            _dyn()
+        );
+
+        _applyDirect(_patch(STAGE_DYN, SUPPLIER_DYN, bytes32(0), 1), _bindingProof(STAGE_DYN), new bytes32[](0));
+        (bytes32 supplierId, uint256 patchNonce, bytes32 dockId) =
+            machine.activeStageExecutorPatch(planId, orderId, STAGE_DYN);
+        require(supplierId == SUPPLIER_DYN && patchNonce == 1 && dockId == bytes32(0), "dynamic assign not applied");
+
+        _submit(SOURCE_DYN, STAGE_DYN, SIGNAL_DYN, _dyn());
+        (uint256 count,,,) = machine.stageSignalState(planId, orderId, STAGE_DYN);
+        require(count == 1, "dynamic stage fact not counted");
+
+        _expectPatchRevert(
+            abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, orderId, STAGE_DYN),
+            _patch(STAGE_DYN, SUPPLIER_DYN, bytes32(0), 2),
+            _bindingProof(STAGE_DYN),
+            new bytes32[](0)
+        );
+    }
+
+    function testRevokedSupplierCannotBeAssigned() public {
+        suppliers.revokeSupplier(SUPPLIER_CAND3);
+        _expectPatchRevert(
+            abi.encodeWithSelector(UVPStagePatchModule.SupplierNotRegistered.selector, SUPPLIER_CAND3),
+            _patch(STAGE_AUDIT, SUPPLIER_CAND3, bytes32(0), 1),
+            _bindingProof(STAGE_AUDIT),
+            _candidateProof(SUPPLIER_CAND3)
+        );
+    }
+
+    function testEffectiveExecutorBoundSubmitAfterPatch() public {
+        _applyDirect(
+            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 1),
+            _bindingProof(STAGE_AUDIT),
+            _candidateProof(SUPPLIER_CAND1)
+        );
+
+        _submitExpectRevert(
+            abi.encodeWithSelector(
+                UVPStateMachine.UnauthorizedStageExecutor.selector, orderId, STAGE_AUDIT, _default(), _cand1()
+            ),
+            STAGE_AUDIT,
             STAGE_AUDIT,
             SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9101)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        , bytes32(0), emptyFilePatch());
-        PreparedPatch memory prepared = _prepareRelayed(
-            machine,
-            PLAN_ID,
-            ORDER_ID,
-            _patchWithMode(2, E2(), PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, E1()),
-            SELECTOR_PRIVATE_KEY,
-            EXECUTOR1_PRIVATE_KEY
+            _default()
         );
-        vm.expectRevert(
+
+        _submitExpectRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.StageExecutorNotCandidate.selector, PLAN_ID, ORDER_ID, STAGE_AUDIT, E2()
-            )
+                UVPStateMachine.UnauthorizedStageExecutor.selector, orderId, STAGE_AUDIT, STRANGER, _cand1()
+            ),
+            STAGE_AUDIT,
+            STAGE_AUDIT,
+            SIGNAL_STAGE_DONE,
+            STRANGER
         );
-        _sendRelayed(machine, PLAN_ID, ORDER_ID, prepared);
+
+        _submit(STAGE_AUDIT, STAGE_AUDIT, SIGNAL_STAGE_DONE, _cand1());
+        (,,,, address submitter) = machine.getSignal(planId, orderId, STAGE_AUDIT, SIGNAL_STAGE_DONE);
+        require(submitter == _cand1(), "patched executor submit not recorded");
     }
 
-    function testRelayedPatchRejectsSelectorSignatureOverDifferentPatch() public {
-        UVPStateMachine machine = _patchMachineReady();
-        IUVPStateMachineCore.SignalAuthorization[] memory auths =
-            _executorAuthorizationsFor(machine, PLAN_ID, STAGE_AUDIT, E3);
-        UVPStagePatchModule.StageExecutorPatch memory submittedPatch = _withAuthHash(_patch(1, E3, PATCH_HASH), auths);
-        UVPStagePatchModule.StageExecutorPatch memory signedPatch = _withAuthHash(_patch(1, E2(), PATCH_HASH), auths);
+    function testRelayedPatchRejectsCrossPatchSelectorSignatureAndExpiredDeadline() public {
+        UVPStagePatchModule.StageExecutorPatch memory signedPatch =
+            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 1);
+        UVPStagePatchModule.StageExecutorPatch memory submittedPatch =
+            _patch(STAGE_AUDIT, SUPPLIER_CAND2, bytes32(0), 1);
         uint256 deadline = block.timestamp + 1 hours;
-        bytes32 signedDigest =
-            _stagePatch(machine).stageExecutorPatchDigest(PLAN_ID, ORDER_ID, signedPatch, _selector(), deadline);
+        bytes32 signedDigest = stagePatch.stageExecutorPatchDigest(planId, orderId, signedPatch, _selector(), deadline);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(SELECTOR_PRIVATE_KEY, signedDigest);
         bytes32 submittedDigest =
-            _stagePatch(machine).stageExecutorPatchDigest(PLAN_ID, ORDER_ID, submittedPatch, _selector(), deadline);
+            stagePatch.stageExecutorPatchDigest(planId, orderId, submittedPatch, _selector(), deadline);
         address expectedRecovered = ecrecover(submittedDigest, v, r, s);
+        IUVPStateMachineCore.SelectorBindingProof memory selectorProof = _bindingProof(STAGE_AUDIT);
+        bytes32[] memory submittedCandidateProof = _candidateProof(SUPPLIER_CAND2);
+        bytes32[] memory signedCandidateProof = _candidateProof(SUPPLIER_CAND1);
 
         vm.expectRevert(
             abi.encodeWithSelector(
                 UVPStagePatchModule.InvalidStageExecutorPatchSignature.selector, _selector(), expectedRecovered
             )
         );
-        _stagePatch(machine)
-            .applyStageExecutorPatchFor(
-                PLAN_ID,
-                ORDER_ID,
-                submittedPatch,
-                _selector(),
-                deadline,
-                _packedSignature(v, r, s),
-                "",
-                _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT),
-                _candidateProofFor(machine, PLAN_ID, STAGE_AUDIT, E3),
-                auths
-            );
-    }
+        stagePatch.applyStageExecutorPatchFor(
+            planId,
+            orderId,
+            submittedPatch,
+            _selector(),
+            deadline,
+            abi.encodePacked(r, s, v),
+            "",
+            selectorProof,
+            submittedCandidateProof
+        );
 
-    function testDirectPatchRejectsThirdPartyWithoutSelectorRights() public {
-        UVPStateMachine machine = _patchMachineReady();
-
-        vm.prank(STRANGER);
+        uint256 expiredDeadline = block.timestamp - 1;
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.UnauthorizedStageExecutorPatchSelector.selector, ORDER_ID, STAGE_INIT, STRANGER
+                UVPStagePatchModule.ExpiredStageExecutorPatchSignature.selector, expiredDeadline
             )
         );
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
-    }
-
-    function testSelectorBindingProofMixingRejected() public {
-        UVPStateMachine machine = _patchMachineReady();
-        IUVPStateMachineCore.SignalAuthorization[] memory auths =
-            _executorAuthorizationsFor(machine, PLAN_ID, STAGE_AUDIT, E1());
-        UVPStagePatchModule.StageExecutorPatch memory patch = _withAuthHash(_patch(1, E1(), PATCH_HASH), auths);
-
-        vm.prank(CREATOR);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStagePatchModule.StageSelectorBindingNotFound.selector, PLAN_ID, STAGE_INIT, STAGE_AUDIT
-            )
-        );
-        _stagePatch(machine)
-            .applyStageExecutorPatch(
-                PLAN_ID,
-                ORDER_ID,
-                patch,
-                IUVPStateMachineCore.SelectorBindingProof({selectorStageId: STAGE_AUDIT, proof: new bytes32[](0)}),
-                _candidateProofFor(machine, PLAN_ID, STAGE_AUDIT, E1()),
-                auths
-            );
-
-        vm.prank(CREATOR);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStagePatchModule.StageSelectorBindingNotFound.selector, PLAN_ID, STAGE_INIT, STAGE_AUDIT
-            )
-        );
-        _stagePatch(machine)
-            .applyStageExecutorPatch(
-                PLAN_ID,
-                ORDER_ID,
-                patch,
-                IUVPStateMachineCore.SelectorBindingProof({selectorStageId: STAGE_INIT, proof: new bytes32[](0)}),
-                _candidateProofFor(machine, PLAN_ID, STAGE_AUDIT, E1()),
-                auths
-            );
-    }
-
-    function testPatchRejectsAuthorizationSetSwapAfterDigestSigning() public {
-        UVPStateMachine machine = _patchMachineReady();
-        IUVPStateMachineCore.SignalAuthorization[] memory swappedAuths =
-            _executorAuthorizationsFor(machine, PLAN_ID, STAGE_AUDIT, E3);
-        IUVPStateMachineCore.SignalAuthorization[] memory signedAuths =
-            _executorAuthorizationsFor(machine, PLAN_ID, STAGE_AUDIT, E2());
-        UVPStagePatchModule.StageExecutorPatch memory patch = _withAuthHash(_patch(1, E3, PATCH_HASH), signedAuths);
-        uint256 deadline = block.timestamp + 1 hours;
-        bytes32 digest = _stagePatch(machine).stageExecutorPatchDigest(PLAN_ID, ORDER_ID, patch, _selector(), deadline);
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(SELECTOR_PRIVATE_KEY, digest);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStagePatchModule.InvalidStageExecutorPatchSignature.selector, _selector(), address(0)
-            )
-        );
-        _stagePatch(machine)
-            .applyStageExecutorPatchFor(
-                PLAN_ID,
-                ORDER_ID,
-                patch,
-                _selector(),
-                deadline,
-                _packedSignature(v, r, s),
-                "",
-                _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT),
-                _candidateProofFor(machine, PLAN_ID, STAGE_AUDIT, E3),
-                swappedAuths
-            );
-    }
-
-    function testPatchAuthorizationSetWithDuplicateEntriesAbsorbed() public {
-        UVPStateMachine machine = _patchMachineReady();
-        IUVPStateMachineCore.SignalAuthorization[] memory base =
-            _executorAuthorizationsFor(machine, PLAN_ID, STAGE_AUDIT, E3);
-        IUVPStateMachineCore.SignalAuthorization[] memory auths = new IUVPStateMachineCore.SignalAuthorization[](3);
-        auths[0] = base[0];
-        auths[1] = base[0];
-        auths[2] = base[1];
-
-        vm.prank(CREATOR);
-        _patchDirectWithAuths(machine, PLAN_ID, ORDER_ID, _withAuthHash(_patch(1, E3, PATCH_HASH), auths), auths);
-        require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E3, "patch not applied");
-        require(
-            machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, E3),
-            "duplicate-entry auth set not written"
-        );
-        vm.prank(E3);
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9102)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        , bytes32(0), emptyFilePatch());
-    }
-
-    function testPatchedExecutorCanSubmitStageSignalWhileStrangerCannot() public {
-        UVPStateMachine machine = _patchMachineReady();
-
-        vm.prank(CREATOR);
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E3, PATCH_HASH));
-        require(
-            machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, E3),
-            "new executor not authorized"
-        );
-        vm.prank(STRANGER);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStateMachine.UnauthorizedSignalSubmitter.selector, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, STRANGER
-            )
-        );
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9103)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        , bytes32(0), emptyFilePatch());
-        vm.prank(E3);
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9104)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        , bytes32(0), emptyFilePatch());
-        (,,,, address submitter) = machine.getSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE);
-        require(submitter == E3, "patched executor submission not recorded");
-    }
-
-    function testExplicitAuthorizationsSurviveExecutorHandoff() public {
-        UVPStateMachine machine = _patchMachineReady();
-
-        vm.prank(CREATOR);
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9105)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        , bytes32(0), emptyFilePatch());
-        PreparedPatch memory handoff = _prepareRelayed(
-            machine,
-            PLAN_ID,
-            ORDER_ID,
-            _patchWithMode(2, E2(), PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, E1()),
-            SELECTOR_PRIVATE_KEY,
-            EXECUTOR1_PRIVATE_KEY
-        );
-        _sendRelayed(machine, PLAN_ID, ORDER_ID, handoff);
-        require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E2(), "handoff not applied");
-
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_REVIEW,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9106)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
-        , bytes32(0), emptyFilePatch());
-        (,,,, address reviewSubmitter) = machine.getSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW);
-        require(reviewSubmitter == E1(), "old executor explicit auth not preserved");
-
-        vm.prank(STRANGER);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStateMachine.UnauthorizedSignalSubmitter.selector,
-                ORDER_ID,
-                STAGE_AUDIT,
-                SIGNAL_STAGE_REVIEW,
-                STRANGER
-            )
-        );
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_REVIEW,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9107)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
-        , bytes32(0), emptyFilePatch());
-    }
-
-    function testPatchWithEmptyAuthorizationSetLeavesNoSubmitLane() public {
-        UVPStateMachine machine = _patchMachineReady();
-        IUVPStateMachineCore.SignalAuthorization[] memory emptyAuths = new IUVPStateMachineCore.SignalAuthorization[](0);
-
-        vm.prank(CREATOR);
-        _patchDirectWithAuths(
-            machine, PLAN_ID, ORDER_ID, _withAuthHash(_patch(1, E3, PATCH_HASH), emptyAuths), emptyAuths
-        );
-        require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E3, "patch not applied");
-        require(
-            !machine.hasExplicitSignalAuthorization(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, E3),
-            "unexpected auth from empty set"
-        );
-        vm.prank(E3);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStateMachine.UnauthorizedSignalSubmitter.selector, ORDER_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE, E3
-            )
-        );
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9108)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        , bytes32(0), emptyFilePatch());
-    }
-
-    function testBirthStageExecutorPatchForbiddenEvenInsideCandidateSet() public {
-        UVPStateMachine machine = _patchMachineReady();
-
-        vm.prank(CREATOR);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStagePatchModule.StageExecutorPatchForbiddenOnBirthStage.selector, ORDER_ID, STAGE_INIT
-            )
-        );
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patchToStage(1, STAGE_INIT, E1(), PATCH_HASH));
-
-        vm.prank(CREATOR);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStagePatchModule.StageExecutorPatchForbiddenOnBirthStage.selector, ORDER_ID, STAGE_INIT
-            )
-        );
-        _patchDirect(
-            machine,
-            PLAN_ID,
-            ORDER_ID,
-            _patchWithMode(1, STAGE_INIT, E1(), PATCH_HASH, EXECUTOR_PATCH_MODE_HANDOFF, E2())
+        stagePatch.applyStageExecutorPatchFor(
+            planId,
+            orderId,
+            signedPatch,
+            _selector(),
+            expiredDeadline,
+            "",
+            "",
+            selectorProof,
+            signedCandidateProof
         );
     }
 
-    function testPatchModeVocabularyIsClosedSet() public {
-        UVPStateMachine machine = _patchMachineReady();
-        bytes32 foreignMode = bytes32("replace");
-
-        vm.prank(CREATOR);
-        vm.expectRevert(abi.encodeWithSelector(UVPStagePatchModule.InvalidStageExecutorPatchMode.selector, foreignMode));
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patchWithMode(1, E1(), PATCH_HASH, foreignMode, address(0)));
-
-        vm.prank(CREATOR);
-        vm.expectRevert(abi.encodeWithSelector(UVPStagePatchModule.InvalidStageExecutorPatchMode.selector, bytes32(0)));
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patchWithMode(1, E1(), PATCH_HASH, bytes32(0), address(0)));
-    }
-
-    function testPatchNonceMonotonicAcrossModesAndExecutors() public {
-        UVPStateMachine machine = _patchMachineReady();
-
-        vm.prank(CREATOR);
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9109)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        , bytes32(0), emptyFilePatch());
-        PreparedPatch memory handoff1 = _prepareRelayed(
-            machine,
-            PLAN_ID,
-            ORDER_ID,
-            _patchWithMode(2, E2(), PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, E1()),
-            SELECTOR_PRIVATE_KEY,
-            EXECUTOR1_PRIVATE_KEY
+    function testPatchOnForkedOrderUsesReplayedStageCounts() public {
+        _applyDirect(
+            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 1),
+            _bindingProof(STAGE_AUDIT),
+            _candidateProof(SUPPLIER_CAND1)
         );
-        _sendRelayed(machine, PLAN_ID, ORDER_ID, handoff1);
-        PreparedPatch memory handoff2 = _prepareRelayed(
-            machine,
-            PLAN_ID,
-            ORDER_ID,
-            _patchWithMode(3, E3, PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, E2()),
-            SELECTOR_PRIVATE_KEY,
-            EXECUTOR2_PRIVATE_KEY
-        );
-        _sendRelayed(machine, PLAN_ID, ORDER_ID, handoff2);
-        require(
-            _stagePatch(machine).orderStageExecutorPatchNonce(PLAN_ID, ORDER_ID, STAGE_AUDIT) == 3, "nonce not tracked"
-        );
+        _submit(STAGE_AUDIT, STAGE_AUDIT, SIGNAL_STAGE_DONE, _cand1());
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStagePatchModule.StageExecutorPatchNonceNotIncreasing.selector, ORDER_ID, STAGE_AUDIT, 3, 3
-            )
-        );
-        _sendRelayed(machine, PLAN_ID, ORDER_ID, handoff2);
-    }
-
-    function testPatchValidatesZeroFieldsAndUnknownOrder() public {
-        UVPStateMachine machine = _patchMachineReady();
-        IUVPStateMachineCore.SignalAuthorization[] memory auths =
-            _executorAuthorizationsFor(machine, PLAN_ID, STAGE_AUDIT, E1());
-        uint256 deadline = block.timestamp + 1 hours;
-        UVPStagePatchModule.StageExecutorPatch memory patch = _withAuthHash(_patch(1, E1(), PATCH_HASH), auths);
-
-        vm.expectRevert(UVPStagePatchModule.ZeroSelector.selector);
-        _stagePatch(machine)
-            .applyStageExecutorPatchFor(
-                PLAN_ID,
-                ORDER_ID,
-                patch,
-                address(0),
-                deadline,
-                new bytes(65),
-                "",
-                _moduleBindingFor(machine, PLAN_ID, STAGE_AUDIT),
-                _candidateProofFor(machine, PLAN_ID, STAGE_AUDIT, E1()),
-                auths
-            );
-
-        vm.prank(CREATOR);
-        vm.expectRevert(UVPStagePatchModule.ZeroTargetStageId.selector);
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patchToStage(1, bytes32(0), E1(), PATCH_HASH));
-
-        UVPStagePatchModule.StageExecutorPatch memory foreignOrderPatch =
-            _withAuthHash(_patch(1, E1(), PATCH_HASH), auths);
-        vm.prank(CREATOR);
-        vm.expectRevert(UVPStagePatchModule.UnknownOrder.selector);
-        _patchDirect(machine, PLAN_ID, bytes32(uint256(0xdeadbeef)), foreignOrderPatch);
-    }
-
-    function testHandoffRequiresPreviousExecutorSignature() public {
-        UVPStateMachine machine = _patchMachineReady();
-
-        vm.prank(CREATOR);
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9120)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        , bytes32(0), emptyFilePatch());
-
-        vm.prank(CREATOR);
-        vm.expectRevert(
-            abi.encodeWithSelector(UVPStagePatchModule.InvalidStageExecutorPatchSignature.selector, E1(), address(0))
-        );
-        _patchDirect(
-            machine, PLAN_ID, ORDER_ID, _patchWithMode(2, E2(), PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, E1())
-        );
-
-        PreparedPatch memory wrongSigner = _prepareRelayed(
-            machine,
-            PLAN_ID,
-            ORDER_ID,
-            _patchWithMode(2, E2(), PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, E1()),
-            SELECTOR_PRIVATE_KEY,
-            EXECUTOR2_PRIVATE_KEY
-        );
-        vm.expectRevert(
-            abi.encodeWithSelector(UVPStagePatchModule.InvalidStageExecutorPatchSignature.selector, E1(), E2())
-        );
-        _sendRelayed(machine, PLAN_ID, ORDER_ID, wrongSigner);
-
-        PreparedPatch memory correct = _prepareRelayed(
-            machine,
-            PLAN_ID,
-            ORDER_ID,
-            _patchWithMode(2, E2(), PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, E1()),
-            SELECTOR_PRIVATE_KEY,
-            EXECUTOR1_PRIVATE_KEY
-        );
-        _sendRelayed(machine, PLAN_ID, ORDER_ID, correct);
-        require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E2(), "handoff not applied");
-    }
-
-    function testHandoffFailClosedOnSameSecondAmbiguousSubmitters() public {
-        UVPStateMachine machine = _patchMachineReady();
-
-        vm.prank(CREATOR);
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9110)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        , bytes32(0), emptyFilePatch());
-        vm.prank(E2());
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_REVIEW,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9111)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
-        , bytes32(0), emptyFilePatch());
-        vm.prank(CREATOR);
-        bytes32 ambiguousChild = machine.forkOrder(
-            PLAN_ID,
-            ORDER_ID,
-            bytes32(uint256(0xABA1)),
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            _twoFacts(
-                STAGE_AUDIT,
-                SIGNAL_STAGE_DONE,
-                bytes32(uint256(0x9110)),
-                STAGE_AUDIT,
-                SIGNAL_STAGE_REVIEW,
-                bytes32(uint256(0x9111))
-            ),
-            _forkChildAuthorizations()
-        );
-        (uint256 count,,, bool ambiguous) = machine.stageSignalState(PLAN_ID, ambiguousChild, STAGE_AUDIT);
-        require(count == 2 && ambiguous, "ambiguity flag not raised");
-        PreparedPatch memory ambiguousHandoff = _prepareRelayed(
-            machine,
-            PLAN_ID,
-            ambiguousChild,
-            _patchWithMode(1, E3, PATCH_HASH, EXECUTOR_PATCH_MODE_HANDOFF, E1()),
-            SELECTOR_PRIVATE_KEY,
-            EXECUTOR1_PRIVATE_KEY
-        );
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStagePatchModule.StagePreviousExecutorAmbiguous.selector,
-                ambiguousChild,
-                STAGE_AUDIT,
-                uint64(block.timestamp)
-            )
-        );
-        _sendRelayed(machine, PLAN_ID, ambiguousChild, ambiguousHandoff);
-
-        bytes32 secondOrder = _birthSecondOrder(machine, keccak256("ambiguous-test/second"));
-        vm.prank(CREATOR);
-        _patchDirect(machine, PLAN_ID, secondOrder, _patch(1, E1(), PATCH_HASH));
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            secondOrder,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9112)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        , bytes32(0), emptyFilePatch());
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            secondOrder,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_REVIEW,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9113)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
-        , bytes32(0), emptyFilePatch());
-        vm.prank(CREATOR);
-        bytes32 cleanChild = machine.forkOrder(
-            PLAN_ID,
-            secondOrder,
-            bytes32(uint256(0xABA2)),
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            _twoFacts(
-                STAGE_AUDIT,
-                SIGNAL_STAGE_DONE,
-                bytes32(uint256(0x9112)),
-                STAGE_AUDIT,
-                SIGNAL_STAGE_REVIEW,
-                bytes32(uint256(0x9113))
-            ),
-            _forkChildAuthorizations()
-        );
-        (,,, bool secondAmbiguous) = machine.stageSignalState(PLAN_ID, cleanChild, STAGE_AUDIT);
-        require(!secondAmbiguous, "same-submitter same-second must not be ambiguous");
-        PreparedPatch memory cleanHandoff = _prepareRelayed(
-            machine,
-            PLAN_ID,
-            cleanChild,
-            _patchWithMode(1, E2(), PATCH_HASH, EXECUTOR_PATCH_MODE_HANDOFF, E1()),
-            SELECTOR_PRIVATE_KEY,
-            EXECUTOR1_PRIVATE_KEY
-        );
-        _sendRelayed(machine, PLAN_ID, cleanChild, cleanHandoff);
-        require(machine.activeStageExecutor(PLAN_ID, cleanChild, STAGE_AUDIT) == E2(), "clean handoff failed");
-
-        bytes32 thirdOrder = _birthSecondOrder(machine, keccak256("ambiguous-test/third"));
-        vm.prank(CREATOR);
-        _patchDirect(machine, PLAN_ID, thirdOrder, _patch(1, E1(), PATCH_HASH));
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            thirdOrder,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9114)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        , bytes32(0), emptyFilePatch());
-        vm.prank(E2());
-        machine.submitSignal(
-            PLAN_ID,
-            thirdOrder,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_REVIEW,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9115)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
-        , bytes32(0), emptyFilePatch());
-        (,,, bool thirdAmbiguous) = machine.stageSignalState(PLAN_ID, thirdOrder, STAGE_AUDIT);
-        require(thirdAmbiguous, "setup: expected ambiguity");
-        PreparedPatch memory patchedHandoff = _prepareRelayed(
-            machine,
-            PLAN_ID,
-            thirdOrder,
-            _patchWithMode(2, E3, PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, E1()),
-            SELECTOR_PRIVATE_KEY,
-            EXECUTOR1_PRIVATE_KEY
-        );
-        _sendRelayed(machine, PLAN_ID, thirdOrder, patchedHandoff);
-        require(machine.activeStageExecutor(PLAN_ID, thirdOrder, STAGE_AUDIT) == E3, "patch-authoritative handoff");
-    }
-
-    function testHandoffPreviousExecutorPrecedencePinnedToPatchExecutor() public {
-        UVPStateMachine machine = _patchMachineReady();
-
-        vm.prank(CREATOR);
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
-        vm.prank(E2());
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9121)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        , bytes32(0), emptyFilePatch());
-
-        PreparedPatch memory impostor = _prepareRelayed(
-            machine,
-            PLAN_ID,
-            ORDER_ID,
-            _patchWithMode(2, E3, PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, E2()),
-            SELECTOR_PRIVATE_KEY,
-            EXECUTOR2_PRIVATE_KEY
-        );
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStagePatchModule.StageExecutorPatchPreviousExecutorMismatch.selector,
-                ORDER_ID,
-                STAGE_AUDIT,
-                E1(),
-                E2()
-            )
-        );
-        _sendRelayed(machine, PLAN_ID, ORDER_ID, impostor);
-
-        PreparedPatch memory authoritative = _prepareRelayed(
-            machine,
-            PLAN_ID,
-            ORDER_ID,
-            _patchWithMode(2, E3, PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, E1()),
-            SELECTOR_PRIVATE_KEY,
-            EXECUTOR1_PRIVATE_KEY
-        );
-        _sendRelayed(machine, PLAN_ID, ORDER_ID, authoritative);
-        require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E3, "authoritative handoff failed");
-    }
-
-    function testAssignSignalHandoffLifecycleAndAssignBlockedAfterSignal() public {
-        UVPStateMachine machine = _patchMachineReady();
-
-        vm.prank(CREATOR);
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9116)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        , bytes32(0), emptyFilePatch());
-
-        vm.prank(CREATOR);
-        vm.expectRevert(
-            abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, ORDER_ID, STAGE_AUDIT)
-        );
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(2, E2(), PATCH_HASH_2));
-
-        PreparedPatch memory handoff = _prepareRelayed(
-            machine,
-            PLAN_ID,
-            ORDER_ID,
-            _patchWithMode(2, E2(), PATCH_HASH_2, EXECUTOR_PATCH_MODE_HANDOFF, E1()),
-            SELECTOR_PRIVATE_KEY,
-            EXECUTOR1_PRIVATE_KEY
-        );
-        _sendRelayed(machine, PLAN_ID, ORDER_ID, handoff);
-        require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E2(), "handoff not applied");
-
-        vm.prank(E2());
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_REVIEW,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9117)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
-        , bytes32(0), emptyFilePatch());
-        (uint256 finalCount,,,,) = _stageStateAbi(machine, ORDER_ID);
-        require(finalCount == 2, "stage count mismatch");
-    }
-
-    function testAssignBlockedByProofAttributedBusinessFact() public {
-        UVPStateMachine machine = _newMachine();
-        SignalCapability[] memory extra = new SignalCapability[](1);
-        extra[0] = SignalCapability({
-            stageId: STAGE_AUDIT, targetSourceId: SOURCE_BOOTSTRAP, signalId: SIGNAL_EXTRA, targetOrderRelation: 0
-        });
-        _registerPlanWithCandidates(
-            machine,
-            _patchHooks(),
-            _selectorBindings(),
-            _mergeCapabilities(_patchCapabilities(), extra),
-            PUBLISHER_PRIVATE_KEY,
-            _standardCandidates()
-        );
-        UVPStateMachine.SignalAuthorization[] memory auths =
-            _append(_overlayAuthorizations(), _stageAuthorization(SOURCE_BOOTSTRAP, SIGNAL_EXTRA, E1()));
-        _submitBirth(machine, CREATOR, auths);
-        _materializeAuditStage(machine, ORDER_ID);
-
-        vm.prank(E1());
-        vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.StageExecutorNotAssigned.selector, ORDER_ID, STAGE_AUDIT)
-        );
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_EXTRA,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9118)),
-            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_EXTRA)
-        , bytes32(0), emptyFilePatch());
-        (uint256 preCount,,,,) = _stageStateAbi(machine, ORDER_ID);
-        require(preCount == 0, "rejected pre-assign fact must leave no state");
-
-        vm.prank(CREATOR);
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
-        require(machine.activeStageExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT) == E1(), "assign must survive rejection");
-
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_EXTRA,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9118)),
-            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_EXTRA)
-        , bytes32(0), emptyFilePatch());
-        (uint256 count,,,,) = _stageStateAbi(machine, ORDER_ID);
-        require(count == 1, "attributed business fact not counted");
-
-        vm.prank(CREATOR);
-        vm.expectRevert(
-            abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, ORDER_ID, STAGE_AUDIT)
-        );
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(2, E1(), PATCH_HASH_2));
-    }
-
-
-    function testForkRejectsApprovalSignalAbsentOnParent() public {
-        UVPStateMachine machine = _forkMachineReady();
-        bytes32 parentOrderId = ORDER_ID;
-        bytes32 siblingOrder = _birthSecondOrderFork(machine);
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            siblingOrder,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0xF001)),
-            _noAttribution()
-        , bytes32(0), emptyFilePatch());
-
-        vm.prank(CREATOR);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStateMachine.ForkApprovalSignalUnknown.selector,
-                PLAN_ID,
-                parentOrderId,
-                SOURCE_BOOTSTRAP,
-                SIGNAL_STAGE_DONE
-            )
-        );
-        _fork(
-            machine,
-            parentOrderId,
-            bytes32(uint256(0xF300)),
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_DONE,
-            _singleFact(SOURCE_BOOTSTRAP, SIGNAL_STAGE_DONE, bytes32(uint256(0xF001)))
-        );
-    }
-
-    function testForkRejectsInitiatorWhoSubmittedDifferentSignal() public {
-        UVPStateMachine machine = _forkMachineReady();
-        bytes32 parentOrderId = ORDER_ID;
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            parentOrderId,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0xF001)),
-            _noAttribution()
-        , bytes32(0), emptyFilePatch());
-        vm.prank(E2());
-        machine.submitSignal(
-            PLAN_ID,
-            parentOrderId,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_REVIEW,
-            PAYLOAD_HASH,
-            bytes32(uint256(0xF002)),
-            _noAttribution()
-        , bytes32(0), emptyFilePatch());
-
-        vm.prank(E1());
-        vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.UnauthorizedOrderFork.selector, PLAN_ID, parentOrderId, E1())
-        );
-        _fork(
-            machine,
-            parentOrderId,
-            bytes32(uint256(0xF400)),
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_REVIEW,
-            _singleFact(SOURCE_BOOTSTRAP, SIGNAL_STAGE_REVIEW, bytes32(uint256(0xF002)))
-        );
-    }
-
-    function testForkRejectsBirthFactWithForgedIdempotencyKey() public {
-        UVPStateMachine machine = _forkMachineReady();
-        bytes32 parentOrderId = ORDER_ID;
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            parentOrderId,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0xF001)),
-            _noAttribution()
-        , bytes32(0), emptyFilePatch());
-        UVPStateMachine.ForkBirthFact[] memory facts = new UVPStateMachine.ForkBirthFact[](1);
+        UVPStateMachine.ForkBirthFact[] memory facts = new UVPStateMachine.ForkBirthFact[](2);
         facts[0] = UVPStateMachine.ForkBirthFact({
-            sourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_STAGE_DONE,
-            payloadHash: PAYLOAD_HASH,
-            idempotencyKey: bytes32(uint256(0xF00D))
+            sourceId: STAGE_AUDIT, signalId: SIGNAL_STAGE_DONE, payloadHash: PAYLOAD_HASH, idempotencyKey: IDEMPOTENCY_KEY
         });
-
-        vm.prank(CREATOR);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStateMachine.InvalidForkBirthFact.selector, parentOrderId, SOURCE_BOOTSTRAP, SIGNAL_STAGE_DONE
-            )
-        );
-        machine.forkOrder(
-            PLAN_ID,
-            parentOrderId,
-            bytes32(uint256(0xF500)),
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_DONE,
-            facts,
-            new UVPStateMachine.SignalAuthorization[](0)
-        );
-    }
-
-    function testForkRejectsBirthFactFromSiblingOrder() public {
-        UVPStateMachine machine = _forkMachineReady();
-        bytes32 parentOrderId = ORDER_ID;
-        bytes32 siblingOrder = _birthSecondOrderFork(machine);
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            siblingOrder,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0xF001)),
-            _noAttribution()
-        , bytes32(0), emptyFilePatch());
-        vm.prank(E2());
-        machine.submitSignal(
-            PLAN_ID,
-            parentOrderId,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_REVIEW,
-            PAYLOAD_HASH,
-            bytes32(uint256(0xF002)),
-            _noAttribution()
-        , bytes32(0), emptyFilePatch());
-
-        UVPStateMachine.ForkBirthFact[] memory facts = new UVPStateMachine.ForkBirthFact[](1);
-        facts[0] = UVPStateMachine.ForkBirthFact({
+        facts[1] = UVPStateMachine.ForkBirthFact({
             sourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_STAGE_DONE,
+            signalId: SIGNAL_INIT_CMP,
             payloadHash: PAYLOAD_HASH,
-            idempotencyKey: bytes32(uint256(0xF001))
+            idempotencyKey: IDEMPOTENCY_KEY
         });
-        vm.prank(CREATOR);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStateMachine.InvalidForkBirthFact.selector, parentOrderId, SOURCE_BOOTSTRAP, SIGNAL_STAGE_DONE
-            )
-        );
-        machine.forkOrder(
-            PLAN_ID,
-            parentOrderId,
-            bytes32(uint256(0xF600)),
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_REVIEW,
-            facts,
-            new UVPStateMachine.SignalAuthorization[](0)
-        );
-    }
-
-    function testForkIdempotentReplayAndDistinctPayloads() public {
-        UVPStateMachine machine = _forkMachineReady();
-        bytes32 parentOrderId = ORDER_ID;
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            parentOrderId,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0xF001)),
-            _noAttribution()
-        , bytes32(0), emptyFilePatch());
-
-        vm.prank(E1());
-        bytes32 first = _fork(
-            machine,
-            parentOrderId,
-            bytes32(uint256(0xF100)),
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_DONE,
-            _singleFact(SOURCE_BOOTSTRAP, SIGNAL_STAGE_DONE, bytes32(uint256(0xF001)))
-        );
-        vm.prank(E1());
-        vm.expectRevert(UVPStateMachine.OrderAlreadyRegistered.selector);
-        _fork(
-            machine,
-            parentOrderId,
-            bytes32(uint256(0xF100)),
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_DONE,
-            _singleFact(SOURCE_BOOTSTRAP, SIGNAL_STAGE_DONE, bytes32(uint256(0xF001)))
-        );
-        require(first == machine.forkOrderIdFor(PLAN_ID, parentOrderId, bytes32(uint256(0xF100))), "id derivation");
-
-        vm.prank(CREATOR);
-        bytes32 second = _fork(
-            machine,
-            parentOrderId,
-            bytes32(uint256(0xF200)),
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_DONE,
-            _singleFact(SOURCE_BOOTSTRAP, SIGNAL_STAGE_DONE, bytes32(uint256(0xF001)))
-        );
-        require(second != first, "distinct payloads must fork distinct orders");
-        require(machine.orderExists(PLAN_ID, second), "second fork missing");
-    }
-
-    function testForkChildLineageCreatorInheritanceAndRelayerAttribution() public {
-        UVPStateMachine machine = _forkMachineReady();
-        bytes32 parentOrderId = ORDER_ID;
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            parentOrderId,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0xF001)),
-            _noAttribution()
-        , bytes32(0), emptyFilePatch());
-
-        vm.recordLogs();
-        vm.prank(E1());
-        bytes32 child = _fork(
-            machine,
-            parentOrderId,
-            bytes32(uint256(0xF700)),
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_DONE,
-            _singleFact(SOURCE_BOOTSTRAP, SIGNAL_STAGE_DONE, bytes32(uint256(0xF001)))
-        );
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-
-        require(machine.orderParent(PLAN_ID, child) == parentOrderId, "fork lineage broken");
-        require(machine.orderCreator(PLAN_ID, child) == CREATOR, "fork creator must inherit parent creator");
-        require(machine.orderRelayer(PLAN_ID, child) == E1(), "initiator must be recorded as relayer");
-        require(child == machine.forkOrderIdFor(PLAN_ID, parentOrderId, bytes32(uint256(0xF700))), "id derivation");
-        require(
-            _countTopic(
-                    logs, keccak256("OrderForked(bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32[])")
-                ) == 1,
-            "OrderForked event count"
-        );
-    }
-
-    function testForkOfForkNestedLineage() public {
-        UVPStateMachine machine = _forkMachineReady();
-        bytes32 parent = ORDER_ID;
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            parent,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0xF001)),
-            _noAttribution()
-        , bytes32(0), emptyFilePatch());
-        vm.prank(E2());
-        machine.submitSignal(
-            PLAN_ID,
-            parent,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_REVIEW,
-            PAYLOAD_HASH,
-            bytes32(uint256(0xF002)),
-            _noAttribution()
-        , bytes32(0), emptyFilePatch());
-
-        vm.prank(E1());
-        bytes32 child1 = _fork(
-            machine,
-            parent,
-            bytes32(uint256(0xF800)),
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_DONE,
-            _twoFacts(
-                SOURCE_BOOTSTRAP,
-                SIGNAL_STAGE_DONE,
-                bytes32(uint256(0xF001)),
-                SOURCE_BOOTSTRAP,
-                SIGNAL_STAGE_REVIEW,
-                bytes32(uint256(0xF002))
-            )
-        );
-        require(machine.orderParent(PLAN_ID, child1) == parent, "child1 lineage");
-
-        (,,,, address reviewSubmitter) = machine.getSignal(PLAN_ID, child1, SOURCE_BOOTSTRAP, SIGNAL_STAGE_REVIEW);
-        require(reviewSubmitter == E2(), "fork fact submitter attribution broken");
-
-        vm.prank(STRANGER);
-        vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.UnauthorizedOrderFork.selector, PLAN_ID, child1, STRANGER)
-        );
-        _fork(
-            machine,
-            child1,
-            bytes32(uint256(0xF801)),
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_REVIEW,
-            _singleFact(SOURCE_BOOTSTRAP, SIGNAL_STAGE_REVIEW, bytes32(uint256(0xF002)))
-        );
-
-        vm.prank(E2());
-        bytes32 child2 = _fork(
-            machine,
-            child1,
-            bytes32(uint256(0xF900)),
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_REVIEW,
-            _singleFact(SOURCE_BOOTSTRAP, SIGNAL_STAGE_REVIEW, bytes32(uint256(0xF002)))
-        );
-        require(machine.orderParent(PLAN_ID, child2) == child1, "child2 lineage");
-        require(machine.orderCreator(PLAN_ID, child2) == CREATOR, "nested creator inheritance");
-
-        vm.prank(CREATOR);
-        bytes32 child3 = _fork(
-            machine,
-            child2,
-            bytes32(uint256(0xFA00)),
-            SOURCE_BOOTSTRAP,
-            SIGNAL_STAGE_REVIEW,
-            _singleFact(SOURCE_BOOTSTRAP, SIGNAL_STAGE_REVIEW, bytes32(uint256(0xF002)))
-        );
-        require(machine.orderParent(PLAN_ID, child3) == child2, "child3 lineage");
-        require(machine.hasSignal(PLAN_ID, child3, SOURCE_BOOTSTRAP, SIGNAL_STAGE_REVIEW), "nested replay missing");
-    }
-
-    function testPatchAndHandoffOnForkedOrderWithReplayedStageCounts() public {
-        UVPStateMachine machine = _stageFactForkMachineReady();
-        bytes32 parent = ORDER_ID;
-
         vm.prank(CREATOR);
         bytes32 child = machine.forkOrder(
-            PLAN_ID,
-            parent,
-            bytes32(uint256(0xFB00)),
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            _singleFact(STAGE_AUDIT, SIGNAL_STAGE_DONE, bytes32(uint256(0xF001))),
-            _forkChildAuthorizations()
+            planId, orderId, bytes32(uint256(0xF100)), STAGE_AUDIT, SIGNAL_STAGE_DONE, facts
         );
+        (uint256 childCount, address childLast,,) = machine.stageSignalState(planId, child, STAGE_AUDIT);
+        require(childCount == 1 && childLast == _cand1(), "replayed stage count wrong");
 
-        (uint256 stageCount, address childLast,, bool childAmbiguous) =
-            machine.stageSignalState(PLAN_ID, child, STAGE_AUDIT);
-        require(stageCount == 1, "replayed stage fact not counted on child");
-        require(childLast == E1(), "replayed submitter attribution");
-        require(!childAmbiguous, "unexpected ambiguity");
-
-        vm.prank(CREATOR);
-        vm.expectRevert(abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, child, STAGE_AUDIT));
-        _patchDirect(machine, PLAN_ID, child, _patch(1, E2(), PATCH_HASH));
-
-        PreparedPatch memory handoff = _prepareRelayed(
-            machine,
-            PLAN_ID,
+        _expectPatchRevertOn(
             child,
-            _patchWithMode(1, E2(), PATCH_HASH, EXECUTOR_PATCH_MODE_HANDOFF, E1()),
-            SELECTOR_PRIVATE_KEY,
-            EXECUTOR1_PRIVATE_KEY
+            abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, child, STAGE_AUDIT),
+            _patch(STAGE_AUDIT, SUPPLIER_CAND2, bytes32(0), 1),
+            _bindingProof(STAGE_AUDIT),
+            _candidateProof(SUPPLIER_CAND2)
         );
-        _sendRelayed(machine, PLAN_ID, child, handoff);
-        require(machine.activeStageExecutor(PLAN_ID, child, STAGE_AUDIT) == E2(), "fork child handoff failed");
-
-        vm.prank(E1());
-        vm.expectRevert(
+        _expectPatchRevertOn(
+            child,
             abi.encodeWithSelector(
-                UVPStateMachine.UnauthorizedSignalSubmitter.selector, child, STAGE_AUDIT, SIGNAL_STAGE_REVIEW, E1()
-            )
+                UVPStagePatchModule.StageExecutorPatchPreviousSupplierMismatch.selector,
+                child,
+                STAGE_AUDIT,
+                SUPPLIER_DEFAULT,
+                SUPPLIER_CAND1
+            ),
+            _patch(STAGE_AUDIT, SUPPLIER_CAND2, SUPPLIER_CAND1, 2),
+            _bindingProof(STAGE_AUDIT),
+            _candidateProof(SUPPLIER_CAND2)
         );
+
+        PreparedPatch memory handoff =
+            _prepareFor(child, _patch(STAGE_AUDIT, SUPPLIER_CAND2, SUPPLIER_DEFAULT, 2));
+        handoff.previousExecutorSignature =
+            _signatureOver(DEFAULT_PRIVATE_KEY, _digestFor(child, handoff.patch, handoff.selector, handoff.deadline));
+        _sendRelayedFor(child, handoff);
+        (bytes32 supplierId,,) = machine.activeStageExecutorPatch(planId, child, STAGE_AUDIT);
+        require(supplierId == SUPPLIER_CAND2, "fork child handoff failed");
+
+        UVPStateMachine.FactAttribution memory reviewAttribution =
+            _attribution(STAGE_AUDIT, STAGE_AUDIT, SIGNAL_STAGE_REVIEW);
+        FilePatch memory noFilePatch = emptyFilePatch();
+        vm.prank(_cand2());
         machine.submitSignal(
-            PLAN_ID,
+            planId,
             child,
             STAGE_AUDIT,
             SIGNAL_STAGE_REVIEW,
-            PAYLOAD_HASH,
-            bytes32(uint256(0xFC00)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_REVIEW)
-        , bytes32(0), emptyFilePatch());
+            PAYLOAD_HASH_2,
+            IDEMPOTENCY_KEY_2,
+            reviewAttribution,
+            bytes32(0),
+            noFilePatch
+        );
     }
 
-    function _birthOrder(UVPStateMachine machine, address creator, bytes32 payloadHash)
-        private
-        returns (bytes32 orderId)
-    {
-        orderId = bytes32(
-            uint256(keccak256(abi.encode(PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, payloadHash)))
-                & ~uint256(1 << 255)
+    function _deployStack() private {
+        machine = new UVPStateMachine();
+        suppliers = new UVPSupplierRegistry();
+        metadata = new UVPPlanMetadataModule(address(machine));
+        stagePatch = new UVPStagePatchModule(address(machine));
+        UVPDerivedSignalModule derivedSignal = new UVPDerivedSignalModule(address(machine));
+        UVPDockRegistry dockRegistry = new UVPDockRegistry(address(machine));
+        UVPOrderLinkModule orderLink = new UVPOrderLinkModule(address(machine));
+        files = new UVPFileResourceModule(address(machine));
+        machine.setStagePatchModule(address(stagePatch));
+        machine.setDerivedSignalModule(address(derivedSignal));
+        machine.setDockRegistry(address(dockRegistry));
+        machine.setPlanMetadataModule(address(metadata));
+        machine.setOrderLinkModule(address(orderLink));
+        machine.setLens(address(new UVPStateMachineLens(address(machine))));
+        machine.setFileResourceModule(address(files));
+        machine.setSupplierRegistry(address(suppliers));
+        machine.freezeModules();
+
+        suppliers.registerSupplier(SUPPLIER_SELECTOR, _selector());
+        suppliers.registerSupplier(SUPPLIER_DEFAULT, _default());
+        suppliers.registerSupplier(SUPPLIER_FIXED, _fixed());
+        suppliers.registerSupplier(SUPPLIER_CAND1, _cand1());
+        suppliers.registerSupplier(SUPPLIER_CAND2, _cand2());
+        suppliers.registerSupplier(SUPPLIER_CAND3, _cand3());
+        suppliers.registerSupplier(SUPPLIER_DYN, _dyn());
+    }
+
+    function _commitAndBirth() private {
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](4);
+        hooks[0] = _hook(
+            HOOK_BIRTH, STAGE_INIT, HOOK_NAME_BIRTH, FLAG_ORDER_TRIGGER_MINT | FLAG_EMIT_READY, SIGNAL_ORDER_START
         );
-        UVPStateMachine.SignalAuthorization[] memory authorizations = _minimalAuthorizations();
-        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = UVPStateMachine.TriggerOrderFromOutsideRequest({
-            planId: PLAN_ID,
-            creator: creator,
-            triggerHookId: HOOK_ORDER_START,
-            triggerStageId: STAGE_INIT,
-            sourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_ORDER_START,
-            payloadHash: payloadHash,
-            idempotencyKey: IDEMPOTENCY_KEY,
-            submitter: _selector(),
+        hooks[1] = _hook(HOOK_AUDIT, STAGE_AUDIT, HOOK_NAME_AUDIT, FLAG_EMIT_READY, SIGNAL_INIT_CMP);
+        hooks[2] = _hook(HOOK_FIXED, STAGE_FIXED, HOOK_NAME_FIXED, FLAG_EMIT_READY, SIGNAL_FIXED_READY);
+        hooks[3] = _hook(
+            HOOK_DYN, STAGE_DYN, HOOK_NAME_DYN, FLAG_EMIT_READY | FLAG_DYNAMIC_EXECUTOR, SIGNAL_DYN_READY
+        );
+
+        capabilityLeaves = new bytes32[](9);
+        capabilityLeaves[0] = metadata.selectorBindingLeaf(STAGE_INIT, STAGE_AUDIT);
+        capabilityLeaves[1] = metadata.selectorBindingLeaf(STAGE_INIT, STAGE_DYN);
+        capabilityLeaves[2] = metadata.signalCapabilityLeaf(STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, 0);
+        capabilityLeaves[3] = metadata.signalCapabilityLeaf(STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, 0);
+        capabilityLeaves[4] = metadata.signalCapabilityLeaf(STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_FIXED_READY, 0);
+        capabilityLeaves[5] = metadata.signalCapabilityLeaf(STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_DYN_READY, 0);
+        capabilityLeaves[6] = metadata.signalCapabilityLeaf(STAGE_AUDIT, STAGE_AUDIT, SIGNAL_STAGE_DONE, 0);
+        capabilityLeaves[7] = metadata.signalCapabilityLeaf(STAGE_AUDIT, STAGE_AUDIT, SIGNAL_STAGE_REVIEW, 0);
+        capabilityLeaves[8] = metadata.signalCapabilityLeaf(STAGE_DYN, SOURCE_DYN, SIGNAL_DYN, 0);
+
+        UVPStateMachine.ExecutorBinding[] memory bindings = new UVPStateMachine.ExecutorBinding[](6);
+        bindings[0] = UVPStateMachine.ExecutorBinding({stageId: STAGE_INIT, supplierId: SUPPLIER_SELECTOR, kind: 0});
+        bindings[1] = UVPStateMachine.ExecutorBinding({stageId: STAGE_AUDIT, supplierId: SUPPLIER_DEFAULT, kind: 0});
+        bindings[2] = UVPStateMachine.ExecutorBinding({stageId: STAGE_FIXED, supplierId: SUPPLIER_FIXED, kind: 0});
+        bindings[3] = UVPStateMachine.ExecutorBinding({stageId: STAGE_AUDIT, supplierId: SUPPLIER_CAND1, kind: 1});
+        bindings[4] = UVPStateMachine.ExecutorBinding({stageId: STAGE_AUDIT, supplierId: SUPPLIER_CAND2, kind: 1});
+        bindings[5] = UVPStateMachine.ExecutorBinding({stageId: STAGE_AUDIT, supplierId: SUPPLIER_CAND3, kind: 1});
+        bindingLeaves = new bytes32[](bindings.length);
+        for (uint256 i = 0; i < bindings.length; i++) {
+            bindingLeaves[i] = keccak256(
+                abi.encodePacked(
+                    _EXECUTOR_BINDING_LEAF_DOMAIN, bindings[i].stageId, bindings[i].supplierId, bindings[i].kind
+                )
+            );
+        }
+
+        UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
+            publisher: vm.addr(PUBLISHER_PRIVATE_KEY),
+            hooksHash: keccak256(abi.encode(hooks)),
+            capabilitiesRoot: MerkleCommitment.root(capabilityLeaves),
+            executorBindingsRoot: MerkleCommitment.root(bindingLeaves),
+            birthAuthorizer: _selector(),
             deadline: block.timestamp + 1 hours
         });
+        planId = machine.commitPlan(commit, hooks, bindings, _sign(PUBLISHER_PRIVATE_KEY, _planCommitDigest(commit)));
+        machine.finalizePlan(planId);
+
+        orderId = machine.triggerOrderIdFor(planId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, PAYLOAD_HASH);
+        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger =
+            UVPStateMachine.TriggerOrderFromOutsideRequest({
+                planId: planId,
+                creator: CREATOR,
+                triggerHookId: HOOK_BIRTH,
+                triggerStageId: STAGE_INIT,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_ORDER_START,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                submitter: _selector(),
+                deadline: block.timestamp + 1 hours
+            });
         machine.triggerOrderFromOutsideFor(
             trigger,
-            authorizations,
-            _triggerSignature(machine, trigger, authorizations),
-            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START)
+            _sign(SELECTOR_PRIVATE_KEY, _triggerDigest(trigger)),
+            _attribution(STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START)
+        );
+
+        _submit(SOURCE_BOOTSTRAP, STAGE_INIT, SIGNAL_INIT_CMP, _selector());
+        _submit(SOURCE_BOOTSTRAP, STAGE_INIT, SIGNAL_FIXED_READY, _selector());
+        _submit(SOURCE_BOOTSTRAP, STAGE_INIT, SIGNAL_DYN_READY, _selector());
+        _requireHookReady(HOOK_AUDIT);
+        _requireHookReady(HOOK_FIXED);
+        _requireHookReady(HOOK_DYN);
+    }
+
+    function _requireHookReady(bytes32 hookId) private view {
+        (UVPStateMachine.HookStatus status,, bool readyEmitted) = machine.getHookStatus(planId, orderId, hookId);
+        require(status == UVPStateMachine.HookStatus.Ready && readyEmitted, "hook not ready");
+    }
+
+    function _patch(bytes32 targetStageId, bytes32 supplierId, bytes32 previousSupplierId, uint256 patchNonce)
+        private
+        pure
+        returns (UVPStagePatchModule.StageExecutorPatch memory)
+    {
+        return UVPStagePatchModule.StageExecutorPatch({
+            selectorStageId: STAGE_INIT,
+            targetStageId: targetStageId,
+            supplierId: supplierId,
+            previousSupplierId: previousSupplierId,
+            patchNonce: patchNonce
+        });
+    }
+
+    function _applyDirect(
+        UVPStagePatchModule.StageExecutorPatch memory patch,
+        IUVPStateMachineCore.SelectorBindingProof memory bindingProof,
+        bytes32[] memory candidateProof
+    ) private {
+        vm.prank(_selector());
+        stagePatch.applyStageExecutorPatch(planId, orderId, patch, bindingProof, candidateProof);
+    }
+
+    function _expectPatchRevert(
+        bytes memory revertData,
+        UVPStagePatchModule.StageExecutorPatch memory patch,
+        IUVPStateMachineCore.SelectorBindingProof memory bindingProof,
+        bytes32[] memory candidateProof
+    ) private {
+        _expectPatchRevertOn(orderId, revertData, patch, bindingProof, candidateProof);
+    }
+
+    function _expectPatchRevertOn(
+        bytes32 targetOrderId,
+        bytes memory revertData,
+        UVPStagePatchModule.StageExecutorPatch memory patch,
+        IUVPStateMachineCore.SelectorBindingProof memory bindingProof,
+        bytes32[] memory candidateProof
+    ) private {
+        vm.prank(_selector());
+        vm.expectRevert(revertData);
+        stagePatch.applyStageExecutorPatch(planId, targetOrderId, patch, bindingProof, candidateProof);
+    }
+
+    function _prepare(UVPStagePatchModule.StageExecutorPatch memory patch)
+        private
+        returns (PreparedPatch memory prepared)
+    {
+        prepared = _prepareFor(orderId, patch);
+    }
+
+    function _prepareFor(bytes32 targetOrderId, UVPStagePatchModule.StageExecutorPatch memory patch)
+        private
+        returns (PreparedPatch memory prepared)
+    {
+        prepared.patch = patch;
+        prepared.selector = _selector();
+        prepared.deadline = block.timestamp + 1 hours;
+        prepared.bindingProof = _bindingProof(patch.targetStageId);
+        prepared.candidateProof = _candidateProof(patch.supplierId);
+        prepared.selectorSignature =
+            _signatureOver(SELECTOR_PRIVATE_KEY, _digestFor(targetOrderId, patch, _selector(), prepared.deadline));
+    }
+
+    function _prepareWithSelector(
+        UVPStagePatchModule.StageExecutorPatch memory patch,
+        address selector,
+        uint256 selectorPrivateKey
+    ) private returns (PreparedPatch memory prepared) {
+        prepared = _prepare(patch);
+        prepared.selector = selector;
+        prepared.selectorSignature = _signatureOver(selectorPrivateKey, _digestFor(orderId, patch, selector, prepared.deadline));
+    }
+
+    function _digestFor(
+        bytes32 targetOrderId,
+        UVPStagePatchModule.StageExecutorPatch memory patch,
+        address selector,
+        uint256 deadline
+    ) private view returns (bytes32) {
+        return stagePatch.stageExecutorPatchDigest(planId, targetOrderId, patch, selector, deadline);
+    }
+
+    function _sendRelayed(PreparedPatch memory prepared) private {
+        _sendRelayedFor(orderId, prepared);
+    }
+
+    function _sendRelayedFor(bytes32 targetOrderId, PreparedPatch memory prepared) private {
+        stagePatch.applyStageExecutorPatchFor(
+            planId,
+            targetOrderId,
+            prepared.patch,
+            prepared.selector,
+            prepared.deadline,
+            prepared.selectorSignature,
+            prepared.previousExecutorSignature,
+            prepared.bindingProof,
+            prepared.candidateProof
         );
     }
 
-    function _minimalAuthorizations()
+    function _submit(bytes32 sourceId, bytes32 factStageId, bytes32 signalId, address submitter) private {
+        UVPStateMachine.FactAttribution memory attribution = _attribution(factStageId, sourceId, signalId);
+        FilePatch memory noFilePatch = emptyFilePatch();
+        vm.prank(submitter);
+        machine.submitSignal(
+            planId, orderId, sourceId, signalId, PAYLOAD_HASH, IDEMPOTENCY_KEY, attribution, bytes32(0), noFilePatch
+        );
+    }
+
+    function _submitExpectRevert(
+        bytes memory revertData,
+        bytes32 sourceId,
+        bytes32 factStageId,
+        bytes32 signalId,
+        address submitter
+    ) private {
+        UVPStateMachine.FactAttribution memory attribution = _attribution(factStageId, sourceId, signalId);
+        FilePatch memory noFilePatch = emptyFilePatch();
+        vm.expectRevert(revertData);
+        vm.prank(submitter);
+        machine.submitSignal(
+            planId, orderId, sourceId, signalId, PAYLOAD_HASH, IDEMPOTENCY_KEY, attribution, bytes32(0), noFilePatch
+        );
+    }
+
+    function _attribution(bytes32 stageId, bytes32 sourceId, bytes32 signalId)
         private
         view
-        returns (UVPStateMachine.SignalAuthorization[] memory authorizations)
+        returns (UVPStateMachine.FactAttribution memory)
     {
-        authorizations = new UVPStateMachine.SignalAuthorization[](1);
-        authorizations[0] = _stageAuthorization(SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, _selector());
+        bytes32 leaf = metadata.signalCapabilityLeaf(stageId, sourceId, signalId, 0);
+        return UVPStateMachine.FactAttribution({
+            sourceId: sourceId,
+            signalId: signalId,
+            stageId: stageId,
+            capabilityProof: _proofFrom(capabilityLeaves, leaf)
+        });
     }
 
-    function E1() private view returns (address) {
-        return vm.addr(EXECUTOR1_PRIVATE_KEY);
+    function _bindingProof(bytes32 targetStageId)
+        private
+        view
+        returns (IUVPStateMachineCore.SelectorBindingProof memory)
+    {
+        bytes32 leaf = metadata.selectorBindingLeaf(STAGE_INIT, targetStageId);
+        return IUVPStateMachineCore.SelectorBindingProof({
+            selectorStageId: STAGE_INIT,
+            proof: _proofFrom(capabilityLeaves, leaf)
+        });
     }
 
-    function E2() private view returns (address) {
-        return vm.addr(EXECUTOR2_PRIVATE_KEY);
+    function _candidateProof(bytes32 supplierId) private view returns (bytes32[] memory) {
+        bytes32 leaf = keccak256(
+            abi.encodePacked(_EXECUTOR_BINDING_LEAF_DOMAIN, STAGE_AUDIT, supplierId, uint8(1))
+        );
+        for (uint256 i = 0; i < bindingLeaves.length; i++) {
+            if (bindingLeaves[i] == leaf) {
+                return _proofFrom(bindingLeaves, leaf);
+            }
+        }
+        return new bytes32[](0);
+    }
+
+    function _proofFrom(bytes32[] memory rawLeaves, bytes32 leaf) private pure returns (bytes32[] memory) {
+        bytes32[] memory sorted = _sortedUnique(rawLeaves);
+        return _merkleProofFor(sorted, leaf);
+    }
+
+    function _planCommitDigest(UVPStateMachine.PlanCommit memory commit) private view returns (bytes32) {
+        return keccak256(
+            abi.encodePacked(
+                "\x19\x01",
+                machine.DOMAIN_SEPARATOR(),
+                keccak256(
+                    abi.encode(
+                        PLAN_COMMIT_TYPEHASH,
+                        commit.publisher,
+                        commit.hooksHash,
+                        commit.capabilitiesRoot,
+                        commit.executorBindingsRoot,
+                        commit.birthAuthorizer,
+                        commit.deadline
+                    )
+                )
+            )
+        );
+    }
+
+    function _triggerDigest(UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger)
+        private
+        view
+        returns (bytes32)
+    {
+        return keccak256(
+            abi.encodePacked(
+                "\x19\x01",
+                machine.DOMAIN_SEPARATOR(),
+                keccak256(
+                    abi.encode(
+                        TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH,
+                        trigger.planId,
+                        trigger.creator,
+                        trigger.triggerHookId,
+                        trigger.triggerStageId,
+                        trigger.sourceId,
+                        trigger.signalId,
+                        trigger.payloadHash,
+                        trigger.idempotencyKey,
+                        trigger.submitter,
+                        trigger.deadline
+                    )
+                )
+            )
+        );
+    }
+
+    function _signatureOver(uint256 privateKey, bytes32 digest) private returns (bytes memory) {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
+        UVPSignatures.Signature memory signature = UVPSignatures.Signature({v: v, r: r, s: s});
+        return abi.encodePacked(signature.r, signature.s, signature.v);
+    }
+
+    function _sign(uint256 privateKey, bytes32 digest) private returns (bytes memory) {
+        return _signatureOver(privateKey, digest);
     }
 
     function _selector() private view returns (address) {
         return vm.addr(SELECTOR_PRIVATE_KEY);
     }
 
-    function _stagePatch(UVPStateMachine machine) private view returns (UVPStagePatchModule) {
-        return _stagePatchModules[address(machine)];
+    function _default() private view returns (address) {
+        return vm.addr(DEFAULT_PRIVATE_KEY);
     }
 
-    function _newMachine() private returns (UVPStateMachine machine) {
-        machine = new UVPStateMachine();
-        UVPStagePatchModule stagePatch = new UVPStagePatchModule(address(machine));
-        UVPDerivedSignalModule derivedSignal = new UVPDerivedSignalModule(address(machine));
-        UVPPlanMetadataModule planMetadata = new UVPPlanMetadataModule(address(machine));
-        UVPDockRegistry dockRegistry = new UVPDockRegistry(address(machine));
-        UVPOrderLinkModule orderLink = new UVPOrderLinkModule(address(machine));
-        _stagePatchModules[address(machine)] = stagePatch;
-        machine.setStagePatchModule(address(stagePatch));
-        machine.setDerivedSignalModule(address(derivedSignal));
-        machine.setDockRegistry(address(dockRegistry));
-        machine.setPlanMetadataModule(address(planMetadata));
-        machine.setOrderLinkModule(address(orderLink));
-        machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
-        machine.setLens(address(new UVPStateMachineLens(address(machine))));
-        machine.freezeModules();
+    function _fixed() private view returns (address) {
+        return vm.addr(FIXED_PRIVATE_KEY);
     }
 
-    function _patchHooks() private pure returns (UVPStateMachine.CompactHook[] memory hooks) {
-        hooks = new UVPStateMachine.CompactHook[](3);
-        hooks[0] = _signalHook(HOOK_ORDER_START, STAGE_INIT, HOOK_NAME_ORDER_START, true, SIGNAL_ORDER_START);
-        hooks[1] = _emitReadyHook(HOOK_AUDIT, STAGE_AUDIT, HOOK_NAME_INIT_DONE, SIGNAL_INIT_CMP);
-        hooks[2] = _emitReadyHook(bytes32(uint256(0x6002)), STAGE_AUDIT, bytes32(uint256(0x7006)), SIGNAL_AUDIT_PASS);
+    function _cand1() private view returns (address) {
+        return vm.addr(CAND1_PRIVATE_KEY);
     }
 
-    function _selectorBindings() private pure returns (StageSelectorBinding[] memory bindings) {
-        bindings = new StageSelectorBinding[](1);
-        bindings[0] = StageSelectorBinding({selectorStageId: STAGE_INIT, targetStageId: STAGE_AUDIT});
+    function _cand2() private view returns (address) {
+        return vm.addr(CAND2_PRIVATE_KEY);
     }
 
-    function _patchCapabilities() private pure returns (SignalCapability[] memory capabilities) {
-        capabilities = new SignalCapability[](4);
-        capabilities[0] = SignalCapability({
-            stageId: STAGE_AUDIT, targetSourceId: STAGE_AUDIT, signalId: SIGNAL_STAGE_DONE, targetOrderRelation: 0
-        });
-        capabilities[1] = SignalCapability({
-            stageId: STAGE_AUDIT, targetSourceId: STAGE_AUDIT, signalId: SIGNAL_STAGE_REVIEW, targetOrderRelation: 0
-        });
-        capabilities[2] = SignalCapability({
-            stageId: STAGE_INIT, targetSourceId: SOURCE_BOOTSTRAP, signalId: SIGNAL_ORDER_START, targetOrderRelation: 0
-        });
-        capabilities[3] = SignalCapability({
-            stageId: STAGE_INIT, targetSourceId: SOURCE_BOOTSTRAP, signalId: SIGNAL_INIT_CMP, targetOrderRelation: 0
-        });
+    function _cand3() private view returns (address) {
+        return vm.addr(CAND3_PRIVATE_KEY);
     }
 
-    function _standardCandidates() private view returns (UVPStateMachine.ExecutorCandidate[] memory candidates) {
-        candidates = new UVPStateMachine.ExecutorCandidate[](5);
-        candidates[0] = UVPStateMachine.ExecutorCandidate({stageId: STAGE_AUDIT, executor: E1()});
-        candidates[1] = UVPStateMachine.ExecutorCandidate({stageId: STAGE_AUDIT, executor: E2()});
-        candidates[2] = UVPStateMachine.ExecutorCandidate({stageId: STAGE_AUDIT, executor: E3});
-        candidates[3] = UVPStateMachine.ExecutorCandidate({stageId: STAGE_INIT, executor: E1()});
-        candidates[4] = UVPStateMachine.ExecutorCandidate({stageId: STAGE_INIT, executor: E2()});
+    function _dyn() private view returns (address) {
+        return vm.addr(DYN_PRIVATE_KEY);
     }
 
-    function _patchMachineReady() private returns (UVPStateMachine machine) {
-        machine = _newMachine();
-        _registerPlanWithCandidates(
-            machine,
-            _patchHooks(),
-            _selectorBindings(),
-            _patchCapabilities(),
-            PUBLISHER_PRIVATE_KEY,
-            _standardCandidates()
-        );
-        _submitBirth(machine, CREATOR, _overlayAuthorizations());
-        _materializeAuditStage(machine, ORDER_ID);
+    function _cand1Static() private pure returns (address) {
+        return address(uint160(uint256(keccak256(abi.encodePacked(uint256(CAND1_PRIVATE_KEY))))));
     }
 
-    function _registerPlanWithCandidates(
-        UVPStateMachine machine,
-        UVPStateMachine.CompactHook[] memory hooks,
-        StageSelectorBinding[] memory selectorBindings,
-        SignalCapability[] memory signalCapabilities,
-        uint256 publisherPrivateKey,
-        UVPStateMachine.ExecutorCandidate[] memory executorCandidates
-    ) private returns (bytes32 planId) {
-        address publisher = vm.addr(publisherPrivateKey);
-        bytes32[] memory leaves = _capabilityLeaves(selectorBindings, signalCapabilities);
-        bytes32[] memory candidateLeaves = _executorCandidateLeaves(executorCandidates);
-        UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
-            publisher: publisher,
-            hooksHash: keccak256(abi.encode(hooks)),
-            capabilitiesRoot: MerkleCommitment.root(leaves),
-            executorCandidatesRoot: MerkleCommitment.root(candidateLeaves),
-            birthAuthorizer: vm.addr(SELECTOR_PRIVATE_KEY),
-            deadline: block.timestamp + 1 hours
-        });
-        bytes32 structHash = keccak256(
-            abi.encode(
-                PLAN_COMMIT_TYPEHASH,
-                commit.publisher,
-                commit.hooksHash,
-                commit.capabilitiesRoot,
-                commit.executorCandidatesRoot,
-                commit.birthAuthorizer,
-                commit.deadline
-            )
-        );
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _domainSeparator(machine), structHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(publisherPrivateKey, digest);
-        planId = machine.commitPlan(commit, hooks, executorCandidates, _packedSignature(v, r, s));
-        machine.finalizePlan(planId);
-        PLAN_ID = planId;
-        CapabilityTables storage tables = _capabilityTables[address(machine)][planId];
-        tables.bindings = selectorBindings;
-        tables.capabilities = signalCapabilities;
-        tables.sortedLeaves = _sortedUnique(leaves);
-        tables.candidateLeaves = _sortedUnique(candidateLeaves);
+    function _cand2Static() private pure returns (address) {
+        return address(uint160(uint256(keccak256(abi.encodePacked(uint256(CAND2_PRIVATE_KEY))))));
     }
 
-    function _submitBirth(UVPStateMachine machine, address, UVPStateMachine.SignalAuthorization[] memory authorizations)
+    function _defaultStatic() private pure returns (address) {
+        return address(uint160(uint256(keccak256(abi.encodePacked(uint256(DEFAULT_PRIVATE_KEY))))));
+    }
+
+    function _dynStatic() private pure returns (address) {
+        return address(uint160(uint256(keccak256(abi.encodePacked(uint256(DYN_PRIVATE_KEY))))));
+    }
+
+    function _hook(bytes32 hookId, bytes32 stageId, bytes32 hookName, uint8 flags, bytes32 signalId)
         private
+        pure
+        returns (UVPStateMachine.CompactHook memory)
     {
-        ORDER_ID = bytes32(
-            uint256(keccak256(abi.encode(PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, PAYLOAD_HASH)))
-                & ~uint256(1 << 255)
-        );
-        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = UVPStateMachine.TriggerOrderFromOutsideRequest({
-            planId: PLAN_ID,
-            creator: CREATOR,
-            triggerHookId: HOOK_ORDER_START,
-            triggerStageId: STAGE_INIT,
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](1);
+        instructions[0] = UVPStateMachine.Instruction({
+            op: uint8(UVPStateMachine.InstructionOp.Signal),
             sourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_ORDER_START,
-            payloadHash: PAYLOAD_HASH,
-            idempotencyKey: IDEMPOTENCY_KEY,
-            submitter: _selector(),
-            deadline: block.timestamp + 1 hours
-        });
-        bytes memory signature = _triggerSignature(machine, trigger, authorizations);
-        machine.triggerOrderFromOutsideFor(
-            trigger, authorizations, signature, _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START)
-        );
-    }
-
-    function _birthSecondOrder(UVPStateMachine machine, bytes32 salt) private returns (bytes32 orderId) {
-        bytes32 payload = keccak256(abi.encode("executor-change-blackbox/second-order", salt));
-        orderId = bytes32(
-            uint256(keccak256(abi.encode(PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, payload))) & ~uint256(1 << 255)
-        );
-        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = UVPStateMachine.TriggerOrderFromOutsideRequest({
-            planId: PLAN_ID,
-            creator: CREATOR,
-            triggerHookId: HOOK_ORDER_START,
-            triggerStageId: STAGE_INIT,
-            sourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_ORDER_START,
-            payloadHash: payload,
-            idempotencyKey: IDEMPOTENCY_KEY,
-            submitter: _selector(),
-            deadline: block.timestamp + 1 hours
-        });
-        bytes memory signature = _triggerSignature(machine, trigger, _overlayAuthorizations());
-        machine.triggerOrderFromOutsideFor(
-            trigger,
-            _overlayAuthorizations(),
-            signature,
-            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START)
-        );
-        _materializeAuditStage(machine, orderId);
-    }
-
-    function _birthSecondOrderFork(UVPStateMachine machine) private returns (bytes32 orderId) {
-        bytes32 payload = keccak256("executor-change-blackbox/fork-sibling");
-        orderId = bytes32(
-            uint256(keccak256(abi.encode(PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, payload))) & ~uint256(1 << 255)
-        );
-        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = UVPStateMachine.TriggerOrderFromOutsideRequest({
-            planId: PLAN_ID,
-            creator: CREATOR,
-            triggerHookId: HOOK_ORDER_START,
-            triggerStageId: STAGE_INIT,
-            sourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_ORDER_START,
-            payloadHash: payload,
-            idempotencyKey: IDEMPOTENCY_KEY,
-            submitter: _selector(),
-            deadline: block.timestamp + 1 hours
-        });
-        bytes memory signature = _triggerSignature(machine, trigger, _forkAuthorizations());
-        machine.triggerOrderFromOutsideFor(trigger, _forkAuthorizations(), signature, _noAttribution());
-    }
-
-    function _triggerSignature(
-        UVPStateMachine machine,
-        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger,
-        UVPStateMachine.SignalAuthorization[] memory authorizations
-    ) private returns (bytes memory) {
-        bytes32 authorizationsHash = _signalAuthorizationsHash(authorizations);
-        bytes memory encoded = new bytes(0x180);
-        _writeWord(encoded, 0x00, TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH);
-        _writeWord(encoded, 0x20, trigger.planId);
-        _writeAddress(encoded, 0x40, trigger.creator);
-        _writeWord(encoded, 0x60, trigger.triggerHookId);
-        _writeWord(encoded, 0x80, trigger.triggerStageId);
-        _writeWord(encoded, 0xa0, trigger.sourceId);
-        _writeWord(encoded, 0xc0, trigger.signalId);
-        _writeWord(encoded, 0xe0, trigger.payloadHash);
-        _writeWord(encoded, 0x100, trigger.idempotencyKey);
-        _writeWord(encoded, 0x120, authorizationsHash);
-        _writeAddress(encoded, 0x140, trigger.submitter);
-        _writeWord(encoded, 0x160, bytes32(trigger.deadline));
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _domainSeparator(machine), keccak256(encoded)));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(SELECTOR_PRIVATE_KEY, digest);
-        return _packedSignature(v, r, s);
-    }
-
-    function _materializeAuditStage(UVPStateMachine machine, bytes32 orderId) private {
-        vm.prank(_selector());
-        machine.submitSignal(
-            PLAN_ID,
-            orderId,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_INIT_CMP,
-            PAYLOAD_HASH,
-            bytes32(uint256(0x9201)),
-            _factAttribution(machine, PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP)
-        , bytes32(0), emptyFilePatch());
-    }
-
-    function _patch(uint256 nonce, address executor, bytes32 patchHash)
-        private
-        pure
-        returns (UVPStagePatchModule.StageExecutorPatch memory)
-    {
-        return _patchToStage(nonce, STAGE_AUDIT, executor, patchHash);
-    }
-
-    function _patchToStage(uint256 nonce, bytes32 targetStageId, address executor, bytes32 patchHash)
-        private
-        pure
-        returns (UVPStagePatchModule.StageExecutorPatch memory)
-    {
-        return _patchWithMode(nonce, targetStageId, executor, patchHash, EXECUTOR_PATCH_MODE_ASSIGN, address(0));
-    }
-
-    function _patchWithMode(uint256 nonce, address executor, bytes32 patchHash, bytes32 mode, address previousExecutor)
-        private
-        pure
-        returns (UVPStagePatchModule.StageExecutorPatch memory)
-    {
-        return _patchWithMode(nonce, STAGE_AUDIT, executor, patchHash, mode, previousExecutor);
-    }
-
-    function _patchWithMode(
-        uint256 nonce,
-        bytes32 targetStageId,
-        address executor,
-        bytes32 patchHash,
-        bytes32 mode,
-        address previousExecutor
-    ) private pure returns (UVPStagePatchModule.StageExecutorPatch memory) {
-        return UVPStagePatchModule.StageExecutorPatch({
-            selectorStageId: STAGE_INIT,
-            targetStageId: targetStageId,
-            executor: executor,
-            role: ROLE_EXECUTOR,
-            executorMetadataHash: EXECUTOR_METADATA_HASH,
-            mode: mode,
-            previousExecutor: previousExecutor,
-            authorizationsHash: bytes32(0),
-            patchHash: patchHash,
-            patchNonce: nonce,
-            metadataURI: "uvp-eth://executor-patch"
-        });
-    }
-
-
-    function _withAuthHash(
-        UVPStagePatchModule.StageExecutorPatch memory patch,
-        IUVPStateMachineCore.SignalAuthorization[] memory authorizations
-    ) private pure returns (UVPStagePatchModule.StageExecutorPatch memory) {
-        patch.authorizationsHash = _authsHashLocal(authorizations);
-        return patch;
-    }
-
-    function _patchDirect(
-        UVPStateMachine machine,
-        bytes32 planId,
-        bytes32 orderId,
-        UVPStagePatchModule.StageExecutorPatch memory patch
-    ) private {
-        IUVPStateMachineCore.SignalAuthorization[] memory auths =
-            _executorAuthorizationsFor(machine, planId, patch.targetStageId, patch.executor);
-        patch.authorizationsHash = _authsHashLocal(auths);
-        _patchDirectWithAuths(machine, planId, orderId, patch, auths);
-    }
-
-    function _patchDirectWithAuths(
-        UVPStateMachine machine,
-        bytes32 planId,
-        bytes32 orderId,
-        UVPStagePatchModule.StageExecutorPatch memory patch,
-        IUVPStateMachineCore.SignalAuthorization[] memory auths
-    ) private {
-        _stagePatch(machine)
-            .applyStageExecutorPatch(
-                planId,
-                orderId,
-                patch,
-                _moduleBindingFor(machine, planId, patch.targetStageId),
-                _candidateProofFor(machine, planId, patch.targetStageId, patch.executor),
-                auths
-            );
-    }
-
-    function _prepareRelayed(
-        UVPStateMachine machine,
-        bytes32 planId,
-        bytes32 orderId,
-        UVPStagePatchModule.StageExecutorPatch memory patch,
-        uint256 selectorPrivateKey,
-        uint256 previousExecutorPrivateKey
-    ) private returns (PreparedPatch memory prepared) {
-        prepared.patch = patch;
-        prepared.selector = vm.addr(selectorPrivateKey);
-        prepared.deadline = block.timestamp + 1 hours;
-        prepared.authorizations = _executorAuthorizationsFor(machine, planId, patch.targetStageId, patch.executor);
-        prepared.patch.authorizationsHash = _authsHashLocal(prepared.authorizations);
-        bytes32 digest = _stagePatch(machine)
-            .stageExecutorPatchDigest(planId, orderId, prepared.patch, prepared.selector, prepared.deadline);
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(selectorPrivateKey, digest);
-        prepared.selectorSignature = _packedSignature(v, r, s);
-        if (previousExecutorPrivateKey != 0) {
-            (v, r, s) = vm.sign(previousExecutorPrivateKey, digest);
-            prepared.previousExecutorSignature = _packedSignature(v, r, s);
-        }
-        prepared.bindingProof = _moduleBindingFor(machine, planId, patch.targetStageId);
-        prepared.candidateProof = _candidateProofFor(machine, planId, patch.targetStageId, patch.executor);
-    }
-
-    function _sendRelayed(UVPStateMachine machine, bytes32 planId, bytes32 orderId, PreparedPatch memory prepared)
-        private
-    {
-        _stagePatch(machine)
-            .applyStageExecutorPatchFor(
-                planId,
-                orderId,
-                prepared.patch,
-                prepared.selector,
-                prepared.deadline,
-                prepared.selectorSignature,
-                prepared.previousExecutorSignature,
-                prepared.bindingProof,
-                prepared.candidateProof,
-                prepared.authorizations
-            );
-    }
-
-    function _overlayAuthorizations()
-        private
-        view
-        returns (UVPStateMachine.SignalAuthorization[] memory authorizations)
-    {
-        authorizations = new UVPStateMachine.SignalAuthorization[](6);
-        authorizations[0] = _stageAuthorization(STAGE_INIT, EXECUTOR_PATCH_SIGNAL_ID, _selector());
-        authorizations[1] = _stageAuthorization(SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, _selector());
-        authorizations[2] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_DONE, E1());
-        authorizations[3] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_DONE, E2());
-        authorizations[4] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_REVIEW, E1());
-        authorizations[5] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_REVIEW, E2());
-    }
-
-    function _forkChildAuthorizations()
-        private
-        view
-        returns (UVPStateMachine.SignalAuthorization[] memory authorizations)
-    {
-        authorizations = new UVPStateMachine.SignalAuthorization[](1);
-        authorizations[0] = _stageAuthorization(STAGE_INIT, EXECUTOR_PATCH_SIGNAL_ID, _selector());
-    }
-
-    function _stageAuthorization(bytes32 sourceId, bytes32 signalId, address submitter)
-        private
-        pure
-        returns (UVPStateMachine.SignalAuthorization memory)
-    {
-        return UVPStateMachine.SignalAuthorization({
-            sourceId: sourceId,
             signalId: signalId,
-            submitter: submitter,
-            role: ROLE_EXECUTOR,
-            metadataHash: EXECUTOR_METADATA_HASH
+            arity: 0,
+            delaySeconds: 0
         });
-    }
-
-    function _executorAuthorizationsFor(UVPStateMachine machine, bytes32 planId, bytes32 stageId, address executor)
-        private
-        view
-        returns (IUVPStateMachineCore.SignalAuthorization[] memory authorizations)
-    {
-        CapabilityTables storage tables = _capabilityTables[address(machine)][planId];
-        IUVPStateMachineCore.SignalAuthorization[] memory buffer =
-            new IUVPStateMachineCore.SignalAuthorization[](tables.capabilities.length);
-        uint256 count;
-        for (uint256 i = 0; i < tables.capabilities.length; i++) {
-            SignalCapability storage capability = tables.capabilities[i];
-            if (capability.stageId != stageId || capability.targetOrderRelation != 0) {
-                continue;
-            }
-            buffer[count++] = IUVPStateMachineCore.SignalAuthorization({
-                sourceId: capability.targetSourceId,
-                signalId: capability.signalId,
-                submitter: executor,
-                role: ROLE_EXECUTOR,
-                metadataHash: EXECUTOR_METADATA_HASH
-            });
-        }
-        authorizations = new IUVPStateMachineCore.SignalAuthorization[](count);
-        for (uint256 i = 0; i < count; i++) {
-            authorizations[i] = buffer[i];
-        }
-    }
-
-    function _authsHashLocal(IUVPStateMachineCore.SignalAuthorization[] memory authorizations)
-        private
-        pure
-        returns (bytes32 rollingHash)
-    {
-        rollingHash = keccak256(abi.encode(authorizations.length));
-        for (uint256 i = 0; i < authorizations.length; i++) {
-            rollingHash = keccak256(
-                abi.encode(
-                    rollingHash,
-                    authorizations[i].sourceId,
-                    authorizations[i].signalId,
-                    authorizations[i].submitter,
-                    authorizations[i].role,
-                    authorizations[i].metadataHash
-                )
-            );
-        }
-    }
-
-    function _signalAuthorizationsHash(UVPStateMachine.SignalAuthorization[] memory authorizations)
-        private
-        pure
-        returns (bytes32 rollingHash)
-    {
-        rollingHash = keccak256(abi.encode(authorizations.length));
-        for (uint256 i = 0; i < authorizations.length; i++) {
-            rollingHash = keccak256(
-                abi.encode(
-                    rollingHash,
-                    authorizations[i].sourceId,
-                    authorizations[i].signalId,
-                    authorizations[i].submitter,
-                    authorizations[i].role,
-                    authorizations[i].metadataHash
-                )
-            );
-        }
-    }
-
-    function _capabilityLeaves(
-        StageSelectorBinding[] memory selectorBindings,
-        SignalCapability[] memory signalCapabilities
-    ) private pure returns (bytes32[] memory leaves) {
-        leaves = new bytes32[](selectorBindings.length + signalCapabilities.length);
-        for (uint256 i = 0; i < selectorBindings.length; i++) {
-            leaves[i] = keccak256(
-                abi.encode(
-                    SELECTOR_BINDING_LEAF_DOMAIN, selectorBindings[i].selectorStageId, selectorBindings[i].targetStageId
-                )
-            );
-        }
-        for (uint256 i = 0; i < signalCapabilities.length; i++) {
-            leaves[selectorBindings.length + i] = keccak256(
-                abi.encode(
-                    SIGNAL_CAPABILITY_LEAF_DOMAIN,
-                    signalCapabilities[i].stageId,
-                    signalCapabilities[i].targetSourceId,
-                    signalCapabilities[i].signalId,
-                    uint256(signalCapabilities[i].targetOrderRelation)
-                )
-            );
-        }
-    }
-
-    function _executorCandidateLeaves(UVPStateMachine.ExecutorCandidate[] memory candidates)
-        private
-        pure
-        returns (bytes32[] memory leaves)
-    {
-        leaves = new bytes32[](candidates.length);
-        for (uint256 i = 0; i < candidates.length; i++) {
-            leaves[i] = keccak256(
-                abi.encodePacked(EXECUTOR_CANDIDATE_LEAF_DOMAIN, candidates[i].stageId, candidates[i].executor)
-            );
-        }
+        bytes32[] memory dependencyKeys = new bytes32[](1);
+        dependencyKeys[0] = keccak256(abi.encode(SOURCE_BOOTSTRAP, signalId));
+        return UVPStateMachine.CompactHook({
+            hookId: hookId,
+            stageId: stageId,
+            hookName: hookName,
+            flags: flags,
+            instructions: instructions,
+            dependencyKeys: dependencyKeys
+        });
     }
 
     function _sortedUnique(bytes32[] memory raw) private pure returns (bytes32[] memory sorted) {
@@ -1971,321 +955,6 @@ contract ExecutorChangeBlackBoxTest {
         proof = new bytes32[](count);
         for (uint256 i = 0; i < count; i++) {
             proof[i] = buffer[i];
-        }
-    }
-
-    function _candidateProofFor(UVPStateMachine machine, bytes32 planId, bytes32 stageId, address executor)
-        private
-        view
-        returns (bytes32[] memory proof)
-    {
-        CapabilityTables storage tables = _capabilityTables[address(machine)][planId];
-        bytes32 leaf = keccak256(abi.encodePacked(EXECUTOR_CANDIDATE_LEAF_DOMAIN, stageId, executor));
-        bytes32[] memory sorted = tables.candidateLeaves;
-        for (uint256 i = 0; i < sorted.length; i++) {
-            if (sorted[i] == leaf) {
-                return _merkleProofFor(sorted, leaf);
-            }
-        }
-        proof = new bytes32[](0);
-    }
-
-    function _factAttribution(UVPStateMachine machine, bytes32 planId, bytes32 sourceId, bytes32 signalId)
-        private
-        view
-        returns (UVPStateMachine.FactAttribution memory attribution)
-    {
-        CapabilityTables storage tables = _capabilityTables[address(machine)][planId];
-        for (uint256 i = 0; i < tables.capabilities.length; i++) {
-            SignalCapability storage capability = tables.capabilities[i];
-            if (
-                capability.targetOrderRelation == 0 && capability.targetSourceId == sourceId
-                    && capability.signalId == signalId
-            ) {
-                bytes32 leaf = keccak256(
-                    abi.encode(
-                        SIGNAL_CAPABILITY_LEAF_DOMAIN,
-                        capability.stageId,
-                        capability.targetSourceId,
-                        capability.signalId,
-                        uint256(0)
-                    )
-                );
-                return UVPStateMachine.FactAttribution({
-                    sourceId: sourceId,
-                    signalId: signalId,
-                    stageId: capability.stageId,
-                    capabilityProof: _merkleProofFor(tables.sortedLeaves, leaf)
-                });
-            }
-        }
-        return _noAttribution();
-    }
-
-    function _moduleBindingFor(UVPStateMachine machine, bytes32 planId, bytes32 targetStageId)
-        private
-        view
-        returns (IUVPStateMachineCore.SelectorBindingProof memory)
-    {
-        CapabilityTables storage tables = _capabilityTables[address(machine)][planId];
-        for (uint256 i = 0; i < tables.bindings.length; i++) {
-            if (tables.bindings[i].targetStageId == targetStageId) {
-                bytes32 leaf = keccak256(
-                    abi.encode(
-                        SELECTOR_BINDING_LEAF_DOMAIN,
-                        tables.bindings[i].selectorStageId,
-                        tables.bindings[i].targetStageId
-                    )
-                );
-                return IUVPStateMachineCore.SelectorBindingProof({
-                    selectorStageId: tables.bindings[i].selectorStageId,
-                    proof: _merkleProofFor(tables.sortedLeaves, leaf)
-                });
-            }
-        }
-        return IUVPStateMachineCore.SelectorBindingProof({selectorStageId: bytes32(0), proof: new bytes32[](0)});
-    }
-
-    function _noAttribution() private pure returns (UVPStateMachine.FactAttribution memory) {
-        return UVPStateMachine.FactAttribution({
-            sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
-        });
-    }
-
-    function _stageStateAbi(UVPStateMachine machine, bytes32 orderId)
-        private
-        view
-        returns (uint256 count, address lastSubmitter, uint64 lastAt, bool ambiguous, bytes32 orderIdEcho)
-    {
-        (count, lastSubmitter, lastAt, ambiguous) = machine.stageSignalState(PLAN_ID, orderId, STAGE_AUDIT);
-        orderIdEcho = orderId;
-    }
-
-    function _mergeBindings(StageSelectorBinding[] memory base, StageSelectorBinding[] memory extra)
-        private
-        pure
-        returns (StageSelectorBinding[] memory merged)
-    {
-        merged = new StageSelectorBinding[](base.length + extra.length);
-        for (uint256 i = 0; i < base.length; i++) {
-            merged[i] = base[i];
-        }
-        for (uint256 i = 0; i < extra.length; i++) {
-            merged[base.length + i] = extra[i];
-        }
-    }
-
-    function _mergeCapabilities(SignalCapability[] memory base, SignalCapability[] memory extra)
-        private
-        pure
-        returns (SignalCapability[] memory merged)
-    {
-        merged = new SignalCapability[](base.length + extra.length);
-        for (uint256 i = 0; i < base.length; i++) {
-            merged[i] = base[i];
-        }
-        for (uint256 i = 0; i < extra.length; i++) {
-            merged[base.length + i] = extra[i];
-        }
-    }
-
-    function _append(
-        UVPStateMachine.SignalAuthorization[] memory base,
-        UVPStateMachine.SignalAuthorization memory extra
-    ) private pure returns (UVPStateMachine.SignalAuthorization[] memory merged) {
-        merged = new UVPStateMachine.SignalAuthorization[](base.length + 1);
-        for (uint256 i = 0; i < base.length; i++) {
-            merged[i] = base[i];
-        }
-        merged[base.length] = extra;
-    }
-
-    function _forkMachineReady() private returns (UVPStateMachine machine) {
-        machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
-        hooks[0] = _signalHook(HOOK_ORDER_START, STAGE_INIT, HOOK_NAME_ORDER_START, true, SIGNAL_ORDER_START);
-        hooks[1] = _emitReadyHook(HOOK_AUDIT, STAGE_AUDIT, HOOK_NAME_INIT_DONE, SIGNAL_STAGE_DONE);
-        _registerPlanWithCandidates(
-            machine,
-            hooks,
-            new StageSelectorBinding[](0),
-            new SignalCapability[](0),
-            PUBLISHER_PRIVATE_KEY,
-            new UVPStateMachine.ExecutorCandidate[](0)
-        );
-        _submitBirth(machine, CREATOR, _forkAuthorizations());
-    }
-
-    function _forkAuthorizations() private view returns (UVPStateMachine.SignalAuthorization[] memory authorizations) {
-        authorizations = new UVPStateMachine.SignalAuthorization[](2);
-        authorizations[0] = _stageAuthorization(SOURCE_BOOTSTRAP, SIGNAL_STAGE_DONE, E1());
-        authorizations[1] = _stageAuthorization(SOURCE_BOOTSTRAP, SIGNAL_STAGE_REVIEW, E2());
-    }
-
-    function _fork(
-        UVPStateMachine machine,
-        bytes32 parentOrderId,
-        bytes32 forkPayloadHash,
-        bytes32 approvalSourceId,
-        bytes32 approvalSignalId,
-        UVPStateMachine.ForkBirthFact[] memory facts
-    ) private returns (bytes32) {
-        return machine.forkOrder(
-            PLAN_ID,
-            parentOrderId,
-            forkPayloadHash,
-            approvalSourceId,
-            approvalSignalId,
-            facts,
-            new UVPStateMachine.SignalAuthorization[](0)
-        );
-    }
-
-    function _singleFact(bytes32 sourceId, bytes32 signalId, bytes32 idempotencyKey)
-        private
-        pure
-        returns (UVPStateMachine.ForkBirthFact[] memory facts)
-    {
-        facts = new UVPStateMachine.ForkBirthFact[](1);
-        facts[0] = UVPStateMachine.ForkBirthFact({
-            sourceId: sourceId, signalId: signalId, payloadHash: PAYLOAD_HASH, idempotencyKey: idempotencyKey
-        });
-    }
-
-    function _twoFacts(bytes32 sourceA, bytes32 signalA, bytes32 idemA, bytes32 sourceB, bytes32 signalB, bytes32 idemB)
-        private
-        pure
-        returns (UVPStateMachine.ForkBirthFact[] memory facts)
-    {
-        facts = new UVPStateMachine.ForkBirthFact[](2);
-        facts[0] = UVPStateMachine.ForkBirthFact({
-            sourceId: sourceA, signalId: signalA, payloadHash: PAYLOAD_HASH, idempotencyKey: idemA
-        });
-        facts[1] = UVPStateMachine.ForkBirthFact({
-            sourceId: sourceB, signalId: signalB, payloadHash: PAYLOAD_HASH, idempotencyKey: idemB
-        });
-    }
-
-    function _stageFactForkMachineReady() private returns (UVPStateMachine machine) {
-        machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
-        hooks[0] = _signalHook(HOOK_ORDER_START, STAGE_INIT, HOOK_NAME_ORDER_START, true, SIGNAL_ORDER_START);
-        hooks[1] = _emitReadyHook(HOOK_AUDIT, STAGE_AUDIT, HOOK_NAME_INIT_DONE, SIGNAL_INIT_CMP);
-        SignalCapability[] memory capabilities = new SignalCapability[](3);
-        capabilities[0] = SignalCapability({
-            stageId: STAGE_INIT, targetSourceId: SOURCE_BOOTSTRAP, signalId: SIGNAL_ORDER_START, targetOrderRelation: 0
-        });
-        capabilities[1] = SignalCapability({
-            stageId: STAGE_INIT, targetSourceId: SOURCE_BOOTSTRAP, signalId: SIGNAL_INIT_CMP, targetOrderRelation: 0
-        });
-        capabilities[2] = SignalCapability({
-            stageId: STAGE_AUDIT, targetSourceId: STAGE_AUDIT, signalId: SIGNAL_STAGE_DONE, targetOrderRelation: 0
-        });
-        _registerPlanWithCandidates(
-            machine, hooks, _selectorBindings(), capabilities, PUBLISHER_PRIVATE_KEY, _standardCandidates()
-        );
-        UVPStateMachine.SignalAuthorization[] memory auths = new UVPStateMachine.SignalAuthorization[](3);
-        auths[0] = _stageAuthorization(SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, _selector());
-        auths[1] = _stageAuthorization(STAGE_AUDIT, SIGNAL_STAGE_DONE, E1());
-        auths[2] = _stageAuthorization(SOURCE_BOOTSTRAP, SIGNAL_INIT_CMP, CREATOR);
-        _submitBirth(machine, CREATOR, auths);
-        _materializeAuditStage(machine, ORDER_ID);
-
-        vm.prank(CREATOR);
-        _patchDirect(machine, PLAN_ID, ORDER_ID, _patch(1, E1(), PATCH_HASH));
-        vm.prank(E1());
-        machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_DONE,
-            PAYLOAD_HASH,
-            bytes32(uint256(0xF001)),
-            _factAttribution(machine, PLAN_ID, STAGE_AUDIT, SIGNAL_STAGE_DONE)
-        , bytes32(0), emptyFilePatch());
-    }
-
-    function _signalHook(bytes32 hookId, bytes32 stageId, bytes32 hookName, bool isTrigger, bytes32 signalId)
-        private
-        pure
-        returns (UVPStateMachine.CompactHook memory)
-    {
-        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](1);
-        instructions[0] = _signal(signalId);
-        return UVPStateMachine.CompactHook({
-            hookId: hookId,
-            stageId: stageId,
-            hookName: hookName,
-            flags: isTrigger ? uint8(FLAG_ORDER_TRIGGER_MINT | FLAG_EMIT_READY) : uint8(0),
-            instructions: instructions,
-            dependencyKeys: _deps(signalId)
-        });
-    }
-
-    function _emitReadyHook(bytes32 hookId, bytes32 stageId, bytes32 hookName, bytes32 signalId)
-        private
-        pure
-        returns (UVPStateMachine.CompactHook memory)
-    {
-        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](1);
-        instructions[0] = _signal(signalId);
-        return UVPStateMachine.CompactHook({
-            hookId: hookId,
-            stageId: stageId,
-            hookName: hookName,
-            flags: FLAG_EMIT_READY,
-            instructions: instructions,
-            dependencyKeys: _deps(signalId)
-        });
-    }
-
-    function _signal(bytes32 signalId) private pure returns (UVPStateMachine.Instruction memory) {
-        return UVPStateMachine.Instruction({
-            op: uint8(UVPStateMachine.InstructionOp.Signal),
-            sourceId: SOURCE_BOOTSTRAP,
-            signalId: signalId,
-            arity: 0,
-            delaySeconds: 0
-        });
-    }
-
-    function _deps(bytes32 signalId) private pure returns (bytes32[] memory deps) {
-        deps = new bytes32[](1);
-        deps[0] = keccak256(abi.encode(SOURCE_BOOTSTRAP, signalId));
-    }
-
-    function _packedSignature(uint8 v, bytes32 r, bytes32 s) private pure returns (bytes memory) {
-        UVPSignatures.Signature memory signature = UVPSignatures.Signature({v: v, r: r, s: s});
-        return abi.encodePacked(signature.r, signature.s, signature.v);
-    }
-
-    function _domainSeparator(UVPStateMachine machine) private view returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                EIP712_DOMAIN_TYPEHASH,
-                STATE_MACHINE_NAME_HASH,
-                STATE_MACHINE_VERSION_HASH,
-                block.chainid,
-                address(machine)
-            )
-        );
-    }
-
-    function _writeWord(bytes memory encoded, uint256 offset, bytes32 value) private pure {
-        assembly ("memory-safe") {
-            mstore(add(add(encoded, 0x20), offset), value)
-        }
-    }
-
-    function _writeAddress(bytes memory encoded, uint256 offset, address value) private pure {
-        _writeWord(encoded, offset, bytes32(uint256(uint160(value))));
-    }
-
-    function _countTopic(Vm.Log[] memory logs, bytes32 topic) private pure returns (uint256 count) {
-        for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics.length != 0 && logs[i].topics[0] == topic) {
-                count += 1;
-            }
         }
     }
 }

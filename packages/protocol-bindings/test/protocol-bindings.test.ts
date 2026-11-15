@@ -12,8 +12,6 @@ import {
   keccak256,
   stringToHex,
   toEventHash,
-  toEventSignature,
-  toFunctionSignature,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
@@ -21,17 +19,19 @@ import {
   unsupportedSolanaProtocolBinding,
 } from "@uvp-eth/protocol-bindings/solana";
 import {
-  EXECUTOR_PATCH_MODE_ASSIGN,
-  EXECUTOR_PATCH_MODE_HANDOFF,
   DERIVED_SIGNAL_MODULE_ABI,
   ORDER_LINK_MODULE_ABI,
   STATE_MACHINE_ABI,
   STAGE_PATCH_MODULE_ABI,
+  SIGNAL_SUBMISSION_PRIMARY_TYPE,
+  SIGNAL_SUBMISSION_TYPED_DATA_FIELDS,
   buildApplyStageExecutorPatchForCall,
   buildDerivedSignalTypedData,
   buildPlanCommitTypedData,
+  buildSignalSubmissionTypedData,
   buildStageExecutorPatchTypedData,
   buildSubmitDerivedSignalForCall,
+  buildSubmitSignalForCall,
   buildTriggerOrderFromOutsideForCall,
   buildTriggerOrderFromSignalForCall,
   buildTriggerOrderFromSignalTypedData,
@@ -39,7 +39,9 @@ import {
   deriveOrderLinkOrderId,
   deriveTriggerOrderId,
   EMPTY_CAPABILITIES_ROOT,
+  EMPTY_FILE_PATCH,
   factAttribution,
+  factAttributionHash,
   hashStageExecutorPatchPayload,
   selectorBindingLeaf,
   selectorBindingProofFor,
@@ -47,6 +49,7 @@ import {
   STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN,
   recoverDerivedSignalSigner,
   recoverPlanCommitSigner,
+  recoverSignalSubmissionSigner,
   recoverStageExecutorPatchSigner,
   recoverTriggerOrderFromSignalSigner,
 } from "../src/index.js";
@@ -168,31 +171,22 @@ const payloadHash = bytes32("04");
 const idempotencyKey = bytes32("05");
 const selectorStageId = bytes32("06");
 const targetStageId = bytes32("07");
-const role = bytes32("08");
-const executorMetadataHash = bytes32("09");
-const authorizationsHash = bytes32("0f");
+const supplierId = bytes32("08");
+const previousSupplierId = bytes32("09");
+const replacementSupplierId = bytes32("0a");
 const approvalSignalId = bytes32("10");
 const originSourceId = bytes32("16");
 const originSignalId = bytes32("17");
 const deadline = "1777777777";
-const executor = "0x7777777777777777777777777777777777777777" as const;
-const metadataURI = "ipfs://stage-overlay/executor-demo";
-const handoffMetadataURI = "ipfs://stage-overlay/executor-handoff";
-const replacementMetadataURI = "ipfs://stage-overlay/executor-replacement";
 const executorPatchNonce = "3";
 const handoffPatchNonce = "4";
 const replacementPatchNonce = "5";
 const assignExecutorPatchPayload = {
   selectorStageId,
   targetStageId,
-  executor,
-  role,
-  executorMetadataHash,
-  mode: EXECUTOR_PATCH_MODE_ASSIGN,
-  previousExecutor: zeroAddress,
-  authorizationsHash: zeroBytes32,
+  supplierId,
+  previousSupplierId: zeroBytes32,
   patchNonce: executorPatchNonce,
-  metadataURI,
 } as const;
 const assignExecutorPatchHash = hashStageExecutorPatchPayload(
   assignExecutorPatchPayload,
@@ -200,14 +194,9 @@ const assignExecutorPatchHash = hashStageExecutorPatchPayload(
 const handoffExecutorPatchPayload = {
   selectorStageId,
   targetStageId,
-  executor,
-  role,
-  executorMetadataHash,
-  mode: EXECUTOR_PATCH_MODE_HANDOFF,
-  previousExecutor,
-  authorizationsHash: zeroBytes32,
+  supplierId,
+  previousSupplierId,
   patchNonce: handoffPatchNonce,
-  metadataURI: handoffMetadataURI,
 } as const;
 const handoffExecutorPatchHash = hashStageExecutorPatchPayload(
   handoffExecutorPatchPayload,
@@ -215,27 +204,13 @@ const handoffExecutorPatchHash = hashStageExecutorPatchPayload(
 const rotatedExecutorPatchPayload = {
   selectorStageId,
   targetStageId,
-  executor,
-  role,
-  executorMetadataHash,
-  mode: EXECUTOR_PATCH_MODE_HANDOFF,
-  previousExecutor,
-  authorizationsHash,
+  supplierId: replacementSupplierId,
+  previousSupplierId,
   patchNonce: replacementPatchNonce,
-  metadataURI: replacementMetadataURI,
 } as const;
 const rotatedExecutorPatchHash = hashStageExecutorPatchPayload(
   rotatedExecutorPatchPayload,
 );
-const signalAuthorizations = [
-  {
-    sourceId,
-    signalId,
-    submitter,
-    role,
-    metadataHash: executorMetadataHash,
-  },
-] as const;
 
 describe("protocol bindings", () => {
   it("exposes plan-scoped hook observation events", () => {
@@ -287,16 +262,13 @@ describe("protocol bindings", () => {
   });
 
   it("builds and recovers a PlanCommit publisher signature", async () => {
-    // commitPlan(PlanCommit, hooks, signature) 是 UVPStateMachine 的签名面
-    // 之一：七个 typed-data builder 中 PlanCommit 不得是唯一没有 recover
-    // 助手的一个（签名面不对称会让发布侧无法离线验证 publisher）。
     const typedData = buildPlanCommitTypedData({
       chainId: 31337,
       verifyingContract,
       publisher: submitter,
       hooksHash: payloadHash,
       capabilitiesRoot: idempotencyKey,
-      executorCandidatesRoot: idempotencyKey,
+      executorBindingsRoot: idempotencyKey,
       birthAuthorizer: submitter,
       deadline,
     });
@@ -305,13 +277,19 @@ describe("protocol bindings", () => {
     );
 
     assert.equal(typedData.primaryType, "UVPStateMachinePlanCommit");
+    assert.deepEqual(typedData.domain, {
+      name: "UVPStateMachine",
+      version: "0.18",
+      chainId: 31337,
+      verifyingContract,
+    });
     assert.deepEqual(
       typedData.types.UVPStateMachinePlanCommit.map((field) => field.name),
       [
         "publisher",
         "hooksHash",
         "capabilitiesRoot",
-        "executorCandidatesRoot",
+        "executorBindingsRoot",
         "birthAuthorizer",
         "deadline",
       ],
@@ -337,7 +315,6 @@ describe("protocol bindings", () => {
       originSignalId,
       payloadHash,
       idempotencyKey,
-      authorizations: signalAuthorizations,
       submitter,
       deadline,
     });
@@ -345,6 +322,7 @@ describe("protocol bindings", () => {
       typedData as unknown as Parameters<typeof account.signTypedData>[0],
     );
 
+    assert.equal(typedData.domain.version, "0.9");
     assert.deepEqual(
       typedData.types.UVPOrderLinkModuleTriggerOrderFromSignal.map(
         (field) => field.name,
@@ -361,11 +339,11 @@ describe("protocol bindings", () => {
         "originSignalId",
         "payloadHash",
         "idempotencyKey",
-        "authorizationsHash",
         "submitter",
         "deadline",
       ],
     );
+    assert.equal("authorizationsHash" in typedData.message, false);
     assert.equal(typedData.message.triggerOriginOrderId, triggerOriginOrderId);
     assert.equal(
       await recoverTriggerOrderFromSignalSigner(typedData, signature),
@@ -375,18 +353,9 @@ describe("protocol bindings", () => {
 
   it("builds assign, handoff, and replacement stage executor patch typed data", () => {
     const cases = [
-      {
-        payload: assignExecutorPatchPayload,
-        patchHash: assignExecutorPatchHash,
-      },
-      {
-        payload: rotatedExecutorPatchPayload,
-        patchHash: rotatedExecutorPatchHash,
-      },
-      {
-        payload: rotatedExecutorPatchPayload,
-        patchHash: rotatedExecutorPatchHash,
-      },
+      assignExecutorPatchPayload,
+      handoffExecutorPatchPayload,
+      rotatedExecutorPatchPayload,
     ] as const;
 
     const [firstCase] = cases;
@@ -396,12 +365,12 @@ describe("protocol bindings", () => {
       verifyingContract,
       planId,
       orderId,
-      ...firstCase.payload,
-      patchHash: firstCase.patchHash,
+      ...firstCase,
       selector: submitter,
       deadline,
     });
 
+    assert.equal(firstTypedData.domain.version, "0.5");
     assert.deepEqual(
       firstTypedData.types.UVPStagePatchModuleStageExecutorPatch,
       [
@@ -409,15 +378,9 @@ describe("protocol bindings", () => {
         { name: "orderId", type: "bytes32" },
         { name: "selectorStageId", type: "bytes32" },
         { name: "targetStageId", type: "bytes32" },
-        { name: "executor", type: "address" },
-        { name: "role", type: "bytes32" },
-        { name: "executorMetadataHash", type: "bytes32" },
-        { name: "mode", type: "bytes32" },
-        { name: "previousExecutor", type: "address" },
-        { name: "authorizationsHash", type: "bytes32" },
-        { name: "patchHash", type: "bytes32" },
+        { name: "supplierId", type: "bytes32" },
+        { name: "previousSupplierId", type: "bytes32" },
         { name: "patchNonce", type: "uint256" },
-        { name: "metadataURI", type: "string" },
         { name: "selector", type: "address" },
         { name: "deadline", type: "uint256" },
       ],
@@ -427,31 +390,26 @@ describe("protocol bindings", () => {
       "UVPStagePatchModuleStageExecutorPatch",
     );
 
-    for (const { payload, patchHash } of cases) {
+    for (const payload of cases) {
       const typedData = buildStageExecutorPatchTypedData({
         chainId: 31337,
         verifyingContract,
         planId,
         orderId,
         ...payload,
-        patchHash,
         selector: submitter,
         deadline,
       });
 
-      assert.equal(typedData.message.mode, payload.mode);
+      assert.equal(typedData.message.supplierId, payload.supplierId);
       assert.equal(
-        typedData.message.previousExecutor,
-        payload.previousExecutor,
+        typedData.message.previousSupplierId,
+        payload.previousSupplierId,
       );
-      assert.equal(
-        typedData.message.authorizationsHash,
-        payload.authorizationsHash,
-      );
-      assert.equal(typedData.message.patchHash, patchHash);
       assert.equal(typedData.message.patchNonce, payload.patchNonce);
-      assert.equal(typedData.message.metadataURI, payload.metadataURI);
-      assert.equal("fileResourcesHash" in typedData.message, false);
+      assert.equal("mode" in typedData.message, false);
+      assert.equal("executor" in typedData.message, false);
+      assert.equal("metadataURI" in typedData.message, false);
     }
   });
 
@@ -462,7 +420,6 @@ describe("protocol bindings", () => {
       planId,
       orderId,
       ...rotatedExecutorPatchPayload,
-      patchHash: rotatedExecutorPatchHash,
       selector: submitter,
       deadline,
     });
@@ -487,6 +444,212 @@ describe("protocol bindings", () => {
       ),
       previousExecutor,
     );
+  });
+
+  it("builds and recovers a SignalSubmission typed data whose digest matches the contract formula", async () => {
+    const attribution = {
+      sourceId,
+      signalId,
+      stageId: targetStageId,
+      capabilityProof: [payloadHash],
+    } as const;
+    const typedData = buildSignalSubmissionTypedData({
+      chainId: 31337,
+      verifyingContract,
+      planId,
+      orderId,
+      sourceId,
+      signalId,
+      payloadHash,
+      idempotencyKey,
+      filesDigest: zeroBytes32,
+      attribution,
+      submitter,
+      deadline,
+    });
+
+    assert.equal(typedData.primaryType, SIGNAL_SUBMISSION_PRIMARY_TYPE);
+    assert.deepEqual(typedData.domain, {
+      name: "UVPStateMachine",
+      version: "0.18",
+      chainId: 31337,
+      verifyingContract,
+    });
+    assert.deepEqual(
+      typedData.types.UVPStateMachineSignalSubmission.map((field) => field.name),
+      ["planId", "orderId", "sourceId", "signalId", "payloadHash", "idempotencyKey", "filesDigest", "attributionHash", "submitter", "deadline"],
+    );
+    assert.deepEqual(
+      typedData.types.UVPStateMachineSignalSubmission,
+      SIGNAL_SUBMISSION_TYPED_DATA_FIELDS,
+    );
+    assert.equal(typedData.message.attributionHash, factAttributionHash(attribution));
+    assert.equal(typedData.message.filesDigest, zeroBytes32);
+
+    // 与 UVPStateMachine._signalSubmissionDigest 的链上公式逐字段对拍：
+    // typehash 字段名/顺序、attributionHash 的 FactAttribution typehash 与
+    // capabilityProof 的 abi.encode 外层哈希、domain separator、struct hash。
+    const factTypehash = keccak256(
+      stringToHex(
+        "FactAttribution(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof)",
+      ),
+    );
+    const expectedAttributionHash = keccak256(
+      encodeAbiParameters(
+        [
+          { type: "bytes32" },
+          { type: "bytes32" },
+          { type: "bytes32" },
+          { type: "bytes32" },
+          { type: "bytes32" },
+        ],
+        [
+          factTypehash,
+          attribution.sourceId,
+          attribution.signalId,
+          attribution.stageId,
+          keccak256(
+            encodeAbiParameters(
+              [{ type: "bytes32[]" }],
+              [attribution.capabilityProof],
+            ),
+          ),
+        ],
+      ),
+    );
+    assert.equal(typedData.message.attributionHash, expectedAttributionHash);
+
+    const typehash = keccak256(
+      stringToHex(
+        "UVPStateMachineSignalSubmission(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 filesDigest,bytes32 attributionHash,address submitter,uint256 deadline)",
+      ),
+    );
+    const domainSeparator = keccak256(
+      encodeAbiParameters(
+        [
+          { type: "bytes32" },
+          { type: "bytes32" },
+          { type: "bytes32" },
+          { type: "uint256" },
+          { type: "address" },
+        ],
+        [
+          keccak256(
+            stringToHex(
+              "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
+            ),
+          ),
+          keccak256(stringToHex("UVPStateMachine")),
+          keccak256(stringToHex("0.18")),
+          31337n,
+          verifyingContract,
+        ],
+      ),
+    );
+    const structHash = keccak256(
+      encodeAbiParameters(
+        [
+          { type: "bytes32" },
+          { type: "bytes32" },
+          { type: "bytes32" },
+          { type: "bytes32" },
+          { type: "bytes32" },
+          { type: "bytes32" },
+          { type: "bytes32" },
+          { type: "bytes32" },
+          { type: "bytes32" },
+          { type: "address" },
+          { type: "uint256" },
+        ],
+        [
+          typehash,
+          planId,
+          orderId,
+          sourceId,
+          signalId,
+          payloadHash,
+          idempotencyKey,
+          zeroBytes32,
+          expectedAttributionHash,
+          submitter,
+          BigInt(deadline),
+        ],
+      ),
+    );
+    const expectedDigest = keccak256(
+      concatHex(["0x1901", domainSeparator, structHash]),
+    );
+    assert.equal(
+      await hashTypedData({
+        domain: typedData.domain,
+        types: typedData.types,
+        primaryType: typedData.primaryType,
+        message: typedData.message,
+      }),
+      expectedDigest,
+    );
+
+    const signature = await account.signTypedData({
+      domain: typedData.domain,
+      types: typedData.types,
+      primaryType: typedData.primaryType,
+      message: typedData.message,
+    });
+    assert.equal(
+      await recoverSignalSubmissionSigner(typedData, signature),
+      submitter,
+    );
+  });
+
+  it("builds submitSignalFor calldata with the signed attribution and files digest", () => {
+    const attribution = {
+      sourceId,
+      signalId,
+      stageId: targetStageId,
+      capabilityProof: [payloadHash],
+    } as const;
+    const signature = `0x${"ab".repeat(65)}` as const;
+    const call = buildSubmitSignalForCall(
+      { stateMachineAddress: verifyingContract, chainId: 31337 },
+      {
+        planId,
+        orderId,
+        sourceId,
+        signalId,
+        payloadHash,
+        idempotencyKey,
+        attribution,
+        submitter,
+        deadline,
+        signature,
+      },
+    );
+
+    assert.equal(call.address, verifyingContract);
+    assert.equal(call.chainId, 31337);
+    assert.equal(call.functionName, "submitSignalFor");
+    assert.deepEqual(call.args, [
+      planId,
+      orderId,
+      sourceId,
+      signalId,
+      payloadHash,
+      idempotencyKey,
+      attribution,
+      zeroBytes32,
+      EMPTY_FILE_PATCH,
+      submitter,
+      BigInt(deadline),
+      signature,
+    ]);
+    const decoded = decodeFunctionData({
+      abi: STATE_MACHINE_ABI,
+      data: call.data,
+    });
+    assert.equal(decoded.functionName, "submitSignalFor");
+    assert.ok(decoded.args);
+    assert.deepEqual(decoded.args[6], attribution);
+    assert.equal(decoded.args[11], signature);
   });
 
   it("matches the shared capabilities-root golden vectors consumed by compiler and Foundry", () => {
@@ -659,7 +822,6 @@ describe("protocol bindings", () => {
         idempotencyKey,
         submitter,
         deadline,
-        authorizations: signalAuthorizations,
         signature,
         originFactAttributions,
       },
@@ -673,7 +835,8 @@ describe("protocol bindings", () => {
     assert.equal(call.abi, ORDER_LINK_MODULE_ABI);
     assert.equal(call.functionName, "triggerOrderFromSignalFor");
     assert.equal(call.args[0].triggerOriginOrderId, triggerOriginOrderId);
-    assert.deepEqual(call.args[3], [
+    assert.equal(call.args[1], signature);
+    assert.deepEqual(call.args[2], [
       {
         sourceId: originSourceId,
         signalId: originSignalId,
@@ -684,7 +847,6 @@ describe("protocol bindings", () => {
     assert.equal(decoded.functionName, "triggerOrderFromSignalFor");
     const decodedArgs = decoded.args as unknown as readonly [
       { triggerOriginOrderId: `0x${string}` },
-      unknown,
       `0x${string}`,
       readonly {
         sourceId: `0x${string}`;
@@ -695,8 +857,8 @@ describe("protocol bindings", () => {
     ];
     assert.ok(decodedArgs);
     assert.equal(decodedArgs[0].triggerOriginOrderId, triggerOriginOrderId);
-    assert.equal(decodedArgs[2], signature);
-    assert.deepEqual(decodedArgs[3], [
+    assert.equal(decodedArgs[1], signature);
+    assert.deepEqual(decodedArgs[2], [
       {
         sourceId: originSourceId,
         signalId: originSignalId,
@@ -778,7 +940,7 @@ describe("protocol bindings", () => {
     });
 
     assert.equal(typedData.domain.name, "UVPDerivedSignalModule");
-    assert.equal(typedData.domain.version, "0.6");
+    assert.equal(typedData.domain.version, "0.7");
     assert.equal(typedData.primaryType, "UVPDerivedSignalModuleSignal");
 
     // 与 UVPDerivedSignalModule.derivedSignalDigest 的链上公式逐字段对拍：
@@ -804,7 +966,7 @@ describe("protocol bindings", () => {
             ),
           ),
           keccak256(stringToHex("UVPDerivedSignalModule")),
-          keccak256(stringToHex("0.6")),
+          keccak256(stringToHex("0.7")),
           31337n,
           verifyingContract,
         ],
@@ -869,18 +1031,7 @@ describe("protocol bindings", () => {
     const selectorSignature = `0x${"bb".repeat(65)}` as const;
     const previousExecutorSignature = `0x${"dd".repeat(65)}` as const;
     const bindingProof = { selectorStageId, proof: [payloadHash] } as const;
-
-// UB-36①②③：候选集成员证明 + patch 生效时对新城执行者写入的显式授权集。
-const candidateProof = [payloadHash, idempotencyKey] as const;
-const executorAuthorizations = [
-  {
-    sourceId,
-    signalId,
-    submitter,
-    role,
-    metadataHash: executorMetadataHash,
-  },
-] as const;
+    const candidateProof = [payloadHash, idempotencyKey] as const;
     const call = buildApplyStageExecutorPatchForCall(
       {
         stagePatchModuleAddress: verifyingContract,
@@ -889,17 +1040,13 @@ const executorAuthorizations = [
       {
         planId,
         orderId,
-        patch: {
-          ...rotatedExecutorPatchPayload,
-          patchHash: rotatedExecutorPatchHash,
-        },
+        patch: rotatedExecutorPatchPayload,
         selector: submitter,
         deadline,
         selectorSignature,
         previousExecutorSignature,
         bindingProof,
         candidateProof,
-        executorAuthorizations,
       },
     );
     const decoded = decodeFunctionData({
@@ -916,15 +1063,9 @@ const executorAuthorizations = [
       [
         selectorStageId,
         targetStageId,
-        executor,
-        role,
-        executorMetadataHash,
-        EXECUTOR_PATCH_MODE_HANDOFF,
-        previousExecutor,
-        authorizationsHash,
-        rotatedExecutorPatchHash,
+        replacementSupplierId,
+        previousSupplierId,
         BigInt(replacementPatchNonce),
-        replacementMetadataURI,
       ],
       submitter,
       BigInt(deadline),
@@ -932,7 +1073,6 @@ const executorAuthorizations = [
       previousExecutorSignature,
       { selectorStageId, proof: [payloadHash] },
       candidateProof,
-      executorAuthorizations,
     ]);
     assert.equal(decoded.functionName, "applyStageExecutorPatchFor");
     assert.ok(decoded.args);
@@ -942,15 +1082,9 @@ const executorAuthorizations = [
     assert.deepEqual(decodedArgs[2], {
       selectorStageId,
       targetStageId,
-      executor,
-      role,
-      executorMetadataHash,
-      mode: EXECUTOR_PATCH_MODE_HANDOFF,
-      previousExecutor: previousExecutorAccount.address,
-      authorizationsHash,
-      patchHash: rotatedExecutorPatchHash,
+      supplierId: replacementSupplierId,
+      previousSupplierId,
       patchNonce: BigInt(replacementPatchNonce),
-      metadataURI: replacementMetadataURI,
     });
     assert.equal(String(decodedArgs[3]).toLowerCase(), submitter);
     assert.equal(decodedArgs[4], BigInt(deadline));
@@ -958,30 +1092,14 @@ const executorAuthorizations = [
     assert.equal(decodedArgs[6], previousExecutorSignature);
     assert.deepEqual(decodedArgs[7], { selectorStageId, proof: [payloadHash] });
     assert.deepEqual(decodedArgs[8], candidateProof);
-    // submitter 大小写由 EIP-55 校验和决定——比较按小写归一。
-    assert.deepEqual(
-      (decodedArgs[9] as Array<{ submitter: string }>).map((auth) => ({
-        ...auth,
-        submitter: auth.submitter.toLowerCase(),
-      })),
-      executorAuthorizations,
-    );
   });
 
   it("hashes stage executor patch payload canonically", () => {
-    assert.equal(
-      EXECUTOR_PATCH_MODE_ASSIGN,
-      "0x61737369676e0000000000000000000000000000000000000000000000000000",
-    );
-    assert.equal(
-      EXECUTOR_PATCH_MODE_HANDOFF,
-      "0x68616e646f666600000000000000000000000000000000000000000000000000",
-    );
     // payload 哈希必须吃进导出的域常量（域分离）——keccak256(abi
     // .encode(keccak256(domain), …payload))。独立重算而非同源引用。
     assert.equal(
       STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN,
-      "uvp:stage-executor-patch-payload:v1",
+      "uvp:stage-executor-patch-payload:v2",
     );
     assert.equal(
       assignExecutorPatchHash,
@@ -991,14 +1109,9 @@ const executorAuthorizations = [
             { name: "domain", type: "bytes32" },
             { name: "selectorStageId", type: "bytes32" },
             { name: "targetStageId", type: "bytes32" },
-            { name: "executor", type: "address" },
-            { name: "role", type: "bytes32" },
-            { name: "executorMetadataHash", type: "bytes32" },
-            { name: "mode", type: "bytes32" },
-            { name: "previousExecutor", type: "address" },
-            { name: "authorizationsHash", type: "bytes32" },
+            { name: "supplierId", type: "bytes32" },
+            { name: "previousSupplierId", type: "bytes32" },
             { name: "patchNonce", type: "uint256" },
-            { name: "metadataURI", type: "string" },
           ],
           [
             keccak256(
@@ -1006,14 +1119,9 @@ const executorAuthorizations = [
             ),
             selectorStageId,
             targetStageId,
-            executor,
-            role,
-            executorMetadataHash,
-            EXECUTOR_PATCH_MODE_ASSIGN,
-            zeroAddress,
+            supplierId,
             zeroBytes32,
             BigInt(executorPatchNonce),
-            metadataURI,
           ],
         ),
       ),
@@ -1021,32 +1129,25 @@ const executorAuthorizations = [
     assert.equal(
       assignExecutorPatchHash,
       hashStageExecutorPatchPayload({
-        targetStageId,
         selectorStageId,
-        executor,
-        role,
-        executorMetadataHash,
-        mode: "assign",
-        previousExecutor: zeroAddress,
-        authorizationsHash: zeroBytes32,
+        targetStageId,
+        supplierId,
+        previousSupplierId: zeroBytes32,
         patchNonce: BigInt(executorPatchNonce),
-        metadataURI,
       }),
     );
     assert.equal(
-      rotatedExecutorPatchHash,
+      handoffExecutorPatchHash,
       hashStageExecutorPatchPayload({
-        ...rotatedExecutorPatchPayload,
-        mode: "handoff",
-        patchNonce: BigInt(replacementPatchNonce),
+        ...handoffExecutorPatchPayload,
+        patchNonce: BigInt(handoffPatchNonce),
       }),
     );
     assert.notEqual(
       assignExecutorPatchHash,
       hashStageExecutorPatchPayload({
         ...assignExecutorPatchPayload,
-        mode: EXECUTOR_PATCH_MODE_HANDOFF,
-        metadataURI: "ipfs://stage-overlay/changed",
+        previousSupplierId,
       }),
     );
   });

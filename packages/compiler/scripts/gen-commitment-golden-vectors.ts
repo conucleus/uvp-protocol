@@ -80,8 +80,15 @@ interface CommitmentGoldenCase {
     readonly runtimePlanHash: string;
     readonly hooksHash: string;
     readonly capabilitiesRoot: string;
-    readonly executorCandidatesRoot: string;
+    readonly executorBindingsRoot: string;
+    readonly executorBindings: readonly GoldenExecutorBinding[];
   };
+}
+
+interface GoldenExecutorBinding {
+  readonly stageId: HexString;
+  readonly supplierId: HexString;
+  readonly kind: 0 | 1;
 }
 
 interface DockAtomVector {
@@ -220,7 +227,12 @@ function buildDefinitionCase(
       runtimePlanHash: args.planHash,
       hooksHash: args.hooksHash,
       capabilitiesRoot: args.capabilitiesRoot,
-      executorCandidatesRoot: args.executorCandidatesRoot,
+      executorBindingsRoot: args.executorBindingsRoot,
+      executorBindings: args.executorBindings.map((binding) => ({
+        stageId: binding.stageId,
+        supplierId: binding.supplierId,
+        kind: binding.kind,
+      })),
     },
   };
 }
@@ -364,8 +376,8 @@ const birthZhixu: ZhixuDefinition = {
   },
 };
 
-const WALLET_A = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266" as const;
-const WALLET_B = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8" as const;
+const CANDIDATE_SUPPLIER_A = "candidate-org-a";
+const CANDIDATE_SUPPLIER_B = "candidate-org-b";
 
 const uidVectors: readonly UidVector[] = [
   {
@@ -398,22 +410,22 @@ const cases: readonly CommitmentGoldenCase[] = [
   ),
   buildDefinitionCase(
     "candidates_blackbox_with_candidates",
-    "同上定义 + 两阶段候选集输入（executorCandidatesRoot 非 EMPTY）",
+    "同上定义 + 两阶段候选 supplierID 输入（executorBindingsRoot 含 kind=1 叶）",
     {
       definition: twoStageZhixu,
       executorCandidates: [
-        { stageIdentifier: "main", executor: WALLET_A },
-        { stageIdentifier: "deal", executor: WALLET_B },
+        { stageIdentifier: "main", supplierID: CANDIDATE_SUPPLIER_A },
+        { stageIdentifier: "deal", supplierID: CANDIDATE_SUPPLIER_B },
       ],
     },
   ),
   buildDefinitionCase(
     "candidates_blackbox_birth",
-    "出生（trigger）阶段形态 + deal 候选（出生阶段执行者终生不可变）",
+    "出生（trigger）阶段形态 + deal 候选（出生阶段执行者终生不可变，只带 default binding）",
     {
       definition: birthZhixu,
       executorCandidates: [
-        { stageIdentifier: "deal", executor: WALLET_A },
+        { stageIdentifier: "deal", supplierID: CANDIDATE_SUPPLIER_A },
       ],
     },
   ),

@@ -14,8 +14,8 @@ import type {
   ChainDockFactRef,
   ChainDockOutput,
   ChainDerivedSignal,
-  ChainExecutorCandidate,
   ChainHook,
+  ChainExecutorBinding,
   ChainHookStatus,
   ChainModuleProjection,
   ChainOrderFork,
@@ -34,15 +34,14 @@ import type {
   ChainRebuildMetadata,
   ChainRebuildStatus,
   ChainSignal,
-  ChainSignalAuthorization,
   ChainSignalCapability,
   ChainSignalTargetRelation,
   ChainStageExecutorOverlay,
-  ChainStageExecutorPatchMode,
   ChainStageFileEntry,
   ChainStageFileMap,
   ChainStageMaterialization,
   ChainStageSelectorBinding,
+  ChainSupplier,
   ChainSubmitSignal,
   ChainSyncDiagnosticsCounts,
   ChainSyncState,
@@ -58,7 +57,7 @@ type WireRecord = Record<string, unknown>;
 const ORDER_STATUSES: readonly ChainOrderStatus[] = ["registered", "unknown"];
 const TASK_STATUSES: readonly ChainTaskStatus[] = ["ready", "submitted", "cancelled", "unknown"];
 const HOOK_STATUSES: readonly ChainHookStatus[] = ["init", "waiting", "ready", "cancelled", "unknown"];
-const EXECUTOR_PATCH_MODES: readonly ChainStageExecutorPatchMode[] = ["assign", "handoff"];
+const EXECUTOR_BINDING_KINDS: readonly ChainExecutorBinding["kind"][] = ["default", "candidate"];
 const SIGNAL_TARGET_RELATIONS: readonly ChainSignalTargetRelation[] = ["current", "triggerOrigin", "unknown"];
 const DEPLOYMENT_STATUSES: readonly ChainDeploymentStatus[] = [
   "candidate",
@@ -71,8 +70,6 @@ const DEPLOYMENT_STATUSES: readonly ChainDeploymentStatus[] = [
 const PLAN_TRIGGER_KINDS: readonly ChainPlanTriggerKind[] = ["trigger"];
 const SYNC_STATUSES: readonly ChainSyncStatus[] = ["indexed", "syncing", "stale", "rebuilding", "degraded"];
 const REBUILD_STATUSES: readonly ChainRebuildStatus[] = ["idle", "running", "completed", "failed"];
-const SUBMIT_SIGNAL_SOURCES: readonly ChainSubmitSignal["source"][] = ["plan_capability", "authorization"];
-
 export function decodeProvenanceWire(value: unknown, path = "provenance"): ChainProvenance {
   const record = wireRecord(value, path);
   requireNumber(record, "chainId", path);
@@ -110,19 +107,6 @@ export function decodeTimelineEventWire(value: unknown, path = "timelineEvent"):
   return value as ChainTimelineEvent;
 }
 
-export function decodeSignalAuthorizationWire(
-  value: unknown,
-  path = "signalAuthorization"
-): ChainSignalAuthorization {
-  const record = wireRecord(value, path);
-  for (const field of ["orderId", "sourceId", "signalId", "submitter", "role", "metadataHash"] as const) {
-    requireString(record, field, path);
-  }
-  decodeProvenanceWire(record["authorizedAt"], `${path}.authorizedAt`);
-  decodeProofWire(record["proof"], `${path}.proof`);
-  return value as ChainSignalAuthorization;
-}
-
 export function decodeSignalWire(value: unknown, path = "signal"): ChainSignal {
   const record = wireRecord(value, path);
   for (const field of [
@@ -135,6 +119,7 @@ export function decodeSignalWire(value: unknown, path = "signal"): ChainSignal {
   ] as const) {
     requireString(record, field, path);
   }
+  optionalString(record, "relayer", path);
   optionalString(record, "factStageId", path);
   optionalBoolean(record, "replayedFromFork", path);
   decodeProvenanceWire(record["submittedAt"], `${path}.submittedAt`);
@@ -183,24 +168,15 @@ export function decodeStageExecutorOverlayWire(
   path = "stageExecutorOverlay"
 ): ChainStageExecutorOverlay {
   const record = wireRecord(value, path);
-  for (const field of [
-    "orderId",
-    "targetStageId",
-    "activeExecutorWallet",
-    "roleHash",
-    "executorMetadataHash",
-    "patchNonce",
-    "metadataURI"
-  ] as const) {
+  for (const field of ["orderId", "targetStageId", "supplierId", "patchNonce"] as const) {
     requireString(record, field, path);
   }
   optionalString(record, "selectorStageId", path);
-  optionalString(record, "selectorWallet", path);
-  optionalString(record, "patchHash", path);
-  optionalEnum(record, "mode", path, EXECUTOR_PATCH_MODES);
-  optionalString(record, "modeHash", path);
-  optionalString(record, "previousExecutor", path);
-  optionalString(record, "authorizationsHash", path);
+  optionalString(record, "selector", path);
+  optionalString(record, "previousSupplierId", path);
+  optionalString(record, "dockId", path);
+  optionalString(record, "fromPlanId", path);
+  optionalString(record, "effectiveExecutor", path);
   decodeProvenanceWire(record["updatedAt"], `${path}.updatedAt`);
   optionalProvenance(record, "activatedAt", path);
   decodeProofWire(record["proof"], `${path}.proof`);
@@ -260,7 +236,6 @@ export function decodeTaskSubmitSignalWire(
   const record = wireRecord(value, path);
   requireString(record, "sourceId", path);
   requireString(record, "signalId", path);
-  requireEnum(record, "source", path, SUBMIT_SIGNAL_SOURCES);
   return value as ChainSubmitSignal;
 }
 
@@ -272,16 +247,14 @@ export function decodeTaskWire(value: unknown, path = "task"): ChainTaskProjecti
     "stateMachineAddress",
     "hookId",
     "stageIdentifier",
-    "hookName",
-    "assigneeRole"
+    "hookName"
   ] as const) {
     requireString(record, field, path);
   }
   optionalString(record, "planId", path);
   optionalString(record, "deploymentId", path);
-  optionalString(record, "assigneeWallet", path);
-  optionalString(record, "assigneeRoleHash", path);
-  optionalString(record, "authorizationMetadataHash", path);
+  optionalString(record, "assigneeSupplierId", path);
+  optionalString(record, "assigneeExecutor", path);
   requireEnum(record, "status", path, TASK_STATUSES);
   if (record["submitSignals"] !== undefined) {
     decodeArray(record["submitSignals"], `${path}.submitSignals`).forEach((signal, index) => {
@@ -350,7 +323,6 @@ export function decodeOrderWire(value: unknown, path = "order"): ChainOrderProje
   optionalString(record, "currentStage", path);
   optionalString(record, "relayer", path);
   optionalString(record, "creator", path);
-  decodeRecordMap(record["authorizations"], `${path}.authorizations`, decodeSignalAuthorizationWire);
   decodeRecordMap(record["signals"], `${path}.signals`, decodeSignalWire);
   decodeRecordMap(record["derivedSignals"], `${path}.derivedSignals`, decodeDerivedSignalWire);
   decodeRecordMap(record["stageMaterializations"], `${path}.stageMaterializations`, decodeStageMaterializationWire);
@@ -404,14 +376,15 @@ export function decodeStageSelectorBindingWire(
   return value as ChainStageSelectorBinding;
 }
 
-export function decodeExecutorCandidateWire(
+export function decodeExecutorBindingWire(
   value: unknown,
-  path = "executorCandidate"
-): ChainExecutorCandidate {
+  path = "executorBinding"
+): ChainExecutorBinding {
   const record = wireRecord(value, path);
   requireString(record, "stageId", path);
-  requireString(record, "executor", path);
-  return value as ChainExecutorCandidate;
+  requireString(record, "supplierId", path);
+  requireEnum(record, "kind", path, EXECUTOR_BINDING_KINDS);
+  return value as ChainExecutorBinding;
 }
 
 export function decodeSignalCapabilityWire(
@@ -440,7 +413,7 @@ export function decodePlanWire(value: unknown, path = "plan"): ChainPlanProjecti
   optionalString(record, "publisher", path);
   optionalString(record, "hooksHash", path);
   optionalString(record, "capabilitiesRoot", path);
-  optionalString(record, "executorCandidatesRoot", path);
+  optionalString(record, "executorBindingsRoot", path);
   optionalString(record, "birthAuthorizer", path);
   optionalProvenance(record, "committedAt", path);
   optionalProvenance(record, "finalizedAt", path);
@@ -450,9 +423,16 @@ export function decodePlanWire(value: unknown, path = "plan"): ChainPlanProjecti
   decodeArray(record["signalCapabilities"], `${path}.signalCapabilities`).forEach((capability, index) => {
     decodeSignalCapabilityWire(capability, `${path}.signalCapabilities[${index}]`);
   });
-  decodeArray(record["executorCandidates"], `${path}.executorCandidates`).forEach((candidate, index) => {
-    decodeExecutorCandidateWire(candidate, `${path}.executorCandidates[${index}]`);
+  decodeArray(record["executorBindings"], `${path}.executorBindings`).forEach((binding, index) => {
+    decodeExecutorBindingWire(binding, `${path}.executorBindings[${index}]`);
   });
+  if (record["dynamicExecutorStages"] !== undefined) {
+    decodeArray(record["dynamicExecutorStages"], `${path}.dynamicExecutorStages`).forEach((stageId, index) => {
+      if (typeof stageId !== "string") {
+        throw new ChainReadContractError(`${path}.dynamicExecutorStages[${index}]`, "must be a string");
+      }
+    });
+  }
   if (record["capabilityEnrichment"] !== undefined) {
     requireEnum(record, "capabilityEnrichment", path, PLAN_ENRICHMENT_STATUSES);
   }
@@ -700,6 +680,28 @@ export function decodeDockBindingWire(
   return value as ChainDockBinding;
 }
 
+export function decodeSupplierWire(
+  value: unknown,
+  path = "supplier"
+): ChainSupplier {
+  const record = wireRecord(value, path);
+  for (const field of ["supplierId", "executor"] as const) {
+    requireString(record, field, path);
+  }
+  decodeProvenanceWire(record["registeredAt"], `${path}.registeredAt`);
+  decodeProvenanceWire(record["updatedAt"], `${path}.updatedAt`);
+  decodeProofWire(record["proof"], `${path}.proof`);
+  optionalProvenance(record, "rotatedAt", path);
+  if (record["rotationProof"] !== undefined) {
+    decodeProofWire(record["rotationProof"], `${path}.rotationProof`);
+  }
+  optionalProvenance(record, "revokedAt", path);
+  if (record["revocationProof"] !== undefined) {
+    decodeProofWire(record["revocationProof"], `${path}.revocationProof`);
+  }
+  return value as ChainSupplier;
+}
+
 export function decodeSnapshotWire(
   value: unknown,
   path = "snapshot"
@@ -718,7 +720,8 @@ export function decodeSnapshotWire(
     "stateMachineOrders",
     "stateMachineDocks",
     "stateMachineDockBindings",
-    "stateMachineTasks"
+    "stateMachineTasks",
+    "stateMachineSuppliers"
   ] as const) {
     wireRecord(record[field], `${path}.${field}`);
   }

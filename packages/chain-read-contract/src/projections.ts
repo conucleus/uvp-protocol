@@ -39,17 +39,6 @@ export interface ChainTimelineEvent {
   readonly proof: ChainProof;
 }
 
-export interface ChainSignalAuthorization {
-  readonly orderId: Hex;
-  readonly sourceId: Hex;
-  readonly signalId: Hex;
-  readonly submitter: Address;
-  readonly role: Hex;
-  readonly metadataHash: Hex;
-  readonly authorizedAt: ChainProvenance;
-  readonly proof: ChainProof;
-}
-
 export interface ChainSignal {
   readonly orderId: Hex;
   readonly sourceId: Hex;
@@ -57,6 +46,8 @@ export interface ChainSignal {
   readonly payloadHash: Hex;
   readonly idempotencyKey: Hex;
   readonly submitter: Address;
+  /** 代付交易的钱包；业务签名者始终是 submitter。 */
+  readonly relayer?: Address;
   readonly factStageId?: Hex;
   readonly replayedFromFork?: boolean;
   readonly submittedAt: ChainProvenance;
@@ -88,23 +79,18 @@ export interface ChainStageMaterialization {
   readonly proof: ChainProof;
 }
 
-export type ChainStageExecutorPatchMode = "assign" | "handoff";
-
 export interface ChainStageExecutorOverlay {
   readonly orderId: Hex;
   readonly selectorStageId?: Hex;
   readonly targetStageId: Hex;
-  readonly selectorWallet?: Address;
-  readonly activeExecutorWallet: Address;
-  readonly mode?: ChainStageExecutorPatchMode;
-  readonly modeHash?: Hex;
-  readonly previousExecutor?: Address;
-  readonly authorizationsHash?: Hex;
-  readonly roleHash: Hex;
-  readonly executorMetadataHash: Hex;
-  readonly patchHash?: Hex;
+  readonly selector?: Address;
+  readonly supplierId: Hex;
+  readonly previousSupplierId?: Hex;
   readonly patchNonce: string;
-  readonly metadataURI: string;
+  readonly dockId?: Hex;
+  readonly fromPlanId?: Hex;
+  /** SupplierRegistry 在投影时点解析的 executorOf(supplierId)；供应商已撤销时缺省。 */
+  readonly effectiveExecutor?: Address;
   readonly updatedAt: ChainProvenance;
   readonly activatedAt?: ChainProvenance;
   readonly proof: ChainProof;
@@ -150,7 +136,6 @@ export type ChainTaskStatus = "ready" | "submitted" | "cancelled" | "unknown";
 export interface ChainSubmitSignal {
   readonly sourceId: Hex;
   readonly signalId: Hex;
-  readonly source: "plan_capability" | "authorization";
 }
 
 export interface ChainTaskProjection {
@@ -162,10 +147,8 @@ export interface ChainTaskProjection {
   readonly hookId: Hex;
   readonly stageIdentifier: Hex;
   readonly hookName: Hex;
-  readonly assigneeRole: string;
-  readonly assigneeWallet?: Address;
-  readonly assigneeRoleHash?: Hex;
-  readonly authorizationMetadataHash?: Hex;
+  readonly assigneeSupplierId?: Hex;
+  readonly assigneeExecutor?: Address;
   readonly status: ChainTaskStatus;
   readonly submitSignals?: readonly ChainSubmitSignal[];
   readonly createdAt: ChainProvenance;
@@ -209,7 +192,6 @@ export interface ChainOrderProjection {
   readonly currentStage?: Hex;
   readonly relayer?: Address;
   readonly creator?: Address;
-  readonly authorizations: Readonly<Record<string, ChainSignalAuthorization>>;
   readonly signals: Readonly<Record<string, ChainSignal>>;
   readonly derivedSignals: Readonly<Record<string, ChainDerivedSignal>>;
   readonly stageMaterializations: Readonly<Record<string, ChainStageMaterialization>>;
@@ -247,9 +229,12 @@ export interface ChainStageSelectorBinding {
   readonly bindingHash?: Hex;
 }
 
-export interface ChainExecutorCandidate {
+export type ChainExecutorBindingKind = "default" | "candidate";
+
+export interface ChainExecutorBinding {
   readonly stageId: Hex;
-  readonly executor: Address;
+  readonly supplierId: Hex;
+  readonly kind: ChainExecutorBindingKind;
 }
 
 export interface ChainSignalCapability {
@@ -270,13 +255,14 @@ export interface ChainPlanProjection {
   readonly publisher?: Address;
   readonly hooksHash?: Hex;
   readonly capabilitiesRoot?: Hex;
-  readonly executorCandidatesRoot?: Hex;
+  readonly executorBindingsRoot?: Hex;
   readonly birthAuthorizer?: Address;
   readonly committedAt?: ChainProvenance;
   readonly finalizedAt?: ChainProvenance;
   readonly selectorBindings: readonly ChainStageSelectorBinding[];
   readonly signalCapabilities: readonly ChainSignalCapability[];
-  readonly executorCandidates: readonly ChainExecutorCandidate[];
+  readonly executorBindings: readonly ChainExecutorBinding[];
+  readonly dynamicExecutorStages?: readonly Hex[];
   readonly capabilityEnrichment?: ChainPlanCapabilityEnrichmentStatus;
   readonly registeredAt: ChainProvenance;
   readonly publisherRecordedAt?: ChainProvenance;
@@ -479,6 +465,19 @@ export interface ChainDockBinding {
   readonly proof?: ChainProof;
 }
 
+/** SupplierRegistry binding at projection time; revoked suppliers keep their last executor and revocation proof. */
+export interface ChainSupplier {
+  readonly supplierId: Hex;
+  readonly executor: Address;
+  readonly registeredAt: ChainProvenance;
+  readonly updatedAt: ChainProvenance;
+  readonly proof: ChainProof;
+  readonly rotatedAt?: ChainProvenance;
+  readonly rotationProof?: ChainProof;
+  readonly revokedAt?: ChainProvenance;
+  readonly revocationProof?: ChainProof;
+}
+
 /** Complete rebuildable order projection snapshot; every nested block number is a decimal string. */
 export interface ChainProjectionSnapshot {
   readonly rebuildable: true;
@@ -492,6 +491,7 @@ export interface ChainProjectionSnapshot {
   readonly stateMachineDocks: Readonly<Record<string, ChainDock>>;
   readonly stateMachineDockBindings: Readonly<Record<string, ChainDockBinding>>;
   readonly stateMachineTasks: Readonly<Record<string, ChainTaskProjection>>;
+  readonly stateMachineSuppliers: Readonly<Record<string, ChainSupplier>>;
   readonly lastEvent?: ChainProvenance;
   readonly unresolvedModuleOrderEventCount?: number;
   readonly unresolvedStageActivationEventCount?: number;

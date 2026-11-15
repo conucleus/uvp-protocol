@@ -1,4 +1,9 @@
 import {
+  EXECUTOR_BINDING_KIND_CANDIDATE,
+  EXECUTOR_BINDING_KIND_DEFAULT,
+  MAX_EXECUTOR_BINDINGS,
+} from "../executor-bindings.js";
+import {
   onchainSelectorBindingHash,
   onchainSignalCapabilityHash,
   onchainSignalId,
@@ -15,11 +20,12 @@ import {
   isHexHash,
   isRecord,
 } from "../shape.js";
-import type { HexString } from "../../types/index.js";
+import type { ExecutorBinding, ExecutorBindingKind, HexString } from "../../types/index.js";
 
 /**
- * 能力声明族校验：executorRoutes / selectorBindings / signalCapabilities
- * 的形状与承诺重算，事实键唯一属主镜像，supplierType/fileType 闭集词表。
+ * 能力声明族校验：executorRoutes / executorBindings / selectorBindings /
+ * signalCapabilities 的形状与承诺重算，事实键唯一属主镜像，
+ * supplierType/fileType/executor-kind 闭集词表。
  */
 
 const EXECUTOR_ROUTE_FIELDS: readonly string[] = [
@@ -38,6 +44,16 @@ const SELECTOR_BINDING_FIELDS: readonly string[] = [
   "selectorStageId",
   "targetStageId",
   "bindingHash",
+];
+const EXECUTOR_BINDING_FIELDS: readonly string[] = [
+  "stageIdentifier",
+  "stageId",
+  "supplierId",
+  "kind",
+];
+const EXECUTOR_BINDING_KINDS: readonly number[] = [
+  EXECUTOR_BINDING_KIND_DEFAULT,
+  EXECUTOR_BINDING_KIND_CANDIDATE,
 ];
 const SIGNAL_CAPABILITY_FIELDS: readonly string[] = [
   "stageIdentifier",
@@ -86,6 +102,77 @@ function duplicateCurrentOrderFactKeyIssues(
     }
   }
   return issues;
+}
+
+export interface OnchainExecutorBindingRecord extends ExecutorBinding {}
+
+function validateOnchainExecutorBindings(
+  bindings: readonly unknown[],
+): {
+  readonly records: readonly OnchainExecutorBindingRecord[];
+  readonly issues: readonly string[];
+} {
+  const issues: string[] = [];
+  const records: OnchainExecutorBindingRecord[] = [];
+  if (bindings.length > MAX_EXECUTOR_BINDINGS) {
+    issues.push(
+      `executorBindings must not exceed ${MAX_EXECUTOR_BINDINGS} entries; UVPStateMachine.commitPlan reverts TooManyExecutorBindings`,
+    );
+  }
+  const seen = new Set<string>();
+  for (const [index, binding] of bindings.entries()) {
+    const prefix = `executorBindings[${index}]`;
+    if (!isRecord(binding)) {
+      issues.push(`${prefix} must be an object`);
+      continue;
+    }
+    expectClosedKeySet(binding, EXECUTOR_BINDING_FIELDS, prefix, issues);
+    expectNonEmptyString(
+      binding.stageIdentifier,
+      `${prefix}.stageIdentifier`,
+      issues,
+    );
+    expectHexHash(binding.stageId, `${prefix}.stageId`, issues);
+    expectHexHash(binding.supplierId, `${prefix}.supplierId`, issues);
+    if (
+      typeof binding.stageIdentifier === "string" &&
+      typeof binding.stageId === "string" &&
+      binding.stageId !== onchainStageId(binding.stageIdentifier)
+    ) {
+      issues.push(`${prefix}.stageId must be keccak256(stageIdentifier)`);
+    }
+    if (
+      typeof binding.kind !== "number" ||
+      !EXECUTOR_BINDING_KINDS.includes(binding.kind)
+    ) {
+      issues.push(
+        `${prefix}.kind must be ${EXECUTOR_BINDING_KIND_DEFAULT} (default) or ${EXECUTOR_BINDING_KIND_CANDIDATE} (candidate), received ${JSON.stringify(binding.kind)}`,
+      );
+      continue;
+    }
+    const kind = binding.kind as ExecutorBindingKind;
+    if (
+      typeof binding.stageIdentifier === "string" &&
+      isHexHash(binding.stageId) &&
+      isHexHash(binding.supplierId)
+    ) {
+      const key = `${binding.stageId}:${binding.supplierId}:${kind}`;
+      if (seen.has(key)) {
+        issues.push(
+          `duplicate executor binding for stage ${binding.stageIdentifier} (supplierId ${binding.supplierId}, kind ${kind}); `
+            + "UVPStateMachine.commitPlan reverts DuplicateExecutorBinding and the Merkle tree must not absorb the duplicate",
+        );
+      }
+      seen.add(key);
+      records.push({
+        stageIdentifier: binding.stageIdentifier,
+        stageId: binding.stageId,
+        supplierId: binding.supplierId,
+        kind,
+      });
+    }
+  }
+  return { records, issues };
 }
 
 function validateOnchainExecutorRoutes(
@@ -358,6 +445,7 @@ function selectorBindingKey(
 
 export {
   duplicateCurrentOrderFactKeyIssues,
+  validateOnchainExecutorBindings,
   validateOnchainExecutorRoutes,
   validateOnchainSelectorBindings,
   validateOnchainSignalCapabilities,

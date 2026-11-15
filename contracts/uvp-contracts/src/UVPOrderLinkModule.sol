@@ -31,9 +31,9 @@ contract UVPOrderLinkModule {
     bytes32 private constant _EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _EIP712_NAME_HASH = keccak256("UVPOrderLinkModule");
-    bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.8");
+    bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.9");
     bytes32 private constant _TRIGGER_ORDER_FROM_SIGNAL_TYPEHASH = keccak256(
-        "UVPOrderLinkModuleTriggerOrderFromSignal(bytes32 orderId,bytes32 planId,address creator,bytes32 triggerOriginOrderId,bytes32 originPlanId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 authorizationsHash,address submitter,uint256 deadline)"
+        "UVPOrderLinkModuleTriggerOrderFromSignal(bytes32 orderId,bytes32 planId,address creator,bytes32 triggerOriginOrderId,bytes32 originPlanId,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
     );
 
     mapping(bytes32 planId => mapping(bytes32 triggeredOrderId => OrderTriggerLink link)) private _orderTriggerLinks;
@@ -54,7 +54,6 @@ contract UVPOrderLinkModule {
 
     function triggerOrderFromSignalFor(
         IUVPStateMachineCore.TriggerOrderFromSignalRequest calldata trigger,
-        IUVPStateMachineCore.SignalAuthorization[] calldata authorizations,
         bytes calldata signature,
         IUVPStateMachineCore.FactAttribution[] calldata originFactAttributions
     ) external {
@@ -76,20 +75,15 @@ contract UVPOrderLinkModule {
             revert OrderTriggerLinkAlreadyRegistered(trigger.orderId);
         }
 
-        {
-            bytes32 authorizationsHash = signalAuthorizationsHash(authorizations);
-            address recoveredSigner =
-                _recoverSignalSubmitter(triggerOrderFromSignalDigest(trigger, authorizationsHash), signature);
-            if (recoveredSigner != trigger.submitter) {
-                revert InvalidTriggerOrderSignature(trigger.submitter, recoveredSigner);
-            }
+        address recoveredSigner = _recoverSignalSubmitter(triggerOrderFromSignalDigest(trigger), signature);
+        if (recoveredSigner != trigger.submitter) {
+            revert InvalidTriggerOrderSignature(trigger.submitter, recoveredSigner);
         }
-        _registerLinkAndTrigger(trigger, authorizations, originFactAttributions);
+        _registerLinkAndTrigger(trigger, originFactAttributions);
     }
 
     function _registerLinkAndTrigger(
         IUVPStateMachineCore.TriggerOrderFromSignalRequest calldata trigger,
-        IUVPStateMachineCore.SignalAuthorization[] calldata authorizations,
         IUVPStateMachineCore.FactAttribution[] calldata originFactAttributions
     ) private {
         _orderTriggerLinks[trigger.planId][trigger.orderId] = OrderTriggerLink({
@@ -101,7 +95,7 @@ contract UVPOrderLinkModule {
             exists: true
         });
 
-        stateMachine.triggerOrderFromSignalFromModule(trigger, authorizations, msg.sender, originFactAttributions);
+        stateMachine.triggerOrderFromSignalFromModule(trigger, msg.sender, originFactAttributions);
         emit OrderLinked(
             trigger.orderId,
             trigger.triggerOriginOrderId,
@@ -157,49 +151,29 @@ contract UVPOrderLinkModule {
         );
     }
 
-    function signalAuthorizationsHash(IUVPStateMachineCore.SignalAuthorization[] calldata authorizations)
+    function triggerOrderFromSignalDigest(IUVPStateMachineCore.TriggerOrderFromSignalRequest calldata trigger)
         public
-        pure
+        view
         returns (bytes32)
     {
-        bytes32 rollingHash = keccak256(abi.encode(authorizations.length));
-        for (uint256 i = 0; i < authorizations.length; i++) {
-            IUVPStateMachineCore.SignalAuthorization calldata authorization = authorizations[i];
-            rollingHash = keccak256(
-                abi.encode(
-                    rollingHash,
-                    authorization.sourceId,
-                    authorization.signalId,
-                    authorization.submitter,
-                    authorization.role,
-                    authorization.metadataHash
-                )
-            );
-        }
-        return rollingHash;
-    }
-
-    function triggerOrderFromSignalDigest(
-        IUVPStateMachineCore.TriggerOrderFromSignalRequest calldata trigger,
-        bytes32 authorizationsHash
-    ) public view returns (bytes32) {
-        bytes memory encoded = new bytes(0x1e0);
-        _writeWord(encoded, 0x00, _TRIGGER_ORDER_FROM_SIGNAL_TYPEHASH);
-        _writeWord(encoded, 0x20, trigger.orderId);
-        _writeWord(encoded, 0x40, trigger.planId);
-        _writeAddress(encoded, 0x60, trigger.creator);
-        _writeWord(encoded, 0x80, trigger.triggerOriginOrderId);
-        _writeWord(encoded, 0xa0, trigger.originPlanId);
-        _writeWord(encoded, 0xc0, trigger.triggerHookId);
-        _writeWord(encoded, 0xe0, trigger.triggerStageId);
-        _writeWord(encoded, 0x100, trigger.originSourceId);
-        _writeWord(encoded, 0x120, trigger.originSignalId);
-        _writeWord(encoded, 0x140, trigger.payloadHash);
-        _writeWord(encoded, 0x160, trigger.idempotencyKey);
-        _writeWord(encoded, 0x180, authorizationsHash);
-        _writeAddress(encoded, 0x1a0, trigger.submitter);
-        _writeWord(encoded, 0x1c0, bytes32(trigger.deadline));
-        bytes32 structHash = keccak256(encoded);
+        bytes32 structHash = keccak256(
+            abi.encode(
+                _TRIGGER_ORDER_FROM_SIGNAL_TYPEHASH,
+                trigger.orderId,
+                trigger.planId,
+                trigger.creator,
+                trigger.triggerOriginOrderId,
+                trigger.originPlanId,
+                trigger.triggerHookId,
+                trigger.triggerStageId,
+                trigger.originSourceId,
+                trigger.originSignalId,
+                trigger.payloadHash,
+                trigger.idempotencyKey,
+                trigger.submitter,
+                trigger.deadline
+            )
+        );
         return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
     }
 
@@ -217,15 +191,5 @@ contract UVPOrderLinkModule {
             v := byte(0, calldataload(add(signature.offset, 0x40)))
         }
         return ECDSA.recover(digest, UVPSignatures.Signature({v: v, r: r, s: s}));
-    }
-
-    function _writeWord(bytes memory encoded, uint256 offset, bytes32 value) private pure {
-        assembly ("memory-safe") {
-            mstore(add(add(encoded, 0x20), offset), value)
-        }
-    }
-
-    function _writeAddress(bytes memory encoded, uint256 offset, address value) private pure {
-        _writeWord(encoded, offset, bytes32(uint256(uint160(value))));
     }
 }

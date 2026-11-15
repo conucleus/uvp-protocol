@@ -117,7 +117,7 @@ contract CommitmentGoldenVectorsTest {
         bytes32 runtimePlanHash = machine.planRuntimeHash(
             hooksHash,
             vm.parseJsonBytes32(fixture, string.concat(base, ".expected.capabilitiesRoot")),
-            vm.parseJsonBytes32(fixture, string.concat(base, ".expected.executorCandidatesRoot"))
+            vm.parseJsonBytes32(fixture, string.concat(base, ".expected.executorBindingsRoot"))
         );
         require(
             runtimePlanHash == vm.parseJsonBytes32(fixture, string.concat(base, ".expected.runtimePlanHash")),

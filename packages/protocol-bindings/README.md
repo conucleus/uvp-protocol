@@ -9,22 +9,24 @@ tools, and participant apps.
 pnpm --filter @uvp-eth/protocol-bindings typecheck
 pnpm --filter @uvp-eth/protocol-bindings test
 pnpm --filter @uvp-eth/protocol-bindings build
+pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
 ```
 
 ## Boundary
 
 - Exposes core and module ABI constants (`UVP_STATE_MACHINE_ARTIFACT_ABI`,
-  `STATE_MACHINE_ABI`, `FILE_RESOURCE_MODULE_ABI`, `DOCK_REGISTRY_ABI`,
-  module call surfaces — including the stage-patch dock selection/binding poke/output
-  events),
-  stage executor patch typed-data
-  helpers, `UVPZhixuRegistry/1` registry typed data
+  `STATE_MACHINE_ABI`, `FILE_RESOURCE_MODULE_ABI`,
+  `SUPPLIER_REGISTRY_ABI`, `DOCK_REGISTRY_ABI`, module call surfaces —
+  including the stage-patch executor patch/dock selection and output events),
+  stage executor patch and stage dock executor selection typed-data helpers,
+  plan executor binding registration helpers, signal submission
+  (`submitSignalFor`) typed data, `UVPZhixuRegistry/1` registry typed data
   (`ZhixuRecord`/`IdentityClaim` schema, builders, type hashes),
-  `submitSignal` (direct, including trailing `filesDigest`/`FilePatch`),
-  `applyStageExecutorPatchFor`, and file patch call construction (`filePatchDigest`, `FileOp`/`FilePatch`), capability-tree
-  root/proof helpers, and address/bytes32 validation. Canonical JSON
-  serialization and evidence hashing are owned by
-  `@uvp-eth/canonical-json`.
+  direct `submitSignal` (including trailing `filesDigest`/`FilePatch`),
+  `applyStageExecutorPatchFor`, and file patch call construction
+  (`filePatchDigest`, `FileOp`/`FilePatch`), capability-tree root/proof
+  helpers, and address/bytes32 validation. Canonical JSON serialization and
+  evidence hashing are owned by `@uvp-eth/canonical-json`.
 - Trigger birth helpers: `OrderTriggerKind`/`buildCompactHookFlags`,
   `buildTriggerOrderFromOutsideTypedData`, the two
   `buildTriggerOrderFromOutside*Call` encoders, and `deriveTriggerOrderId`.
@@ -37,29 +39,58 @@ pnpm --filter @uvp-eth/protocol-bindings build
   package dependency; moving that fixture requires updating all three
   consumers together.
 
+## Plan Registration Bindings
+
+- `PlanCommitPayload` / `PlanCommitTypedData` mirror
+  `UVPStateMachine.PlanCommit`: the publisher signs `publisher`, `hooksHash`,
+  `capabilitiesRoot`, `executorBindingsRoot`, `birthAuthorizer`, `deadline`
+  under the main `UVPStateMachine` domain (`0.18`).
+- `ExecutorBinding` is `{ stageId, supplierId, kind }` with kind `0`
+  (default) / `1` (candidate); `buildPlanCommitCall` encodes
+  `commitPlan(commit, hooks, bindings, signature)` from
+  `PlanRegistrationArgs.executorBindings` and
+  `PlanRegistrationArgs.executorBindingsRoot`. Supplier IDs, binding roots,
+  binding proofs, and default-vs-candidate derivation are owned by
+  `@uvp-eth/compiler/browser`; this package only carries them into calldata.
+
+## Signal Submission Bindings
+
+- `buildSignalSubmissionTypedData` builds
+  `UVPStateMachineSignalSubmission(planId, orderId, sourceId, signalId,
+  payloadHash, idempotencyKey, filesDigest, attributionHash, submitter,
+  deadline)` under the main domain (`0.18`); `factAttributionHash` is the
+  `FactAttribution(sourceId, signalId, stageId, capabilityProof)` digest that
+  enters the signature, and `recoverSignalSubmissionSigner` recovers the
+  signer.
+- `buildSubmitSignalForCall` encodes
+  `submitSignalFor(planId, orderId, sourceId, signalId, payloadHash,
+  idempotencyKey, attribution, filesDigest, filePatch, submitter, deadline,
+  signature)`; the submitter is the effective stage executor and `msg.sender`
+  is only the relayer. `filesDigest` must equal `filePatchDigest` when the
+  patch carries ops.
+
 ## Trigger Birth Bindings
 
 - `OrderTriggerKind` is `"none" | "trigger"`.
   `buildCompactHookFlags` folds it into the compact-hook flag word:
   `"trigger"` → `HOOK_FLAG_ORDER_TRIGGER_MINT`, plus `HOOK_FLAG_EMIT_READY`
-  when the hook must emit ready. The compiler marks dock-stage hooks with
-  `HOOK_FLAG_DOCK_EXECUTOR`. Flags are committed through the plan's
-  `hooksHash`.
+  when the hook must emit ready, `HOOK_FLAG_DOCK_EXECUTOR` for dock stages,
+  and `HOOK_FLAG_DYNAMIC_EXECUTOR` for dynamic executor stages. Flags are
+  committed through the plan's `hooksHash`.
 - `buildTriggerOrderFromOutsideTypedData` builds
   `UVPStateMachineTriggerOrderFromOutside` typed data under the product-submit
-  domain (`UVPStateMachine`, version `0.17`). `triggerHookId` +
+  domain (`UVPStateMachine`, version `0.18`). `triggerHookId` +
   `triggerStageId` explicitly select one trigger birth line among the plan's
-  order-trigger hooks; the signed message also covers `authorizationsHash`.
+  order-trigger hooks.
 - `buildTriggerOrderFromOutsideForCall` encodes the relayer-submitted signed
   birth entry; `buildTriggerOrderFromOutsideByAuthorizerCall` encodes the
   contract `birthAuthorizer` direct entry, which carries no signature.
 - `deriveTriggerOrderId(planId, sourceId, signalId, payloadHash)` mirrors the
   on-chain `triggerOrderIdFor`: `keccak256(abi.encode(planId, sourceId,
   signalId, payloadHash))` with the reserved top namespace bit cleared.
-- The trigger-birth surface pins the state-machine fixture
-  `uvp-state-machine.v0.19.json` and the linked-library fixture
-  `uvp-plan-registration.v0.6.json`; birth admission rejects with
-  `SignalAdmissionRejected`.
+- The trigger-birth surface pins the state-machine and linked
+  plan-registration ABI fixtures under `contracts/uvp-contracts/fixtures/`;
+  birth admission rejects with `SignalAdmissionRejected`.
 
 ## Dock Write Surface
 
@@ -72,8 +103,10 @@ pnpm --filter @uvp-eth/protocol-bindings build
   plan capability tables (single-source leaf/proof helpers above).
 - `selectStageDockExecutor` / `For` builders select a dkid once;
   `buildStageDockExecutorSelectionTypedData` builds the selector EIP-712
-  payload (`UVPStagePatchModule`, version `0.4`), and
-  `recoverStageDockExecutorSelectionSigner` recovers it.
+  payload (`UVPStagePatchModule`, version `0.5`), and
+  `recoverStageDockExecutorSelectionSigner` recovers it. The selection carries
+  `supplierId` + `patchNonce`; executor addresses are resolved on chain from
+  the supplier registry.
 - `buildPokeDockBindingCall` encodes `pokeDockBinding` (payload content, A
   order id, per-output capability proofs); `dockBindingId` mirrors the
   contract binding-id preimage (7 words, no payload hash).
@@ -105,28 +138,27 @@ pnpm --filter @uvp-eth/protocol-bindings build
 
 ## Stage Executor Patch Helpers
 
-- Exported mode constants mirror the contract constants:
-  `EXECUTOR_PATCH_MODE_ASSIGN` and `EXECUTOR_PATCH_MODE_HANDOFF`.
 - `buildStageExecutorPatchTypedData` builds
-  `UVPStagePatchModuleStageExecutorPatch` EIP-712 typed data for `assign` and
-  `handoff` payloads. The payload includes `mode`,
-  `previousExecutor`, `approvalSourceId`, and `approvalSignalId`.
+  `UVPStagePatchModuleStageExecutorPatch` EIP-712 typed data (module domain
+  `0.5`) for supplier assignment and handoff payloads. The payload is
+  `selectorStageId, targetStageId, supplierId, previousSupplierId,
+  patchNonce`; there is no mode/role/metadata/patch-hash field.
+  `previousSupplierId == 0` is the assign transition (before the stage's
+  first signal); a non-zero value is the handoff transition (after it).
 - `recoverStageExecutorPatchSigner` recovers either the selector wallet or the
   previous executor wallet from a signature over the same executor patch typed
   data.
 - `buildApplyStageExecutorPatchForCall` encodes
   `applyStageExecutorPatchFor` calldata with `selectorSignature` and
-  `previousExecutorSignature`; pass `0x` when the selected mode does not
-  require previous-executor consent.
+  `previousExecutorSignature`; pass `0x` when the transition does not require
+  previous-executor consent. `bindingProof` proves the selector stage binding;
+  `candidateProof` proves candidate membership only for candidate stages and
+  is empty for dynamic stages.
 - `hashStageExecutorPatchPayload` commits to the
-  `uvp:stage-executor-patch-payload:v1` domain
+  `uvp:stage-executor-patch-payload:v2` domain
   (`STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN`, hashed as the leading
   `keccak256(domain)` word of the abi-encoded preimage) plus selector stage,
-  target stage, executor, role, executor metadata hash, mode, previous
-  executor, approval source/signal ids, nonce, and metadata URI. It does not
-  include file resource fields.
-- Use the zero address or zero `bytes32` for unused `previousExecutor` and
-  approval fields so those absences are still explicit in the signed payload.
+  target stage, supplier, previous supplier, and nonce.
 
 ## File Patch Helpers
 

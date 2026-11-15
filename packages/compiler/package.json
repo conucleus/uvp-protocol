@@ -1,6 +1,6 @@
 {
   "name": "@uvp-eth/compiler",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Deterministic EVM artifact compiler for Zhixu HookPlan state-machine definitions.",

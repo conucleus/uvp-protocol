@@ -73,7 +73,6 @@ function internalOrder() {
     status: "registered" as const,
     currentStage: STAGE_ID,
     creator: WALLET,
-    authorizations: {},
     signals: {
       [SIGNAL_ID]: {
         orderId: ORDER_ID,
@@ -82,6 +81,7 @@ function internalOrder() {
         payloadHash: HASH,
         idempotencyKey: HASH,
         submitter: WALLET,
+        relayer: WALLET,
         submittedAt: provenance(13n),
         proof: proof(13n)
       }
@@ -119,10 +119,10 @@ function internalOrder() {
         hookId: HOOK_ID,
         stageIdentifier: STAGE_ID,
         hookName: HOOK_ID,
-        assigneeRole: "performer",
-        assigneeWallet: WALLET,
+        assigneeSupplierId: HASH,
+        assigneeExecutor: WALLET,
         status: "ready" as const,
-        submitSignals: [{ sourceId: STAGE_ID, signalId: SIGNAL_ID, source: "authorization" as const }],
+        submitSignals: [{ sourceId: STAGE_ID, signalId: SIGNAL_ID }],
         createdAt: provenance(20n),
         updatedAt: provenance(21n),
         proof: proof(21n)
@@ -177,7 +177,7 @@ function internalSnapshot() {
         hookCount: "0",
         selectorBindings: [],
         signalCapabilities: [],
-        executorCandidates: [],
+        executorBindings: [],
         registeredAt: provenance(8n),
         updatedAt: provenance(8n),
         proof: proof(8n),
@@ -188,6 +188,17 @@ function internalSnapshot() {
     stateMachineDocks: {},
     stateMachineDockBindings: {},
     stateMachineTasks: { [order.tasks["task-1"]!.taskId]: order.tasks["task-1"]! },
+    stateMachineSuppliers: {
+      [HASH]: {
+        supplierId: HASH,
+        executor: WALLET,
+        registeredAt: provenance(6n),
+        updatedAt: provenance(7n),
+        proof: proof(6n),
+        rotatedAt: provenance(7n),
+        rotationProof: proof(7n)
+      }
+    },
     lastEvent: provenance(15n),
     unresolvedModuleOrderEventCount: 0,
     unresolvedStageActivationEventCount: 0,
@@ -234,7 +245,8 @@ describe("chain read wire contract", () => {
 
     const task: ChainTaskProjection = toWire(internalTask());
     assert.equal(task.proof.blockNumber, "21");
-    assert.equal(task.submitSignals?.[0]?.source, "authorization");
+    assert.equal(task.assigneeSupplierId, HASH);
+    assert.equal(wire.signals[SIGNAL_ID]?.relayer, WALLET);
   });
 
   it("round-trips a representative order, task, snapshot, and sync state through the decoders", () => {
@@ -258,15 +270,15 @@ describe("chain read wire contract", () => {
 
   it("rejects a missing required group and a malformed nested placeholder", () => {
     const order: ChainOrderProjection = toWire(internalOrder());
-    const { authorizations: _authorizations, ...withoutAuthorizations } = order;
+    const { signals: _signals, ...withoutSignals } = order;
     assert.throws(
-      () => decodeOrderWire(withoutAuthorizations),
+      () => decodeOrderWire(withoutSignals),
       (error: unknown) =>
         error instanceof ChainReadContractError &&
-        error.path === "order.authorizations" &&
+        error.path === "order.signals" &&
         error.message.includes("must be an object")
     );
-    assert.equal(isChainOrderProjection(withoutAuthorizations), false);
+    assert.equal(isChainOrderProjection(withoutSignals), false);
 
     const malformedBlock = {
       ...order,

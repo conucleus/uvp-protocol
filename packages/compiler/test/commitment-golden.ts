@@ -30,6 +30,12 @@ export interface CommitmentGoldenHook {
   readonly dependencyKeys: readonly HexString[];
 }
 
+export interface CommitmentGoldenExecutorBinding {
+  readonly stageId: HexString;
+  readonly supplierId: HexString;
+  readonly kind: 0 | 1;
+}
+
 export interface CommitmentGoldenCase {
   readonly name: string;
   readonly note: string;
@@ -54,7 +60,8 @@ export interface CommitmentGoldenCase {
     readonly runtimePlanHash: string;
     readonly hooksHash: string;
     readonly capabilitiesRoot: string;
-    readonly executorCandidatesRoot: string;
+    readonly executorBindingsRoot: string;
+    readonly executorBindings: readonly CommitmentGoldenExecutorBinding[];
   };
 }
 

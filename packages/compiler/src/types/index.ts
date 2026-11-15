@@ -1,8 +1,8 @@
 export const COMPILER_NAME = "uvp-eth-compiler" as const;
-export const COMPILER_VERSION = "0.2.0" as const;
-export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v7" as const;
+export const COMPILER_VERSION = "0.3.0" as const;
+export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v8" as const;
 export const ONCHAIN_HOOK_PLAN_SCHEMA_VERSION =
-  "uvp.onchainHookPlan.v7" as const;
+  "uvp.onchainHookPlan.v8" as const;
 
 export type HexString = `0x${string}`;
 export type Address = HexString;
@@ -102,6 +102,7 @@ export interface CompiledHookPlanHook {
   readonly orderTriggerKind: OrderTriggerKind;
   readonly emitReady: boolean;
   readonly dockExecutor: boolean;
+  readonly dynamicExecutor: boolean;
   readonly rawExpression: string;
   readonly normalizedExpression: string;
   readonly ast: import("@uvp-eth/hook-core").HookExpressionAst;
@@ -131,15 +132,24 @@ export interface SelectedStageBinding {
 
 export type SignalTargetOrderRelation = "current";
 
+export type ExecutorBindingKind = 0 | 1;
+
 export interface ExecutorCandidateInput {
   readonly stageIdentifier: string;
-  readonly executor: HexString;
+  readonly supplierID: string;
 }
 
-export interface OnchainExecutorCandidate {
+export interface ExecutorBinding {
   readonly stageIdentifier: string;
   readonly stageId: HexString;
-  readonly executor: HexString;
+  readonly supplierId: HexString;
+  readonly kind: ExecutorBindingKind;
+}
+
+export interface ExecutorBindingInput {
+  readonly stageIdentifier: string;
+  readonly supplierID: string;
+  readonly kind: ExecutorBindingKind;
 }
 
 export interface SignalCapability {
@@ -245,6 +255,7 @@ export interface OnchainCompiledHook {
   readonly orderTriggerKind: OrderTriggerKind;
   readonly emitReady: boolean;
   readonly dockExecutor: boolean;
+  readonly dynamicExecutor: boolean;
   readonly instructions: readonly OnchainHookInstruction[];
   readonly dependencies: readonly OnchainHookDependency[];
   readonly routeRef?: OnchainExecutorRouteRef;
@@ -277,8 +288,8 @@ export interface OnchainHookPlanArtifact {
   readonly signalCapabilities: readonly OnchainSignalCapability[];
   readonly stageFileWriters: readonly OnchainStageFileWriter[];
   readonly admissions: readonly OnchainCompiledAdmission[];
-  readonly executorCandidates: readonly OnchainExecutorCandidate[];
-  readonly executorCandidatesRoot: HexString;
+  readonly executorBindings: readonly ExecutorBinding[];
+  readonly executorBindingsRoot: HexString;
   readonly planHash: HexString;
 }
 
@@ -344,9 +355,10 @@ export interface SolidityRegisterSignalCapabilityArg {
   readonly targetOrderRelation: 0 | 1;
 }
 
-export interface SolidityRegisterExecutorCandidateArg {
+export interface SolidityRegisterExecutorBindingArg {
   readonly stageId: HexString;
-  readonly executor: HexString;
+  readonly supplierId: HexString;
+  readonly kind: ExecutorBindingKind;
 }
 
 export interface SolidityRegisterPlanArgs {
@@ -357,11 +369,11 @@ export interface SolidityRegisterPlanArgs {
   readonly artifactHash: HexString;
   readonly hooksHash: HexString;
   readonly capabilitiesRoot: HexString;
-  readonly executorCandidatesRoot: HexString;
+  readonly executorBindingsRoot: HexString;
   readonly hooks: readonly SolidityRegisterHookArg[];
   readonly dependencyIndex: readonly SolidityRegisterDependencyIndexArg[];
   readonly executorRoutes: readonly SolidityRegisterExecutorRouteArg[];
-  readonly executorCandidates: readonly SolidityRegisterExecutorCandidateArg[];
+  readonly executorBindings: readonly SolidityRegisterExecutorBindingArg[];
   readonly selectorBindings: readonly SolidityRegisterStageSelectorBindingArg[];
   readonly signalCapabilities: readonly SolidityRegisterSignalCapabilityArg[];
   readonly fileWriterBindings: readonly SolidityRegisterFileWriterBindingArg[];

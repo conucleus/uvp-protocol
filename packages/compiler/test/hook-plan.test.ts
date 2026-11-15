@@ -106,7 +106,7 @@ function topologyZhixu(stages: readonly ZhixuStage[]): ZhixuDefinition {
 test("compiles internal HookPlan IR", () => {
   const plan = compileZhixuHookPlan(baseZhixu);
 
-  assert.equal(plan.schemaVersion, "uvp.hookPlan.v7");
+  assert.equal(plan.schemaVersion, "uvp.hookPlan.v8");
   assert.match(plan.zhixuId, /^zx-[0-9a-f]{32}$/);
   assert.deepEqual(plan.platform, { type: "cloud" });
   assert.match(plan.planId, /^0x[0-9a-f]{64}$/);
@@ -208,7 +208,7 @@ test("validates HookPlan IR artifacts at the internal boundary", () => {
 
   assert.deepEqual(
     validateHookPlanArtifact(resign({ ...plan, schemaVersion: "wrong" })),
-    ["schemaVersion must be uvp.hookPlan.v7"]
+    ["schemaVersion must be uvp.hookPlan.v8"]
   );
   assert.deepEqual(
     validateHookPlanArtifact(
