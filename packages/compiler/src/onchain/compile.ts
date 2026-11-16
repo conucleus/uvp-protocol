@@ -5,7 +5,6 @@ import {
 } from "../hook-plan.js";
 import {
   birthStageStaticSupplierIssues,
-  crossStageDependencyIssues,
   declaredStageIdentifiers,
   dynamicStageRouteIssues,
   dockStageRouteIssues,
@@ -121,7 +120,6 @@ export function compileOnchainHookPlan(
     declaredStages,
     candidates,
   );
-  const crossStageIssues = crossStageDependencyIssues(compiledHooks);
   const materializationIssues = unmaterializableStageIssues(
     compiledHooks,
     declaredStages,
@@ -157,7 +155,6 @@ export function compileOnchainHookPlan(
   );
   const bindingSetIssues = supplierBindingSetIssues(supplierBindings);
   const preflightIssues = [
-    ...crossStageIssues,
     ...materializationIssues,
     ...birthStageSupplierIssues,
     ...silentTriggerIssues,

@@ -279,7 +279,7 @@ describe("protocol bindings", () => {
     assert.equal(typedData.primaryType, "UVPStateMachinePlanCommit");
     assert.deepEqual(typedData.domain, {
       name: "UVPStateMachine",
-      version: "0.18",
+      version: "0.19",
       chainId: 31337,
       verifyingContract,
     });
@@ -471,7 +471,7 @@ describe("protocol bindings", () => {
     assert.equal(typedData.primaryType, SIGNAL_SUBMISSION_PRIMARY_TYPE);
     assert.deepEqual(typedData.domain, {
       name: "UVPStateMachine",
-      version: "0.18",
+      version: "0.19",
       chainId: 31337,
       verifyingContract,
     });
@@ -540,7 +540,7 @@ describe("protocol bindings", () => {
             ),
           ),
           keccak256(stringToHex("UVPStateMachine")),
-          keccak256(stringToHex("0.18")),
+          keccak256(stringToHex("0.19")),
           31337n,
           verifyingContract,
         ],

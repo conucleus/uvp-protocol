@@ -300,23 +300,11 @@ library UVPPlanRegistration {
             if (dependents.length >= MAX_HOOKS_PER_DEPENDENCY_KEY) {
                 revert UVPStateMachine.TooManyHooksPerDependencyKey(dependencyKey);
             }
-            bool inputIsTrigger = _isOrderTrigger(input.flags);
             if (dependents.length == 0) {
                 if (updatedCount == MAX_PLAN_DEPENDENCIES) {
                     revert UVPStateMachine.TooManyDependencies();
                 }
                 updatedCount += 1;
-            } else {
-                bool triggerOnly = inputIsTrigger;
-                for (uint256 k = 0; k < dependents.length; k++) {
-                    if (!_isOrderTrigger(plan.hooks[dependents[k]].flags)) {
-                        triggerOnly = false;
-                        break;
-                    }
-                }
-                if (plan.hooks[dependents[0]].stageId != input.stageId && !triggerOnly) {
-                    revert UVPStateMachine.CrossStageDependency(dependencyKey);
-                }
             }
 
             hook.dependencyKeys.push(dependencyKey);
@@ -324,6 +312,7 @@ library UVPPlanRegistration {
         }
 
         plan.hookIds.push(input.hookId);
+        plan.stageHookIds[input.stageId].push(input.hookId);
         plan.stageExists[input.stageId] = true;
         return updatedCount;
     }
@@ -886,13 +875,9 @@ library UVPPlanRegistration {
         }
 
         UVPStateMachine.Plan storage plan = _s.plans[planId];
-        UVPStateMachine.Order storage forkedOrder = _s.orders[planId][forkedOrderId];
         for (uint256 i = 0; i < plan.hookIds.length; i++) {
             UVPStateMachine.StoredHook storage hook = plan.hooks[plan.hookIds[i]];
             if (L_isOrderTrigger(hook.flags)) {
-                continue;
-            }
-            if (hook.flags & HOOK_FLAG_EMIT_READY == 0 && !forkedOrder.materializedStages[hook.stageId]) {
                 continue;
             }
             L_evaluateHook(_s, planId, forkedOrderId, plan.hookIds[i], bytes32(0), bytes32(0));
@@ -1122,7 +1107,7 @@ library UVPPlanRegistration {
         for (uint256 i = 0; i < plan.hookIds.length; i++) {
             UVPStateMachine.StoredHook storage hook = plan.hooks[plan.hookIds[i]];
             if (L_isOrderTrigger(hook.flags)) {
-                L_initializeHookRuntime(order, plan.hookIds[i]);
+                L_initializeHookRuntime(order.hookRuntimes[plan.hookIds[i]]);
             }
         }
 
@@ -1215,7 +1200,6 @@ library UVPPlanRegistration {
         bool evaluateOrderTriggerHooks
     ) private {
         UVPStateMachine.Plan storage plan = _s.plans[planId];
-        UVPStateMachine.Order storage order = _s.orders[planId][orderId];
         bytes32[] storage hookIds = plan.dependencyIndex[dependencyKey];
         if (evaluateOrderTriggerHooks) {
             for (uint256 i = 0; i < hookIds.length; i++) {
@@ -1228,9 +1212,6 @@ library UVPPlanRegistration {
         for (uint256 i = 0; i < hookIds.length; i++) {
             UVPStateMachine.StoredHook storage hook = plan.hooks[hookIds[i]];
             if (!L_isOrderTrigger(hook.flags)) {
-                if (hook.flags & HOOK_FLAG_EMIT_READY == 0 && !order.materializedStages[hook.stageId]) {
-                    continue;
-                }
                 L_evaluateHook(_s, planId, orderId, hookIds[i], triggerSourceId, triggerSignalId);
             }
         }
@@ -1252,15 +1233,7 @@ library UVPPlanRegistration {
 
         UVPStateMachine.Order storage order = _s.orders[planId][orderId];
         UVPStateMachine.HookRuntime storage runtime = order.hookRuntimes[hookId];
-        if (!runtime.exists) {
-            if (
-                !L_isOrderTrigger(hook.flags) && hook.flags & HOOK_FLAG_EMIT_READY == 0
-                    && !order.materializedStages[hook.stageId]
-            ) {
-                revert UVPStateMachine.UnknownHook();
-            }
-            L_initializeHookRuntime(order, hookId);
-        }
+        L_initializeHookRuntime(runtime);
         if (
             runtime.status == UVPStateMachine.HookStatus.Cancelled || runtime.status == UVPStateMachine.HookStatus.Ready
         ) {
@@ -1289,16 +1262,16 @@ library UVPPlanRegistration {
         }
 
         if (nextStatus == UVPStateMachine.HookStatus.Ready && !runtime.readyEmitted) {
-            if (hook.flags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_EMIT_READY) != 0) {
+            if (order.materializedStages[hook.stageId]) {
                 runtime.readyEmitted = true;
-                L_materializeStage(_s, planId, orderId, hook.stageId, hookId, triggerSourceId, triggerSignalId);
                 emit UVPStateMachine.HookReady(planId, orderId, hookId, hook.stageId, hook.hookName);
+            } else if (_hookCanMaterializeStage(hook.flags)) {
+                L_materializeStage(_s, planId, orderId, hook.stageId, hookId, triggerSourceId, triggerSignalId);
             }
         }
     }
 
-    function L_initializeHookRuntime(UVPStateMachine.Order storage order, bytes32 hookId) private {
-        UVPStateMachine.HookRuntime storage runtime = order.hookRuntimes[hookId];
+    function L_initializeHookRuntime(UVPStateMachine.HookRuntime storage runtime) private {
         if (runtime.exists) {
             return;
         }
@@ -1327,17 +1300,33 @@ library UVPPlanRegistration {
         }
         order.materializedStages[stageId] = true;
 
-        UVPStateMachine.Plan storage plan = _s.plans[planId];
-        for (uint256 i = 0; i < plan.hookIds.length; i++) {
-            UVPStateMachine.StoredHook storage hook = plan.hooks[plan.hookIds[i]];
-            if (hook.stageId == stageId) {
-                L_initializeHookRuntime(order, hook.hookId);
-            }
-        }
-
         emit UVPStateMachine.StageMaterialized(
             planId, orderId, stageId, triggerHookId, triggerSourceId, triggerSignalId
         );
+
+        bytes32[] storage stageHooks = _s.plans[planId].stageHookIds[stageId];
+        for (uint256 i = 0; i < stageHooks.length; i++) {
+            L_settleStageHook(_s, planId, orderId, stageHooks[i]);
+        }
+    }
+
+    function L_settleStageHook(
+        UVPStateMachine.SMState storage _s,
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 hookId
+    ) private {
+        UVPStateMachine.HookRuntime storage runtime = _s.orders[planId][orderId].hookRuntimes[hookId];
+        L_initializeHookRuntime(runtime);
+        if (runtime.status != UVPStateMachine.HookStatus.Ready) {
+            return;
+        }
+        if (runtime.readyEmitted) {
+            return;
+        }
+        runtime.readyEmitted = true;
+        UVPStateMachine.StoredHook storage hook = _s.plans[planId].hooks[hookId];
+        emit UVPStateMachine.HookReady(planId, orderId, hookId, hook.stageId, hook.hookName);
     }
 
     function L_evaluateInstructions(
@@ -1627,9 +1616,7 @@ library UVPPlanRegistration {
         UVPStateMachine.StoredHook storage hook = L_validatedTriggerHook(_s, planId, triggerHookId, triggerStageId);
         UVPStateMachine.Order storage order = _s.orders[planId][orderId];
         UVPStateMachine.HookRuntime storage runtime = order.hookRuntimes[triggerHookId];
-        if (!runtime.exists) {
-            L_initializeHookRuntime(order, triggerHookId);
-        }
+        L_initializeHookRuntime(runtime);
         if (runtime.status == UVPStateMachine.HookStatus.Cancelled) {
             revert UVPStateMachine.InvalidTriggerHook(triggerHookId);
         }

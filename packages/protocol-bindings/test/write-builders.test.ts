@@ -101,7 +101,7 @@ describe("plan registration builders", () => {
     assert.equal(typedData.primaryType, PLAN_COMMIT_PRIMARY_TYPE);
     assert.deepEqual(typedData.domain, {
       name: "UVPStateMachine",
-      version: "0.18",
+      version: "0.19",
       chainId: 31337,
       verifyingContract: STATE_MACHINE,
     });

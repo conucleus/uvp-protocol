@@ -109,6 +109,9 @@ contract UVPStateMachineTest {
     bytes32 private constant STAGE_AUDIT = bytes32(uint256(0x5002));
     bytes32 private constant STAGE_DYN = bytes32(uint256(0x5003));
     bytes32 private constant STAGE_DOCK = bytes32(uint256(0x5004));
+    bytes32 private constant STAGE_OBSERVER_A = bytes32(uint256(0x5005));
+    bytes32 private constant STAGE_OBSERVER_B = bytes32(uint256(0x5006));
+    bytes32 private constant STAGE_WATCH = bytes32(uint256(0x5007));
     bytes32 private constant EXTERNAL_SOURCE = bytes32(uint256(0x3ff1));
 
     bytes32 private constant SIGNAL_BIRTH = bytes32(uint256(0x4000));
@@ -117,6 +120,9 @@ contract UVPStateMachineTest {
     bytes32 private constant SIGNAL_TIMER = bytes32(uint256(0x4003));
     bytes32 private constant SIGNAL_VETO = bytes32(uint256(0x4004));
     bytes32 private constant SIGNAL_DERIVED = bytes32(uint256(0x4005));
+    bytes32 private constant SIGNAL_SHARED = bytes32(uint256(0x4006));
+    bytes32 private constant SIGNAL_WATCH_PRE = bytes32(uint256(0x4007));
+    bytes32 private constant SIGNAL_WATCH_OPEN = bytes32(uint256(0x4008));
 
     bytes32 private constant HOOK_BIRTH = bytes32(uint256(0x6000));
     bytes32 private constant HOOK_OPEN = bytes32(uint256(0x6001));
@@ -126,6 +132,10 @@ contract UVPStateMachineTest {
     bytes32 private constant HOOK_DOCK_DONE = bytes32(uint256(0x6007));
     bytes32 private constant HOOK_TIMER = bytes32(uint256(0x6005));
     bytes32 private constant HOOK_VETO = bytes32(uint256(0x6006));
+    bytes32 private constant HOOK_OBSERVER_A = bytes32(uint256(0x6010));
+    bytes32 private constant HOOK_OBSERVER_B = bytes32(uint256(0x6011));
+    bytes32 private constant HOOK_WATCH_PRE = bytes32(uint256(0x6012));
+    bytes32 private constant HOOK_WATCH_OPEN = bytes32(uint256(0x6013));
 
     bytes32 private constant PAYLOAD_HASH = bytes32(uint256(0x8001));
     bytes32 private constant IDEMPOTENCY_KEY = bytes32(uint256(0x9001));
@@ -149,7 +159,7 @@ contract UVPStateMachineTest {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.18");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.19");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
         "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,address birthAuthorizer,uint256 deadline)"
     );
@@ -164,6 +174,9 @@ contract UVPStateMachineTest {
     bytes32 private constant SUPPLIER_BINDING_LEAF_DOMAIN = keccak256("UVP_SUPPLIER_BINDING_V1");
     bytes32 private constant SELECTOR_BINDING_LEAF_DOMAIN = keccak256("UVP_SELECTOR_BINDING_V1");
     bytes32 private constant SIGNAL_CAPABILITY_LEAF_DOMAIN = keccak256("UVP_SIGNAL_CAPABILITY_V1");
+    bytes32 private constant STAGE_MATERIALIZED_TOPIC =
+        keccak256("StageMaterialized(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)");
+    bytes32 private constant HOOK_READY_TOPIC = keccak256("HookReady(bytes32,bytes32,bytes32,bytes32,bytes32)");
 
     mapping(address machine => UVPSupplierRegistry) private _registries;
     mapping(address machine => UVPFileResourceModule) private _fileModules;
@@ -599,6 +612,77 @@ contract UVPStateMachineTest {
         require(machine.orderCreator(PLAN_ID, ORDER_ID) == ORDER_CREATOR, "creator mismatch");
         (,,,, address submitter) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_BIRTH);
         require(submitter == vm.addr(BIRTH_PRIVATE_KEY), "birth submitter mismatch");
+    }
+
+    function testCrossStageObservationMaterializesBothStages() public {
+        UVPStateMachine machine = _newMachine();
+        bytes32 planId = _registerPlan(machine, _crossStageObservationPlan());
+        _submitTriggerBirth(machine, planId);
+
+        vm.recordLogs();
+        _submit(machine, STAGE_INIT, SIGNAL_SHARED);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        uint256 materializedA = _logIndexOf(logs, STAGE_MATERIALIZED_TOPIC, planId, ORDER_ID, STAGE_OBSERVER_A);
+        uint256 materializedB = _logIndexOf(logs, STAGE_MATERIALIZED_TOPIC, planId, ORDER_ID, STAGE_OBSERVER_B);
+        uint256 readyA = _logIndexOf(logs, HOOK_READY_TOPIC, planId, ORDER_ID, HOOK_OBSERVER_A);
+        uint256 readyB = _logIndexOf(logs, HOOK_READY_TOPIC, planId, ORDER_ID, HOOK_OBSERVER_B);
+        require(materializedA != type(uint256).max, "observer A stage not materialized");
+        require(materializedB != type(uint256).max, "observer B stage not materialized");
+        require(readyA != type(uint256).max, "observer A hook ready missing");
+        require(readyB != type(uint256).max, "observer B hook ready missing");
+        require(_countLogs(logs, HOOK_READY_TOPIC, planId, ORDER_ID) == 2, "expected exactly two HookReady");
+        require(materializedA < readyA && materializedB < readyB, "HookReady must follow its stage materialization");
+        require(readyA < readyB, "HookReady order must follow stage hook registration order");
+
+        (UVPStateMachine.HookStatus statusA,, bool emittedA) = machine.getHookStatus(planId, ORDER_ID, HOOK_OBSERVER_A);
+        (UVPStateMachine.HookStatus statusB,, bool emittedB) = machine.getHookStatus(planId, ORDER_ID, HOOK_OBSERVER_B);
+        require(statusA == UVPStateMachine.HookStatus.Ready && emittedA, "observer A not ready");
+        require(statusB == UVPStateMachine.HookStatus.Ready && emittedB, "observer B not ready");
+    }
+
+    function testWatcherReadyBeforeMaterializationFlushesHookReady() public {
+        UVPStateMachine machine = _newMachine();
+        bytes32 planId = _registerPlan(machine, _watcherFlushPlan());
+        _submitTriggerBirth(machine, planId);
+
+        vm.recordLogs();
+        _submit(machine, STAGE_INIT, SIGNAL_WATCH_PRE);
+        Vm.Log[] memory preLogs = vm.getRecordedLogs();
+
+        (UVPStateMachine.HookStatus preStatus,, bool preEmitted) =
+            machine.getHookStatus(planId, ORDER_ID, HOOK_WATCH_PRE);
+        require(preStatus == UVPStateMachine.HookStatus.Ready, "watcher not ready before materialization");
+        require(!preEmitted, "watcher announced before materialization");
+        require(
+            _logIndexOf(preLogs, STAGE_MATERIALIZED_TOPIC, planId, ORDER_ID, STAGE_WATCH) == type(uint256).max,
+            "watch stage materialized too early"
+        );
+        require(
+            _logIndexOf(preLogs, HOOK_READY_TOPIC, planId, ORDER_ID, HOOK_WATCH_PRE) == type(uint256).max,
+            "watcher announced too early"
+        );
+
+        vm.recordLogs();
+        _submit(machine, STAGE_INIT, SIGNAL_WATCH_OPEN);
+        Vm.Log[] memory openLogs = vm.getRecordedLogs();
+
+        uint256 materialized = _logIndexOf(openLogs, STAGE_MATERIALIZED_TOPIC, planId, ORDER_ID, STAGE_WATCH);
+        uint256 readyPre = _logIndexOf(openLogs, HOOK_READY_TOPIC, planId, ORDER_ID, HOOK_WATCH_PRE);
+        uint256 readyOpen = _logIndexOf(openLogs, HOOK_READY_TOPIC, planId, ORDER_ID, HOOK_WATCH_OPEN);
+        require(materialized != type(uint256).max, "watch stage not materialized");
+        require(readyPre != type(uint256).max, "pre-ready watcher HookReady was dropped");
+        require(readyOpen != type(uint256).max, "materializer HookReady missing");
+        require(_countLogs(openLogs, HOOK_READY_TOPIC, planId, ORDER_ID) == 2, "expected exactly two HookReady");
+        require(materialized < readyPre, "watcher HookReady must follow materialization");
+        require(readyPre < readyOpen, "flush order must follow stage hook registration order");
+
+        (UVPStateMachine.HookStatus statusPre,, bool emittedPre) =
+            machine.getHookStatus(planId, ORDER_ID, HOOK_WATCH_PRE);
+        (UVPStateMachine.HookStatus statusOpen,, bool emittedOpen) =
+            machine.getHookStatus(planId, ORDER_ID, HOOK_WATCH_OPEN);
+        require(statusPre == UVPStateMachine.HookStatus.Ready && emittedPre, "watcher not flushed");
+        require(statusOpen == UVPStateMachine.HookStatus.Ready && emittedOpen, "materializer not ready");
     }
 
     function testBirthRelayerIsRecordedInSignalEvent() public {
@@ -1296,6 +1380,37 @@ contract UVPStateMachineTest {
 
     bytes32 private constant EMPTY_ROOT = keccak256("");
 
+    function _logIndexOf(Vm.Log[] memory logs, bytes32 topic, bytes32 planId, bytes32 orderId, bytes32 subjectId)
+        private
+        pure
+        returns (uint256)
+    {
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (
+                logs[i].topics.length >= 4 && logs[i].topics[0] == topic && logs[i].topics[1] == planId
+                    && logs[i].topics[2] == orderId && logs[i].topics[3] == subjectId
+            ) {
+                return i;
+            }
+        }
+        return type(uint256).max;
+    }
+
+    function _countLogs(Vm.Log[] memory logs, bytes32 topic, bytes32 planId, bytes32 orderId)
+        private
+        pure
+        returns (uint256 count)
+    {
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (
+                logs[i].topics.length >= 3 && logs[i].topics[0] == topic && logs[i].topics[1] == planId
+                    && logs[i].topics[2] == orderId
+            ) {
+                count += 1;
+            }
+        }
+    }
+
     function _newMachine() private returns (UVPStateMachine machine) {
         machine = _deployModules();
         UVPSupplierRegistry registry = new UVPSupplierRegistry();
@@ -1890,6 +2005,24 @@ contract UVPStateMachineTest {
         hooks[0] = _signalHook(
             HOOK_BIRTH, STAGE_INIT, SIGNAL_BIRTH, FLAG_ORDER_TRIGGER_MINT | FLAG_EMIT_READY, SOURCE_BOOTSTRAP
         );
+    }
+
+    function _crossStageObservationPlan() private pure returns (UVPStateMachine.CompactHook[] memory hooks) {
+        hooks = new UVPStateMachine.CompactHook[](3);
+        hooks[0] = _signalHook(
+            HOOK_BIRTH, STAGE_INIT, SIGNAL_BIRTH, FLAG_ORDER_TRIGGER_MINT | FLAG_EMIT_READY, SOURCE_BOOTSTRAP
+        );
+        hooks[1] = _signalHook(HOOK_OBSERVER_A, STAGE_OBSERVER_A, SIGNAL_SHARED, FLAG_EMIT_READY, STAGE_INIT);
+        hooks[2] = _signalHook(HOOK_OBSERVER_B, STAGE_OBSERVER_B, SIGNAL_SHARED, FLAG_EMIT_READY, STAGE_INIT);
+    }
+
+    function _watcherFlushPlan() private pure returns (UVPStateMachine.CompactHook[] memory hooks) {
+        hooks = new UVPStateMachine.CompactHook[](3);
+        hooks[0] = _signalHook(
+            HOOK_BIRTH, STAGE_INIT, SIGNAL_BIRTH, FLAG_ORDER_TRIGGER_MINT | FLAG_EMIT_READY, SOURCE_BOOTSTRAP
+        );
+        hooks[1] = _signalHook(HOOK_WATCH_PRE, STAGE_WATCH, SIGNAL_WATCH_PRE, 0, STAGE_INIT);
+        hooks[2] = _signalHook(HOOK_WATCH_OPEN, STAGE_WATCH, SIGNAL_WATCH_OPEN, FLAG_EMIT_READY, STAGE_INIT);
     }
 
     function _supplierPlan() private pure returns (UVPStateMachine.CompactHook[] memory hooks) {

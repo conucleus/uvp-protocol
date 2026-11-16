@@ -178,6 +178,7 @@ contract UVPStateMachine {
         address publisher;
         address birthAuthorizer;
         bytes32[] hookIds;
+        mapping(bytes32 stageId => bytes32[] hookIds) stageHookIds;
         mapping(bytes32 hookId => StoredHook hook) hooks;
         mapping(bytes32 signalKey => bytes32[] hookIds) dependencyIndex;
         mapping(bytes32 signalKey => StoredAdmission admission) admissions;
@@ -220,7 +221,6 @@ contract UVPStateMachine {
     error ExpiredPlanSignature(uint256 deadline);
     error HookAlreadyRegistered();
     error HookDelayTooLong(uint256 delaySeconds);
-    error CrossStageDependency(bytes32 signalKey);
     error HookDependencyKeyMismatch(bytes32 hookId);
     error TooManyDependencies();
     error TooManyHooksPerDependencyKey(bytes32 signalKey);
@@ -794,9 +794,9 @@ contract UVPStateMachine {
 
     function stageHasOrderTriggerHook(bytes32 planId, bytes32 stageId) external view returns (bool) {
         Plan storage plan = _s.plans[planId];
-        for (uint256 i = 0; i < plan.hookIds.length; i++) {
-            StoredHook storage hook = plan.hooks[plan.hookIds[i]];
-            if (hook.stageId == stageId && _isOrderTrigger(hook.flags)) {
+        bytes32[] storage stageHooks = plan.stageHookIds[stageId];
+        for (uint256 i = 0; i < stageHooks.length; i++) {
+            if (_isOrderTrigger(plan.hooks[stageHooks[i]].flags)) {
                 return true;
             }
         }
@@ -805,9 +805,9 @@ contract UVPStateMachine {
 
     function stageHasDockExecutorHook(bytes32 planId, bytes32 stageId) external view returns (bool) {
         Plan storage plan = _s.plans[planId];
-        for (uint256 i = 0; i < plan.hookIds.length; i++) {
-            StoredHook storage hook = plan.hooks[plan.hookIds[i]];
-            if (hook.stageId == stageId && hook.flags & HOOK_FLAG_DOCK_EXECUTOR != 0) {
+        bytes32[] storage stageHooks = plan.stageHookIds[stageId];
+        for (uint256 i = 0; i < stageHooks.length; i++) {
+            if (plan.hooks[stageHooks[i]].flags & HOOK_FLAG_DOCK_EXECUTOR != 0) {
                 return true;
             }
         }
@@ -1391,6 +1391,10 @@ contract UVPStateMachine {
         return flags & HOOK_FLAG_ORDER_TRIGGER_MINT != 0;
     }
 
+    function _hookCanMaterializeStage(uint8 flags) private pure returns (bool) {
+        return _isOrderTrigger(flags) || flags & HOOK_FLAG_EMIT_READY != 0;
+    }
+
     function hasTriggerOriginConsent(
         bytes32 originPlanId,
         bytes32 originOrderId,
@@ -1443,7 +1447,6 @@ contract UVPStateMachine {
         bool evaluateOrderTriggerHooks
     ) private {
         Plan storage plan = _s.plans[planId];
-        Order storage order = _s.orders[planId][orderId];
         bytes32[] storage hookIds = plan.dependencyIndex[dependencyKey];
         if (evaluateOrderTriggerHooks) {
             for (uint256 i = 0; i < hookIds.length; i++) {
@@ -1456,9 +1459,6 @@ contract UVPStateMachine {
         for (uint256 i = 0; i < hookIds.length; i++) {
             StoredHook storage hook = plan.hooks[hookIds[i]];
             if (!_isOrderTrigger(hook.flags)) {
-                if (hook.flags & HOOK_FLAG_EMIT_READY == 0 && !order.materializedStages[hook.stageId]) {
-                    continue;
-                }
                 _evaluateHook(planId, orderId, hookIds[i], triggerSourceId, triggerSignalId);
             }
         }
@@ -1479,15 +1479,7 @@ contract UVPStateMachine {
 
         Order storage order = _s.orders[planId][orderId];
         HookRuntime storage runtime = order.hookRuntimes[hookId];
-        if (!runtime.exists) {
-            if (
-                !_isOrderTrigger(hook.flags) && hook.flags & HOOK_FLAG_EMIT_READY == 0
-                    && !order.materializedStages[hook.stageId]
-            ) {
-                revert UnknownHook();
-            }
-            _initializeHookRuntime(order, hookId);
-        }
+        _initializeHookRuntime(runtime);
         if (runtime.status == HookStatus.Cancelled || runtime.status == HookStatus.Ready) {
             return;
         }
@@ -1513,21 +1505,32 @@ contract UVPStateMachine {
             emit HookStatusChanged(planId, orderId, hookId, previousStatus, nextStatus, nextDueAt);
         }
 
-        if (nextStatus == HookStatus.Ready && !runtime.readyEmitted) {
-            if (_isOrderTrigger(hook.flags)) {
-                runtime.readyEmitted = true;
-                _materializeStage(planId, orderId, hook.stageId, hookId, triggerSourceId, triggerSignalId);
-                emit HookReady(planId, orderId, hookId, hook.stageId, hook.hookName);
-            } else if (hook.flags & HOOK_FLAG_EMIT_READY != 0) {
-                runtime.readyEmitted = true;
-                _materializeStage(planId, orderId, hook.stageId, hookId, triggerSourceId, triggerSignalId);
-                emit HookReady(planId, orderId, hookId, hook.stageId, hook.hookName);
-            }
+        if (nextStatus == HookStatus.Ready) {
+            _announceHookReady(planId, orderId, hookId, triggerSourceId, triggerSignalId);
         }
     }
 
-    function _initializeHookRuntime(Order storage order, bytes32 hookId) private {
-        HookRuntime storage runtime = order.hookRuntimes[hookId];
+    function _announceHookReady(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 hookId,
+        bytes32 triggerSourceId,
+        bytes32 triggerSignalId
+    ) private {
+        StoredHook storage hook = _s.plans[planId].hooks[hookId];
+        HookRuntime storage runtime = _s.orders[planId][orderId].hookRuntimes[hookId];
+        if (runtime.readyEmitted) {
+            return;
+        }
+        if (_s.orders[planId][orderId].materializedStages[hook.stageId]) {
+            runtime.readyEmitted = true;
+            emit HookReady(planId, orderId, hookId, hook.stageId, hook.hookName);
+        } else if (_hookCanMaterializeStage(hook.flags)) {
+            _materializeStage(planId, orderId, hook.stageId, hookId, triggerSourceId, triggerSignalId);
+        }
+    }
+
+    function _initializeHookRuntime(HookRuntime storage runtime) private {
         if (runtime.exists) {
             return;
         }
@@ -1555,15 +1558,26 @@ contract UVPStateMachine {
         }
         order.materializedStages[stageId] = true;
 
-        Plan storage plan = _s.plans[planId];
-        for (uint256 i = 0; i < plan.hookIds.length; i++) {
-            StoredHook storage hook = plan.hooks[plan.hookIds[i]];
-            if (hook.stageId == stageId) {
-                _initializeHookRuntime(order, hook.hookId);
-            }
-        }
-
         emit StageMaterialized(planId, orderId, stageId, triggerHookId, triggerSourceId, triggerSignalId);
+
+        bytes32[] storage stageHooks = _s.plans[planId].stageHookIds[stageId];
+        for (uint256 i = 0; i < stageHooks.length; i++) {
+            _settleStageHook(planId, orderId, stageHooks[i]);
+        }
+    }
+
+    function _settleStageHook(bytes32 planId, bytes32 orderId, bytes32 hookId) private {
+        HookRuntime storage runtime = _s.orders[planId][orderId].hookRuntimes[hookId];
+        _initializeHookRuntime(runtime);
+        if (runtime.status != HookStatus.Ready) {
+            return;
+        }
+        if (runtime.readyEmitted) {
+            return;
+        }
+        runtime.readyEmitted = true;
+        StoredHook storage hook = _s.plans[planId].hooks[hookId];
+        emit HookReady(planId, orderId, hookId, hook.stageId, hook.hookName);
     }
 
     function _evaluateInstructions(bytes32 planId, bytes32 orderId, Instruction[] storage instructions)

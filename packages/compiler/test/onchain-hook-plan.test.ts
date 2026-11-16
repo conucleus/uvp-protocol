@@ -101,6 +101,7 @@ const SUPPLIER_WORK = "5f0b1e2a-7c9d-4e1f-9a2b-000000000002";
 const SUPPLIER_WATCHER = "5f0b1e2a-7c9d-4e1f-9a2b-000000000003";
 const SUPPLIER_FULFILLER = "5f0b1e2a-7c9d-4e1f-9a2b-000000000004";
 const SUPPLIER_ROUTING = "5f0b1e2a-7c9d-4e1f-9a2b-000000000005";
+const SUPPLIER_AUDIT = "5f0b1e2a-7c9d-4e1f-9a2b-000000000006";
 
 const baseZhixu: ZhixuDefinition = {
   apiVersion: "uvp/v0",
@@ -752,111 +753,6 @@ test("commitment golden vectors pin uid/planHash/hooksHash from the shared fixtu
   }
 });
 
-test("cross-stage dependency guard fires on deserialized artifacts and follows contract order", () => {
-  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
-
-  const sharedKey = onchainSignalKey(
-    onchainSourceId("buyer"),
-    onchainSignalId("assign.executor_selected"),
-  );
-  assert.ok(sharedKey, "base artifact must expose a watcher dependency");
-  const watchesSharedKey = (hook: (typeof onchain.compiledHooks)[number]) =>
-    hook.orderTriggerKind === "none" &&
-    hook.dependencies.some((dependency) => dependency.signalKey === sharedKey);
-  const watcherIndex = onchain.compiledHooks.findIndex(watchesSharedKey);
-  const laterWatcherIndex = onchain.compiledHooks.findIndex(
-    (hook, index) => index > watcherIndex && watchesSharedKey(hook),
-  );
-  assert.ok(watcherIndex >= 0 && laterWatcherIndex > watcherIndex, "need two shared-key watchers");
-  const foreignStageIdentifier = "stage";
-  const tamperedHooks = onchain.compiledHooks.map((hook, index) =>
-    index === watcherIndex
-      ? {
-          ...hook,
-          stageIdentifier: foreignStageIdentifier,
-          stageId: keccak256Hex(foreignStageIdentifier),
-          hookId: keccak256Hex(`${foreignStageIdentifier}#${hook.hookName}`),
-        }
-      : hook,
-  );
-  const issues = validateOnchainHookPlanArtifact({
-    ...onchain,
-    compiledHooks: tamperedHooks,
-    dependencyIndex: Object.fromEntries(
-      Object.entries(onchain.dependencyIndex).map(([key, hookIds]) => [
-        key,
-        hookIds,
-      ]),
-    ),
-  });
-  assert.equal(
-    issues.some((issue) => /is shared across stages/.test(issue)),
-    true,
-    `expected cross-stage issue, got: ${issues.join("; ")}`,
-  );
-
-  const stageA = "0x" + "01".repeat(32);
-  const stageB = "0x" + "02".repeat(32);
-  const dep = {
-    kind: "positive",
-    source: "buyer",
-    signalName: "buyer::shared",
-    sourceId: onchainSourceId("buyer"),
-    signalId: onchainSignalId("buyer::shared"),
-    signalKey: sharedKey,
-  };
-  const hookOf = (
-    name: string,
-    stageIdentifier: string,
-    stageId: string,
-    orderTriggerKind: "trigger" | "none",
-  ) => ({
-    hookId: keccak256Hex(`${stageIdentifier}#${name}`),
-    stageId,
-    stageIdentifier,
-    hookName: name,
-    kind: "receive",
-    orderTriggerKind,
-    emitReady: orderTriggerKind !== "none",
-    instructions: [
-      {
-        op: "SIGNAL",
-        source: "buyer",
-        signalName: "buyer::shared",
-        sourceId: dep.sourceId,
-        signalId: dep.signalId,
-        signalKey: sharedKey,
-      },
-    ],
-    dependencies: [dep],
-  });
-  const sequentialHookLists = {
-    accepted: [
-      hookOf("t1", "a", stageA, "trigger"),
-      hookOf("t2", "b", stageB, "trigger"),
-      hookOf("w1", "a", stageA, "none"),
-    ],
-    rejected: [
-      hookOf("w1", "a", stageA, "none"),
-      hookOf("t1", "b", stageB, "trigger"),
-    ],
-  };
-  const sequentialArtifact = (hooks: readonly ReturnType<typeof hookOf>[]) => ({
-    ...onchain,
-    compiledHooks: hooks,
-    dependencyIndex: { [sharedKey]: hooks.map((hook) => hook.hookId) },
-  });
-  const acceptedIssues = validateOnchainHookPlanArtifact(sequentialArtifact(sequentialHookLists.accepted)).filter(
-    (issue) => /is shared across stages/.test(issue),
-  );
-  assert.deepEqual(acceptedIssues, []);
-
-  const rejectedIssues = validateOnchainHookPlanArtifact(sequentialArtifact(sequentialHookLists.rejected)).filter(
-    (issue) => /is shared across stages/.test(issue),
-  );
-  assert.equal(rejectedIssues.length, 1);
-});
-
 test("compiles capability tables beyond gas caps into a verifiable capabilitiesRoot", () => {
   const tableBindings = Array.from({ length: 400 }, (_, index) => ({
     selectorStageId: keccak256Hex(`capability.selector-${index}`),
@@ -1151,30 +1047,51 @@ test("rejects DELAY seconds beyond the 30-day contract bound", () => {
   );
 });
 
-test("rejects a dependency key shared across stages", () => {
+test("accepts a dependency key shared across stages", () => {
   const sharedZhixu: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      stages: baseZhixu.spec.stages.map((stage) =>
-        stage.name === "assign"
-          ? {
-              ...stage,
-              receiveSignals: {
-                ECHO: "buyer::assign.executor_selected"
-              }
-            }
-          : stage
-      )
-    }
+      stages: [
+        ...baseZhixu.spec.stages,
+        {
+          name: "audit",
+          source: "buyer",
+          receiveSignals: {
+            ECHO: "buyer::assign.executor_selected",
+          },
+          executor: {
+            supplierType: "organization",
+            supplierID: SUPPLIER_AUDIT,
+          },
+        },
+      ],
+    },
   };
 
-  assert.throws(
-    () => compileOnchainHookPlan(compileZhixuHookPlan(sharedZhixu)),
-    (error: unknown) =>
-      error instanceof HookPlanCompilationError &&
-      error.issues.some((issue) => /shared across stages/.test(issue))
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(sharedZhixu));
+  const sharedKey = onchainSignalKey(
+    onchainSourceId("buyer"),
+    onchainSignalId("assign.executor_selected"),
   );
+  const hookIdOf = (
+    stageIdentifier: string,
+    hookName: string,
+  ): OnchainHookPlanArtifact["compiledHooks"][number]["hookId"] => {
+    const hook = onchain.compiledHooks.find(
+      (candidate) =>
+        candidate.stageIdentifier === stageIdentifier &&
+        candidate.hookName === hookName,
+    );
+    assert.ok(hook, `compiledHooks must include ${stageIdentifier}#${hookName}`);
+    return hook.hookId;
+  };
+  const sharedHookIds = onchain.dependencyIndex[sharedKey];
+  assert.ok(sharedHookIds, "dependencyIndex must index the shared signal key");
+  assert.ok(sharedHookIds.includes(hookIdOf("main", "START")));
+  assert.ok(sharedHookIds.includes(hookIdOf("audit", "ECHO")));
+
+  assert.doesNotThrow(() => toSolidityRegisterPlanArgs(onchain));
 });
 
 test("flags stages whose hooks can never materialize on-chain", () => {

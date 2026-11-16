@@ -311,7 +311,7 @@ tampered entry. Hook identity — including the trigger bit — stays inside
 The current state-machine alignment is `toSolidityRegisterPlanArgs()`:
 
 - `planId` and `planHash` are the state-machine plan identity; the plan runtime
-  hash domain is `uvp.plan.runtime.v6` and covers `hooksHash`,
+  hash domain is `uvp.plan.runtime.v7` and covers `hooksHash`,
   `capabilitiesRoot`, and `supplierBindingsRoot`;
 - `hooks` map to `UVPStateMachine.CompactHook`; hook flags are
   `ORDER_TRIGGER_MINT` for `orderTriggerKind: "trigger"`, `EMIT_READY`,

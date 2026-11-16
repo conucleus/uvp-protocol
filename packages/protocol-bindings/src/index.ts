@@ -443,7 +443,7 @@ export const STATE_MACHINE_LENS_ABI = parseAbi([
 ]);
 
 export const PRODUCT_SUBMIT_DOMAIN_NAME = "UVPStateMachine";
-export const PRODUCT_SUBMIT_DOMAIN_VERSION = "0.18";
+export const PRODUCT_SUBMIT_DOMAIN_VERSION = "0.19";
 export const SIGNAL_SUBMISSION_PRIMARY_TYPE =
   "UVPStateMachineSignalSubmission";
 export const PLAN_COMMIT_PRIMARY_TYPE = "UVPStateMachinePlanCommit";

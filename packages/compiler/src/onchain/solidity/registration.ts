@@ -26,7 +26,7 @@ import type {
  * CompactHook flags 与各哈希的 ABI 编码冻结口径。
  */
 
-const PLAN_RUNTIME_HASH_DOMAIN = "uvp.plan.runtime.v6";
+const PLAN_RUNTIME_HASH_DOMAIN = "uvp.plan.runtime.v7";
 
 export const HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
 export const HOOK_FLAG_EMIT_READY = 4;

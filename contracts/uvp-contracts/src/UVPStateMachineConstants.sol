@@ -20,9 +20,9 @@ uint256 constant _MAX_SUPPLIER_BINDINGS = 256;
 bytes32 constant _EIP712_DOMAIN_TYPEHASH =
     keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 bytes32 constant _EIP712_NAME_HASH = keccak256("UVPStateMachine");
-bytes32 constant _EIP712_VERSION_HASH = keccak256("0.18");
+bytes32 constant _EIP712_VERSION_HASH = keccak256("0.19");
 
-bytes32 constant _PLAN_RUNTIME_HASH_DOMAIN = keccak256("uvp.plan.runtime.v6");
+bytes32 constant _PLAN_RUNTIME_HASH_DOMAIN = keccak256("uvp.plan.runtime.v7");
 bytes32 constant _PLAN_ID_HASH_DOMAIN = keccak256("uvp.plan.id.v1");
 bytes32 constant _PLAN_COMMIT_TYPEHASH = keccak256(
     "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,address birthAuthorizer,uint256 deadline)"

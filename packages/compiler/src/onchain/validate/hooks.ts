@@ -24,7 +24,7 @@ import type {
 
 /**
  * hook 族校验：compiledHooks 形状与 _validateHook 栈机镜像、依赖形状、
- * 阶段物化门、跨阶段依赖门、dynamic/dock/route 互斥与依赖索引重算
+ * 阶段物化门、dynamic/dock/route 互斥与依赖索引重算
  * （两个边界共用）。
  */
 
@@ -964,49 +964,6 @@ function silentOrderTriggerIssues(
   return issues;
 }
 
-function crossStageDependencyIssues(hooks: readonly unknown[]): readonly string[] {
-  interface KeyState {
-    stageId: string;
-    triggerOnly: boolean;
-  }
-  const issues: string[] = [];
-  const keyState = new Map<string, KeyState>();
-  for (const hook of hooks) {
-    if (
-      !isRecord(hook) ||
-      typeof hook.hookId !== "string" ||
-      typeof hook.stageId !== "string" ||
-      typeof hook.orderTriggerKind !== "string" ||
-      !Array.isArray(hook.dependencies)
-    ) {
-      continue;
-    }
-    const isOrderTrigger = hook.orderTriggerKind !== "none";
-    for (const dependency of hook.dependencies) {
-      if (!isOnchainHookDependency(dependency)) {
-        continue;
-      }
-      const seen = keyState.get(dependency.signalKey);
-      if (seen === undefined) {
-        keyState.set(dependency.signalKey, { stageId: hook.stageId, triggerOnly: isOrderTrigger });
-        continue;
-      }
-      const triggerOnly = seen.triggerOnly && isOrderTrigger;
-      if (seen.stageId !== hook.stageId && !triggerOnly) {
-        issues.push(
-          `dependency ${dependency.signalKey} is shared across stages ${[seen.stageId, hook.stageId]
-            .sort((left, right) => compareCanonicalKey(left, right))
-            .join(", ")} with a non-trigger watcher after a foreign stage; `
-          + "an unmaterialized stage's non-trigger hook would make the "
-          + "submitting transaction revert forever",
-        );
-      }
-      seen.triggerOnly = triggerOnly;
-    }
-  }
-  return issues;
-}
-
 function dockStageRouteIssues(
   hooks: readonly unknown[],
   supplierRoutes: readonly unknown[],
@@ -1098,8 +1055,6 @@ function validateOnchainDependencyIndex(
     }
   }
 
-  issues.push(...crossStageDependencyIssues(hooks));
-
   const expected = Object.fromEntries(
     [...recomputed.entries()]
       .sort(([left], [right]) => compareCanonicalKey(left, right))
@@ -1167,7 +1122,6 @@ export {
   unmaterializableStageIssues,
   declaredStageIdentifiers,
   silentOrderTriggerIssues,
-  crossStageDependencyIssues,
   dockStageRouteIssues,
   validateOnchainDependencyIndex,
   birthStageStaticSupplierIssues,

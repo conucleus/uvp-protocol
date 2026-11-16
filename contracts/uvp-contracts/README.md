@@ -48,7 +48,7 @@ under this folder; repository-level deployment scripts live under
 - `src/libraries/ECDSA.sol`: minimal signature recovery helper.
 - `src/libraries/UVPSignatures.sol`: shared signature struct used by relayed
   state-machine signal submission.
-- `fixtures/uvp-state-machine.v0.20.json`,
+- `fixtures/uvp-state-machine.v0.21.json`,
   `fixtures/uvp-plan-registration.v0.7.json`,
   `fixtures/uvp-stage-patch-module.v0.10.json`,
   `fixtures/uvp-derived-signal-module.v0.7.json`,
@@ -97,7 +97,7 @@ oracle.
 
 ## ABI Fixture
 
-`UVPStateMachine` (ABI fixture v0.20, EIP-712 domain version `0.18`) treats
+`UVPStateMachine` (ABI fixture v0.21, EIP-712 domain version `0.19`) treats
 these as public interfaces:
 
 - its no-argument constructor;
@@ -262,7 +262,7 @@ code do not silently drift away from the contract ABI.
    there — birth writes do not bypass admission.
 8. Dynamic stages (`HOOK_FLAG_DYNAMIC_EXECUTOR`, flag 32) are collected from
    receive hooks at `commitPlan`: a stage mixing dynamic and non-dynamic hooks
-   reverts `InconsistentDynamicExecutorFlag`; the flag is forbidden on trigger
+   reverts `InconsistentDynamicSupplierFlag`; the flag is forbidden on trigger
    and dock hooks and requires `EMIT_READY`. A dynamic stage has no default
    supplier; its supplier must be assigned through the stage supplier patch
    before the stage's first signal, otherwise `_requireEffectiveSupplier`
@@ -386,19 +386,22 @@ second registration of the same `orderId` reverts with
 `planId` into their domain so derived order ids are plan-scoped by
 construction. Function signatures take a leading `planId` parameter, and the
 from-signal trigger request carries `originPlanId`. Event signatures are
-pinned in the v0.20 and module fixtures; indexers must consume the composite
+pinned in the v0.21 and module fixtures; indexers must consume the composite
 identity in every event and projection rather than treating `orderId` as
 globally unique.
 
 ## EIP-712 Domains
 
 Domain versions are part of the frozen public surface: main
-`UVPStateMachine`/product-submit and `UVPPlanRegistration` `0.18`,
+`UVPStateMachine`/product-submit and `UVPPlanRegistration` `0.19`,
 `UVPOrderLinkModule` `0.9`, `UVPStagePatchModule` `0.5`,
 `UVPDerivedSignalModule` `0.7`; `UVPSupplierRegistry` and `UVPDockRegistry`
 have no EIP-712 signature domain (registration is permissionless / owner or
-registrar gated). The single mechanical source for versions and frozen ABI
-fixtures is `uvp-deploy/deploy/compatibility/uvp-stack.v1.json`.
+registrar gated). The plan runtime hash domain (non-EIP-712, hashed by
+`planRuntimeHash`) is `uvp.plan.runtime.v7` over `hooksHash`,
+`capabilitiesRoot`, and `supplierBindingsRoot`. The single mechanical source
+for versions and frozen ABI fixtures is
+`uvp-deploy/deploy/compatibility/uvp-stack.v1.json`.
 
 ## Stable Events
 
@@ -464,6 +467,13 @@ and timer due timestamps. It emits `HookReady` once per hook when positive and
 timer conditions become satisfied; negative signals can cancel hooks before the
 off-chain execution layer acts on readiness.
 
+`dependencyIndex` is a plain many-to-many map from a signal key to the hooks
+that observe it: any number of hooks of any stage may observe the same fact,
+and there is no per-fact owner stage or cross-stage rejection. When a fact is
+recorded, every non-trigger hook under its key is evaluated; evaluation does
+not depend on whether the hook's stage is materialized. `EMIT_READY` is the
+stage-materialization capability bit, not an evaluation gate.
+
 Order-trigger hooks are birth-line anchors. A trigger hook carries
 `ORDER_TRIGGER_MINT` (the bit is reused for trigger signals) and one `SIGNAL`
 instruction over its stage-qualified birth fact. A plan may declare multiple
@@ -477,9 +487,17 @@ birth line's fact inside an order born from a different fact cannot push that
 line's hook to `Ready`, materialize its birth stage, or emit `HookReady` on
 that order (grammar §7.2: a birth fact arrival serves only the birth of its own
 unique order). Trigger hooks are not birth-key deduplicated, with trigger
-signal uniqueness owned by the compiler. Non-trigger hooks (`EMIT_READY`
-watchers and plain watchers) are evaluated as before. Dock stages are marked
-by `HOOK_FLAG_DOCK_EXECUTOR`; dynamic stages are marked by
+signal uniqueness owned by the compiler. Non-trigger hooks are evaluated on
+every fact arrival regardless of stage materialization. A hook that lands
+`Ready` emits `HookReady` immediately when its stage is already materialized;
+if the stage is not materialized and the hook can materialize it (trigger or
+`EMIT_READY`), the hook materializes the stage and `HookReady` is announced by
+the materialization flush. A plain watcher (flags=0, only reachable through
+hand-built plans) keeps its `Ready` queued: `StageMaterialized` announces every
+ready-but-unannounced hook of that stage in the stage's hook registration
+order, without reordering or duplicating. Signal submission still requires the
+source stage to be materialized (`UnknownHook` otherwise). Dock stages are
+marked by `HOOK_FLAG_DOCK_EXECUTOR`; dynamic stages are marked by
 `HOOK_FLAG_DYNAMIC_EXECUTOR` (flag 32) — both flags mark the stage's supplier
 resolution mode and are not order-trigger flags.
 
@@ -493,13 +511,17 @@ output, module mirrors): omitting the proof reverts
 "no-proof" submissions. The stage patch module's assign/handoff timing gates
 read this native count instead of caller-supplied capability tables.
 
-Registration-bounds note: `MAX_PLAN_DEPENDENCIES` (1024) is a sanity ceiling,
-not a physically reachable target. Each distinct dependency key costs two
-storage-array pushes (~50k gas); within a 30M-gas block the storage cost alone
-bounds committable distinct keys to roughly 600. Dedup/cross-stage checks at
-registration read the persisted `dependencyIndex` (O(1) per key) instead of a
-quadratic in-memory scan, so large legitimate plans register at storage cost,
-and `TooManyDependencies` remains an OOG-shielded guard for absurd inputs.
+Registration-bounds note: `MAX_PLAN_DEPENDENCIES` (1024) and
+`MAX_HOOKS_PER_DEPENDENCY_KEY` (16) are gas/DoS ceilings, not observation
+semantics. Registration appends each `(hook, dependency key)` edge to the
+persisted `dependencyIndex` (O(1) per edge; no owner assignment or cross-stage
+check), and a fact submission evaluates every hook hanging off its key — so
+per-key fan-out is bounded (`TooManyHooksPerDependencyKey`), and each distinct
+key costs two storage-array pushes (~50k gas). Within a 30M-gas block the
+storage cost alone bounds committable distinct keys to roughly 600, so
+`MAX_PLAN_DEPENDENCIES` stays a sanity ceiling rather than a physically
+reachable target, and `TooManyDependencies` remains an OOG-shielded guard for
+absurd inputs.
 
 ## Funding Boundary
 

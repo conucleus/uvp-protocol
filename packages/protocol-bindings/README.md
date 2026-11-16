@@ -44,7 +44,7 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
 - `PlanCommitPayload` / `PlanCommitTypedData` mirror
   `UVPStateMachine.PlanCommit`: the publisher signs `publisher`, `hooksHash`,
   `capabilitiesRoot`, `executorBindingsRoot`, `birthAuthorizer`, `deadline`
-  under the main `UVPStateMachine` domain (`0.18`).
+  under the main `UVPStateMachine` domain (`0.19`).
 - `ExecutorBinding` is `{ stageId, supplierId, kind }` with kind `0`
   (default) / `1` (candidate); `buildPlanCommitCall` encodes
   `commitPlan(commit, hooks, bindings, signature)` from
@@ -58,7 +58,7 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
 - `buildSignalSubmissionTypedData` builds
   `UVPStateMachineSignalSubmission(planId, orderId, sourceId, signalId,
   payloadHash, idempotencyKey, filesDigest, attributionHash, submitter,
-  deadline)` under the main domain (`0.18`); `factAttributionHash` is the
+  deadline)` under the main domain (`0.19`); `factAttributionHash` is the
   `FactAttribution(sourceId, signalId, stageId, capabilityProof)` digest that
   enters the signature, and `recoverSignalSubmissionSigner` recovers the
   signer.
@@ -79,7 +79,7 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
   committed through the plan's `hooksHash`.
 - `buildTriggerOrderFromOutsideTypedData` builds
   `UVPStateMachineTriggerOrderFromOutside` typed data under the product-submit
-  domain (`UVPStateMachine`, version `0.18`). `triggerHookId` +
+  domain (`UVPStateMachine`, version `0.19`). `triggerHookId` +
   `triggerStageId` explicitly select one trigger birth line among the plan's
   order-trigger hooks.
 - `buildTriggerOrderFromOutsideForCall` encodes the relayer-submitted signed

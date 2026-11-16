@@ -3367,17 +3367,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "CrossStageDependency",
-    "inputs": [
-      {
-        "name": "signalKey",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "DuplicateSupplierBinding",
     "inputs": [
       {
