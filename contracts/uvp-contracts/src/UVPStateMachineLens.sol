@@ -18,7 +18,7 @@ interface IUVPStagePatchModuleLens {
             bool current,
             bytes32 dockId,
             bytes32 supplierId,
-            address executor,
+            address supplierAccount,
             bytes32 fromPlanId,
             bytes32 bindingId
         );
@@ -87,23 +87,27 @@ contract UVPStateMachineLens {
         _moduleDirectory = IUVPStateMachineModuleDirectory(stateMachineAddress);
     }
 
-    function effectiveStageExecutor(bytes32 planId, bytes32 orderId, bytes32 stageId)
+    function effectiveStageSupplier(bytes32 planId, bytes32 orderId, bytes32 stageId)
         external
         view
-        returns (bytes32 supplierId, address executor)
+        returns (bytes32)
     {
-        return stateMachine.effectiveStageExecutor(planId, orderId, stageId);
+        return stateMachine.effectiveStageSupplier(planId, orderId, stageId);
     }
 
-    function getActiveStageExecutorPatch(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
+    function effectiveStageAccount(bytes32 planId, bytes32 orderId, bytes32 stageId) external view returns (address) {
+        return stateMachine.effectiveStageAccount(planId, orderId, stageId);
+    }
+
+    function getActiveStageSupplierAssignment(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
         external
         view
-        returns (bool exists, bytes32 supplierId, address executor, uint256 patchNonce, bytes32 dockId)
+        returns (bool exists, bytes32 supplierId, address supplierAccount, uint256 patchNonce, bytes32 dockId)
     {
-        (supplierId, patchNonce, dockId) = stateMachine.activeStageExecutorPatch(planId, orderId, targetStageId);
+        (supplierId, patchNonce, dockId) = stateMachine.stageSupplierAssignment(planId, orderId, targetStageId);
         exists = supplierId != bytes32(0);
         if (exists) {
-            (, executor) = stateMachine.effectiveStageExecutor(planId, orderId, targetStageId);
+            supplierAccount = stateMachine.effectiveStageAccount(planId, orderId, targetStageId);
         }
     }
 
@@ -111,12 +115,12 @@ contract UVPStateMachineLens {
         (fromPlanId,,,,,,,) = IUVPDockRegistry(stateMachine.dockRegistry()).getDock(dockId);
     }
 
-    function getActiveStageDockSelection(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
+    function getActiveStageDockSupplierSelection(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
         external
         view
         returns (bool exists, bytes32 dockId, bytes32 fromPlanId, bytes32 supplierId)
     {
-        (supplierId,, dockId) = stateMachine.activeStageExecutorPatch(planId, orderId, targetStageId);
+        (supplierId,, dockId) = stateMachine.stageSupplierAssignment(planId, orderId, targetStageId);
         exists = supplierId != bytes32(0) && dockId != bytes32(0);
         if (exists) {
             fromPlanId = _dockFromPlanId(dockId);
@@ -136,7 +140,7 @@ contract UVPStateMachineLens {
             bool current,
             bytes32 dockId,
             bytes32 supplierId,
-            address executor,
+            address supplierAccount,
             bytes32 fromPlanId,
             bytes32 bindingId
         )
@@ -164,12 +168,12 @@ contract UVPStateMachineLens {
         return IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule()).capabilitiesRoot(planId);
     }
 
-    function planExecutorBindingsRoot(bytes32 planId) external view returns (bytes32) {
-        return stateMachine.planExecutorBindingsRoot(planId);
+    function planSupplierBindingsRoot(bytes32 planId) external view returns (bytes32) {
+        return stateMachine.planSupplierBindingsRoot(planId);
     }
 
-    function planStageHasDynamicExecutor(bytes32 planId, bytes32 stageId) external view returns (bool) {
-        return stateMachine.planStageHasDynamicExecutor(planId, stageId);
+    function planStageHasDynamicSupplier(bytes32 planId, bytes32 stageId) external view returns (bool) {
+        return stateMachine.planStageHasDynamicSupplier(planId, stageId);
     }
 
     function planStageIsCandidate(bytes32 planId, bytes32 stageId) external view returns (bool) {

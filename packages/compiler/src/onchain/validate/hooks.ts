@@ -86,20 +86,20 @@ function expectInstructionKeyClosure(
 
 function validateOnchainCompiledHooks(
   hooks: readonly unknown[],
-  executorRoutes: readonly unknown[],
+  supplierRoutes: readonly unknown[],
 ): readonly string[] {
   const issues: string[] = [];
   const hookIds = new Set<string>();
   const dynamicByStage = new Map<string, boolean>();
   const mixedDynamicStages = new Set<string>();
   const routeIds = new Set(
-    executorRoutes
+    supplierRoutes
       .filter(isRecord)
       .map((route) => route.routeId)
       .filter((routeId): routeId is string => typeof routeId === "string"),
   );
   const routesById = new Map<string, Record<string, unknown>>();
-  for (const route of executorRoutes) {
+  for (const route of supplierRoutes) {
     if (isRecord(route) && typeof route.routeId === "string") {
       routesById.set(route.routeId, route);
     }
@@ -134,12 +134,12 @@ function validateOnchainCompiledHooks(
     if (hook.dynamicExecutor === true) {
       if (hook.orderTriggerKind !== "none") {
         issues.push(
-          `${prefix} is a dynamic-executor hook and must not carry an order-trigger bit; birth executors are fixed at plan time`,
+          `${prefix} is a dynamic-executor hook and must not carry an order-trigger bit; birth suppliers are fixed at plan time`,
         );
       }
       if (hook.dockExecutor === true) {
         issues.push(
-          `${prefix} cannot be both a dynamic-executor and a dock-executor hook; dock executors are selected once through the stage executor patch`,
+          `${prefix} cannot be both a dynamic-executor and a dock-executor hook; dock executors are selected once through the stage supplier patch`,
         );
       }
       if (hook.emitReady !== true) {
@@ -149,7 +149,7 @@ function validateOnchainCompiledHooks(
       }
       if (hook.routeRef !== undefined) {
         issues.push(
-          `${prefix} is a dynamic-executor hook and must not carry an executor route; the supplier is assigned per order through the stage executor patch`,
+          `${prefix} is a dynamic-executor hook and must not carry a supplier route; the supplier is assigned per order through the stage supplier patch`,
         );
       }
     }
@@ -167,7 +167,7 @@ function validateOnchainCompiledHooks(
         mixedDynamicStages.add(hook.stageId);
         issues.push(
           `stage ${String(hook.stageIdentifier)} mixes dynamic-executor hooks with non-dynamic hooks `
-            + "(UVPStateMachine.commitPlan collects the per-stage dynamic set from hook flags and reverts InconsistentDynamicExecutorFlag)",
+            + "(UVPStateMachine.commitPlan collects the per-stage dynamic set from hook flags and reverts InconsistentDynamicSupplierFlag)",
         );
       }
     }
@@ -184,7 +184,7 @@ function validateOnchainCompiledHooks(
       }
       if (hook.routeRef !== undefined) {
         issues.push(
-          `${prefix} is a dock stage hook and must not carry an executor route; the dock executor is selected once through the stage executor patch (dkid)`,
+          `${prefix} is a dock stage hook and must not carry a supplier route; the dock executor is selected once through the stage supplier patch (dkid)`,
         );
       }
     }
@@ -308,7 +308,7 @@ function validateOnchainCompiledHooks(
           !routeIds.has(hook.routeRef.routeId)
         ) {
           issues.push(
-            `${prefix}.routeRef.routeId must reference executorRoutes`,
+            `${prefix}.routeRef.routeId must reference supplierRoutes`,
           );
         }
         if (
@@ -321,7 +321,7 @@ function validateOnchainCompiledHooks(
             referencedRoute.routeHash !== hook.routeRef.routeHash
           ) {
             issues.push(
-              `${prefix}.routeRef.routeHash must match the referenced executor route`,
+              `${prefix}.routeRef.routeHash must match the referenced supplier route`,
             );
           }
         }
@@ -928,7 +928,7 @@ function unmaterializableStageIssues(
         + "this stage's own order-trigger/EMIT_READY hooks) and its sendSignals have "
         + "no hook to hang on — submitSignal requires the source stage to be "
         + "materialized and reverts UnknownHook forever (deadlock, no recovery path); "
-        + "declare a trigger signal, receiveSignals, or a static executor",
+        + "declare a trigger signal, receiveSignals, or a static supplier",
     );
   }
   return issues;
@@ -1009,11 +1009,11 @@ function crossStageDependencyIssues(hooks: readonly unknown[]): readonly string[
 
 function dockStageRouteIssues(
   hooks: readonly unknown[],
-  executorRoutes: readonly unknown[],
+  supplierRoutes: readonly unknown[],
 ): readonly string[] {
   const issues: string[] = [];
   const routedStages = new Set<string>();
-  for (const route of executorRoutes) {
+  for (const route of supplierRoutes) {
     if (isRecord(route) && typeof route.stageIdentifier === "string") {
       routedStages.add(route.stageIdentifier);
     }
@@ -1031,8 +1031,8 @@ function dockStageRouteIssues(
     }
     reported.add(hook.stageIdentifier);
     issues.push(
-      `dock stage ${hook.stageIdentifier} must not carry an executor route; `
-        + "its executor is selected once through the stage executor patch (dkid), so a plan-level route would pin the wrong executor",
+      `dock stage ${hook.stageIdentifier} must not carry a supplier route; `
+        + "its executor is selected once through the stage supplier patch (dkid), so a plan-level route would pin the wrong executor",
     );
   }
   return issues;
@@ -1040,7 +1040,7 @@ function dockStageRouteIssues(
 
 function dynamicStageRouteIssues(
   hooks: readonly unknown[],
-  executorRoutes: readonly unknown[],
+  supplierRoutes: readonly unknown[],
 ): readonly string[] {
   const issues: string[] = [];
   const dynamicStages = new Set<string>();
@@ -1054,7 +1054,7 @@ function dynamicStageRouteIssues(
     }
   }
   const reported = new Set<string>();
-  for (const route of executorRoutes) {
+  for (const route of supplierRoutes) {
     if (
       !isRecord(route) ||
       typeof route.stageIdentifier !== "string" ||
@@ -1065,7 +1065,7 @@ function dynamicStageRouteIssues(
     }
     reported.add(route.stageIdentifier);
     issues.push(
-      `dynamic executor stage ${route.stageIdentifier} must not carry an executor route; `
+      `dynamic stage ${route.stageIdentifier} must not carry a supplier route; `
         + "a dynamic stage has no plan-default supplier, so a route would pin an executor the plan never binds",
     );
   }
@@ -1127,12 +1127,12 @@ function isOnchainHookDependency(
   );
 }
 
-function birthStageStaticExecutorIssues(
+function birthStageStaticSupplierIssues(
   hooks: readonly unknown[],
-  executorRoutes: readonly unknown[],
+  supplierRoutes: readonly unknown[],
 ): readonly string[] {
   const routedStages = new Set<string>();
-  for (const route of executorRoutes) {
+  for (const route of supplierRoutes) {
     if (isRecord(route) && typeof route.stageIdentifier === "string") {
       routedStages.add(route.stageIdentifier);
     }
@@ -1153,8 +1153,8 @@ function birthStageStaticExecutorIssues(
     }
     reported.add(stageIdentifier);
     issues.push(
-      `stage ${stageIdentifier} is a trigger birth stage (trigger order-trigger hook) and requires its own static executor route; `
-        + "trigger stages reject dock delegation and runtime executor patches "
+      `stage ${stageIdentifier} is a trigger birth stage (trigger order-trigger hook) and requires its own static supplier route; `
+        + "trigger stages reject dock delegation and runtime supplier patches "
         + "— the Rust compiler must reject this shape",
     );
   }
@@ -1170,6 +1170,6 @@ export {
   crossStageDependencyIssues,
   dockStageRouteIssues,
   validateOnchainDependencyIndex,
-  birthStageStaticExecutorIssues,
+  birthStageStaticSupplierIssues,
   dynamicStageRouteIssues,
 };

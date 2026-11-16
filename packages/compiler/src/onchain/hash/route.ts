@@ -3,7 +3,7 @@ import { hashCanonical, keccak256Hex } from "../../hash.js";
 import { isHexHash } from "../shape.js";
 import type {
   HexString,
-  HookPlanExecutorRoute,
+  HookPlanSupplierRoute,
   SignalTargetOrderRelation,
 } from "../../types/index.js";
 
@@ -70,7 +70,7 @@ export function onchainSignalCapabilityHash(
 }
 
 export function onchainRouteId(stageIdentifier: string): HexString {
-  return keccak256Hex(`${stageIdentifier}#executorRoute`);
+  return keccak256Hex(`${stageIdentifier}#supplierRoute`);
 }
 
 export function onchainSignalKey(
@@ -84,7 +84,7 @@ export function opaqueContentHash(value: unknown): HexString {
   return keccak256Hex(canonicalJson(value));
 }
 
-export function onchainRouteHash(route: HookPlanExecutorRoute): HexString {
+export function onchainRouteHash(route: HookPlanSupplierRoute): HexString {
   return routeHashFromDigests(
     onchainStageId(route.stageIdentifier),
     route.stageIdentifier,
@@ -96,13 +96,13 @@ export function onchainRouteHash(route: HookPlanExecutorRoute): HexString {
 export function routeHashFromDigests(
   stageId: HexString,
   stageIdentifier: string,
-  executorHash: HexString,
+  supplierHash: HexString,
   resourcesHash: HexString,
 ): HexString {
   return hashCanonical(ONCHAIN_ROUTE_HASH_DOMAIN, {
     stageId,
     stageIdentifier,
-    executorHash,
+    supplierHash,
     resourcesHash,
   });
 }

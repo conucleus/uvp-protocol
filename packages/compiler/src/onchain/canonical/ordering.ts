@@ -1,10 +1,10 @@
 import { compareCanonicalKey } from "../../hook-plan.js";
 import { isRecord } from "../shape.js";
 import type {
-  ExecutorBinding,
+  StageSupplierBinding,
   OnchainCompiledAdmission,
   OnchainCompiledHook,
-  OnchainExecutorRoute,
+  OnchainSupplierRoute,
   OnchainSignalCapability,
   OnchainStageFileWriter,
   OnchainStageSelectorBinding,
@@ -26,9 +26,9 @@ function compareOnchainHooks(
   );
 }
 
-function compareExecutorRoutes(
-  left: OnchainExecutorRoute,
-  right: OnchainExecutorRoute,
+function compareSupplierRoutes(
+  left: OnchainSupplierRoute,
+  right: OnchainSupplierRoute,
 ): number {
   return (
     compareCanonicalKey(left.stageIdentifier, right.stageIdentifier) ||
@@ -82,9 +82,9 @@ function compareAdmissions(
   );
 }
 
-function compareExecutorBindings(
-  left: ExecutorBinding,
-  right: ExecutorBinding,
+function compareSupplierBindings(
+  left: StageSupplierBinding,
+  right: StageSupplierBinding,
 ): number {
   return (
     compareCanonicalKey(left.stageId, right.stageId) ||
@@ -95,12 +95,12 @@ function compareExecutorBindings(
 
 export {
   compareOnchainHooks,
-  compareExecutorRoutes,
+  compareSupplierRoutes,
   compareSelectorBindings,
   compareSignalCapabilities,
   compareStageFileWriters,
   compareAdmissions,
-  compareExecutorBindings,
+  compareSupplierBindings,
 };
 
 function canonicalOrderIssues(
@@ -183,7 +183,7 @@ function fileWriterOrderKey(binding: Record<string, unknown>): readonly string[]
   ];
 }
 
-function executorBindingOrderKey(
+function supplierBindingOrderKey(
   binding: Record<string, unknown>,
 ): readonly string[] {
   return [
@@ -200,6 +200,6 @@ export {
   selectorBindingOrderKey,
   signalCapabilityOrderKey,
   admissionOrderKey,
-  executorBindingOrderKey,
+  supplierBindingOrderKey,
   fileWriterOrderKey,
 };

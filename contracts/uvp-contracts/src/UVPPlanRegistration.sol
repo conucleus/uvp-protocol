@@ -17,14 +17,14 @@ import {
     _MAX_PLAN_DEPENDENCIES as MAX_PLAN_DEPENDENCIES,
     _MAX_HOOKS_PER_DEPENDENCY_KEY as MAX_HOOKS_PER_DEPENDENCY_KEY,
     _MAX_INSTRUCTION_DEPTH as MAX_INSTRUCTION_DEPTH,
-    _MAX_EXECUTOR_BINDINGS as MAX_EXECUTOR_BINDINGS,
+    _MAX_SUPPLIER_BINDINGS as MAX_SUPPLIER_BINDINGS,
     _EIP712_DOMAIN_TYPEHASH,
     _EIP712_NAME_HASH,
     _EIP712_VERSION_HASH,
     _PLAN_RUNTIME_HASH_DOMAIN,
     _PLAN_ID_HASH_DOMAIN,
     _PLAN_COMMIT_TYPEHASH,
-    _EXECUTOR_BINDING_LEAF_DOMAIN,
+    _SUPPLIER_BINDING_LEAF_DOMAIN,
     _TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH,
     _FORK_ORDER_ID_DOMAIN as L_FORK_ORDER_ID_DOMAIN,
     _ORDER_LINK_ORDER_ID_DOMAIN as L_ORDER_LINK_ORDER_ID_DOMAIN
@@ -41,7 +41,7 @@ library UVPPlanRegistration {
         address supplierRegistry,
         UVPStateMachine.PlanCommit calldata commit,
         UVPStateMachine.CompactHook[] calldata hooks,
-        UVPStateMachine.ExecutorBinding[] calldata bindings,
+        UVPStateMachine.StageSupplierBinding[] calldata bindings,
         bytes calldata signature
     ) public returns (bytes32 planId) {
         if (!modulesFrozen) {
@@ -56,8 +56,8 @@ library UVPPlanRegistration {
         if (hooks.length == 0) {
             revert UVPStateMachine.EmptyPlan();
         }
-        if (bindings.length > MAX_EXECUTOR_BINDINGS) {
-            revert UVPStateMachine.TooManyExecutorBindings(bindings.length);
+        if (bindings.length > MAX_SUPPLIER_BINDINGS) {
+            revert UVPStateMachine.TooManySupplierBindings(bindings.length);
         }
         bytes32 actualHooksHash = keccak256(abi.encode(hooks));
         if (actualHooksHash != commit.hooksHash) {
@@ -69,11 +69,11 @@ library UVPPlanRegistration {
         }
 
         bytes32 capabilitiesRoot = _orEmptyRoot(commit.capabilitiesRoot);
-        bytes32 executorBindingsRoot = _executorBindingsRoot(bindings);
-        if (executorBindingsRoot != commit.executorBindingsRoot) {
-            revert UVPStateMachine.ExecutorBindingsRootMismatch(commit.executorBindingsRoot, executorBindingsRoot);
+        bytes32 supplierBindingsRoot = _supplierBindingsRoot(bindings);
+        if (supplierBindingsRoot != commit.supplierBindingsRoot) {
+            revert UVPStateMachine.SupplierBindingsRootMismatch(commit.supplierBindingsRoot, supplierBindingsRoot);
         }
-        bytes32 runtimePlanHash = planRuntimeHash(commit.hooksHash, capabilitiesRoot, executorBindingsRoot);
+        bytes32 runtimePlanHash = planRuntimeHash(commit.hooksHash, capabilitiesRoot, supplierBindingsRoot);
         planId = planIdFor(commit.publisher, runtimePlanHash);
         UVPStateMachine.Plan storage plan = _plans[planId];
         if (plan.committed) {
@@ -82,7 +82,7 @@ library UVPPlanRegistration {
         plan.planHash = runtimePlanHash;
         plan.hooksHash = commit.hooksHash;
         plan.capabilitiesRoot = capabilitiesRoot;
-        plan.executorBindingsRoot = executorBindingsRoot;
+        plan.supplierBindingsRoot = supplierBindingsRoot;
         plan.publisher = commit.publisher;
         plan.birthAuthorizer = commit.birthAuthorizer;
         plan.committed = true;
@@ -103,7 +103,7 @@ library UVPPlanRegistration {
                         hookFlags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_DOCK_EXECUTOR) != 0
                             || hookFlags & HOOK_FLAG_EMIT_READY == 0
                     ) {
-                        revert UVPStateMachine.InconsistentDynamicExecutorFlag(hooks[i].stageId);
+                        revert UVPStateMachine.InconsistentDynamicSupplierFlag(hooks[i].stageId);
                     }
                 }
                 uint256 stageIndex = _seenDependencyIndex(stages, stageCount, hooks[i].stageId);
@@ -132,10 +132,10 @@ library UVPPlanRegistration {
                     revert UVPStateMachine.StageNotMaterializable(stages[i]);
                 }
                 if (stageKinds[i] & _STAGE_DYNAMIC != 0) {
-                    plan.dynamicExecutorStages[stages[i]] = true;
+                    plan.dynamicSupplierStages[stages[i]] = true;
                 }
             }
-            _applyExecutorBindings(plan, bindings, supplierRegistry, stages, stageKinds, stageCount);
+            _applySupplierBindings(plan, bindings, supplierRegistry, stages, stageKinds, stageCount);
         }
 
         emit UVPStateMachine.PlanCommitted(
@@ -145,7 +145,7 @@ library UVPPlanRegistration {
             commit.hooksHash,
             capabilitiesRoot,
             hooks.length,
-            executorBindingsRoot,
+            supplierBindingsRoot,
             commit.birthAuthorizer
         );
         emit UVPStateMachine.PlanPublisherRecorded(planId, commit.publisher);
@@ -155,7 +155,7 @@ library UVPPlanRegistration {
         return root == bytes32(0) ? MerkleCommitment.EMPTY_ROOT : root;
     }
 
-    function _executorBindingsRoot(UVPStateMachine.ExecutorBinding[] calldata bindings)
+    function _supplierBindingsRoot(UVPStateMachine.StageSupplierBinding[] calldata bindings)
         private
         pure
         returns (bytes32)
@@ -164,23 +164,23 @@ library UVPPlanRegistration {
         for (uint256 i = 0; i < bindings.length; i++) {
             leaves[i] = keccak256(
                 abi.encodePacked(
-                    _EXECUTOR_BINDING_LEAF_DOMAIN, bindings[i].stageId, bindings[i].supplierId, bindings[i].kind
+                    _SUPPLIER_BINDING_LEAF_DOMAIN, bindings[i].stageId, bindings[i].supplierId, bindings[i].kind
                 )
             );
         }
         return MerkleCommitment.root(leaves);
     }
 
-    function _applyExecutorBindings(
+    function _applySupplierBindings(
         UVPStateMachine.Plan storage plan,
-        UVPStateMachine.ExecutorBinding[] calldata bindings,
+        UVPStateMachine.StageSupplierBinding[] calldata bindings,
         address supplierRegistry,
         bytes32[] memory stages,
         uint8[] memory stageKinds,
         uint256 stageCount
     ) private {
         for (uint256 i = 0; i < bindings.length; i++) {
-            UVPStateMachine.ExecutorBinding calldata binding = bindings[i];
+            UVPStateMachine.StageSupplierBinding calldata binding = bindings[i];
             if (binding.kind != 0) {
                 continue;
             }
@@ -189,54 +189,54 @@ library UVPPlanRegistration {
                 revert UVPStateMachine.UnknownPlanStage(binding.stageId);
             }
             if (stageKinds[stageIndex] & (_STAGE_DOCK | _STAGE_DYNAMIC) != 0) {
-                revert UVPStateMachine.ExecutorBindingForbiddenForStage(binding.stageId);
+                revert UVPStateMachine.SupplierBindingForbiddenForStage(binding.stageId);
             }
             if (plan.stageDefaultSuppliers[binding.stageId] != bytes32(0)) {
-                revert UVPStateMachine.DuplicateExecutorBinding(binding.stageId, binding.supplierId, binding.kind);
+                revert UVPStateMachine.DuplicateSupplierBinding(binding.stageId, binding.supplierId, binding.kind);
             }
-            _requireRegisteredSupplier(supplierRegistry, binding.supplierId);
+            _requireActiveSupplier(supplierRegistry, binding.supplierId);
             plan.stageDefaultSuppliers[binding.stageId] = binding.supplierId;
         }
 
         for (uint256 i = 0; i < bindings.length; i++) {
-            UVPStateMachine.ExecutorBinding calldata binding = bindings[i];
+            UVPStateMachine.StageSupplierBinding calldata binding = bindings[i];
             if (binding.kind == 0) {
                 continue;
             }
             if (binding.kind != 1) {
-                revert UVPStateMachine.InvalidExecutorBindingKind(binding.kind);
+                revert UVPStateMachine.InvalidSupplierBindingKind(binding.kind);
             }
             uint256 stageIndex = _seenDependencyIndex(stages, stageCount, binding.stageId);
             if (stageIndex == type(uint256).max) {
                 revert UVPStateMachine.UnknownPlanStage(binding.stageId);
             }
             if (stageKinds[stageIndex] & (_STAGE_TRIGGER | _STAGE_DOCK | _STAGE_DYNAMIC) != 0) {
-                revert UVPStateMachine.CandidateExecutorBindingForbiddenForStage(binding.stageId);
+                revert UVPStateMachine.CandidateSupplierBindingForbiddenForStage(binding.stageId);
             }
             if (plan.stageDefaultSuppliers[binding.stageId] == bytes32(0)) {
-                revert UVPStateMachine.CandidateExecutorBindingRequiresDefault(binding.stageId);
+                revert UVPStateMachine.CandidateSupplierBindingRequiresDefault(binding.stageId);
             }
             for (uint256 j = 0; j < i; j++) {
                 if (
                     bindings[j].kind == 1 && bindings[j].stageId == binding.stageId
                         && bindings[j].supplierId == binding.supplierId
                 ) {
-                    revert UVPStateMachine.DuplicateExecutorBinding(
+                    revert UVPStateMachine.DuplicateSupplierBinding(
                         binding.stageId, binding.supplierId, binding.kind
                     );
                 }
             }
-            _requireRegisteredSupplier(supplierRegistry, binding.supplierId);
+            _requireActiveSupplier(supplierRegistry, binding.supplierId);
             plan.stageCandidateStages[binding.stageId] = true;
         }
     }
 
-    function _requireRegisteredSupplier(address supplierRegistry, bytes32 supplierId) private view {
+    function _requireActiveSupplier(address supplierRegistry, bytes32 supplierId) private view {
         if (supplierRegistry == address(0)) {
             revert UVPStateMachine.SupplierRegistryNotConfigured();
         }
-        if (!IUVPSupplierRegistry(supplierRegistry).isRegisteredSupplier(supplierId)) {
-            revert UVPStateMachine.SupplierNotRegistered(supplierId);
+        if (!IUVPSupplierRegistry(supplierRegistry).isActiveSupplier(supplierId)) {
+            revert UVPStateMachine.SupplierNotActive(supplierId);
         }
     }
 
@@ -538,7 +538,7 @@ library UVPPlanRegistration {
                 commit.publisher,
                 commit.hooksHash,
                 commit.capabilitiesRoot,
-                commit.executorBindingsRoot,
+                commit.supplierBindingsRoot,
                 commit.birthAuthorizer,
                 commit.deadline
             )
@@ -562,12 +562,12 @@ library UVPPlanRegistration {
         return ECDSA.recover(digest, UVPSignatures.Signature({v: v, r: r, s: s}));
     }
 
-    function planRuntimeHash(bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 executorBindingsRoot)
+    function planRuntimeHash(bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 supplierBindingsRoot)
         private
         pure
         returns (bytes32)
     {
-        return keccak256(abi.encode(_PLAN_RUNTIME_HASH_DOMAIN, hooksHash, capabilitiesRoot, executorBindingsRoot));
+        return keccak256(abi.encode(_PLAN_RUNTIME_HASH_DOMAIN, hooksHash, capabilitiesRoot, supplierBindingsRoot));
     }
 
     function planIdFor(address publisher, bytes32 runtimePlanHash) private pure returns (bytes32) {
@@ -1010,32 +1010,45 @@ library UVPPlanRegistration {
         if (stageId == bytes32(0)) {
             return bytes32(0);
         }
-        bytes32 patchedSupplierId = _s.activeStageExecutorPatches[planId][orderId][stageId].supplierId;
-        if (patchedSupplierId != bytes32(0)) {
-            return patchedSupplierId;
+        bytes32 assignedSupplierId = _s.stageSupplierAssignments[planId][orderId][stageId].supplierId;
+        if (assignedSupplierId != bytes32(0)) {
+            return assignedSupplierId;
         }
         return _s.plans[planId].stageDefaultSuppliers[stageId];
     }
 
-    function L_isEffectiveStageExecutor(
+    function L_effectiveStageAccount(
         UVPStateMachine.SMState storage _s,
         bytes32 planId,
         bytes32 orderId,
-        bytes32 stageId,
-        address executor
-    ) private view returns (bool) {
-        if (stageId == bytes32(0) || executor == address(0)) {
-            return false;
-        }
+        bytes32 stageId
+    ) private view returns (address) {
         bytes32 supplierId = L_effectiveStageSupplier(_s, planId, orderId, stageId);
         if (supplierId == bytes32(0)) {
-            return false;
+            return address(0);
         }
         address registry = _s.supplierRegistry;
         if (registry == address(0)) {
             revert UVPStateMachine.SupplierRegistryNotConfigured();
         }
-        return IUVPSupplierRegistry(registry).executorOf(supplierId) == executor;
+        IUVPSupplierRegistry registryContract = IUVPSupplierRegistry(registry);
+        if (!registryContract.isActiveSupplier(supplierId)) {
+            return address(0);
+        }
+        return registryContract.accountOf(supplierId);
+    }
+
+    function L_isEffectiveStageAccount(
+        UVPStateMachine.SMState storage _s,
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 stageId,
+        address account
+    ) private view returns (bool) {
+        if (stageId == bytes32(0) || account == address(0)) {
+            return false;
+        }
+        return L_effectiveStageAccount(_s, planId, orderId, stageId) == account;
     }
 
     function L_triggerOriginConsent(
@@ -1057,7 +1070,7 @@ library UVPPlanRegistration {
         if (originOrder.creator == party) {
             return true;
         }
-        return L_isEffectiveStageExecutor(_s, originPlanId, originOrderId, originStageId, party);
+        return L_isEffectiveStageAccount(_s, originPlanId, originOrderId, originStageId, party);
     }
 
     function L_eitherTriggerOriginConsent(

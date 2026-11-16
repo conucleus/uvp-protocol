@@ -88,7 +88,22 @@ function internalOrder() {
     },
     derivedSignals: {},
     stageMaterializations: {},
-    stageExecutorOverlays: {},
+    stageSupplierAssignments: {
+      [STAGE_ID]: {
+        orderId: ORDER_ID,
+        selectorStageId: STAGE_ID,
+        targetStageId: STAGE_ID,
+        selector: WALLET,
+        supplierId: HASH,
+        previousSupplierId: HASH,
+        patchNonce: "3",
+        supplierAccount: WALLET,
+        updatedAt: provenance(22n),
+        activatedAt: provenance(22n),
+        proof: proof(22n),
+        activationProof: proof(22n)
+      }
+    },
     stageFiles: {
       [STAGE_ID]: {
         planId: PLAN_ID,
@@ -120,7 +135,7 @@ function internalOrder() {
         stageIdentifier: STAGE_ID,
         hookName: HOOK_ID,
         assigneeSupplierId: HASH,
-        assigneeExecutor: WALLET,
+        assigneeSupplierAccount: WALLET,
         status: "ready" as const,
         submitSignals: [{ sourceId: STAGE_ID, signalId: SIGNAL_ID }],
         createdAt: provenance(20n),
@@ -177,7 +192,7 @@ function internalSnapshot() {
         hookCount: "0",
         selectorBindings: [],
         signalCapabilities: [],
-        executorBindings: [],
+        supplierBindings: [],
         registeredAt: provenance(8n),
         updatedAt: provenance(8n),
         proof: proof(8n),
@@ -191,12 +206,13 @@ function internalSnapshot() {
     stateMachineSuppliers: {
       [HASH]: {
         supplierId: HASH,
-        executor: WALLET,
+        account: WALLET,
+        status: "active" as const,
         registeredAt: provenance(6n),
         updatedAt: provenance(7n),
         proof: proof(6n),
-        rotatedAt: provenance(7n),
-        rotationProof: proof(7n)
+        statusChangedAt: provenance(7n),
+        statusChangedProof: proof(7n)
       }
     },
     lastEvent: provenance(15n),

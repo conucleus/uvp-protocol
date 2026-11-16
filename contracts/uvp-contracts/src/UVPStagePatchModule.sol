@@ -8,7 +8,7 @@ import {IUVPSupplierRegistry} from "./interfaces/IUVPSupplierRegistry.sol";
 import {ECDSA} from "./libraries/ECDSA.sol";
 import {UVPSignatures} from "./libraries/UVPSignatures.sol";
 import {MerkleCommitment} from "./libraries/MerkleCommitment.sol";
-import {_EXECUTOR_BINDING_LEAF_DOMAIN} from "./UVPStateMachineConstants.sol";
+import {_SUPPLIER_BINDING_LEAF_DOMAIN} from "./UVPStateMachineConstants.sol";
 
 interface IUVPPlanMetadataModuleForStagePatch {
     function verifyStageSelectorBinding(
@@ -22,9 +22,9 @@ interface IUVPPlanMetadataModuleForStagePatch {
 contract UVPStagePatchModule {
     bytes32 private constant _DOCK_PAYLOAD_FILE_KEY = keccak256("dock_link");
     bytes32 private constant _DOCK_BINDING_ID_DOMAIN = keccak256("uvp.dock.binding_id.v1");
-    uint8 private constant _EXECUTOR_BINDING_KIND_CANDIDATE = 1;
+    uint8 private constant _SUPPLIER_BINDING_KIND_CANDIDATE = 1;
 
-    struct StageExecutorPatch {
+    struct StageSupplierPatch {
         bytes32 selectorStageId;
         bytes32 targetStageId;
         bytes32 supplierId;
@@ -32,7 +32,7 @@ contract UVPStagePatchModule {
         uint256 patchNonce;
     }
 
-    struct StageDockExecutorSelection {
+    struct StageDockSupplierSelection {
         bytes32 selectorStageId;
         bytes32 targetStageId;
         bytes32 dockId;
@@ -49,7 +49,7 @@ contract UVPStagePatchModule {
         bytes32 toSourceId;
         bytes32 bindingId;
         bytes32 supplierId;
-        address executor;
+        address supplierAccount;
     }
 
     error DockBindingContentHashMismatch(bytes32 expectedHash, bytes32 actualHash);
@@ -63,25 +63,25 @@ contract UVPStagePatchModule {
     error DockStageMismatch(bytes32 expectedStageId, bytes32 providedStageId);
     error DockStageNotDockExecutor(bytes32 planId, bytes32 stageId);
     error DockUnknown(bytes32 dkid);
-    error ExpiredStageExecutorPatchSignature(uint256 deadline);
-    error InvalidStageExecutorPatchSignature(address expectedSigner, address recoveredSigner);
-    error InvalidStageExecutorPatchSignatureLength(uint256 length);
+    error ExpiredStageSupplierPatchSignature(uint256 deadline);
+    error InvalidStageSupplierPatchSignature(address expectedSigner, address recoveredSigner);
+    error InvalidStageSupplierPatchSignatureLength(uint256 length);
     error StageAlreadyHasSignal(bytes32 orderId, bytes32 targetStageId);
-    error StageDockExecutorAlreadySelected(bytes32 planId, bytes32 orderId, bytes32 targetStageId);
-    error StageExecutorNotCandidate(bytes32 planId, bytes32 orderId, bytes32 targetStageId, bytes32 supplierId);
-    error StageExecutorPatchForbiddenOnBirthStage(bytes32 orderId, bytes32 targetStageId);
-    error StageExecutorPatchForbiddenOnDockStage(bytes32 orderId, bytes32 targetStageId);
-    error StageExecutorPatchForbiddenOnFixedStage(bytes32 orderId, bytes32 targetStageId);
-    error StageExecutorPatchNonceNotIncreasing(
-        bytes32 orderId, bytes32 targetStageId, uint256 previousNonce, uint256 patchNonce
-    );
-    error StageExecutorPatchPreviousSupplierMismatch(
-        bytes32 orderId, bytes32 targetStageId, bytes32 expectedSupplierId, bytes32 previousSupplierId
-    );
+    error StageDockSupplierAlreadySelected(bytes32 planId, bytes32 orderId, bytes32 targetStageId);
     error StageHasNoSignal(bytes32 orderId, bytes32 targetStageId);
     error StageSelectorBindingNotFound(bytes32 planId, bytes32 selectorStageId, bytes32 targetStageId);
-    error SupplierNotRegistered(bytes32 supplierId);
-    error UnauthorizedStageExecutorPatchSelector(bytes32 orderId, bytes32 selectorStageId, address selector);
+    error StageSupplierNotCandidate(bytes32 planId, bytes32 orderId, bytes32 targetStageId, bytes32 supplierId);
+    error StageSupplierPatchForbiddenOnBirthStage(bytes32 orderId, bytes32 targetStageId);
+    error StageSupplierPatchForbiddenOnDockStage(bytes32 orderId, bytes32 targetStageId);
+    error StageSupplierPatchForbiddenOnFixedStage(bytes32 orderId, bytes32 targetStageId);
+    error StageSupplierPatchNonceNotIncreasing(
+        bytes32 orderId, bytes32 targetStageId, uint256 previousNonce, uint256 patchNonce
+    );
+    error StageSupplierPatchPreviousSupplierMismatch(
+        bytes32 orderId, bytes32 targetStageId, bytes32 expectedSupplierId, bytes32 previousSupplierId
+    );
+    error SupplierNotActive(bytes32 supplierId);
+    error UnauthorizedStageSupplierPatchSelector(bytes32 orderId, bytes32 selectorStageId, address selector);
     error UnknownOrder();
     error UnknownStage(bytes32 planId, bytes32 stageId);
     error ZeroDockId();
@@ -99,14 +99,14 @@ contract UVPStagePatchModule {
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _EIP712_NAME_HASH = keccak256("UVPStagePatchModule");
     bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.5");
-    bytes32 private constant _STAGE_EXECUTOR_PATCH_TYPEHASH = keccak256(
-        "UVPStagePatchModuleStageExecutorPatch(bytes32 planId,bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,bytes32 supplierId,bytes32 previousSupplierId,uint256 patchNonce,address selector,uint256 deadline)"
+    bytes32 private constant _STAGE_SUPPLIER_PATCH_TYPEHASH = keccak256(
+        "UVPStagePatchModuleStageSupplierPatch(bytes32 planId,bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,bytes32 supplierId,bytes32 previousSupplierId,uint256 patchNonce,address selector,uint256 deadline)"
     );
-    bytes32 private constant _STAGE_DOCK_EXECUTOR_SELECTION_TYPEHASH = keccak256(
-        "UVPStagePatchModuleStageDockExecutorSelection(bytes32 planId,bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,bytes32 dockId,bytes32 supplierId,uint256 patchNonce,address selector,uint256 deadline)"
+    bytes32 private constant _STAGE_DOCK_SUPPLIER_SELECTION_TYPEHASH = keccak256(
+        "UVPStagePatchModuleStageDockSupplierSelection(bytes32 planId,bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,bytes32 dockId,bytes32 supplierId,uint256 patchNonce,address selector,uint256 deadline)"
     );
 
-    event StageExecutorPatchApplied(
+    event StageSupplierPatchApplied(
         bytes32 indexed planId,
         bytes32 indexed orderId,
         bytes32 indexed selectorStageId,
@@ -116,14 +116,12 @@ contract UVPStagePatchModule {
         bytes32 previousSupplierId,
         uint256 patchNonce
     );
-    event StageDockExecutorSelected(
+    event StageDockSupplierSelected(
         bytes32 indexed planId,
         bytes32 indexed orderId,
         bytes32 indexed targetStageId,
         bytes32 dockId,
-        bytes32 fromPlanId,
         bytes32 supplierId,
-        address selector,
         uint256 patchNonce
     );
     event DockBindingPoked(
@@ -151,80 +149,80 @@ contract UVPStagePatchModule {
         stateMachine = IUVPStateMachineCore(stateMachineAddress);
     }
 
-    function applyStageExecutorPatch(
+    function applyStageSupplierPatch(
         bytes32 planId,
         bytes32 orderId,
-        StageExecutorPatch calldata patch,
+        StageSupplierPatch calldata patch,
         IUVPStateMachineCore.SelectorBindingProof calldata bindingProof,
         bytes32[] calldata candidateProof
     ) external {
-        _applyStageExecutorPatch(planId, orderId, patch, msg.sender, address(0), bindingProof, candidateProof);
+        _applyStageSupplierPatch(planId, orderId, patch, msg.sender, address(0), bindingProof, candidateProof);
     }
 
-    function applyStageExecutorPatchFor(
+    function applyStageSupplierPatchFor(
         bytes32 planId,
         bytes32 orderId,
-        StageExecutorPatch calldata patch,
+        StageSupplierPatch calldata patch,
         address selector,
         uint256 deadline,
         bytes calldata selectorSignature,
-        bytes calldata previousExecutorSignature,
+        bytes calldata previousSupplierSignature,
         IUVPStateMachineCore.SelectorBindingProof calldata bindingProof,
         bytes32[] calldata candidateProof
     ) external {
         if (block.timestamp > deadline) {
-            revert ExpiredStageExecutorPatchSignature(deadline);
+            revert ExpiredStageSupplierPatchSignature(deadline);
         }
         if (selector == address(0)) {
             revert ZeroSelector();
         }
 
-        bytes32 digest = stageExecutorPatchDigest(planId, orderId, patch, selector, deadline);
-        address recoveredSigner = _recoverStageExecutorPatchSigner(digest, selectorSignature);
+        bytes32 digest = stageSupplierPatchDigest(planId, orderId, patch, selector, deadline);
+        address recoveredSigner = _recoverStageSupplierPatchSigner(digest, selectorSignature);
         if (recoveredSigner != selector) {
-            revert InvalidStageExecutorPatchSignature(selector, recoveredSigner);
+            revert InvalidStageSupplierPatchSignature(selector, recoveredSigner);
         }
 
-        address recoveredPreviousExecutor;
-        if (previousExecutorSignature.length != 0) {
-            recoveredPreviousExecutor = _recoverStageExecutorPatchSigner(digest, previousExecutorSignature);
+        address recoveredPreviousSupplier;
+        if (previousSupplierSignature.length != 0) {
+            recoveredPreviousSupplier = _recoverStageSupplierPatchSigner(digest, previousSupplierSignature);
         }
 
-        _applyStageExecutorPatch(
-            planId, orderId, patch, selector, recoveredPreviousExecutor, bindingProof, candidateProof
+        _applyStageSupplierPatch(
+            planId, orderId, patch, selector, recoveredPreviousSupplier, bindingProof, candidateProof
         );
     }
 
-    function selectStageDockExecutor(
+    function selectStageDockSupplier(
         bytes32 planId,
         bytes32 orderId,
-        StageDockExecutorSelection calldata selection,
+        StageDockSupplierSelection calldata selection,
         IUVPStateMachineCore.SelectorBindingProof calldata bindingProof
     ) external {
-        _selectStageDockExecutor(planId, orderId, selection, msg.sender, bindingProof);
+        _selectStageDockSupplier(planId, orderId, selection, msg.sender, bindingProof);
     }
 
-    function selectStageDockExecutorFor(
+    function selectStageDockSupplierFor(
         bytes32 planId,
         bytes32 orderId,
-        StageDockExecutorSelection calldata selection,
+        StageDockSupplierSelection calldata selection,
         address selector,
         uint256 deadline,
         bytes calldata selectorSignature,
         IUVPStateMachineCore.SelectorBindingProof calldata bindingProof
     ) external {
         if (block.timestamp > deadline) {
-            revert ExpiredStageExecutorPatchSignature(deadline);
+            revert ExpiredStageSupplierPatchSignature(deadline);
         }
         if (selector == address(0)) {
             revert ZeroSelector();
         }
-        bytes32 digest = stageDockExecutorSelectionDigest(planId, orderId, selection, selector, deadline);
-        address recoveredSigner = _recoverStageExecutorPatchSigner(digest, selectorSignature);
+        bytes32 digest = stageDockSupplierSelectionDigest(planId, orderId, selection, selector, deadline);
+        address recoveredSigner = _recoverStageSupplierPatchSigner(digest, selectorSignature);
         if (recoveredSigner != selector) {
-            revert InvalidStageExecutorPatchSignature(selector, recoveredSigner);
+            revert InvalidStageSupplierPatchSignature(selector, recoveredSigner);
         }
-        _selectStageDockExecutor(planId, orderId, selection, selector, bindingProof);
+        _selectStageDockSupplier(planId, orderId, selection, selector, bindingProof);
     }
 
     function pokeDockBinding(
@@ -235,7 +233,7 @@ contract UVPStagePatchModule {
         bytes32 fromOrderId,
         bytes32[][] calldata outputCapabilityProofs
     ) external returns (uint256 emittedCount) {
-        (bytes32 supplierId,, bytes32 dockId) = stateMachine.activeStageExecutorPatch(planId, orderId, targetStageId);
+        (bytes32 supplierId,, bytes32 dockId) = stateMachine.stageSupplierAssignment(planId, orderId, targetStageId);
         if (supplierId == bytes32(0) || dockId == bytes32(0)) {
             revert DockBindingNotSelected(planId, orderId, targetStageId);
         }
@@ -244,9 +242,18 @@ contract UVPStagePatchModule {
         if (!dockExists) {
             revert DockUnknown(dockId);
         }
-        (, address executor) = stateMachine.effectiveStageExecutor(planId, orderId, targetStageId);
+        address supplierAccount = stateMachine.effectiveStageAccount(planId, orderId, targetStageId);
         DockBindingContext memory context = _dockBindingContext(
-            planId, orderId, targetStageId, fromPlanId, dockId, toSourceId, supplierId, executor, payloadContent, fromOrderId
+            planId,
+            orderId,
+            targetStageId,
+            fromPlanId,
+            dockId,
+            toSourceId,
+            supplierId,
+            supplierAccount,
+            payloadContent,
+            fromOrderId
         );
         uint256 outputCount = registry.dockOutputCount(dockId);
         if (outputCapabilityProofs.length != outputCount) {
@@ -283,12 +290,12 @@ contract UVPStagePatchModule {
             bool current,
             bytes32 dockId,
             bytes32 supplierId,
-            address executor,
+            address supplierAccount,
             bytes32 fromPlanId,
             bytes32 bindingId
         )
     {
-        (supplierId,, dockId) = stateMachine.activeStageExecutorPatch(planId, orderId, targetStageId);
+        (supplierId,, dockId) = stateMachine.stageSupplierAssignment(planId, orderId, targetStageId);
         selected = supplierId != bytes32(0) && dockId != bytes32(0);
         if (!selected) {
             return (false, false, bytes32(0), bytes32(0), address(0), bytes32(0), bytes32(0));
@@ -298,12 +305,12 @@ contract UVPStagePatchModule {
         if (!dockExists || dockToStageId != targetStageId) {
             return (false, false, bytes32(0), bytes32(0), address(0), bytes32(0), bytes32(0));
         }
-        (, executor) = stateMachine.effectiveStageExecutor(planId, orderId, targetStageId);
+        supplierAccount = stateMachine.effectiveStageAccount(planId, orderId, targetStageId);
         (bool payloadExists,,,) = IUVPFileResourceModule(stateMachine.fileResourceModule())
             .getStageFile(planId, orderId, targetStageId, _DOCK_PAYLOAD_FILE_KEY);
         current = payloadExists && fromOrderId != bytes32(0);
         if (!current) {
-            return (true, false, dockId, supplierId, executor, fromPlanId, bytes32(0));
+            return (true, false, dockId, supplierId, supplierAccount, fromPlanId, bytes32(0));
         }
         bindingId = keccak256(
             abi.encode(_DOCK_BINDING_ID_DOMAIN, dockId, planId, orderId, targetStageId, fromPlanId, fromOrderId)
@@ -321,7 +328,7 @@ contract UVPStagePatchModule {
         view
         returns (bool current, bool aSatisfied, uint64 aDueInSeconds, bool bSatisfied, bool emitted)
     {
-        (bytes32 supplierId,, bytes32 dockId) = stateMachine.activeStageExecutorPatch(planId, orderId, targetStageId);
+        (bytes32 supplierId,, bytes32 dockId) = stateMachine.stageSupplierAssignment(planId, orderId, targetStageId);
         if (supplierId == bytes32(0) || dockId == bytes32(0)) {
             return (false, false, 0, false, false);
         }
@@ -349,10 +356,10 @@ contract UVPStagePatchModule {
         );
     }
 
-    function stageExecutorPatchDigest(
+    function stageSupplierPatchDigest(
         bytes32 planId,
         bytes32 orderId,
-        StageExecutorPatch calldata patch,
+        StageSupplierPatch calldata patch,
         address selector,
         uint256 deadline
     ) public view returns (bytes32) {
@@ -362,7 +369,7 @@ contract UVPStagePatchModule {
                 DOMAIN_SEPARATOR(),
                 keccak256(
                     abi.encode(
-                        _STAGE_EXECUTOR_PATCH_TYPEHASH,
+                        _STAGE_SUPPLIER_PATCH_TYPEHASH,
                         planId,
                         orderId,
                         patch.selectorStageId,
@@ -378,10 +385,10 @@ contract UVPStagePatchModule {
         );
     }
 
-    function stageDockExecutorSelectionDigest(
+    function stageDockSupplierSelectionDigest(
         bytes32 planId,
         bytes32 orderId,
-        StageDockExecutorSelection calldata selection,
+        StageDockSupplierSelection calldata selection,
         address selector,
         uint256 deadline
     ) public view returns (bytes32) {
@@ -391,7 +398,7 @@ contract UVPStagePatchModule {
                 DOMAIN_SEPARATOR(),
                 keccak256(
                     abi.encode(
-                        _STAGE_DOCK_EXECUTOR_SELECTION_TYPEHASH,
+                        _STAGE_DOCK_SUPPLIER_SELECTION_TYPEHASH,
                         planId,
                         orderId,
                         selection.selectorStageId,
@@ -407,29 +414,29 @@ contract UVPStagePatchModule {
         );
     }
 
-    function _applyStageExecutorPatch(
+    function _applyStageSupplierPatch(
         bytes32 planId,
         bytes32 orderId,
-        StageExecutorPatch calldata patch,
+        StageSupplierPatch calldata patch,
         address selector,
-        address previousExecutorSigner,
+        address previousSupplierSigner,
         IUVPStateMachineCore.SelectorBindingProof calldata bindingProof,
         bytes32[] calldata candidateProof
     ) private {
-        _validateStageExecutorPatch(planId, orderId, patch, selector, bindingProof, candidateProof);
+        _validateStageSupplierPatch(planId, orderId, patch, selector, bindingProof, candidateProof);
 
-        (, uint256 currentNonce,) = stateMachine.activeStageExecutorPatch(planId, orderId, patch.targetStageId);
+        (, uint256 currentNonce,) = stateMachine.stageSupplierAssignment(planId, orderId, patch.targetStageId);
         if (patch.patchNonce <= currentNonce) {
-            revert StageExecutorPatchNonceNotIncreasing(
+            revert StageSupplierPatchNonceNotIncreasing(
                 orderId, patch.targetStageId, currentNonce, patch.patchNonce
             );
         }
-        _validateStageExecutorPatchTransition(planId, orderId, patch, previousExecutorSigner);
+        _validateStageSupplierPatchTransition(planId, orderId, patch, previousSupplierSigner);
 
-        stateMachine.activateStageExecutorFromModule(
+        stateMachine.activateStageSupplierFromModule(
             planId, orderId, patch.targetStageId, patch.supplierId, patch.patchNonce
         );
-        emit StageExecutorPatchApplied(
+        emit StageSupplierPatchApplied(
             planId,
             orderId,
             patch.selectorStageId,
@@ -441,47 +448,45 @@ contract UVPStagePatchModule {
         );
     }
 
-    function _selectStageDockExecutor(
+    function _selectStageDockSupplier(
         bytes32 planId,
         bytes32 orderId,
-        StageDockExecutorSelection calldata selection,
+        StageDockSupplierSelection calldata selection,
         address selector,
         IUVPStateMachineCore.SelectorBindingProof calldata bindingProof
     ) private {
-        (bytes32 fromPlanId,,,,) = _validateStageDockSelection(planId, orderId, selection, selector, bindingProof);
+        _validateStageDockSelection(planId, orderId, selection, selector, bindingProof);
 
         (bytes32 activeSupplierId, uint256 activeNonce, bytes32 activeDockId) =
-            stateMachine.activeStageExecutorPatch(planId, orderId, selection.targetStageId);
+            stateMachine.stageSupplierAssignment(planId, orderId, selection.targetStageId);
         if (activeDockId == selection.dockId && activeSupplierId == selection.supplierId) {
             return;
         }
         if (activeDockId != bytes32(0) || activeSupplierId != bytes32(0)) {
-            revert StageDockExecutorAlreadySelected(planId, orderId, selection.targetStageId);
+            revert StageDockSupplierAlreadySelected(planId, orderId, selection.targetStageId);
         }
         if (selection.patchNonce <= activeNonce) {
-            revert StageExecutorPatchNonceNotIncreasing(
+            revert StageSupplierPatchNonceNotIncreasing(
                 orderId, selection.targetStageId, activeNonce, selection.patchNonce
             );
         }
-        stateMachine.activateStageDockExecutorFromModule(
+        stateMachine.activateStageDockSupplierFromModule(
             planId, orderId, selection.targetStageId, selection.supplierId, selection.dockId, selection.patchNonce
         );
-        emit StageDockExecutorSelected(
+        emit StageDockSupplierSelected(
             planId,
             orderId,
             selection.targetStageId,
             selection.dockId,
-            fromPlanId,
             selection.supplierId,
-            selector,
             selection.patchNonce
         );
     }
 
-    function _validateStageExecutorPatch(
+    function _validateStageSupplierPatch(
         bytes32 planId,
         bytes32 orderId,
-        StageExecutorPatch calldata patch,
+        StageSupplierPatch calldata patch,
         address selector,
         IUVPStateMachineCore.SelectorBindingProof calldata bindingProof,
         bytes32[] calldata candidateProof
@@ -505,30 +510,30 @@ contract UVPStagePatchModule {
             revert UnknownStage(planId, patch.targetStageId);
         }
         if (stateMachine.stageHasOrderTriggerHook(planId, patch.targetStageId)) {
-            revert StageExecutorPatchForbiddenOnBirthStage(orderId, patch.targetStageId);
+            revert StageSupplierPatchForbiddenOnBirthStage(orderId, patch.targetStageId);
         }
         if (stateMachine.stageHasDockExecutorHook(planId, patch.targetStageId)) {
-            revert StageExecutorPatchForbiddenOnDockStage(orderId, patch.targetStageId);
+            revert StageSupplierPatchForbiddenOnDockStage(orderId, patch.targetStageId);
         }
-        if (!stateMachine.planStageHasDynamicExecutor(planId, patch.targetStageId)) {
+        if (!stateMachine.planStageHasDynamicSupplier(planId, patch.targetStageId)) {
             if (stateMachine.planStageIsCandidate(planId, patch.targetStageId)) {
                 bytes32 leaf = keccak256(
                     abi.encodePacked(
-                        _EXECUTOR_BINDING_LEAF_DOMAIN,
+                        _SUPPLIER_BINDING_LEAF_DOMAIN,
                         patch.targetStageId,
                         patch.supplierId,
-                        _EXECUTOR_BINDING_KIND_CANDIDATE
+                        _SUPPLIER_BINDING_KIND_CANDIDATE
                     )
                 );
-                bytes32 bindingsRoot = stateMachine.planExecutorBindingsRoot(planId);
+                bytes32 bindingsRoot = stateMachine.planSupplierBindingsRoot(planId);
                 if (
                     bindingsRoot == bytes32(0) || bindingsRoot == MerkleCommitment.EMPTY_ROOT
                         || !MerkleCommitment.verify(bindingsRoot, leaf, candidateProof)
                 ) {
-                    revert StageExecutorNotCandidate(planId, orderId, patch.targetStageId, patch.supplierId);
+                    revert StageSupplierNotCandidate(planId, orderId, patch.targetStageId, patch.supplierId);
                 }
             } else {
-                revert StageExecutorPatchForbiddenOnFixedStage(orderId, patch.targetStageId);
+                revert StageSupplierPatchForbiddenOnFixedStage(orderId, patch.targetStageId);
             }
         }
         if (
@@ -538,27 +543,27 @@ contract UVPStagePatchModule {
         ) {
             revert StageSelectorBindingNotFound(planId, patch.selectorStageId, patch.targetStageId);
         }
-        if (!stateMachine.isEffectiveStageExecutor(planId, orderId, patch.selectorStageId, selector)) {
-            revert UnauthorizedStageExecutorPatchSelector(orderId, patch.selectorStageId, selector);
+        if (!stateMachine.isEffectiveStageAccount(planId, orderId, patch.selectorStageId, selector)) {
+            revert UnauthorizedStageSupplierPatchSelector(orderId, patch.selectorStageId, selector);
         }
-        if (!_supplierRegistry().isRegisteredSupplier(patch.supplierId)) {
-            revert SupplierNotRegistered(patch.supplierId);
+        if (!_supplierRegistry().isActiveSupplier(patch.supplierId)) {
+            revert SupplierNotActive(patch.supplierId);
         }
     }
 
-    function _validateStageExecutorPatchTransition(
+    function _validateStageSupplierPatchTransition(
         bytes32 planId,
         bytes32 orderId,
-        StageExecutorPatch calldata patch,
-        address previousExecutorSigner
+        StageSupplierPatch calldata patch,
+        address previousSupplierSigner
     ) private view {
         (uint256 signalCount,,,) = stateMachine.stageSignalState(planId, orderId, patch.targetStageId);
         if (patch.previousSupplierId == bytes32(0)) {
             if (signalCount != 0) {
                 revert StageAlreadyHasSignal(orderId, patch.targetStageId);
             }
-            if (previousExecutorSigner != address(0)) {
-                revert InvalidStageExecutorPatchSignature(address(0), previousExecutorSigner);
+            if (previousSupplierSigner != address(0)) {
+                revert InvalidStageSupplierPatchSignature(address(0), previousSupplierSigner);
             }
             return;
         }
@@ -566,25 +571,25 @@ contract UVPStagePatchModule {
         if (signalCount == 0) {
             revert StageHasNoSignal(orderId, patch.targetStageId);
         }
-        (bytes32 effectiveSupplierId, address effectiveExecutor) =
-            stateMachine.effectiveStageExecutor(planId, orderId, patch.targetStageId);
+        bytes32 effectiveSupplierId = stateMachine.effectiveStageSupplier(planId, orderId, patch.targetStageId);
         if (effectiveSupplierId != patch.previousSupplierId) {
-            revert StageExecutorPatchPreviousSupplierMismatch(
+            revert StageSupplierPatchPreviousSupplierMismatch(
                 orderId, patch.targetStageId, effectiveSupplierId, patch.previousSupplierId
             );
         }
-        if (previousExecutorSigner != effectiveExecutor) {
-            revert InvalidStageExecutorPatchSignature(effectiveExecutor, previousExecutorSigner);
+        address previousSupplierAccount = _supplierRegistry().accountOf(patch.previousSupplierId);
+        if (previousSupplierSigner != previousSupplierAccount) {
+            revert InvalidStageSupplierPatchSignature(previousSupplierAccount, previousSupplierSigner);
         }
     }
 
     function _validateStageDockSelection(
         bytes32 planId,
         bytes32 orderId,
-        StageDockExecutorSelection calldata selection,
+        StageDockSupplierSelection calldata selection,
         address selector,
         IUVPStateMachineCore.SelectorBindingProof calldata bindingProof
-    ) private view returns (bytes32 fromPlanId, bytes32 toPlanId, bytes32 toSourceId, bytes32 toStageId, bool exists) {
+    ) private view {
         if (selector == address(0)) {
             revert ZeroSelector();
         }
@@ -609,7 +614,7 @@ contract UVPStagePatchModule {
         if (!stateMachine.stageHasDockExecutorHook(planId, selection.targetStageId)) {
             revert DockStageNotDockExecutor(planId, selection.targetStageId);
         }
-        (fromPlanId, toPlanId, toSourceId, toStageId, exists) = _dockFields(selection.dockId);
+        (, bytes32 toPlanId,, bytes32 toStageId, bool exists) = _dockFields(selection.dockId);
         if (!exists) {
             revert DockUnknown(selection.dockId);
         }
@@ -627,11 +632,11 @@ contract UVPStagePatchModule {
         ) {
             revert StageSelectorBindingNotFound(planId, selection.selectorStageId, selection.targetStageId);
         }
-        if (!stateMachine.isEffectiveStageExecutor(planId, orderId, selection.selectorStageId, selector)) {
-            revert UnauthorizedStageExecutorPatchSelector(orderId, selection.selectorStageId, selector);
+        if (!stateMachine.isEffectiveStageAccount(planId, orderId, selection.selectorStageId, selector)) {
+            revert UnauthorizedStageSupplierPatchSelector(orderId, selection.selectorStageId, selector);
         }
-        if (!_supplierRegistry().isRegisteredSupplier(selection.supplierId)) {
-            revert SupplierNotRegistered(selection.supplierId);
+        if (!_supplierRegistry().isActiveSupplier(selection.supplierId)) {
+            revert SupplierNotActive(selection.supplierId);
         }
     }
 
@@ -643,7 +648,7 @@ contract UVPStagePatchModule {
         bytes32 dockId,
         bytes32 toSourceId,
         bytes32 supplierId,
-        address executor,
+        address supplierAccount,
         bytes calldata payloadContent,
         bytes32 fromOrderId
     ) private view returns (DockBindingContext memory context) {
@@ -674,7 +679,7 @@ contract UVPStagePatchModule {
                 abi.encode(_DOCK_BINDING_ID_DOMAIN, dockId, planId, orderId, targetStageId, fromPlanId, fromOrderId)
             ),
             supplierId: supplierId,
-            executor: executor
+            supplierAccount: supplierAccount
         });
     }
 
@@ -707,7 +712,7 @@ contract UVPStagePatchModule {
             signalId,
             context.bindingId,
             keccak256(abi.encode(_DOCK_BINDING_ID_DOMAIN, context.bindingId, signalId)),
-            context.executor,
+            context.supplierAccount,
             attribution
         );
         if (submitted) {
@@ -773,9 +778,13 @@ contract UVPStagePatchModule {
         return IUVPSupplierRegistry(stateMachine.supplierRegistry());
     }
 
-    function _recoverStageExecutorPatchSigner(bytes32 digest, bytes calldata signature) private pure returns (address) {
+    function _recoverStageSupplierPatchSigner(bytes32 digest, bytes calldata signature)
+        private
+        pure
+        returns (address)
+    {
         if (signature.length != 65) {
-            revert InvalidStageExecutorPatchSignatureLength(signature.length);
+            revert InvalidStageSupplierPatchSignatureLength(signature.length);
         }
 
         bytes32 r;

@@ -4,24 +4,32 @@ import {
   compileZhixuOnchainHookPlan,
   compileZhixuRegisterPlanArgs,
   EMPTY_MERKLE_ROOT,
-  executorBindingLeaf,
-  executorBindingProof,
-  executorBindingsRootOf,
+  hashOnchainPlanPayload,
   HOOK_FLAG_DYNAMIC_EXECUTOR,
   HOOK_FLAG_EMIT_READY,
-  hashOnchainPlanPayload,
   HookPlanCompilationError,
   keccak256Hex,
-  onchainSupplierId,
+  supplierBindingLeaf,
+  supplierBindingProof,
+  supplierBindingsRootOf,
+  supplierIdFromUuid,
   toSolidityRegisterPlanArgs,
+  uuidFromSupplierId,
   validateOnchainHookPlanArtifact,
   verifyMerkleProof,
   type OnchainHookPlanArtifact,
   type ZhixuDefinition,
 } from "../src/index.js";
-import type { ExecutorBinding } from "../src/types/index.js";
+import type { StageSupplierBinding } from "../src/types/index.js";
 
-function staticZhixu(mainSupplierID = "main-org"): ZhixuDefinition {
+const SUPPLIER_MAIN = "5f0b1e2a-7c9d-4e1f-9a2b-000000000021";
+const SUPPLIER_DEAL = "5f0b1e2a-7c9d-4e1f-9a2b-000000000022";
+const SUPPLIER_BIRTH = "5f0b1e2a-7c9d-4e1f-9a2b-000000000023";
+const SUPPLIER_CANDIDATE = "5f0b1e2a-7c9d-4e1f-9a2b-000000000024";
+const SUPPLIER_DYNAMIC_ANCHOR = "5f0b1e2a-7c9d-4e1f-9a2b-000000000025";
+const SUPPLIER_GATE = "5f0b1e2a-7c9d-4e1f-9a2b-000000000026";
+
+function staticZhixu(mainSupplierID = SUPPLIER_MAIN): ZhixuDefinition {
   return {
     apiVersion: "uvp/v0",
     kind: "Zhixu",
@@ -47,7 +55,7 @@ function staticZhixu(mainSupplierID = "main-org"): ZhixuDefinition {
           sendSignals: [{ name: "closed" }, { name: "kickoff" }],
           executor: {
             supplierType: "organization",
-            supplierID: "deal-org",
+            supplierID: SUPPLIER_DEAL,
           },
         },
       ],
@@ -68,14 +76,14 @@ function birthZhixu(): ZhixuDefinition {
           name: "main",
           source: "buyer",
           sendSignals: [{ name: "str", trigger: true }, { name: "cmp" }],
-          executor: { supplierType: "organization", supplierID: "birth-org" },
+          executor: { supplierType: "organization", supplierID: SUPPLIER_BIRTH },
         },
         {
           name: "deal",
           source: "trading",
           receiveSignals: { PLACE: "trading::deal.kickoff" },
           sendSignals: [{ name: "closed" }, { name: "kickoff" }],
-          executor: { supplierType: "organization", supplierID: "trading-org" },
+          executor: { supplierType: "organization", supplierID: SUPPLIER_DEAL },
         },
       ],
     },
@@ -103,7 +111,7 @@ function dockZhixu(): ZhixuDefinition {
           source: "acceptor",
           receiveSignals: { OPEN: "acceptor::gate.open" },
           sendSignals: [{ name: "open" }],
-          executor: { supplierType: "organization", supplierID: "gate-org" },
+          executor: { supplierType: "organization", supplierID: SUPPLIER_GATE },
         },
       ],
     },
@@ -125,7 +133,10 @@ function dynamicZhixu(): ZhixuDefinition {
           selectedStages: ["main"],
           receiveSignals: { BEGIN: "buyer::anchor.self_ready" },
           sendSignals: [{ name: "executor_selected" }, { name: "self_ready" }],
-          executor: { supplierType: "organization", supplierID: "anchor-org" },
+          executor: {
+            supplierType: "organization",
+            supplierID: SUPPLIER_DYNAMIC_ANCHOR,
+          },
         },
         {
           name: "main",
@@ -156,36 +167,38 @@ function repin(artifact: OnchainHookPlanArtifact): OnchainHookPlanArtifact {
 }
 
 function bindingOf(
-  bindings: readonly ExecutorBinding[],
+  bindings: readonly StageSupplierBinding[],
   stageIdentifier: string,
   kind: 0 | 1,
-): readonly ExecutorBinding[] {
+): readonly StageSupplierBinding[] {
   return bindings.filter(
     (binding) =>
       binding.stageIdentifier === stageIdentifier && binding.kind === kind,
   );
 }
 
-test("default bindings derive from each plain executor supplierID and commit to the root", () => {
+test("default bindings decode each plain executor supplierID UUID and commit to the root", () => {
   const artifact = compileZhixuOnchainHookPlan(staticZhixu());
 
-  assert.equal(artifact.executorBindings.length, 2);
+  assert.equal(artifact.supplierBindings.length, 2);
   assert.deepEqual(
-    bindingOf(artifact.executorBindings, "main", 0).map((binding) => ({
+    bindingOf(artifact.supplierBindings, "main", 0).map((binding) => ({
       stageId: binding.stageId,
+      supplierID: binding.supplierID,
       supplierId: binding.supplierId,
       kind: binding.kind,
     })),
     [
       {
         stageId: keccak256Hex("main"),
-        supplierId: onchainSupplierId("main-org"),
+        supplierID: SUPPLIER_MAIN,
+        supplierId: supplierIdFromUuid(SUPPLIER_MAIN),
         kind: 0,
       },
     ],
   );
   assert.deepEqual(
-    bindingOf(artifact.executorBindings, "deal", 0).map((binding) => ({
+    bindingOf(artifact.supplierBindings, "deal", 0).map((binding) => ({
       stageId: binding.stageId,
       supplierId: binding.supplierId,
       kind: binding.kind,
@@ -193,20 +206,41 @@ test("default bindings derive from each plain executor supplierID and commit to 
     [
       {
         stageId: keccak256Hex("deal"),
-        supplierId: onchainSupplierId("deal-org"),
+        supplierId: supplierIdFromUuid(SUPPLIER_DEAL),
         kind: 0,
       },
     ],
   );
   assert.equal(
-    artifact.executorBindingsRoot,
-    executorBindingsRootOf(artifact.executorBindings),
+    artifact.supplierBindingsRoot,
+    supplierBindingsRootOf(artifact.supplierBindings),
   );
   assert.deepEqual(validateOnchainHookPlanArtifact(artifact), []);
 
-  const defaultBinding = bindingOf(artifact.executorBindings, "main", 0)[0]!;
-  const proof = executorBindingProof(
-    artifact.executorBindings,
+  const defaultBinding = bindingOf(artifact.supplierBindings, "main", 0)[0]!;
+  assert.equal(uuidFromSupplierId(defaultBinding.supplierId), SUPPLIER_MAIN);
+  assert.equal(
+    defaultBinding.supplierId,
+    `0x${"00".repeat(16)}${SUPPLIER_MAIN.replaceAll("-", "")}`,
+  );
+  assert.equal(
+    uuidFromSupplierId(supplierIdFromUuid(SUPPLIER_MAIN.toUpperCase())),
+    SUPPLIER_MAIN,
+    "UUID decode normalizes to lowercase canonical form",
+  );
+  assert.equal(
+    supplierIdFromUuid("6BA7B810-9DAD-11D1-80B4-00C04FD430C8"),
+    "0x000000000000000000000000000000006ba7b8109dad11d180b400c04fd430c8",
+    "UUID decode matches the supplier registry mint shape (low 16 bytes, big-endian, no hash)",
+  );
+  assert.equal(
+    uuidFromSupplierId(
+      "0x000000000000000000000000000000006ba7b8109dad11d180b400c04fd430c8",
+    ),
+    "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+  );
+  const proof = supplierBindingProof(
+    artifact.supplierBindings,
     defaultBinding.stageId,
     defaultBinding.supplierId,
     0,
@@ -214,8 +248,8 @@ test("default bindings derive from each plain executor supplierID and commit to 
   assert.ok(proof, "every committed default binding must be provable");
   assert.equal(
     verifyMerkleProof(
-      artifact.executorBindingsRoot,
-      executorBindingLeaf(
+      artifact.supplierBindingsRoot,
+      supplierBindingLeaf(
         defaultBinding.stageId,
         defaultBinding.supplierId,
         defaultBinding.kind,
@@ -226,50 +260,52 @@ test("default bindings derive from each plain executor supplierID and commit to 
   );
 });
 
-test("candidate input carries a supplierID and adds a kind=1 leaf beside the default binding", () => {
+test("candidate input carries a supplierID UUID and adds a kind=1 leaf beside the default binding", () => {
   const bare = compileZhixuOnchainHookPlan(staticZhixu());
   const withCandidate = compileZhixuOnchainHookPlan(staticZhixu(), [
-    { stageIdentifier: "main", supplierID: "candidate-org" },
+    { stageIdentifier: "main", supplierID: SUPPLIER_CANDIDATE },
   ]);
 
   assert.deepEqual(
-    bindingOf(withCandidate.executorBindings, "main", 1).map((binding) => ({
+    bindingOf(withCandidate.supplierBindings, "main", 1).map((binding) => ({
       stageId: binding.stageId,
+      supplierID: binding.supplierID,
       supplierId: binding.supplierId,
       kind: binding.kind,
     })),
     [
       {
         stageId: keccak256Hex("main"),
-        supplierId: onchainSupplierId("candidate-org"),
+        supplierID: SUPPLIER_CANDIDATE,
+        supplierId: supplierIdFromUuid(SUPPLIER_CANDIDATE),
         kind: 1,
       },
     ],
   );
-  assert.equal(bindingOf(withCandidate.executorBindings, "main", 0).length, 1);
+  assert.equal(bindingOf(withCandidate.supplierBindings, "main", 0).length, 1);
   assert.equal(
-    withCandidate.executorBindingsRoot,
-    executorBindingsRootOf(withCandidate.executorBindings),
+    withCandidate.supplierBindingsRoot,
+    supplierBindingsRootOf(withCandidate.supplierBindings),
   );
-  assert.notEqual(withCandidate.executorBindingsRoot, bare.executorBindingsRoot);
+  assert.notEqual(withCandidate.supplierBindingsRoot, bare.supplierBindingsRoot);
   assert.notEqual(withCandidate.planHash, bare.planHash);
   assert.deepEqual(validateOnchainHookPlanArtifact(withCandidate), []);
 
   const args = toSolidityRegisterPlanArgs(withCandidate);
   assert.deepEqual(
-    args.executorBindings,
-    withCandidate.executorBindings.map((binding) => ({
+    args.supplierBindings,
+    withCandidate.supplierBindings.map((binding) => ({
       stageId: binding.stageId,
       supplierId: binding.supplierId,
       kind: binding.kind,
     })),
   );
-  assert.equal(args.executorBindingsRoot, withCandidate.executorBindingsRoot);
+  assert.equal(args.supplierBindingsRoot, withCandidate.supplierBindingsRoot);
   assert.notEqual(args.planHash, toSolidityRegisterPlanArgs(bare).planHash);
 
-  const candidateBinding = bindingOf(withCandidate.executorBindings, "main", 1)[0]!;
-  const candidateProof = executorBindingProof(
-    withCandidate.executorBindings,
+  const candidateBinding = bindingOf(withCandidate.supplierBindings, "main", 1)[0]!;
+  const candidateProof = supplierBindingProof(
+    withCandidate.supplierBindings,
     candidateBinding.stageId,
     candidateBinding.supplierId,
     1,
@@ -279,15 +315,15 @@ test("candidate input carries a supplierID and adds a kind=1 leaf beside the def
 
 test("register args carry the binding set, root, and dynamic hook flag end-to-end", () => {
   const args = compileZhixuRegisterPlanArgs(staticZhixu(), [
-    { stageIdentifier: "deal", supplierID: "candidate-deal" },
+    { stageIdentifier: "deal", supplierID: SUPPLIER_CANDIDATE },
   ]);
   assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v8");
-  assert.equal(args.executorBindings.length, 3);
+  assert.equal(args.supplierBindings.length, 3);
   assert.equal(
-    args.executorBindingsRoot,
-    executorBindingsRootOf(args.executorBindings),
+    args.supplierBindingsRoot,
+    supplierBindingsRootOf(args.supplierBindings),
   );
-  for (const binding of args.executorBindings) {
+  for (const binding of args.supplierBindings) {
     assert.deepEqual(Object.keys(binding).sort(), ["kind", "stageId", "supplierId"]);
   }
 
@@ -304,7 +340,7 @@ test("register args carry the binding set, root, and dynamic hook flag end-to-en
   assert.equal(dynamicHook.routeId, undefined);
 });
 
-test("dynamic stage binds no plan executor and materializes without a route", () => {
+test("dynamic stage binds no plan supplier and materializes without a route", () => {
   const artifact = compileZhixuOnchainHookPlan(dynamicZhixu());
   assert.deepEqual(validateOnchainHookPlanArtifact(artifact), []);
 
@@ -326,52 +362,65 @@ test("dynamic stage binds no plan executor and materializes without a route", ()
   assert.ok(anchorHook?.routeRef);
 
   assert.deepEqual(
-    artifact.executorBindings.map((binding) => binding.stageIdentifier),
+    artifact.supplierBindings.map((binding) => binding.stageIdentifier),
     ["anchor"],
     "dynamic stages carry no default or candidate binding",
   );
   assert.equal(
-    artifact.executorBindingsRoot,
-    executorBindingsRootOf(artifact.executorBindings),
+    artifact.supplierBindingsRoot,
+    supplierBindingsRootOf(artifact.supplierBindings),
   );
 });
 
-test("dynamic, candidate, birth, and dock executor bindings are mutually exclusive", () => {
+test("dynamic, candidate, birth, and dock supplier bindings are mutually exclusive", () => {
   assert.throws(
     () =>
       compileZhixuOnchainHookPlan(dynamicZhixu(), [
-        { stageIdentifier: "main", supplierID: "candidate-org" },
+        { stageIdentifier: "main", supplierID: SUPPLIER_CANDIDATE },
       ]),
     (error: unknown) => isCompilationIssue(error, "is a dynamic stage"),
   );
   assert.throws(
     () =>
       compileZhixuOnchainHookPlan(birthZhixu(), [
-        { stageIdentifier: "main", supplierID: "candidate-org" },
+        { stageIdentifier: "main", supplierID: SUPPLIER_CANDIDATE },
       ]),
-    (error: unknown) => isCompilationIssue(error, "birth-stage executors are immutable"),
+    (error: unknown) => isCompilationIssue(error, "birth-stage suppliers are immutable"),
   );
   assert.throws(
     () =>
       compileZhixuOnchainHookPlan(dockZhixu(), [
-        { stageIdentifier: "accept", supplierID: "candidate-org" },
+        { stageIdentifier: "accept", supplierID: SUPPLIER_CANDIDATE },
       ]),
     (error: unknown) => isCompilationIssue(error, "is a dock stage"),
   );
   assert.throws(
     () =>
       compileZhixuOnchainHookPlan(staticZhixu(), [
-        { stageIdentifier: "ghost", supplierID: "candidate-org" },
+        { stageIdentifier: "ghost", supplierID: SUPPLIER_CANDIDATE },
       ]),
     (error: unknown) => isCompilationIssue(error, "not a stage declared in this plan"),
   );
-  assert.throws(
-    () =>
-      compileZhixuOnchainHookPlan(staticZhixu(), [
-        { stageIdentifier: "main", supplierID: "   " },
-      ]),
-    (error: unknown) => isCompilationIssue(error, "non-empty supplierID"),
-  );
+  for (const supplierID of ["   ", ""]) {
+    assert.throws(
+      () =>
+        compileZhixuOnchainHookPlan(staticZhixu(), [
+          { stageIdentifier: "main", supplierID },
+        ]),
+      (error: unknown) => isCompilationIssue(error, "non-empty supplierID UUID"),
+      `supplierID=${JSON.stringify(supplierID)} must be rejected as empty`,
+    );
+  }
+  for (const supplierID of ["candidate-org", "5f0b1e2a-7c9d-4e1f-9a2b-00000000002"]) {
+    assert.throws(
+      () =>
+        compileZhixuOnchainHookPlan(staticZhixu(), [
+          { stageIdentifier: "main", supplierID },
+        ]),
+      (error: unknown) => isCompilationIssue(error, "canonical 8-4-4-4-12 UUID"),
+      `supplierID=${JSON.stringify(supplierID)} must be rejected as a non-UUID`,
+    );
+  }
 
   const artifact = compileZhixuOnchainHookPlan(dynamicZhixu());
   const mixed = repin({
@@ -384,22 +433,22 @@ test("dynamic, candidate, birth, and dock executor bindings are mutually exclusi
   });
   assert.ok(
     validateOnchainHookPlanArtifact(mixed).some((issue) =>
-      issue.includes("InconsistentDynamicExecutorFlag"),
+      issue.includes("InconsistentDynamicSupplierFlag"),
     ),
     "mixing dynamic and non-dynamic hooks of one stage must be rejected",
   );
 
   const withRoute = repin({
     ...artifact,
-    executorRoutes: [
-      ...artifact.executorRoutes,
+    supplierRoutes: [
+      ...artifact.supplierRoutes,
       {
-        routeId: keccak256Hex("main#executorRoute"),
+        routeId: keccak256Hex("main#supplierRoute"),
         stageId: keccak256Hex("main"),
         stageIdentifier: "main",
-        executorType: "organization",
-        executorId: "main-org",
-        executorHash: keccak256Hex("main-executor"),
+        supplierType: "organization",
+        supplierID: SUPPLIER_CANDIDATE,
+        supplierHash: keccak256Hex("main-supplier"),
         resourcesHash: keccak256Hex("main-resources"),
         routeHash: keccak256Hex("main-route"),
       },
@@ -407,7 +456,7 @@ test("dynamic, candidate, birth, and dock executor bindings are mutually exclusi
   });
   assert.ok(
     validateOnchainHookPlanArtifact(withRoute).some((issue) =>
-      issue.includes("dynamic executor stage main must not carry an executor route"),
+      issue.includes("dynamic stage main must not carry a supplier route"),
     ),
     "a dynamic stage must not be given a plan-level route",
   );
@@ -417,23 +466,23 @@ test("duplicate bindings are rejected at compile time instead of absorbed by the
   assert.throws(
     () =>
       compileZhixuOnchainHookPlan(staticZhixu(), [
-        { stageIdentifier: "main", supplierID: "candidate-org" },
-        { stageIdentifier: "main", supplierID: "candidate-org" },
+        { stageIdentifier: "main", supplierID: SUPPLIER_CANDIDATE },
+        { stageIdentifier: "main", supplierID: SUPPLIER_CANDIDATE },
       ]),
     (error: unknown) =>
-      isCompilationIssue(error, "duplicate executor binding") &&
-      isCompilationIssue(error, "DuplicateExecutorBinding"),
+      isCompilationIssue(error, "duplicate supplier binding") &&
+      isCompilationIssue(error, "DuplicateSupplierBinding"),
   );
 });
 
-test("the binding cap mirrors the contract's MAX_EXECUTOR_BINDINGS bound", () => {
+test("the binding cap mirrors the contract's MAX_SUPPLIER_BINDINGS bound", () => {
   const candidates = Array.from({ length: 257 }, (_, index) => ({
     stageIdentifier: "main",
-    supplierID: `candidate-org-${index}`,
+    supplierID: `5f0b1e2a-7c9d-4e1f-9a2b-${index.toString(16).padStart(12, "0")}`,
   }));
   assert.throws(
     () => compileZhixuOnchainHookPlan(staticZhixu(), candidates),
-    (error: unknown) => isCompilationIssue(error, "TooManyExecutorBindings"),
+    (error: unknown) => isCompilationIssue(error, "TooManySupplierBindings"),
   );
 });
 
@@ -457,32 +506,36 @@ test("a binding-free plan pins the empty binding root and rejects tampered roots
     },
   };
   const emptyArtifact = compileZhixuOnchainHookPlan(dockOnly);
-  assert.deepEqual(emptyArtifact.executorBindings, []);
-  assert.equal(emptyArtifact.executorBindingsRoot, EMPTY_MERKLE_ROOT);
+  assert.deepEqual(emptyArtifact.supplierBindings, []);
+  assert.equal(emptyArtifact.supplierBindingsRoot, EMPTY_MERKLE_ROOT);
   assert.deepEqual(validateOnchainHookPlanArtifact(emptyArtifact), []);
 
   const artifact = compileZhixuOnchainHookPlan(staticZhixu());
   const tamperedRoot = repin({
     ...artifact,
-    executorBindingsRoot: keccak256Hex("tampered binding root"),
+    supplierBindingsRoot: keccak256Hex("tampered binding root"),
   });
   assert.ok(
     validateOnchainHookPlanArtifact(tamperedRoot).includes(
-      "executorBindingsRoot must match the recomputed root over the executor binding leaves",
+      "supplierBindingsRoot must match the recomputed root over the supplier binding leaves",
     ),
   );
   const tamperedDefault = repin({
     ...artifact,
-    executorBindings: artifact.executorBindings.map((binding) =>
+    supplierBindings: artifact.supplierBindings.map((binding) =>
       binding.kind === 0
-        ? { ...binding, supplierId: onchainSupplierId("tampered-supplier") }
+        ? {
+            ...binding,
+            supplierID: SUPPLIER_CANDIDATE,
+            supplierId: supplierIdFromUuid(SUPPLIER_CANDIDATE),
+          }
         : binding,
     ),
   });
   assert.ok(
     validateOnchainHookPlanArtifact(tamperedDefault).some((issue) =>
       issue.includes(
-        "must commit the supplierId derived from the route's executor.supplierID",
+        "must commit the supplier UUID of the route's executor.supplierID",
       ),
     ),
   );

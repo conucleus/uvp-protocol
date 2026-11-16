@@ -3,85 +3,65 @@ pragma solidity ^0.8.24;
 
 import {IUVPSupplierRegistry} from "./interfaces/IUVPSupplierRegistry.sol";
 
-// QA-only boundary: every nonzero supplierId reads as registered so local flows
-// need no registrar step. Production deployment scripts must never wire this
-// contract; production uses UVPSupplierRegistry.
+// QA-only boundary: every nonzero supplierId resolves to one fixed debug account
+// and reads as active, so local flows need no self-registration or activation.
+// There is deliberately no reverse index (one fixed account cannot be the
+// reverse of every SID), and every write reverts instead of faking registration
+// state. Production deployment scripts must never wire this contract.
 contract UVPSupplierRegistryDebug is IUVPSupplierRegistry {
-    error NotOwner();
-    error ZeroExecutor();
-    error ZeroOwner();
-    error ZeroSupplierId();
+    error DebugRegistryIsReadOnly();
+    error UnknownSupplier(bytes32 supplierId);
+    error ZeroDebugAccount();
 
-    address public owner;
-    address public immutable debugExecutor;
+    address public immutable debugAccount;
 
-    mapping(bytes32 supplierId => address executor) private _explicitExecutor;
-    mapping(address executor => bytes32 supplierId) private _explicitSupplier;
-
-    constructor(address debugExecutor_) {
-        if (debugExecutor_ == address(0)) {
-            revert ZeroExecutor();
+    constructor(address debugAccount_) {
+        if (debugAccount_ == address(0)) {
+            revert ZeroDebugAccount();
         }
-        owner = msg.sender;
-        debugExecutor = debugExecutor_;
-        emit OwnershipTransferred(address(0), msg.sender);
+        debugAccount = debugAccount_;
     }
 
-    modifier onlyOwner() {
-        if (msg.sender != owner) {
-            revert NotOwner();
-        }
-        _;
+    function registerSupplier(address) external pure returns (bytes32) {
+        revert DebugRegistryIsReadOnly();
     }
 
-    function debugSetExecutor(bytes32 supplierId, address executor) external onlyOwner {
+    function activateSupplier(bytes32) external pure {
+        revert DebugRegistryIsReadOnly();
+    }
+
+    function suspendSupplier(bytes32) external pure {
+        revert DebugRegistryIsReadOnly();
+    }
+
+    function revokeSupplier(bytes32) external pure {
+        revert DebugRegistryIsReadOnly();
+    }
+
+    function setRegistrar(address, bool) external pure {
+        revert DebugRegistryIsReadOnly();
+    }
+
+    function transferOwnership(address) external pure {
+        revert DebugRegistryIsReadOnly();
+    }
+
+    function accountOf(bytes32 supplierId) external view returns (address) {
+        return supplierId == bytes32(0) ? address(0) : debugAccount;
+    }
+
+    function statusOf(bytes32 supplierId) external view returns (SupplierStatus) {
         if (supplierId == bytes32(0)) {
-            revert ZeroSupplierId();
+            revert UnknownSupplier(supplierId);
         }
-        if (executor == address(0)) {
-            revert ZeroExecutor();
-        }
-        address previousExecutor = _explicitExecutor[supplierId];
-        if (previousExecutor != address(0) && _explicitSupplier[previousExecutor] == supplierId) {
-            delete _explicitSupplier[previousExecutor];
-        }
-        _explicitExecutor[supplierId] = executor;
-        _explicitSupplier[executor] = supplierId;
+        return SupplierStatus.Active;
     }
 
-    function transferOwnership(address newOwner) external onlyOwner {
-        if (newOwner == address(0)) {
-            revert ZeroOwner();
-        }
-        address previousOwner = owner;
-        owner = newOwner;
-        emit OwnershipTransferred(previousOwner, newOwner);
-    }
-
-    function executorOf(bytes32 supplierId) external view returns (address) {
-        if (supplierId == bytes32(0)) {
-            return address(0);
-        }
-        address explicitExecutor = _explicitExecutor[supplierId];
-        if (explicitExecutor != address(0)) {
-            return explicitExecutor;
-        }
-        return debugExecutor;
-    }
-
-    function supplierOf(address executor) external view returns (bytes32) {
-        return _explicitSupplier[executor];
-    }
-
-    function isRegisteredSupplier(bytes32 supplierId) external view returns (bool) {
+    function isActiveSupplier(bytes32 supplierId) external pure returns (bool) {
         return supplierId != bytes32(0);
     }
 
-    function registerSupplier(bytes32, address) external {}
-
-    function rotateSupplierExecutor(bytes32, address) external {}
-
-    function revokeSupplier(bytes32) external {}
-
-    function setRegistrar(address, bool) external onlyOwner {}
+    function supplierOf(address) external pure returns (bytes32) {
+        return bytes32(0);
+    }
 }

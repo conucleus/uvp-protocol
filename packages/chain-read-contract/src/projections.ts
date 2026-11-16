@@ -79,7 +79,8 @@ export interface ChainStageMaterialization {
   readonly proof: ChainProof;
 }
 
-export interface ChainStageExecutorOverlay {
+/** Order-level stage→supplier assignment: the active supplierId plus its registry-resolved account. */
+export interface ChainStageSupplierAssignment {
   readonly orderId: Hex;
   readonly selectorStageId?: Hex;
   readonly targetStageId: Hex;
@@ -89,8 +90,8 @@ export interface ChainStageExecutorOverlay {
   readonly patchNonce: string;
   readonly dockId?: Hex;
   readonly fromPlanId?: Hex;
-  /** SupplierRegistry 在投影时点解析的 executorOf(supplierId)；供应商已撤销时缺省。 */
-  readonly effectiveExecutor?: Address;
+  /** SupplierRegistry 在投影时点解析的 accountOf(supplierId)。 */
+  readonly supplierAccount?: Address;
   readonly updatedAt: ChainProvenance;
   readonly activatedAt?: ChainProvenance;
   readonly proof: ChainProof;
@@ -148,7 +149,8 @@ export interface ChainTaskProjection {
   readonly stageIdentifier: Hex;
   readonly hookName: Hex;
   readonly assigneeSupplierId?: Hex;
-  readonly assigneeExecutor?: Address;
+  /** SupplierRegistry 在投影时点解析的 accountOf(assigneeSupplierId)。 */
+  readonly assigneeSupplierAccount?: Address;
   readonly status: ChainTaskStatus;
   readonly submitSignals?: readonly ChainSubmitSignal[];
   readonly createdAt: ChainProvenance;
@@ -195,7 +197,7 @@ export interface ChainOrderProjection {
   readonly signals: Readonly<Record<string, ChainSignal>>;
   readonly derivedSignals: Readonly<Record<string, ChainDerivedSignal>>;
   readonly stageMaterializations: Readonly<Record<string, ChainStageMaterialization>>;
-  readonly stageExecutorOverlays: Readonly<Record<string, ChainStageExecutorOverlay>>;
+  readonly stageSupplierAssignments: Readonly<Record<string, ChainStageSupplierAssignment>>;
   readonly stageFiles: Readonly<Record<string, ChainStageFileMap>>;
   readonly triggerLink?: ChainOrderTriggerLink;
   readonly forkLineage?: ChainOrderFork;
@@ -229,12 +231,12 @@ export interface ChainStageSelectorBinding {
   readonly bindingHash?: Hex;
 }
 
-export type ChainExecutorBindingKind = "default" | "candidate";
+export type ChainSupplierBindingKind = "default" | "candidate";
 
-export interface ChainExecutorBinding {
+export interface ChainSupplierBinding {
   readonly stageId: Hex;
   readonly supplierId: Hex;
-  readonly kind: ChainExecutorBindingKind;
+  readonly kind: ChainSupplierBindingKind;
 }
 
 export interface ChainSignalCapability {
@@ -255,14 +257,14 @@ export interface ChainPlanProjection {
   readonly publisher?: Address;
   readonly hooksHash?: Hex;
   readonly capabilitiesRoot?: Hex;
-  readonly executorBindingsRoot?: Hex;
+  readonly supplierBindingsRoot?: Hex;
   readonly birthAuthorizer?: Address;
   readonly committedAt?: ChainProvenance;
   readonly finalizedAt?: ChainProvenance;
   readonly selectorBindings: readonly ChainStageSelectorBinding[];
   readonly signalCapabilities: readonly ChainSignalCapability[];
-  readonly executorBindings: readonly ChainExecutorBinding[];
-  readonly dynamicExecutorStages?: readonly Hex[];
+  readonly supplierBindings: readonly ChainSupplierBinding[];
+  readonly dynamicSupplierStages?: readonly Hex[];
   readonly capabilityEnrichment?: ChainPlanCapabilityEnrichmentStatus;
   readonly registeredAt: ChainProvenance;
   readonly publisherRecordedAt?: ChainProvenance;
@@ -465,15 +467,22 @@ export interface ChainDockBinding {
   readonly proof?: ChainProof;
 }
 
-/** SupplierRegistry binding at projection time; revoked suppliers keep their last executor and revocation proof. */
+export type ChainSupplierStatus = "pending" | "active" | "suspended" | "revoked";
+
+/**
+ * SupplierRegistry binding at projection time: the UUID-encoded supplierId is
+ * permanently bound to one account; status gates formal use. Revoked suppliers
+ * keep their account and revocation proof.
+ */
 export interface ChainSupplier {
   readonly supplierId: Hex;
-  readonly executor: Address;
+  readonly account: Address;
+  readonly status: ChainSupplierStatus;
   readonly registeredAt: ChainProvenance;
   readonly updatedAt: ChainProvenance;
   readonly proof: ChainProof;
-  readonly rotatedAt?: ChainProvenance;
-  readonly rotationProof?: ChainProof;
+  readonly statusChangedAt?: ChainProvenance;
+  readonly statusChangedProof?: ChainProof;
   readonly revokedAt?: ChainProvenance;
   readonly revocationProof?: ChainProof;
 }

@@ -169,7 +169,7 @@ contract SemanticsReplayCorpusTest {
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
     bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.18");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorBindingsRoot,address birthAuthorizer,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,address birthAuthorizer,uint256 deadline)"
     );
     bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
@@ -184,7 +184,7 @@ contract SemanticsReplayCorpusTest {
     bytes32 private constant NAME_TIMER_POKED = keccak256("TimerPoked");
     bytes32 private constant NAME_ORDER_TRIGGERED = keccak256("OrderTriggered");
     bytes32 private constant SIGNAL_CAPABILITY_LEAF_DOMAIN = keccak256("UVP_SIGNAL_CAPABILITY_V1");
-    bytes32 private constant EXECUTOR_BINDING_LEAF_DOMAIN = keccak256("UVP_EXECUTOR_BINDING_V2");
+    bytes32 private constant SUPPLIER_BINDING_LEAF_DOMAIN = keccak256("UVP_SUPPLIER_BINDING_V1");
 
     function testReplayCase00() public {
         _runReplayCase(0);
@@ -633,7 +633,7 @@ contract SemanticsReplayCorpusTest {
         bytes32 birthStage = plan.hasTrigger ? _hookStage(plan, _triggerHookOf(plan)) : plan.birthStageId;
         bytes32[] memory leaves = _planCapabilityLeaves(caseIdx, planIdx, plan, hooks, birthStage, variant);
         bytes32 capabilitiesRoot = MerkleCommitment.root(leaves);
-        UVPStateMachine.ExecutorBinding[] memory bindings = _bindingsForHooks(hooks);
+        UVPStateMachine.StageSupplierBinding[] memory bindings = _bindingsForHooks(hooks);
         (bytes32 planId, bytes4 revertSelector) = _commitHooks(hooks, capabilitiesRoot, bindings);
         if (planId == bytes32(0)) {
             return (true, revertSelector);
@@ -724,7 +724,7 @@ contract SemanticsReplayCorpusTest {
     function _bindingsForHooks(UVPStateMachine.CompactHook[] memory hooks)
         private
         view
-        returns (UVPStateMachine.ExecutorBinding[] memory bindings)
+        returns (UVPStateMachine.StageSupplierBinding[] memory bindings)
     {
         bytes32[] memory stages = new bytes32[](hooks.length);
         uint256 stageCount;
@@ -743,19 +743,19 @@ contract SemanticsReplayCorpusTest {
                 stages[stageCount++] = hooks[i].stageId;
             }
         }
-        bindings = new UVPStateMachine.ExecutorBinding[](stageCount);
+        bindings = new UVPStateMachine.StageSupplierBinding[](stageCount);
         for (uint256 i = 0; i < stageCount; i++) {
             bindings[i] =
-                UVPStateMachine.ExecutorBinding({stageId: stages[i], supplierId: testSupplierId, kind: 0});
+                UVPStateMachine.StageSupplierBinding({stageId: stages[i], supplierId: testSupplierId, kind: 0});
         }
     }
 
-    function _bindingsRoot(UVPStateMachine.ExecutorBinding[] memory bindings) private pure returns (bytes32) {
+    function _bindingsRoot(UVPStateMachine.StageSupplierBinding[] memory bindings) private pure returns (bytes32) {
         bytes32[] memory leaves = new bytes32[](bindings.length);
         for (uint256 i = 0; i < bindings.length; i++) {
             leaves[i] = keccak256(
                 abi.encodePacked(
-                    EXECUTOR_BINDING_LEAF_DOMAIN, bindings[i].stageId, bindings[i].supplierId, bindings[i].kind
+                    SUPPLIER_BINDING_LEAF_DOMAIN, bindings[i].stageId, bindings[i].supplierId, bindings[i].kind
                 )
             );
         }
@@ -923,14 +923,14 @@ contract SemanticsReplayCorpusTest {
     function _commitHooks(
         UVPStateMachine.CompactHook[] memory hooks,
         bytes32 capabilitiesRoot,
-        UVPStateMachine.ExecutorBinding[] memory bindings
+        UVPStateMachine.StageSupplierBinding[] memory bindings
     ) private returns (bytes32 planId, bytes4 revertSelector) {
         address publisher = vm.addr(PUBLISHER_PRIVATE_KEY);
         UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
             publisher: publisher,
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: capabilitiesRoot,
-            executorBindingsRoot: _bindingsRoot(bindings),
+            supplierBindingsRoot: _bindingsRoot(bindings),
             birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: type(uint256).max
         });
@@ -940,7 +940,7 @@ contract SemanticsReplayCorpusTest {
                 commit.publisher,
                 commit.hooksHash,
                 commit.capabilitiesRoot,
-                commit.executorBindingsRoot,
+                commit.supplierBindingsRoot,
                 commit.birthAuthorizer,
                 commit.deadline
             )
@@ -1363,8 +1363,8 @@ contract SemanticsReplayCorpusTest {
         for (uint256 i = 0; i < signalNameCount; i++) {
             filterLeaves[2 + i] = _capabilityLeaf(birthStage, _filterSource(), _filterSignal(signalNames[i]), 0);
         }
-        UVPStateMachine.ExecutorBinding[] memory filterBindings = new UVPStateMachine.ExecutorBinding[](1);
-        filterBindings[0] = UVPStateMachine.ExecutorBinding({stageId: birthStage, supplierId: testSupplierId, kind: 0});
+        UVPStateMachine.StageSupplierBinding[] memory filterBindings = new UVPStateMachine.StageSupplierBinding[](1);
+        filterBindings[0] = UVPStateMachine.StageSupplierBinding({stageId: birthStage, supplierId: testSupplierId, kind: 0});
         (bytes32 planId, bytes4 planRevert) =
             _commitHooks(hooks, MerkleCommitment.root(filterLeaves), filterBindings);
         require(planId != bytes32(0) && planRevert == 0, "filter corpus plan must register");
@@ -1490,13 +1490,13 @@ contract SemanticsReplayCorpusTest {
         bytes32[] memory leaves = new bytes32[](2);
         leaves[0] = _capabilityLeaf(birthStage, birthSource, birthSignal, 0);
         leaves[1] = _capabilityLeaf(birthStage, emitSource, emitSignal, 0);
-        UVPStateMachine.ExecutorBinding[] memory bindings = new UVPStateMachine.ExecutorBinding[](1);
-        bindings[0] = UVPStateMachine.ExecutorBinding({stageId: birthStage, supplierId: testSupplierId, kind: 0});
+        UVPStateMachine.StageSupplierBinding[] memory bindings = new UVPStateMachine.StageSupplierBinding[](1);
+        bindings[0] = UVPStateMachine.StageSupplierBinding({stageId: birthStage, supplierId: testSupplierId, kind: 0});
         UVPStateMachine.PlanCommit memory commit = UVPStateMachine.PlanCommit({
             publisher: vm.addr(PUBLISHER_PRIVATE_KEY),
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: MerkleCommitment.root(leaves),
-            executorBindingsRoot: _bindingsRoot(bindings),
+            supplierBindingsRoot: _bindingsRoot(bindings),
             birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: type(uint256).max
         });
@@ -1506,7 +1506,7 @@ contract SemanticsReplayCorpusTest {
                 commit.publisher,
                 commit.hooksHash,
                 commit.capabilitiesRoot,
-                commit.executorBindingsRoot,
+                commit.supplierBindingsRoot,
                 commit.birthAuthorizer,
                 commit.deadline
             )
@@ -1528,8 +1528,8 @@ contract SemanticsReplayCorpusTest {
     function _newCaseMachine() private returns (UVPStateMachine newMachine) {
         newMachine = new UVPStateMachine();
         registry = new UVPSupplierRegistry();
-        testSupplierId = keccak256("corpus.supplier");
-        registry.registerSupplier(testSupplierId, address(this));
+        testSupplierId = registry.registerSupplier(address(this));
+        registry.activateSupplier(testSupplierId);
         UVPStagePatchModule stagePatch = new UVPStagePatchModule(address(newMachine));
         UVPDerivedSignalModule derivedSignal = new UVPDerivedSignalModule(address(newMachine));
         UVPPlanMetadataModule planMetadata = new UVPPlanMetadataModule(address(newMachine));

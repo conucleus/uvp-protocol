@@ -132,13 +132,13 @@ export function toSolidityRegisterPlanArgs(
   const planHash = keccak256(
     encodeAbiParameters(
       parseAbiParameters(
-        "bytes32 domain, bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 executorBindingsRoot",
+        "bytes32 domain, bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 supplierBindingsRoot",
       ),
       [
         keccak256(stringToHex(PLAN_RUNTIME_HASH_DOMAIN)),
         hooksHash,
         capabilitiesRoot,
-        artifact.executorBindingsRoot,
+        artifact.supplierBindingsRoot,
       ],
     ),
   ) as HexString;
@@ -151,7 +151,7 @@ export function toSolidityRegisterPlanArgs(
     artifactHash: artifact.planHash,
     hooksHash,
     capabilitiesRoot,
-    executorBindingsRoot: artifact.executorBindingsRoot,
+    supplierBindingsRoot: artifact.supplierBindingsRoot,
     hooks,
     dependencyIndex: Object.entries(artifact.dependencyIndex)
       .sort(([left], [right]) => compareCanonicalKey(left, right))
@@ -159,16 +159,16 @@ export function toSolidityRegisterPlanArgs(
         signalKey: signalKey as HexString,
         hookIds,
       })),
-    executorRoutes: artifact.executorRoutes.map((route) => ({
+    supplierRoutes: artifact.supplierRoutes.map((route) => ({
       routeId: route.routeId,
       stageId: route.stageId,
-      executorType: route.executorType,
-      executorId: route.executorId,
-      executorHash: route.executorHash,
+      supplierType: route.supplierType,
+      supplierID: route.supplierID,
+      supplierHash: route.supplierHash,
       resourcesHash: route.resourcesHash,
       routeHash: route.routeHash,
     })),
-    executorBindings: artifact.executorBindings.map((binding) => ({
+    supplierBindings: artifact.supplierBindings.map((binding) => ({
       stageId: binding.stageId,
       supplierId: binding.supplierId,
       kind: binding.kind,

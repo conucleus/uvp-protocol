@@ -10,9 +10,9 @@
   },
   "hashes": {
     "abiHash": "0x2c3385a2c71b0ce51b5c239a9eed54023c3ce80a2a3a6551216a189653aa8630",
-    "bytecodeHash": "0xa88134c7bd2fae2f3e01fa9b7cd6934d521ed1619f1986faa181e2ae7307db5a",
-    "deployedBytecodeHash": "0x577604122bb5c4fc99cc4baa8d5592dc7e95ce965d735a75523c472b9d2fff40",
-    "artifactHash": "0x018c137bc11c70d535319fc869efda9c673461ff43720596b294fe6ac36e4e44"
+    "bytecodeHash": "0x89ecdab15d8cb6700ca1f2edcd826065f968dd9a9718ba245c2efe2c08ba7ed5",
+    "deployedBytecodeHash": "0x19ad8ae009c9e554cf1c43872b2976ff7fc80a54395a8ee8276b2314ef44b9d8",
+    "artifactHash": "0x48923bb8c027504e3e6c779143d4fecc143a28924b2666068f4c2446204cf039"
   },
   "events": {
     "StageFileOpApplied": {

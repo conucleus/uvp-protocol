@@ -28,7 +28,7 @@ spec:
         PUBLISH: "bootstrap::submission.seed"
       sendSignals: [{ name: "submitted" }, { name: "seed" }]
       executor:
-        supplierID: "{{ .update_init_executor_uid }}"
+        supplierID: "0a000000-0000-4000-8000-000000000001"
         supplierType: individual
 
     - name: init
@@ -43,7 +43,7 @@ spec:
           localFile:
             path: "./bootstrap/update/update_spec.sample.json"
       executor:
-        supplierID: "{{ .update_init_executor_uid }}"
+        supplierID: "0a000000-0000-4000-8000-000000000001"
         supplierType: individual
 
     - name: audit
@@ -52,7 +52,7 @@ spec:
         init_done: "registrar::init.cmp"
       sendSignals: [{ name: "str" }, { name: "pass" }, { name: "reject" }, { name: "cmp" }, { name: "err" }]
       executor:
-        supplierID: "{{ .update_audit_executor_uid }}"
+        supplierID: "0a000000-0000-4000-8000-000000000002"
         supplierType: individual
 
     - name: prepare
@@ -61,7 +61,7 @@ spec:
         audit_pass: "bootstrap::audit.pass"
       sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
       executor:
-        supplierID: "{{ .update_prepare_executor_uid }}"
+        supplierID: "0a000000-0000-4000-8000-000000000003"
         supplierType: individual
 
     - name: build
@@ -70,7 +70,7 @@ spec:
         prepare_done: "bootstrap::prepare.cmp"
       sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
       executor:
-        supplierID: "{{ .update_build_executor_uid }}"
+        supplierID: "0a000000-0000-4000-8000-000000000004"
         supplierType: individual
 
     - name: deploy
@@ -79,7 +79,7 @@ spec:
         build_done: "bootstrap::build.cmp"
       sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
       executor:
-        supplierID: "{{ .update_deploy_executor_uid }}"
+        supplierID: "0a000000-0000-4000-8000-000000000005"
         supplierType: individual
 
     - name: verify
@@ -88,7 +88,7 @@ spec:
         deploy_done: "bootstrap::deploy.cmp"
       sendSignals: [{ name: "str" }, { name: "pass" }, { name: "fail" }, { name: "cmp" }, { name: "err" }]
       executor:
-        supplierID: "{{ .update_verify_executor_uid }}"
+        supplierID: "0a000000-0000-4000-8000-000000000006"
         supplierType: individual
 
     - name: switch
@@ -97,7 +97,7 @@ spec:
         verify_pass: "bootstrap::verify.pass"
       sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
       executor:
-        supplierID: "{{ .update_switch_executor_uid }}"
+        supplierID: "0a000000-0000-4000-8000-000000000007"
         supplierType: individual
 
     - name: cleanup
@@ -106,7 +106,7 @@ spec:
         switch_done: "bootstrap::switch.cmp"
       sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
       executor:
-        supplierID: "{{ .update_cleanup_executor_uid }}"
+        supplierID: "0a000000-0000-4000-8000-000000000008"
         supplierType: individual
 
     - name: rollback
@@ -119,5 +119,5 @@ spec:
         verify_error: "bootstrap::verify.err"
       sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }]
       executor:
-        supplierID: "{{ .update_rollback_executor_uid }}"
+        supplierID: "0a000000-0000-4000-8000-000000000009"
         supplierType: individual

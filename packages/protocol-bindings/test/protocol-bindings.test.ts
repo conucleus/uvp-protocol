@@ -25,11 +25,11 @@ import {
   STAGE_PATCH_MODULE_ABI,
   SIGNAL_SUBMISSION_PRIMARY_TYPE,
   SIGNAL_SUBMISSION_TYPED_DATA_FIELDS,
-  buildApplyStageExecutorPatchForCall,
+  buildApplyStageSupplierPatchForCall,
   buildDerivedSignalTypedData,
   buildPlanCommitTypedData,
   buildSignalSubmissionTypedData,
-  buildStageExecutorPatchTypedData,
+  buildStageSupplierPatchTypedData,
   buildSubmitDerivedSignalForCall,
   buildSubmitSignalForCall,
   buildTriggerOrderFromOutsideForCall,
@@ -42,15 +42,15 @@ import {
   EMPTY_FILE_PATCH,
   factAttribution,
   factAttributionHash,
-  hashStageExecutorPatchPayload,
+  hashStageSupplierPatchPayload,
   selectorBindingLeaf,
   selectorBindingProofFor,
   signalCapabilityLeaf,
-  STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN,
+  STAGE_SUPPLIER_PATCH_PAYLOAD_HASH_DOMAIN,
   recoverDerivedSignalSigner,
   recoverPlanCommitSigner,
   recoverSignalSubmissionSigner,
-  recoverStageExecutorPatchSigner,
+  recoverStageSupplierPatchSigner,
   recoverTriggerOrderFromSignalSigner,
 } from "../src/index.js";
 
@@ -148,11 +148,11 @@ const privateKey =
   "0x1111111111111111111111111111111111111111111111111111111111111111" as const;
 const account = privateKeyToAccount(privateKey);
 const submitter = account.address.toLowerCase() as `0x${string}`;
-const previousExecutorPrivateKey =
+const previousSupplierPrivateKey =
   "0x2222222222222222222222222222222222222222222222222222222222222222" as const;
-const previousExecutorAccount = privateKeyToAccount(previousExecutorPrivateKey);
-const previousExecutor =
-  previousExecutorAccount.address.toLowerCase() as `0x${string}`;
+const previousSupplierAccount = privateKeyToAccount(previousSupplierPrivateKey);
+const previousSupplier =
+  previousSupplierAccount.address.toLowerCase() as `0x${string}`;
 const verifyingContract = "0x8888888888888888888888888888888888888888" as const;
 const zeroAddress = "0x0000000000000000000000000000000000000000" as const;
 const zeroBytes32 = bytes32("");
@@ -178,38 +178,38 @@ const approvalSignalId = bytes32("10");
 const originSourceId = bytes32("16");
 const originSignalId = bytes32("17");
 const deadline = "1777777777";
-const executorPatchNonce = "3";
+const supplierPatchNonce = "3";
 const handoffPatchNonce = "4";
 const replacementPatchNonce = "5";
-const assignExecutorPatchPayload = {
+const assignSupplierPatchPayload = {
   selectorStageId,
   targetStageId,
   supplierId,
   previousSupplierId: zeroBytes32,
-  patchNonce: executorPatchNonce,
+  patchNonce: supplierPatchNonce,
 } as const;
-const assignExecutorPatchHash = hashStageExecutorPatchPayload(
-  assignExecutorPatchPayload,
+const assignSupplierPatchHash = hashStageSupplierPatchPayload(
+  assignSupplierPatchPayload,
 );
-const handoffExecutorPatchPayload = {
+const handoffSupplierPatchPayload = {
   selectorStageId,
   targetStageId,
   supplierId,
   previousSupplierId,
   patchNonce: handoffPatchNonce,
 } as const;
-const handoffExecutorPatchHash = hashStageExecutorPatchPayload(
-  handoffExecutorPatchPayload,
+const handoffSupplierPatchHash = hashStageSupplierPatchPayload(
+  handoffSupplierPatchPayload,
 );
-const rotatedExecutorPatchPayload = {
+const handoffReplacementSupplierPatchPayload = {
   selectorStageId,
   targetStageId,
   supplierId: replacementSupplierId,
   previousSupplierId,
   patchNonce: replacementPatchNonce,
 } as const;
-const rotatedExecutorPatchHash = hashStageExecutorPatchPayload(
-  rotatedExecutorPatchPayload,
+const handoffReplacementSupplierPatchHash = hashStageSupplierPatchPayload(
+  handoffReplacementSupplierPatchPayload,
 );
 
 describe("protocol bindings", () => {
@@ -268,7 +268,7 @@ describe("protocol bindings", () => {
       publisher: submitter,
       hooksHash: payloadHash,
       capabilitiesRoot: idempotencyKey,
-      executorBindingsRoot: idempotencyKey,
+      supplierBindingsRoot: idempotencyKey,
       birthAuthorizer: submitter,
       deadline,
     });
@@ -289,7 +289,7 @@ describe("protocol bindings", () => {
         "publisher",
         "hooksHash",
         "capabilitiesRoot",
-        "executorBindingsRoot",
+        "supplierBindingsRoot",
         "birthAuthorizer",
         "deadline",
       ],
@@ -351,16 +351,16 @@ describe("protocol bindings", () => {
     );
   });
 
-  it("builds assign, handoff, and replacement stage executor patch typed data", () => {
+  it("builds assign, handoff, and replacement stage supplier patch typed data", () => {
     const cases = [
-      assignExecutorPatchPayload,
-      handoffExecutorPatchPayload,
-      rotatedExecutorPatchPayload,
+      assignSupplierPatchPayload,
+      handoffSupplierPatchPayload,
+      handoffReplacementSupplierPatchPayload,
     ] as const;
 
     const [firstCase] = cases;
     assert.ok(firstCase);
-    const firstTypedData = buildStageExecutorPatchTypedData({
+    const firstTypedData = buildStageSupplierPatchTypedData({
       chainId: 31337,
       verifyingContract,
       planId,
@@ -372,7 +372,7 @@ describe("protocol bindings", () => {
 
     assert.equal(firstTypedData.domain.version, "0.5");
     assert.deepEqual(
-      firstTypedData.types.UVPStagePatchModuleStageExecutorPatch,
+      firstTypedData.types.UVPStagePatchModuleStageSupplierPatch,
       [
         { name: "planId", type: "bytes32" },
         { name: "orderId", type: "bytes32" },
@@ -387,11 +387,11 @@ describe("protocol bindings", () => {
     );
     assert.equal(
       firstTypedData.primaryType,
-      "UVPStagePatchModuleStageExecutorPatch",
+      "UVPStagePatchModuleStageSupplierPatch",
     );
 
     for (const payload of cases) {
-      const typedData = buildStageExecutorPatchTypedData({
+      const typedData = buildStageSupplierPatchTypedData({
         chainId: 31337,
         verifyingContract,
         planId,
@@ -413,36 +413,36 @@ describe("protocol bindings", () => {
     }
   });
 
-  it("recovers selector and previous executor stage executor patch signers", async () => {
-    const typedData = buildStageExecutorPatchTypedData({
+  it("recovers selector and previous supplier signers over the stage supplier patch typed data", async () => {
+    const typedData = buildStageSupplierPatchTypedData({
       chainId: 31337,
       verifyingContract,
       planId,
       orderId,
-      ...rotatedExecutorPatchPayload,
+      ...handoffReplacementSupplierPatchPayload,
       selector: submitter,
       deadline,
     });
     const selectorSignature = await account.signTypedData(
       typedData as unknown as Parameters<typeof account.signTypedData>[0],
     );
-    const previousExecutorSignature =
-      await previousExecutorAccount.signTypedData(
+    const previousSupplierSignature =
+      await previousSupplierAccount.signTypedData(
         typedData as unknown as Parameters<
-          typeof previousExecutorAccount.signTypedData
+          typeof previousSupplierAccount.signTypedData
         >[0],
       );
 
     assert.equal(
-      await recoverStageExecutorPatchSigner(typedData, selectorSignature),
+      await recoverStageSupplierPatchSigner(typedData, selectorSignature),
       submitter,
     );
     assert.equal(
-      await recoverStageExecutorPatchSigner(
+      await recoverStageSupplierPatchSigner(
         typedData,
-        previousExecutorSignature,
+        previousSupplierSignature,
       ),
-      previousExecutor,
+      previousSupplier,
     );
   });
 
@@ -1027,12 +1027,12 @@ describe("protocol bindings", () => {
     assert.equal(await recoverDerivedSignalSigner(typedData, signature), submitter);
   });
 
-  it("builds applyStageExecutorPatchFor calls from the stage patch module ABI", () => {
+  it("builds applyStageSupplierPatchFor calls from the stage patch module ABI", () => {
     const selectorSignature = `0x${"bb".repeat(65)}` as const;
-    const previousExecutorSignature = `0x${"dd".repeat(65)}` as const;
+    const previousSupplierSignature = `0x${"dd".repeat(65)}` as const;
     const bindingProof = { selectorStageId, proof: [payloadHash] } as const;
     const candidateProof = [payloadHash, idempotencyKey] as const;
-    const call = buildApplyStageExecutorPatchForCall(
+    const call = buildApplyStageSupplierPatchForCall(
       {
         stagePatchModuleAddress: verifyingContract,
         chainId: 31337,
@@ -1040,11 +1040,11 @@ describe("protocol bindings", () => {
       {
         planId,
         orderId,
-        patch: rotatedExecutorPatchPayload,
+        patch: handoffReplacementSupplierPatchPayload,
         selector: submitter,
         deadline,
         selectorSignature,
-        previousExecutorSignature,
+        previousSupplierSignature,
         bindingProof,
         candidateProof,
       },
@@ -1056,7 +1056,7 @@ describe("protocol bindings", () => {
 
     assert.equal(call.address, verifyingContract);
     assert.equal(call.abi, STAGE_PATCH_MODULE_ABI);
-    assert.equal(call.functionName, "applyStageExecutorPatchFor");
+    assert.equal(call.functionName, "applyStageSupplierPatchFor");
     assert.deepEqual(call.args, [
       planId,
       orderId,
@@ -1070,11 +1070,11 @@ describe("protocol bindings", () => {
       submitter,
       BigInt(deadline),
       selectorSignature,
-      previousExecutorSignature,
+      previousSupplierSignature,
       { selectorStageId, proof: [payloadHash] },
       candidateProof,
     ]);
-    assert.equal(decoded.functionName, "applyStageExecutorPatchFor");
+    assert.equal(decoded.functionName, "applyStageSupplierPatchFor");
     assert.ok(decoded.args);
     const decodedArgs = decoded.args;
     assert.equal(decodedArgs[0], planId);
@@ -1089,20 +1089,20 @@ describe("protocol bindings", () => {
     assert.equal(String(decodedArgs[3]).toLowerCase(), submitter);
     assert.equal(decodedArgs[4], BigInt(deadline));
     assert.equal(decodedArgs[5], selectorSignature);
-    assert.equal(decodedArgs[6], previousExecutorSignature);
+    assert.equal(decodedArgs[6], previousSupplierSignature);
     assert.deepEqual(decodedArgs[7], { selectorStageId, proof: [payloadHash] });
     assert.deepEqual(decodedArgs[8], candidateProof);
   });
 
-  it("hashes stage executor patch payload canonically", () => {
+  it("hashes stage supplier patch payload canonically", () => {
     // payload 哈希必须吃进导出的域常量（域分离）——keccak256(abi
     // .encode(keccak256(domain), …payload))。独立重算而非同源引用。
     assert.equal(
-      STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN,
-      "uvp:stage-executor-patch-payload:v2",
+      STAGE_SUPPLIER_PATCH_PAYLOAD_HASH_DOMAIN,
+      "uvp:stage-supplier-patch-payload:v2",
     );
     assert.equal(
-      assignExecutorPatchHash,
+      assignSupplierPatchHash,
       keccak256(
         encodeAbiParameters(
           [
@@ -1115,38 +1115,38 @@ describe("protocol bindings", () => {
           ],
           [
             keccak256(
-              stringToHex(STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN),
+              stringToHex(STAGE_SUPPLIER_PATCH_PAYLOAD_HASH_DOMAIN),
             ),
             selectorStageId,
             targetStageId,
             supplierId,
             zeroBytes32,
-            BigInt(executorPatchNonce),
+            BigInt(supplierPatchNonce),
           ],
         ),
       ),
     );
     assert.equal(
-      assignExecutorPatchHash,
-      hashStageExecutorPatchPayload({
+      assignSupplierPatchHash,
+      hashStageSupplierPatchPayload({
         selectorStageId,
         targetStageId,
         supplierId,
         previousSupplierId: zeroBytes32,
-        patchNonce: BigInt(executorPatchNonce),
+        patchNonce: BigInt(supplierPatchNonce),
       }),
     );
     assert.equal(
-      handoffExecutorPatchHash,
-      hashStageExecutorPatchPayload({
-        ...handoffExecutorPatchPayload,
+      handoffSupplierPatchHash,
+      hashStageSupplierPatchPayload({
+        ...handoffSupplierPatchPayload,
         patchNonce: BigInt(handoffPatchNonce),
       }),
     );
     assert.notEqual(
-      assignExecutorPatchHash,
-      hashStageExecutorPatchPayload({
-        ...assignExecutorPatchPayload,
+      assignSupplierPatchHash,
+      hashStageSupplierPatchPayload({
+        ...assignSupplierPatchPayload,
         previousSupplierId,
       }),
     );

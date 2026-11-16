@@ -9,19 +9,15 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x40e30c2cf29a8b73d7699a29074035c7e459c35cd2c652d1a37ff4539b30bb49",
-    "bytecodeHash": "0x43a45b8d05ac0bf142e439537a905ff4e21e56ba14e5fcfc19603e5436353a70",
-    "deployedBytecodeHash": "0x1427379c28c42b3d933b146121f1bddb9286b235d0d802cc16130c7b904f00f4",
-    "artifactHash": "0x0528ae532dea02de4adee17cee993d505c488f2d6a99e497064dd340c732531d"
+    "abiHash": "0xa0efa723c85653164f119867db77025eecf53025a6a191304150fffa26d6a573",
+    "bytecodeHash": "0x970d8df2a5ada4f957edfb2dfbbb9cfa9357e31521ec8a6228fe474e6e633be7",
+    "deployedBytecodeHash": "0x9f4801903b1677b2a6c5637608af835eef5a00bf999cb7bdec747829268a6070",
+    "artifactHash": "0xf2c94816e1bf7ff346ac7df35d8a2e481896fc236766e8616638078b043ae1fb"
   },
   "events": {
     "OwnershipTransferred": {
       "signature": "OwnershipTransferred(address,address)",
       "topic": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
-    },
-    "SupplierExecutorRotated": {
-      "signature": "SupplierExecutorRotated(bytes32,address,address)",
-      "topic": "0x83f0b78259df8d0c497d8f0a2c134ccfe2e088a9cbed15b97c044067e422a39e"
     },
     "SupplierRegistered": {
       "signature": "SupplierRegistered(bytes32,address)",
@@ -31,43 +27,51 @@
       "signature": "SupplierRegistrarSet(address,bool)",
       "topic": "0x2ebb1be4b3e457f1e827f1518bbeb0c849feec5c021fd7a1496482eab7f651c8"
     },
-    "SupplierRevoked": {
-      "signature": "SupplierRevoked(bytes32,address)",
-      "topic": "0x8e13b71d35d4021e769ee263e47801c9dc713c6886f35b3ab04ba01ae72a52b2"
+    "SupplierStatusChanged": {
+      "signature": "SupplierStatusChanged(bytes32,uint8,uint8,address)",
+      "topic": "0xcad9d40f9f1f27c41e20818280db630876c8d4cce08f069cd3cce39ce8328bdd"
     }
   },
   "functions": {
-    "executorOf": {
-      "signature": "executorOf(bytes32)",
-      "selector": "0x5fe523d4"
+    "accountOf": {
+      "signature": "accountOf(bytes32)",
+      "selector": "0x0b61a887"
     },
-    "isRegisteredSupplier": {
-      "signature": "isRegisteredSupplier(bytes32)",
-      "selector": "0x0f3cd30a"
+    "activateSupplier": {
+      "signature": "activateSupplier(bytes32)",
+      "selector": "0x919cc1ae"
+    },
+    "isActiveSupplier": {
+      "signature": "isActiveSupplier(bytes32)",
+      "selector": "0x7329d13f"
     },
     "owner": {
       "signature": "owner()",
       "selector": "0x8da5cb5b"
     },
     "registerSupplier": {
-      "signature": "registerSupplier(bytes32,address)",
-      "selector": "0x37ca9d8c"
+      "signature": "registerSupplier(address)",
+      "selector": "0xcf7f5e5f"
     },
     "revokeSupplier": {
       "signature": "revokeSupplier(bytes32)",
       "selector": "0x035bac62"
     },
-    "rotateSupplierExecutor": {
-      "signature": "rotateSupplierExecutor(bytes32,address)",
-      "selector": "0x95b713ee"
-    },
     "setRegistrar": {
       "signature": "setRegistrar(address,bool)",
       "selector": "0xc1bf1dcf"
     },
+    "statusOf": {
+      "signature": "statusOf(bytes32)",
+      "selector": "0xc7df14e2"
+    },
     "supplierOf": {
       "signature": "supplierOf(address)",
       "selector": "0xf761160b"
+    },
+    "suspendSupplier": {
+      "signature": "suspendSupplier(bytes32)",
+      "selector": "0xfb5f47f6"
     },
     "transferOwnership": {
       "signature": "transferOwnership(address)",

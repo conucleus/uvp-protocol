@@ -32,7 +32,7 @@ interface Vm {
     function warp(uint256 newTimestamp) external;
 }
 
-contract Eip1271Executor {
+contract Eip1271SupplierAccount {
     bytes4 private constant _MAGIC = 0x1626ba7e;
 
     bool public valid = true;
@@ -44,6 +44,10 @@ contract Eip1271Executor {
     function isValidSignature(bytes32, bytes calldata) external view returns (bytes4) {
         return valid ? _MAGIC : bytes4(0xffffffff);
     }
+
+    function registerSupplier(UVPSupplierRegistry registry) external returns (bytes32 supplierId) {
+        supplierId = registry.registerSupplier(address(this));
+    }
 }
 
 contract StagePatchActivationMock {
@@ -53,19 +57,19 @@ contract StagePatchActivationMock {
         _machine = machineAddress;
     }
 
-    function activateExecutor(
+    function activateSupplier(
         bytes32 planId,
         bytes32 orderId,
         bytes32 targetStageId,
         bytes32 supplierId,
         uint256 patchNonce
     ) external {
-        IUVPStateMachineCore(_machine).activateStageExecutorFromModule(
+        IUVPStateMachineCore(_machine).activateStageSupplierFromModule(
             planId, orderId, targetStageId, supplierId, patchNonce
         );
     }
 
-    function activateDockExecutor(
+    function activateDockSupplier(
         bytes32 planId,
         bytes32 orderId,
         bytes32 targetStageId,
@@ -73,7 +77,7 @@ contract StagePatchActivationMock {
         bytes32 dockId,
         uint256 patchNonce
     ) external {
-        IUVPStateMachineCore(_machine).activateStageDockExecutorFromModule(
+        IUVPStateMachineCore(_machine).activateStageDockSupplierFromModule(
             planId, orderId, targetStageId, supplierId, dockId, patchNonce
         );
     }
@@ -134,8 +138,7 @@ contract UVPStateMachineTest {
     uint8 private constant FLAG_DYNAMIC_EXECUTOR = 32;
 
     address private constant ORDER_CREATOR = address(uint160(0xc0de));
-    address private constant EXECUTOR_A = address(uint160(0xa11ce));
-    address private constant EXECUTOR_B = address(uint160(0xb0b));
+    address private constant SUPPLIER_ACCOUNT_A = address(uint160(0xa11ce));
     address private constant OUTSIDER = address(uint160(0xbad));
     address private constant NON_OWNER = address(uint160(0xf01));
 
@@ -148,7 +151,7 @@ contract UVPStateMachineTest {
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
     bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.18");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorBindingsRoot,address birthAuthorizer,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,address birthAuthorizer,uint256 deadline)"
     );
     bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
@@ -158,7 +161,7 @@ contract UVPStateMachineTest {
     );
     bytes32 private constant FACT_ATTRIBUTION_TYPEHASH =
         keccak256("FactAttribution(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof)");
-    bytes32 private constant EXECUTOR_BINDING_LEAF_DOMAIN = keccak256("UVP_EXECUTOR_BINDING_V2");
+    bytes32 private constant SUPPLIER_BINDING_LEAF_DOMAIN = keccak256("UVP_SUPPLIER_BINDING_V1");
     bytes32 private constant SELECTOR_BINDING_LEAF_DOMAIN = keccak256("UVP_SELECTOR_BINDING_V1");
     bytes32 private constant SIGNAL_CAPABILITY_LEAF_DOMAIN = keccak256("UVP_SIGNAL_CAPABILITY_V1");
 
@@ -166,8 +169,8 @@ contract UVPStateMachineTest {
     mapping(address machine => UVPFileResourceModule) private _fileModules;
     mapping(address machine => UVPDerivedSignalModule) private _derivedModules;
     mapping(address machine => StagePatchActivationMock) private _patchModules;
-    mapping(address machine => mapping(address executor => bytes32 supplierId)) private _suppliers;
-    mapping(address machine => mapping(bytes32 stageId => address executor)) private _stageExecutors;
+    mapping(address machine => mapping(address account => bytes32 supplierId)) private _suppliers;
+    mapping(address machine => mapping(bytes32 stageId => address account)) private _stageSupplierAccounts;
     mapping(address machine => mapping(bytes32 planId => CapabilityTables)) private _tables;
 
     bytes32 private PLAN_ID;
@@ -217,7 +220,7 @@ contract UVPStateMachineTest {
     function testCommitPlanRequiresFrozenModules() public {
         UVPStateMachine machine = _deployModulesWithoutSupplierRegistry();
         UVPStateMachine.CompactHook[] memory hooks = _birthPlan();
-        UVPStateMachine.ExecutorBinding[] memory bindings = new UVPStateMachine.ExecutorBinding[](0);
+        UVPStateMachine.StageSupplierBinding[] memory bindings = new UVPStateMachine.StageSupplierBinding[](0);
         UVPStateMachine.PlanCommit memory commit = _planCommit(
             hooks, new StageSelectorBinding[](0), new SignalCapability[](0), bindings, vm.addr(BIRTH_PRIVATE_KEY)
         );
@@ -237,18 +240,18 @@ contract UVPStateMachineTest {
         machine.finalizePlan(planId);
     }
 
-    function testCommitPlanStoresExecutorBindingsState() public {
+    function testCommitPlanStoresSupplierBindingsState() public {
         UVPStateMachine machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = _executorPlan();
+        UVPStateMachine.CompactHook[] memory hooks = _supplierPlan();
         bytes32 supplierThis = _supplierFor(machine, address(this));
-        bytes32 supplierA = _supplierFor(machine, EXECUTOR_A);
-        UVPStateMachine.ExecutorBinding[] memory bindings = _autoBindings(machine, hooks);
-        UVPStateMachine.ExecutorBinding[] memory withCandidate =
-            new UVPStateMachine.ExecutorBinding[](bindings.length + 1);
+        bytes32 supplierA = _supplierFor(machine, SUPPLIER_ACCOUNT_A);
+        UVPStateMachine.StageSupplierBinding[] memory bindings = _autoBindings(machine, hooks);
+        UVPStateMachine.StageSupplierBinding[] memory withCandidate =
+            new UVPStateMachine.StageSupplierBinding[](bindings.length + 1);
         for (uint256 i = 0; i < bindings.length; i++) {
             withCandidate[i] = bindings[i];
         }
-        withCandidate[bindings.length] = UVPStateMachine.ExecutorBinding({
+        withCandidate[bindings.length] = UVPStateMachine.StageSupplierBinding({
             stageId: STAGE_AUDIT,
             supplierId: supplierA,
             kind: 1
@@ -258,19 +261,19 @@ contract UVPStateMachineTest {
             machine, hooks, new StageSelectorBinding[](0), new SignalCapability[](0), withCandidate, PUBLISHER_PRIVATE_KEY
         );
         require(
-            machine.planExecutorBindingsRoot(planId) == _bindingsRoot(withCandidate), "bindings root mismatch"
+            machine.planSupplierBindingsRoot(planId) == _bindingsRoot(withCandidate), "bindings root mismatch"
         );
         require(machine.planStageDefaultSupplier(planId, STAGE_INIT) == supplierThis, "init supplier mismatch");
         require(machine.planStageDefaultSupplier(planId, STAGE_AUDIT) == supplierThis, "audit supplier mismatch");
         require(machine.planStageIsCandidate(planId, STAGE_AUDIT), "candidate stage flag missing");
         require(!machine.planStageIsCandidate(planId, STAGE_INIT), "init must not be candidate");
-        require(!machine.planStageHasDynamicExecutor(planId, STAGE_AUDIT), "unexpected dynamic flag");
+        require(!machine.planStageHasDynamicSupplier(planId, STAGE_AUDIT), "unexpected dynamic flag");
     }
 
     function testDynamicPlanMarksDynamicStageWithoutBinding() public {
         UVPStateMachine machine = _newMachine();
         bytes32 planId = _registerPlan(machine, _dynamicPlan());
-        require(machine.planStageHasDynamicExecutor(planId, STAGE_DYN), "dynamic stage flag missing");
+        require(machine.planStageHasDynamicSupplier(planId, STAGE_DYN), "dynamic stage flag missing");
         require(machine.planStageDefaultSupplier(planId, STAGE_DYN) == bytes32(0), "dynamic stage must be unbound");
         _submitTriggerBirth(machine, planId);
         require(machine.effectiveStageSupplier(planId, ORDER_ID, STAGE_DYN) == bytes32(0), "dynamic supplier must be zero");
@@ -278,43 +281,43 @@ contract UVPStateMachineTest {
 
     function testCommitPlanRejectsBindingsRootMismatch() public {
         UVPStateMachine machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = _executorPlan();
-        UVPStateMachine.ExecutorBinding[] memory bindings = _autoBindings(machine, hooks);
+        UVPStateMachine.CompactHook[] memory hooks = _supplierPlan();
+        UVPStateMachine.StageSupplierBinding[] memory bindings = _autoBindings(machine, hooks);
         UVPStateMachine.PlanCommit memory commit = _planCommit(
             hooks, new StageSelectorBinding[](0), new SignalCapability[](0), bindings, vm.addr(BIRTH_PRIVATE_KEY)
         );
-        commit.executorBindingsRoot = bytes32(uint256(0x1234));
+        commit.supplierBindingsRoot = bytes32(uint256(0x1234));
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStateMachine.ExecutorBindingsRootMismatch.selector, bytes32(uint256(0x1234)), _bindingsRoot(bindings)
+                UVPStateMachine.SupplierBindingsRootMismatch.selector, bytes32(uint256(0x1234)), _bindingsRoot(bindings)
             )
         );
         machine.commitPlan(commit, hooks, bindings, signature);
     }
 
-    function testCommitPlanRejectsTooManyExecutorBindings() public {
+    function testCommitPlanRejectsTooManySupplierBindings() public {
         UVPStateMachine machine = _newMachine();
         UVPStateMachine.CompactHook[] memory hooks = _birthPlan();
-        UVPStateMachine.ExecutorBinding[] memory bindings = new UVPStateMachine.ExecutorBinding[](257);
+        UVPStateMachine.StageSupplierBinding[] memory bindings = new UVPStateMachine.StageSupplierBinding[](257);
         bytes32 supplierId = _supplierFor(machine, address(this));
         for (uint256 i = 0; i < bindings.length; i++) {
-            bindings[i] = UVPStateMachine.ExecutorBinding({stageId: STAGE_INIT, supplierId: supplierId, kind: 0});
+            bindings[i] = UVPStateMachine.StageSupplierBinding({stageId: STAGE_INIT, supplierId: supplierId, kind: 0});
         }
         UVPStateMachine.PlanCommit memory commit = _planCommit(
             hooks, new StageSelectorBinding[](0), new SignalCapability[](0), bindings, vm.addr(BIRTH_PRIVATE_KEY)
         );
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
-        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.TooManyExecutorBindings.selector, 257));
+        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.TooManySupplierBindings.selector, 257));
         machine.commitPlan(commit, hooks, bindings, signature);
     }
 
-    function testCommitPlanRejectsDuplicateExecutorBinding() public {
+    function testCommitPlanRejectsDuplicateSupplierBinding() public {
         UVPStateMachine machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = _executorPlan();
-        UVPStateMachine.ExecutorBinding[] memory bindings = _autoBindings(machine, hooks);
-        UVPStateMachine.ExecutorBinding[] memory duplicated =
-            new UVPStateMachine.ExecutorBinding[](bindings.length + 1);
+        UVPStateMachine.CompactHook[] memory hooks = _supplierPlan();
+        UVPStateMachine.StageSupplierBinding[] memory bindings = _autoBindings(machine, hooks);
+        UVPStateMachine.StageSupplierBinding[] memory duplicated =
+            new UVPStateMachine.StageSupplierBinding[](bindings.length + 1);
         for (uint256 i = 0; i < bindings.length; i++) {
             duplicated[i] = bindings[i];
         }
@@ -325,38 +328,38 @@ contract UVPStateMachineTest {
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStateMachine.DuplicateExecutorBinding.selector, bindings[0].stageId, bindings[0].supplierId, bindings[0].kind
+                UVPStateMachine.DuplicateSupplierBinding.selector, bindings[0].stageId, bindings[0].supplierId, bindings[0].kind
             )
         );
         machine.commitPlan(commit, hooks, duplicated, signature);
     }
 
-    function testCommitPlanRejectsUnregisteredSupplier() public {
+    function testCommitPlanRejectsInactiveSupplier() public {
         UVPStateMachine machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = _executorPlan();
-        UVPStateMachine.ExecutorBinding[] memory bindings = _autoBindings(machine, hooks);
+        UVPStateMachine.CompactHook[] memory hooks = _supplierPlan();
+        UVPStateMachine.StageSupplierBinding[] memory bindings = _autoBindings(machine, hooks);
         bytes32 unknownSupplier = keccak256("unknown-supplier");
         bindings[0].supplierId = unknownSupplier;
         UVPStateMachine.PlanCommit memory commit = _planCommit(
             hooks, new StageSelectorBinding[](0), new SignalCapability[](0), bindings, vm.addr(BIRTH_PRIVATE_KEY)
         );
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
-        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.SupplierNotRegistered.selector, unknownSupplier));
+        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.SupplierNotActive.selector, unknownSupplier));
         machine.commitPlan(commit, hooks, bindings, signature);
     }
 
     function testCommitPlanRejectsBindingForUnknownStage() public {
         UVPStateMachine machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = _executorPlan();
-        UVPStateMachine.ExecutorBinding[] memory bindings = _autoBindings(machine, hooks);
-        UVPStateMachine.ExecutorBinding[] memory withUnknown =
-            new UVPStateMachine.ExecutorBinding[](bindings.length + 1);
+        UVPStateMachine.CompactHook[] memory hooks = _supplierPlan();
+        UVPStateMachine.StageSupplierBinding[] memory bindings = _autoBindings(machine, hooks);
+        UVPStateMachine.StageSupplierBinding[] memory withUnknown =
+            new UVPStateMachine.StageSupplierBinding[](bindings.length + 1);
         for (uint256 i = 0; i < bindings.length; i++) {
             withUnknown[i] = bindings[i];
         }
-        withUnknown[bindings.length] = UVPStateMachine.ExecutorBinding({
+        withUnknown[bindings.length] = UVPStateMachine.StageSupplierBinding({
             stageId: bytes32(uint256(0x7777)),
-            supplierId: _supplierFor(machine, EXECUTOR_A),
+            supplierId: _supplierFor(machine, SUPPLIER_ACCOUNT_A),
             kind: 0
         });
         UVPStateMachine.PlanCommit memory commit = _planCommit(
@@ -372,15 +375,15 @@ contract UVPStateMachineTest {
     function testCommitPlanRejectsBindingOnDynamicStage() public {
         UVPStateMachine machine = _newMachine();
         UVPStateMachine.CompactHook[] memory hooks = _dynamicPlan();
-        UVPStateMachine.ExecutorBinding[] memory bindings = _autoBindings(machine, hooks);
-        UVPStateMachine.ExecutorBinding[] memory withDynamic =
-            new UVPStateMachine.ExecutorBinding[](bindings.length + 1);
+        UVPStateMachine.StageSupplierBinding[] memory bindings = _autoBindings(machine, hooks);
+        UVPStateMachine.StageSupplierBinding[] memory withDynamic =
+            new UVPStateMachine.StageSupplierBinding[](bindings.length + 1);
         for (uint256 i = 0; i < bindings.length; i++) {
             withDynamic[i] = bindings[i];
         }
-        withDynamic[bindings.length] = UVPStateMachine.ExecutorBinding({
+        withDynamic[bindings.length] = UVPStateMachine.StageSupplierBinding({
             stageId: STAGE_DYN,
-            supplierId: _supplierFor(machine, EXECUTOR_A),
+            supplierId: _supplierFor(machine, SUPPLIER_ACCOUNT_A),
             kind: 0
         });
         UVPStateMachine.PlanCommit memory commit = _planCommit(
@@ -388,7 +391,7 @@ contract UVPStateMachineTest {
         );
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
         vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.ExecutorBindingForbiddenForStage.selector, STAGE_DYN)
+            abi.encodeWithSelector(UVPStateMachine.SupplierBindingForbiddenForStage.selector, STAGE_DYN)
         );
         machine.commitPlan(commit, hooks, withDynamic, signature);
     }
@@ -396,14 +399,14 @@ contract UVPStateMachineTest {
     function testCommitPlanRejectsBindingOnDockStage() public {
         UVPStateMachine machine = _newMachine();
         UVPStateMachine.CompactHook[] memory hooks = _dockPlan();
-        UVPStateMachine.ExecutorBinding[] memory bindings = _autoBindings(machine, hooks);
-        UVPStateMachine.ExecutorBinding[] memory withDock = new UVPStateMachine.ExecutorBinding[](bindings.length + 1);
+        UVPStateMachine.StageSupplierBinding[] memory bindings = _autoBindings(machine, hooks);
+        UVPStateMachine.StageSupplierBinding[] memory withDock = new UVPStateMachine.StageSupplierBinding[](bindings.length + 1);
         for (uint256 i = 0; i < bindings.length; i++) {
             withDock[i] = bindings[i];
         }
-        withDock[bindings.length] = UVPStateMachine.ExecutorBinding({
+        withDock[bindings.length] = UVPStateMachine.StageSupplierBinding({
             stageId: STAGE_DOCK,
-            supplierId: _supplierFor(machine, EXECUTOR_A),
+            supplierId: _supplierFor(machine, SUPPLIER_ACCOUNT_A),
             kind: 0
         });
         UVPStateMachine.PlanCommit memory commit = _planCommit(
@@ -411,23 +414,23 @@ contract UVPStateMachineTest {
         );
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
         vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.ExecutorBindingForbiddenForStage.selector, STAGE_DOCK)
+            abi.encodeWithSelector(UVPStateMachine.SupplierBindingForbiddenForStage.selector, STAGE_DOCK)
         );
         machine.commitPlan(commit, hooks, withDock, signature);
     }
 
     function testCommitPlanRejectsCandidateOnBirthStage() public {
         UVPStateMachine machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = _executorPlan();
-        UVPStateMachine.ExecutorBinding[] memory bindings = _autoBindings(machine, hooks);
-        UVPStateMachine.ExecutorBinding[] memory withCandidate =
-            new UVPStateMachine.ExecutorBinding[](bindings.length + 1);
+        UVPStateMachine.CompactHook[] memory hooks = _supplierPlan();
+        UVPStateMachine.StageSupplierBinding[] memory bindings = _autoBindings(machine, hooks);
+        UVPStateMachine.StageSupplierBinding[] memory withCandidate =
+            new UVPStateMachine.StageSupplierBinding[](bindings.length + 1);
         for (uint256 i = 0; i < bindings.length; i++) {
             withCandidate[i] = bindings[i];
         }
-        withCandidate[bindings.length] = UVPStateMachine.ExecutorBinding({
+        withCandidate[bindings.length] = UVPStateMachine.StageSupplierBinding({
             stageId: STAGE_INIT,
-            supplierId: _supplierFor(machine, EXECUTOR_A),
+            supplierId: _supplierFor(machine, SUPPLIER_ACCOUNT_A),
             kind: 1
         });
         UVPStateMachine.PlanCommit memory commit = _planCommit(
@@ -435,17 +438,17 @@ contract UVPStateMachineTest {
         );
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
         vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.CandidateExecutorBindingForbiddenForStage.selector, STAGE_INIT)
+            abi.encodeWithSelector(UVPStateMachine.CandidateSupplierBindingForbiddenForStage.selector, STAGE_INIT)
         );
         machine.commitPlan(commit, hooks, withCandidate, signature);
     }
 
     function testCommitPlanRejectsCandidateWithoutDefault() public {
         UVPStateMachine machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = _executorPlan();
-        UVPStateMachine.ExecutorBinding[] memory bindings = _autoBindings(machine, hooks);
-        UVPStateMachine.ExecutorBinding[] memory candidatesOnly =
-            new UVPStateMachine.ExecutorBinding[](bindings.length);
+        UVPStateMachine.CompactHook[] memory hooks = _supplierPlan();
+        UVPStateMachine.StageSupplierBinding[] memory bindings = _autoBindings(machine, hooks);
+        UVPStateMachine.StageSupplierBinding[] memory candidatesOnly =
+            new UVPStateMachine.StageSupplierBinding[](bindings.length);
         uint256 count;
         for (uint256 i = 0; i < bindings.length; i++) {
             if (bindings[i].stageId == STAGE_AUDIT) {
@@ -453,12 +456,12 @@ contract UVPStateMachineTest {
             }
             candidatesOnly[count++] = bindings[i];
         }
-        candidatesOnly[count] = UVPStateMachine.ExecutorBinding({
+        candidatesOnly[count] = UVPStateMachine.StageSupplierBinding({
             stageId: STAGE_AUDIT,
-            supplierId: _supplierFor(machine, EXECUTOR_A),
+            supplierId: _supplierFor(machine, SUPPLIER_ACCOUNT_A),
             kind: 1
         });
-        UVPStateMachine.ExecutorBinding[] memory trimmed = new UVPStateMachine.ExecutorBinding[](count + 1);
+        UVPStateMachine.StageSupplierBinding[] memory trimmed = new UVPStateMachine.StageSupplierBinding[](count + 1);
         for (uint256 i = 0; i < count + 1; i++) {
             trimmed[i] = candidatesOnly[i];
         }
@@ -467,34 +470,34 @@ contract UVPStateMachineTest {
         );
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
         vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.CandidateExecutorBindingRequiresDefault.selector, STAGE_AUDIT)
+            abi.encodeWithSelector(UVPStateMachine.CandidateSupplierBindingRequiresDefault.selector, STAGE_AUDIT)
         );
         machine.commitPlan(commit, hooks, trimmed, signature);
     }
 
     function testCommitPlanRejectsInvalidBindingKind() public {
         UVPStateMachine machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = _executorPlan();
-        UVPStateMachine.ExecutorBinding[] memory bindings = _autoBindings(machine, hooks);
-        UVPStateMachine.ExecutorBinding[] memory withInvalid =
-            new UVPStateMachine.ExecutorBinding[](bindings.length + 1);
+        UVPStateMachine.CompactHook[] memory hooks = _supplierPlan();
+        UVPStateMachine.StageSupplierBinding[] memory bindings = _autoBindings(machine, hooks);
+        UVPStateMachine.StageSupplierBinding[] memory withInvalid =
+            new UVPStateMachine.StageSupplierBinding[](bindings.length + 1);
         for (uint256 i = 0; i < bindings.length; i++) {
             withInvalid[i] = bindings[i];
         }
-        withInvalid[bindings.length] = UVPStateMachine.ExecutorBinding({
+        withInvalid[bindings.length] = UVPStateMachine.StageSupplierBinding({
             stageId: STAGE_AUDIT,
-            supplierId: _supplierFor(machine, EXECUTOR_A),
+            supplierId: _supplierFor(machine, SUPPLIER_ACCOUNT_A),
             kind: 2
         });
         UVPStateMachine.PlanCommit memory commit = _planCommit(
             hooks, new StageSelectorBinding[](0), new SignalCapability[](0), withInvalid, vm.addr(BIRTH_PRIVATE_KEY)
         );
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
-        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.InvalidExecutorBindingKind.selector, 2));
+        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.InvalidSupplierBindingKind.selector, 2));
         machine.commitPlan(commit, hooks, withInvalid, signature);
     }
 
-    function testCommitPlanRejectsInconsistentDynamicExecutorFlag() public {
+    function testCommitPlanRejectsInconsistentDynamicSupplierFlag() public {
         UVPStateMachine machine = _newMachine();
         UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
         hooks[0] = _signalHook(HOOK_BIRTH, STAGE_INIT, SIGNAL_BIRTH, FLAG_ORDER_TRIGGER_MINT | FLAG_EMIT_READY, SOURCE_BOOTSTRAP);
@@ -505,21 +508,21 @@ contract UVPStateMachineTest {
             FLAG_EMIT_READY | FLAG_ORDER_TRIGGER_MINT | FLAG_DYNAMIC_EXECUTOR,
             SOURCE_BOOTSTRAP
         );
-        UVPStateMachine.ExecutorBinding[] memory bindings = _autoBindings(machine, hooks);
+        UVPStateMachine.StageSupplierBinding[] memory bindings = _autoBindings(machine, hooks);
         UVPStateMachine.PlanCommit memory commit = _planCommit(
             hooks, new StageSelectorBinding[](0), new SignalCapability[](0), bindings, vm.addr(BIRTH_PRIVATE_KEY)
         );
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
         vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.InconsistentDynamicExecutorFlag.selector, STAGE_DYN)
+            abi.encodeWithSelector(UVPStateMachine.InconsistentDynamicSupplierFlag.selector, STAGE_DYN)
         );
         machine.commitPlan(commit, hooks, bindings, signature);
     }
 
     function testCommitPlanRejectsWrongPublisherSignature() public {
         UVPStateMachine machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = _executorPlan();
-        UVPStateMachine.ExecutorBinding[] memory bindings = _autoBindings(machine, hooks);
+        UVPStateMachine.CompactHook[] memory hooks = _supplierPlan();
+        UVPStateMachine.StageSupplierBinding[] memory bindings = _autoBindings(machine, hooks);
         UVPStateMachine.PlanCommit memory commit = _planCommit(
             hooks, new StageSelectorBinding[](0), new SignalCapability[](0), bindings, vm.addr(BIRTH_PRIVATE_KEY)
         );
@@ -534,8 +537,8 @@ contract UVPStateMachineTest {
 
     function testCommitPlanRejectsExpiredSignature() public {
         UVPStateMachine machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = _executorPlan();
-        UVPStateMachine.ExecutorBinding[] memory bindings = _autoBindings(machine, hooks);
+        UVPStateMachine.CompactHook[] memory hooks = _supplierPlan();
+        UVPStateMachine.StageSupplierBinding[] memory bindings = _autoBindings(machine, hooks);
         UVPStateMachine.PlanCommit memory commit = _planCommit(
             hooks, new StageSelectorBinding[](0), new SignalCapability[](0), bindings, vm.addr(BIRTH_PRIVATE_KEY)
         );
@@ -547,8 +550,8 @@ contract UVPStateMachineTest {
 
     function testCommitPlanRejectsHooksHashMismatch() public {
         UVPStateMachine machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = _executorPlan();
-        UVPStateMachine.ExecutorBinding[] memory bindings = _autoBindings(machine, hooks);
+        UVPStateMachine.CompactHook[] memory hooks = _supplierPlan();
+        UVPStateMachine.StageSupplierBinding[] memory bindings = _autoBindings(machine, hooks);
         UVPStateMachine.PlanCommit memory commit = _planCommit(
             hooks, new StageSelectorBinding[](0), new SignalCapability[](0), bindings, vm.addr(BIRTH_PRIVATE_KEY)
         );
@@ -562,10 +565,10 @@ contract UVPStateMachineTest {
         machine.commitPlan(commit, hooks, bindings, signature);
     }
 
-    function testPlanCommittedEventCarriesExecutorBindingsRoot() public {
+    function testPlanCommittedEventCarriesSupplierBindingsRoot() public {
         UVPStateMachine machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = _executorPlan();
-        UVPStateMachine.ExecutorBinding[] memory bindings = _autoBindings(machine, hooks);
+        UVPStateMachine.CompactHook[] memory hooks = _supplierPlan();
+        UVPStateMachine.StageSupplierBinding[] memory bindings = _autoBindings(machine, hooks);
         vm.recordLogs();
         _commitPlan(machine, hooks, new StageSelectorBinding[](0), new SignalCapability[](0), bindings, PUBLISHER_PRIVATE_KEY);
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -638,7 +641,7 @@ contract UVPStateMachineTest {
 
     function testBirthRejectsUnauthorizedBirthSubmitter() public {
         UVPStateMachine machine = _newMachine();
-        bytes32 planId = _registerPlanWithBirthAuthorizer(machine, _birthPlan(), new SignalCapability[](0), EXECUTOR_A);
+        bytes32 planId = _registerPlanWithBirthAuthorizer(machine, _birthPlan(), new SignalCapability[](0), SUPPLIER_ACCOUNT_A);
         address signer = vm.addr(BIRTH_PRIVATE_KEY);
         UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = _birthTrigger(planId, signer);
         bytes32 digest = _triggerDigest(machine, trigger);
@@ -670,8 +673,8 @@ contract UVPStateMachineTest {
         require(machine.orderRelayer(planId, orderId) == authorizer, "authorizer relayer mismatch");
     }
 
-    function testDefaultExecutorBoundSubmitRecordsSignal() public {
-        UVPStateMachine machine = _executorMachine();
+    function testDefaultSupplierBoundSubmitRecordsSignal() public {
+        UVPStateMachine machine = _supplierMachine();
         _submit(machine, STAGE_AUDIT, SIGNAL_DONE);
         require(machine.hasSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_DONE), "signal missing");
         (,,,, address submitter) = machine.getSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_DONE);
@@ -680,51 +683,49 @@ contract UVPStateMachineTest {
         require(status == UVPStateMachine.HookStatus.Ready, "hook not ready");
     }
 
-    function testSubmitSignalRejectsNonExecutor() public {
-        UVPStateMachine machine = _executorMachine();
+    function testSubmitSignalRejectsUnauthorizedSupplierAccount() public {
+        UVPStateMachine machine = _supplierMachine();
         vm.prank(OUTSIDER);
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStateMachine.UnauthorizedStageExecutor.selector, ORDER_ID, STAGE_INIT, OUTSIDER, address(this)
+                UVPStateMachine.UnauthorizedStageSupplierAccount.selector, ORDER_ID, STAGE_INIT, OUTSIDER, address(this)
             )
         );
         _submit(machine, SOURCE_BOOTSTRAP, SIGNAL_DONE);
     }
 
     function testSubmitSignalRejectsUnknownSourceStage() public {
-        UVPStateMachine machine = _executorMachine();
+        UVPStateMachine machine = _supplierMachine();
         vm.expectRevert(
             abi.encodeWithSelector(UVPStateMachine.SignalStageUnknown.selector, PLAN_ID, EXTERNAL_SOURCE, SIGNAL_DONE)
         );
         _submit(machine, EXTERNAL_SOURCE, SIGNAL_DONE);
     }
 
-    function testEffectiveExecutorViews() public {
-        UVPStateMachine machine = _executorMachine();
+    function testEffectiveStageSupplierViews() public {
+        UVPStateMachine machine = _supplierMachine();
         bytes32 supplierId = _supplierFor(machine, address(this));
         require(machine.effectiveStageSupplier(PLAN_ID, ORDER_ID, STAGE_INIT) == supplierId, "supplier mismatch");
-        (bytes32 resolvedSupplier, address executor) = machine.effectiveStageExecutor(PLAN_ID, ORDER_ID, STAGE_INIT);
-        require(resolvedSupplier == supplierId, "executor supplier mismatch");
-        require(executor == address(this), "executor mismatch");
-        require(machine.isEffectiveStageExecutor(PLAN_ID, ORDER_ID, STAGE_INIT, address(this)), "executor not effective");
-        require(!machine.isEffectiveStageExecutor(PLAN_ID, ORDER_ID, STAGE_INIT, OUTSIDER), "outsider effective");
+        require(machine.effectiveStageAccount(PLAN_ID, ORDER_ID, STAGE_INIT) == address(this), "account mismatch");
+        require(machine.isEffectiveStageAccount(PLAN_ID, ORDER_ID, STAGE_INIT, address(this)), "account not effective");
+        require(!machine.isEffectiveStageAccount(PLAN_ID, ORDER_ID, STAGE_INIT, OUTSIDER), "outsider effective");
     }
 
-    function testActivateStageExecutorFromModuleSwitchesEffectiveExecutor() public {
-        UVPStateMachine machine = _executorMachine();
-        bytes32 supplierA = _supplierFor(machine, EXECUTOR_A);
+    function testActivateStageSupplierFromModuleSwitchesEffectiveSupplier() public {
+        UVPStateMachine machine = _supplierMachine();
+        bytes32 supplierA = _supplierFor(machine, SUPPLIER_ACCOUNT_A);
         vm.recordLogs();
-        _patchModules[address(machine)].activateExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT, supplierA, 1);
+        _patchModules[address(machine)].activateSupplier(PLAN_ID, ORDER_ID, STAGE_AUDIT, supplierA, 1);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         (bytes32 patchedSupplier, uint256 patchNonce, bytes32 dockId) =
-            machine.activeStageExecutorPatch(PLAN_ID, ORDER_ID, STAGE_AUDIT);
+            machine.stageSupplierAssignment(PLAN_ID, ORDER_ID, STAGE_AUDIT);
         require(patchedSupplier == supplierA, "patch supplier mismatch");
         require(patchNonce == 1, "patch nonce mismatch");
         require(dockId == bytes32(0), "unexpected dock id");
         require(machine.effectiveStageSupplier(PLAN_ID, ORDER_ID, STAGE_AUDIT) == supplierA, "effective supplier mismatch");
 
-        bytes32 topic = keccak256("StageExecutorActivated(bytes32,bytes32,bytes32,bytes32,uint256)");
+        bytes32 topic = keccak256("StageSupplierAssigned(bytes32,bytes32,bytes32,bytes32,uint256)");
         bool found;
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics.length == 0 || logs[i].topics[0] != topic) {
@@ -735,49 +736,49 @@ contract UVPStateMachineTest {
             require(eventNonce == 1, "event nonce mismatch");
             found = true;
         }
-        require(found, "StageExecutorActivated not emitted");
+        require(found, "StageSupplierAssigned not emitted");
 
-        vm.prank(EXECUTOR_A);
+        vm.prank(SUPPLIER_ACCOUNT_A);
         _submit(machine, STAGE_AUDIT, SIGNAL_DONE);
-        require(machine.hasSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_DONE), "patched executor signal missing");
+        require(machine.hasSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_DONE), "patched supplier signal missing");
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStateMachine.UnauthorizedStageExecutor.selector, ORDER_ID, STAGE_AUDIT, address(this), EXECUTOR_A
+                UVPStateMachine.UnauthorizedStageSupplierAccount.selector, ORDER_ID, STAGE_AUDIT, address(this), SUPPLIER_ACCOUNT_A
             )
         );
         _submit(machine, STAGE_AUDIT, SIGNAL_TIMER);
     }
 
-    function testActivateDockExecutorRecordsDockId() public {
-        UVPStateMachine machine = _executorMachine();
-        bytes32 supplierA = _supplierFor(machine, EXECUTOR_A);
-        _patchModules[address(machine)].activateDockExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT, supplierA, DOCK_ID, 1);
+    function testActivateDockSupplierRecordsDockId() public {
+        UVPStateMachine machine = _supplierMachine();
+        bytes32 supplierA = _supplierFor(machine, SUPPLIER_ACCOUNT_A);
+        _patchModules[address(machine)].activateDockSupplier(PLAN_ID, ORDER_ID, STAGE_AUDIT, supplierA, DOCK_ID, 1);
         (bytes32 supplierId, uint256 patchNonce, bytes32 dockId) =
-            machine.activeStageExecutorPatch(PLAN_ID, ORDER_ID, STAGE_AUDIT);
+            machine.stageSupplierAssignment(PLAN_ID, ORDER_ID, STAGE_AUDIT);
         require(supplierId == supplierA, "dock supplier mismatch");
         require(patchNonce == 1, "dock nonce mismatch");
         require(dockId == DOCK_ID, "dock id mismatch");
     }
 
-    function testActivateStageExecutorRejectsNonIncreasingNonce() public {
-        UVPStateMachine machine = _executorMachine();
-        bytes32 supplierA = _supplierFor(machine, EXECUTOR_A);
-        _patchModules[address(machine)].activateExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT, supplierA, 2);
+    function testActivateStageSupplierRejectsNonIncreasingNonce() public {
+        UVPStateMachine machine = _supplierMachine();
+        bytes32 supplierA = _supplierFor(machine, SUPPLIER_ACCOUNT_A);
+        _patchModules[address(machine)].activateSupplier(PLAN_ID, ORDER_ID, STAGE_AUDIT, supplierA, 2);
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStateMachine.StageExecutorPatchNonceNotIncreasing.selector, ORDER_ID, STAGE_AUDIT, 2, 2
+                UVPStateMachine.StageSupplierPatchNonceNotIncreasing.selector, ORDER_ID, STAGE_AUDIT, 2, 2
             )
         );
-        _patchModules[address(machine)].activateExecutor(PLAN_ID, ORDER_ID, STAGE_AUDIT, supplierA, 2);
+        _patchModules[address(machine)].activateSupplier(PLAN_ID, ORDER_ID, STAGE_AUDIT, supplierA, 2);
     }
 
-    function testActivateStageExecutorRejectsUnauthorizedCaller() public {
-        UVPStateMachine machine = _executorMachine();
-        bytes32 supplierA = _supplierFor(machine, EXECUTOR_A);
+    function testActivateStageSupplierRejectsUnauthorizedCaller() public {
+        UVPStateMachine machine = _supplierMachine();
+        bytes32 supplierA = _supplierFor(machine, SUPPLIER_ACCOUNT_A);
         vm.prank(OUTSIDER);
         vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.UnauthorizedStateMachineModule.selector, OUTSIDER));
-        machine.activateStageExecutorFromModule(PLAN_ID, ORDER_ID, STAGE_AUDIT, supplierA, 1);
+        machine.activateStageSupplierFromModule(PLAN_ID, ORDER_ID, STAGE_AUDIT, supplierA, 1);
     }
 
     function testDynamicStageRequiresAssignmentBeforeSignal() public {
@@ -788,47 +789,50 @@ contract UVPStateMachineTest {
         require(machine.orderExists(planId, ORDER_ID), "dynamic order missing");
 
         vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.StageExecutorNotAssigned.selector, ORDER_ID, STAGE_DYN)
+            abi.encodeWithSelector(UVPStateMachine.StageSupplierNotAssigned.selector, ORDER_ID, STAGE_DYN)
         );
         _submit(machine, STAGE_DYN, SIGNAL_DONE);
 
-        bytes32 supplierA = _supplierFor(machine, EXECUTOR_A);
-        _patchModules[address(machine)].activateExecutor(planId, ORDER_ID, STAGE_DYN, supplierA, 1);
-        vm.prank(EXECUTOR_A);
+        bytes32 supplierA = _supplierFor(machine, SUPPLIER_ACCOUNT_A);
+        _patchModules[address(machine)].activateSupplier(planId, ORDER_ID, STAGE_DYN, supplierA, 1);
+        vm.prank(SUPPLIER_ACCOUNT_A);
         _submit(machine, STAGE_DYN, SIGNAL_DONE);
         require(machine.hasSignal(planId, ORDER_ID, STAGE_DYN, SIGNAL_DONE), "dynamic signal missing");
     }
 
-    function testSupplierRevocationBlocksSubmit() public {
-        UVPStateMachine machine = _executorMachine();
+    function testSubmitSignalRejectsSuspendedSupplier() public {
+        UVPStateMachine machine = _supplierMachine();
+        bytes32 supplierId = _supplierFor(machine, address(this));
+        _registries[address(machine)].suspendSupplier(supplierId);
+        require(machine.effectiveStageAccount(PLAN_ID, ORDER_ID, STAGE_AUDIT) == address(0), "suspended account");
+        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.SupplierNotActive.selector, supplierId));
+        _submit(machine, STAGE_AUDIT, SIGNAL_DONE);
+    }
+
+    function testSubmitSignalRejectsRevokedSupplier() public {
+        UVPStateMachine machine = _supplierMachine();
         bytes32 supplierId = _supplierFor(machine, address(this));
         _registries[address(machine)].revokeSupplier(supplierId);
-        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.SupplierNotRegistered.selector, supplierId));
+        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.SupplierNotActive.selector, supplierId));
         _submit(machine, STAGE_AUDIT, SIGNAL_DONE);
     }
 
-    function testSupplierRotationSwitchesEffectiveExecutor() public {
-        UVPStateMachine machine = _executorMachine();
-        bytes32 supplierId = _supplierFor(machine, address(this));
-        _registries[address(machine)].rotateSupplierExecutor(supplierId, EXECUTOR_A);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStateMachine.UnauthorizedStageExecutor.selector, ORDER_ID, STAGE_AUDIT, address(this), EXECUTOR_A
-            )
-        );
+    function testSubmitSignalRejectsPendingSupplierAssignment() public {
+        UVPStateMachine machine = _supplierMachine();
+        address pendingAccount = address(uint160(0x9e9));
+        vm.prank(pendingAccount);
+        bytes32 pendingSupplierId = _registries[address(machine)].registerSupplier(pendingAccount);
+        _patchModules[address(machine)].activateSupplier(PLAN_ID, ORDER_ID, STAGE_AUDIT, pendingSupplierId, 1);
+        vm.prank(pendingAccount);
+        vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.SupplierNotActive.selector, pendingSupplierId));
         _submit(machine, STAGE_AUDIT, SIGNAL_DONE);
-
-        vm.prank(EXECUTOR_A);
-        _submit(machine, STAGE_AUDIT, SIGNAL_DONE);
-        require(machine.hasSignal(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_DONE), "rotated executor signal missing");
     }
 
-    function testSubmitSignalForEcdsaByExecutor() public {
+    function testSubmitSignalForEcdsaBySupplier() public {
         UVPStateMachine machine = _newMachine();
         address signer = vm.addr(SIGNAL_PRIVATE_KEY);
-        _stageExecutors[address(machine)][STAGE_INIT] = signer;
-        bytes32 planId = _registerPlan(machine, _executorPlan());
+        _stageSupplierAccounts[address(machine)][STAGE_INIT] = signer;
+        bytes32 planId = _registerPlan(machine, _supplierPlan());
         _submitTriggerBirth(machine, planId);
 
         uint256 deadline = block.timestamp + 1 hours;
@@ -860,8 +864,8 @@ contract UVPStateMachineTest {
     function testSubmitSignalForRejectsWrongSigner() public {
         UVPStateMachine machine = _newMachine();
         address signer = vm.addr(SIGNAL_PRIVATE_KEY);
-        _stageExecutors[address(machine)][STAGE_INIT] = signer;
-        bytes32 planId = _registerPlan(machine, _executorPlan());
+        _stageSupplierAccounts[address(machine)][STAGE_INIT] = signer;
+        bytes32 planId = _registerPlan(machine, _supplierPlan());
         _submitTriggerBirth(machine, planId);
 
         uint256 deadline = block.timestamp + 1 hours;
@@ -893,8 +897,8 @@ contract UVPStateMachineTest {
     function testSubmitSignalForRejectsExpiredDeadline() public {
         UVPStateMachine machine = _newMachine();
         address signer = vm.addr(SIGNAL_PRIVATE_KEY);
-        _stageExecutors[address(machine)][STAGE_INIT] = signer;
-        bytes32 planId = _registerPlan(machine, _executorPlan());
+        _stageSupplierAccounts[address(machine)][STAGE_INIT] = signer;
+        bytes32 planId = _registerPlan(machine, _supplierPlan());
         _submitTriggerBirth(machine, planId);
         vm.warp(block.timestamp + 2 hours);
         uint256 deadline = block.timestamp - 1;
@@ -915,10 +919,10 @@ contract UVPStateMachineTest {
         );
     }
 
-    function testSubmitSignalForRejectsSignerThatIsNotExecutor() public {
+    function testSubmitSignalForRejectsSignerThatIsNotSupplierAccount() public {
         UVPStateMachine machine = _newMachine();
         address signer = vm.addr(SIGNAL_PRIVATE_KEY);
-        bytes32 planId = _registerPlan(machine, _executorPlan());
+        bytes32 planId = _registerPlan(machine, _supplierPlan());
         _submitTriggerBirth(machine, planId);
 
         uint256 deadline = block.timestamp + 1 hours;
@@ -928,7 +932,7 @@ contract UVPStateMachineTest {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(SIGNAL_PRIVATE_KEY, digest);
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStateMachine.UnauthorizedStageExecutor.selector, ORDER_ID, STAGE_INIT, signer, address(this)
+                UVPStateMachine.UnauthorizedStageSupplierAccount.selector, ORDER_ID, STAGE_INIT, signer, address(this)
             )
         );
         machine.submitSignalFor(
@@ -947,11 +951,11 @@ contract UVPStateMachineTest {
         );
     }
 
-    function testSubmitSignalForEip1271ExecutorAccepted() public {
+    function testSubmitSignalForEip1271SupplierAccountAccepted() public {
         UVPStateMachine machine = _newMachine();
-        Eip1271Executor wallet = new Eip1271Executor();
-        _stageExecutors[address(machine)][STAGE_INIT] = address(wallet);
-        bytes32 planId = _registerPlan(machine, _executorPlan());
+        Eip1271SupplierAccount wallet = new Eip1271SupplierAccount();
+        _stageSupplierAccounts[address(machine)][STAGE_INIT] = address(wallet);
+        bytes32 planId = _registerPlan(machine, _supplierPlan());
         _submitTriggerBirth(machine, planId);
 
         uint256 deadline = block.timestamp + 1 hours;
@@ -975,10 +979,10 @@ contract UVPStateMachineTest {
 
     function testSubmitSignalForEip1271InvalidSignatureRejected() public {
         UVPStateMachine machine = _newMachine();
-        Eip1271Executor wallet = new Eip1271Executor();
+        Eip1271SupplierAccount wallet = new Eip1271SupplierAccount();
         wallet.setValid(false);
-        _stageExecutors[address(machine)][STAGE_INIT] = address(wallet);
-        bytes32 planId = _registerPlan(machine, _executorPlan());
+        _stageSupplierAccounts[address(machine)][STAGE_INIT] = address(wallet);
+        bytes32 planId = _registerPlan(machine, _supplierPlan());
         _submitTriggerBirth(machine, planId);
         uint256 deadline = block.timestamp + 1 hours;
         vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.InvalidEIP1271Signature.selector, address(wallet)));
@@ -998,8 +1002,8 @@ contract UVPStateMachineTest {
         );
     }
 
-    function testPureFilePatchUsesEffectiveExecutor() public {
-        UVPStateMachine machine = _executorMachine();
+    function testPureFilePatchUsesEffectiveSupplierAccount() public {
+        UVPStateMachine machine = _supplierMachine();
         FilePatch memory patch = _addFilePatch(0, keccak256("k1"), keccak256("content"));
         bytes32 digest = _fileModules[address(machine)].filePatchDigest(PLAN_ID, ORDER_ID, patch);
         machine.submitSignal(
@@ -1009,8 +1013,8 @@ contract UVPStateMachineTest {
         require(exists, "file record missing");
     }
 
-    function testPureFilePatchRejectsNonExecutor() public {
-        UVPStateMachine machine = _executorMachine();
+    function testPureFilePatchRejectsNonSupplierAccount() public {
+        UVPStateMachine machine = _supplierMachine();
         FilePatch memory patch = _addFilePatch(0, keccak256("k2"), keccak256("content"));
         bytes32 digest = _fileModules[address(machine)].filePatchDigest(PLAN_ID, ORDER_ID, patch);
         vm.expectRevert(
@@ -1024,8 +1028,8 @@ contract UVPStateMachineTest {
         );
     }
 
-    function testBusinessSignalWithFilePatchUsesEffectiveExecutor() public {
-        UVPStateMachine machine = _executorMachine();
+    function testBusinessSignalWithFilePatchUsesEffectiveSupplierAccount() public {
+        UVPStateMachine machine = _supplierMachine();
         FilePatch memory patch = _addFilePatch(0, keccak256("k3"), keccak256("content"));
         bytes32 digest = _fileModules[address(machine)].filePatchDigest(PLAN_ID, ORDER_ID, patch);
         machine.submitSignal(
@@ -1044,7 +1048,7 @@ contract UVPStateMachineTest {
         require(exists, "file record missing");
     }
 
-    function testDerivedSignalUsesEffectiveExecutor() public {
+    function testDerivedSignalUsesEffectiveSupplierAccount() public {
         UVPStateMachine machine = _newMachine();
         SignalCapability[] memory capabilities = new SignalCapability[](3);
         capabilities[0] = SignalCapability({
@@ -1065,7 +1069,7 @@ contract UVPStateMachineTest {
             signalId: SIGNAL_DERIVED,
             targetOrderRelation: 0
         });
-        bytes32 planId = _registerPlan(machine, _executorPlan(), new StageSelectorBinding[](0), capabilities);
+        bytes32 planId = _registerPlan(machine, _supplierPlan(), new StageSelectorBinding[](0), capabilities);
         _submitTriggerBirthWithAttribution(
             machine, planId, _capabilityAttribution(machine, planId, STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_BIRTH)
         );
@@ -1092,7 +1096,7 @@ contract UVPStateMachineTest {
         require(machine.hasSignal(planId, ORDER_ID, STAGE_AUDIT, SIGNAL_DERIVED), "derived signal missing");
     }
 
-    function testDerivedSignalRejectsNonExecutor() public {
+    function testDerivedSignalRejectsNonSupplierAccount() public {
         UVPStateMachine machine = _newMachine();
         SignalCapability[] memory capabilities = new SignalCapability[](3);
         capabilities[0] = SignalCapability({
@@ -1113,7 +1117,7 @@ contract UVPStateMachineTest {
             signalId: SIGNAL_DERIVED,
             targetOrderRelation: 0
         });
-        bytes32 planId = _registerPlan(machine, _executorPlan(), new StageSelectorBinding[](0), capabilities);
+        bytes32 planId = _registerPlan(machine, _supplierPlan(), new StageSelectorBinding[](0), capabilities);
         _submitTriggerBirthWithAttribution(
             machine, planId, _capabilityAttribution(machine, planId, STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_BIRTH)
         );
@@ -1150,7 +1154,7 @@ contract UVPStateMachineTest {
     }
 
     function testOrderLinkTriggerFromSignalRequiresNoAuthorizations() public {
-        UVPStateMachine machine = _executorMachine();
+        UVPStateMachine machine = _supplierMachine();
         _submit(machine, STAGE_AUDIT, SIGNAL_DONE);
 
         address signer = vm.addr(BIRTH_PRIVATE_KEY);
@@ -1186,7 +1190,7 @@ contract UVPStateMachineTest {
 
     function testOrderLinkTriggerRejectsOutsiderRelayerWithoutConsent() public {
         UVPStateMachine machine = _newMachine();
-        bytes32 planId = _registerPlan(machine, _executorPlan());
+        bytes32 planId = _registerPlan(machine, _supplierPlan());
         _submitTriggerBirth(machine, planId);
         _submit(machine, SOURCE_BOOTSTRAP, SIGNAL_OPEN);
         _submit(machine, STAGE_AUDIT, SIGNAL_DONE);
@@ -1224,7 +1228,7 @@ contract UVPStateMachineTest {
     }
 
     function testForkOrderWithoutAuthorizationsReplaysFacts() public {
-        UVPStateMachine machine = _executorMachine();
+        UVPStateMachine machine = _supplierMachine();
         _submit(machine, SOURCE_BOOTSTRAP, SIGNAL_DONE);
 
         bytes32 forkPayload = keccak256("fork");
@@ -1274,7 +1278,7 @@ contract UVPStateMachineTest {
     }
 
     function testDuplicateSignalIsAbsorbedFirstWin() public {
-        UVPStateMachine machine = _executorMachine();
+        UVPStateMachine machine = _supplierMachine();
         _submit(machine, SOURCE_BOOTSTRAP, SIGNAL_DONE);
         _submit(machine, SOURCE_BOOTSTRAP, SIGNAL_DONE);
         address submitter;
@@ -1320,19 +1324,27 @@ contract UVPStateMachineTest {
         machine = _deployModules();
     }
 
-    function _supplierFor(UVPStateMachine machine, address executor) private returns (bytes32 supplierId) {
-        supplierId = _suppliers[address(machine)][executor];
+    function _supplierFor(UVPStateMachine machine, address account) private returns (bytes32 supplierId) {
+        supplierId = _suppliers[address(machine)][account];
         if (supplierId != bytes32(0)) {
             return supplierId;
         }
-        supplierId = keccak256(abi.encode("test.supplier", executor));
-        _registries[address(machine)].registerSupplier(supplierId, executor);
-        _suppliers[address(machine)][executor] = supplierId;
+        UVPSupplierRegistry registry = _registries[address(machine)];
+        if (account == address(this)) {
+            supplierId = registry.registerSupplier(account);
+        } else if (account.code.length != 0) {
+            supplierId = Eip1271SupplierAccount(account).registerSupplier(registry);
+        } else {
+            vm.prank(account);
+            supplierId = registry.registerSupplier(account);
+        }
+        registry.activateSupplier(supplierId);
+        _suppliers[address(machine)][account] = supplierId;
     }
 
-    function _executorMachine() private returns (UVPStateMachine machine) {
+    function _supplierMachine() private returns (UVPStateMachine machine) {
         machine = _newMachine();
-        bytes32 planId = _registerPlan(machine, _executorPlan());
+        bytes32 planId = _registerPlan(machine, _supplierPlan());
         _submitTriggerBirth(machine, planId);
         _submit(machine, SOURCE_BOOTSTRAP, SIGNAL_OPEN);
         require(machine.hasSignal(planId, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_OPEN), "audit stage not opened");
@@ -1489,7 +1501,7 @@ contract UVPStateMachineTest {
         UVPStateMachine machine,
         UVPStateMachine.CompactHook[] memory hooks,
         SignalCapability[] memory signalCapabilities,
-        UVPStateMachine.ExecutorBinding[] memory bindings
+        UVPStateMachine.StageSupplierBinding[] memory bindings
     ) private returns (bytes32 planId) {
         planId = _commitPlan(
             machine, hooks, new StageSelectorBinding[](0), signalCapabilities, bindings, PUBLISHER_PRIVATE_KEY
@@ -1503,7 +1515,7 @@ contract UVPStateMachineTest {
         SignalCapability[] memory signalCapabilities,
         address birthAuthorizer
     ) private returns (bytes32 planId) {
-        UVPStateMachine.ExecutorBinding[] memory bindings = _autoBindings(machine, hooks);
+        UVPStateMachine.StageSupplierBinding[] memory bindings = _autoBindings(machine, hooks);
         planId = _commitPlanWithAuthorizer(
             machine, hooks, new StageSelectorBinding[](0), signalCapabilities, bindings, PUBLISHER_PRIVATE_KEY, birthAuthorizer
         );
@@ -1515,7 +1527,7 @@ contract UVPStateMachineTest {
         UVPStateMachine.CompactHook[] memory hooks,
         StageSelectorBinding[] memory selectorBindings,
         SignalCapability[] memory signalCapabilities,
-        UVPStateMachine.ExecutorBinding[] memory bindings,
+        UVPStateMachine.StageSupplierBinding[] memory bindings,
         uint256 publisherPrivateKey
     ) private returns (bytes32 planId) {
         return _commitPlanWithAuthorizer(
@@ -1534,7 +1546,7 @@ contract UVPStateMachineTest {
         UVPStateMachine.CompactHook[] memory hooks,
         StageSelectorBinding[] memory selectorBindings,
         SignalCapability[] memory signalCapabilities,
-        UVPStateMachine.ExecutorBinding[] memory bindings,
+        UVPStateMachine.StageSupplierBinding[] memory bindings,
         uint256 publisherPrivateKey,
         address birthAuthorizer
     ) private returns (bytes32 planId) {
@@ -1543,7 +1555,7 @@ contract UVPStateMachineTest {
             publisher: vm.addr(publisherPrivateKey),
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: MerkleCommitment.root(leaves),
-            executorBindingsRoot: _bindingsRoot(bindings),
+            supplierBindingsRoot: _bindingsRoot(bindings),
             birthAuthorizer: birthAuthorizer,
             deadline: block.timestamp + 1 hours
         });
@@ -1559,14 +1571,14 @@ contract UVPStateMachineTest {
         UVPStateMachine.CompactHook[] memory hooks,
         StageSelectorBinding[] memory selectorBindings,
         SignalCapability[] memory signalCapabilities,
-        UVPStateMachine.ExecutorBinding[] memory bindings,
+        UVPStateMachine.StageSupplierBinding[] memory bindings,
         address birthAuthorizer
     ) private returns (UVPStateMachine.PlanCommit memory commit) {
         commit = UVPStateMachine.PlanCommit({
             publisher: vm.addr(PUBLISHER_PRIVATE_KEY),
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: MerkleCommitment.root(_capabilityLeaves(selectorBindings, signalCapabilities)),
-            executorBindingsRoot: _bindingsRoot(bindings),
+            supplierBindingsRoot: _bindingsRoot(bindings),
             birthAuthorizer: birthAuthorizer,
             deadline: block.timestamp + 1 hours
         });
@@ -1583,7 +1595,7 @@ contract UVPStateMachineTest {
                 commit.publisher,
                 commit.hooksHash,
                 commit.capabilitiesRoot,
-                commit.executorBindingsRoot,
+                commit.supplierBindingsRoot,
                 commit.birthAuthorizer,
                 commit.deadline
             )
@@ -1669,7 +1681,7 @@ contract UVPStateMachineTest {
 
     function _autoBindings(UVPStateMachine machine, UVPStateMachine.CompactHook[] memory hooks)
         private
-        returns (UVPStateMachine.ExecutorBinding[] memory bindings)
+        returns (UVPStateMachine.StageSupplierBinding[] memory bindings)
     {
         bytes32[] memory stages = new bytes32[](hooks.length);
         uint8[] memory kinds = new uint8[](hooks.length);
@@ -1700,19 +1712,19 @@ contract UVPStateMachineTest {
                 boundCount += 1;
             }
         }
-        bindings = new UVPStateMachine.ExecutorBinding[](boundCount);
+        bindings = new UVPStateMachine.StageSupplierBinding[](boundCount);
         uint256 cursor;
         for (uint256 i = 0; i < stageCount; i++) {
             if (kinds[i] & (2 | 4) != 0) {
                 continue;
             }
-            address executor = _stageExecutors[address(machine)][stages[i]];
-            if (executor == address(0)) {
-                executor = address(this);
+            address account = _stageSupplierAccounts[address(machine)][stages[i]];
+            if (account == address(0)) {
+                account = address(this);
             }
-            bindings[cursor++] = UVPStateMachine.ExecutorBinding({
+            bindings[cursor++] = UVPStateMachine.StageSupplierBinding({
                 stageId: stages[i],
-                supplierId: _supplierFor(machine, executor),
+                supplierId: _supplierFor(machine, account),
                 kind: 0
             });
         }
@@ -1731,12 +1743,12 @@ contract UVPStateMachineTest {
         return type(uint256).max;
     }
 
-    function _bindingsRoot(UVPStateMachine.ExecutorBinding[] memory bindings) private pure returns (bytes32) {
+    function _bindingsRoot(UVPStateMachine.StageSupplierBinding[] memory bindings) private pure returns (bytes32) {
         bytes32[] memory leaves = new bytes32[](bindings.length);
         for (uint256 i = 0; i < bindings.length; i++) {
             leaves[i] = keccak256(
                 abi.encodePacked(
-                    EXECUTOR_BINDING_LEAF_DOMAIN, bindings[i].stageId, bindings[i].supplierId, bindings[i].kind
+                    SUPPLIER_BINDING_LEAF_DOMAIN, bindings[i].stageId, bindings[i].supplierId, bindings[i].kind
                 )
             );
         }
@@ -1880,7 +1892,7 @@ contract UVPStateMachineTest {
         );
     }
 
-    function _executorPlan() private pure returns (UVPStateMachine.CompactHook[] memory hooks) {
+    function _supplierPlan() private pure returns (UVPStateMachine.CompactHook[] memory hooks) {
         hooks = new UVPStateMachine.CompactHook[](3);
         hooks[0] = _signalHook(
             HOOK_BIRTH, STAGE_INIT, SIGNAL_BIRTH, FLAG_ORDER_TRIGGER_MINT | FLAG_EMIT_READY, SOURCE_BOOTSTRAP

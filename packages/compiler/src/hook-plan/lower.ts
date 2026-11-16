@@ -13,7 +13,7 @@ import {
   type CompiledHookPlanHook,
   type ExecuteConfigs,
   type FileResourceLike,
-  type HookPlanExecutorRoute,
+  type HookPlanSupplierRoute,
   type OrderTriggerKind,
   type SelectedStageBinding,
   type SignalCapability,
@@ -22,13 +22,13 @@ import {
 /**
  * Chain hook_plan shell 总装：analyze 只给共享校验与 hook 解析结果，本模块按
  * stage.triggers 的每个信号合成一条 order-trigger hook，并补 emit-ready/route/
- * dock/dynamic executor 装饰与 dependencyIndex/executorRoutes，输出 hookPlan.v8
+ * dock/dynamic executor 装饰与 dependencyIndex/supplierRoutes，输出 hookPlan.v8
  * shell 形态。
  */
 
 export interface LoweredHookPlanShell extends HookPlanShell {
   readonly compiledHooks: readonly CompiledHookPlanHook[];
-  readonly executorRoutes: Record<string, HookPlanExecutorRoute>;
+  readonly supplierRoutes: Record<string, HookPlanSupplierRoute>;
   readonly selectedStageBindings: readonly SelectedStageBinding[];
   readonly signalCapabilities: readonly SignalCapability[];
   readonly admissions: readonly CompiledHookPlanAdmission[];
@@ -38,11 +38,11 @@ export function lowerHookPlanShell(
   analysis: ZhixuAnalysis,
 ): LoweredHookPlanShell {
   const compiledHooks: CompiledHookPlanHook[] = [];
-  const executorRoutes: Record<string, HookPlanExecutorRoute> = {};
+  const supplierRoutes: Record<string, HookPlanSupplierRoute> = {};
   const dependencyHookIds = new Map<string, Set<string>>();
 
   for (const stage of analysis.stages) {
-    const route = executorRouteOf(stage);
+    const route = supplierRouteOf(stage);
     const receiveHooks = orderedStageHooks(stage).map((hook) =>
       compileReceiveHook(stage, route, hook),
     );
@@ -62,7 +62,7 @@ export function lowerHookPlanShell(
       }
     }
     if (route !== undefined) {
-      executorRoutes[stage.stageIdentifier] = route;
+      supplierRoutes[stage.stageIdentifier] = route;
     }
   }
 
@@ -81,7 +81,7 @@ export function lowerHookPlanShell(
     platform: analysis.platform,
     compiledHooks,
     dependencyIndex,
-    executorRoutes,
+    supplierRoutes,
     selectedStageBindings:
       analysis.selectedStageBindings as readonly SelectedStageBinding[],
     signalCapabilities:
@@ -107,7 +107,7 @@ function stageHookId(stage: ZhixuAnalysisStage, hook: ZhixuAnalysisHook): string
 
 function compileReceiveHook(
   stage: ZhixuAnalysisStage,
-  route: HookPlanExecutorRoute | undefined,
+  route: HookPlanSupplierRoute | undefined,
   hook: ZhixuAnalysisHook,
 ): CompiledHookPlanHook {
   const orderTriggerKind: OrderTriggerKind = "none";
@@ -118,7 +118,7 @@ function compileReceiveHook(
     hookName: hook.hookName,
     orderTriggerKind,
     emitReady: true,
-    dockExecutor: isDockExecutor(stage.executor),
+    dockExecutor: isDockSupplier(stage.executor),
     dynamicExecutor: stage.executor === null || stage.executor === undefined,
     rawExpression: hook.rawExpression,
     normalizedExpression: hook.normalizedExpression,
@@ -130,7 +130,7 @@ function compileReceiveHook(
 
 function compileTriggerHook(
   stage: ZhixuAnalysisStage,
-  route: HookPlanExecutorRoute | undefined,
+  route: HookPlanSupplierRoute | undefined,
   trigger: string,
   receiveHookNames: ReadonlySet<string>,
 ): CompiledHookPlanHook {
@@ -186,14 +186,14 @@ function triggeredHookName(
   return hookName;
 }
 
-function executorRouteOf(
+function supplierRouteOf(
   stage: ZhixuAnalysisStage,
-): HookPlanExecutorRoute | undefined {
+): HookPlanSupplierRoute | undefined {
   const executor = stage.executor;
   if (executor === null || executor === undefined) {
     return undefined;
   }
-  if (isDockExecutor(executor)) {
+  if (isDockSupplier(executor)) {
     return undefined;
   }
   const fileResources = stage.fileResources;
@@ -206,7 +206,7 @@ function executorRouteOf(
   };
 }
 
-function isDockExecutor(executor: unknown): boolean {
+function isDockSupplier(executor: unknown): boolean {
   return (
     typeof executor === "object" &&
     executor !== null &&

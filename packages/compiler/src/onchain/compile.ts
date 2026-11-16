@@ -4,7 +4,7 @@ import {
   HookPlanCompilationError,
 } from "../hook-plan.js";
 import {
-  birthStageStaticExecutorIssues,
+  birthStageStaticSupplierIssues,
   crossStageDependencyIssues,
   declaredStageIdentifiers,
   dynamicStageRouteIssues,
@@ -20,18 +20,19 @@ import { onchainPlanTriggersOf } from "./triggers.js";
 import { capabilitiesRootOf } from "./capabilities-root.js";
 import { compileStageFileWriters } from "./file-writers.js";
 import {
-  EXECUTOR_BINDING_KIND_CANDIDATE,
-  EXECUTOR_BINDING_KIND_DEFAULT,
-  executorBindingSetIssues,
-  executorBindingsRootOf,
-  resolveExecutorBindings,
-} from "./executor-bindings.js";
+  SUPPLIER_BINDING_KIND_CANDIDATE,
+  SUPPLIER_BINDING_KIND_DEFAULT,
+  resolveSupplierBindings,
+  supplierBindingSetIssues,
+  supplierBindingsRootOf,
+  supplierIdFromUuid,
+} from "./supplier-bindings.js";
 import {
   canonicalOrderIssues,
   admissionOrderKey,
   compareAdmissions,
-  compareExecutorRoutes,
   compareOnchainHooks,
+  compareSupplierRoutes,
   hookOrderKey,
 } from "./canonical/ordering.js";
 import { hashOnchainPlanPayload } from "./hash/plan.js";
@@ -44,9 +45,9 @@ import {
 } from "./hash/route.js";
 import {
   compileHookInstructions,
-  compileExecutorRoute,
   compileSelectorBindings,
   compileSignalCapabilities,
+  compileSupplierRoute,
   routeRefForRoute,
 } from "./instructions/hooks.js";
 import {
@@ -58,15 +59,15 @@ import { isRecord } from "./shape.js";
 import {
   ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
   type CompiledHookPlanAdmission,
-  type ExecutorBindingInput,
-  type ExecutorCandidateInput,
   type HookPlanArtifact,
   type OnchainCompiledAdmission,
   type OnchainCompiledHook,
-  type OnchainExecutorRoute,
   type OnchainHookPlanArtifact,
+  type OnchainSupplierRoute,
   type SignalCapability,
   type SolidityRegisterPlanArgs,
+  type StageSupplierBindingInput,
+  type SupplierCandidateInput,
   type ZhixuDefinition,
 } from "../types/index.js";
 
@@ -76,7 +77,7 @@ import {
  */
 export function compileOnchainHookPlan(
   hookPlanArtifact: HookPlanArtifact,
-  executorCandidates?: readonly ExecutorCandidateInput[],
+  supplierCandidates?: readonly SupplierCandidateInput[],
 ): OnchainHookPlanArtifact {
   assertHookPlanArtifact(hookPlanArtifact);
 
@@ -104,19 +105,19 @@ export function compileOnchainHookPlan(
   );
   const declaredStages = declaredStageIdentifiers(
     hookPlanArtifact.signalCapabilities.map((capability) => capability.stageIdentifier),
-    Object.keys(hookPlanArtifact.executorRoutes),
+    Object.keys(hookPlanArtifact.supplierRoutes),
     hookPlanArtifact.selectedStageBindings.flatMap((binding) => [
       binding.selectorStageIdentifier,
       binding.targetStageIdentifier,
     ]),
   );
-  const executorRoutes = Object.values(hookPlanArtifact.executorRoutes)
-    .map(compileExecutorRoute)
-    .sort(compareExecutorRoutes);
-  const candidates = executorCandidates ?? [];
-  const executorCandidateIssues = validateExecutorCandidates(
+  const supplierRoutes = Object.values(hookPlanArtifact.supplierRoutes)
+    .map(compileSupplierRoute)
+    .sort(compareSupplierRoutes);
+  const candidates = supplierCandidates ?? [];
+  const supplierCandidateIssues = validateSupplierCandidates(
     compiledHooks,
-    executorRoutes,
+    supplierRoutes,
     declaredStages,
     candidates,
   );
@@ -134,31 +135,31 @@ export function compileOnchainHookPlan(
       signalId: onchainSignalId(capability.targetSignalName),
     })),
   );
-  const dockRouteIssues = dockStageRouteIssues(compiledHooks, executorRoutes);
-  const dynamicRouteIssues = dynamicStageRouteIssues(compiledHooks, executorRoutes);
-  const birthStageExecutorIssues = birthStageStaticExecutorIssues(
+  const dockRouteIssues = dockStageRouteIssues(compiledHooks, supplierRoutes);
+  const dynamicRouteIssues = dynamicStageRouteIssues(compiledHooks, supplierRoutes);
+  const birthStageSupplierIssues = birthStageStaticSupplierIssues(
     compiledHooks,
-    executorRoutes,
+    supplierRoutes,
   );
   const hookShapeIssues: readonly string[] = compiledHooks.length === 0
     ? ["compiledHooks must not be empty (contract reverts EmptyPlan)"]
     : [
-        ...validateOnchainCompiledHooks(compiledHooks, executorRoutes),
+        ...validateOnchainCompiledHooks(compiledHooks, supplierRoutes),
         ...canonicalOrderIssues(compiledHooks, hookOrderKey, "compiledHooks"),
       ];
   const admissionShapeIssues: readonly string[] = [
     ...validateOnchainCompiledAdmissions(admissions),
     ...canonicalOrderIssues(admissions, admissionOrderKey, "admissions"),
   ];
-  const executorBindings = resolveExecutorBindings(
-    executorBindingInputsOf(executorRoutes, candidates),
+  const supplierBindings = resolveSupplierBindings(
+    supplierBindingInputsOf(supplierRoutes, candidates),
     onchainStageId,
   );
-  const bindingSetIssues = executorBindingSetIssues(executorBindings);
+  const bindingSetIssues = supplierBindingSetIssues(supplierBindings);
   const preflightIssues = [
     ...crossStageIssues,
     ...materializationIssues,
-    ...birthStageExecutorIssues,
+    ...birthStageSupplierIssues,
     ...silentTriggerIssues,
     ...dependencyCountIssues,
     ...currentOrderFactKeyIssues,
@@ -166,13 +167,13 @@ export function compileOnchainHookPlan(
     ...dynamicRouteIssues,
     ...hookShapeIssues,
     ...admissionShapeIssues,
-    ...executorCandidateIssues,
+    ...supplierCandidateIssues,
     ...bindingSetIssues,
   ];
   if (preflightIssues.length > 0) {
     throw new HookPlanCompilationError(preflightIssues);
   }
-  const executorBindingsRoot = executorBindingsRootOf(executorBindings);
+  const supplierBindingsRoot = supplierBindingsRootOf(supplierBindings);
   const dependencyIndex = buildOnchainDependencyIndex(compiledHooks);
   const selectorBindings = compileSelectorBindings(
     hookPlanArtifact.selectedStageBindings,
@@ -214,14 +215,14 @@ export function compileOnchainHookPlan(
     compiledHooks,
     triggers,
     dependencyIndex,
-    executorRoutes,
+    supplierRoutes,
     capabilitiesRoot,
     selectorBindings,
     signalCapabilities,
     stageFileWriters,
     admissions,
-    executorBindings,
-    executorBindingsRoot,
+    supplierBindings,
+    supplierBindingsRoot,
   };
 
   return {
@@ -232,24 +233,24 @@ export function compileOnchainHookPlan(
 
 export function compileZhixuOnchainHookPlan(
   definition: ZhixuDefinition,
-  executorCandidates?: readonly ExecutorCandidateInput[],
+  supplierCandidates?: readonly SupplierCandidateInput[],
 ): OnchainHookPlanArtifact {
   return compileOnchainHookPlan(
     compileZhixuHookPlan(definition),
-    executorCandidates,
+    supplierCandidates,
   );
 }
 
-function executorBindingInputsOf(
-  executorRoutes: readonly OnchainExecutorRoute[],
+function supplierBindingInputsOf(
+  supplierRoutes: readonly OnchainSupplierRoute[],
   candidates: readonly unknown[],
-): readonly ExecutorBindingInput[] {
-  const defaults: ExecutorBindingInput[] = executorRoutes.map((route) => ({
+): readonly StageSupplierBindingInput[] {
+  const defaults: StageSupplierBindingInput[] = supplierRoutes.map((route) => ({
     stageIdentifier: route.stageIdentifier,
-    supplierID: route.executorId,
-    kind: EXECUTOR_BINDING_KIND_DEFAULT,
+    supplierID: route.supplierID,
+    kind: SUPPLIER_BINDING_KIND_DEFAULT,
   }));
-  const candidateBindings = candidates.flatMap<ExecutorBindingInput>((candidate) => {
+  const candidateBindings = candidates.flatMap<StageSupplierBindingInput>((candidate) => {
     if (!isRecord(candidate)) {
       return [];
     }
@@ -263,27 +264,32 @@ function executorBindingInputsOf(
     ) {
       return [];
     }
+    try {
+      supplierIdFromUuid(supplierID);
+    } catch {
+      return [];
+    }
     return [{
       stageIdentifier,
       supplierID,
-      kind: EXECUTOR_BINDING_KIND_CANDIDATE,
+      kind: SUPPLIER_BINDING_KIND_CANDIDATE,
     }];
   });
   return [...defaults, ...candidateBindings];
 }
 
-function validateExecutorCandidates(
+function validateSupplierCandidates(
   hooks: readonly OnchainCompiledHook[],
-  executorRoutes: readonly OnchainExecutorRoute[],
+  supplierRoutes: readonly OnchainSupplierRoute[],
   declaredStages: ReadonlySet<string>,
   candidates: readonly unknown[],
 ): readonly string[] {
   const issues: string[] = [];
-  const routedStages = new Set(executorRoutes.map((route) => route.stageIdentifier));
+  const routedStages = new Set(supplierRoutes.map((route) => route.stageIdentifier));
   for (const [index, candidate] of candidates.entries()) {
     if (!isRecord(candidate)) {
       issues.push(
-        `executorCandidates[${index}] must be an object with stageIdentifier and supplierID`,
+        `supplierCandidates[${index}] must be an object with stageIdentifier and supplierID`,
       );
       continue;
     }
@@ -294,19 +300,28 @@ function validateExecutorCandidates(
       stageIdentifier.trim().length === 0
     ) {
       issues.push(
-        `executorCandidates[${index}].stageIdentifier must be a non-empty stage name`,
+        `supplierCandidates[${index}].stageIdentifier must be a non-empty stage name`,
       );
       continue;
     }
     if (typeof supplierID !== "string" || supplierID.trim().length === 0) {
       issues.push(
-        `executor candidate for stage "${stageIdentifier}" must carry a non-empty supplierID, received ${JSON.stringify(supplierID)}`,
+        `supplier candidate for stage "${stageIdentifier}" must carry a non-empty supplierID UUID, received ${JSON.stringify(supplierID)}`,
+      );
+      continue;
+    }
+    try {
+      supplierIdFromUuid(supplierID);
+    } catch (error) {
+      issues.push(
+        `supplier candidate for stage "${stageIdentifier}": `
+          + (error instanceof Error ? error.message : String(error)),
       );
       continue;
     }
     if (!declaredStages.has(stageIdentifier)) {
       issues.push(
-        `executor candidate stage "${stageIdentifier}" is not a stage declared in this plan`,
+        `supplier candidate stage "${stageIdentifier}" is not a stage declared in this plan`,
       );
       continue;
     }
@@ -315,25 +330,25 @@ function validateExecutorCandidates(
     );
     if (stageHooks.some((hook) => hook.orderTriggerKind !== "none")) {
       issues.push(
-        `executor candidate stage "${stageIdentifier}" carries an order-trigger hook; birth-stage executors are immutable and cannot be per-order patch targets`,
+        `supplier candidate stage "${stageIdentifier}" carries an order-trigger hook; birth-stage suppliers are immutable and cannot be per-order patch targets`,
       );
       continue;
     }
     if (stageHooks.some((hook) => hook.dockExecutor)) {
       issues.push(
-        `executor candidate stage "${stageIdentifier}" is a dock stage; its executor is selected once through the stage executor patch (dkid), never as a plan candidate`,
+        `supplier candidate stage "${stageIdentifier}" is a dock stage; its supplier is selected once through the stage supplier patch (dkid), never as a plan candidate`,
       );
       continue;
     }
     if (stageHooks.some((hook) => hook.dynamicExecutor)) {
       issues.push(
-        `executor candidate stage "${stageIdentifier}" is a dynamic stage; its supplier is assigned per order through the stage executor patch and never carries a plan candidate binding`,
+        `supplier candidate stage "${stageIdentifier}" is a dynamic stage; its supplier is assigned per order through the stage supplier patch and never carries a plan candidate binding`,
       );
       continue;
     }
     if (!routedStages.has(stageIdentifier)) {
       issues.push(
-        `executor candidate stage "${stageIdentifier}" has no static executor route; only fixed/candidate/birth stages carry plan executor bindings`,
+        `supplier candidate stage "${stageIdentifier}" has no static supplier route; only fixed/candidate/birth stages carry plan supplier bindings`,
       );
     }
   }
@@ -384,9 +399,9 @@ function compileSignalAdmissions(
 
 export function compileZhixuRegisterPlanArgs(
   definition: ZhixuDefinition,
-  executorCandidates?: readonly ExecutorCandidateInput[],
+  supplierCandidates?: readonly SupplierCandidateInput[],
 ): SolidityRegisterPlanArgs {
   return toSolidityRegisterPlanArgs(
-    compileZhixuOnchainHookPlan(definition, executorCandidates),
+    compileZhixuOnchainHookPlan(definition, supplierCandidates),
   );
 }

@@ -1,13 +1,14 @@
 import {
-  EXECUTOR_BINDING_KIND_CANDIDATE,
-  EXECUTOR_BINDING_KIND_DEFAULT,
-  MAX_EXECUTOR_BINDINGS,
-} from "../executor-bindings.js";
+  MAX_SUPPLIER_BINDINGS,
+  SUPPLIER_BINDING_KIND_CANDIDATE,
+  SUPPLIER_BINDING_KIND_DEFAULT,
+  supplierIdFromUuid,
+} from "../supplier-bindings.js";
 import {
+  onchainRouteId,
   onchainSelectorBindingHash,
   onchainSignalCapabilityHash,
   onchainSignalId,
-  onchainRouteId,
   onchainSourceId,
   onchainStageId,
   routeHashFromDigests,
@@ -20,21 +21,25 @@ import {
   isHexHash,
   isRecord,
 } from "../shape.js";
-import type { ExecutorBinding, ExecutorBindingKind, HexString } from "../../types/index.js";
+import type {
+  HexString,
+  StageSupplierBinding,
+  SupplierBindingKind,
+} from "../../types/index.js";
 
 /**
- * 能力声明族校验：executorRoutes / executorBindings / selectorBindings /
+ * 能力声明族校验：supplierRoutes / supplierBindings / selectorBindings /
  * signalCapabilities 的形状与承诺重算，事实键唯一属主镜像，
- * supplierType/fileType/executor-kind 闭集词表。
+ * supplierType/fileType/supplier-binding-kind 闭集词表。
  */
 
-const EXECUTOR_ROUTE_FIELDS: readonly string[] = [
+const SUPPLIER_ROUTE_FIELDS: readonly string[] = [
   "routeId",
   "stageId",
   "stageIdentifier",
-  "executorType",
-  "executorId",
-  "executorHash",
+  "supplierType",
+  "supplierID",
+  "supplierHash",
   "resourcesHash",
   "routeHash",
 ];
@@ -45,15 +50,16 @@ const SELECTOR_BINDING_FIELDS: readonly string[] = [
   "targetStageId",
   "bindingHash",
 ];
-const EXECUTOR_BINDING_FIELDS: readonly string[] = [
+const SUPPLIER_BINDING_FIELDS: readonly string[] = [
   "stageIdentifier",
   "stageId",
+  "supplierID",
   "supplierId",
   "kind",
 ];
-const EXECUTOR_BINDING_KINDS: readonly number[] = [
-  EXECUTOR_BINDING_KIND_DEFAULT,
-  EXECUTOR_BINDING_KIND_CANDIDATE,
+const SUPPLIER_BINDING_KINDS: readonly number[] = [
+  SUPPLIER_BINDING_KIND_DEFAULT,
+  SUPPLIER_BINDING_KIND_CANDIDATE,
 ];
 const SIGNAL_CAPABILITY_FIELDS: readonly string[] = [
   "stageIdentifier",
@@ -70,11 +76,11 @@ const SIGNAL_CAPABILITY_FIELDS: readonly string[] = [
 
 const SUPPLIER_TYPES: readonly string[] = ["individual", "organization", "dock"];
 
-const PLAN_EXECUTOR_TYPES: readonly string[] = ["individual", "organization"];
+const PLAN_SUPPLIER_TYPES: readonly string[] = ["individual", "organization"];
 
 const FILE_TYPES: readonly string[] = ["local", "http", "txcloud", "plain_text"];
 
-export { SUPPLIER_TYPES, PLAN_EXECUTOR_TYPES, FILE_TYPES };
+export { SUPPLIER_TYPES, PLAN_SUPPLIER_TYPES, FILE_TYPES };
 
 function duplicateCurrentOrderFactKeyIssues(
   capabilities: readonly {
@@ -104,29 +110,29 @@ function duplicateCurrentOrderFactKeyIssues(
   return issues;
 }
 
-export interface OnchainExecutorBindingRecord extends ExecutorBinding {}
+export interface OnchainSupplierBindingRecord extends StageSupplierBinding {}
 
-function validateOnchainExecutorBindings(
+function validateOnchainSupplierBindings(
   bindings: readonly unknown[],
 ): {
-  readonly records: readonly OnchainExecutorBindingRecord[];
+  readonly records: readonly OnchainSupplierBindingRecord[];
   readonly issues: readonly string[];
 } {
   const issues: string[] = [];
-  const records: OnchainExecutorBindingRecord[] = [];
-  if (bindings.length > MAX_EXECUTOR_BINDINGS) {
+  const records: OnchainSupplierBindingRecord[] = [];
+  if (bindings.length > MAX_SUPPLIER_BINDINGS) {
     issues.push(
-      `executorBindings must not exceed ${MAX_EXECUTOR_BINDINGS} entries; UVPStateMachine.commitPlan reverts TooManyExecutorBindings`,
+      `supplierBindings must not exceed ${MAX_SUPPLIER_BINDINGS} entries; UVPStateMachine.commitPlan reverts TooManySupplierBindings`,
     );
   }
   const seen = new Set<string>();
   for (const [index, binding] of bindings.entries()) {
-    const prefix = `executorBindings[${index}]`;
+    const prefix = `supplierBindings[${index}]`;
     if (!isRecord(binding)) {
       issues.push(`${prefix} must be an object`);
       continue;
     }
-    expectClosedKeySet(binding, EXECUTOR_BINDING_FIELDS, prefix, issues);
+    expectClosedKeySet(binding, SUPPLIER_BINDING_FIELDS, prefix, issues);
     expectNonEmptyString(
       binding.stageIdentifier,
       `${prefix}.stageIdentifier`,
@@ -141,32 +147,64 @@ function validateOnchainExecutorBindings(
     ) {
       issues.push(`${prefix}.stageId must be keccak256(stageIdentifier)`);
     }
+    let decodedSupplierId: HexString | undefined;
+    if (typeof binding.supplierID !== "string") {
+      issues.push(
+        `${prefix}.supplierID must be a canonical 8-4-4-4-12 UUID string`,
+      );
+    } else {
+      try {
+        decodedSupplierId = supplierIdFromUuid(binding.supplierID);
+      } catch (error) {
+        issues.push(
+          `${prefix}.supplierID: `
+            + (error instanceof Error ? error.message : String(error)),
+        );
+      }
+      if (binding.supplierID !== binding.supplierID.toLowerCase()) {
+        issues.push(
+          `${prefix}.supplierID must be normalized to lowercase`,
+        );
+      }
+    }
     if (
-      typeof binding.kind !== "number" ||
-      !EXECUTOR_BINDING_KINDS.includes(binding.kind)
+      decodedSupplierId !== undefined &&
+      isHexHash(binding.supplierId) &&
+      binding.supplierId !== decodedSupplierId
     ) {
       issues.push(
-        `${prefix}.kind must be ${EXECUTOR_BINDING_KIND_DEFAULT} (default) or ${EXECUTOR_BINDING_KIND_CANDIDATE} (candidate), received ${JSON.stringify(binding.kind)}`,
+        `${prefix}.supplierId must decode ${JSON.stringify(binding.supplierID)} to raw UUID bytes in the low 16 bytes of a zero-padded bytes32 (the chain never hashes the identity)`,
+      );
+    }
+    if (
+      typeof binding.kind !== "number" ||
+      !SUPPLIER_BINDING_KINDS.includes(binding.kind)
+    ) {
+      issues.push(
+        `${prefix}.kind must be ${SUPPLIER_BINDING_KIND_DEFAULT} (default) or ${SUPPLIER_BINDING_KIND_CANDIDATE} (candidate), received ${JSON.stringify(binding.kind)}`,
       );
       continue;
     }
-    const kind = binding.kind as ExecutorBindingKind;
+    const kind = binding.kind as SupplierBindingKind;
     if (
       typeof binding.stageIdentifier === "string" &&
+      typeof binding.supplierID === "string" &&
       isHexHash(binding.stageId) &&
-      isHexHash(binding.supplierId)
+      isHexHash(binding.supplierId) &&
+      decodedSupplierId !== undefined
     ) {
       const key = `${binding.stageId}:${binding.supplierId}:${kind}`;
       if (seen.has(key)) {
         issues.push(
-          `duplicate executor binding for stage ${binding.stageIdentifier} (supplierId ${binding.supplierId}, kind ${kind}); `
-            + "UVPStateMachine.commitPlan reverts DuplicateExecutorBinding and the Merkle tree must not absorb the duplicate",
+          `duplicate supplier binding for stage ${binding.stageIdentifier} (supplierId ${binding.supplierId}, kind ${kind}); `
+            + "UVPStateMachine.commitPlan reverts DuplicateSupplierBinding and the Merkle tree must not absorb the duplicate",
         );
       }
       seen.add(key);
       records.push({
         stageIdentifier: binding.stageIdentifier,
         stageId: binding.stageId,
+        supplierID: binding.supplierID,
         supplierId: binding.supplierId,
         kind,
       });
@@ -175,19 +213,19 @@ function validateOnchainExecutorBindings(
   return { records, issues };
 }
 
-function validateOnchainExecutorRoutes(
+function validateOnchainSupplierRoutes(
   routes: readonly unknown[],
 ): readonly string[] {
   const issues: string[] = [];
   const routeIds = new Set<string>();
   for (const [index, route] of routes.entries()) {
     if (!isRecord(route)) {
-      issues.push(`executorRoutes[${index}] must be an object`);
+      issues.push(`supplierRoutes[${index}] must be an object`);
       continue;
     }
 
-    const prefix = `executorRoutes[${index}]`;
-    expectClosedKeySet(route, EXECUTOR_ROUTE_FIELDS, prefix, issues);
+    const prefix = `supplierRoutes[${index}]`;
+    expectClosedKeySet(route, SUPPLIER_ROUTE_FIELDS, prefix, issues);
     expectHexHash(route.routeId, `${prefix}.routeId`, issues);
     expectHexHash(route.stageId, `${prefix}.stageId`, issues);
     expectNonEmptyString(
@@ -195,35 +233,48 @@ function validateOnchainExecutorRoutes(
       `${prefix}.stageIdentifier`,
       issues,
     );
-    expectNonEmptyString(route.executorType, `${prefix}.executorType`, issues);
+    expectNonEmptyString(route.supplierType, `${prefix}.supplierType`, issues);
     if (
-      typeof route.executorType === "string" &&
-      !PLAN_EXECUTOR_TYPES.includes(route.executorType)
+      typeof route.supplierType === "string" &&
+      !PLAN_SUPPLIER_TYPES.includes(route.supplierType)
     ) {
       issues.push(
-        `${prefix}.executorType must be one of ${PLAN_EXECUTOR_TYPES.join("|")} (case-sensitive), received ${JSON.stringify(route.executorType)}; `
-          + "a dock stage's executor is selected once through the stage executor patch (dkid) and never becomes a plan route",
+        `${prefix}.supplierType must be one of ${PLAN_SUPPLIER_TYPES.join("|")} (case-sensitive), received ${JSON.stringify(route.supplierType)}; `
+          + "a dock stage's supplier is selected once through the stage supplier patch (dkid) and never becomes a plan route",
       );
     }
-    if (typeof route.executorId === "string" && route.executorId.trim().length === 0) {
+    if (typeof route.supplierID === "string" && route.supplierID.trim().length === 0) {
       issues.push(
-        `${prefix}.executorId must be a non-empty executor id (whitespace-only ids are rejected at the compile entry already)`,
+        `${prefix}.supplierID must be a non-empty supplier UUID (whitespace-only ids are rejected at the compile entry already)`,
       );
     }
-    expectHexHash(route.executorHash, `${prefix}.executorHash`, issues);
+    if (typeof route.supplierID === "string" && route.supplierID.trim().length > 0) {
+      try {
+        supplierIdFromUuid(route.supplierID);
+      } catch (error) {
+        issues.push(
+          `${prefix}.supplierID: `
+            + (error instanceof Error ? error.message : String(error)),
+        );
+      }
+      if (route.supplierID !== route.supplierID.toLowerCase()) {
+        issues.push(`${prefix}.supplierID must be normalized to lowercase`);
+      }
+    }
+    expectHexHash(route.supplierHash, `${prefix}.supplierHash`, issues);
     expectHexHash(route.resourcesHash, `${prefix}.resourcesHash`, issues);
     expectHexHash(route.routeHash, `${prefix}.routeHash`, issues);
     if (
       typeof route.routeHash === "string" &&
       typeof route.stageId === "string" &&
       typeof route.stageIdentifier === "string" &&
-      typeof route.executorHash === "string" &&
+      typeof route.supplierHash === "string" &&
       typeof route.resourcesHash === "string"
     ) {
       const recomputedRouteHash = routeHashFromDigests(
         route.stageId as HexString,
         route.stageIdentifier,
-        route.executorHash as HexString,
+        route.supplierHash as HexString,
         route.resourcesHash as HexString,
       );
       if (route.routeHash !== recomputedRouteHash) {
@@ -243,7 +294,7 @@ function validateOnchainExecutorRoutes(
       route.routeId !== onchainRouteId(route.stageIdentifier)
     ) {
       issues.push(
-        `${prefix}.routeId must be keccak256(stageIdentifier#executorRoute)`,
+        `${prefix}.routeId must be keccak256(stageIdentifier#supplierRoute)`,
       );
     }
     if (typeof route.routeId === "string") {
@@ -445,8 +496,8 @@ function selectorBindingKey(
 
 export {
   duplicateCurrentOrderFactKeyIssues,
-  validateOnchainExecutorBindings,
-  validateOnchainExecutorRoutes,
+  validateOnchainSupplierBindings,
+  validateOnchainSupplierRoutes,
   validateOnchainSelectorBindings,
   validateOnchainSignalCapabilities,
   selectorBindingKey,

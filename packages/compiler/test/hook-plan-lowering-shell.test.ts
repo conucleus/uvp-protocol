@@ -30,7 +30,7 @@ function triggerDefinition(): ZhixuDefinition {
           sendSignals: [{ name: "str", trigger: true }, { name: "ack", trigger: true }, { name: "seed" }],
           executor: {
             supplierType: "organization",
-            supplierID: "journey-executor",
+            supplierID: "5f0b1e2a-7c9d-4e1f-9a2b-000000000041",
           },
         },
       ],
@@ -104,7 +104,7 @@ test("trigger signals cannot reuse a receiveSignals channel name", () => {
           sendSignals: [{ name: "ack", trigger: true }, { name: "seed" }],
           executor: {
             supplierType: "organization",
-            supplierID: "journey-executor",
+            supplierID: "5f0b1e2a-7c9d-4e1f-9a2b-000000000041",
           },
         },
       ],

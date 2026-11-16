@@ -15,16 +15,18 @@ under this folder; repository-level deployment scripts live under
 - `src/UVPIdentityRegistry.sol`: owner-controlled offline-subject to wallet
   bindings. Its complete scope is subject/account registration and revocation.
 - `src/UVPSupplierRegistry.sol` (+ `src/interfaces/IUVPSupplierRegistry.sol`):
-  thin `supplierId ↔ executor` binding for the strong executor model. Two
-  mappings only (one-to-one), one owner + registrars, no struct, no
-  status/tier/validity/descriptor, no EIP-712. `executorOf != 0` means
-  registered; revoke deletes both directions. The platform store is the only
-  registrar; identity/KYC data stays off chain.
+  supplier identity boundary. A supplier self-registers with its own account;
+  the registry mints a UUID SID (128-bit low half of a `bytes32`) and binds it
+  permanently to that one account. Status is `pending` until a registrar
+  activates it; `suspend`/`revoke` are registrar-gated. There is no
+  rotate/setAccount write path, revoking does not free the account, and the
+  reverse mapping `supplierOf` stays permanent. No EIP-712, no struct,
+  no tier/validity/descriptor; identity/KYC data stays off chain.
 - `src/UVPSupplierRegistryDebug.sol`: **QA-only** stand-in implementing the same
-  interface (any nonzero `supplierId` resolves to a fixed debug executor;
-  `debugSetExecutor` overrides per id; register/rotate/revoke are no-ops).
-  Production deployment scripts must never wire it — production uses
-  `UVPSupplierRegistry` and its strong registration checks.
+  interface (every nonzero `supplierId` resolves to one fixed debug account and
+  reads as active; writes revert instead of faking registration). Production
+  deployment scripts must never wire it — production uses
+  `UVPSupplierRegistry` and its registration/status checks.
 - `src/UVPStateMachine.sol`: compact core state machine for plan, order, signal,
   timer, hook status, signed Plan publication, supplier-bound signal
   submission (`submitSignal` / `submitSignalFor`), dynamic-stage supplier
@@ -35,8 +37,8 @@ under this folder; repository-level deployment scripts live under
   program, its atoms, the B output signals, and the document hash.
 - `src/UVPStagePatchModule.sol`, `src/UVPDerivedSignalModule.sol`,
   `src/UVPFileResourceModule.sol`, and `src/UVPStateMachineLens.sol`: protocol
-  modules configured by the core owner for stage executor patch/dock selection,
-  derived signal, stage file maps, and read-helper surfaces.
+  modules configured by the core owner for stage supplier patch/dock supplier
+  selection, derived signal, stage file maps, and read-helper surfaces.
 - `src/UVPPlanRegistration.sol`: linked library hosting the externally
   segmented `commitPlan`/`finalizePlan`/`forkOrder` bodies.
 - `src/UVPDeploymentRegistry.sol`: on-chain cutover ledger for versioned
@@ -105,7 +107,7 @@ these as public interfaces:
   be set before freeze);
 - core function selectors for signed `commitPlan(commit, hooks, bindings,
   signature)` (six-field `PlanCommit`: publisher, hooksHash, capabilitiesRoot,
-  `executorBindingsRoot`, birthAuthorizer, deadline), permissionless
+  `supplierBindingsRoot`, birthAuthorizer, deadline), permissionless
   single-argument `finalizePlan(bytes32)`, derived-order-id
   `triggerOrderFromOutsideFor` (one fact, one order — the id
   is `triggerOrderIdFor(planId, sourceId, signalId, payloadHash)`, callers no
@@ -117,17 +119,18 @@ these as public interfaces:
   `submitSignal` (msg.sender path; carries the trailing `attribution` proof,
   `bytes32 filesDigest`, and a trailing `FilePatch filePatch`; `signalId == 0`
   means a pure file patch), and `submitSignalFor` (EIP-712 relayer path; the
-  extra `submitter`/`deadline`/`signature` bind the effective executor, and
+  extra `submitter`/`deadline`/`signature` bind the source stage's supplier
+  account, and
   `msg.sender` is only the relayer; EOA uses ECDSA, contract submitter uses
   EIP-1271), module configuration, module-only writebacks (including the
   order-link writeback `triggerOrderFromSignalFromModule` and the stage-patch
-  activations `activateStageExecutorFromModule` /
-  `activateStageDockExecutorFromModule`), `DOMAIN_SEPARATOR`, `pokeTimer`,
-  `getHookStatus`, `hasSignal`/`getSignal`, the effective-executor views
-  (`effectiveStageSupplier`, `effectiveStageExecutor`,
-  `isEffectiveStageExecutor`, `activeStageExecutorPatch`), plan-binding views
-  (`planExecutorBindingsRoot`, `planStageDefaultSupplier`,
-  `planStageHasDynamicExecutor`, `planStageIsCandidate`), signal target
+  activations `activateStageSupplierFromModule` /
+  `activateStageDockSupplierFromModule`), `DOMAIN_SEPARATOR`, `pokeTimer`,
+  `getHookStatus`, `hasSignal`/`getSignal`, the supplier views
+  (`effectiveStageSupplier`, `effectiveStageAccount`,
+  `isEffectiveStageAccount`, `stageSupplierAssignment`), plan-binding views
+  (`planSupplierBindingsRoot`, `planStageDefaultSupplier`,
+  `planStageHasDynamicSupplier`, `planStageIsCandidate`), signal target
   relation constants, `sourceSignalCount`, `lastSignalSubmitter`,
   per-stage native counting (`stageSignalState`), fork helpers
   (`forkOrder`/`forkOrderIdFor`/`orderParent`), plan-runtime-hash helpers,
@@ -140,41 +143,44 @@ these as public interfaces:
   `submitDerivedSignalFromModule`. The signed from-signal trigger entrypoint is
   `triggerOrderFromSignalFor` on `UVPOrderLinkModule` (order-link module
   fixture), not a core selector;
-- module function selectors for stage patch (executor patch
-  `applyStageExecutorPatch`/`For` with `bindingProof` + `candidateProof` and
-  the signed selector/previous-executor consent, dock executor selection with
-  `supplierId` + `patchNonce`), file resource (single
+- module function selectors for stage patch (stage supplier patch
+  `applyStageSupplierPatch`/`For` with `bindingProof` + `candidateProof` and
+  the signed selector/previous-supplier-account consent, dock supplier
+  selection with `supplierId` + `patchNonce`), file resource (single
   `applyStageFilePatch` entry gated on `msg.sender == stateMachine`, writer
-  authority = writer-stage effective executor + `fileWriters` capability),
+  authority = writer-stage assigned supplier account + `fileWriters`
+  capability),
   derived signal (`submitDerivedSignal`/`For`, submit authority = from-stage
-  effective executor), dock registry (`registerDock`/`getDock`/
+  assigned supplier account), dock registry (`registerDock`/`getDock`/
   `getDockOutput`), supplier registry
-  (`registerSupplier`/`rotateSupplierExecutor`/`revokeSupplier`/
-  `setRegistrar`/`executorOf`/`supplierOf`/`isRegisteredSupplier`), and lens
+  (`registerSupplier`/`activateSupplier`/`suspendSupplier`/`revokeSupplier`/
+  `setRegistrar`/`transferOwnership`/`accountOf`/`statusOf`/
+  `isActiveSupplier`/`supplierOf`), and lens
   entrypoints/digest helpers/views, plus plan-metadata module views
   `capabilitiesRoot`, `hasCapabilityVocabulary`, `verifySignalCapability`,
   `verifyStageSelectorBinding`, and `verifyFileWriter` (membership is checked
   as field-recomputed leaves against caller-supplied Merkle proofs);
 - event topics for ownership, module configuration/freeze,
-  `PlanCommitted` (carries `executorBindingsRoot`), `PlanFinalized`,
+  `PlanCommitted` (carries `supplierBindingsRoot`), `PlanFinalized`,
   `PlanRegistered`, `PlanPublisherRecorded`, `OrderRegistered`,
   `OrderMaterialized`, `OrderRelayerRecorded`, `OrderTriggered`,
   `SignalSubmitted` (carries `submitter`, `relayer`, `factStageId`),
-  `StageMaterialized`, `HookStatusChanged`, `HookReady`, `TimerPoked`,
-  `StageExecutorActivated` (carries `supplierId` + `patchNonce`), and
+  `StageMaterialized`, `StageSupplierAssigned` (carries `supplierId` +
+  `patchNonce`), `HookStatusChanged`, `HookReady`, `TimerPoked`, and
   `OrderForked` (the fork birth channel, UB-39). `SignalAuthorization` events
   are deleted;
 - dock registry event `DockRegistered` (carries the full Dock outputs, atoms,
   and A-window program); stage-patch module (`UVPStagePatchModule`) event
-  topics for `StageExecutorPatchApplied` (carries `supplierId`,
-  `previousSupplierId`, `patchNonce`), `StageDockExecutorSelected` (carries
+  topics for `StageSupplierPatchApplied` (carries `supplierId`,
+  `previousSupplierId`, `patchNonce`), `StageDockSupplierSelected` (carries
   `supplierId`), `DockBindingPoked`, and `DockOutputSubmitted`; order-link
   module event topics for `OrderLinked`; derived signal module event topics
   for `DerivedSignalSubmitted`; file resource module (`UVPFileResourceModule`)
   event topics for `StageFilePatchApplied` and `StageFileOpApplied`; supplier
-  registry event topics for `SupplierRegistered`,
-  `SupplierExecutorRotated`, `SupplierRevoked`, `SupplierRegistrarSet`, and
-  `OwnershipTransferred`; and deployment registry event topics for
+  registry event topics for `SupplierRegistered` (carries `supplierId` +
+  `account`), `SupplierStatusChanged` (carries `supplierId`, previous/new
+  status, `account`), `SupplierRegistrarSet`, and `OwnershipTransferred`; and
+  deployment registry event topics for
   `DeploymentRegistered`, `DeploymentCanaryMarked`, `DeploymentActivated`,
   `DeploymentDeprecated`, and `DeploymentRetired`;
 - ABI hash, bytecode hash, deployed bytecode hash, canonical artifact hash, and
@@ -189,22 +195,22 @@ code do not silently drift away from the contract ABI.
 1. The deployer creates a thin `UVPIdentityRegistry` for Store-operated identity
    bindings; the StateMachine never queries it.
 2. `UVPSupplierRegistry` is deployed and wired as the eighth module before
-   `freezeModules`; the StateMachine resolves every executor through it.
-   `UVPSupplierRegistryDebug` exists only for QA/local flows and is never part
-   of a production deployment.
+   `freezeModules`; the StateMachine resolves every stage supplier and its
+   account through it. `UVPSupplierRegistryDebug` exists only for QA/local
+   flows and is never part of a production deployment.
 3. `UVPStateMachine` is deployed without registry constructor arguments.
 4. The owner configures the complete module set and irreversibly freezes it.
    Runtime or module upgrades require a new state-machine deployment; existing
    orders remain on their original deployment and module set.
 5. A publisher signs the six-field `PlanCommit` (publisher, hooksHash,
-   capabilitiesRoot, executorBindingsRoot, birthAuthorizer, deadline) together
-   with the hooks and the `ExecutorBinding[]` list; any relayer commits it.
+   capabilitiesRoot, supplierBindingsRoot, birthAuthorizer, deadline) together
+   with the hooks and the `StageSupplierBinding[]` list; any relayer commits it.
    Binding kinds are `0 = default` and `1 = candidate`; the contract recomputes
-   `executorBindingsRoot` and rejects a mismatch. Bindings are capped at 256
-   (`TooManyExecutorBindings`), must be unique, must reference stages declared
-   by the hooks, must point at registered suppliers, and are forbidden for
-   dock/dynamic stages (candidate bindings also forbidden for birth stages;
-   a candidate binding requires the stage's default binding). Any caller then
+   `supplierBindingsRoot` and rejects a mismatch. Bindings are capped at 256
+   (`TooManySupplierBindings`), must be unique, must reference stages declared
+   by the hooks, must point at active SIDs (`SupplierNotActive`), and are
+   forbidden for dock/dynamic stages (candidate bindings also forbidden for
+   birth stages; a candidate binding requires the stage's default binding). Any caller then
    finalizes with `finalizePlan(bytes32)` — a permissionless step that only
    flips the plan to finalized and stores the capabilities root, so its gas is
    independent of table size. A pending Plan cannot create an Order and
@@ -225,17 +231,19 @@ code do not silently drift away from the contract ABI.
    order-level authorization records are written. A rejected admission reverts
    `SignalAdmissionRejected(orderId, sourceId, signalId)` before the order
    exists. The plan keeps one plan-wide `birthAuthorizer`.
-7. Signal submission authority is the stage's **effective executor**: the
-   active stage-patch supplier when one exists, else the plan's default
-   supplier (fixed/candidate/birth), else zero for a dynamic stage. The
-   effective executor is `supplierRegistry.executorOf(effectiveSupplierId)`,
-   resolved at call time, so a registry rotation takes effect immediately.
-   `submitSignal` uses `msg.sender` as the submitter; `submitSignalFor` lets a
-   relayer pay gas while the submitter's EIP-712 signature (ECDSA or EIP-1271)
-   binds the same effective executor. Missing supplier assignment reverts
-   `StageExecutorNotAssigned`, an unregistered supplier reverts
-   `SupplierNotRegistered`, and a wrong wallet reverts
-   `UnauthorizedStageExecutor`. There is no order-level submitter allowlist.
+7. Signal submission authority is the source stage's **assigned supplier
+   account**: the effective supplierId is the active stage-patch supplier when
+   one exists, else the plan's default supplier (fixed/candidate/birth), else
+   zero for a dynamic stage; the account is
+   `supplierRegistry.accountOf(effectiveSupplierId)` and the SID must be
+   `active`. `submitSignal` uses `msg.sender` as the submitter;
+   `submitSignalFor` lets a relayer pay gas while the submitter's EIP-712
+   signature (ECDSA or EIP-1271) binds the same supplier account. Missing
+   assignment reverts `StageSupplierNotAssigned`, a non-active SID reverts
+   `SupplierNotActive`, a missing registry wiring reverts
+   `SupplierRegistryNotConfigured`, and a wrong wallet reverts
+   `UnauthorizedStageSupplierAccount`. There is no order-level submitter
+   allowlist.
    External submissions are idempotent first-win: a fact already recorded for
    the order is absorbed silently instead of reverting (at-least-once retries
    must never be rejected by an expired admission window). Plans may declare an
@@ -256,32 +264,33 @@ code do not silently drift away from the contract ABI.
    receive hooks at `commitPlan`: a stage mixing dynamic and non-dynamic hooks
    reverts `InconsistentDynamicExecutorFlag`; the flag is forbidden on trigger
    and dock hooks and requires `EMIT_READY`. A dynamic stage has no default
-   supplier; its supplier must be assigned through the stage executor patch
-   before the stage's first signal, otherwise `_requireEffectiveExecutor`
-   reverts `StageExecutorNotAssigned`. Stage materialization stays per-stage:
+   supplier; its supplier must be assigned through the stage supplier patch
+   before the stage's first signal, otherwise `_requireEffectiveSupplier`
+   reverts `StageSupplierNotAssigned`. Stage materialization stays per-stage:
    every stage (dynamic included) materializes only through its own
    order-trigger or EMIT_READY hooks.
-9. Order-level executor change goes through `UVPStagePatchModule`. The selector
-   must be the selector stage's effective executor (there is no order-creator
-   bypass) and the plan must declare the `(selectorStageId, targetStageId)`
+9. Order-level stage supplier change goes through `UVPStagePatchModule`. The
+   selector must be the selector stage's assigned supplier account (there is no
+   order-creator bypass) and the plan must declare the
+   `(selectorStageId, targetStageId)`
    binding in `capabilitiesRoot`. The patch payload is
    `{ selectorStageId, targetStageId, supplierId, previousSupplierId,
    patchNonce }` and `patchNonce` must increase.
    - `previousSupplierId == 0` is **assign**: only before the target stage's
-     first signal (`StageAlreadyHasSignal` otherwise), and any registered
-     supplier may be assigned for a dynamic stage.
+     first signal (`StageAlreadyHasSignal` otherwise), and any active SID may be
+     assigned for a dynamic stage.
    - non-zero is **handoff**: only after the stage's first signal
      (`StageHasNoSignal`), the declared `previousSupplierId` must equal the
-     current effective supplier, and the previous effective executor must sign
+     current effective supplier, and the previous supplier account must sign
      the same EIP-712 digest.
    - candidate stages additionally require a Merkle proof for the
-     `(targetStageId, supplierId, kind=1)` leaf against `executorBindingsRoot`
-     (`StageExecutorNotCandidate`); fixed stages revert
-     `StageExecutorPatchForbiddenOnFixedStage`; dynamic stages require no
+     `(targetStageId, supplierId, kind=1)` leaf against `supplierBindingsRoot`
+     (`StageSupplierNotCandidate`); fixed stages revert
+     `StageSupplierPatchForbiddenOnFixedStage`; dynamic stages require no
      proof; dock and birth stages revert
-     `StageExecutorPatchForbiddenOnDockStage` /
-     `StageExecutorPatchForbiddenOnBirthStage`. Assignments must point at a
-     registered supplier.
+     `StageSupplierPatchForbiddenOnDockStage` /
+     `StageSupplierPatchForbiddenOnBirthStage`. Assignments must point at an
+     active SID (`SupplierNotActive`).
 10. Stage file maps are owned by `UVPFileResourceModule` (configured as
     `fileResourceModule()` before `freezeModules`). A stage's map is
     `key -> (contentHash, handle)`: the chain stores a content hash and an
@@ -294,7 +303,7 @@ code do not silently drift away from the contract ABI.
     a mandatory `baseHash` equal to the stage's current files version —
     mismatch rejects the whole request, and there is no nonce (the projection
     holds exactly one current value per key). Write authority is the writer
-    stage's **effective executor** (the submitter of the business signal or
+    stage's **assigned supplier account** (the submitter of the business signal or
     file patch); when the writer stage differs from the target stage, the
     `fileWriters` capability leaf (`UVP_FILE_WRITER_V1`) must also prove the
     stage pair. There is no reserved `FILE_WRITE_SIGNAL_ID` row and no
@@ -315,13 +324,13 @@ code do not silently drift away from the contract ABI.
     `capabilitiesRoot` (per-atom Merkle proofs), so a Dock can only reference
     declared signals.
     A dock stage is selected once through `UVPStagePatchModule`: the selector
-    signs `StageDockExecutorSelection` (selector stage, target stage, dock id,
+    signs `StageDockSupplierSelection` (selector stage, target stage, dock id,
     `supplierId`, `patchNonce`), the contract checks the dock stage flag
     (`HOOK_FLAG_DOCK_EXECUTOR`), the selector binding, that the selector is the
-    selector stage's effective executor, that the supplier is registered, and
+    selector stage's assigned supplier account, that the SID is active, and
     that the dock/stage/plan relations match. There is no per-output
-    order-level authorization row; the selected supplier's registry executor is
-    the effective executor for output writes. Replays of the same dock id +
+    order-level authorization row; the selected SID's supplier account is the
+    submitter for output writes. Replays of the same dock id +
     supplier are absorbed, a different selection reverts. There is no link
     record and no activation: the payload is the attach stage's
     `fileResource` entry with key `keccak("dock_link")`, plain-text canonical A
@@ -331,7 +340,7 @@ code do not silently drift away from the contract ABI.
     through the state machine's `evaluateDockWindow` (same evaluator as hooks;
     `~` closes on fact arrival, `+T` delays the anchor), and writes each
     satisfied B output signal through `submitDockOutputSignalFromModule` with
-    the selected supplier's current executor as submitter. The B plan's own
+    the selected SID's supplier account as submitter. The B plan's own
     `sendSignals.validWhen` admission is judged again at write time; a closed B
     window skips the output (no failure state). The binding is identified only
     by the selected dock id, the target order/stage, the from order, and the
@@ -351,8 +360,9 @@ code do not silently drift away from the contract ABI.
     through signed trigger paths. Signal-triggered orders record a trigger-origin
     link so `UVPDerivedSignalModule` can write declared signals back to the
     trigger-origin order. Establishing a trigger link requires origin-side
-    consent: the origin order's creator or the effective executor of the origin
-    source stage (`hasTriggerOriginConsent`); the old explicit per-fact
+    consent: the origin order's creator or the assigned supplier account of the
+    origin source stage (`hasTriggerOriginConsent`, which resolves the origin
+    source stage's assigned supplier account); the old explicit per-fact
     authorization lookup is gone. A foreign plan mirroring the origin plan's
     public capability declarations without that standing cannot register the
     link nor create the derived order.
@@ -398,8 +408,7 @@ Indexer and replay tooling should treat these event names as public interfaces:
 - `IdentityBindingRegistered`
 - `IdentityBindingRevoked`
 - `SupplierRegistered`
-- `SupplierExecutorRotated`
-- `SupplierRevoked`
+- `SupplierStatusChanged`
 - `SupplierRegistrarSet`
 - `PlanCommitted`
 - `PlanFinalized`
@@ -411,10 +420,10 @@ Indexer and replay tooling should treat these event names as public interfaces:
 - `SignalSubmitted`
 - `OrderForked`
 - `StageMaterialized`
-- `StageExecutorPatchApplied`
+- `StageSupplierPatchApplied`
 - `StageFilePatchApplied`
 - `StageFileOpApplied`
-- `StageExecutorActivated`
+- `StageSupplierAssigned`
 - `HookStatusChanged`
 - `HookReady`
 - `TimerPoked`
@@ -429,7 +438,7 @@ The module fixtures add these public events:
   patch-level and per-op records, replayed in log order);
 - `DockRegistered` (dock registry; carries the full Dock outputs, atoms, and
   A-window programs);
-- `StageDockExecutorSelected`, `DockBindingPoked`, and `DockOutputSubmitted`
+- `StageDockSupplierSelected`, `DockBindingPoked`, and `DockOutputSubmitted`
   (stage-patch module; selection carries dock id, from plan, supplierId,
   selector, and nonce; poke/output events carry the binding id, from order, and
   output signal id);
@@ -471,7 +480,7 @@ unique order). Trigger hooks are not birth-key deduplicated, with trigger
 signal uniqueness owned by the compiler. Non-trigger hooks (`EMIT_READY`
 watchers and plain watchers) are evaluated as before. Dock stages are marked
 by `HOOK_FLAG_DOCK_EXECUTOR`; dynamic stages are marked by
-`HOOK_FLAG_DYNAMIC_EXECUTOR` (flag 32) — both flags mark the stage's executor
+`HOOK_FLAG_DYNAMIC_EXECUTOR` (flag 32) — both flags mark the stage's supplier
 resolution mode and are not order-trigger flags.
 
 Per-stage counting note (UB-2): every signal write path resolves the fact's
@@ -511,7 +520,8 @@ Known limits:
 
 - Role administration is owner-managed and intentionally minimal (owner +
   supplier registrars).
-- Supplier identity/KYC is off-chain (`zhixu-store`); the chain only records
-  the `supplierId ↔ executor` binding. Pausing a supplier is `revokeSupplier`;
-  resuming means re-registering.
+- Supplier identity/KYC is off-chain (`zhixu-store`); the chain records the
+  SID, its permanently bound supplier account, and `pending/active/suspended/
+  revoked` status. `suspendSupplier` can be reversed by activating again;
+  `revokeSupplier` is terminal and keeps the SID/account binding.
 - `UVPSupplierRegistryDebug` is QA-only and must never be wired in production.

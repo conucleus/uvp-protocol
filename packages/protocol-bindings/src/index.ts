@@ -18,8 +18,11 @@ import {
 import { encodeTypedDataFields } from "./order-book.js";
 import {
   dockWindowInstructionsOf,
+  SUPPLIER_BINDING_KIND_CANDIDATE,
+  SUPPLIER_BINDING_KIND_DEFAULT,
   type DockArtifact,
   type DockArtifactOutput,
+  type SupplierBindingKind,
 } from "@uvp-eth/compiler/browser";
 import { signalCapabilityProofFor } from "./capabilities-root.js";
 import { DOCK_REGISTRY_ABI } from "./artifact-abis.js";
@@ -153,7 +156,7 @@ export const STATE_MACHINE_ABI = [
   "event HookStatusChanged(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed hookId,uint8 previousStatus,uint8 newStatus,uint64 dueAt)",
   "event TimerPoked(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed hookId,uint64 dueAt)",
   "event SignalSubmitted(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,address relayer,bytes32 factStageId)",
-  "event PlanCommitted(bytes32 indexed planId,bytes32 indexed planHash,address indexed publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,uint256 hookCount,bytes32 executorBindingsRoot,address birthAuthorizer)",
+  "event PlanCommitted(bytes32 indexed planId,bytes32 indexed planHash,address indexed publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,uint256 hookCount,bytes32 supplierBindingsRoot,address birthAuthorizer)",
   "event PlanFinalized(bytes32 indexed planId,bytes32 indexed planHash,bytes32 capabilitiesRoot)",
   "event PlanRegistered(bytes32 indexed planId,bytes32 planHash,uint256 hookCount)",
   "event PlanPublisherRecorded(bytes32 indexed planId,address indexed publisher)",
@@ -162,7 +165,7 @@ export const STATE_MACHINE_ABI = [
   "event OrderRelayerRecorded(bytes32 indexed planId,bytes32 orderId,address indexed relayer,address creator)",
   "event StageMaterialized(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed stageId,bytes32 triggerHookId,bytes32 sourceId,bytes32 signalId)",
   "event OrderTriggered(bytes32 indexed orderId,bytes32 indexed planId,bytes32 indexed triggerStageId,bytes32 triggerHookId,bytes32 sourceId,bytes32 signalId,address submitter)",
-  "event StageExecutorActivated(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 supplierId,uint256 patchNonce)",
+  "event StageSupplierAssigned(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 supplierId,uint256 patchNonce)",
   "event OrderForked(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed parentOrderId,bytes32 approvalSourceId,bytes32 approvalSignalId,address initiator,bytes32 forkPayloadHash,bytes32[] replayedFactKeys)",
   "function owner() view returns (address)",
   "function stagePatchModule() view returns (address)",
@@ -184,9 +187,9 @@ export const STATE_MACHINE_ABI = [
   "function setFileResourceModule(address moduleAddress)",
   "function setSupplierRegistry(address moduleAddress)",
   "function freezeModules()",
-  "function commitPlan((address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorBindingsRoot,address birthAuthorizer,uint256 deadline) commit,(bytes32 hookId,bytes32 stageId,bytes32 hookName,uint8 flags,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks,(bytes32 stageId,bytes32 supplierId,uint8 kind)[] bindings,bytes signature) returns (bytes32 planId)",
+  "function commitPlan((address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,address birthAuthorizer,uint256 deadline) commit,(bytes32 hookId,bytes32 stageId,bytes32 hookName,uint8 flags,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks,(bytes32 stageId,bytes32 supplierId,uint8 kind)[] bindings,bytes signature) returns (bytes32 planId)",
   "function finalizePlan(bytes32 planId)",
-  "function planRuntimeHash(bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorBindingsRoot) pure returns (bytes32)",
+  "function planRuntimeHash(bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot) pure returns (bytes32)",
   "function planIdFor(address publisher,bytes32 runtimePlanHash) pure returns (bytes32)",
   "function triggerOrderIdFor(bytes32 planId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash) pure returns (bytes32)",
   "function orderLinkOrderIdFor(bytes32 planId,bytes32 originPlanId,bytes32 triggerOriginOrderId,bytes32 originSourceId,bytes32 originSignalId,bytes32 payloadHash) pure returns (bytes32)",
@@ -197,21 +200,21 @@ export const STATE_MACHINE_ABI = [
   "function planHookFlags(bytes32 planId,bytes32 hookId) view returns (uint8)",
   "function planHookStageId(bytes32 planId,bytes32 hookId) view returns (bytes32)",
   "function planBirthAuthorizer(bytes32 planId) view returns (address)",
-  "function activateStageExecutorFromModule(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 supplierId,uint256 patchNonce)",
-  "function activateStageDockExecutorFromModule(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 supplierId,bytes32 dockId,uint256 patchNonce)",
+  "function activateStageSupplierFromModule(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 supplierId,uint256 patchNonce)",
+  "function activateStageDockSupplierFromModule(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 supplierId,bytes32 dockId,uint256 patchNonce)",
   "function forkOrder(bytes32 planId,bytes32 parentOrderId,bytes32 forkPayloadHash,bytes32 approvalSourceId,bytes32 approvalSignalId,(bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey)[] birthFacts) returns (bytes32 forkedOrderId)",
   "function forkOrderIdFor(bytes32 planId,bytes32 parentOrderId,bytes32 forkPayloadHash) pure returns (bytes32)",
   "function stageSignalState(bytes32 planId,bytes32 orderId,bytes32 stageId) view returns (uint256 count,address lastSubmitter,uint64 lastAt,bool ambiguous)",
   "function orderParent(bytes32 planId,bytes32 orderId) view returns (bytes32)",
-  "function planExecutorBindingsRoot(bytes32 planId) view returns (bytes32)",
+  "function planSupplierBindingsRoot(bytes32 planId) view returns (bytes32)",
   "function planStageDefaultSupplier(bytes32 planId,bytes32 stageId) view returns (bytes32)",
-  "function planStageHasDynamicExecutor(bytes32 planId,bytes32 stageId) view returns (bool)",
+  "function planStageHasDynamicSupplier(bytes32 planId,bytes32 stageId) view returns (bool)",
   "function planStageIsCandidate(bytes32 planId,bytes32 stageId) view returns (bool)",
   "function isPlanStage(bytes32 planId,bytes32 stageId) view returns (bool)",
   "function effectiveStageSupplier(bytes32 planId,bytes32 orderId,bytes32 stageId) view returns (bytes32)",
-  "function effectiveStageExecutor(bytes32 planId,bytes32 orderId,bytes32 stageId) view returns (bytes32 supplierId,address executor)",
-  "function isEffectiveStageExecutor(bytes32 planId,bytes32 orderId,bytes32 stageId,address executor) view returns (bool)",
-  "function activeStageExecutorPatch(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bytes32 supplierId,uint256 patchNonce,bytes32 dockId)",
+  "function effectiveStageAccount(bytes32 planId,bytes32 orderId,bytes32 stageId) view returns (address)",
+  "function isEffectiveStageAccount(bytes32 planId,bytes32 orderId,bytes32 stageId,address account) view returns (bool)",
+  "function stageSupplierAssignment(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bytes32 supplierId,uint256 patchNonce,bytes32 dockId)",
   "function SIGNAL_TARGET_CURRENT_ORDER() view returns (uint8)",
   "function SIGNAL_TARGET_TRIGGER_ORIGIN() view returns (uint8)",
   "function DERIVED_SIGNAL_MODULE_ID() view returns (bytes32)",
@@ -223,7 +226,7 @@ export const STATE_MACHINE_ABI = [
   "function HOOK_FLAG_EMIT_READY() view returns (uint8)",
   "function HOOK_FLAG_ORDER_TRIGGER_MINT() view returns (uint8)",
   "function LENS_MODULE_ID() view returns (bytes32)",
-  "function MAX_EXECUTOR_BINDINGS() view returns (uint256)",
+  "function MAX_SUPPLIER_BINDINGS() view returns (uint256)",
   "function MAX_HOOK_DELAY_SECONDS() view returns (uint64)",
   "function MAX_PLAN_DEPENDENCIES() view returns (uint256)",
   "function ORDER_LINK_MODULE_ID() view returns (bytes32)",
@@ -308,10 +311,10 @@ export const ORDER_LINK_MODULE_ABI = [
   ...TRIGGER_ORDER_FROM_SIGNAL_FOR_ABI_ENTRY,
 ] as const;
 
-const APPLY_STAGE_EXECUTOR_PATCH_FOR_ABI_ENTRY = [
+const APPLY_STAGE_SUPPLIER_PATCH_FOR_ABI_ENTRY = [
   {
     type: "function",
-    name: "applyStageExecutorPatchFor",
+    name: "applyStageSupplierPatchFor",
     stateMutability: "nonpayable",
     inputs: [
       { name: "planId", type: "bytes32" },
@@ -330,7 +333,7 @@ const APPLY_STAGE_EXECUTOR_PATCH_FOR_ABI_ENTRY = [
       { name: "selector", type: "address" },
       { name: "deadline", type: "uint256" },
       { name: "selectorSignature", type: "bytes" },
-      { name: "previousExecutorSignature", type: "bytes" },
+      { name: "previousSupplierSignature", type: "bytes" },
       {
         name: "bindingProof",
         type: "tuple",
@@ -344,7 +347,7 @@ const APPLY_STAGE_EXECUTOR_PATCH_FOR_ABI_ENTRY = [
   },
 ] as const;
 
-const STAGE_DOCK_EXECUTOR_SELECTION_COMPONENTS = [
+const STAGE_DOCK_SUPPLIER_SELECTION_COMPONENTS = [
   { name: "selectorStageId", type: "bytes32" },
   { name: "targetStageId", type: "bytes32" },
   { name: "dockId", type: "bytes32" },
@@ -361,29 +364,29 @@ const STAGE_SELECTOR_BINDING_PROOF_COMPONENT = {
   ],
 } as const;
 
-const SELECT_STAGE_DOCK_EXECUTOR_ABI_ENTRY = [
+const SELECT_STAGE_DOCK_SUPPLIER_ABI_ENTRY = [
   {
     type: "function",
-    name: "selectStageDockExecutor",
+    name: "selectStageDockSupplier",
     stateMutability: "nonpayable",
     inputs: [
       { name: "planId", type: "bytes32" },
       { name: "orderId", type: "bytes32" },
-      { name: "selection", type: "tuple", components: STAGE_DOCK_EXECUTOR_SELECTION_COMPONENTS },
+      { name: "selection", type: "tuple", components: STAGE_DOCK_SUPPLIER_SELECTION_COMPONENTS },
       STAGE_SELECTOR_BINDING_PROOF_COMPONENT,
     ],
   },
 ] as const;
 
-const SELECT_STAGE_DOCK_EXECUTOR_FOR_ABI_ENTRY = [
+const SELECT_STAGE_DOCK_SUPPLIER_FOR_ABI_ENTRY = [
   {
     type: "function",
-    name: "selectStageDockExecutorFor",
+    name: "selectStageDockSupplierFor",
     stateMutability: "nonpayable",
     inputs: [
       { name: "planId", type: "bytes32" },
       { name: "orderId", type: "bytes32" },
-      { name: "selection", type: "tuple", components: STAGE_DOCK_EXECUTOR_SELECTION_COMPONENTS },
+      { name: "selection", type: "tuple", components: STAGE_DOCK_SUPPLIER_SELECTION_COMPONENTS },
       { name: "selector", type: "address" },
       { name: "deadline", type: "uint256" },
       { name: "selectorSignature", type: "bytes" },
@@ -394,22 +397,22 @@ const SELECT_STAGE_DOCK_EXECUTOR_FOR_ABI_ENTRY = [
 
 export const STAGE_PATCH_MODULE_ABI = [
   ...parseAbi([
-  "event StageExecutorPatchApplied(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed selectorStageId,bytes32 targetStageId,address selector,bytes32 supplierId,bytes32 previousSupplierId,uint256 patchNonce)",
-  "event StageDockExecutorSelected(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 dockId,bytes32 fromPlanId,bytes32 supplierId,address selector,uint256 patchNonce)",
+  "event StageSupplierPatchApplied(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed selectorStageId,bytes32 targetStageId,address selector,bytes32 supplierId,bytes32 previousSupplierId,uint256 patchNonce)",
+  "event StageDockSupplierSelected(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 dockId,bytes32 supplierId,uint256 patchNonce)",
   "event DockBindingPoked(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 dockId,bytes32 bindingId,bytes32 fromPlanId,bytes32 fromOrderId,bytes32 supplierId,uint256 emittedCount)",
   "event DockOutputSubmitted(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 bindingId,uint256 outputIndex,bytes32 signalId,bytes32 supplierId)",
   "function DOCK_PAYLOAD_FILE_KEY() view returns (bytes32)",
   "function DOCK_BINDING_ID_DOMAIN() view returns (bytes32)",
-  "function applyStageExecutorPatch(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 supplierId,bytes32 previousSupplierId,uint256 patchNonce) patch,(bytes32 selectorStageId,bytes32[] proof) bindingProof,bytes32[] candidateProof)",
-  "function stageExecutorPatchDigest(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 supplierId,bytes32 previousSupplierId,uint256 patchNonce) patch,address selector,uint256 deadline) view returns (bytes32)",
-  "function stageDockExecutorSelectionDigest(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 dockId,bytes32 supplierId,uint256 patchNonce) selection,address selector,uint256 deadline) view returns (bytes32)",
+  "function applyStageSupplierPatch(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 supplierId,bytes32 previousSupplierId,uint256 patchNonce) patch,(bytes32 selectorStageId,bytes32[] proof) bindingProof,bytes32[] candidateProof)",
+  "function stageSupplierPatchDigest(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 supplierId,bytes32 previousSupplierId,uint256 patchNonce) patch,address selector,uint256 deadline) view returns (bytes32)",
+  "function stageDockSupplierSelectionDigest(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 dockId,bytes32 supplierId,uint256 patchNonce) selection,address selector,uint256 deadline) view returns (bytes32)",
   "function pokeDockBinding(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes dockPayload,bytes32 fromOrderId,bytes32[][] outputCapabilityProofs) returns (uint256 emittedCount)",
-  "function getStageDockBinding(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 fromOrderId) view returns (bool selected,bool current,bytes32 dockId,bytes32 supplierId,address executor,bytes32 fromPlanId,bytes32 bindingId)",
+  "function getStageDockBinding(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 fromOrderId) view returns (bool selected,bool current,bytes32 dockId,bytes32 supplierId,address supplierAccount,bytes32 fromPlanId,bytes32 bindingId)",
   "function dockOutputWindow(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 fromOrderId,uint256 outputIndex) view returns (bool current,bool aSatisfied,uint64 aDueInSeconds,bool bSatisfied,bool emitted)",
   ]),
-  ...APPLY_STAGE_EXECUTOR_PATCH_FOR_ABI_ENTRY,
-  ...SELECT_STAGE_DOCK_EXECUTOR_ABI_ENTRY,
-  ...SELECT_STAGE_DOCK_EXECUTOR_FOR_ABI_ENTRY,
+  ...APPLY_STAGE_SUPPLIER_PATCH_FOR_ABI_ENTRY,
+  ...SELECT_STAGE_DOCK_SUPPLIER_ABI_ENTRY,
+  ...SELECT_STAGE_DOCK_SUPPLIER_FOR_ABI_ENTRY,
 ] as const;
 
 export const DERIVED_SIGNAL_MODULE_ABI = parseAbi([
@@ -422,19 +425,20 @@ export const DERIVED_SIGNAL_MODULE_ABI = parseAbi([
 
 export const STATE_MACHINE_LENS_ABI = parseAbi([
   "function stateMachine() view returns (address)",
-  "function effectiveStageExecutor(bytes32 planId,bytes32 orderId,bytes32 stageId) view returns (bytes32 supplierId,address executor)",
-  "function getActiveStageExecutorPatch(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bool exists,bytes32 supplierId,address executor,uint256 patchNonce,bytes32 dockId)",
+  "function effectiveStageSupplier(bytes32 planId,bytes32 orderId,bytes32 stageId) view returns (bytes32)",
+  "function effectiveStageAccount(bytes32 planId,bytes32 orderId,bytes32 stageId) view returns (address)",
+  "function getActiveStageSupplierAssignment(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bool exists,bytes32 supplierId,address supplierAccount,uint256 patchNonce,bytes32 dockId)",
   "function planCapabilitiesRoot(bytes32 planId) view returns (bytes32)",
-  "function planExecutorBindingsRoot(bytes32 planId) view returns (bytes32)",
-  "function planStageHasDynamicExecutor(bytes32 planId,bytes32 stageId) view returns (bool)",
+  "function planSupplierBindingsRoot(bytes32 planId) view returns (bytes32)",
+  "function planStageHasDynamicSupplier(bytes32 planId,bytes32 stageId) view returns (bool)",
   "function planStageIsCandidate(bytes32 planId,bytes32 stageId) view returns (bool)",
   "function planHasCapabilityVocabulary(bytes32 planId) view returns (bool)",
   "function verifySignalCapability(bytes32 planId,bytes32 stageId,bytes32 targetSourceId,bytes32 signalId,uint8 relation,bytes32[] proof) view returns (bool)",
   "function verifyStageSelectorBinding(bytes32 planId,bytes32 selectorStageId,bytes32 targetStageId,bytes32[] proof) view returns (bool)",
   "function targetOrderRelation(bytes32 fromPlanId,bytes32 fromOrderId,bytes32 targetPlanId,bytes32 targetOrderId) view returns (uint8)",
   "function getTriggerOriginLink(bytes32 planId,bytes32 triggeredOrderId) view returns (bool exists,bytes32 triggerOriginOrderId,bytes32 triggerOriginPlanId,bytes32 originSourceId,bytes32 originSignalId,bytes32 triggerStageId)",
-  "function getActiveStageDockSelection(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bool exists,bytes32 dockId,bytes32 fromPlanId,bytes32 supplierId)",
-  "function getStageDockBinding(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 fromOrderId) view returns (bool selected,bool current,bytes32 dockId,bytes32 supplierId,address executor,bytes32 fromPlanId,bytes32 bindingId)",
+  "function getActiveStageDockSupplierSelection(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bool exists,bytes32 dockId,bytes32 fromPlanId,bytes32 supplierId)",
+  "function getStageDockBinding(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 fromOrderId) view returns (bool selected,bool current,bytes32 dockId,bytes32 supplierId,address supplierAccount,bytes32 fromPlanId,bytes32 bindingId)",
   "function dockOutputWindow(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 fromOrderId,uint256 outputIndex) view returns (bool current,bool aSatisfied,uint64 aDueInSeconds,bool bSatisfied,bool emitted)",
 ]);
 
@@ -452,12 +456,12 @@ export const TRIGGER_ORDER_FROM_SIGNAL_PRIMARY_TYPE =
 export const DERIVED_SIGNAL_DOMAIN_NAME = "UVPDerivedSignalModule";
 export const DERIVED_SIGNAL_DOMAIN_VERSION = "0.7";
 export const DERIVED_SIGNAL_PRIMARY_TYPE = "UVPDerivedSignalModuleSignal";
-export const STAGE_EXECUTOR_PATCH_DOMAIN_NAME = "UVPStagePatchModule";
-export const STAGE_EXECUTOR_PATCH_DOMAIN_VERSION = "0.5";
-export const STAGE_EXECUTOR_PATCH_PRIMARY_TYPE =
-  "UVPStagePatchModuleStageExecutorPatch";
-export const STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN =
-  "uvp:stage-executor-patch-payload:v2";
+export const STAGE_PATCH_MODULE_DOMAIN_NAME = "UVPStagePatchModule";
+export const STAGE_PATCH_MODULE_DOMAIN_VERSION = "0.5";
+export const STAGE_SUPPLIER_PATCH_PRIMARY_TYPE =
+  "UVPStagePatchModuleStageSupplierPatch";
+export const STAGE_SUPPLIER_PATCH_PAYLOAD_HASH_DOMAIN =
+  "uvp:stage-supplier-patch-payload:v2";
 import {
   HOOK_FLAG_DOCK_EXECUTOR,
   HOOK_FLAG_DYNAMIC_EXECUTOR,
@@ -525,7 +529,7 @@ export const PLAN_COMMIT_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField
     { name: "publisher", type: "address" },
     { name: "hooksHash", type: "bytes32" },
     { name: "capabilitiesRoot", type: "bytes32" },
-    { name: "executorBindingsRoot", type: "bytes32" },
+    { name: "supplierBindingsRoot", type: "bytes32" },
     { name: "birthAuthorizer", type: "address" },
     { name: "deadline", type: "uint256" },
   ];
@@ -591,7 +595,7 @@ export const DERIVED_SIGNAL_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataFi
     { name: "deadline", type: "uint256" },
   ];
 
-export const STAGE_EXECUTOR_PATCH_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] =
+export const STAGE_SUPPLIER_PATCH_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] =
   [
     { name: "planId", type: "bytes32" },
     { name: "orderId", type: "bytes32" },
@@ -720,8 +724,8 @@ export interface PlanCommitPayload {
   readonly publisher: Address | string;
   readonly hooksHash: Hex | string;
   readonly capabilitiesRoot: Hex | string;
-  /** 执行者绑定树根（default/candidate 叶，空集归一化为 EMPTY_ROOT）。 */
-  readonly executorBindingsRoot: Hex | string;
+  /** supplier 绑定树根（default/candidate 叶，空集归一化为 EMPTY_ROOT）。 */
+  readonly supplierBindingsRoot: Hex | string;
   /**
    * 出生授权者（0.15 承诺域）：outside 出生提交的唯一被授权 submitter，
    * 只进 commit digest 与存储，不进 planRuntimeHash。零地址 = 关闭 outside
@@ -741,18 +745,16 @@ export interface PlanCommitTypedData {
     readonly publisher: Address;
     readonly hooksHash: Hex;
     readonly capabilitiesRoot: Hex;
-    readonly executorBindingsRoot: Hex;
+    readonly supplierBindingsRoot: Hex;
     readonly birthAuthorizer: Address;
     readonly deadline: string;
   };
 }
 
-export type ExecutorBindingKind = 0 | 1;
-
-export interface ExecutorBinding {
+export interface StageSupplierBinding {
   readonly stageId: Hex | string;
   readonly supplierId: Hex | string;
-  readonly kind: ExecutorBindingKind;
+  readonly kind: SupplierBindingKind;
 }
 
 // 一事一单：orderId 由合约 triggerOrderIdFor(planId, sourceId,
@@ -886,7 +888,7 @@ export interface TriggerOrderFromSignalTypedData {
   };
 }
 
-export interface StageExecutorPatchPayload {
+export interface StageSupplierPatchPayload {
   readonly selectorStageId: Hex | string;
   readonly targetStageId: Hex | string;
   readonly supplierId: Hex | string;
@@ -894,19 +896,19 @@ export interface StageExecutorPatchPayload {
   readonly patchNonce: bigint | number | string;
 }
 
-export type StageExecutorPatchCallPatch = StageExecutorPatchPayload;
+export type StageSupplierPatchCallPatch = StageSupplierPatchPayload;
 
-export interface StageExecutorPatchTypedData {
+export interface StageSupplierPatchTypedData {
   readonly domain: {
-    readonly name: typeof STAGE_EXECUTOR_PATCH_DOMAIN_NAME;
-    readonly version: typeof STAGE_EXECUTOR_PATCH_DOMAIN_VERSION;
+    readonly name: typeof STAGE_PATCH_MODULE_DOMAIN_NAME;
+    readonly version: typeof STAGE_PATCH_MODULE_DOMAIN_VERSION;
     readonly chainId: number;
     readonly verifyingContract: Address;
   };
   readonly types: {
-    readonly UVPStagePatchModuleStageExecutorPatch: readonly ProductSubmitTypedDataField[];
+    readonly UVPStagePatchModuleStageSupplierPatch: readonly ProductSubmitTypedDataField[];
   };
-  readonly primaryType: typeof STAGE_EXECUTOR_PATCH_PRIMARY_TYPE;
+  readonly primaryType: typeof STAGE_SUPPLIER_PATCH_PRIMARY_TYPE;
   readonly message: {
     readonly planId: Hex;
     readonly orderId: Hex;
@@ -950,8 +952,8 @@ export interface BuildSignalSubmissionTypedDataInput
   readonly verifyingContract: Address | string;
 }
 
-export interface BuildStageExecutorPatchTypedDataInput
-  extends StageExecutorPatchCallPatch {
+export interface BuildStageSupplierPatchTypedDataInput
+  extends StageSupplierPatchCallPatch {
   readonly chainId: number;
   readonly verifyingContract: Address | string;
   readonly planId: Hex | string;
@@ -1100,14 +1102,14 @@ export interface TriggerOrderFromSignalForCallArgs
   readonly originFactAttributions: readonly SignalAttributionPayload[];
 }
 
-export interface ApplyStageExecutorPatchForCallArgs {
+export interface ApplyStageSupplierPatchForCallArgs {
   readonly planId: Hex | string;
   readonly orderId: Hex | string;
-  readonly patch: StageExecutorPatchCallPatch;
+  readonly patch: StageSupplierPatchCallPatch;
   readonly selector: Address | string;
   readonly deadline: bigint | number | string;
   readonly selectorSignature: Hex | string;
-  readonly previousExecutorSignature: Hex | string;
+  readonly previousSupplierSignature: Hex | string;
   readonly bindingProof: SelectorBindingPayload;
   /** 候选集成员证明（candidate 阶段可用；dynamic 阶段空数组）。 */
   readonly candidateProof: readonly (Hex | string)[];
@@ -1149,7 +1151,7 @@ export interface OrderLinkModuleCallConfig {
   readonly chainId?: number;
 }
 
-export type ApplyStageExecutorPatchForCallConfig = StagePatchModuleCallConfig;
+export type ApplyStageSupplierPatchForCallConfig = StagePatchModuleCallConfig;
 export type SubmitDerivedSignalForCallConfig = DerivedSignalModuleCallConfig;
 export type TriggerOrderFromOutsideForCallConfig = SubmitSignalForCallConfig;
 export type TriggerOrderFromOutsideByAuthorizerCallConfig =
@@ -1289,7 +1291,7 @@ export interface TriggerOrderFromSignalForCall {
   readonly chainId?: number;
 }
 
-export type StageExecutorPatchCallTuple = readonly [
+export type StageSupplierPatchCallTuple = readonly [
   Hex,
   Hex,
   Hex,
@@ -1297,14 +1299,14 @@ export type StageExecutorPatchCallTuple = readonly [
   bigint,
 ];
 
-export interface ApplyStageExecutorPatchForCall {
+export interface ApplyStageSupplierPatchForCall {
   readonly address: Address;
   readonly abi: typeof STAGE_PATCH_MODULE_ABI;
-  readonly functionName: "applyStageExecutorPatchFor";
+  readonly functionName: "applyStageSupplierPatchFor";
   readonly args: readonly [
     Hex,
     Hex,
-    StageExecutorPatchCallTuple,
+    StageSupplierPatchCallTuple,
     Address,
     bigint,
     Hex,
@@ -1425,9 +1427,9 @@ export function buildPlanCommitTypedData(
         input.capabilitiesRoot,
         "capabilitiesRoot",
       ),
-      executorBindingsRoot: normalizeBytes32(
-        input.executorBindingsRoot,
-        "executorBindingsRoot",
+      supplierBindingsRoot: normalizeBytes32(
+        input.supplierBindingsRoot,
+        "supplierBindingsRoot",
       ),
       birthAuthorizer: normalizeAddress(input.birthAuthorizer, "birthAuthorizer"),
       deadline: normalizeUintString(input.deadline, "deadline"),
@@ -1606,14 +1608,14 @@ export function buildDerivedSignalTypedData(
   };
 }
 
-export function buildStageExecutorPatchTypedData(
-  input: BuildStageExecutorPatchTypedDataInput,
-): StageExecutorPatchTypedData {
-  const patch = normalizeStageExecutorPatch(input);
+export function buildStageSupplierPatchTypedData(
+  input: BuildStageSupplierPatchTypedDataInput,
+): StageSupplierPatchTypedData {
+  const patch = normalizeStageSupplierPatch(input);
   return {
     domain: {
-      name: STAGE_EXECUTOR_PATCH_DOMAIN_NAME,
-      version: STAGE_EXECUTOR_PATCH_DOMAIN_VERSION,
+      name: STAGE_PATCH_MODULE_DOMAIN_NAME,
+      version: STAGE_PATCH_MODULE_DOMAIN_VERSION,
       chainId: normalizeChainId(input.chainId),
       verifyingContract: normalizeAddress(
         input.verifyingContract,
@@ -1621,10 +1623,10 @@ export function buildStageExecutorPatchTypedData(
       ),
     },
     types: {
-      UVPStagePatchModuleStageExecutorPatch:
-        STAGE_EXECUTOR_PATCH_TYPED_DATA_FIELDS,
+      UVPStagePatchModuleStageSupplierPatch:
+        STAGE_SUPPLIER_PATCH_TYPED_DATA_FIELDS,
     },
-    primaryType: STAGE_EXECUTOR_PATCH_PRIMARY_TYPE,
+    primaryType: STAGE_SUPPLIER_PATCH_PRIMARY_TYPE,
     message: {
       planId: normalizeBytes32(input.planId, "planId"),
       orderId: normalizeBytes32(input.orderId, "orderId"),
@@ -1696,8 +1698,8 @@ export async function recoverDerivedSignalSigner(
   return normalizeAddress(recovered, "recoveredDerivedSignalSigner");
 }
 
-export async function recoverStageExecutorPatchSigner(
-  typedData: StageExecutorPatchTypedData,
+export async function recoverStageSupplierPatchSigner(
+  typedData: StageSupplierPatchTypedData,
   signature: Hex | string,
 ): Promise<Address> {
   const recovered = await recoverTypedDataAddress({
@@ -1707,7 +1709,7 @@ export async function recoverStageExecutorPatchSigner(
     message: typedData.message,
     signature: normalizeHex(signature, "signature"),
   } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
-  return normalizeAddress(recovered, "recoveredStageExecutorPatchSigner");
+  return normalizeAddress(recovered, "recoveredStageSupplierPatchSigner");
 }
 
 export async function recoverSignalSubmissionSigner(
@@ -1849,18 +1851,18 @@ export function buildTriggerOrderFromSignalForCall(
   };
 }
 
-export function buildApplyStageExecutorPatchForCall(
-  config: ApplyStageExecutorPatchForCallConfig,
-  args: ApplyStageExecutorPatchForCallArgs,
-): ApplyStageExecutorPatchForCall {
+export function buildApplyStageSupplierPatchForCall(
+  config: ApplyStageSupplierPatchForCallConfig,
+  args: ApplyStageSupplierPatchForCallArgs,
+): ApplyStageSupplierPatchForCall {
   const normalizedArgs = [
     normalizeBytes32(args.planId, "planId"),
     normalizeBytes32(args.orderId, "orderId"),
-    normalizeStageExecutorPatch(args.patch),
+    normalizeStageSupplierPatch(args.patch),
     normalizeAddress(args.selector, "selector"),
     normalizeUintBigInt(args.deadline, "deadline"),
     normalizeHex(args.selectorSignature, "selectorSignature"),
-    normalizeHex(args.previousExecutorSignature, "previousExecutorSignature"),
+    normalizeHex(args.previousSupplierSignature, "previousSupplierSignature"),
     normalizeSelectorBinding(args.bindingProof),
     args.candidateProof.map((word, index) =>
       normalizeBytes32(word, `candidateProof[${index}]`),
@@ -1873,11 +1875,11 @@ export function buildApplyStageExecutorPatchForCall(
       "stagePatchModuleAddress",
     ),
     abi: STAGE_PATCH_MODULE_ABI,
-    functionName: "applyStageExecutorPatchFor",
+    functionName: "applyStageSupplierPatchFor",
     args: normalizedArgs,
     data: encodeFunctionData({
       abi: STAGE_PATCH_MODULE_ABI,
-      functionName: "applyStageExecutorPatchFor",
+      functionName: "applyStageSupplierPatchFor",
       args: normalizedArgs as never,
     }),
     ...(config.chainId !== undefined
@@ -1939,11 +1941,11 @@ export function buildSubmitSignalForCall(
   };
 }
 
-export function hashStageExecutorPatchPayload(
-  payload: StageExecutorPatchPayload,
+export function hashStageSupplierPatchPayload(
+  payload: StageSupplierPatchPayload,
 ): Hex {
-  const normalized = normalizeStageExecutorPatchPayload(payload);
-  // 域分离：payload 哈希以 keccak256(STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN)
+  const normalized = normalizeStageSupplierPatchPayload(payload);
+  // 域分离：payload 哈希以 keccak256(STAGE_SUPPLIER_PATCH_PAYLOAD_HASH_DOMAIN)
   // 开头——域常量必须真正进入 preimage，只在定义处引用等于没有分域。
   return keccak256(
     encodeAbiParameters(
@@ -1956,7 +1958,7 @@ export function hashStageExecutorPatchPayload(
         { name: "patchNonce", type: "uint256" },
       ],
       [
-        keccak256(stringToHex(STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN)),
+        keccak256(stringToHex(STAGE_SUPPLIER_PATCH_PAYLOAD_HASH_DOMAIN)),
         normalized.selectorStageId,
         normalized.targetStageId,
         normalized.supplierId,
@@ -2088,7 +2090,7 @@ function normalizeTriggerOrderFromOutside(
     normalizeNonZeroBytes32(trigger.triggerHookId, "triggerHookId"),
     normalizeNonZeroBytes32(trigger.triggerStageId, "triggerStageId"),
     // 零字闸镜像：triggerOrderFromOutsideFor 对 sourceId==0 revert
-    // ZeroSourceId（零字出生事实是 stage 物化与 executor 门的永久豁免键）。
+    // ZeroSourceId（零字出生事实是 stage 物化与 supplier 指派门的永久豁免键）。
     normalizeNonZeroBytes32(trigger.sourceId, "sourceId"),
     normalizeNonZeroBytes32(trigger.signalId, "signalId"),
     normalizeBytes32(trigger.payloadHash, "payloadHash"),
@@ -2177,9 +2179,9 @@ function normalizeDerivedSignalRequest(
   };
 }
 
-function normalizeStageExecutorPatch(
-  patch: StageExecutorPatchCallPatch,
-): StageExecutorPatchCallTuple {
+function normalizeStageSupplierPatch(
+  patch: StageSupplierPatchCallPatch,
+): StageSupplierPatchCallTuple {
   return [
     normalizeNonZeroBytes32(patch.selectorStageId, "selectorStageId"),
     normalizeNonZeroBytes32(patch.targetStageId, "targetStageId"),
@@ -2189,8 +2191,8 @@ function normalizeStageExecutorPatch(
   ] as const;
 }
 
-function normalizeStageExecutorPatchPayload(
-  payload: StageExecutorPatchPayload,
+function normalizeStageSupplierPatchPayload(
+  payload: StageSupplierPatchPayload,
 ): {
   readonly selectorStageId: Hex;
   readonly targetStageId: Hex;
@@ -2336,29 +2338,23 @@ export interface PlanRegistrationHook {
   readonly routeId?: Hex | string;
 }
 
-export interface PlanRegistrationExecutorBinding {
-  readonly stageId: Hex | string;
-  readonly supplierId: Hex | string;
-  readonly kind: ExecutorBindingKind;
-}
-
 export interface PlanRegistrationArgs {
   readonly planId: Hex | string;
   readonly planHash: Hex | string;
   readonly hooksHash: Hex | string;
   readonly capabilitiesRoot: Hex | string;
-  readonly executorBindingsRoot: Hex | string;
+  readonly supplierBindingsRoot: Hex | string;
   readonly hooks: readonly PlanRegistrationHook[];
-  readonly executorBindings: readonly PlanRegistrationExecutorBinding[];
+  readonly supplierBindings: readonly StageSupplierBinding[];
 }
 
 export interface PlanRegistrationSource {
   readonly planHash: Hex | string;
   readonly hooksHash: Hex | string;
   readonly capabilitiesRoot: Hex | string;
-  readonly executorBindingsRoot: Hex | string;
+  readonly supplierBindingsRoot: Hex | string;
   readonly hooks: readonly PlanRegistrationHook[];
-  readonly executorBindings: readonly PlanRegistrationExecutorBinding[];
+  readonly supplierBindings: readonly StageSupplierBinding[];
 }
 
 export interface StateMachineCallConfig {
@@ -2383,9 +2379,9 @@ export function planRegistrationArgs(
     planHash: source.planHash,
     hooksHash: source.hooksHash,
     capabilitiesRoot: source.capabilitiesRoot,
-    executorBindingsRoot: source.executorBindingsRoot,
+    supplierBindingsRoot: source.supplierBindingsRoot,
     hooks: source.hooks,
-    executorBindings: source.executorBindings,
+    supplierBindings: source.supplierBindings,
   };
 }
 
@@ -2407,15 +2403,15 @@ interface PlanCommitTuple {
   readonly publisher: Address;
   readonly hooksHash: Hex;
   readonly capabilitiesRoot: Hex;
-  readonly executorBindingsRoot: Hex;
+  readonly supplierBindingsRoot: Hex;
   readonly birthAuthorizer: Address;
   readonly deadline: bigint;
 }
 
-interface ExecutorBindingCallStruct {
+interface SupplierBindingCallStruct {
   readonly stageId: Hex;
   readonly supplierId: Hex;
-  readonly kind: ExecutorBindingKind;
+  readonly kind: SupplierBindingKind;
 }
 
 interface PlanCommitHookTuple {
@@ -2446,7 +2442,7 @@ export function buildPlanCommitTypedDataFor(
     publisher: commit.publisher,
     hooksHash: commit.hooksHash,
     capabilitiesRoot: commit.capabilitiesRoot,
-    executorBindingsRoot: commit.executorBindingsRoot,
+    supplierBindingsRoot: commit.supplierBindingsRoot,
     birthAuthorizer: commit.birthAuthorizer,
     deadline: commit.deadline,
   });
@@ -2460,13 +2456,13 @@ export function buildPlanCommitCall(
   const commit = planCommitTuple(config, args);
   const signature = normalizePlanSignature(args.signature);
   const hooks = encodePlanRegistrationHooks(args.registration.hooks);
-  const bindings = args.registration.executorBindings.map((binding) => ({
-    stageId: normalizeBytes32(binding.stageId, "executorBindings[].stageId"),
+  const bindings = args.registration.supplierBindings.map((binding) => ({
+    stageId: normalizeBytes32(binding.stageId, "supplierBindings[].stageId"),
     supplierId: normalizeBytes32(
       binding.supplierId,
-      "executorBindings[].supplierId",
+      "supplierBindings[].supplierId",
     ),
-    kind: normalizeExecutorBindingKind(binding.kind),
+    kind: normalizeSupplierBindingKind(binding.kind),
   }));
   const data = encodeFunctionData({
     abi: STATE_MACHINE_ABI,
@@ -2526,9 +2522,9 @@ function planCommitTuple(
     publisher,
     hooksHash: normalizeBytes32(args.registration.hooksHash, "hooksHash"),
     capabilitiesRoot: normalizeBytes32(args.registration.capabilitiesRoot, "capabilitiesRoot"),
-    executorBindingsRoot: normalizeBytes32(
-      args.registration.executorBindingsRoot,
-      "executorBindingsRoot",
+    supplierBindingsRoot: normalizeBytes32(
+      args.registration.supplierBindingsRoot,
+      "supplierBindingsRoot",
     ),
     birthAuthorizer: args.birthAuthorizer === undefined
       ? publisher
@@ -2591,9 +2587,12 @@ function normalizePlanArity(value: number): number {
   return value;
 }
 
-function normalizeExecutorBindingKind(value: number): ExecutorBindingKind {
-  if (value !== 0 && value !== 1) {
-    throw new Error("executorBindings[].kind must be 0 (default) or 1 (candidate)");
+function normalizeSupplierBindingKind(value: number): SupplierBindingKind {
+  if (
+    value !== SUPPLIER_BINDING_KIND_DEFAULT &&
+    value !== SUPPLIER_BINDING_KIND_CANDIDATE
+  ) {
+    throw new Error("supplierBindings[].kind must be 0 (default) or 1 (candidate)");
   }
   return value;
 }
@@ -2804,15 +2803,15 @@ export const DOCK_PAYLOAD_FILE_KEY = keccak256(
 export const DOCK_BINDING_ID_DOMAIN = keccak256(
   stringToHex("uvp.dock.binding_id.v1"),
 ) as Hex;
-export const STAGE_DOCK_EXECUTOR_SELECTION_PRIMARY_TYPE =
-  "UVPStagePatchModuleStageDockExecutorSelection";
-export const STAGE_DOCK_EXECUTOR_SELECTION_TYPEHASH = keccak256(
+export const STAGE_DOCK_SUPPLIER_SELECTION_PRIMARY_TYPE =
+  "UVPStagePatchModuleStageDockSupplierSelection";
+export const STAGE_DOCK_SUPPLIER_SELECTION_TYPEHASH = keccak256(
   stringToHex(
-    "UVPStagePatchModuleStageDockExecutorSelection(bytes32 planId,bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,bytes32 dockId,bytes32 supplierId,uint256 patchNonce,address selector,uint256 deadline)",
+    "UVPStagePatchModuleStageDockSupplierSelection(bytes32 planId,bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,bytes32 dockId,bytes32 supplierId,uint256 patchNonce,address selector,uint256 deadline)",
   ),
 ) as Hex;
 
-export const STAGE_DOCK_EXECUTOR_SELECTION_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] =
+export const STAGE_DOCK_SUPPLIER_SELECTION_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField[] =
   [
     { name: "planId", type: "bytes32" },
     { name: "orderId", type: "bytes32" },
@@ -2863,7 +2862,7 @@ export function dockBindingId(input: {
   ) as Hex;
 }
 
-export interface StageDockExecutorSelectionPayload {
+export interface StageDockSupplierSelectionPayload {
   readonly selectorStageId: Hex | string;
   readonly targetStageId: Hex | string;
   readonly dockId: Hex | string;
@@ -2871,7 +2870,7 @@ export interface StageDockExecutorSelectionPayload {
   readonly patchNonce: bigint | number | string;
 }
 
-export interface StageDockExecutorSelectionCallStruct {
+export interface StageDockSupplierSelectionCallStruct {
   readonly selectorStageId: Hex;
   readonly targetStageId: Hex;
   readonly dockId: Hex;
@@ -2879,9 +2878,9 @@ export interface StageDockExecutorSelectionCallStruct {
   readonly patchNonce: bigint;
 }
 
-function normalizeStageDockExecutorSelection(
-  selection: StageDockExecutorSelectionPayload,
-): StageDockExecutorSelectionCallStruct {
+function normalizeStageDockSupplierSelection(
+  selection: StageDockSupplierSelectionPayload,
+): StageDockSupplierSelectionCallStruct {
   return {
     selectorStageId: normalizeNonZeroBytes32(
       selection.selectorStageId,
@@ -2897,17 +2896,17 @@ function normalizeStageDockExecutorSelection(
   };
 }
 
-export interface StageDockExecutorSelectionTypedData {
+export interface StageDockSupplierSelectionTypedData {
   readonly domain: {
-    readonly name: typeof STAGE_EXECUTOR_PATCH_DOMAIN_NAME;
-    readonly version: typeof STAGE_EXECUTOR_PATCH_DOMAIN_VERSION;
+    readonly name: typeof STAGE_PATCH_MODULE_DOMAIN_NAME;
+    readonly version: typeof STAGE_PATCH_MODULE_DOMAIN_VERSION;
     readonly chainId: number;
     readonly verifyingContract: Address;
   };
   readonly types: {
-    readonly UVPStagePatchModuleStageDockExecutorSelection: readonly ProductSubmitTypedDataField[];
+    readonly UVPStagePatchModuleStageDockSupplierSelection: readonly ProductSubmitTypedDataField[];
   };
-  readonly primaryType: typeof STAGE_DOCK_EXECUTOR_SELECTION_PRIMARY_TYPE;
+  readonly primaryType: typeof STAGE_DOCK_SUPPLIER_SELECTION_PRIMARY_TYPE;
   readonly message: {
     readonly planId: Hex;
     readonly orderId: Hex;
@@ -2921,24 +2920,24 @@ export interface StageDockExecutorSelectionTypedData {
   };
 }
 
-export interface BuildStageDockExecutorSelectionTypedDataInput {
+export interface BuildStageDockSupplierSelectionTypedDataInput {
   readonly chainId: number;
   readonly verifyingContract: Address | string;
   readonly planId: Hex | string;
   readonly orderId: Hex | string;
   readonly selector: Address | string;
   readonly deadline: bigint | number | string;
-  readonly selection: StageDockExecutorSelectionPayload;
+  readonly selection: StageDockSupplierSelectionPayload;
 }
 
-export function buildStageDockExecutorSelectionTypedData(
-  input: BuildStageDockExecutorSelectionTypedDataInput,
-): StageDockExecutorSelectionTypedData {
-  const selection = normalizeStageDockExecutorSelection(input.selection);
+export function buildStageDockSupplierSelectionTypedData(
+  input: BuildStageDockSupplierSelectionTypedDataInput,
+): StageDockSupplierSelectionTypedData {
+  const selection = normalizeStageDockSupplierSelection(input.selection);
   return {
     domain: {
-      name: STAGE_EXECUTOR_PATCH_DOMAIN_NAME,
-      version: STAGE_EXECUTOR_PATCH_DOMAIN_VERSION,
+      name: STAGE_PATCH_MODULE_DOMAIN_NAME,
+      version: STAGE_PATCH_MODULE_DOMAIN_VERSION,
       chainId: normalizeChainId(input.chainId),
       verifyingContract: normalizeAddress(
         input.verifyingContract,
@@ -2946,10 +2945,10 @@ export function buildStageDockExecutorSelectionTypedData(
       ),
     },
     types: {
-      UVPStagePatchModuleStageDockExecutorSelection:
-        STAGE_DOCK_EXECUTOR_SELECTION_TYPED_DATA_FIELDS,
+      UVPStagePatchModuleStageDockSupplierSelection:
+        STAGE_DOCK_SUPPLIER_SELECTION_TYPED_DATA_FIELDS,
     },
-    primaryType: STAGE_DOCK_EXECUTOR_SELECTION_PRIMARY_TYPE,
+    primaryType: STAGE_DOCK_SUPPLIER_SELECTION_PRIMARY_TYPE,
     message: {
       planId: normalizeNonZeroBytes32(input.planId, "planId"),
       orderId: normalizeNonZeroBytes32(input.orderId, "orderId"),
@@ -2964,8 +2963,8 @@ export function buildStageDockExecutorSelectionTypedData(
   };
 }
 
-export async function recoverStageDockExecutorSelectionSigner(
-  typedData: StageDockExecutorSelectionTypedData,
+export async function recoverStageDockSupplierSelectionSigner(
+  typedData: StageDockSupplierSelectionTypedData,
   signature: Hex | string,
 ): Promise<Address> {
   const recovered = await recoverTypedDataAddress({
@@ -2975,29 +2974,29 @@ export async function recoverStageDockExecutorSelectionSigner(
     message: typedData.message,
     signature: normalizeHex(signature, "signature"),
   } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
-  return normalizeAddress(recovered, "recoveredStageDockExecutorSelectionSigner");
+  return normalizeAddress(recovered, "recoveredStageDockSupplierSelectionSigner");
 }
 
-export interface SelectStageDockExecutorCallArgs {
+export interface SelectStageDockSupplierCallArgs {
   readonly planId: Hex | string;
   readonly orderId: Hex | string;
-  readonly selection: StageDockExecutorSelectionPayload;
+  readonly selection: StageDockSupplierSelectionPayload;
   readonly bindingProof: SelectorBindingPayload;
 }
 
-export interface SelectStageDockExecutorCall {
+export interface SelectStageDockSupplierCall {
   readonly address: Address;
   readonly abi: typeof STAGE_PATCH_MODULE_ABI;
-  readonly functionName: "selectStageDockExecutor";
+  readonly functionName: "selectStageDockSupplier";
   readonly args: readonly unknown[];
   readonly data: Hex;
   readonly chainId?: number;
 }
 
-export function buildSelectStageDockExecutorCall(
+export function buildSelectStageDockSupplierCall(
   config: StagePatchModuleCallConfig,
-  args: SelectStageDockExecutorCallArgs,
-): SelectStageDockExecutorCall {
+  args: SelectStageDockSupplierCallArgs,
+): SelectStageDockSupplierCall {
   const address = normalizeAddress(
     config.stagePatchModuleAddress,
     "stagePatchModuleAddress",
@@ -3005,17 +3004,17 @@ export function buildSelectStageDockExecutorCall(
   const normalizedArgs = [
     normalizeNonZeroBytes32(args.planId, "planId"),
     normalizeNonZeroBytes32(args.orderId, "orderId"),
-    normalizeStageDockExecutorSelection(args.selection),
+    normalizeStageDockSupplierSelection(args.selection),
     normalizeSelectorBinding(args.bindingProof),
   ] as const;
   return {
     address,
     abi: STAGE_PATCH_MODULE_ABI,
-    functionName: "selectStageDockExecutor",
+    functionName: "selectStageDockSupplier",
     args: normalizedArgs,
     data: encodeFunctionData({
       abi: STAGE_PATCH_MODULE_ABI,
-      functionName: "selectStageDockExecutor",
+      functionName: "selectStageDockSupplier",
       args: normalizedArgs as never,
     }),
     ...(config.chainId !== undefined
@@ -3024,26 +3023,26 @@ export function buildSelectStageDockExecutorCall(
   };
 }
 
-export interface SelectStageDockExecutorForCallArgs
-  extends SelectStageDockExecutorCallArgs {
+export interface SelectStageDockSupplierForCallArgs
+  extends SelectStageDockSupplierCallArgs {
   readonly selector: Address | string;
   readonly deadline: bigint | number | string;
   readonly signature: Hex | string;
 }
 
-export interface SelectStageDockExecutorForCall {
+export interface SelectStageDockSupplierForCall {
   readonly address: Address;
   readonly abi: typeof STAGE_PATCH_MODULE_ABI;
-  readonly functionName: "selectStageDockExecutorFor";
+  readonly functionName: "selectStageDockSupplierFor";
   readonly args: readonly unknown[];
   readonly data: Hex;
   readonly chainId?: number;
 }
 
-export function buildSelectStageDockExecutorForCall(
+export function buildSelectStageDockSupplierForCall(
   config: StagePatchModuleCallConfig,
-  args: SelectStageDockExecutorForCallArgs,
-): SelectStageDockExecutorForCall {
+  args: SelectStageDockSupplierForCallArgs,
+): SelectStageDockSupplierForCall {
   const address = normalizeAddress(
     config.stagePatchModuleAddress,
     "stagePatchModuleAddress",
@@ -3051,7 +3050,7 @@ export function buildSelectStageDockExecutorForCall(
   const normalizedArgs = [
     normalizeNonZeroBytes32(args.planId, "planId"),
     normalizeNonZeroBytes32(args.orderId, "orderId"),
-    normalizeStageDockExecutorSelection(args.selection),
+    normalizeStageDockSupplierSelection(args.selection),
     normalizeAddress(args.selector, "selector"),
     normalizeUintBigInt(args.deadline, "deadline"),
     normalizeHex(args.signature, "signature"),
@@ -3060,11 +3059,11 @@ export function buildSelectStageDockExecutorForCall(
   return {
     address,
     abi: STAGE_PATCH_MODULE_ABI,
-    functionName: "selectStageDockExecutorFor",
+    functionName: "selectStageDockSupplierFor",
     args: normalizedArgs,
     data: encodeFunctionData({
       abi: STAGE_PATCH_MODULE_ABI,
-      functionName: "selectStageDockExecutorFor",
+      functionName: "selectStageDockSupplierFor",
       args: normalizedArgs as never,
     }),
     ...(config.chainId !== undefined
@@ -3397,6 +3396,10 @@ export function buildRegisterDockCallFromArtifact(
       : { toCapabilityTables: input.toCapabilityTables }),
   });
 }
+
+// UUID SID 编解码单源在 @uvp-eth/compiler/browser（onchain/supplier-bindings.ts）。
+export { supplierIdFromUuid, uuidFromSupplierId } from "@uvp-eth/compiler/browser";
+export type { SupplierBindingKind };
 
 // 签名闸门单源（三端签名前校验与用户拒绝判定的最强集），见 signing-gate.ts。
 export {

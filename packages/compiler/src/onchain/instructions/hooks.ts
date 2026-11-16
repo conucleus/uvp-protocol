@@ -6,8 +6,8 @@ import { HookPlanCompilationError } from "../../hook-plan.js";
 import { OnchainHookPlanArtifactValidationError } from "../validate/artifact.js";
 import {
   FILE_TYPES,
+  PLAN_SUPPLIER_TYPES,
   selectorBindingKey,
-  SUPPLIER_TYPES,
 } from "../validate/capabilities.js";
 import {
   compareSelectorBindings,
@@ -26,21 +26,22 @@ import {
   onchainStageId,
   routeHashFromDigests,
 } from "../hash/route.js";
+import { supplierIdFromUuid } from "../supplier-bindings.js";
 import { assertNever, isRecord } from "../shape.js";
 import type {
-  HookPlanExecutorRoute,
-  OnchainExecutorRoute,
-  OnchainExecutorRouteRef,
+  HookPlanSupplierRoute,
   OnchainHookInstruction,
   OnchainSignalCapability,
   OnchainStageSelectorBinding,
+  OnchainSupplierRoute,
+  OnchainSupplierRouteRef,
   OrderTriggerKind,
   SelectedStageBinding,
   SignalCapability,
 } from "../../types/index.js";
 
 /**
- * hook 编译转换：条件 AST → 栈机指令，hook 周边声明（executor route /
+ * hook 编译转换：条件 AST → 栈机指令，hook 周边声明（supplier route /
  * selector binding / signal capability）→ 链轨形态。
  */
 
@@ -113,26 +114,31 @@ function signalInstruction(
   };
 }
 
-function compileExecutorRoute(
-  route: HookPlanExecutorRoute,
-): OnchainExecutorRoute {
+function compileSupplierRoute(
+  route: HookPlanSupplierRoute,
+): OnchainSupplierRoute {
   if (
     route.executor.supplierID === undefined ||
     route.executor.supplierID.trim().length === 0
   ) {
     throw new HookPlanCompilationError([
-      `executor route "${route.stageIdentifier}" (supplierType=${String(route.executor.supplierType)}) is missing a non-empty executor.supplierID`,
+      `stage "${route.stageIdentifier}" (supplierType=${String(route.executor.supplierType)}) is missing a non-empty executor.supplierID`,
     ]);
   }
   const supplierType = String(route.executor.supplierType);
-  if (!SUPPLIER_TYPES.includes(supplierType)) {
+  if (!PLAN_SUPPLIER_TYPES.includes(supplierType)) {
     throw new HookPlanCompilationError([
-      `executor route "${route.stageIdentifier}" supplierType must be one of ${SUPPLIER_TYPES.join("|")} (case-sensitive), received ${JSON.stringify(supplierType)}`,
+      `supplier route "${route.stageIdentifier}" supplierType must be one of ${PLAN_SUPPLIER_TYPES.join("|")} (case-sensitive), received ${JSON.stringify(supplierType)}`,
     ]);
   }
-  if (supplierType === "dock") {
+  let supplierID: string;
+  try {
+    supplierIdFromUuid(route.executor.supplierID);
+    supplierID = route.executor.supplierID.toLowerCase();
+  } catch (error) {
     throw new HookPlanCompilationError([
-      `executor route "${route.stageIdentifier}" is a dock stage; a dock stage's executor is selected once through the stage executor patch (dkid) and never becomes a plan route`,
+      `supplier route "${route.stageIdentifier}" executor.supplierID: `
+        + (error instanceof Error ? error.message : String(error)),
     ]);
   }
   const assertFileResources = (
@@ -144,7 +150,7 @@ function compileExecutorRoute(
     }
     if (!isRecord(resources)) {
       throw new HookPlanCompilationError([
-        `executor route "${route.stageIdentifier}" ${label} must be a map of file resources`,
+        `supplier route "${route.stageIdentifier}" ${label} must be a map of file resources`,
       ]);
     }
     for (const [key, resource] of Object.entries(resources)) {
@@ -154,7 +160,7 @@ function compileExecutorRoute(
           : undefined;
       if (typeof fileType !== "string" || !FILE_TYPES.includes(fileType)) {
         throw new HookPlanCompilationError([
-          `executor route "${route.stageIdentifier}" ${label}[${JSON.stringify(key)}].fileType must be one of ${FILE_TYPES.join("|")}, received ${JSON.stringify(fileType)}`,
+          `supplier route "${route.stageIdentifier}" ${label}[${JSON.stringify(key)}].fileType must be one of ${FILE_TYPES.join("|")}, received ${JSON.stringify(fileType)}`,
         ]);
       }
     }
@@ -164,21 +170,21 @@ function compileExecutorRoute(
     assertFileResources(selectable, "executor.selectableResource");
   }
   assertFileResources(route.fileResources, "fileResources");
-  const executorHash = opaqueContentHash(route.executor);
+  const supplierHash = opaqueContentHash(route.executor);
   const resourcesHash =
     route.fileResources === undefined ? ZERO_HASH : opaqueContentHash(route.fileResources);
   return {
     routeId: onchainRouteId(route.stageIdentifier),
     stageId: onchainStageId(route.stageIdentifier),
     stageIdentifier: route.stageIdentifier,
-    executorType: String(route.executor.supplierType),
-    executorId: route.executor.supplierID,
-    executorHash,
+    supplierType,
+    supplierID,
+    supplierHash,
     resourcesHash,
     routeHash: routeHashFromDigests(
       onchainStageId(route.stageIdentifier),
       route.stageIdentifier,
-      executorHash,
+      supplierHash,
       resourcesHash,
     ),
   };
@@ -266,8 +272,8 @@ function compileSignalCapabilities(
 }
 
 function routeRefForRoute(
-  route: HookPlanExecutorRoute,
-): OnchainExecutorRouteRef {
+  route: HookPlanSupplierRoute,
+): OnchainSupplierRouteRef {
   return {
     routeId: onchainRouteId(route.stageIdentifier),
     stageId: onchainStageId(route.stageIdentifier),
@@ -277,7 +283,7 @@ function routeRefForRoute(
 
 export {
   compileHookInstructions,
-  compileExecutorRoute,
+  compileSupplierRoute,
   compileSelectorBindings,
   compileSignalCapabilities,
   routeRefForRoute,

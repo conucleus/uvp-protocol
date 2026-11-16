@@ -72,7 +72,7 @@ export interface HookPlanArtifact {
   readonly platform: ZhixuPlatform;
   readonly compiledHooks: readonly CompiledHookPlanHook[];
   readonly dependencyIndex: Record<string, readonly string[]>;
-  readonly executorRoutes: Record<string, HookPlanExecutorRoute>;
+  readonly supplierRoutes: Record<string, HookPlanSupplierRoute>;
   readonly selectedStageBindings: readonly SelectedStageBinding[];
   readonly signalCapabilities: readonly SignalCapability[];
   readonly admissions: readonly CompiledHookPlanAdmission[];
@@ -107,10 +107,10 @@ export interface CompiledHookPlanHook {
   readonly normalizedExpression: string;
   readonly ast: import("@uvp-eth/hook-core").HookExpressionAst;
   readonly dependencies: readonly import("@uvp-eth/hook-core").HookDependency[];
-  readonly route?: HookPlanExecutorRoute;
+  readonly route?: HookPlanSupplierRoute;
 }
 
-export interface HookPlanExecutorRoute {
+export interface HookPlanSupplierRoute {
   readonly stageIdentifier: string;
   readonly executor: ExecuteConfigs;
   readonly fileResources?: Record<string, FileResourceLike>;
@@ -132,24 +132,25 @@ export interface SelectedStageBinding {
 
 export type SignalTargetOrderRelation = "current";
 
-export type ExecutorBindingKind = 0 | 1;
+export type SupplierBindingKind = 0 | 1;
 
-export interface ExecutorCandidateInput {
+export interface SupplierCandidateInput {
   readonly stageIdentifier: string;
   readonly supplierID: string;
 }
 
-export interface ExecutorBinding {
+export interface StageSupplierBinding {
   readonly stageIdentifier: string;
   readonly stageId: HexString;
+  readonly supplierID: string;
   readonly supplierId: HexString;
-  readonly kind: ExecutorBindingKind;
+  readonly kind: SupplierBindingKind;
 }
 
-export interface ExecutorBindingInput {
+export interface StageSupplierBindingInput {
   readonly stageIdentifier: string;
   readonly supplierID: string;
-  readonly kind: ExecutorBindingKind;
+  readonly kind: SupplierBindingKind;
 }
 
 export interface SignalCapability {
@@ -200,19 +201,19 @@ export interface OnchainHookDependency {
   readonly delaySeconds?: number;
 }
 
-export interface OnchainExecutorRouteRef {
+export interface OnchainSupplierRouteRef {
   readonly routeId: HexString;
   readonly stageId: HexString;
   readonly routeHash: HexString;
 }
 
-export interface OnchainExecutorRoute {
+export interface OnchainSupplierRoute {
   readonly routeId: HexString;
   readonly stageId: HexString;
   readonly stageIdentifier: string;
-  readonly executorType: string;
-  readonly executorId: string;
-  readonly executorHash: HexString;
+  readonly supplierType: string;
+  readonly supplierID: string;
+  readonly supplierHash: HexString;
   readonly resourcesHash: HexString;
   readonly routeHash: HexString;
 }
@@ -258,7 +259,7 @@ export interface OnchainCompiledHook {
   readonly dynamicExecutor: boolean;
   readonly instructions: readonly OnchainHookInstruction[];
   readonly dependencies: readonly OnchainHookDependency[];
-  readonly routeRef?: OnchainExecutorRouteRef;
+  readonly routeRef?: OnchainSupplierRouteRef;
 }
 
 export interface OnchainCompiledAdmission {
@@ -282,14 +283,14 @@ export interface OnchainHookPlanArtifact {
   readonly compiledHooks: readonly OnchainCompiledHook[];
   readonly triggers: readonly OnchainPlanTrigger[];
   readonly dependencyIndex: Record<HexString, readonly HexString[]>;
-  readonly executorRoutes: readonly OnchainExecutorRoute[];
+  readonly supplierRoutes: readonly OnchainSupplierRoute[];
   readonly capabilitiesRoot: HexString;
   readonly selectorBindings: readonly OnchainStageSelectorBinding[];
   readonly signalCapabilities: readonly OnchainSignalCapability[];
   readonly stageFileWriters: readonly OnchainStageFileWriter[];
   readonly admissions: readonly OnchainCompiledAdmission[];
-  readonly executorBindings: readonly ExecutorBinding[];
-  readonly executorBindingsRoot: HexString;
+  readonly supplierBindings: readonly StageSupplierBinding[];
+  readonly supplierBindingsRoot: HexString;
   readonly planHash: HexString;
 }
 
@@ -328,12 +329,12 @@ export interface SolidityRegisterDependencyIndexArg {
   readonly hookIds: readonly HexString[];
 }
 
-export interface SolidityRegisterExecutorRouteArg {
+export interface SolidityRegisterSupplierRouteArg {
   readonly routeId: HexString;
   readonly stageId: HexString;
-  readonly executorType: string;
-  readonly executorId: string;
-  readonly executorHash: HexString;
+  readonly supplierType: string;
+  readonly supplierID: string;
+  readonly supplierHash: HexString;
   readonly resourcesHash: HexString;
   readonly routeHash: HexString;
 }
@@ -355,10 +356,10 @@ export interface SolidityRegisterSignalCapabilityArg {
   readonly targetOrderRelation: 0 | 1;
 }
 
-export interface SolidityRegisterExecutorBindingArg {
+export interface SolidityRegisterSupplierBindingArg {
   readonly stageId: HexString;
   readonly supplierId: HexString;
-  readonly kind: ExecutorBindingKind;
+  readonly kind: SupplierBindingKind;
 }
 
 export interface SolidityRegisterPlanArgs {
@@ -369,11 +370,11 @@ export interface SolidityRegisterPlanArgs {
   readonly artifactHash: HexString;
   readonly hooksHash: HexString;
   readonly capabilitiesRoot: HexString;
-  readonly executorBindingsRoot: HexString;
+  readonly supplierBindingsRoot: HexString;
   readonly hooks: readonly SolidityRegisterHookArg[];
   readonly dependencyIndex: readonly SolidityRegisterDependencyIndexArg[];
-  readonly executorRoutes: readonly SolidityRegisterExecutorRouteArg[];
-  readonly executorBindings: readonly SolidityRegisterExecutorBindingArg[];
+  readonly supplierRoutes: readonly SolidityRegisterSupplierRouteArg[];
+  readonly supplierBindings: readonly SolidityRegisterSupplierBindingArg[];
   readonly selectorBindings: readonly SolidityRegisterStageSelectorBindingArg[];
   readonly signalCapabilities: readonly SolidityRegisterSignalCapabilityArg[];
   readonly fileWriterBindings: readonly SolidityRegisterFileWriterBindingArg[];

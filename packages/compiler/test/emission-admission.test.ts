@@ -25,6 +25,9 @@ import {
   commitmentRegisterHooksArgs,
 } from "./commitment-golden.js";
 
+const GATE_SUPPLIER = "5f0b1e2a-7c9d-4e1f-9a2b-000000000011";
+const WORK_SUPPLIER = "5f0b1e2a-7c9d-4e1f-9a2b-000000000012";
+
 const admissionZhixu = (validWhen: string): ZhixuDefinition => ({
   apiVersion: "uvp/v0",
   kind: "Zhixu",
@@ -38,7 +41,7 @@ const admissionZhixu = (validWhen: string): ZhixuDefinition => ({
         source: "slot_a",
         receiveSignals: { BEGIN: "slot_a::gate.seed" },
         sendSignals: [{ name: "seed" }, { name: "ready" }],
-        executor: { supplierType: "organization", supplierID: "gate-org" },
+        executor: { supplierType: "organization", supplierID: GATE_SUPPLIER },
       },
       {
         name: "work",
@@ -48,7 +51,7 @@ const admissionZhixu = (validWhen: string): ZhixuDefinition => ({
           { name: "cmp", validWhen: [validWhen] },
           { name: "cmp_err" },
         ],
-        executor: { supplierType: "organization", supplierID: "work-org" },
+        executor: { supplierType: "organization", supplierID: WORK_SUPPLIER },
       },
     ],
   },
@@ -260,14 +263,14 @@ function loaderCaseZhixu(
           source: "slot_a",
           receiveSignals: { BEGIN: "slot_a::gate.seed" },
           sendSignals: [{ name: "seed" }],
-          executor: { supplierType: "organization", supplierID: "gate-org" },
+          executor: { supplierType: "organization", supplierID: GATE_SUPPLIER },
         },
         {
           name: "work",
           source: "slot_a",
           receiveSignals: { RUN: "slot_a::gate.ready" },
           sendSignals,
-          executor: { supplierType: "organization", supplierID: "work-org" },
+          executor: { supplierType: "organization", supplierID: WORK_SUPPLIER },
         },
       ],
     },

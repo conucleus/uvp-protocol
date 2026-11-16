@@ -4,18 +4,18 @@ import { capabilitiesRootOf } from "../capabilities-root.js";
 import {
   canonicalOrderIssues,
   admissionOrderKey,
-  executorBindingOrderKey,
   fileWriterOrderKey,
   hookOrderKey,
   routeOrderKey,
   selectorBindingOrderKey,
   signalCapabilityOrderKey,
+  supplierBindingOrderKey,
 } from "../canonical/ordering.js";
 import { validateOnchainStageFileWriters } from "../file-writers.js";
 import {
-  executorBindingsRootOf,
-  onchainSupplierId,
-} from "../executor-bindings.js";
+  supplierBindingsRootOf,
+  supplierIdFromUuid,
+} from "../supplier-bindings.js";
 import {
   expectHexHash,
   expectLiteral,
@@ -26,13 +26,13 @@ import {
 import { onchainPlanTriggerIssues } from "../triggers.js";
 import {
   duplicateCurrentOrderFactKeyIssues,
-  validateOnchainExecutorBindings,
-  validateOnchainExecutorRoutes,
   validateOnchainSelectorBindings,
   validateOnchainSignalCapabilities,
+  validateOnchainSupplierBindings,
+  validateOnchainSupplierRoutes,
 } from "./capabilities.js";
 import {
-  birthStageStaticExecutorIssues,
+  birthStageStaticSupplierIssues,
   declaredStageIdentifiers,
   dockStageRouteIssues,
   dynamicStageRouteIssues,
@@ -47,11 +47,10 @@ import {
 } from "./limits.js";
 import {
   ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
-  type ExecutorBinding,
   type HexString,
   type OnchainCompiledHook,
-  type OnchainExecutorRoute,
   type OnchainHookPlanArtifact,
+  type StageSupplierBinding,
   type ZhixuPlatform,
 } from "../../types/index.js";
 
@@ -80,14 +79,14 @@ const ONCHAIN_ARTIFACT_FIELDS: readonly string[] = [
   "compiledHooks",
   "triggers",
   "dependencyIndex",
-  "executorRoutes",
+  "supplierRoutes",
   "capabilitiesRoot",
   "selectorBindings",
   "signalCapabilities",
   "stageFileWriters",
   "admissions",
-  "executorBindings",
-  "executorBindingsRoot",
+  "supplierBindings",
+  "supplierBindingsRoot",
   "planHash",
 ];
 
@@ -162,11 +161,11 @@ export function validateOnchainHookPlanArtifact(
     issues.push("dependencyIndex must be a record of 32-byte hex hash arrays");
   }
 
-  const executorRoutes = Array.isArray(value.executorRoutes)
-    ? value.executorRoutes
+  const supplierRoutes = Array.isArray(value.supplierRoutes)
+    ? value.supplierRoutes
     : undefined;
-  if (!executorRoutes) {
-    issues.push("executorRoutes must be an array");
+  if (!supplierRoutes) {
+    issues.push("supplierRoutes must be an array");
   }
   const selectorBindings = Array.isArray(value.selectorBindings)
     ? value.selectorBindings
@@ -192,17 +191,17 @@ export function validateOnchainHookPlanArtifact(
   if (!admissions) {
     issues.push("admissions must be an array");
   }
-  const executorBindings = Array.isArray(value.executorBindings)
-    ? value.executorBindings
+  const supplierBindings = Array.isArray(value.supplierBindings)
+    ? value.supplierBindings
     : undefined;
-  if (!executorBindings) {
-    issues.push("executorBindings must be an array");
+  if (!supplierBindings) {
+    issues.push("supplierBindings must be an array");
   }
-  expectHexHash(value.executorBindingsRoot, "executorBindingsRoot", issues);
+  expectHexHash(value.supplierBindingsRoot, "supplierBindingsRoot", issues);
 
   if (compiledHooks) {
     issues.push(
-      ...validateOnchainCompiledHooks(compiledHooks, executorRoutes ?? []),
+      ...validateOnchainCompiledHooks(compiledHooks, supplierRoutes ?? []),
     );
     issues.push(
       ...canonicalOrderIssues(compiledHooks, hookOrderKey, "compiledHooks"),
@@ -221,7 +220,7 @@ export function validateOnchainHookPlanArtifact(
               ? capability.stageIdentifier
               : undefined,
           ),
-          (executorRoutes ?? [])
+          (supplierRoutes ?? [])
             .map((route) =>
               isRecord(route) && typeof route.stageIdentifier === "string"
                 ? route.stageIdentifier
@@ -246,22 +245,22 @@ export function validateOnchainHookPlanArtifact(
       ...silentOrderTriggerIssues(compiledHooks as readonly OnchainCompiledHook[]),
     );
     issues.push(
-      ...birthStageStaticExecutorIssues(compiledHooks, executorRoutes ?? []),
+      ...birthStageStaticSupplierIssues(compiledHooks, supplierRoutes ?? []),
     );
     issues.push(
-      ...dockStageRouteIssues(compiledHooks, executorRoutes ?? []),
+      ...dockStageRouteIssues(compiledHooks, supplierRoutes ?? []),
     );
     issues.push(
-      ...dynamicStageRouteIssues(compiledHooks, executorRoutes ?? []),
+      ...dynamicStageRouteIssues(compiledHooks, supplierRoutes ?? []),
     );
     issues.push(...planDependencyCountIssues(compiledHooks as readonly OnchainCompiledHook[]));
     issues.push(...onchainPlanTriggerIssues(value));
   }
 
-  if (executorRoutes) {
-    issues.push(...validateOnchainExecutorRoutes(executorRoutes));
+  if (supplierRoutes) {
+    issues.push(...validateOnchainSupplierRoutes(supplierRoutes));
     issues.push(
-      ...canonicalOrderIssues(executorRoutes, routeOrderKey, "executorRoutes"),
+      ...canonicalOrderIssues(supplierRoutes, routeOrderKey, "supplierRoutes"),
     );
   }
   if (selectorBindings) {
@@ -308,24 +307,24 @@ export function validateOnchainHookPlanArtifact(
       ...canonicalOrderIssues(admissions, admissionOrderKey, "admissions"),
     );
   }
-  if (executorBindings) {
+  if (supplierBindings) {
     const { records, issues: bindingShapeIssues } =
-      validateOnchainExecutorBindings(executorBindings);
+      validateOnchainSupplierBindings(supplierBindings);
     issues.push(...bindingShapeIssues);
     issues.push(
       ...canonicalOrderIssues(
-        executorBindings,
-        executorBindingOrderKey,
-        "executorBindings",
+        supplierBindings,
+        supplierBindingOrderKey,
+        "supplierBindings",
       ),
     );
-    if (records.length === executorBindings.length) {
+    if (records.length === supplierBindings.length) {
       issues.push(
-        ...executorBindingSemanticIssues(
+        ...supplierBindingSemanticIssues(
           records,
-          value.executorBindingsRoot,
+          value.supplierBindingsRoot,
           compiledHooks ?? [],
-          executorRoutes ?? [],
+          supplierRoutes ?? [],
         ),
       );
     }
@@ -362,14 +361,14 @@ export function validateOnchainHookPlanArtifact(
         compiledHooks: value.compiledHooks,
         triggers: value.triggers,
         dependencyIndex: value.dependencyIndex,
-        executorRoutes: value.executorRoutes,
+        supplierRoutes: value.supplierRoutes,
         capabilitiesRoot: value.capabilitiesRoot,
         selectorBindings: value.selectorBindings,
         signalCapabilities: value.signalCapabilities,
         stageFileWriters: value.stageFileWriters,
         admissions: value.admissions,
-        executorBindings: value.executorBindings,
-        executorBindingsRoot: value.executorBindingsRoot,
+        supplierBindings: value.supplierBindings,
+        supplierBindingsRoot: value.supplierBindingsRoot,
       });
       if (value.planHash !== expectedPlanHash) {
         issues.push(
@@ -490,19 +489,19 @@ function capabilitiesRootCommitmentIssues(
   return [];
 }
 
-function executorBindingSemanticIssues(
-  bindings: readonly ExecutorBinding[],
+function supplierBindingSemanticIssues(
+  bindings: readonly StageSupplierBinding[],
   declaredRoot: unknown,
   compiledHooks: readonly unknown[],
-  executorRoutes: readonly unknown[],
+  supplierRoutes: readonly unknown[],
 ): readonly string[] {
   const issues: string[] = [];
   if (
     isHexHash(declaredRoot) &&
-    declaredRoot !== executorBindingsRootOf(bindings)
+    declaredRoot !== supplierBindingsRootOf(bindings)
   ) {
     issues.push(
-      "executorBindingsRoot must match the recomputed root over the executor binding leaves",
+      "supplierBindingsRoot must match the recomputed root over the supplier binding leaves",
     );
   }
 
@@ -534,19 +533,30 @@ function executorBindingSemanticIssues(
 
   const routesByStageId = new Map<
     string,
-    { readonly stageIdentifier: string; readonly executorId: string }
+    {
+      readonly stageIdentifier: string;
+      readonly supplierID: string;
+      readonly supplierId: HexString;
+    }
   >();
-  for (const route of executorRoutes) {
+  for (const route of supplierRoutes) {
     if (
       isRecord(route) &&
       isHexHash(route.stageId) &&
       typeof route.stageIdentifier === "string" &&
-      typeof route.executorId === "string" &&
-      route.executorId.trim().length > 0
+      typeof route.supplierID === "string" &&
+      route.supplierID.trim().length > 0
     ) {
+      let supplierId: HexString;
+      try {
+        supplierId = supplierIdFromUuid(route.supplierID);
+      } catch {
+        continue;
+      }
       routesByStageId.set(route.stageId, {
         stageIdentifier: route.stageIdentifier,
-        executorId: route.executorId,
+        supplierID: route.supplierID,
+        supplierId,
       });
     }
   }
@@ -556,19 +566,19 @@ function executorBindingSemanticIssues(
     const label = binding.stageIdentifier;
     if (declaredStageIds.size > 0 && !declaredStageIds.has(binding.stageId)) {
       issues.push(
-        `executor binding stage ${label} is not a stage declared in this plan`,
+        `supplier binding stage ${label} is not a stage declared in this plan`,
       );
       continue;
     }
     if (dynamicStageIds.has(binding.stageId)) {
       issues.push(
-        `dynamic executor stage ${label} must not carry plan executor bindings; its supplier is assigned per order through the stage executor patch`,
+        `dynamic stage ${label} must not carry plan supplier bindings; its supplier is assigned per order through the stage supplier patch`,
       );
       continue;
     }
     if (dockStageIds.has(binding.stageId)) {
       issues.push(
-        `dock stage ${label} must not carry plan executor bindings; its supplier is selected once through the stage executor patch (dkid)`,
+        `dock stage ${label} must not carry plan supplier bindings; its supplier is selected once through the stage supplier patch (dkid)`,
       );
       continue;
     }
@@ -577,29 +587,33 @@ function executorBindingSemanticIssues(
       defaultBindingsPerStage.set(binding.stageId, count);
       if (count > 1) {
         issues.push(
-          `stage ${label} must carry exactly one default executor binding`,
+          `stage ${label} must carry exactly one default supplier binding`,
         );
       }
       const route = routesByStageId.get(binding.stageId);
       if (route === undefined) {
         issues.push(
-          `default executor binding for stage ${label} requires the stage's own static executor route`,
+          `default supplier binding for stage ${label} requires the stage's own static supplier route`,
         );
-      } else if (binding.supplierId !== onchainSupplierId(route.executorId)) {
+      } else if (binding.supplierID !== route.supplierID) {
         issues.push(
-          `default executor binding for stage ${label} must commit the supplierId derived from the route's executor.supplierID`,
+          `default supplier binding for stage ${label} must commit the supplier UUID of the route's executor.supplierID`,
+        );
+      } else if (binding.supplierId !== route.supplierId) {
+        issues.push(
+          `default supplier binding for stage ${label} must commit the supplierId decoded from the route's executor.supplierID`,
         );
       }
       continue;
     }
     if (birthStageIds.has(binding.stageId)) {
       issues.push(
-        `birth stage ${label} must not carry candidate executor bindings; birth-stage executors are immutable and cannot be per-order patch targets`,
+        `birth stage ${label} must not carry candidate supplier bindings; birth-stage suppliers are immutable and cannot be per-order patch targets`,
       );
     }
     if (!routesByStageId.has(binding.stageId)) {
       issues.push(
-        `candidate executor binding for stage ${label} requires the stage's own plain executor route`,
+        `candidate supplier binding for stage ${label} requires the stage's own plain supplier route`,
       );
     }
   }
@@ -607,7 +621,7 @@ function executorBindingSemanticIssues(
   for (const [stageId, route] of routesByStageId) {
     if (!defaultBindingsPerStage.has(stageId)) {
       issues.push(
-        `stage ${route.stageIdentifier} has a static executor route but no default executor binding`,
+        `stage ${route.stageIdentifier} has a static supplier route but no default supplier binding`,
       );
     }
   }
@@ -629,13 +643,13 @@ function isPlanHashRecomputable(
     Array.isArray(value.compiledHooks) &&
     Array.isArray(value.triggers) &&
     isHexArrayRecord(value.dependencyIndex) &&
-    Array.isArray(value.executorRoutes) &&
+    Array.isArray(value.supplierRoutes) &&
     Array.isArray(value.selectorBindings) &&
     Array.isArray(value.signalCapabilities) &&
     Array.isArray(value.stageFileWriters) &&
     Array.isArray(value.admissions) &&
-    Array.isArray(value.executorBindings) &&
-    isHexHash(value.executorBindingsRoot) &&
+    Array.isArray(value.supplierBindings) &&
+    isHexHash(value.supplierBindingsRoot) &&
     isHexHash(value.capabilitiesRoot) &&
     isHexHash(value.planHash)
   );

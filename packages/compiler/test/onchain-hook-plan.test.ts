@@ -6,10 +6,10 @@ import { canonicalJson } from "@uvp-eth/canonical-json";
 import {
   assertOnchainHookPlanArtifact,
   compileZhixuOnchainHookPlan,
-  executorBindingsRootOf,
+  supplierBindingsRootOf,
   hashSolidityRegisterHooks,
   keccak256Hex,
-  onchainSupplierId,
+  supplierIdFromUuid,
   onchainSelectorBindingHash,
   OnchainHookPlanArtifactValidationError,
   toSolidityRegisterPlanArgs,
@@ -96,6 +96,12 @@ function rebuildDependencyIndex(
   );
 }
 
+const SUPPLIER_SELECTOR = "5f0b1e2a-7c9d-4e1f-9a2b-000000000001";
+const SUPPLIER_WORK = "5f0b1e2a-7c9d-4e1f-9a2b-000000000002";
+const SUPPLIER_WATCHER = "5f0b1e2a-7c9d-4e1f-9a2b-000000000003";
+const SUPPLIER_FULFILLER = "5f0b1e2a-7c9d-4e1f-9a2b-000000000004";
+const SUPPLIER_ROUTING = "5f0b1e2a-7c9d-4e1f-9a2b-000000000005";
+
 const baseZhixu: ZhixuDefinition = {
   apiVersion: "uvp/v0",
   kind: "Zhixu",
@@ -119,7 +125,7 @@ const baseZhixu: ZhixuDefinition = {
         sendSignals: [{ name: "executor_selected" }, { name: "seed" }],
         executor: {
           supplierType: "organization",
-          supplierID: "selector-org",
+          supplierID: SUPPLIER_SELECTOR,
         },
       },
 {
@@ -133,7 +139,7 @@ const baseZhixu: ZhixuDefinition = {
         sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
         executor: {
           supplierType: "organization",
-          supplierID: "work-org",
+          supplierID: SUPPLIER_WORK,
         },
       }],
   },
@@ -151,14 +157,14 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
   const { planHash: _onchainPlanHash, ...onchainPayload } = onchain;
   assert.equal(onchain.planHash, hashOnchainPlanPayload(onchainPayload));
-  assert.equal(onchain.executorBindings.length, 2);
+  assert.equal(onchain.supplierBindings.length, 2);
   assert.deepEqual(
-    onchain.executorBindings.map((binding) => binding.kind),
+    onchain.supplierBindings.map((binding) => binding.kind),
     [0, 0],
   );
   assert.equal(
-    onchain.executorBindingsRoot,
-    executorBindingsRootOf(onchain.executorBindings),
+    onchain.supplierBindingsRoot,
+    supplierBindingsRootOf(onchain.supplierBindings),
   );
   assert.equal(
     onchain.capabilitiesRoot,
@@ -320,16 +326,16 @@ test("builds a stable on-chain dependency index and route references", () => {
   });
 
   assert.deepEqual(
-    onchain.executorRoutes.map((route) => route.routeId),
+    onchain.supplierRoutes.map((route) => route.routeId),
     [
-      "0x35f6e55806e8018d555e976995705fa96f202a0a8499a801846c3d0c8d83c1e4",
-      "0xfa7857664e818ab16d79e0890e6b5fbf7c53c02c666c2b19329fe7942cbc443e",
+      "0x320cb9a7512c3259a18b51e46118fb023d0dbc780811958feedb1b630bae7b55",
+      "0x2a05600dd140e0e8053c65920cd602198cefa5b52886a12003680905eb82de67",
     ],
   );
   assert.equal(
     onchain.compiledHooks.find((hook) => hook.hookName === "START")?.routeRef
       ?.routeId,
-    "0xfa7857664e818ab16d79e0890e6b5fbf7c53c02c666c2b19329fe7942cbc443e",
+    "0x2a05600dd140e0e8053c65920cd602198cefa5b52886a12003680905eb82de67",
   );
 });
 
@@ -351,7 +357,7 @@ test("dependencyIndex hookIds follow calldata order, not keccak order (oracle pa
           sendSignals: [{ name: "seed" }],
           executor: {
             supplierType: "organization",
-            supplierID: "watcher-org",
+            supplierID: SUPPLIER_WATCHER,
           },
         }],
     },
@@ -523,22 +529,22 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
   );
   assert.equal(args.dependencyIndex.length, 3);
   assert.deepEqual(
-    args.executorRoutes.map((route) => route.executorId),
-    ["selector-org", "work-org"],
+    args.supplierRoutes.map((route) => route.supplierID),
+    [SUPPLIER_SELECTOR, SUPPLIER_WORK],
   );
-  assert.deepEqual(args.executorBindings, [
+  assert.deepEqual(args.supplierBindings, [
     {
       stageId: keccak256Hex("assign"),
-      supplierId: onchainSupplierId("selector-org"),
+      supplierId: supplierIdFromUuid(SUPPLIER_SELECTOR),
       kind: 0,
     },
     {
       stageId: keccak256Hex("main"),
-      supplierId: onchainSupplierId("work-org"),
+      supplierId: supplierIdFromUuid(SUPPLIER_WORK),
       kind: 0,
     },
   ]);
-  assert.equal(args.executorBindingsRoot, onchain.executorBindingsRoot);
+  assert.equal(args.supplierBindingsRoot, onchain.supplierBindingsRoot);
   assert.deepEqual(args.selectorBindings, [
     {
       selectorStageId: keccak256Hex("assign"),
@@ -672,11 +678,11 @@ test("commitment golden vectors pin uid/planHash/hooksHash from the shared fixtu
   }
 
   for (const golden of vectors.cases) {
-    const { definition, executorCandidates } = golden.input;
+    const { definition, supplierCandidates } = golden.input;
     const plan = compileZhixuHookPlan(definition);
     const onchain = compileZhixuOnchainHookPlan(
       definition,
-      executorCandidates,
+      supplierCandidates,
     );
     const args = toSolidityRegisterPlanArgs(onchain);
 
@@ -687,23 +693,23 @@ test("commitment golden vectors pin uid/planHash/hooksHash from the shared fixtu
     assert.equal(args.hooksHash, golden.expected.hooksHash, `${golden.name}: hooksHash`);
     assert.equal(args.capabilitiesRoot, golden.expected.capabilitiesRoot, `${golden.name}: capabilitiesRoot`);
     assert.equal(
-      onchain.executorBindingsRoot,
-      golden.expected.executorBindingsRoot,
-      `${golden.name}: executorBindingsRoot`,
+      onchain.supplierBindingsRoot,
+      golden.expected.supplierBindingsRoot,
+      `${golden.name}: supplierBindingsRoot`,
     );
     assert.deepEqual(
-      onchain.executorBindings.map((binding) => ({
+      onchain.supplierBindings.map((binding) => ({
         stageId: binding.stageId,
         supplierId: binding.supplierId,
         kind: binding.kind,
       })),
-      golden.expected.executorBindings,
-      `${golden.name}: executorBindings`,
+      golden.expected.supplierBindings,
+      `${golden.name}: supplierBindings`,
     );
     assert.deepEqual(
-      args.executorBindings,
-      golden.expected.executorBindings,
-      `${golden.name}: register-args executorBindings`,
+      args.supplierBindings,
+      golden.expected.supplierBindings,
+      `${golden.name}: register-args supplierBindings`,
     );
 
     assert.equal(args.hooks.length, golden.counts.hooks, `${golden.name}: counts.hooks`);
@@ -1187,7 +1193,7 @@ test("flags stages whose hooks can never materialize on-chain", () => {
           sendSignals: [{ name: "str", trigger: true }, { name: "cmp" }, { name: "err" }],
           executor: {
             supplierType: "organization",
-            supplierID: "fulfiller-exec",
+            supplierID: SUPPLIER_FULFILLER,
           },
         }],
     },
@@ -1294,7 +1300,7 @@ test("rejects stages that compile to zero hooks (materialization gate)", () => {
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
       zeroHookIssues(error.issues).length === 1 &&
-      /^stage assign declares no receiveSignals and compiles to zero hooks: the stage can never materialize on-chain \(materialization only happens via this stage's own order-trigger\/EMIT_READY hooks\) and its sendSignals have no hook to hang on — submitSignal requires the source stage to be materialized and reverts UnknownHook forever \(deadlock, no recovery path\); declare a trigger signal, receiveSignals, or a static executor$/.test(
+      /^stage assign declares no receiveSignals and compiles to zero hooks: the stage can never materialize on-chain \(materialization only happens via this stage's own order-trigger\/EMIT_READY hooks\) and its sendSignals have no hook to hang on — submitSignal requires the source stage to be materialized and reverts UnknownHook forever \(deadlock, no recovery path\); declare a trigger signal, receiveSignals, or a static supplier$/.test(
         zeroHookIssues(error.issues)[0] ?? "",
       ),
   );
@@ -1567,7 +1573,7 @@ test("rejects DELAY on order-trigger conditions at the compile boundary (produce
           sendSignals: [{ name: "str", trigger: true }, { name: "cmp" }],
           executor: {
             supplierType: "organization",
-            supplierID: "fulfiller-exec",
+            supplierID: SUPPLIER_FULFILLER,
           },
         }],
     },
@@ -1613,12 +1619,12 @@ test("rejects supplierType outside the closed enum at the on-chain compile bound
   const hookPlan = compileZhixuHookPlan(baseZhixu);
   const mutated = resign({
     ...hookPlan,
-    executorRoutes: {
-      ...hookPlan.executorRoutes,
+    supplierRoutes: {
+      ...hookPlan.supplierRoutes,
       "assign": {
-        ...hookPlan.executorRoutes["assign"]!,
+        ...hookPlan.supplierRoutes["assign"]!,
         executor: {
-          ...hookPlan.executorRoutes["assign"]!.executor,
+          ...hookPlan.supplierRoutes["assign"]!.executor,
           supplierType: "Organization",
         },
       },
@@ -1630,7 +1636,7 @@ test("rejects supplierType outside the closed enum at the on-chain compile bound
       assert.ok(error instanceof HookPlanCompilationError);
       assert.match(
         error.issues.join("; "),
-        /supplierType must be one of individual\|organization\|dock \(case-sensitive\), received "Organization"/,
+        /supplierType must be one of individual\|organization \(case-sensitive\), received "Organization"/,
       );
       return true;
     },
@@ -1642,12 +1648,12 @@ test("rejects whitespace-padded supplierType at the on-chain compile boundary", 
   for (const supplierType of [" organization ", "individual "]) {
     const mutated = resign({
       ...hookPlan,
-      executorRoutes: {
-        ...hookPlan.executorRoutes,
+      supplierRoutes: {
+        ...hookPlan.supplierRoutes,
         "assign": {
-          ...hookPlan.executorRoutes["assign"]!,
+          ...hookPlan.supplierRoutes["assign"]!,
           executor: {
-            ...hookPlan.executorRoutes["assign"]!.executor,
+            ...hookPlan.supplierRoutes["assign"]!.executor,
             supplierType,
           },
         },
@@ -1660,7 +1666,7 @@ test("rejects whitespace-padded supplierType at the on-chain compile boundary", 
         assert.match(
           error.issues.join("; "),
           new RegExp(
-            `supplierType must be one of individual\\|organization\\|dock \\(case-sensitive\\), received ${JSON.stringify(supplierType).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+            `supplierType must be one of individual\\|organization \\(case-sensitive\\), received ${JSON.stringify(supplierType).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
           ),
         );
         return true;
@@ -1696,12 +1702,12 @@ test("rejects selectableResource fileType outside the closed enum at the on-chai
   for (const fileType of ["tx_cloud", " local", "http "]) {
     const mutated = resign({
       ...hookPlan,
-      executorRoutes: {
-        ...hookPlan.executorRoutes,
+      supplierRoutes: {
+        ...hookPlan.supplierRoutes,
         "assign": {
-          ...hookPlan.executorRoutes["assign"]!,
+          ...hookPlan.supplierRoutes["assign"]!,
           executor: {
-            ...hookPlan.executorRoutes["assign"]!.executor,
+            ...hookPlan.supplierRoutes["assign"]!.executor,
             selectableResource: {
               dataset: { fileType, plainText: { content: "x" } },
             },
@@ -1726,11 +1732,11 @@ test("rejects selectableResource fileType outside the closed enum at the on-chai
 
 test("rejects fileResources fileType outside the closed enum at the on-chain compile boundary", () => {
   const hookPlan = compileZhixuHookPlan(baseZhixu);
-  const route = hookPlan.executorRoutes["assign"]!;
+  const route = hookPlan.supplierRoutes["assign"]!;
   const mutated = resign({
     ...hookPlan,
-    executorRoutes: {
-      ...hookPlan.executorRoutes,
+    supplierRoutes: {
+      ...hookPlan.supplierRoutes,
       "assign": {
         ...route,
         fileResources: {
@@ -1759,12 +1765,12 @@ test("rejects non-map file-resource shapes at the on-chain compile boundary", ()
   ): Parameters<typeof compileOnchainHookPlan>[0] =>
     resign({
       ...hookPlan,
-      executorRoutes: {
-        ...hookPlan.executorRoutes,
+      supplierRoutes: {
+        ...hookPlan.supplierRoutes,
         "assign": {
-          ...hookPlan.executorRoutes["assign"]!,
+          ...hookPlan.supplierRoutes["assign"]!,
           executor: {
-            ...hookPlan.executorRoutes["assign"]!.executor,
+            ...hookPlan.supplierRoutes["assign"]!.executor,
             ...(selectableResource === undefined
               ? {}
               : { selectableResource }),
@@ -1800,10 +1806,10 @@ test("rejects non-map file-resource shapes at the on-chain compile boundary", ()
   for (const shape of [null, "local", 7]) {
     const mutated = resign({
       ...hookPlan,
-      executorRoutes: {
-        ...hookPlan.executorRoutes,
+      supplierRoutes: {
+        ...hookPlan.supplierRoutes,
         "assign": {
-          ...hookPlan.executorRoutes["assign"]!,
+          ...hookPlan.supplierRoutes["assign"]!,
           fileResources: shape,
         },
       },
@@ -1823,11 +1829,11 @@ test("rejects non-map file-resource shapes at the on-chain compile boundary", ()
   }
 });
 
-test("artifact boundary enforces the executorType closed enum and non-empty executorId", () => {
+test("artifact boundary enforces the supplierType closed enum and non-empty supplierID", () => {
   const onchain = compileOnchainHookPlan(
     compileZhixuHookPlan(baseZhixu),
   );
-  const route = onchain.executorRoutes[0]!;
+  const route = onchain.supplierRoutes[0]!;
   const rehashed = (mutated: OnchainHookPlanArtifact): OnchainHookPlanArtifact => {
     const { planHash: _drop, ...payload } = mutated;
     void _drop;
@@ -1837,48 +1843,48 @@ test("artifact boundary enforces the executorType closed enum and non-empty exec
     } as OnchainHookPlanArtifact;
   };
   const mutateRoute = (
-    patch: Partial<(typeof onchain.executorRoutes)[number]>,
+    patch: Partial<(typeof onchain.supplierRoutes)[number]>,
   ): OnchainHookPlanArtifact =>
     rehashed({
       ...onchain,
-      executorRoutes: onchain.executorRoutes.map((candidate) =>
+      supplierRoutes: onchain.supplierRoutes.map((candidate) =>
         candidate === route ? { ...candidate, ...patch } : candidate,
       ),
     } as OnchainHookPlanArtifact);
 
   const issues = validateOnchainHookPlanArtifact(
-    mutateRoute({ executorType: "Vendor" }),
+    mutateRoute({ supplierType: "Vendor" }),
   );
   assert.ok(
     issues.some((issue) =>
-      /executorType must be one of individual\|organization \(case-sensitive\), received "Vendor"/.test(
+      /supplierType must be one of individual\|organization \(case-sensitive\), received "Vendor"/.test(
         issue,
       ),
     ),
     issues.join("; "),
   );
-  for (const executorType of [" organization ", "dock ", "\tindividual"]) {
+  for (const supplierType of [" organization ", "dock ", "\tindividual"]) {
     const paddedIssues = validateOnchainHookPlanArtifact(
-      mutateRoute({ executorType }),
+      mutateRoute({ supplierType }),
     );
     assert.ok(
       paddedIssues.some((issue) =>
         new RegExp(
-          `executorType must be one of individual\\|organization \\(case-sensitive\\), received ${JSON.stringify(executorType).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+          `supplierType must be one of individual\\|organization \\(case-sensitive\\), received ${JSON.stringify(supplierType).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
         ).test(issue),
       ),
-      `executorType=${JSON.stringify(executorType)}: ${paddedIssues.join("; ")}`,
+      `supplierType=${JSON.stringify(supplierType)}: ${paddedIssues.join("; ")}`,
     );
   }
-  for (const executorId of ["", "   "]) {
+  for (const supplierID of ["", "   "]) {
     const idIssues = validateOnchainHookPlanArtifact(
-      mutateRoute({ executorId }),
+      mutateRoute({ supplierID }),
     );
     assert.ok(
       idIssues.some((issue) =>
-        /executorId must be a non-empty executor id/.test(issue),
+        /supplierID must be a non-empty supplier UUID/.test(issue),
       ),
-      `executorId=${JSON.stringify(executorId)}: ${idIssues.join("; ")}`,
+      `supplierID=${JSON.stringify(supplierID)}: ${idIssues.join("; ")}`,
     );
   }
   assert.deepEqual(
@@ -1889,32 +1895,51 @@ test("artifact boundary enforces the executorType closed enum and non-empty exec
   );
 });
 
-test("compile boundary rejects whitespace-only executor.supplierID", () => {
-  const hookPlan = compileZhixuHookPlan(baseZhixu);
-  const mutated = resign({
-    ...hookPlan,
-    executorRoutes: {
-      ...hookPlan.executorRoutes,
-      "assign": {
-        ...hookPlan.executorRoutes["assign"]!,
-        executor: {
-          ...hookPlan.executorRoutes["assign"]!.executor,
-          supplierID: "   ",
+test("compile boundary rejects empty and non-UUID executor.supplierID", () => {
+  const mutateSupplierID = (supplierID: string) => {
+    const hookPlan = compileZhixuHookPlan(baseZhixu);
+    return resign({
+      ...hookPlan,
+      supplierRoutes: {
+        ...hookPlan.supplierRoutes,
+        "assign": {
+          ...hookPlan.supplierRoutes["assign"]!,
+          executor: {
+            ...hookPlan.supplierRoutes["assign"]!.executor,
+            supplierID,
+          },
         },
       },
-    },
-  } as typeof hookPlan);
-  assert.throws(
-    () => compileOnchainHookPlan(mutated),
-    (error: unknown) => {
-      assert.ok(error instanceof HookPlanCompilationError);
-      assert.match(
-        error.issues.join("; "),
-        /is missing a non-empty executor\.supplierID/,
-      );
-      return true;
-    },
-  );
+    } as typeof hookPlan);
+  };
+  for (const supplierID of ["   ", ""]) {
+    assert.throws(
+      () => compileOnchainHookPlan(mutateSupplierID(supplierID)),
+      (error: unknown) => {
+        assert.ok(error instanceof HookPlanCompilationError);
+        assert.match(
+          error.issues.join("; "),
+          /is missing a non-empty executor\.supplierID/,
+        );
+        return true;
+      },
+      `supplierID=${JSON.stringify(supplierID)} must be rejected as empty`,
+    );
+  }
+  for (const supplierID of ["selector-org", "5f0b1e2a-7c9d-4e1f-9a2b-00000000001"]) {
+    assert.throws(
+      () => compileOnchainHookPlan(mutateSupplierID(supplierID)),
+      (error: unknown) => {
+        assert.ok(error instanceof HookPlanCompilationError);
+        assert.match(
+          error.issues.join("; "),
+          /must be a canonical 8-4-4-4-12 UUID/,
+        );
+        return true;
+      },
+      `supplierID=${JSON.stringify(supplierID)} must be rejected as a non-UUID`,
+    );
+  }
 });
 
 test("compile boundary mirrors _validateHook shape gates before producing artifacts", () => {
@@ -1968,7 +1993,7 @@ test("compile boundary mirrors _validateHook shape gates before producing artifa
     ...hookPlan,
     compiledHooks: [],
     dependencyIndex: {},
-    executorRoutes: {},
+    supplierRoutes: {},
     selectedStageBindings: [],
     signalCapabilities: [],
   } as typeof hookPlan);
@@ -2143,7 +2168,7 @@ test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirr
     issuesOf((a) => a.admissions[0]).includes(closureIssue("admissions[0]")),
   );
   assert.ok(
-    issuesOf((a) => a.executorRoutes[0]).includes(closureIssue("executorRoutes[0]")),
+    issuesOf((a) => a.supplierRoutes[0]).includes(closureIssue("supplierRoutes[0]")),
   );
   assert.ok(
     issuesOf((a) => a.selectorBindings[0]).includes(closureIssue("selectorBindings[0]")),
@@ -2152,7 +2177,7 @@ test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirr
     issuesOf((a) => a.signalCapabilities[0]).includes(closureIssue("signalCapabilities[0]")),
   );
   assert.ok(
-    issuesOf((a) => a.executorBindings[0]).includes(closureIssue("executorBindings[0]")),
+    issuesOf((a) => a.supplierBindings[0]).includes(closureIssue("supplierBindings[0]")),
   );
 
   assert.deepEqual(
@@ -2161,7 +2186,7 @@ test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirr
   );
 });
 
-test("rejects trigger birth stages without their own static executor route", () => {
+test("rejects trigger birth stages without their own static supplier route", () => {
   const zhixu: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
@@ -2189,7 +2214,7 @@ test("rejects trigger birth stages without their own static executor route", () 
           name: "birth",
           source: "fulfiller",
           sendSignals: [{ name: "str", trigger: true }, { name: "cmp" }, { name: "err" }],
-          executor: { supplierType: "organization", supplierID: "fulfiller-exec" },
+          executor: { supplierType: "organization", supplierID: SUPPLIER_FULFILLER },
         },
         {
           name: "routing",
@@ -2197,7 +2222,7 @@ test("rejects trigger birth stages without their own static executor route", () 
           selectedStages: ["birth"],
           receiveSignals: { PLACE: "buyer::routing.seed" },
           sendSignals: [{ name: "picked" }, { name: "seed" }],
-          executor: { supplierType: "organization", supplierID: "routing-org" },
+          executor: { supplierType: "organization", supplierID: SUPPLIER_ROUTING },
         }],
     },
   };
@@ -2219,8 +2244,8 @@ test("rejects trigger birth stages without their own static executor route", () 
 
   const strippedIr = resign({
     ...ir,
-    executorRoutes: Object.fromEntries(
-      Object.entries(ir.executorRoutes).filter(
+    supplierRoutes: Object.fromEntries(
+      Object.entries(ir.supplierRoutes).filter(
         ([stageIdentifier]) => stageIdentifier !== "birth",
       ),
     ),
@@ -2238,11 +2263,11 @@ test("rejects trigger birth stages without their own static executor route", () 
     (error: unknown) =>
       error instanceof HookPlanCompilationError &&
       error.issues.some((issue) =>
-        /birth is a trigger birth stage \(trigger order-trigger hook\) and requires its own static executor route/.test(
+        /birth is a trigger birth stage \(trigger order-trigger hook\) and requires its own static supplier route/.test(
           issue,
         )
       ),
-    "compile preflight must reject a trigger birth stage without its own executor route",
+    "compile preflight must reject a trigger birth stage without its own supplier route",
   );
 
   const rehashed = (mutated: OnchainHookPlanArtifact): OnchainHookPlanArtifact => {
@@ -2255,7 +2280,7 @@ test("rejects trigger birth stages without their own static executor route", () 
   };
   const strippedOnchain = rehashed({
     ...structuredClone(onchain),
-    executorRoutes: onchain.executorRoutes.filter(
+    supplierRoutes: onchain.supplierRoutes.filter(
       (route) => route.stageIdentifier !== "birth",
     ),
     compiledHooks: onchain.compiledHooks.map((hook) => {
@@ -2269,11 +2294,11 @@ test("rejects trigger birth stages without their own static executor route", () 
   } as OnchainHookPlanArtifact);
   assert.ok(
     validateOnchainHookPlanArtifact(strippedOnchain).some((issue) =>
-      /birth is a trigger birth stage \(trigger order-trigger hook\) and requires its own static executor route/.test(
+      /birth is a trigger birth stage \(trigger order-trigger hook\) and requires its own static supplier route/.test(
         issue,
       )
     ),
-    "artifact boundary must reject a trigger birth stage without its own executor route",
+    "artifact boundary must reject a trigger birth stage without its own supplier route",
   );
 });
 test("hook dependencies must mirror the SIGNAL atom key set (contract mirror)", () => {
@@ -2387,7 +2412,7 @@ test("triggers are derived, not committed: boundary rejects tampering and planHa
           name: "birth",
           source: "fulfiller",
           sendSignals: [{ name: "str", trigger: true }, { name: "ack", trigger: true }, { name: "cmp" }],
-          executor: { supplierType: "organization", supplierID: "fulfiller-exec" },
+          executor: { supplierType: "organization", supplierID: SUPPLIER_FULFILLER },
         },
       ],
     },

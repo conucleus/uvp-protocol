@@ -87,7 +87,7 @@ const HOOK_PLAN_ARTIFACT_FIELDS: readonly string[] = [
   "platform",
   "compiledHooks",
   "dependencyIndex",
-  "executorRoutes",
+  "supplierRoutes",
   "selectedStageBindings",
   "signalCapabilities",
   "admissions",
@@ -164,8 +164,8 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
   if (!dependencyIndex) {
     issues.push("dependencyIndex must be a record of string arrays");
   }
-  if (!isRecord(value.executorRoutes)) {
-    issues.push("executorRoutes must be an object");
+  if (!isRecord(value.supplierRoutes)) {
+    issues.push("supplierRoutes must be an object");
   }
   if (!Array.isArray(value.selectedStageBindings)) {
     issues.push("selectedStageBindings must be an array");
@@ -181,20 +181,20 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
     }
   }
 
-  if (isRecord(value.executorRoutes)) {
-    for (const [routeKey, route] of Object.entries(value.executorRoutes)) {
+  if (isRecord(value.supplierRoutes)) {
+    for (const [routeKey, route] of Object.entries(value.supplierRoutes)) {
       if (!isRecord(route)) {
-        issues.push(`executorRoutes.${routeKey} must be an object`);
+        issues.push(`supplierRoutes.${routeKey} must be an object`);
         continue;
       }
       if (route.stageIdentifier !== routeKey) {
-        issues.push(`executorRoutes.${routeKey}.stageIdentifier must equal ${routeKey}`);
+        issues.push(`supplierRoutes.${routeKey}.stageIdentifier must equal ${routeKey}`);
       }
       if (!isRecord(route.executor)) {
-        issues.push(`executorRoutes.${routeKey}.executor must be an object`);
+        issues.push(`supplierRoutes.${routeKey}.executor must be an object`);
       } else if (route.executor.supplierType === "dock") {
         issues.push(
-          `executorRoutes.${routeKey} must not carry a dock executor; a dock stage's executor is selected once through the stage executor patch (dkid), not as a plan route`,
+          `supplierRoutes.${routeKey} must not carry a dock supplier; a dock stage's supplier is selected once through the stage supplier patch (dkid), not as a plan route`,
         );
       }
     }
@@ -282,7 +282,7 @@ function validateCompiledHooks(hooks: readonly unknown[]): readonly string[] {
       }
       if (hook.route !== undefined) {
         issues.push(
-          `${prefix} is a dynamic-executor hook and must not carry an executor route; the supplier is assigned per order through the stage executor patch`,
+          `${prefix} is a dynamic-executor hook and must not carry a supplier route; the supplier is assigned per order through the stage supplier patch`,
         );
       }
     }
@@ -297,7 +297,7 @@ function validateCompiledHooks(hooks: readonly unknown[]): readonly string[] {
       }
       if (hook.route !== undefined) {
         issues.push(
-          `${prefix} is a dock stage hook and must not carry an executor route; the dock executor is selected once through the stage executor patch (dkid)`,
+          `${prefix} is a dock stage hook and must not carry a supplier route; the dock supplier is selected once through the stage supplier patch (dkid)`,
         );
       }
     }
@@ -336,7 +336,7 @@ function validateCompiledHooks(hooks: readonly unknown[]): readonly string[] {
         mixedDynamicStages.add(hook.stageIdentifier);
         issues.push(
           `stage ${hook.stageIdentifier} mixes dynamic-executor hooks with non-dynamic hooks; `
-            + "the contract collects the per-stage dynamic set from hook flags and reverts InconsistentDynamicExecutorFlag",
+            + "the contract collects the per-stage dynamic set from hook flags and reverts InconsistentDynamicSupplierFlag",
         );
       }
     }

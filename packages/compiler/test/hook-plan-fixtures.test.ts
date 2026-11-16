@@ -92,7 +92,7 @@ test("the dynamic stage fixture lowers to emit-ready dynamic hooks without a rou
   assert.equal(mainHooks[0]?.dynamicExecutor, true);
   assert.equal(mainHooks[0]?.emitReady, true);
   assert.equal(mainHooks[0]?.route, undefined);
-  assert.equal(plan.executorRoutes["main"], undefined);
+  assert.equal(plan.supplierRoutes["main"], undefined);
   const anchorHook = plan.compiledHooks.find(
     (hook) => hook.stageIdentifier === "assign",
   );

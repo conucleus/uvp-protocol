@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
-  ExecutorCandidateInput,
+  SupplierCandidateInput,
   SolidityRegisterPlanArgs,
   ZhixuDefinition,
 } from "../src/index.js";
@@ -30,7 +30,7 @@ export interface CommitmentGoldenHook {
   readonly dependencyKeys: readonly HexString[];
 }
 
-export interface CommitmentGoldenExecutorBinding {
+export interface CommitmentGoldenSupplierBinding {
   readonly stageId: HexString;
   readonly supplierId: HexString;
   readonly kind: 0 | 1;
@@ -41,7 +41,7 @@ export interface CommitmentGoldenCase {
   readonly note: string;
   readonly input: {
     readonly definition: ZhixuDefinition;
-    readonly executorCandidates?: readonly ExecutorCandidateInput[];
+    readonly supplierCandidates?: readonly SupplierCandidateInput[];
     readonly hooks: readonly CommitmentGoldenHook[];
   };
   readonly counts: {
@@ -60,8 +60,8 @@ export interface CommitmentGoldenCase {
     readonly runtimePlanHash: string;
     readonly hooksHash: string;
     readonly capabilitiesRoot: string;
-    readonly executorBindingsRoot: string;
-    readonly executorBindings: readonly CommitmentGoldenExecutorBinding[];
+    readonly supplierBindingsRoot: string;
+    readonly supplierBindings: readonly CommitmentGoldenSupplierBinding[];
   };
 }
 

@@ -51,22 +51,19 @@ interface IUVPStateMachineCore {
 
     function effectiveStageSupplier(bytes32 planId, bytes32 orderId, bytes32 stageId) external view returns (bytes32);
 
-    function effectiveStageExecutor(bytes32 planId, bytes32 orderId, bytes32 stageId)
-        external
-        view
-        returns (bytes32 supplierId, address executor);
+    function effectiveStageAccount(bytes32 planId, bytes32 orderId, bytes32 stageId) external view returns (address);
 
-    function isEffectiveStageExecutor(bytes32 planId, bytes32 orderId, bytes32 stageId, address executor)
+    function isEffectiveStageAccount(bytes32 planId, bytes32 orderId, bytes32 stageId, address account)
         external
         view
         returns (bool);
 
-    function activeStageExecutorPatch(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
+    function stageSupplierAssignment(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
         external
         view
         returns (bytes32 supplierId, uint256 patchNonce, bytes32 dockId);
 
-    function activateStageExecutorFromModule(
+    function activateStageSupplierFromModule(
         bytes32 planId,
         bytes32 orderId,
         bytes32 targetStageId,
@@ -74,7 +71,7 @@ interface IUVPStateMachineCore {
         uint256 patchNonce
     ) external;
 
-    function activateStageDockExecutorFromModule(
+    function activateStageDockSupplierFromModule(
         bytes32 planId,
         bytes32 orderId,
         bytes32 targetStageId,
@@ -83,11 +80,11 @@ interface IUVPStateMachineCore {
         uint256 patchNonce
     ) external;
 
-    function planExecutorBindingsRoot(bytes32 planId) external view returns (bytes32);
+    function planSupplierBindingsRoot(bytes32 planId) external view returns (bytes32);
 
     function planStageDefaultSupplier(bytes32 planId, bytes32 stageId) external view returns (bytes32);
 
-    function planStageHasDynamicExecutor(bytes32 planId, bytes32 stageId) external view returns (bool);
+    function planStageHasDynamicSupplier(bytes32 planId, bytes32 stageId) external view returns (bool);
 
     function planStageIsCandidate(bytes32 planId, bytes32 stageId) external view returns (bool);
 

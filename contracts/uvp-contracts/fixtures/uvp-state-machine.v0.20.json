@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x5106d72f99e12d537b46277c3985cd9aad83c1c73f7ed41156a52e3d76558868",
-    "bytecodeHash": "0x32ad729e82b173747bfc023b1de0379ecdff522145bd97df296a6a8fe2145bfc",
-    "deployedBytecodeHash": "0x7c862e6f598c6235cb07162033c096c17d49a27cb08dcb75dca543619037e4e4",
-    "artifactHash": "0xf8d294ca8d12ab2aa85b92b004399f87021540645f5883c921546a6b8dcccb1d"
+    "abiHash": "0x33c9aa3d000b40aa8d7f595de2b306318c67b79ab7ce35d9deb2f9cfa0c625b0",
+    "bytecodeHash": "0x7d82c77c89805257da99425ed48b144462edfb774aaa4d1a67cce6a01447df59",
+    "deployedBytecodeHash": "0x07606e7a0c13bb6480667f6882534a521a844ed8e0d1057b966e2296fe3a40bc",
+    "artifactHash": "0xa49a194850d762e36f2397b5bc2c9379a2746f3c3c7e7822bc5769fd0cd98e1c"
   },
   "events": {
     "HookReady": {
@@ -67,13 +67,13 @@
       "signature": "SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,address,bytes32)",
       "topic": "0xb91dd9284f04ad9b78d623f2f98c5518b48265a68a2160df5d1acf72c18da6a6"
     },
-    "StageExecutorActivated": {
-      "signature": "StageExecutorActivated(bytes32,bytes32,bytes32,bytes32,uint256)",
-      "topic": "0x075e3d85b145bd72fb1e117d15e1f489a02570e6122d15cb9cbd7f0deb19b44a"
-    },
     "StageMaterialized": {
       "signature": "StageMaterialized(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",
       "topic": "0xd3fe5ddcdf026d22011073e060fbb953dcb75b37213cbc68633da859ecccdb9b"
+    },
+    "StageSupplierAssigned": {
+      "signature": "StageSupplierAssigned(bytes32,bytes32,bytes32,bytes32,uint256)",
+      "topic": "0x9ae08bed269cd952ce3c96c13ba7b7def076966e42dad484cf1ecc778436c994"
     },
     "StateMachineModuleSet": {
       "signature": "StateMachineModuleSet(bytes32,address,address)",
@@ -129,10 +129,6 @@
       "signature": "LENS_MODULE_ID()",
       "selector": "0x1a781337"
     },
-    "MAX_EXECUTOR_BINDINGS": {
-      "signature": "MAX_EXECUTOR_BINDINGS()",
-      "selector": "0x166b4696"
-    },
     "MAX_FORK_BIRTH_FACTS": {
       "signature": "MAX_FORK_BIRTH_FACTS()",
       "selector": "0x2e0eff3d"
@@ -144,6 +140,10 @@
     "MAX_PLAN_DEPENDENCIES": {
       "signature": "MAX_PLAN_DEPENDENCIES()",
       "selector": "0x67c17cbb"
+    },
+    "MAX_SUPPLIER_BINDINGS": {
+      "signature": "MAX_SUPPLIER_BINDINGS()",
+      "selector": "0x18de98ae"
     },
     "ORDER_LINK_MODULE_ID": {
       "signature": "ORDER_LINK_MODULE_ID()",
@@ -169,17 +169,13 @@
       "signature": "SUPPLIER_REGISTRY_MODULE_ID()",
       "selector": "0x2e723476"
     },
-    "activateStageDockExecutorFromModule": {
-      "signature": "activateStageDockExecutorFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,uint256)",
-      "selector": "0x9867fcfb"
+    "activateStageDockSupplierFromModule": {
+      "signature": "activateStageDockSupplierFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,uint256)",
+      "selector": "0xdea54119"
     },
-    "activateStageExecutorFromModule": {
-      "signature": "activateStageExecutorFromModule(bytes32,bytes32,bytes32,bytes32,uint256)",
-      "selector": "0x9e092942"
-    },
-    "activeStageExecutorPatch": {
-      "signature": "activeStageExecutorPatch(bytes32,bytes32,bytes32)",
-      "selector": "0x9e30c87e"
+    "activateStageSupplierFromModule": {
+      "signature": "activateStageSupplierFromModule(bytes32,bytes32,bytes32,bytes32,uint256)",
+      "selector": "0xba1525eb"
     },
     "commitPlan": {
       "signature": "commitPlan((address,bytes32,bytes32,bytes32,address,uint256),(bytes32,bytes32,bytes32,uint8,(uint8,bytes32,bytes32,uint16,uint64)[],bytes32[])[],(bytes32,bytes32,uint8)[],bytes)",
@@ -193,9 +189,9 @@
       "signature": "dockRegistry()",
       "selector": "0xc156ce96"
     },
-    "effectiveStageExecutor": {
-      "signature": "effectiveStageExecutor(bytes32,bytes32,bytes32)",
-      "selector": "0xa19612b3"
+    "effectiveStageAccount": {
+      "signature": "effectiveStageAccount(bytes32,bytes32,bytes32)",
+      "selector": "0x542f8828"
     },
     "effectiveStageSupplier": {
       "signature": "effectiveStageSupplier(bytes32,bytes32,bytes32)",
@@ -245,9 +241,9 @@
       "signature": "hasTriggerOriginConsent(bytes32,bytes32,bytes32,bytes32,address,(bytes32,bytes32,bytes32,bytes32[]))",
       "selector": "0xa1968e4f"
     },
-    "isEffectiveStageExecutor": {
-      "signature": "isEffectiveStageExecutor(bytes32,bytes32,bytes32,address)",
-      "selector": "0x496c5f48"
+    "isEffectiveStageAccount": {
+      "signature": "isEffectiveStageAccount(bytes32,bytes32,bytes32,address)",
+      "selector": "0x93484acc"
     },
     "isPlanStage": {
       "signature": "isPlanStage(bytes32,bytes32)",
@@ -309,10 +305,6 @@
       "signature": "planCommitted(bytes32)",
       "selector": "0xbbc66f3d"
     },
-    "planExecutorBindingsRoot": {
-      "signature": "planExecutorBindingsRoot(bytes32)",
-      "selector": "0x4e9d221a"
-    },
     "planExists": {
       "signature": "planExists(bytes32)",
       "selector": "0x1df23e4d"
@@ -357,13 +349,17 @@
       "signature": "planStageDefaultSupplier(bytes32,bytes32)",
       "selector": "0xf145d3c4"
     },
-    "planStageHasDynamicExecutor": {
-      "signature": "planStageHasDynamicExecutor(bytes32,bytes32)",
-      "selector": "0xec1ae007"
+    "planStageHasDynamicSupplier": {
+      "signature": "planStageHasDynamicSupplier(bytes32,bytes32)",
+      "selector": "0x6246bb09"
     },
     "planStageIsCandidate": {
       "signature": "planStageIsCandidate(bytes32,bytes32)",
       "selector": "0xe459fd30"
+    },
+    "planSupplierBindingsRoot": {
+      "signature": "planSupplierBindingsRoot(bytes32)",
+      "selector": "0xdc8f6b3d"
     },
     "pokeTimer": {
       "signature": "pokeTimer(bytes32,bytes32,bytes32)",
@@ -420,6 +416,10 @@
     "stageSignalState": {
       "signature": "stageSignalState(bytes32,bytes32,bytes32)",
       "selector": "0x9bc685d3"
+    },
+    "stageSupplierAssignment": {
+      "signature": "stageSupplierAssignment(bytes32,bytes32,bytes32)",
+      "selector": "0xdb4d1a59"
     },
     "submitDerivedSignalFromModule": {
       "signature": "submitDerivedSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",

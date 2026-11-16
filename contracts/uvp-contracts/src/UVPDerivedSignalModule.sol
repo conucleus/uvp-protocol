@@ -227,7 +227,7 @@ contract UVPDerivedSignalModule {
                 }
             }
         }
-        if (!stateMachine.isEffectiveStageExecutor(
+        if (!stateMachine.isEffectiveStageAccount(
                 request.fromPlanId, request.fromOrderId, request.fromStageId, submitter
             )) {
             revert UnauthorizedSignalSubmitter(request.fromOrderId, request.targetSourceId, request.signalId, submitter);

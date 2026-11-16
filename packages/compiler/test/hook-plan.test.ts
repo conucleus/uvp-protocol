@@ -149,8 +149,8 @@ test("compiles internal HookPlan IR", () => {
     ["main", "buyer", "main.err", "current"],
     ["main", "buyer", "main.str", "current"]
   ]);
-  assert.equal(plan.executorRoutes["main"]?.stageIdentifier, "main");
-  assert.equal(plan.executorRoutes["assign"]?.stageIdentifier, "assign");
+  assert.equal(plan.supplierRoutes["main"]?.stageIdentifier, "main");
+  assert.equal(plan.supplierRoutes["assign"]?.stageIdentifier, "assign");
   assert.deepEqual(validateHookPlanArtifact(plan), []);
   assert.doesNotThrow(() => assertHookPlanArtifact(plan));
 });
@@ -577,9 +577,9 @@ test("rejects executor-less selected-stage chains at the materialization gate", 
       targetStageIdentifier: "c"
     }
   ]);
-  assert.equal(plan.executorRoutes["a"]?.executor.supplierID, "anchor-org");
-  assert.ok(plan.executorRoutes["b"]);
-  assert.ok(plan.executorRoutes["c"]);
+  assert.equal(plan.supplierRoutes["a"]?.executor.supplierID, "anchor-org");
+  assert.ok(plan.supplierRoutes["b"]);
+  assert.ok(plan.supplierRoutes["c"]);
 });
 
 test("rejects executor-less selected cycles without a static anchor", () => {

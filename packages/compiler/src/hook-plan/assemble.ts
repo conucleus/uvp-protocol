@@ -24,7 +24,7 @@ export interface HookPlanShell {
   readonly platform: unknown;
   readonly compiledHooks: readonly unknown[];
   readonly dependencyIndex: Record<string, readonly string[]>;
-  readonly executorRoutes: Record<string, unknown>;
+  readonly supplierRoutes: Record<string, unknown>;
   readonly selectedStageBindings: readonly unknown[];
   readonly signalCapabilities: readonly unknown[];
   readonly admissions: readonly unknown[];
@@ -67,7 +67,7 @@ export function assembleChainTrackHookPlan(
     platform,
     compiledHooks: shell.compiledHooks as HookPlanArtifact["compiledHooks"],
     dependencyIndex: shell.dependencyIndex,
-    executorRoutes: shell.executorRoutes as HookPlanArtifact["executorRoutes"],
+    supplierRoutes: shell.supplierRoutes as HookPlanArtifact["supplierRoutes"],
     selectedStageBindings:
       shell.selectedStageBindings as HookPlanArtifact["selectedStageBindings"],
     signalCapabilities:
@@ -105,7 +105,7 @@ export function hookPlanPayloadForHash(
     platform: artifact.platform,
     compiledHooks: artifact.compiledHooks,
     dependencyIndex: artifact.dependencyIndex,
-    executorRoutes: artifact.executorRoutes,
+    supplierRoutes: artifact.supplierRoutes,
     selectedStageBindings: artifact.selectedStageBindings,
     signalCapabilities: artifact.signalCapabilities,
     admissions: artifact.admissions,

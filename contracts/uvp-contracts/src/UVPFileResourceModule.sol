@@ -189,7 +189,7 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
                 revert FileWriterUnauthorized(orderId, filePatch.targetStageId, filePatch.writerStageId, submitter);
             }
         }
-        if (!stateMachine.isEffectiveStageExecutor(planId, orderId, writerStageId, submitter)) {
+        if (!stateMachine.isEffectiveStageAccount(planId, orderId, writerStageId, submitter)) {
             revert FileWriterUnauthorized(orderId, filePatch.targetStageId, filePatch.writerStageId, submitter);
         }
     }

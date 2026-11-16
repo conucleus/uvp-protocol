@@ -14,7 +14,7 @@ import {UVPSupplierRegistry} from "../src/UVPSupplierRegistry.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
 import {MerkleCommitment} from "../src/libraries/MerkleCommitment.sol";
-import {_EXECUTOR_BINDING_LEAF_DOMAIN} from "../src/UVPStateMachineConstants.sol";
+import {_SUPPLIER_BINDING_LEAF_DOMAIN} from "../src/UVPStateMachineConstants.sol";
 import {emptyFilePatch} from "./FilePatchTestHelpers.sol";
 
 interface Vm {
@@ -34,15 +34,15 @@ interface Vm {
     function warp(uint256 newTimestamp) external;
 }
 
-contract ExecutorChangeBlackBoxTest {
+contract StageSupplierChangeBlackBoxTest {
     struct PreparedPatch {
-        UVPStagePatchModule.StageExecutorPatch patch;
+        UVPStagePatchModule.StageSupplierPatch patch;
         IUVPStateMachineCore.SelectorBindingProof bindingProof;
         bytes32[] candidateProof;
         address selector;
         uint256 deadline;
         bytes selectorSignature;
-        bytes previousExecutorSignature;
+        bytes previousSupplierSignature;
     }
 
     Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
@@ -72,14 +72,6 @@ contract ExecutorChangeBlackBoxTest {
     bytes32 private constant PAYLOAD_HASH_2 = bytes32(uint256(0x8002));
     bytes32 private constant IDEMPOTENCY_KEY = bytes32(uint256(0x9001));
     bytes32 private constant IDEMPOTENCY_KEY_2 = bytes32(uint256(0x9002));
-    bytes32 private constant SUPPLIER_SELECTOR = bytes32(uint256(0x5101));
-    bytes32 private constant SUPPLIER_DEFAULT = bytes32(uint256(0x5102));
-    bytes32 private constant SUPPLIER_FIXED = bytes32(uint256(0x5103));
-    bytes32 private constant SUPPLIER_CAND1 = bytes32(uint256(0x5104));
-    bytes32 private constant SUPPLIER_CAND2 = bytes32(uint256(0x5105));
-    bytes32 private constant SUPPLIER_CAND3 = bytes32(uint256(0x5106));
-    bytes32 private constant SUPPLIER_DYN = bytes32(uint256(0x5107));
-
     uint8 private constant FLAG_ORDER_TRIGGER_MINT = 1;
     uint8 private constant FLAG_EMIT_READY = 4;
     uint8 private constant FLAG_DYNAMIC_EXECUTOR = 32;
@@ -97,7 +89,7 @@ contract ExecutorChangeBlackBoxTest {
     address private constant STRANGER = address(uint160(0xbad));
 
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 executorBindingsRoot,address birthAuthorizer,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,address birthAuthorizer,uint256 deadline)"
     );
     bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
         "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
@@ -110,6 +102,13 @@ contract ExecutorChangeBlackBoxTest {
     UVPFileResourceModule private files;
     bytes32 private planId;
     bytes32 private orderId;
+    bytes32 private supplierSelector;
+    bytes32 private supplierDefault;
+    bytes32 private supplierFixed;
+    bytes32 private supplierCand1;
+    bytes32 private supplierCand2;
+    bytes32 private supplierCand3;
+    bytes32 private supplierDyn;
     bytes32[] private capabilityLeaves;
     bytes32[] private bindingLeaves;
 
@@ -119,12 +118,12 @@ contract ExecutorChangeBlackBoxTest {
     }
 
     function testCandidateProofMustMatchStageSupplierAndStageType() public {
-        UVPStagePatchModule.StageExecutorPatch memory patch =
-            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 1);
+        UVPStagePatchModule.StageSupplierPatch memory patch =
+            _patch(STAGE_AUDIT, supplierCand1, bytes32(0), 1);
 
         _expectPatchRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.StageExecutorNotCandidate.selector, planId, orderId, STAGE_AUDIT, SUPPLIER_CAND1
+                UVPStagePatchModule.StageSupplierNotCandidate.selector, planId, orderId, STAGE_AUDIT, supplierCand1
             ),
             patch,
             _bindingProof(STAGE_AUDIT),
@@ -132,39 +131,41 @@ contract ExecutorChangeBlackBoxTest {
         );
         _expectPatchRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.StageExecutorNotCandidate.selector, planId, orderId, STAGE_AUDIT, SUPPLIER_CAND1
+                UVPStagePatchModule.StageSupplierNotCandidate.selector, planId, orderId, STAGE_AUDIT, supplierCand1
             ),
             patch,
             _bindingProof(STAGE_AUDIT),
-            _candidateProof(SUPPLIER_CAND2)
+            _candidateProof(supplierCand2)
         );
 
-        _applyDirect(patch, _bindingProof(STAGE_AUDIT), _candidateProof(SUPPLIER_CAND1));
+        _applyDirect(patch, _bindingProof(STAGE_AUDIT), _candidateProof(supplierCand1));
         (bytes32 supplierId, uint256 patchNonce, bytes32 dockId) =
-            machine.activeStageExecutorPatch(planId, orderId, STAGE_AUDIT);
-        require(supplierId == SUPPLIER_CAND1 && patchNonce == 1 && dockId == bytes32(0), "candidate patch not applied");
-        (bytes32 effectiveSupplierId, address effectiveExecutor) =
-            machine.effectiveStageExecutor(planId, orderId, STAGE_AUDIT);
-        require(effectiveSupplierId == SUPPLIER_CAND1 && effectiveExecutor == _cand1(), "effective executor wrong");
+            machine.stageSupplierAssignment(planId, orderId, STAGE_AUDIT);
+        require(supplierId == supplierCand1 && patchNonce == 1 && dockId == bytes32(0), "candidate patch not applied");
+        require(
+            machine.effectiveStageSupplier(planId, orderId, STAGE_AUDIT) == supplierCand1
+                && machine.effectiveStageAccount(planId, orderId, STAGE_AUDIT) == _cand1(),
+            "effective supplier wrong"
+        );
     }
 
-    function testFixedAndBirthStagePatchesForbidden() public {
-        UVPStagePatchModule.StageExecutorPatch memory fixedPatch =
-            _patch(STAGE_FIXED, SUPPLIER_FIXED, bytes32(0), 1);
+    function testFixedAndBirthStageSupplierPatchesForbidden() public {
+        UVPStagePatchModule.StageSupplierPatch memory fixedPatch =
+            _patch(STAGE_FIXED, supplierFixed, bytes32(0), 1);
         _expectPatchRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.StageExecutorPatchForbiddenOnFixedStage.selector, orderId, STAGE_FIXED
+                UVPStagePatchModule.StageSupplierPatchForbiddenOnFixedStage.selector, orderId, STAGE_FIXED
             ),
             fixedPatch,
             IUVPStateMachineCore.SelectorBindingProof({selectorStageId: STAGE_INIT, proof: new bytes32[](0)}),
             new bytes32[](0)
         );
 
-        UVPStagePatchModule.StageExecutorPatch memory birthPatch =
-            _patch(STAGE_INIT, SUPPLIER_SELECTOR, bytes32(0), 1);
+        UVPStagePatchModule.StageSupplierPatch memory birthPatch =
+            _patch(STAGE_INIT, supplierSelector, bytes32(0), 1);
         _expectPatchRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.StageExecutorPatchForbiddenOnBirthStage.selector, orderId, STAGE_INIT
+                UVPStagePatchModule.StageSupplierPatchForbiddenOnBirthStage.selector, orderId, STAGE_INIT
             ),
             birthPatch,
             IUVPStateMachineCore.SelectorBindingProof({selectorStageId: STAGE_INIT, proof: new bytes32[](0)}),
@@ -172,32 +173,32 @@ contract ExecutorChangeBlackBoxTest {
         );
     }
 
-    function testSelectorMustBeEffectiveExecutorAndOrderCreatorHasNoBypass() public {
-        UVPStagePatchModule.StageExecutorPatch memory patch =
-            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 1);
+    function testSelectorMustBeEffectiveSupplierAccountAndOrderCreatorHasNoBypass() public {
+        UVPStagePatchModule.StageSupplierPatch memory patch =
+            _patch(STAGE_AUDIT, supplierCand1, bytes32(0), 1);
 
         IUVPStateMachineCore.SelectorBindingProof memory selectorProof = _bindingProof(STAGE_AUDIT);
-        bytes32[] memory candidateProof = _candidateProof(SUPPLIER_CAND1);
+        bytes32[] memory candidateProof = _candidateProof(supplierCand1);
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.UnauthorizedStageExecutorPatchSelector.selector, orderId, STAGE_INIT, CREATOR
+                UVPStagePatchModule.UnauthorizedStageSupplierPatchSelector.selector, orderId, STAGE_INIT, CREATOR
             )
         );
         vm.prank(CREATOR);
-        stagePatch.applyStageExecutorPatch(planId, orderId, patch, selectorProof, candidateProof);
+        stagePatch.applyStageSupplierPatch(planId, orderId, patch, selectorProof, candidateProof);
 
         PreparedPatch memory prepared = _prepareWithSelector(patch, _cand1(), CAND1_PRIVATE_KEY);
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.UnauthorizedStageExecutorPatchSelector.selector, orderId, STAGE_INIT, _cand1()
+                UVPStagePatchModule.UnauthorizedStageSupplierPatchSelector.selector, orderId, STAGE_INIT, _cand1()
             )
         );
         _sendRelayed(prepared);
     }
 
     function testSelectorBindingProofMustMatch() public {
-        UVPStagePatchModule.StageExecutorPatch memory patch =
-            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 1);
+        UVPStagePatchModule.StageSupplierPatch memory patch =
+            _patch(STAGE_AUDIT, supplierCand1, bytes32(0), 1);
 
         _expectPatchRevert(
             abi.encodeWithSelector(
@@ -205,7 +206,7 @@ contract ExecutorChangeBlackBoxTest {
             ),
             patch,
             IUVPStateMachineCore.SelectorBindingProof({selectorStageId: STAGE_AUDIT, proof: new bytes32[](0)}),
-            _candidateProof(SUPPLIER_CAND1)
+            _candidateProof(supplierCand1)
         );
         _expectPatchRevert(
             abi.encodeWithSelector(
@@ -213,98 +214,98 @@ contract ExecutorChangeBlackBoxTest {
             ),
             patch,
             IUVPStateMachineCore.SelectorBindingProof({selectorStageId: STAGE_INIT, proof: new bytes32[](0)}),
-            _candidateProof(SUPPLIER_CAND1)
+            _candidateProof(supplierCand1)
         );
     }
 
     function testAssignThenHandoffLifecycle() public {
         _applyDirect(
-            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 1),
+            _patch(STAGE_AUDIT, supplierCand1, bytes32(0), 1),
             _bindingProof(STAGE_AUDIT),
-            _candidateProof(SUPPLIER_CAND1)
+            _candidateProof(supplierCand1)
         );
         _submit(STAGE_AUDIT, STAGE_AUDIT, SIGNAL_STAGE_DONE, _cand1());
 
         _expectPatchRevert(
             abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, orderId, STAGE_AUDIT),
-            _patch(STAGE_AUDIT, SUPPLIER_CAND2, bytes32(0), 2),
+            _patch(STAGE_AUDIT, supplierCand2, bytes32(0), 2),
             _bindingProof(STAGE_AUDIT),
-            _candidateProof(SUPPLIER_CAND2)
+            _candidateProof(supplierCand2)
         );
 
         _expectPatchRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.StageExecutorPatchPreviousSupplierMismatch.selector,
+                UVPStagePatchModule.StageSupplierPatchPreviousSupplierMismatch.selector,
                 orderId,
                 STAGE_AUDIT,
-                SUPPLIER_CAND1,
-                SUPPLIER_DEFAULT
+                supplierCand1,
+                supplierDefault
             ),
-            _patch(STAGE_AUDIT, SUPPLIER_CAND2, SUPPLIER_DEFAULT, 2),
+            _patch(STAGE_AUDIT, supplierCand2, supplierDefault, 2),
             _bindingProof(STAGE_AUDIT),
-            _candidateProof(SUPPLIER_CAND2)
+            _candidateProof(supplierCand2)
         );
 
         _expectPatchRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.InvalidStageExecutorPatchSignature.selector, _cand1(), address(0)
+                UVPStagePatchModule.InvalidStageSupplierPatchSignature.selector, _cand1(), address(0)
             ),
-            _patch(STAGE_AUDIT, SUPPLIER_CAND2, SUPPLIER_CAND1, 2),
+            _patch(STAGE_AUDIT, supplierCand2, supplierCand1, 2),
             _bindingProof(STAGE_AUDIT),
-            _candidateProof(SUPPLIER_CAND2)
+            _candidateProof(supplierCand2)
         );
 
-        PreparedPatch memory wrongSigner = _prepare(_patch(STAGE_AUDIT, SUPPLIER_CAND2, SUPPLIER_CAND1, 2));
-        wrongSigner.previousExecutorSignature =
+        PreparedPatch memory wrongSigner = _prepare(_patch(STAGE_AUDIT, supplierCand2, supplierCand1, 2));
+        wrongSigner.previousSupplierSignature =
             _signatureOver(DEFAULT_PRIVATE_KEY, _digestFor(orderId, wrongSigner.patch, wrongSigner.selector, wrongSigner.deadline));
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.InvalidStageExecutorPatchSignature.selector, _cand1(), _default()
+                UVPStagePatchModule.InvalidStageSupplierPatchSignature.selector, _cand1(), _default()
             )
         );
         _sendRelayed(wrongSigner);
 
-        PreparedPatch memory handoff = _prepare(_patch(STAGE_AUDIT, SUPPLIER_CAND2, SUPPLIER_CAND1, 2));
-        handoff.previousExecutorSignature =
+        PreparedPatch memory handoff = _prepare(_patch(STAGE_AUDIT, supplierCand2, supplierCand1, 2));
+        handoff.previousSupplierSignature =
             _signatureOver(CAND1_PRIVATE_KEY, _digestFor(orderId, handoff.patch, handoff.selector, handoff.deadline));
         _sendRelayed(handoff);
-        (bytes32 supplierId, uint256 patchNonce,) = machine.activeStageExecutorPatch(planId, orderId, STAGE_AUDIT);
-        require(supplierId == SUPPLIER_CAND2 && patchNonce == 2, "handoff not applied");
+        (bytes32 supplierId, uint256 patchNonce,) = machine.stageSupplierAssignment(planId, orderId, STAGE_AUDIT);
+        require(supplierId == supplierCand2 && patchNonce == 2, "handoff not applied");
 
         _submit(STAGE_AUDIT, STAGE_AUDIT, SIGNAL_STAGE_REVIEW, _cand2());
         (,,,, address submitter) = machine.getSignal(planId, orderId, STAGE_AUDIT, SIGNAL_STAGE_REVIEW);
-        require(submitter == _cand2(), "handoff executor submit not recorded");
+        require(submitter == _cand2(), "handoff supplier account submit not recorded");
     }
 
     function testPatchNonceMustIncrease() public {
         _applyDirect(
-            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 2),
+            _patch(STAGE_AUDIT, supplierCand1, bytes32(0), 2),
             _bindingProof(STAGE_AUDIT),
-            _candidateProof(SUPPLIER_CAND1)
+            _candidateProof(supplierCand1)
         );
         _expectPatchRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.StageExecutorPatchNonceNotIncreasing.selector, orderId, STAGE_AUDIT, 2, 2
+                UVPStagePatchModule.StageSupplierPatchNonceNotIncreasing.selector, orderId, STAGE_AUDIT, 2, 2
             ),
-            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 2),
+            _patch(STAGE_AUDIT, supplierCand1, bytes32(0), 2),
             _bindingProof(STAGE_AUDIT),
-            _candidateProof(SUPPLIER_CAND1)
+            _candidateProof(supplierCand1)
         );
     }
 
     function testDynamicStagePatchSkipsCandidateProofAndRequiresAssignment() public {
         _submitExpectRevert(
-            abi.encodeWithSelector(UVPStateMachine.StageExecutorNotAssigned.selector, orderId, STAGE_DYN),
+            abi.encodeWithSelector(UVPStateMachine.StageSupplierNotAssigned.selector, orderId, STAGE_DYN),
             SOURCE_DYN,
             STAGE_DYN,
             SIGNAL_DYN,
             _dyn()
         );
 
-        _applyDirect(_patch(STAGE_DYN, SUPPLIER_DYN, bytes32(0), 1), _bindingProof(STAGE_DYN), new bytes32[](0));
+        _applyDirect(_patch(STAGE_DYN, supplierDyn, bytes32(0), 1), _bindingProof(STAGE_DYN), new bytes32[](0));
         (bytes32 supplierId, uint256 patchNonce, bytes32 dockId) =
-            machine.activeStageExecutorPatch(planId, orderId, STAGE_DYN);
-        require(supplierId == SUPPLIER_DYN && patchNonce == 1 && dockId == bytes32(0), "dynamic assign not applied");
+            machine.stageSupplierAssignment(planId, orderId, STAGE_DYN);
+        require(supplierId == supplierDyn && patchNonce == 1 && dockId == bytes32(0), "dynamic assign not applied");
 
         _submit(SOURCE_DYN, STAGE_DYN, SIGNAL_DYN, _dyn());
         (uint256 count,,,) = machine.stageSignalState(planId, orderId, STAGE_DYN);
@@ -312,32 +313,32 @@ contract ExecutorChangeBlackBoxTest {
 
         _expectPatchRevert(
             abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, orderId, STAGE_DYN),
-            _patch(STAGE_DYN, SUPPLIER_DYN, bytes32(0), 2),
+            _patch(STAGE_DYN, supplierDyn, bytes32(0), 2),
             _bindingProof(STAGE_DYN),
             new bytes32[](0)
         );
     }
 
     function testRevokedSupplierCannotBeAssigned() public {
-        suppliers.revokeSupplier(SUPPLIER_CAND3);
+        suppliers.revokeSupplier(supplierCand3);
         _expectPatchRevert(
-            abi.encodeWithSelector(UVPStagePatchModule.SupplierNotRegistered.selector, SUPPLIER_CAND3),
-            _patch(STAGE_AUDIT, SUPPLIER_CAND3, bytes32(0), 1),
+            abi.encodeWithSelector(UVPStagePatchModule.SupplierNotActive.selector, supplierCand3),
+            _patch(STAGE_AUDIT, supplierCand3, bytes32(0), 1),
             _bindingProof(STAGE_AUDIT),
-            _candidateProof(SUPPLIER_CAND3)
+            _candidateProof(supplierCand3)
         );
     }
 
-    function testEffectiveExecutorBoundSubmitAfterPatch() public {
+    function testEffectiveSupplierAccountBoundSubmitAfterPatch() public {
         _applyDirect(
-            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 1),
+            _patch(STAGE_AUDIT, supplierCand1, bytes32(0), 1),
             _bindingProof(STAGE_AUDIT),
-            _candidateProof(SUPPLIER_CAND1)
+            _candidateProof(supplierCand1)
         );
 
         _submitExpectRevert(
             abi.encodeWithSelector(
-                UVPStateMachine.UnauthorizedStageExecutor.selector, orderId, STAGE_AUDIT, _default(), _cand1()
+                UVPStateMachine.UnauthorizedStageSupplierAccount.selector, orderId, STAGE_AUDIT, _default(), _cand1()
             ),
             STAGE_AUDIT,
             STAGE_AUDIT,
@@ -347,7 +348,7 @@ contract ExecutorChangeBlackBoxTest {
 
         _submitExpectRevert(
             abi.encodeWithSelector(
-                UVPStateMachine.UnauthorizedStageExecutor.selector, orderId, STAGE_AUDIT, STRANGER, _cand1()
+                UVPStateMachine.UnauthorizedStageSupplierAccount.selector, orderId, STAGE_AUDIT, STRANGER, _cand1()
             ),
             STAGE_AUDIT,
             STAGE_AUDIT,
@@ -357,30 +358,30 @@ contract ExecutorChangeBlackBoxTest {
 
         _submit(STAGE_AUDIT, STAGE_AUDIT, SIGNAL_STAGE_DONE, _cand1());
         (,,,, address submitter) = machine.getSignal(planId, orderId, STAGE_AUDIT, SIGNAL_STAGE_DONE);
-        require(submitter == _cand1(), "patched executor submit not recorded");
+        require(submitter == _cand1(), "patched supplier account submit not recorded");
     }
 
     function testRelayedPatchRejectsCrossPatchSelectorSignatureAndExpiredDeadline() public {
-        UVPStagePatchModule.StageExecutorPatch memory signedPatch =
-            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 1);
-        UVPStagePatchModule.StageExecutorPatch memory submittedPatch =
-            _patch(STAGE_AUDIT, SUPPLIER_CAND2, bytes32(0), 1);
+        UVPStagePatchModule.StageSupplierPatch memory signedPatch =
+            _patch(STAGE_AUDIT, supplierCand1, bytes32(0), 1);
+        UVPStagePatchModule.StageSupplierPatch memory submittedPatch =
+            _patch(STAGE_AUDIT, supplierCand2, bytes32(0), 1);
         uint256 deadline = block.timestamp + 1 hours;
-        bytes32 signedDigest = stagePatch.stageExecutorPatchDigest(planId, orderId, signedPatch, _selector(), deadline);
+        bytes32 signedDigest = stagePatch.stageSupplierPatchDigest(planId, orderId, signedPatch, _selector(), deadline);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(SELECTOR_PRIVATE_KEY, signedDigest);
         bytes32 submittedDigest =
-            stagePatch.stageExecutorPatchDigest(planId, orderId, submittedPatch, _selector(), deadline);
+            stagePatch.stageSupplierPatchDigest(planId, orderId, submittedPatch, _selector(), deadline);
         address expectedRecovered = ecrecover(submittedDigest, v, r, s);
         IUVPStateMachineCore.SelectorBindingProof memory selectorProof = _bindingProof(STAGE_AUDIT);
-        bytes32[] memory submittedCandidateProof = _candidateProof(SUPPLIER_CAND2);
-        bytes32[] memory signedCandidateProof = _candidateProof(SUPPLIER_CAND1);
+        bytes32[] memory submittedCandidateProof = _candidateProof(supplierCand2);
+        bytes32[] memory signedCandidateProof = _candidateProof(supplierCand1);
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.InvalidStageExecutorPatchSignature.selector, _selector(), expectedRecovered
+                UVPStagePatchModule.InvalidStageSupplierPatchSignature.selector, _selector(), expectedRecovered
             )
         );
-        stagePatch.applyStageExecutorPatchFor(
+        stagePatch.applyStageSupplierPatchFor(
             planId,
             orderId,
             submittedPatch,
@@ -395,10 +396,10 @@ contract ExecutorChangeBlackBoxTest {
         uint256 expiredDeadline = block.timestamp - 1;
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.ExpiredStageExecutorPatchSignature.selector, expiredDeadline
+                UVPStagePatchModule.ExpiredStageSupplierPatchSignature.selector, expiredDeadline
             )
         );
-        stagePatch.applyStageExecutorPatchFor(
+        stagePatch.applyStageSupplierPatchFor(
             planId,
             orderId,
             signedPatch,
@@ -413,9 +414,9 @@ contract ExecutorChangeBlackBoxTest {
 
     function testPatchOnForkedOrderUsesReplayedStageCounts() public {
         _applyDirect(
-            _patch(STAGE_AUDIT, SUPPLIER_CAND1, bytes32(0), 1),
+            _patch(STAGE_AUDIT, supplierCand1, bytes32(0), 1),
             _bindingProof(STAGE_AUDIT),
-            _candidateProof(SUPPLIER_CAND1)
+            _candidateProof(supplierCand1)
         );
         _submit(STAGE_AUDIT, STAGE_AUDIT, SIGNAL_STAGE_DONE, _cand1());
 
@@ -439,31 +440,31 @@ contract ExecutorChangeBlackBoxTest {
         _expectPatchRevertOn(
             child,
             abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, child, STAGE_AUDIT),
-            _patch(STAGE_AUDIT, SUPPLIER_CAND2, bytes32(0), 1),
+            _patch(STAGE_AUDIT, supplierCand2, bytes32(0), 1),
             _bindingProof(STAGE_AUDIT),
-            _candidateProof(SUPPLIER_CAND2)
+            _candidateProof(supplierCand2)
         );
         _expectPatchRevertOn(
             child,
             abi.encodeWithSelector(
-                UVPStagePatchModule.StageExecutorPatchPreviousSupplierMismatch.selector,
+                UVPStagePatchModule.StageSupplierPatchPreviousSupplierMismatch.selector,
                 child,
                 STAGE_AUDIT,
-                SUPPLIER_DEFAULT,
-                SUPPLIER_CAND1
+                supplierDefault,
+                supplierCand1
             ),
-            _patch(STAGE_AUDIT, SUPPLIER_CAND2, SUPPLIER_CAND1, 2),
+            _patch(STAGE_AUDIT, supplierCand2, supplierCand1, 2),
             _bindingProof(STAGE_AUDIT),
-            _candidateProof(SUPPLIER_CAND2)
+            _candidateProof(supplierCand2)
         );
 
         PreparedPatch memory handoff =
-            _prepareFor(child, _patch(STAGE_AUDIT, SUPPLIER_CAND2, SUPPLIER_DEFAULT, 2));
-        handoff.previousExecutorSignature =
+            _prepareFor(child, _patch(STAGE_AUDIT, supplierCand2, supplierDefault, 2));
+        handoff.previousSupplierSignature =
             _signatureOver(DEFAULT_PRIVATE_KEY, _digestFor(child, handoff.patch, handoff.selector, handoff.deadline));
         _sendRelayedFor(child, handoff);
-        (bytes32 supplierId,,) = machine.activeStageExecutorPatch(planId, child, STAGE_AUDIT);
-        require(supplierId == SUPPLIER_CAND2, "fork child handoff failed");
+        (bytes32 supplierId,,) = machine.stageSupplierAssignment(planId, child, STAGE_AUDIT);
+        require(supplierId == supplierCand2, "fork child handoff failed");
 
         UVPStateMachine.FactAttribution memory reviewAttribution =
             _attribution(STAGE_AUDIT, STAGE_AUDIT, SIGNAL_STAGE_REVIEW);
@@ -501,13 +502,20 @@ contract ExecutorChangeBlackBoxTest {
         machine.setSupplierRegistry(address(suppliers));
         machine.freezeModules();
 
-        suppliers.registerSupplier(SUPPLIER_SELECTOR, _selector());
-        suppliers.registerSupplier(SUPPLIER_DEFAULT, _default());
-        suppliers.registerSupplier(SUPPLIER_FIXED, _fixed());
-        suppliers.registerSupplier(SUPPLIER_CAND1, _cand1());
-        suppliers.registerSupplier(SUPPLIER_CAND2, _cand2());
-        suppliers.registerSupplier(SUPPLIER_CAND3, _cand3());
-        suppliers.registerSupplier(SUPPLIER_DYN, _dyn());
+        supplierSelector = _registerSupplier(SELECTOR_PRIVATE_KEY);
+        supplierDefault = _registerSupplier(DEFAULT_PRIVATE_KEY);
+        supplierFixed = _registerSupplier(FIXED_PRIVATE_KEY);
+        supplierCand1 = _registerSupplier(CAND1_PRIVATE_KEY);
+        supplierCand2 = _registerSupplier(CAND2_PRIVATE_KEY);
+        supplierCand3 = _registerSupplier(CAND3_PRIVATE_KEY);
+        supplierDyn = _registerSupplier(DYN_PRIVATE_KEY);
+    }
+
+    function _registerSupplier(uint256 privateKey) private returns (bytes32 supplierId) {
+        address account = vm.addr(privateKey);
+        vm.prank(account);
+        supplierId = suppliers.registerSupplier(account);
+        suppliers.activateSupplier(supplierId);
     }
 
     function _commitAndBirth() private {
@@ -532,18 +540,18 @@ contract ExecutorChangeBlackBoxTest {
         capabilityLeaves[7] = metadata.signalCapabilityLeaf(STAGE_AUDIT, STAGE_AUDIT, SIGNAL_STAGE_REVIEW, 0);
         capabilityLeaves[8] = metadata.signalCapabilityLeaf(STAGE_DYN, SOURCE_DYN, SIGNAL_DYN, 0);
 
-        UVPStateMachine.ExecutorBinding[] memory bindings = new UVPStateMachine.ExecutorBinding[](6);
-        bindings[0] = UVPStateMachine.ExecutorBinding({stageId: STAGE_INIT, supplierId: SUPPLIER_SELECTOR, kind: 0});
-        bindings[1] = UVPStateMachine.ExecutorBinding({stageId: STAGE_AUDIT, supplierId: SUPPLIER_DEFAULT, kind: 0});
-        bindings[2] = UVPStateMachine.ExecutorBinding({stageId: STAGE_FIXED, supplierId: SUPPLIER_FIXED, kind: 0});
-        bindings[3] = UVPStateMachine.ExecutorBinding({stageId: STAGE_AUDIT, supplierId: SUPPLIER_CAND1, kind: 1});
-        bindings[4] = UVPStateMachine.ExecutorBinding({stageId: STAGE_AUDIT, supplierId: SUPPLIER_CAND2, kind: 1});
-        bindings[5] = UVPStateMachine.ExecutorBinding({stageId: STAGE_AUDIT, supplierId: SUPPLIER_CAND3, kind: 1});
+        UVPStateMachine.StageSupplierBinding[] memory bindings = new UVPStateMachine.StageSupplierBinding[](6);
+        bindings[0] = UVPStateMachine.StageSupplierBinding({stageId: STAGE_INIT, supplierId: supplierSelector, kind: 0});
+        bindings[1] = UVPStateMachine.StageSupplierBinding({stageId: STAGE_AUDIT, supplierId: supplierDefault, kind: 0});
+        bindings[2] = UVPStateMachine.StageSupplierBinding({stageId: STAGE_FIXED, supplierId: supplierFixed, kind: 0});
+        bindings[3] = UVPStateMachine.StageSupplierBinding({stageId: STAGE_AUDIT, supplierId: supplierCand1, kind: 1});
+        bindings[4] = UVPStateMachine.StageSupplierBinding({stageId: STAGE_AUDIT, supplierId: supplierCand2, kind: 1});
+        bindings[5] = UVPStateMachine.StageSupplierBinding({stageId: STAGE_AUDIT, supplierId: supplierCand3, kind: 1});
         bindingLeaves = new bytes32[](bindings.length);
         for (uint256 i = 0; i < bindings.length; i++) {
             bindingLeaves[i] = keccak256(
                 abi.encodePacked(
-                    _EXECUTOR_BINDING_LEAF_DOMAIN, bindings[i].stageId, bindings[i].supplierId, bindings[i].kind
+                    _SUPPLIER_BINDING_LEAF_DOMAIN, bindings[i].stageId, bindings[i].supplierId, bindings[i].kind
                 )
             );
         }
@@ -552,7 +560,7 @@ contract ExecutorChangeBlackBoxTest {
             publisher: vm.addr(PUBLISHER_PRIVATE_KEY),
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: MerkleCommitment.root(capabilityLeaves),
-            executorBindingsRoot: MerkleCommitment.root(bindingLeaves),
+            supplierBindingsRoot: MerkleCommitment.root(bindingLeaves),
             birthAuthorizer: _selector(),
             deadline: block.timestamp + 1 hours
         });
@@ -595,9 +603,9 @@ contract ExecutorChangeBlackBoxTest {
     function _patch(bytes32 targetStageId, bytes32 supplierId, bytes32 previousSupplierId, uint256 patchNonce)
         private
         pure
-        returns (UVPStagePatchModule.StageExecutorPatch memory)
+        returns (UVPStagePatchModule.StageSupplierPatch memory)
     {
-        return UVPStagePatchModule.StageExecutorPatch({
+        return UVPStagePatchModule.StageSupplierPatch({
             selectorStageId: STAGE_INIT,
             targetStageId: targetStageId,
             supplierId: supplierId,
@@ -607,17 +615,17 @@ contract ExecutorChangeBlackBoxTest {
     }
 
     function _applyDirect(
-        UVPStagePatchModule.StageExecutorPatch memory patch,
+        UVPStagePatchModule.StageSupplierPatch memory patch,
         IUVPStateMachineCore.SelectorBindingProof memory bindingProof,
         bytes32[] memory candidateProof
     ) private {
         vm.prank(_selector());
-        stagePatch.applyStageExecutorPatch(planId, orderId, patch, bindingProof, candidateProof);
+        stagePatch.applyStageSupplierPatch(planId, orderId, patch, bindingProof, candidateProof);
     }
 
     function _expectPatchRevert(
         bytes memory revertData,
-        UVPStagePatchModule.StageExecutorPatch memory patch,
+        UVPStagePatchModule.StageSupplierPatch memory patch,
         IUVPStateMachineCore.SelectorBindingProof memory bindingProof,
         bytes32[] memory candidateProof
     ) private {
@@ -627,23 +635,23 @@ contract ExecutorChangeBlackBoxTest {
     function _expectPatchRevertOn(
         bytes32 targetOrderId,
         bytes memory revertData,
-        UVPStagePatchModule.StageExecutorPatch memory patch,
+        UVPStagePatchModule.StageSupplierPatch memory patch,
         IUVPStateMachineCore.SelectorBindingProof memory bindingProof,
         bytes32[] memory candidateProof
     ) private {
         vm.prank(_selector());
         vm.expectRevert(revertData);
-        stagePatch.applyStageExecutorPatch(planId, targetOrderId, patch, bindingProof, candidateProof);
+        stagePatch.applyStageSupplierPatch(planId, targetOrderId, patch, bindingProof, candidateProof);
     }
 
-    function _prepare(UVPStagePatchModule.StageExecutorPatch memory patch)
+    function _prepare(UVPStagePatchModule.StageSupplierPatch memory patch)
         private
         returns (PreparedPatch memory prepared)
     {
         prepared = _prepareFor(orderId, patch);
     }
 
-    function _prepareFor(bytes32 targetOrderId, UVPStagePatchModule.StageExecutorPatch memory patch)
+    function _prepareFor(bytes32 targetOrderId, UVPStagePatchModule.StageSupplierPatch memory patch)
         private
         returns (PreparedPatch memory prepared)
     {
@@ -657,7 +665,7 @@ contract ExecutorChangeBlackBoxTest {
     }
 
     function _prepareWithSelector(
-        UVPStagePatchModule.StageExecutorPatch memory patch,
+        UVPStagePatchModule.StageSupplierPatch memory patch,
         address selector,
         uint256 selectorPrivateKey
     ) private returns (PreparedPatch memory prepared) {
@@ -668,11 +676,11 @@ contract ExecutorChangeBlackBoxTest {
 
     function _digestFor(
         bytes32 targetOrderId,
-        UVPStagePatchModule.StageExecutorPatch memory patch,
+        UVPStagePatchModule.StageSupplierPatch memory patch,
         address selector,
         uint256 deadline
     ) private view returns (bytes32) {
-        return stagePatch.stageExecutorPatchDigest(planId, targetOrderId, patch, selector, deadline);
+        return stagePatch.stageSupplierPatchDigest(planId, targetOrderId, patch, selector, deadline);
     }
 
     function _sendRelayed(PreparedPatch memory prepared) private {
@@ -680,14 +688,14 @@ contract ExecutorChangeBlackBoxTest {
     }
 
     function _sendRelayedFor(bytes32 targetOrderId, PreparedPatch memory prepared) private {
-        stagePatch.applyStageExecutorPatchFor(
+        stagePatch.applyStageSupplierPatchFor(
             planId,
             targetOrderId,
             prepared.patch,
             prepared.selector,
             prepared.deadline,
             prepared.selectorSignature,
-            prepared.previousExecutorSignature,
+            prepared.previousSupplierSignature,
             prepared.bindingProof,
             prepared.candidateProof
         );
@@ -746,7 +754,7 @@ contract ExecutorChangeBlackBoxTest {
 
     function _candidateProof(bytes32 supplierId) private view returns (bytes32[] memory) {
         bytes32 leaf = keccak256(
-            abi.encodePacked(_EXECUTOR_BINDING_LEAF_DOMAIN, STAGE_AUDIT, supplierId, uint8(1))
+            abi.encodePacked(_SUPPLIER_BINDING_LEAF_DOMAIN, STAGE_AUDIT, supplierId, uint8(1))
         );
         for (uint256 i = 0; i < bindingLeaves.length; i++) {
             if (bindingLeaves[i] == leaf) {
@@ -772,7 +780,7 @@ contract ExecutorChangeBlackBoxTest {
                         commit.publisher,
                         commit.hooksHash,
                         commit.capabilitiesRoot,
-                        commit.executorBindingsRoot,
+                        commit.supplierBindingsRoot,
                         commit.birthAuthorizer,
                         commit.deadline
                     )
@@ -845,22 +853,6 @@ contract ExecutorChangeBlackBoxTest {
 
     function _dyn() private view returns (address) {
         return vm.addr(DYN_PRIVATE_KEY);
-    }
-
-    function _cand1Static() private pure returns (address) {
-        return address(uint160(uint256(keccak256(abi.encodePacked(uint256(CAND1_PRIVATE_KEY))))));
-    }
-
-    function _cand2Static() private pure returns (address) {
-        return address(uint160(uint256(keccak256(abi.encodePacked(uint256(CAND2_PRIVATE_KEY))))));
-    }
-
-    function _defaultStatic() private pure returns (address) {
-        return address(uint160(uint256(keccak256(abi.encodePacked(uint256(DEFAULT_PRIVATE_KEY))))));
-    }
-
-    function _dynStatic() private pure returns (address) {
-        return address(uint160(uint256(keccak256(abi.encodePacked(uint256(DYN_PRIVATE_KEY))))));
     }
 
     function _hook(bytes32 hookId, bytes32 stageId, bytes32 hookName, uint8 flags, bytes32 signalId)

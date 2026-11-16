@@ -20,14 +20,15 @@ version is `0.3.0`.
   definition validation (including the chain target's trigger-set validation
   and stage materialization gate), parsed hooks/AST, the normalized per-stage
   trigger names, signal capabilities, composed admissions, and each stage's
-  executor config (`null` for a dynamic stage) — the single source for DSL
+  supplier config (`null` for a dynamic stage) — the single source for DSL
   shape and admission validation;
-- per-stage executor intent: a plain executor block (`supplierType`
-  `individual`/`organization` + `supplierID`) becomes a default executor
+- per-stage supplier intent: a plain executor block (`supplierType`
+  `individual`/`organization` + `supplierID`) becomes a default supplier
   binding; a stage without an executor block is a dynamic stage whose supplier
   is assigned per order at runtime;
-- optional executor candidates: `{ stageIdentifier, supplierID }` (a bare
-  address is not accepted). Candidates become candidate executor bindings and
+- optional supplier candidates: `SupplierCandidateInput` =
+  `{ stageIdentifier, supplierID }` with `supplierID` a canonical UUID (a bare
+  address is not accepted). Candidates become candidate supplier bindings and
   are the only per-order patch targets for candidate stages;
 - dock stages declare `executor: {supplierType: dock}`; the compiler only
   decorates their hooks, it does not compile dock routing or dock bindings;
@@ -44,10 +45,10 @@ the Dock DSL validation.
 
 - EVM-facing `OnchainHookPlanArtifact`;
 - Solidity registration args for the two-step `UVPStateMachine.commitPlan` +
-  `finalizePlan` flow, including `executorBindings[]` and
-  `executorBindingsRoot`;
+  `finalizePlan` flow, including the `StageSupplierBinding[]` list and
+  `supplierBindingsRoot`;
 - deterministic `planId`, `planHash`, source `zhixuId` and `sourcePlanHash`,
-  plus the `hooksHash` / `capabilitiesRoot` / `executorBindingsRoot` /
+  plus the `hooksHash` / `capabilitiesRoot` / `supplierBindingsRoot` /
   `artifactHash` tuple of the Solidity registration args;
 - stable hook, stage, source, signal, dependency, and route ids;
 - the plan-level `triggers[]` enumeration of the order-trigger hooks (see
@@ -65,28 +66,30 @@ the Dock DSL validation.
   `CommitmentGoldenVectors.t.sol` (hooksHash / runtime planHash cells) consume
   the same file.
 
-## Executor bindings and dynamic stages
+## Supplier identity and bindings
 
-- `supplierId` is the on-chain supplier identity primary key. The definition
-  alias `supplierID` is derived with the fixed domain
-  `keccak256("uvp.supplier-id.v1")`:
-  `supplierId = keccak256(abi.encodePacked(keccak256("uvp.supplier-id.v1"), utf8(supplierID)))`.
-  `onchainSupplierId` in `src/onchain/executor-bindings.ts` is the single
-  owner of that derivation; do not re-derive it elsewhere.
-- `ExecutorBinding` is `{ stageIdentifier, stageId, supplierId, kind }` with
-  kind `0` (default) / `1` (candidate). Default bindings are auto-derived from
-  static executor routes; candidate bindings come from
-  `ExecutorCandidateInput[]`. The artifact carries both the resolved
-  `executorBindings` list and its `executorBindingsRoot`.
-- Binding leaf: `keccak256(abi.encodePacked(keccak256("UVP_EXECUTOR_BINDING_V2"),
+- `supplierId` is the on-chain supplier identity: a UUID carried in the low 16
+  bytes of a `bytes32` (high 16 bytes zero). The definition writes
+  `executor.supplierID` as a canonical 36-character lowercase UUID; the
+  compiler only decodes that UUID and never hashes it.
+  `supplierIdFromUuid` / `uuidFromSupplierId` in
+  `src/onchain/supplier-bindings.ts` are the single owner of that encoding;
+  imports flow through `@uvp-eth/compiler/browser` and are re-exported by
+  `@uvp-eth/protocol-bindings`; do not re-implement it elsewhere.
+- `StageSupplierBinding` is `{ stageIdentifier, stageId, supplierID, supplierId,
+  kind }` with kind `0` (default) / `1` (candidate). Default bindings are
+  auto-derived from static supplier routes; candidate bindings come from
+  `SupplierCandidateInput[]`. The artifact carries both the resolved
+  `supplierBindings` list and its `supplierBindingsRoot`.
+- Binding leaf: `keccak256(abi.encodePacked(keccak256("UVP_SUPPLIER_BINDING_V1"),
   stageId, supplierId, kind))`; the root is the sorted-pairing Merkle root over
-  the leaves (empty plan pins `keccak256("")`). `executorBindingLeaf` /
-  `executorBindingProof` / `executorBindingsRootOf` are the single-source
+  the leaves (empty plan pins `keccak256("")`). `supplierBindingLeaf` /
+  `supplierBindingProof` / `supplierBindingsRootOf` are the single-source
   helpers (also exported from `/browser`).
 - Mutual exclusions: dock and dynamic stages never carry plan bindings or
-  executor routes; birth stages carry a default binding but no candidate
+  supplier routes; birth stages carry a default binding but no candidate
   binding; a dynamic stage has no plan-default supplier at all.
-- `MAX_EXECUTOR_BINDINGS` is 256 (the contract cap).
+- `MAX_SUPPLIER_BINDINGS` is 256 (the contract cap).
 
 ## MVP Constraint
 
@@ -95,16 +98,16 @@ The supported compiler surface is the chain artifact path:
 - `receiveSignals` hook parsing;
 - `trigger` signal lowering into order-trigger hooks;
 - `selectedStages` binding validation;
-- static/dynamic executor topology validation;
-- executor binding derivation and root commitment;
+- static/dynamic supplier topology validation;
+- supplier binding derivation and root commitment;
 - dock stage decoration (`HOOK_FLAG_DOCK_EXECUTOR`, no plan-level route);
 - dynamic stage decoration (`HOOK_FLAG_DYNAMIC_EXECUTOR`, EMIT_READY receive
   hook, no plan-level route or binding).
 
-Executor topology follows the UVP closure rule: a stage without an
+Supplier topology follows the UVP closure rule: a stage without an
 `executor.supplierID` (a dynamic stage) passes the closure rule only when it
 can be reached through `selectedStages` from a stage that does name a fixed
-executor. Selector loops or selector chains with no fixed executor anchor are
+supplier. Selector loops or selector chains with no fixed supplier anchor are
 rejected. On top of the closure rule, the materialization gate is evaluated by
 uvp-core `analyze` (shared validation for the chain target): every declared
 stage must compile at least one hook with a materialization bit (trigger or an
@@ -119,7 +122,7 @@ check is the separate registration boundary for hand-built plans.
 
 The hook_plan shell lowering itself (one order-trigger hook per analyze-derived
 trigger entry, order-trigger/emit-ready/dock-executor/dynamic-executor
-decoration, `dependencyIndex`, `executorRoutes`, `executorBindings`,
+decoration, `dependencyIndex`, `supplierRoutes`, `supplierBindings`,
 `selectedStageBindings`, and shell assembly) lives in
 `src/hook-plan/lower.ts`. Trigger-set validation (membership/duplicates/static
 executor and the materialization gate) is not re-implemented here: it is part
@@ -128,10 +131,10 @@ admissions are consumed from the same analysis. This package consumes analyze
 issues and parsed ASTs verbatim and must not re-implement shape/dock/admission/
 DSL validation or rewrite its error text.
 
-A dock stage never enters `executorRoutes` or executor bindings: its executor
-is selected once through the stage executor patch (dkid), so the compiler
+A dock stage never enters `supplierRoutes` or supplier bindings: its supplier
+is selected once through the stage supplier patch (dkid), so the compiler
 rejects a plan-level route or binding pointing at it. The same applies to a
-dynamic stage: its supplier is assigned per order through the stage executor
+dynamic stage: its supplier is assigned per order through the stage supplier
 patch (before the stage's first signal), never at plan time.
 
 Do not execute hooks in this module. Runtime evaluation belongs in
@@ -161,7 +164,7 @@ pnpm --filter @uvp-eth/compiler typecheck
 ## Source
 
 - `src/types/`: public TypeScript interfaces for Zhixu inputs, compact
-  on-chain hook plans, executor bindings, and Solidity registration args.
+  on-chain hook plans, supplier bindings, and Solidity registration args.
 - `src/hook-plan.ts`: deterministic Zhixu-to-HookPlan internal IR compiler
   (consumes the neutral uvp-core `analyze` result, lowers the shell, then
   commits plan identity and plan hash).
@@ -170,7 +173,7 @@ pnpm --filter @uvp-eth/compiler typecheck
 - `src/hook-plan/lower.ts`: chain hook_plan lowering implemented by this package —
   one synthesized order-trigger hook per analyze-reported trigger signal,
   `orderTriggerKind`/`emitReady`/dock-executor/dynamic-executor/route
-  decoration, dependency index, executor routes, and executor bindings; it
+  decoration, dependency index, supplier routes, and supplier bindings; it
   consumes uvp-core `analyze` (shared validation, including
   trigger-set/materialization checks, plus parsed hooks/trigger
   names/executor configs/capabilities/admissions) and does not re-implement
@@ -181,14 +184,14 @@ pnpm --filter @uvp-eth/compiler typecheck
 - `src/identity.ts`: content-derived `zx-<32hex>` definition uid and display
   stripping.
 - `src/merkle.ts`: the single Merkle/word hashing implementation used by the
-  capability, executor-binding, and file-writer trees.
+  capability, supplier-binding, and file-writer trees.
 - `src/onchain/`: public Zhixu-to-on-chain artifact compiler and Solidity
   registration input builder (`compile.ts` pipeline, `validate/` boundary
   checks, `canonical/` ordering, `hash/` commitments,
   `solidity/registration.ts` calldata assembly,
   `onchain/capabilities-root.ts` — the authoritative capability-tree
-  implementation, `onchain/executor-bindings.ts` — the authoritative
-  supplierId/binding-tree implementation, and `onchain/triggers.ts` — the
+  implementation, `onchain/supplier-bindings.ts` — the authoritative
+  UUID-SID encoding and supplier-binding-tree implementation, and `onchain/triggers.ts` — the
   single trigger-enumeration derivation shared by the compile pipeline and the
   artifact boundary).
 - `src/zhixu-loader.ts`: YAML/JSON loader for `apiVersion: uvp/v0`,
@@ -206,12 +209,13 @@ pnpm --filter @uvp-eth/compiler typecheck
 
 Use these root-package entrypoints:
 
-- `compileZhixuOnchainHookPlan(zhixuDefinition, executorCandidates?)`;
-- `compileZhixuRegisterPlanArgs(zhixuDefinition, executorCandidates?)`;
+- `compileZhixuOnchainHookPlan(zhixuDefinition, supplierCandidates?)`;
+- `compileZhixuRegisterPlanArgs(zhixuDefinition, supplierCandidates?)`;
 - `toSolidityRegisterPlanArgs(onchainHookPlanArtifact)`.
 
-`executorCandidates` is `ExecutorCandidateInput[]` — `{ stageIdentifier, supplierID }`.
-It is not an address list and never overrides the supplierId derivation.
+`supplierCandidates` is `SupplierCandidateInput[]` — `{ stageIdentifier, supplierID }`
+with a canonical UUID `supplierID`. It is not an address list and never
+overrides the UUID encoding.
 
 `compileZhixuOnchainHookPlan(zhixu)` emits schema
 `uvp.onchainHookPlan.v8`. It:
@@ -224,15 +228,15 @@ It is not an address list and never overrides the supplierId derivation.
 - enumerates every order-trigger hook in `triggers[]`, one entry per hook with
   `orderTriggerKind` `"trigger"` (see Triggers);
 - indexes dependencies by packed signal key;
-- exposes executor routes through route references; dock and dynamic stages
+- exposes supplier routes through route references; dock and dynamic stages
   carry no route;
 - decorates every hook of a `supplierType: dock` stage with
   `dockExecutor: true` (Solidity `HOOK_FLAG_DOCK_EXECUTOR`) and every hook of
   an executor-less dynamic stage with `dynamicExecutor: true` (Solidity
   `HOOK_FLAG_DYNAMIC_EXECUTOR`);
-- derives `executorBindings` (default bindings from executor routes, candidate
-  bindings from `executorCandidates` input) and commits
-  `executorBindingsRoot`;
+- derives `supplierBindings` (default bindings from supplier routes, candidate
+  bindings from `supplierCandidates` input) and commits
+  `supplierBindingsRoot`;
 - compiles `selectedStageBindings` into sorted `selectorBindings` for
   `StageSelectorBinding` registration;
 - lowers `spec.stages[].fileWriters` into a sorted `stageFileWriters` section
@@ -258,10 +262,10 @@ Stable ids use raw Keccak-256:
 
 `validateOnchainHookPlanArtifact(value)` checks the compact artifact shape,
 recomputes ids, validates instruction stack shape, verifies `dependencyIndex`,
-recomputes `executorBindingsRoot`, and verifies `planHash`.
+recomputes `supplierBindingsRoot`, and verifies `planHash`.
 `toSolidityRegisterPlanArgs(value)` strips audit labels and returns a
 deterministic data shape for the Solidity registration ABI (it includes the
-resolved `executorBindings`, never a raw-address candidate list).
+resolved `supplierBindings`, never a raw-address candidate list).
 
 ## Triggers
 
@@ -308,7 +312,7 @@ The current state-machine alignment is `toSolidityRegisterPlanArgs()`:
 
 - `planId` and `planHash` are the state-machine plan identity; the plan runtime
   hash domain is `uvp.plan.runtime.v6` and covers `hooksHash`,
-  `capabilitiesRoot`, and `executorBindingsRoot`;
+  `capabilitiesRoot`, and `supplierBindingsRoot`;
 - `hooks` map to `UVPStateMachine.CompactHook`; hook flags are
   `ORDER_TRIGGER_MINT` for `orderTriggerKind: "trigger"`, `EMIT_READY`,
   `HOOK_FLAG_ADMISSION` for admission entries, `HOOK_FLAG_DOCK_EXECUTOR` for
@@ -317,8 +321,8 @@ The current state-machine alignment is `toSolidityRegisterPlanArgs()`:
 - a `"trigger"` entry in `triggers[]` is the outside-birth entry: the caller
   passes its `hookId` as `triggerHookId`, plus `stageId`, `sourceId`, and
   `signalId`, to `triggerOrderFromOutsideFor`;
-- `executorBindings` map to `UVPStateMachine.ExecutorBinding` and
-  `executorBindingsRoot` is signed inside `PlanCommit`; `commitPlan` takes
+- `supplierBindings` map to `UVPStateMachine.StageSupplierBinding` and
+  `supplierBindingsRoot` is signed inside `PlanCommit`; `commitPlan` takes
   `(commit, hooks, bindings, signature)`;
 - `selectorBindings` map to `UVPStateMachine.StageSelectorBinding` and
   `stageFileWriters` to `UVPPlanMetadataModule.fileWriterLeaf`;
@@ -334,18 +338,18 @@ The current state-machine alignment is `toSolidityRegisterPlanArgs()`:
 - `instructions` map to compact `Signal`, `Not`, `And`, `Or`, and `Delay`
   operations;
 - `dependencyKeys` must match `UVPStateMachine.signalKey(sourceId, signalId)`;
-- executor route metadata stays off chain and is used by Product APIs and
+- supplier route metadata stays off chain and is used by Product APIs and
   `uvp-client` for routing;
 - there is no order-level submitter authorization construction in the compiler:
-  signal submission authority is the stage's effective executor, resolved
-  on chain from the supplier registry; the artifact only commits the
-  default/candidate supplier bindings and the dynamic/stage shape.
+  signal submission authority is the source stage's assigned supplier account,
+  resolved on chain from the supplier registry (SID active); the artifact only
+  commits the default/candidate supplier bindings and the dynamic/stage shape.
 
 ## Overlay Hashing
 
-Supplier identity derivation, executor binding leaves/roots, stage executor
+Supplier identity encoding, supplier binding leaves/roots, stage supplier
 patch hashing, and the file patch canonical digest live in this package
-(executor bindings) and `@uvp-eth/protocol-bindings` (patch/selection typed
-data). The compiler owns selector binding, file-writer leaf, executor-binding
+(supplier bindings) and `@uvp-eth/protocol-bindings` (patch/selection typed
+data). The compiler owns selector binding, file-writer leaf, supplier-binding
 tree, and on-chain HookPlan artifact hashing only; file content and handles
 stay outside compiler artifacts.

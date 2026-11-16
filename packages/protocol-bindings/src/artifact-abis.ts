@@ -141,19 +141,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "MAX_EXECUTOR_BINDINGS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "MAX_FORK_BIRTH_FACTS",
     "inputs": [],
     "outputs": [
@@ -181,6 +168,19 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   {
     "type": "function",
     "name": "MAX_PLAN_DEPENDENCIES",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_SUPPLIER_BINDINGS",
     "inputs": [],
     "outputs": [
       {
@@ -271,7 +271,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "activateStageDockExecutorFromModule",
+    "name": "activateStageDockSupplierFromModule",
     "inputs": [
       {
         "name": "planId",
@@ -309,7 +309,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "activateStageExecutorFromModule",
+    "name": "activateStageSupplierFromModule",
     "inputs": [
       {
         "name": "planId",
@@ -339,45 +339,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "activeStageExecutorPatch",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "targetStageId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "supplierId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "patchNonce",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "dockId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -404,7 +365,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             "internalType": "bytes32"
           },
           {
-            "name": "executorBindingsRoot",
+            "name": "supplierBindingsRoot",
             "type": "bytes32",
             "internalType": "bytes32"
           },
@@ -487,7 +448,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
       {
         "name": "bindings",
         "type": "tuple[]",
-        "internalType": "struct UVPStateMachine.ExecutorBinding[]",
+        "internalType": "struct UVPStateMachine.StageSupplierBinding[]",
         "components": [
           {
             "name": "stageId",
@@ -549,7 +510,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "effectiveStageExecutor",
+    "name": "effectiveStageAccount",
     "inputs": [
       {
         "name": "planId",
@@ -569,12 +530,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     ],
     "outputs": [
       {
-        "name": "supplierId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "executor",
+        "name": "",
         "type": "address",
         "internalType": "address"
       }
@@ -1023,7 +979,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "isEffectiveStageExecutor",
+    "name": "isEffectiveStageAccount",
     "inputs": [
       {
         "name": "planId",
@@ -1041,7 +997,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "bytes32"
       },
       {
-        "name": "executor",
+        "name": "account",
         "type": "address",
         "internalType": "address"
       }
@@ -1387,25 +1343,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "planExecutorBindingsRoot",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "planExists",
     "inputs": [
       {
@@ -1614,7 +1551,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "bytes32"
       },
       {
-        "name": "executorBindingsRoot",
+        "name": "supplierBindingsRoot",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -1654,7 +1591,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "planStageHasDynamicExecutor",
+    "name": "planStageHasDynamicSupplier",
     "inputs": [
       {
         "name": "planId",
@@ -1696,6 +1633,25 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "planSupplierBindingsRoot",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -1957,6 +1913,45 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "ambiguous",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "stageSupplierAssignment",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "targetStageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "patchNonce",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "dockId",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -3033,7 +3028,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "uint256"
       },
       {
-        "name": "executorBindingsRoot",
+        "name": "supplierBindingsRoot",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
@@ -3179,43 +3174,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "event",
-    "name": "StageExecutorActivated",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "targetStageId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "supplierId",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "patchNonce",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "StageMaterialized",
     "inputs": [
       {
@@ -3253,6 +3211,43 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "StageSupplierAssigned",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "targetStageId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "patchNonce",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -3350,7 +3345,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "CandidateExecutorBindingForbiddenForStage",
+    "name": "CandidateSupplierBindingForbiddenForStage",
     "inputs": [
       {
         "name": "stageId",
@@ -3361,7 +3356,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "CandidateExecutorBindingRequiresDefault",
+    "name": "CandidateSupplierBindingRequiresDefault",
     "inputs": [
       {
         "name": "stageId",
@@ -3383,7 +3378,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "DuplicateExecutorBinding",
+    "name": "DuplicateSupplierBinding",
     "inputs": [
       {
         "name": "stageId",
@@ -3406,33 +3401,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     "type": "error",
     "name": "EmptyPlan",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ExecutorBindingForbiddenForStage",
-    "inputs": [
-      {
-        "name": "stageId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ExecutorBindingsRootMismatch",
-    "inputs": [
-      {
-        "name": "expectedRoot",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "actualRoot",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
   },
   {
     "type": "error",
@@ -3537,7 +3505,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "InconsistentDynamicExecutorFlag",
+    "name": "InconsistentDynamicSupplierFlag",
     "inputs": [
       {
         "name": "stageId",
@@ -3554,17 +3522,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "submitter",
         "type": "address",
         "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InvalidExecutorBindingKind",
-    "inputs": [
-      {
-        "name": "kind",
-        "type": "uint8",
-        "internalType": "uint8"
       }
     ]
   },
@@ -3739,6 +3696,17 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
+    "name": "InvalidSupplierBindingKind",
+    "inputs": [
+      {
+        "name": "kind",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "InvalidTriggerHook",
     "inputs": [
       {
@@ -3869,7 +3837,18 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "StageExecutorNotAssigned",
+    "name": "StageNotMaterializable",
+    "inputs": [
+      {
+        "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "StageSupplierNotAssigned",
     "inputs": [
       {
         "name": "orderId",
@@ -3885,7 +3864,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "StageExecutorPatchNonceNotIncreasing",
+    "name": "StageSupplierPatchNonceNotIncreasing",
     "inputs": [
       {
         "name": "orderId",
@@ -3911,7 +3890,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "StageNotMaterializable",
+    "name": "SupplierBindingForbiddenForStage",
     "inputs": [
       {
         "name": "stageId",
@@ -3922,7 +3901,23 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "SupplierNotRegistered",
+    "name": "SupplierBindingsRootMismatch",
+    "inputs": [
+      {
+        "name": "expectedRoot",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "actualRoot",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "SupplierNotActive",
     "inputs": [
       {
         "name": "supplierId",
@@ -3953,17 +3948,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "TooManyExecutorBindings",
-    "inputs": [
-      {
-        "name": "count",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "TooManyForkBirthFacts",
     "inputs": [
       {
@@ -3981,6 +3965,17 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "signalKey",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "TooManySupplierBindings",
+    "inputs": [
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   },
@@ -4018,7 +4013,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "UnauthorizedStageExecutor",
+    "name": "UnauthorizedStageSupplierAccount",
     "inputs": [
       {
         "name": "orderId",
@@ -4036,7 +4031,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "address"
       },
       {
-        "name": "executor",
+        "name": "expectedAccount",
         "type": "address",
         "internalType": "address"
       }
@@ -5460,7 +5455,7 @@ export const SUPPLIER_REGISTRY_ABI = [
   },
   {
     "type": "function",
-    "name": "executorOf",
+    "name": "accountOf",
     "inputs": [
       {
         "name": "supplierId",
@@ -5479,7 +5474,20 @@ export const SUPPLIER_REGISTRY_ABI = [
   },
   {
     "type": "function",
-    "name": "isRegisteredSupplier",
+    "name": "activateSupplier",
+    "inputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "isActiveSupplier",
     "inputs": [
       {
         "name": "supplierId",
@@ -5514,17 +5522,18 @@ export const SUPPLIER_REGISTRY_ABI = [
     "name": "registerSupplier",
     "inputs": [
       {
-        "name": "supplierId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "executor",
+        "name": "account",
         "type": "address",
         "internalType": "address"
       }
     ],
-    "outputs": [],
+    "outputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
     "stateMutability": "nonpayable"
   },
   {
@@ -5535,24 +5544,6 @@ export const SUPPLIER_REGISTRY_ABI = [
         "name": "supplierId",
         "type": "bytes32",
         "internalType": "bytes32"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "rotateSupplierExecutor",
-    "inputs": [
-      {
-        "name": "supplierId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "newExecutor",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -5578,10 +5569,29 @@ export const SUPPLIER_REGISTRY_ABI = [
   },
   {
     "type": "function",
+    "name": "statusOf",
+    "inputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "enum IUVPSupplierRegistry.SupplierStatus"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "supplierOf",
     "inputs": [
       {
-        "name": "executor",
+        "name": "account",
         "type": "address",
         "internalType": "address"
       }
@@ -5594,6 +5604,19 @@ export const SUPPLIER_REGISTRY_ABI = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "suspendSupplier",
+    "inputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -5629,31 +5652,6 @@ export const SUPPLIER_REGISTRY_ABI = [
   },
   {
     "type": "event",
-    "name": "SupplierExecutorRotated",
-    "inputs": [
-      {
-        "name": "supplierId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "previousExecutor",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "newExecutor",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "SupplierRegistered",
     "inputs": [
       {
@@ -5663,7 +5661,7 @@ export const SUPPLIER_REGISTRY_ABI = [
         "internalType": "bytes32"
       },
       {
-        "name": "executor",
+        "name": "account",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -5692,7 +5690,7 @@ export const SUPPLIER_REGISTRY_ABI = [
   },
   {
     "type": "event",
-    "name": "SupplierRevoked",
+    "name": "SupplierStatusChanged",
     "inputs": [
       {
         "name": "supplierId",
@@ -5701,7 +5699,19 @@ export const SUPPLIER_REGISTRY_ABI = [
         "internalType": "bytes32"
       },
       {
-        "name": "executor",
+        "name": "previousStatus",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum IUVPSupplierRegistry.SupplierStatus"
+      },
+      {
+        "name": "newStatus",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum IUVPSupplierRegistry.SupplierStatus"
+      },
+      {
+        "name": "account",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -5711,10 +5721,10 @@ export const SUPPLIER_REGISTRY_ABI = [
   },
   {
     "type": "error",
-    "name": "ExecutorAlreadyBound",
+    "name": "AccountAlreadyRegistered",
     "inputs": [
       {
-        "name": "executor",
+        "name": "account",
         "type": "address",
         "internalType": "address"
       },
@@ -5722,6 +5732,43 @@ export const SUPPLIER_REGISTRY_ABI = [
         "name": "supplierId",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "CallerNotAccount",
+    "inputs": [
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidSupplierStatusTransition",
+    "inputs": [
+      {
+        "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "currentStatus",
+        "type": "uint8",
+        "internalType": "enum IUVPSupplierRegistry.SupplierStatus"
+      },
+      {
+        "name": "nextStatus",
+        "type": "uint8",
+        "internalType": "enum IUVPSupplierRegistry.SupplierStatus"
       }
     ]
   },
@@ -5737,17 +5784,6 @@ export const SUPPLIER_REGISTRY_ABI = [
   },
   {
     "type": "error",
-    "name": "SupplierAlreadyRegistered",
-    "inputs": [
-      {
-        "name": "supplierId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "UnknownSupplier",
     "inputs": [
       {
@@ -5759,17 +5795,7 @@ export const SUPPLIER_REGISTRY_ABI = [
   },
   {
     "type": "error",
-    "name": "ZeroExecutor",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "ZeroOwner",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ZeroSupplierId",
     "inputs": []
   }
 ] as const;

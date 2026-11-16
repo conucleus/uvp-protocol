@@ -22,7 +22,7 @@ import {
   hashSolidityRegisterHooks,
   keccak256Hex,
   toSolidityRegisterPlanArgs,
-  type ExecutorCandidateInput,
+  type SupplierCandidateInput,
   type SolidityRegisterHookArg,
   type SolidityRegisterInstructionArg,
   type SolidityRegisterPlanArgs,
@@ -61,7 +61,7 @@ interface CommitmentGoldenCase {
   readonly note: string;
   readonly input: {
     readonly definition: ZhixuDefinition;
-    readonly executorCandidates?: readonly ExecutorCandidateInput[];
+    readonly supplierCandidates?: readonly SupplierCandidateInput[];
     readonly hooks: readonly GoldenHook[];
   };
   readonly counts: {
@@ -80,12 +80,12 @@ interface CommitmentGoldenCase {
     readonly runtimePlanHash: string;
     readonly hooksHash: string;
     readonly capabilitiesRoot: string;
-    readonly executorBindingsRoot: string;
-    readonly executorBindings: readonly GoldenExecutorBinding[];
+    readonly supplierBindingsRoot: string;
+    readonly supplierBindings: readonly GoldenSupplierBinding[];
   };
 }
 
-interface GoldenExecutorBinding {
+interface GoldenSupplierBinding {
   readonly stageId: HexString;
   readonly supplierId: HexString;
   readonly kind: 0 | 1;
@@ -206,7 +206,7 @@ function buildDefinitionCase(
   const plan = compileZhixuHookPlan(input.definition);
   const onchain = compileZhixuOnchainHookPlan(
     input.definition,
-    input.executorCandidates,
+    input.supplierCandidates,
   );
   const args: SolidityRegisterPlanArgs = toSolidityRegisterPlanArgs(onchain);
   const hooks = goldenHooks(args.hooks);
@@ -227,8 +227,8 @@ function buildDefinitionCase(
       runtimePlanHash: args.planHash,
       hooksHash: args.hooksHash,
       capabilitiesRoot: args.capabilitiesRoot,
-      executorBindingsRoot: args.executorBindingsRoot,
-      executorBindings: args.executorBindings.map((binding) => ({
+      supplierBindingsRoot: args.supplierBindingsRoot,
+      supplierBindings: args.supplierBindings.map((binding) => ({
         stageId: binding.stageId,
         supplierId: binding.supplierId,
         kind: binding.kind,
@@ -236,6 +236,20 @@ function buildDefinitionCase(
     },
   };
 }
+
+const SUPPLIER_PATCHABLE = "5f0b1e2a-7c9d-4e1f-9a2b-000000000031";
+const SUPPLIER_TRADING = "5f0b1e2a-7c9d-4e1f-9a2b-000000000032";
+const SUPPLIER_BIRTH = "5f0b1e2a-7c9d-4e1f-9a2b-000000000033";
+const SUPPLIER_ATELIER = "5f0b1e2a-7c9d-4e1f-9a2b-000000000034";
+const SUPPLIER_ACCEPTOR = "5f0b1e2a-7c9d-4e1f-9a2b-000000000035";
+const SUPPLIER_WATCHER = "5f0b1e2a-7c9d-4e1f-9a2b-000000000036";
+const SUPPLIER_SELECTOR = "5f0b1e2a-7c9d-4e1f-9a2b-000000000037";
+const SUPPLIER_WORK = "5f0b1e2a-7c9d-4e1f-9a2b-000000000038";
+const SUPPLIER_INTAKE = "5f0b1e2a-7c9d-4e1f-9a2b-000000000039";
+const SUPPLIER_FULFILLER = "5f0b1e2a-7c9d-4e1f-9a2b-00000000003a";
+const SUPPLIER_GATE = "5f0b1e2a-7c9d-4e1f-9a2b-00000000003b";
+const CANDIDATE_SUPPLIER_A = "5f0b1e2a-7c9d-4e1f-9a2b-00000000003c";
+const CANDIDATE_SUPPLIER_B = "5f0b1e2a-7c9d-4e1f-9a2b-00000000003d";
 
 const sharedKeyOrderZhixu: ZhixuDefinition = {
   apiVersion: "uvp/v0",
@@ -252,7 +266,7 @@ const sharedKeyOrderZhixu: ZhixuDefinition = {
         SECOND: "buyer::stage.seed",
       },
       sendSignals: [{ name: "seed" }],
-      executor: { supplierType: "organization", supplierID: "watcher-org" },
+      executor: { supplierType: "organization", supplierID: SUPPLIER_WATCHER },
     }],
   },
 };
@@ -270,27 +284,27 @@ const triggerBirthZhixu: ZhixuDefinition = {
         source: "buyer",
         receiveSignals: { PLACE: "buyer::assign.seed" },
         sendSignals: [{ name: "executor_selected" }, { name: "seed" }],
-        executor: { supplierType: "organization", supplierID: "selector-org" },
+        executor: { supplierType: "organization", supplierID: SUPPLIER_SELECTOR },
       },
       {
         name: "main",
         source: "buyer",
         receiveSignals: { START: "buyer::assign.executor_selected" },
         sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "err" }],
-        executor: { supplierType: "organization", supplierID: "work-org" },
+        executor: { supplierType: "organization", supplierID: SUPPLIER_WORK },
       },
       {
         name: "post",
         source: "buyer",
         receiveSignals: { PUBLISH: "buyer::post.seed" },
         sendSignals: [{ name: "posted" }, { name: "seed" }],
-        executor: { supplierType: "organization", supplierID: "intake-exec" },
+        executor: { supplierType: "organization", supplierID: SUPPLIER_INTAKE },
       },
       {
         name: "birth",
         source: "fulfiller",
         sendSignals: [{ name: "str", trigger: true }, { name: "cmp" }, { name: "err" }],
-        executor: { supplierType: "organization", supplierID: "fulfiller-exec" },
+        executor: { supplierType: "organization", supplierID: SUPPLIER_FULFILLER },
       },
     ],
   },
@@ -309,7 +323,7 @@ const admissionZhixu = (validWhen: string): ZhixuDefinition => ({
         source: "buyer",
         receiveSignals: { BEGIN: "buyer::gate.seed" },
         sendSignals: [{ name: "seed" }, { name: "ready" }],
-        executor: { supplierType: "organization", supplierID: "gate-org" },
+        executor: { supplierType: "organization", supplierID: SUPPLIER_GATE },
       },
       {
         name: "work",
@@ -319,7 +333,7 @@ const admissionZhixu = (validWhen: string): ZhixuDefinition => ({
           { name: "cmp", validWhen: [validWhen] },
           { name: "cmp_err" },
         ],
-        executor: { supplierType: "organization", supplierID: "work-org" },
+        executor: { supplierType: "organization", supplierID: SUPPLIER_WORK },
       },
     ],
   },
@@ -338,14 +352,14 @@ const twoStageZhixu: ZhixuDefinition = {
         source: "buyer",
         receiveSignals: { START: "buyer::main.kickoff" },
         sendSignals: [{ name: "str" }, { name: "cmp" }, { name: "kickoff" }],
-        executor: { supplierType: "organization", supplierID: "patchable-org" },
+        executor: { supplierType: "organization", supplierID: SUPPLIER_PATCHABLE },
       },
       {
         name: "deal",
         source: "trading",
         receiveSignals: { PLACE: "trading::deal.kickoff" },
         sendSignals: [{ name: "closed" }, { name: "kickoff" }],
-        executor: { supplierType: "organization", supplierID: "trading-org" },
+        executor: { supplierType: "organization", supplierID: SUPPLIER_TRADING },
       },
     ],
   },
@@ -363,21 +377,18 @@ const birthZhixu: ZhixuDefinition = {
         name: "main",
         source: "buyer",
         sendSignals: [{ name: "str", trigger: true }, { name: "cmp" }],
-        executor: { supplierType: "organization", supplierID: "birth-org" },
+        executor: { supplierType: "organization", supplierID: SUPPLIER_BIRTH },
       },
       {
         name: "deal",
         source: "trading",
         receiveSignals: { PLACE: "trading::deal.kickoff" },
         sendSignals: [{ name: "closed" }, { name: "kickoff" }],
-        executor: { supplierType: "organization", supplierID: "trading-org" },
+        executor: { supplierType: "organization", supplierID: SUPPLIER_TRADING },
       },
     ],
   },
 };
-
-const CANDIDATE_SUPPLIER_A = "candidate-org-a";
-const CANDIDATE_SUPPLIER_B = "candidate-org-b";
 
 const uidVectors: readonly UidVector[] = [
   {
@@ -410,10 +421,10 @@ const cases: readonly CommitmentGoldenCase[] = [
   ),
   buildDefinitionCase(
     "candidates_blackbox_with_candidates",
-    "同上定义 + 两阶段候选 supplierID 输入（executorBindingsRoot 含 kind=1 叶）",
+    "同上定义 + 两阶段候选 supplierID 输入（supplierBindingsRoot 含 kind=1 叶）",
     {
       definition: twoStageZhixu,
-      executorCandidates: [
+      supplierCandidates: [
         { stageIdentifier: "main", supplierID: CANDIDATE_SUPPLIER_A },
         { stageIdentifier: "deal", supplierID: CANDIDATE_SUPPLIER_B },
       ],
@@ -424,7 +435,7 @@ const cases: readonly CommitmentGoldenCase[] = [
     "出生（trigger）阶段形态 + deal 候选（出生阶段执行者终生不可变，只带 default binding）",
     {
       definition: birthZhixu,
-      executorCandidates: [
+      supplierCandidates: [
         { stageIdentifier: "deal", supplierID: CANDIDATE_SUPPLIER_A },
       ],
     },
@@ -529,14 +540,14 @@ const dockFromDefinition: ZhixuDefinition = {
         source: "atelier",
         receiveSignals: { START: "atelier::produce.seed" },
         sendSignals: [{ name: "str" }, { name: "err" }, { name: "seed" }],
-        executor: { supplierType: "organization", supplierID: "atelier-exec" },
+        executor: { supplierType: "organization", supplierID: SUPPLIER_ATELIER },
       },
       {
         name: "settle",
         source: "atelier",
         receiveSignals: { CLOSE: "atelier::settle.close" },
         sendSignals: [{ name: "cmp" }, { name: "close" }],
-        executor: { supplierType: "organization", supplierID: "atelier-exec" },
+        executor: { supplierType: "organization", supplierID: SUPPLIER_ATELIER },
       },
     ],
   },
@@ -562,7 +573,7 @@ const dockToDefinition: ZhixuDefinition = {
         source: "acceptor",
         receiveSignals: { OPEN: "acceptor::gate.open" },
         sendSignals: [{ name: "open" }],
-        executor: { supplierType: "organization", supplierID: "acceptor-exec" },
+        executor: { supplierType: "organization", supplierID: SUPPLIER_ACCEPTOR },
       },
     ],
   },

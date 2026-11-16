@@ -28,7 +28,7 @@ const registration: PlanRegistrationArgs = {
   planHash: bytes32("02"),
   hooksHash: bytes32("03"),
   capabilitiesRoot: bytes32("04"),
-  executorBindingsRoot: bytes32("07"),
+  supplierBindingsRoot: bytes32("07"),
   hooks: [{
     hookId: bytes32("0a"),
     stageId: bytes32("0b"),
@@ -41,7 +41,7 @@ const registration: PlanRegistrationArgs = {
     ],
     dependencyKeys: [bytes32("0f")],
   }],
-  executorBindings: [
+  supplierBindings: [
     { stageId: bytes32("10"), supplierId: bytes32("11"), kind: 0 },
     { stageId: bytes32("10"), supplierId: bytes32("12"), kind: 1 },
   ],
@@ -70,7 +70,7 @@ describe("plan registration builders", () => {
         readonly publisher: string;
         readonly deadline: bigint;
         readonly hooksHash: string;
-        readonly executorBindingsRoot: string;
+        readonly supplierBindingsRoot: string;
         readonly birthAuthorizer: string;
       },
       readonly { readonly instructions: readonly { readonly op: number }[] }[],
@@ -80,14 +80,14 @@ describe("plan registration builders", () => {
     assert.equal(commit.publisher, PUBLISHER);
     assert.equal(commit.deadline, 1_700_000_000n);
     assert.equal(commit.hooksHash, registration.hooksHash);
-    assert.equal(commit.executorBindingsRoot, registration.executorBindingsRoot);
+    assert.equal(commit.supplierBindingsRoot, registration.supplierBindingsRoot);
     assert.equal(commit.birthAuthorizer, PUBLISHER);
     assert.deepEqual(hooks[0]?.instructions.map((instruction) => instruction.op), [0, 2, 4]);
     assert.deepEqual(
       bindings.map((binding) => [binding.supplierId, binding.kind]),
       [
-        [registration.executorBindings[0]!.supplierId, 0],
-        [registration.executorBindings[1]!.supplierId, 1],
+        [registration.supplierBindings[0]!.supplierId, 0],
+        [registration.supplierBindings[1]!.supplierId, 1],
       ],
     );
     assert.equal(signature, SIGNATURE);
@@ -109,8 +109,8 @@ describe("plan registration builders", () => {
     assert.equal(typedData.message.hooksHash, registration.hooksHash);
     assert.equal(typedData.message.capabilitiesRoot, registration.capabilitiesRoot);
     assert.equal(
-      typedData.message.executorBindingsRoot,
-      registration.executorBindingsRoot,
+      typedData.message.supplierBindingsRoot,
+      registration.supplierBindingsRoot,
     );
     assert.equal(typedData.message.birthAuthorizer, PUBLISHER);
     assert.equal(typedData.message.deadline, "1700000000");
