@@ -23,7 +23,6 @@ export type {
   ChainOraclePlan,
   ChainOracleSignalRecord,
   ChainOracleState,
-  ChainOrderLinkedEvent,
   ChainOrderMaterializedEvent,
   ChainOrderRegisteredEvent,
   ChainOrderTriggeredEvent,

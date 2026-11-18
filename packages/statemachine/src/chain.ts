@@ -7,7 +7,6 @@ export type ChainModeEvent =
   | ChainOrderRegisteredEvent
   | ChainOrderMaterializedEvent
   | ChainOrderTriggeredEvent
-  | ChainOrderLinkedEvent
   | ChainSignalSubmittedEvent
   | ChainStageMaterializedEvent
   | ChainHookStatusChangedEvent
@@ -106,17 +105,6 @@ export interface ChainOrderTriggeredEvent extends ChainEventBase {
   readonly sourceId: string;
   readonly signalId: string;
   readonly submitter: string;
-}
-
-export interface ChainOrderLinkedEvent extends ChainEventBase {
-  readonly eventName: "OrderLinked";
-  readonly planId: HexString;
-  readonly triggeredOrderId: string;
-  readonly triggerOriginOrderId: string;
-  readonly originPlanId: HexString;
-  readonly triggerStageId: string;
-  readonly originSourceId: string;
-  readonly originSignalId: string;
 }
 
 export interface ChainSignalSubmittedEvent extends ChainEventBase {

@@ -29,9 +29,9 @@ pnpm --filter @uvp-eth/statemachine typecheck
 
 ## Source
 
-- `src/chain.ts`: stable chain-event adapter over the closed ten-event replay
+- `src/chain.ts`: stable chain-event adapter over the closed nine-event replay
   set — `PlanRegistered`, `OrderRegistered`, `OrderMaterialized`,
-  `OrderTriggered`, `OrderLinked`, `SignalSubmitted`, `StageMaterialized`,
+  `OrderTriggered`, `SignalSubmitted`, `StageMaterialized`,
   `HookStatusChanged`, `HookReady`, and `TimerPoked` (`ChainModeEvent`).
 - `fixtures/chain-hook-oracle.events.json`: chain-mode golden fixture for
   duplicate signals, timer due, negative cancellation, and ready-once behavior.
@@ -56,5 +56,4 @@ business completion; the only completion input is a submitted business signal.
 
 Dock execution is modeled on the same order: a dock stage receives signals
 through its own hooks, and selecting a static Dock dkid is a stage executor
-patch rather than a separate replay event. Trigger-origin order links
-(OrderLinked, UVPOrderLinkModule) remain their own replay event.
+patch rather than a separate replay event.
