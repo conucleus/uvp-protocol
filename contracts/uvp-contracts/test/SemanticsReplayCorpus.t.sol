@@ -47,8 +47,7 @@ contract SemanticsReplayCorpusTest {
     uint256 private constant MAX_ORDERS = 2;
     uint256 private constant MAX_SIGNALS = 8;
     uint256 private constant MAX_POKES = 2;
-    uint256 private constant REPLAY_CASE_COUNT = 24;
-    uint256 private constant ORDER_LINK_CASE_INDEX = 6;
+    uint256 private constant REPLAY_CASE_COUNT = 23;
     uint256 private constant FILTER_CASE_COUNT = 8;
 
     struct RawInstr {
@@ -203,6 +202,10 @@ contract SemanticsReplayCorpusTest {
         _runReplayCase(5);
     }
 
+    function testReplayCase06() public {
+        _runReplayCase(6);
+    }
+
     function testReplayCase07() public {
         _runReplayCase(7);
     }
@@ -267,10 +270,6 @@ contract SemanticsReplayCorpusTest {
         _runReplayCase(22);
     }
 
-    function testReplayCase23() public {
-        _runReplayCase(23);
-    }
-
     function testReplayCorpusCaseCountIsPinned() public {
         _loadCorpus();
         for (uint256 i = 0; i < REPLAY_CASE_COUNT; i++) {
@@ -279,14 +278,6 @@ contract SemanticsReplayCorpusTest {
         }
         (bool beyond,) = _tryString(corpusJson, _casePath(REPLAY_CASE_COUNT, ".name"));
         require(!beyond, "replay corpus grew; extend the per-case entrypoints");
-        (bool excluded, string memory excludedName) =
-            _tryString(corpusJson, _casePath(ORDER_LINK_CASE_INDEX, ".name"));
-        require(
-            excluded
-                && keccak256(bytes(excludedName))
-                    == keccak256(bytes("order-link birth derives child trigger readiness without child signal")),
-            "excluded order-link corpus case index shifted"
-        );
     }
 
 
