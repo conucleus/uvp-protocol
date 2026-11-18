@@ -141,19 +141,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "MAX_FORK_BIRTH_FACTS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "MAX_HOOK_DELAY_SECONDS",
     "inputs": [],
     "outputs": [
@@ -193,19 +180,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "ORDER_LINK_MODULE_ID",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "PLAN_METADATA_MODULE_ID",
     "inputs": [],
     "outputs": [
@@ -220,19 +194,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   {
     "type": "function",
     "name": "SIGNAL_TARGET_CURRENT_ORDER",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint8",
-        "internalType": "uint8"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "SIGNAL_TARGET_TRIGGER_ORIGIN",
     "inputs": [],
     "outputs": [
       {
@@ -368,11 +329,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             "name": "supplierBindingsRoot",
             "type": "bytes32",
             "internalType": "bytes32"
-          },
-          {
-            "name": "birthAuthorizer",
-            "type": "address",
-            "internalType": "address"
           },
           {
             "name": "deadline",
@@ -655,101 +611,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "forkOrder",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "parentOrderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "forkPayloadHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "approvalSourceId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "approvalSignalId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "birthFacts",
-        "type": "tuple[]",
-        "internalType": "struct UVPStateMachine.ForkBirthFact[]",
-        "components": [
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "payloadHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "idempotencyKey",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          }
-        ]
-      }
-    ],
-    "outputs": [
-      {
-        "name": "forkedOrderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "forkOrderIdFor",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "parentOrderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "forkPayloadHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "pure"
-  },
-  {
-    "type": "function",
     "name": "freezeModules",
     "inputs": [],
     "outputs": [],
@@ -900,72 +761,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "sourceId",
         "type": "bytes32",
         "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "hasTriggerOriginConsent",
-    "inputs": [
-      {
-        "name": "originPlanId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "originOrderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "originSourceId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "originSignalId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "party",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "originAttribution",
-        "type": "tuple",
-        "internalType": "struct UVPStateMachine.FactAttribution",
-        "components": [
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "stageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "capabilityProof",
-            "type": "bytes32[]",
-            "internalType": "bytes32[]"
-          }
-        ]
       }
     ],
     "outputs": [
@@ -1139,30 +934,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "orderCreator",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "orderExists",
     "inputs": [
       {
@@ -1181,87 +952,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "",
         "type": "bool",
         "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "orderLinkModule",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "orderLinkOrderIdFor",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "originPlanId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "triggerOriginOrderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "originSourceId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "originSignalId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "payloadHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "pure"
-  },
-  {
-    "type": "function",
-    "name": "orderParent",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -1294,25 +984,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     "type": "function",
     "name": "owner",
     "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "planBirthAuthorizer",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
     "outputs": [
       {
         "name": "",
@@ -1733,19 +1404,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "setOrderLinkModule",
-    "inputs": [
-      {
-        "name": "moduleAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "setPlanMetadataModule",
     "inputs": [
       {
@@ -2095,40 +1753,20 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     "name": "submitSignal",
     "inputs": [
       {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "sourceId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "signalId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "payloadHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "idempotencyKey",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "attribution",
+        "name": "submission",
         "type": "tuple",
-        "internalType": "struct UVPStateMachine.FactAttribution",
+        "internalType": "struct UVPStateMachine.SignalSubmission",
         "components": [
+          {
+            "name": "planId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "orderId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
           {
             "name": "sourceId",
             "type": "bytes32",
@@ -2140,209 +1778,112 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             "internalType": "bytes32"
           },
           {
-            "name": "stageId",
+            "name": "payloadHash",
             "type": "bytes32",
             "internalType": "bytes32"
           },
           {
-            "name": "capabilityProof",
-            "type": "bytes32[]",
-            "internalType": "bytes32[]"
-          }
-        ]
-      },
-      {
-        "name": "filesDigest",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "filePatch",
-        "type": "tuple",
-        "internalType": "struct FilePatch",
-        "components": [
-          {
-            "name": "targetStageId",
+            "name": "idempotencyKey",
             "type": "bytes32",
             "internalType": "bytes32"
           },
           {
-            "name": "baseHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "writerStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "writerProof",
-            "type": "bytes32[]",
-            "internalType": "bytes32[]"
-          },
-          {
-            "name": "ops",
-            "type": "tuple[]",
-            "internalType": "struct FileOp[]",
+            "name": "attribution",
+            "type": "tuple",
+            "internalType": "struct UVPStateMachine.FactAttribution",
             "components": [
               {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "uint8"
-              },
-              {
-                "name": "key",
+                "name": "sourceId",
                 "type": "bytes32",
                 "internalType": "bytes32"
               },
               {
-                "name": "contentHash",
+                "name": "signalId",
                 "type": "bytes32",
                 "internalType": "bytes32"
               },
               {
-                "name": "handle",
-                "type": "string",
-                "internalType": "string"
+                "name": "stageId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "capabilityProof",
+                "type": "bytes32[]",
+                "internalType": "bytes32[]"
               }
             ]
-          }
-        ]
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "submitSignalFor",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "sourceId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "signalId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "payloadHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "idempotencyKey",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "attribution",
-        "type": "tuple",
-        "internalType": "struct UVPStateMachine.FactAttribution",
-        "components": [
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
           },
           {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "stageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "capabilityProof",
-            "type": "bytes32[]",
-            "internalType": "bytes32[]"
-          }
-        ]
-      },
-      {
-        "name": "filesDigest",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "filePatch",
-        "type": "tuple",
-        "internalType": "struct FilePatch",
-        "components": [
-          {
-            "name": "targetStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "baseHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "writerStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "writerProof",
-            "type": "bytes32[]",
-            "internalType": "bytes32[]"
-          },
-          {
-            "name": "ops",
-            "type": "tuple[]",
-            "internalType": "struct FileOp[]",
+            "name": "filePatch",
+            "type": "tuple",
+            "internalType": "struct FilePatch",
             "components": [
               {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "uint8"
-              },
-              {
-                "name": "key",
+                "name": "targetStageId",
                 "type": "bytes32",
                 "internalType": "bytes32"
               },
               {
-                "name": "contentHash",
+                "name": "baseHash",
                 "type": "bytes32",
                 "internalType": "bytes32"
               },
               {
-                "name": "handle",
-                "type": "string",
-                "internalType": "string"
+                "name": "writerStageId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "writerProof",
+                "type": "bytes32[]",
+                "internalType": "bytes32[]"
+              },
+              {
+                "name": "ops",
+                "type": "tuple[]",
+                "internalType": "struct FileOp[]",
+                "components": [
+                  {
+                    "name": "kind",
+                    "type": "uint8",
+                    "internalType": "uint8"
+                  },
+                  {
+                    "name": "key",
+                    "type": "bytes32",
+                    "internalType": "bytes32"
+                  },
+                  {
+                    "name": "contentHash",
+                    "type": "bytes32",
+                    "internalType": "bytes32"
+                  },
+                  {
+                    "name": "handle",
+                    "type": "string",
+                    "internalType": "string"
+                  }
+                ]
               }
             ]
+          },
+          {
+            "name": "patchHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "submitter",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "deadline",
+            "type": "uint256",
+            "internalType": "uint256"
           }
         ]
-      },
-      {
-        "name": "submitter",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "deadline",
-        "type": "uint256",
-        "internalType": "uint256"
       },
       {
         "name": "signature",
@@ -2378,336 +1919,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "triggerOrderFromOutsideByAuthorizer",
-    "inputs": [
-      {
-        "name": "trigger",
-        "type": "tuple",
-        "internalType": "struct UVPStateMachine.TriggerOrderFromOutsideByAuthorizerRequest",
-        "components": [
-          {
-            "name": "planId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "creator",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "triggerHookId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "triggerStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "payloadHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "idempotencyKey",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "deadline",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
-      },
-      {
-        "name": "birthFactAttribution",
-        "type": "tuple",
-        "internalType": "struct UVPStateMachine.FactAttribution",
-        "components": [
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "stageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "capabilityProof",
-            "type": "bytes32[]",
-            "internalType": "bytes32[]"
-          }
-        ]
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "triggerOrderFromOutsideFor",
-    "inputs": [
-      {
-        "name": "trigger",
-        "type": "tuple",
-        "internalType": "struct UVPStateMachine.TriggerOrderFromOutsideRequest",
-        "components": [
-          {
-            "name": "planId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "creator",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "triggerHookId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "triggerStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "payloadHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "idempotencyKey",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "submitter",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "deadline",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
-      },
-      {
-        "name": "signature",
-        "type": "bytes",
-        "internalType": "bytes"
-      },
-      {
-        "name": "birthFactAttribution",
-        "type": "tuple",
-        "internalType": "struct UVPStateMachine.FactAttribution",
-        "components": [
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "stageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "capabilityProof",
-            "type": "bytes32[]",
-            "internalType": "bytes32[]"
-          }
-        ]
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "triggerOrderFromSignalFromModule",
-    "inputs": [
-      {
-        "name": "trigger",
-        "type": "tuple",
-        "internalType": "struct UVPStateMachine.TriggerOrderFromSignalRequest",
-        "components": [
-          {
-            "name": "orderId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "planId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "creator",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "triggerOriginOrderId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "originPlanId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "triggerHookId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "triggerStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "originSourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "originSignalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "payloadHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "idempotencyKey",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "submitter",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "deadline",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
-      },
-      {
-        "name": "relayer",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "originFactAttributions",
-        "type": "tuple[]",
-        "internalType": "struct UVPStateMachine.FactAttribution[]",
-        "components": [
-          {
-            "name": "sourceId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "signalId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "stageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "capabilityProof",
-            "type": "bytes32[]",
-            "internalType": "bytes32[]"
-          }
-        ]
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "triggerOrderIdFor",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "sourceId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "signalId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "payloadHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "pure"
   },
   {
     "type": "event",
@@ -2791,61 +2002,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "event",
-    "name": "OrderForked",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "parentOrderId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "approvalSourceId",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "approvalSignalId",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "initiator",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
-        "name": "forkPayloadHash",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "replayedFactKeys",
-        "type": "bytes32[]",
-        "indexed": false,
-        "internalType": "bytes32[]"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "OrderMaterialized",
     "inputs": [
       {
@@ -2908,12 +2064,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "relayer",
         "type": "address",
         "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "creator",
-        "type": "address",
-        "indexed": false,
         "internalType": "address"
       }
     ],
@@ -3032,12 +2182,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
-      },
-      {
-        "name": "birthAuthorizer",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -3334,12 +2478,17 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "BirthAuthorizerNotContract",
+    "name": "AmbiguousTriggerSignal",
     "inputs": [
       {
-        "name": "authorizer",
-        "type": "address",
-        "internalType": "address"
+        "name": "sourceId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "signalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ]
   },
@@ -3388,6 +2537,27 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
+    "name": "DuplicateTriggerKey",
+    "inputs": [
+      {
+        "name": "submitter",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "idempotencyKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "existingOrderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "EmptyPlan",
     "inputs": []
   },
@@ -3410,37 +2580,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "deadline",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "FilePatchEmpty",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ForkApprovalSignalUnknown",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "parentOrderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "approvalSourceId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "approvalSignalId",
-        "type": "bytes32",
-        "internalType": "bytes32"
       }
     ]
   },
@@ -3542,27 +2681,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "InvalidForkBirthFact",
-    "inputs": [
-      {
-        "name": "parentOrderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "sourceId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "signalId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "InvalidHook",
     "inputs": []
   },
@@ -3575,22 +2693,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     "type": "error",
     "name": "InvalidModuleAddress",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidOrderLinkOrderId",
-    "inputs": [
-      {
-        "name": "declared",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "derived",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
   },
   {
     "type": "error",
@@ -3658,33 +2760,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "InvalidSignature",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidSignatureS",
-    "inputs": [
-      {
-        "name": "s",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InvalidSignatureV",
-    "inputs": [
-      {
-        "name": "v",
-        "type": "uint8",
-        "internalType": "uint8"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "InvalidSupplierBindingKind",
     "inputs": [
       {
@@ -3702,22 +2777,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "hookId",
         "type": "bytes32",
         "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InvalidTriggerOrderSignature",
-    "inputs": [
-      {
-        "name": "expectedSigner",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "recoveredSigner",
-        "type": "address",
-        "internalType": "address"
       }
     ]
   },
@@ -3743,8 +2802,46 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "OrderAlreadyRegistered",
-    "inputs": []
+    "name": "NotTriggerSignal",
+    "inputs": [
+      {
+        "name": "sourceId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "signalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "OrderIdCollision",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "PatchHashMismatch",
+    "inputs": [
+      {
+        "name": "expectedPatchHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "providedPatchHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
   },
   {
     "type": "error",
@@ -3937,17 +3034,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "TooManyForkBirthFacts",
-    "inputs": [
-      {
-        "name": "count",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "TooManyHooksPerDependencyKey",
     "inputs": [
       {
@@ -3970,31 +3056,15 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "UnauthorizedBirthSubmitter",
+    "name": "UnauthorizedDirectSubmitter",
     "inputs": [
       {
         "name": "submitter",
         "type": "address",
         "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "UnauthorizedOrderFork",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
       },
       {
-        "name": "parentOrderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "initiator",
+        "name": "caller",
         "type": "address",
         "internalType": "address"
       }
@@ -4039,27 +3109,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "UnauthorizedTriggerOrigin",
-    "inputs": [
-      {
-        "name": "originPlanId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "originOrderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "submitter",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "UnknownHook",
     "inputs": []
   },
@@ -4091,12 +3140,7 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "ZeroOrderCreator",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ZeroOrderId",
+    "name": "ZeroIdempotencyKey",
     "inputs": []
   },
   {
@@ -4316,6 +3360,74 @@ export const FILE_RESOURCE_MODULE_ABI = [
         "type": "bytes32",
         "internalType": "bytes32"
       },
+      {
+        "name": "filePatch",
+        "type": "tuple",
+        "internalType": "struct FilePatch",
+        "components": [
+          {
+            "name": "targetStageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "baseHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "writerStageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "writerProof",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          },
+          {
+            "name": "ops",
+            "type": "tuple[]",
+            "internalType": "struct FileOp[]",
+            "components": [
+              {
+                "name": "kind",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "key",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "contentHash",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "handle",
+                "type": "string",
+                "internalType": "string"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "filePatchHash",
+    "inputs": [
       {
         "name": "filePatch",
         "type": "tuple",

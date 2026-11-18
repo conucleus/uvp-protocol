@@ -23,7 +23,7 @@ interface CapabilityInput {
   readonly stageId: HexString;
   readonly targetSourceId: HexString;
   readonly signalId: HexString;
-  readonly targetOrderRelation: 0 | 1;
+  readonly targetOrderRelation: 0;
 }
 
 interface GoldenSample {
@@ -122,16 +122,13 @@ for (const sample of fixture.samples) {
     }
 
     for (const [index, capability] of signalCapabilities.entries()) {
-      if (capability.targetOrderRelation !== 0) {
-        continue;
-      }
       const attribution = factAttribution(
         selectorBindings,
         signalCapabilities,
         capability.targetSourceId,
         capability.signalId,
       );
-      assert.ok(attribution, "relation=0 fact key must resolve to an owner");
+      assert.ok(attribution, "current-order fact key must resolve to an owner");
       assert.equal(attribution.stageId, capability.stageId);
       assert.deepEqual(
         attribution.capabilityProof,

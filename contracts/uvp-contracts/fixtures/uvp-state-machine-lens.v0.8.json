@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStateMachineLens",
-  "abiVersion": "0.7",
+  "abiVersion": "0.8",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStateMachineLens.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStateMachineLens.sol/UVPStateMachineLens.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x6b46f4e26732a79010299b31eb48e7e26e6233279a5e6db4753a1eb1a3b14632",
-    "bytecodeHash": "0x0b5ec64dc34b43fe0f5180c55ef682f3d0ef7d5d8a2b958f609e3f1ab336873b",
-    "deployedBytecodeHash": "0x14afa2f87809e1d79a4d2f8509c8b86e3641da7f76f50123c4a16496f79f973b",
-    "artifactHash": "0x3459dadca63be09c19b8b7da44d5ea8ab82236a8b606e89b6d4af6fe0e45e24a"
+    "abiHash": "0xd74fa27783aa061fe583f7fdaac2ec131dd7285213a220bf8818cb053c958efc",
+    "bytecodeHash": "0xc702e289ffd92631deb846044a50f2f7bff2ae8418a42a063e85fcf41b9ce197",
+    "deployedBytecodeHash": "0x2db4e269a09dfabd89119576fea47e29c3ab90352cd10e24aa382dd754579dab",
+    "artifactHash": "0x96931d1536b1ecf539ce7a46e3911c7be1e35a427bb0637c4b574b026fae74ab"
   },
   "events": {},
   "functions": {
@@ -40,10 +40,6 @@
       "signature": "getStageDockBinding(bytes32,bytes32,bytes32,bytes32)",
       "selector": "0x35148333"
     },
-    "getTriggerOriginLink": {
-      "signature": "getTriggerOriginLink(bytes32,bytes32)",
-      "selector": "0x94e59116"
-    },
     "planCapabilitiesRoot": {
       "signature": "planCapabilitiesRoot(bytes32)",
       "selector": "0xbee3def7"
@@ -67,10 +63,6 @@
     "stateMachine": {
       "signature": "stateMachine()",
       "selector": "0x37b416d8"
-    },
-    "targetOrderRelation": {
-      "signature": "targetOrderRelation(bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0x6c4da396"
     },
     "verifySignalCapability": {
       "signature": "verifySignalCapability(bytes32,bytes32,bytes32,bytes32,uint8,bytes32[])",

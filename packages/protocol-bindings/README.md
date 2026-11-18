@@ -15,21 +15,21 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
 ## Boundary
 
 - Exposes core and module ABI constants (`UVP_STATE_MACHINE_ARTIFACT_ABI`,
-  `STATE_MACHINE_ABI`, `FILE_RESOURCE_MODULE_ABI`,
-  `SUPPLIER_REGISTRY_ABI`, `DOCK_REGISTRY_ABI`, module call surfaces —
-  including the stage-patch executor patch/dock selection and output events),
-  stage executor patch and stage dock executor selection typed-data helpers,
-  plan executor binding registration helpers, signal submission
-  (`submitSignalFor`) typed data, `UVPZhixuRegistry/1` registry typed data
-  (`ZhixuRecord`/`IdentityClaim` schema, builders, type hashes),
-  direct `submitSignal` (including trailing `filesDigest`/`FilePatch`),
-  `applyStageExecutorPatchFor`, and file patch call construction
-  (`filePatchDigest`, `FileOp`/`FilePatch`), capability-tree root/proof
-  helpers, and address/bytes32 validation. Canonical JSON serialization and
-  evidence hashing are owned by `@uvp-eth/canonical-json`.
-- Trigger birth helpers: `OrderTriggerKind`/`buildCompactHookFlags`,
-  `buildTriggerOrderFromOutsideTypedData`, the two
-  `buildTriggerOrderFromOutside*Call` encoders, and `deriveTriggerOrderId`.
+  `STATE_MACHINE_ABI`, `FILE_RESOURCE_MODULE_ABI`, `SUPPLIER_REGISTRY_ABI`,
+  `DOCK_REGISTRY_ABI`, `DERIVED_SIGNAL_MODULE_ABI`,
+  `STATE_MACHINE_LENS_ABI`, module call surfaces — including the stage-patch
+  executor patch/dock selection and output events), stage executor patch and
+  stage dock executor selection typed-data helpers, plan executor binding
+  registration helpers, signal submission typed data
+  (`UVPStateMachineSignalSubmission`) and the single `submitSignal` call
+  builder, `UVPZhixuRegistry/1` registry typed data (`ZhixuRecord`/
+  `IdentityClaim` schema, builders, type hashes), file patch call construction
+  (`filePatchHash`, `filePatchDigest`, `FileOp`/`FilePatch`), capability-tree
+  root/proof helpers, and address/bytes32 validation. Canonical JSON
+  serialization and evidence hashing are owned by `@uvp-eth/canonical-json`.
+- Trigger hooks are committed through `buildCompactHookFlags` (`OrderTriggerKind`
+  `"none" | "trigger"`); trigger birth itself is the same `submitSignal`
+  surface with `orderId == 0`.
 - Does not import Node-only modules, read env vars, hold private keys, run
   watchers, request wallet signatures, or submit transactions.
 - The test suite consumes the shared capabilities-root golden vectors from
@@ -43,8 +43,8 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
 
 - `PlanCommitPayload` / `PlanCommitTypedData` mirror
   `UVPStateMachine.PlanCommit`: the publisher signs `publisher`, `hooksHash`,
-  `capabilitiesRoot`, `executorBindingsRoot`, `birthAuthorizer`, `deadline`
-  under the main `UVPStateMachine` domain (`0.19`).
+  `capabilitiesRoot`, `supplierBindingsRoot`, `deadline` under the main
+  `UVPStateMachine` domain (`0.20`).
 - `ExecutorBinding` is `{ stageId, supplierId, kind }` with kind `0`
   (default) / `1` (candidate); `buildPlanCommitCall` encodes
   `commitPlan(commit, hooks, bindings, signature)` from
@@ -57,47 +57,30 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
 
 - `buildSignalSubmissionTypedData` builds
   `UVPStateMachineSignalSubmission(planId, orderId, sourceId, signalId,
-  payloadHash, idempotencyKey, filesDigest, attributionHash, submitter,
-  deadline)` under the main domain (`0.19`); `factAttributionHash` is the
+  payloadHash, idempotencyKey, patchHash, attributionHash, submitter,
+  deadline)` under the main domain (`0.20`); `factAttributionHash` is the
   `FactAttribution(sourceId, signalId, stageId, capabilityProof)` digest that
   enters the signature, and `recoverSignalSubmissionSigner` recovers the
-  signer.
-- `buildSubmitSignalForCall` encodes
-  `submitSignalFor(planId, orderId, sourceId, signalId, payloadHash,
-  idempotencyKey, attribution, filesDigest, filePatch, submitter, deadline,
-  signature)`; the submitter is the effective stage executor and `msg.sender`
-  is only the relayer. `filesDigest` must equal `filePatchDigest` when the
-  patch carries ops.
-
-## Trigger Birth Bindings
-
-- `OrderTriggerKind` is `"none" | "trigger"`.
-  `buildCompactHookFlags` folds it into the compact-hook flag word:
-  `"trigger"` → `HOOK_FLAG_ORDER_TRIGGER_MINT`, plus `HOOK_FLAG_EMIT_READY`
-  when the hook must emit ready, `HOOK_FLAG_DOCK_EXECUTOR` for dock stages,
-  and `HOOK_FLAG_DYNAMIC_EXECUTOR` for dynamic executor stages. Flags are
-  committed through the plan's `hooksHash`.
-- `buildTriggerOrderFromOutsideTypedData` builds
-  `UVPStateMachineTriggerOrderFromOutside` typed data under the product-submit
-  domain (`UVPStateMachine`, version `0.19`). `triggerHookId` +
-  `triggerStageId` explicitly select one trigger birth line among the plan's
-  order-trigger hooks.
-- `buildTriggerOrderFromOutsideForCall` encodes the relayer-submitted signed
-  birth entry; `buildTriggerOrderFromOutsideByAuthorizerCall` encodes the
-  contract `birthAuthorizer` direct entry, which carries no signature.
-- `deriveTriggerOrderId(planId, sourceId, signalId, payloadHash)` mirrors the
-  on-chain `triggerOrderIdFor`: `keccak256(abi.encode(planId, sourceId,
-  signalId, payloadHash))` with the reserved top namespace bit cleared.
-- The trigger-birth surface pins the state-machine and linked
-  plan-registration ABI fixtures under `contracts/uvp-contracts/fixtures/`;
-  birth admission rejects with `SignalAdmissionRejected`.
+  signer. Omit `orderId` (or pass zero) to sign the trigger-birth context,
+  where the contract generates the order id.
+- `buildSubmitSignalCall` encodes `submitSignal(submission, signature)` from
+  `SubmitSignalCallArgs`. An omitted or empty signature is a direct submit
+  (`submitter` must equal `msg.sender`); a non-empty signature is a relayed
+  submit signed by `submitter`. `patchHash` is covered by the signature; pass
+  `filePatchHash(filePatch)` for patch-bearing submissions and zero otherwise.
+- `orderId == 0` is trigger birth: the contract resolves the trigger hook from
+  `(sourceId, signalId)`, requires the trigger-stage assigned supplier, and
+  enforces the `(submitter, idempotencyKey)` first-win rule before creating
+  the order. `orderId != 0` targets an existing order; `signalId == 0` is a
+  file-only patch.
 
 ## Dock Write Surface
 
 - `DOCK_REGISTRY_ABI` / `DOCK_REGISTRY_CONTRACT_NAME` pin the static
   `UVPDockRegistry` artifact; `registerDock` stores from/to plan+source+stage,
   `docHash`, per-output `WindowInstruction[]` (op Signal/Not/And/Or/Delay),
-  atoms, and per-atom/per-output capability proofs.
+  atoms, and per-atom/per-output capability proofs. Capability relations are
+  current-order (`0`) only.
 - `buildRegisterDockCall` and `buildRegisterDockCallFromArtifact` encode the
   registration call; missing per-atom/per-output proofs are derived from the
   plan capability tables (single-source leaf/proof helpers above).
@@ -122,14 +105,15 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
 - `signalCapabilityLeaf` / `selectorBindingLeaf` / `fileWriterLeaf` mirror the
   on-chain leaf formulas: `keccak256(abi.encode(keccak256(domain), …words))`
   with the `UVP_SIGNAL_CAPABILITY_V1` / `UVP_SELECTOR_BINDING_V1` /
-  `UVP_FILE_WRITER_V1` domain separators.
+  `UVP_FILE_WRITER_V1` domain separators. `signalCapabilityLeaf` relation is
+  current-order (`0`) only.
 - `capabilitiesRootOf` builds the sorted-pairing tree root over the capability
   tables (signal capabilities, selector bindings, file writers)
   (dedup + sort, `keccak256(min ‖ max)` per level, odd tail leaf promoted,
   empty tables normalize to `EMPTY_CAPABILITIES_ROOT = keccak256("")`).
 - `factAttribution` returns the owning stage plus its capability proof for a
   `(sourceId, signalId)` fact (relation `0` capability); wire it straight into
-  the direct `submitSignal` call's `attribution` argument.
+  the `submitSignal` call's `attribution` argument.
 - `selectorBindingProofFor` returns the selector stage plus its binding proof
   for a bound target stage; wire it into the `selectorBinding` argument.
 - `fileWriterProofFor` returns the capability proof for a
@@ -166,12 +150,15 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
   `writerStageId == 0` means the target stage's own executor, `handle` is the
   opaque UTF-8 reference, and `kind` is `0|1|2` (add/replace/remove) via
   `FILE_OP_KIND`.
+- `filePatchHash(filePatch)` is the signed patch envelope covered by the
+  `submitSignal` EIP-712 signature:
+  `keccak256(abi.encode(keccak256("UVP_FILE_PATCH_HASH_V1"), targetStageId,
+  baseHash, writerStageId, writerProof, ops))`; `planId`/`orderId` are not in
+  the preimage (the contract recomputes it from calldata and rejects a
+  relayer-replaced patch with `PatchHashMismatch`). Empty-file submissions
+  carry `patchHash == 0`.
 - `filePatchDigest(planId, orderId, filePatch)` is the canonical
-  `filesDigest` carried by the direct `submitSignal` call:
-  `keccak256(abi.encode(keccak256("UVP_FILE_PATCH_V1"), planId, orderId,
-  targetStageId, baseHash, writerStageId, ops))`; `writerProof` is a witness
-  and is excluded. `EMPTY_FILE_PATCH` is the no-patch value.
-- Direct `submitSignal` calldata appends `(bytes32 filesDigest, FilePatch filePatch)`;
-  omitting both produces the fileless form, and a patch-bearing call is
-  rejected unless `filesDigest` equals `filePatchDigest` for the same
-  plan/order/patch.
+  `filesDigest` the state machine hands to the file module after the order id
+  exists: `keccak256(abi.encode(keccak256("UVP_FILE_PATCH_V1"), planId,
+  orderId, targetStageId, baseHash, writerStageId, ops))`; `writerProof` is a
+  witness and is excluded. `EMPTY_FILE_PATCH` is the no-patch value.

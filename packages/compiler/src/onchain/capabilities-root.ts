@@ -20,7 +20,7 @@ export function signalCapabilityLeaf(
   stageId: HexString,
   targetSourceId: HexString,
   signalId: HexString,
-  relation: 0 | 1,
+  relation: 0,
 ): HexString {
   return keccakWords(SIGNAL_CAPABILITY_LEAF_DOMAIN, [
     stageId,
@@ -53,7 +53,7 @@ interface SignalCapabilityTableEntry {
   readonly stageId: HexString;
   readonly targetSourceId: HexString;
   readonly signalId: HexString;
-  readonly targetOrderRelation: 0 | 1;
+  readonly targetOrderRelation: 0;
 }
 
 interface FileWriterTableEntry {
@@ -100,7 +100,7 @@ export function signalCapabilityProof(
   stageId: HexString,
   targetSourceId: HexString,
   signalId: HexString,
-  relation: 0 | 1,
+  relation: 0,
   fileWriterBindings: readonly FileWriterTableEntry[] = [],
 ): HexString[] | undefined {
   return merkleProof(
@@ -145,7 +145,6 @@ export function factAttribution(
 ): { stageId: HexString; capabilityProof: readonly HexString[] } | undefined {
   for (const capability of signalCapabilities) {
     if (
-      capability.targetOrderRelation === 0 &&
       capability.targetSourceId === sourceId &&
       capability.signalId === signalId
     ) {

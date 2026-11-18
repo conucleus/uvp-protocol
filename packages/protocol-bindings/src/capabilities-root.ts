@@ -26,13 +26,12 @@ export const UVP_FILE_WRITER_V1 = FILE_WRITER_LEAF_DOMAIN;
 export const EMPTY_CAPABILITIES_ROOT: Hex = EMPTY_MERKLE_ROOT;
 
 export const SIGNAL_CAPABILITY_RELATION_CURRENT_ORDER = 0;
-export const SIGNAL_CAPABILITY_RELATION_TRIGGER_ORIGIN = 1;
 
 export interface SignalCapabilityTableEntry {
   readonly stageId: Hex | string;
   readonly targetSourceId: Hex | string;
   readonly signalId: Hex | string;
-  readonly relation: 0 | 1;
+  readonly relation: 0;
 }
 
 export interface StageSelectorBindingTableEntry {
@@ -49,7 +48,7 @@ export function signalCapabilityLeaf(
   stageId: Hex | string,
   targetSourceId: Hex | string,
   signalId: Hex | string,
-  relation: 0 | 1,
+  relation: 0,
 ): Hex {
   return sourceSignalCapabilityLeaf(
     normalizeWord(stageId, "stageId"),
@@ -114,7 +113,7 @@ export function signalCapabilityProofFor(
   stageId: Hex | string,
   targetSourceId: Hex | string,
   signalId: Hex | string,
-  relation: 0 | 1 = SIGNAL_CAPABILITY_RELATION_CURRENT_ORDER,
+  relation: 0 = SIGNAL_CAPABILITY_RELATION_CURRENT_ORDER,
   fileWriterBindings: readonly FileWriterTableEntry[] = [],
 ): readonly Hex[] | undefined {
   return signalCapabilityProof(
@@ -190,7 +189,7 @@ function normalizeCapabilities(
   readonly stageId: Hex;
   readonly targetSourceId: Hex;
   readonly signalId: Hex;
-  readonly targetOrderRelation: 0 | 1;
+  readonly targetOrderRelation: 0;
 }[] {
   return signalCapabilities.map((capability) => ({
     stageId: normalizeWord(capability.stageId, "capability.stageId"),

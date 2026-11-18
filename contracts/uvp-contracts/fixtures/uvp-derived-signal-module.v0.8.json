@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPDerivedSignalModule",
-  "abiVersion": "0.7",
+  "abiVersion": "0.8",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPDerivedSignalModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPDerivedSignalModule.sol/UVPDerivedSignalModule.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x2bfd982afd2880278a43a9eae290d5557ed261eb329edc06b885ce12347b9308",
-    "bytecodeHash": "0x6be8443be4ce274c03ec1b82410b754f0d26735866188e5023ff025b25067e67",
-    "deployedBytecodeHash": "0x48dbc14d7c57f369e61155c82ff456bdb8f428d37817edf36eea01062a59d2c5",
-    "artifactHash": "0xbefa37318f449d6b75f69e85b8ce9611eaf81e295a6995fe5aa1a83409ec55a0"
+    "abiHash": "0x8b0dec9850a18bdf755777937388526be1cbc4f4167f3e3911ceabf262d2cc7a",
+    "bytecodeHash": "0x6f774b5ff7b8c1beef892abf1337e59db82eec12aa81dc93656f996d07bb29e0",
+    "deployedBytecodeHash": "0x7d7288a7b7ef114c680d2de3f64670ff9c47b83cae1e515d15d1e60e834edb24",
+    "artifactHash": "0xd5493364cb0373698ef5c8d93aeb3d022ac286b9dc33f0998920d48a59b8c637"
   },
   "events": {
     "DerivedSignalSubmitted": {
@@ -34,12 +34,12 @@
       "selector": "0x37b416d8"
     },
     "submitDerivedSignal": {
-      "signature": "submitDerivedSignal((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32),address,(bytes32[],bytes32[]))",
-      "selector": "0xfbb0772e"
+      "signature": "submitDerivedSignal((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32),address,(bytes32[]))",
+      "selector": "0x9d880c34"
     },
     "submitDerivedSignalFor": {
-      "signature": "submitDerivedSignalFor((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32),address,uint256,bytes,(bytes32[],bytes32[]))",
-      "selector": "0x5c3d8c72"
+      "signature": "submitDerivedSignalFor((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32),address,uint256,bytes,(bytes32[]))",
+      "selector": "0x63f5b4bf"
     }
   }
 }

@@ -38,6 +38,7 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
     uint256 private constant _MAX_FILE_OPS = 16;
     uint256 private constant _MAX_FILE_HANDLE_BYTES = 512;
     bytes32 private constant _DOMAIN_FILE_PATCH = keccak256("UVP_FILE_PATCH_V1");
+    bytes32 private constant _DOMAIN_FILE_PATCH_HASH = keccak256("UVP_FILE_PATCH_HASH_V1");
 
     IUVPStateMachineCore public immutable stateMachine;
 
@@ -138,6 +139,19 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
 
     function stageFilesHash(bytes32 planId, bytes32 orderId, bytes32 targetStageId) external view returns (bytes32) {
         return _stageFilesHashes[planId][orderId][targetStageId];
+    }
+
+    function filePatchHash(FilePatch calldata filePatch) public pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                _DOMAIN_FILE_PATCH_HASH,
+                filePatch.targetStageId,
+                filePatch.baseHash,
+                filePatch.writerStageId,
+                filePatch.writerProof,
+                filePatch.ops
+            )
+        );
     }
 
     function filePatchDigest(bytes32 planId, bytes32 orderId, FilePatch calldata filePatch)

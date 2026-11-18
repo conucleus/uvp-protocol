@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStateMachine",
-  "abiVersion": "0.21",
+  "abiVersion": "0.22",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStateMachine.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStateMachine.sol/UVPStateMachine.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x87ddf1de84ccc3409c2dc7844e4fcb391f055856a7f4b31695c8dc0e53440139",
-    "bytecodeHash": "0xe0f084b04bb453ba81243aeaabd14cbd659f9125411f8d5c690ff7e36bfceea0",
-    "deployedBytecodeHash": "0x2885d00e72127126d8cc162fc10bc9b20da5d49093d729915f8118f378de891b",
-    "artifactHash": "0x85053abccae9e0f3070e85f0b64a90ff7b9a2ad4c546a0ee742df318af97e495"
+    "abiHash": "0xa6b002f4c50e6027fd8b714d511301bff3cdb048842d7433cce9d3e39ac88d2b",
+    "bytecodeHash": "0x0adad19d889e5e58112bde2a481b2c33a6561eea78468f5276e9476f04d0dbdc",
+    "deployedBytecodeHash": "0xffc2f219f912bb39a6d3ee85180e1ee5fa48157542af74c4006245352f39190d",
+    "artifactHash": "0xe9765c62c41a1154728d0da0afcbcb119976ded1e5e3ad27a3ecbaa3b071c612"
   },
   "events": {
     "HookReady": {
@@ -23,10 +23,6 @@
       "signature": "HookStatusChanged(bytes32,bytes32,bytes32,uint8,uint8,uint64)",
       "topic": "0xa0c688f78d307bee6d38b69ad4c19b02d9e1be8c6772327015b60fd21ec38fd2"
     },
-    "OrderForked": {
-      "signature": "OrderForked(bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32[])",
-      "topic": "0x09edcd0132bacd612b1fbd252537cdcf65e43540b8701d7018f35896b41d7ef1"
-    },
     "OrderMaterialized": {
       "signature": "OrderMaterialized(bytes32,bytes32,bytes32)",
       "topic": "0x953786a31eb53b4a577694506c940e7945c2631236bfb4c9dd747deaed397cd5"
@@ -36,8 +32,8 @@
       "topic": "0x4228a1a218f29332c9684f0eed67f17c49aa237467c3770d074734070532349f"
     },
     "OrderRelayerRecorded": {
-      "signature": "OrderRelayerRecorded(bytes32,bytes32,address,address)",
-      "topic": "0xfb823505fda512863c2a65c12c710a42b9bb4653dd8e7ac0c1b8fb9662acc9e8"
+      "signature": "OrderRelayerRecorded(bytes32,bytes32,address)",
+      "topic": "0xa660a2c3611f8b57d12196376bf573ca7fd9ded9f3f2d9d6d55e48ecb4998a96"
     },
     "OrderTriggered": {
       "signature": "OrderTriggered(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
@@ -48,8 +44,8 @@
       "topic": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
     },
     "PlanCommitted": {
-      "signature": "PlanCommitted(bytes32,bytes32,address,bytes32,bytes32,uint256,bytes32,address)",
-      "topic": "0x8571e1792593a960657ee06b74b254922b8ea400e5ac0958f05b2cf3986e638c"
+      "signature": "PlanCommitted(bytes32,bytes32,address,bytes32,bytes32,uint256,bytes32)",
+      "topic": "0x263ba24b62f91245c7672b9391bb0dfca81b5c7f8160db6879dc20ca7a1000e0"
     },
     "PlanFinalized": {
       "signature": "PlanFinalized(bytes32,bytes32,bytes32)",
@@ -129,10 +125,6 @@
       "signature": "LENS_MODULE_ID()",
       "selector": "0x1a781337"
     },
-    "MAX_FORK_BIRTH_FACTS": {
-      "signature": "MAX_FORK_BIRTH_FACTS()",
-      "selector": "0x2e0eff3d"
-    },
     "MAX_HOOK_DELAY_SECONDS": {
       "signature": "MAX_HOOK_DELAY_SECONDS()",
       "selector": "0xe0f77f80"
@@ -145,10 +137,6 @@
       "signature": "MAX_SUPPLIER_BINDINGS()",
       "selector": "0x18de98ae"
     },
-    "ORDER_LINK_MODULE_ID": {
-      "signature": "ORDER_LINK_MODULE_ID()",
-      "selector": "0x8f0f08c0"
-    },
     "PLAN_METADATA_MODULE_ID": {
       "signature": "PLAN_METADATA_MODULE_ID()",
       "selector": "0x20e1cff5"
@@ -156,10 +144,6 @@
     "SIGNAL_TARGET_CURRENT_ORDER": {
       "signature": "SIGNAL_TARGET_CURRENT_ORDER()",
       "selector": "0x06b6c489"
-    },
-    "SIGNAL_TARGET_TRIGGER_ORIGIN": {
-      "signature": "SIGNAL_TARGET_TRIGGER_ORIGIN()",
-      "selector": "0x909f38ec"
     },
     "STAGE_PATCH_MODULE_ID": {
       "signature": "STAGE_PATCH_MODULE_ID()",
@@ -178,8 +162,8 @@
       "selector": "0xba1525eb"
     },
     "commitPlan": {
-      "signature": "commitPlan((address,bytes32,bytes32,bytes32,address,uint256),(bytes32,bytes32,bytes32,uint8,(uint8,bytes32,bytes32,uint16,uint64)[],bytes32[])[],(bytes32,bytes32,uint8)[],bytes)",
-      "selector": "0x27d88400"
+      "signature": "commitPlan((address,bytes32,bytes32,bytes32,uint256),(bytes32,bytes32,bytes32,uint8,(uint8,bytes32,bytes32,uint16,uint64)[],bytes32[])[],(bytes32,bytes32,uint8)[],bytes)",
+      "selector": "0x9bdc8bb5"
     },
     "derivedSignalModule": {
       "signature": "derivedSignalModule()",
@@ -209,14 +193,6 @@
       "signature": "finalizePlan(bytes32)",
       "selector": "0xa08f0ff2"
     },
-    "forkOrder": {
-      "signature": "forkOrder(bytes32,bytes32,bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32)[])",
-      "selector": "0x881827c6"
-    },
-    "forkOrderIdFor": {
-      "signature": "forkOrderIdFor(bytes32,bytes32,bytes32)",
-      "selector": "0x6ce832fc"
-    },
     "freezeModules": {
       "signature": "freezeModules()",
       "selector": "0x5f981c96"
@@ -236,10 +212,6 @@
     "hasSourceSignal": {
       "signature": "hasSourceSignal(bytes32,bytes32,bytes32)",
       "selector": "0xca69a3e9"
-    },
-    "hasTriggerOriginConsent": {
-      "signature": "hasTriggerOriginConsent(bytes32,bytes32,bytes32,bytes32,address,(bytes32,bytes32,bytes32,bytes32[]))",
-      "selector": "0xa1968e4f"
     },
     "isEffectiveStageAccount": {
       "signature": "isEffectiveStageAccount(bytes32,bytes32,bytes32,address)",
@@ -269,25 +241,9 @@
       "signature": "modulesFrozen()",
       "selector": "0xb3e056f9"
     },
-    "orderCreator": {
-      "signature": "orderCreator(bytes32,bytes32)",
-      "selector": "0xeca6e954"
-    },
     "orderExists": {
       "signature": "orderExists(bytes32,bytes32)",
       "selector": "0xabfd253f"
-    },
-    "orderLinkModule": {
-      "signature": "orderLinkModule()",
-      "selector": "0x1d2103c0"
-    },
-    "orderLinkOrderIdFor": {
-      "signature": "orderLinkOrderIdFor(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0xc31e315c"
-    },
-    "orderParent": {
-      "signature": "orderParent(bytes32,bytes32)",
-      "selector": "0xd0f928d6"
     },
     "orderRelayer": {
       "signature": "orderRelayer(bytes32,bytes32)",
@@ -296,10 +252,6 @@
     "owner": {
       "signature": "owner()",
       "selector": "0x8da5cb5b"
-    },
-    "planBirthAuthorizer": {
-      "signature": "planBirthAuthorizer(bytes32)",
-      "selector": "0x2a90f85f"
     },
     "planCommitted": {
       "signature": "planCommitted(bytes32)",
@@ -381,10 +333,6 @@
       "signature": "setLens(address)",
       "selector": "0x6f338582"
     },
-    "setOrderLinkModule": {
-      "signature": "setOrderLinkModule(address)",
-      "selector": "0xeacc6057"
-    },
     "setPlanMetadataModule": {
       "signature": "setPlanMetadataModule(address)",
       "selector": "0x20d29f00"
@@ -430,12 +378,8 @@
       "selector": "0xd1caf3b4"
     },
     "submitSignal": {
-      "signature": "submitSignal(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[]),bytes32,(bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]))",
-      "selector": "0x17281ac9"
-    },
-    "submitSignalFor": {
-      "signature": "submitSignalFor(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[]),bytes32,(bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]),address,uint256,bytes)",
-      "selector": "0x453ac60a"
+      "signature": "submitSignal((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[]),(bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]),bytes32,address,uint256),bytes)",
+      "selector": "0x9e4c756d"
     },
     "supplierRegistry": {
       "signature": "supplierRegistry()",
@@ -444,22 +388,6 @@
     "transferOwnership": {
       "signature": "transferOwnership(address)",
       "selector": "0xf2fde38b"
-    },
-    "triggerOrderFromOutsideByAuthorizer": {
-      "signature": "triggerOrderFromOutsideByAuthorizer((bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256),(bytes32,bytes32,bytes32,bytes32[]))",
-      "selector": "0xfeeb15aa"
-    },
-    "triggerOrderFromOutsideFor": {
-      "signature": "triggerOrderFromOutsideFor((bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),bytes,(bytes32,bytes32,bytes32,bytes32[]))",
-      "selector": "0x9902e66f"
-    },
-    "triggerOrderFromSignalFromModule": {
-      "signature": "triggerOrderFromSignalFromModule((bytes32,bytes32,address,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,uint256),address,(bytes32,bytes32,bytes32,bytes32[])[])",
-      "selector": "0xd82e0668"
-    },
-    "triggerOrderIdFor": {
-      "signature": "triggerOrderIdFor(bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0x155f01af"
     }
   }
 }

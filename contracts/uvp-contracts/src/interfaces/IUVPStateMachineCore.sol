@@ -2,22 +2,6 @@
 pragma solidity ^0.8.24;
 
 interface IUVPStateMachineCore {
-    struct TriggerOrderFromSignalRequest {
-        bytes32 orderId;
-        bytes32 planId;
-        address creator;
-        bytes32 triggerOriginOrderId;
-        bytes32 originPlanId;
-        bytes32 triggerHookId;
-        bytes32 triggerStageId;
-        bytes32 originSourceId;
-        bytes32 originSignalId;
-        bytes32 payloadHash;
-        bytes32 idempotencyKey;
-        address submitter;
-        uint256 deadline;
-    }
-
     struct FactAttribution {
         bytes32 sourceId;
         bytes32 signalId;
@@ -39,15 +23,6 @@ interface IUVPStateMachineCore {
     }
 
     function supplierRegistry() external view returns (address);
-
-    function hasTriggerOriginConsent(
-        bytes32 originPlanId,
-        bytes32 originOrderId,
-        bytes32 originSourceId,
-        bytes32 originSignalId,
-        address party,
-        FactAttribution calldata originAttribution
-    ) external view returns (bool);
 
     function effectiveStageSupplier(bytes32 planId, bytes32 orderId, bytes32 stageId) external view returns (bytes32);
 
@@ -100,11 +75,7 @@ interface IUVPStateMachineCore {
 
     function lastSignalSubmitter(bytes32 planId, bytes32 orderId, bytes32 sourceId) external view returns (address);
 
-    function orderCreator(bytes32 planId, bytes32 orderId) external view returns (address);
-
     function orderExists(bytes32 planId, bytes32 orderId) external view returns (bool);
-
-    function orderLinkModule() external view returns (address);
 
     function isPlanStage(bytes32 planId, bytes32 stageId) external view returns (bool);
 
@@ -171,12 +142,6 @@ interface IUVPStateMachineCore {
         bytes32 payloadHash,
         bytes32 idempotencyKey,
         address submitter
-    ) external;
-
-    function triggerOrderFromSignalFromModule(
-        TriggerOrderFromSignalRequest calldata trigger,
-        address relayer,
-        FactAttribution[] calldata originFactAttributions
     ) external;
 
     function getSignal(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId)

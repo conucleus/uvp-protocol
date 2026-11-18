@@ -1,6 +1,5 @@
-// Plan registration and outside-trigger birth calldata builders: the two-step
-// commitPlan/finalizePlan encoding, the PlanCommit digest, and the
-// triggerOrderFromOutsideFor calldata are protocol-bindings' own contract.
+// Plan registration calldata builders: the two-step commitPlan/finalizePlan
+// encoding and the PlanCommit digest are protocol-bindings' own contract.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { decodeFunctionData, type Hex } from "viem";
@@ -10,8 +9,6 @@ import {
   buildPlanCommitCall,
   buildPlanCommitTypedDataFor,
   buildPlanFinalizeCall,
-  buildTriggerOrderFromOutsideForCall,
-  buildTriggerOrderFromOutsideTypedData,
   type PlanRegistrationArgs,
 } from "../src/index.js";
 
@@ -71,7 +68,6 @@ describe("plan registration builders", () => {
         readonly deadline: bigint;
         readonly hooksHash: string;
         readonly supplierBindingsRoot: string;
-        readonly birthAuthorizer: string;
       },
       readonly { readonly instructions: readonly { readonly op: number }[] }[],
       readonly { readonly supplierId: string; readonly kind: number }[],
@@ -81,7 +77,6 @@ describe("plan registration builders", () => {
     assert.equal(commit.deadline, 1_700_000_000n);
     assert.equal(commit.hooksHash, registration.hooksHash);
     assert.equal(commit.supplierBindingsRoot, registration.supplierBindingsRoot);
-    assert.equal(commit.birthAuthorizer, PUBLISHER);
     assert.deepEqual(hooks[0]?.instructions.map((instruction) => instruction.op), [0, 2, 4]);
     assert.deepEqual(
       bindings.map((binding) => [binding.supplierId, binding.kind]),
@@ -101,7 +96,7 @@ describe("plan registration builders", () => {
     assert.equal(typedData.primaryType, PLAN_COMMIT_PRIMARY_TYPE);
     assert.deepEqual(typedData.domain, {
       name: "UVPStateMachine",
-      version: "0.19",
+      version: "0.20",
       chainId: 31337,
       verifyingContract: STATE_MACHINE,
     });
@@ -112,7 +107,6 @@ describe("plan registration builders", () => {
       typedData.message.supplierBindingsRoot,
       registration.supplierBindingsRoot,
     );
-    assert.equal(typedData.message.birthAuthorizer, PUBLISHER);
     assert.equal(typedData.message.deadline, "1700000000");
   });
 
@@ -124,44 +118,5 @@ describe("plan registration builders", () => {
     assert.equal(decoded.functionName, "finalizePlan");
     assert.ok(decoded.args);
     assert.equal(decoded.args[0], registration.planId);
-  });
-
-  it("builds order birth calldata through the triggerOrderFromOutsideFor surface", () => {
-    const trigger = {
-      planId: registration.planId,
-      creator: PUBLISHER,
-      triggerHookId: bytes32("11"),
-      triggerStageId: bytes32("12"),
-      sourceId: bytes32("13"),
-      signalId: bytes32("14"),
-      payloadHash: bytes32("15"),
-      idempotencyKey: bytes32("16"),
-      submitter: PUBLISHER,
-      deadline: 1_700_000_000n,
-    };
-    const birthFactAttribution = {
-      sourceId: bytes32("13"),
-      signalId: bytes32("14"),
-      stageId: bytes32("00"),
-      capabilityProof: [],
-    };
-    const typedData = buildTriggerOrderFromOutsideTypedData({
-      ...trigger,
-      chainId: 31337,
-      verifyingContract: STATE_MACHINE,
-    });
-    assert.equal(typedData.primaryType, "UVPStateMachineTriggerOrderFromOutside");
-    assert.equal("authorizationsHash" in typedData.message, false);
-
-    const call = buildTriggerOrderFromOutsideForCall(
-      { stateMachineAddress: STATE_MACHINE, chainId: 31337 },
-      { ...trigger, signature: SIGNATURE, birthFactAttribution },
-    );
-    const decoded = decodeFunctionData({ abi: STATE_MACHINE_ABI, data: call.data });
-    assert.equal(decoded.functionName, "triggerOrderFromOutsideFor");
-    assert.ok(decoded.args);
-    assert.equal(decoded.args[1], SIGNATURE);
-    assert.deepEqual(decoded.args[2], birthFactAttribution);
-    assert.equal((decoded.args[0] as { readonly planId: string }).planId, registration.planId);
   });
 });

@@ -49,7 +49,6 @@ export interface ChainSignal {
   /** 代付交易的钱包；业务签名者始终是 submitter。 */
   readonly relayer?: Address;
   readonly factStageId?: Hex;
-  readonly replayedFromFork?: boolean;
   readonly submittedAt: ChainProvenance;
   readonly proof: ChainProof;
 }
@@ -158,29 +157,6 @@ export interface ChainTaskProjection {
   readonly proof: ChainProof;
 }
 
-export interface ChainOrderTriggerLink {
-  readonly triggeredOrderId: Hex;
-  readonly triggerOriginOrderId: Hex;
-  readonly triggerStageId: Hex;
-  readonly originPlanId?: Hex;
-  readonly originSourceId: Hex;
-  readonly originSignalId: Hex;
-  readonly linkedAt: ChainProvenance;
-  readonly proof: ChainProof;
-}
-
-export interface ChainOrderFork {
-  readonly orderId: Hex;
-  readonly parentOrderId: Hex;
-  readonly approvalSourceId: Hex;
-  readonly approvalSignalId: Hex;
-  readonly initiator: Address;
-  readonly forkPayloadHash?: Hex;
-  readonly replayedFactKeys?: readonly Hex[];
-  readonly forkedAt: ChainProvenance;
-  readonly proof: ChainProof;
-}
-
 export type ChainOrderStatus = "registered" | "unknown";
 
 export interface ChainOrderProjection {
@@ -193,14 +169,11 @@ export interface ChainOrderProjection {
   readonly status: ChainOrderStatus;
   readonly currentStage?: Hex;
   readonly relayer?: Address;
-  readonly creator?: Address;
   readonly signals: Readonly<Record<string, ChainSignal>>;
   readonly derivedSignals: Readonly<Record<string, ChainDerivedSignal>>;
   readonly stageMaterializations: Readonly<Record<string, ChainStageMaterialization>>;
   readonly stageSupplierAssignments: Readonly<Record<string, ChainStageSupplierAssignment>>;
   readonly stageFiles: Readonly<Record<string, ChainStageFileMap>>;
-  readonly triggerLink?: ChainOrderTriggerLink;
-  readonly forkLineage?: ChainOrderFork;
   readonly hooks: Readonly<Record<string, ChainHook>>;
   readonly tasks: Readonly<Record<string, ChainTaskProjection>>;
   readonly timeline: readonly ChainTimelineEvent[];
@@ -221,7 +194,7 @@ export interface ChainModuleProjection {
 
 export type ChainPlanCapabilityEnrichmentStatus = "enriched" | "failed";
 
-export type ChainSignalTargetRelation = "current" | "triggerOrigin" | "unknown";
+export type ChainSignalTargetRelation = "current" | "unknown";
 
 export interface ChainStageSelectorBinding {
   readonly selectorStageIdentifier?: string;
@@ -258,7 +231,6 @@ export interface ChainPlanProjection {
   readonly hooksHash?: Hex;
   readonly capabilitiesRoot?: Hex;
   readonly supplierBindingsRoot?: Hex;
-  readonly birthAuthorizer?: Address;
   readonly committedAt?: ChainProvenance;
   readonly finalizedAt?: ChainProvenance;
   readonly selectorBindings: readonly ChainStageSelectorBinding[];

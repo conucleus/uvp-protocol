@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPPlanMetadataModule",
-  "abiVersion": "0.8",
+  "abiVersion": "0.9",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPPlanMetadataModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPPlanMetadataModule.sol/UVPPlanMetadataModule.json",
   "compiler": {
@@ -9,20 +9,16 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x604892a2d11c3ad89bf477e1f6c22fcbcf050289dc46ddd2d007cb9db7f3a03a",
-    "bytecodeHash": "0x6c24fd98142bac2de4336651899a946069336c2a7d198b144b108af89bf13c7f",
-    "deployedBytecodeHash": "0x43d59d2265a85a16c5b48c0c6fe4dc994278a4781b424164b2880281f83b9b55",
-    "artifactHash": "0x2a954387db760a052d87a53046f2917dd3c83be12a9a8d60e2e5cdae3218a0a3"
+    "abiHash": "0xd07a4b1324fb0ce197a09dde1fb7157ce22de8589f8cdac2bb64123d5508623a",
+    "bytecodeHash": "0x9c65dfd00ee567a0d384a74c8f1304a3158d95be0e9692819c453df22e05659d",
+    "deployedBytecodeHash": "0xa00653a1aa00dcf7460a81df5a7875c1b52b201f59868beb1e49e30313fa3d24",
+    "artifactHash": "0x6dd332dc6a2a2776e891309a286e52d8725f0581d2c37bb705847e93ab245825"
   },
   "events": {},
   "functions": {
     "SIGNAL_TARGET_CURRENT_ORDER": {
       "signature": "SIGNAL_TARGET_CURRENT_ORDER()",
       "selector": "0x06b6c489"
-    },
-    "SIGNAL_TARGET_TRIGGER_ORIGIN": {
-      "signature": "SIGNAL_TARGET_TRIGGER_ORIGIN()",
-      "selector": "0x909f38ec"
     },
     "capabilitiesRoot": {
       "signature": "capabilitiesRoot(bytes32)",

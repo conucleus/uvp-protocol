@@ -22,7 +22,7 @@ interface CapabilityInput {
   readonly stageId: HexString;
   readonly targetSourceId: HexString;
   readonly signalId: HexString;
-  readonly targetOrderRelation: 0 | 1;
+  readonly targetOrderRelation: 0;
 }
 
 interface Sample {
@@ -131,7 +131,7 @@ const signals = {
 
 const mixedTables = buildSample(
   "mixed-tables-odd-leaves",
-  "2 selector bindings + 3 signal capabilities（含 relation=1）= 5 叶奇数集，钉奇数尾叶提升",
+  "2 selector bindings + 3 signal capabilities = 5 叶奇数集，钉奇数尾叶提升",
   [
     { selectorStageId: stages.init, targetStageId: stages.audit },
     { selectorStageId: stages.init, targetStageId: stages.settle },
@@ -139,7 +139,7 @@ const mixedTables = buildSample(
   [
     { stageId: stages.audit, targetSourceId: sources.payment, signalId: signals.ready, targetOrderRelation: 0 },
     { stageId: stages.init, targetSourceId: sources.payment, signalId: signals.confirmed, targetOrderRelation: 0 },
-    { stageId: stages.settle, targetSourceId: sources.evidence, signalId: signals.failed, targetOrderRelation: 1 },
+    { stageId: stages.settle, targetSourceId: sources.evidence, signalId: signals.failed, targetOrderRelation: 0 },
   ],
 );
 
@@ -153,7 +153,7 @@ const duplicateLeaves = buildSample(
   ],
   [
     { stageId: stages.audit, targetSourceId: sources.payment, signalId: signals.ready, targetOrderRelation: 0 },
-    { stageId: stages.settle, targetSourceId: sources.evidence, signalId: signals.failed, targetOrderRelation: 1 },
+    { stageId: stages.settle, targetSourceId: sources.evidence, signalId: signals.failed, targetOrderRelation: 0 },
     { stageId: stages.audit, targetSourceId: sources.payment, signalId: signals.ready, targetOrderRelation: 0 },
   ],
 );
@@ -169,7 +169,7 @@ const deepLeaves = buildSample(
     stageId: word(`deep.stage-${index}`),
     targetSourceId: word(`deep.source-${index % 5}`),
     signalId: word(`deep.signal-${index}`),
-    targetOrderRelation: (index % 3 === 0 ? 1 : 0) as 0 | 1,
+    targetOrderRelation: 0,
   })),
 );
 
@@ -184,7 +184,7 @@ const largeTables = buildSample(
     stageId: word(`large.stage-${index}`),
     targetSourceId: word(`large.source-${index % 8}`),
     signalId: word(`large.signal-${index}`),
-    targetOrderRelation: (index % 2 === 0 ? 0 : 1) as 0 | 1,
+    targetOrderRelation: 0,
   })),
 );
 
@@ -198,9 +198,9 @@ const duplicatePayloadHeavy = buildSample(
     { selectorStageId: stages.init, targetStageId: stages.audit },
   ],
   [
-    { stageId: stages.settle, targetSourceId: sources.evidence, signalId: signals.failed, targetOrderRelation: 1 },
-    { stageId: stages.settle, targetSourceId: sources.evidence, signalId: signals.failed, targetOrderRelation: 1 },
-    { stageId: stages.settle, targetSourceId: sources.evidence, signalId: signals.failed, targetOrderRelation: 1 },
+    { stageId: stages.settle, targetSourceId: sources.evidence, signalId: signals.failed, targetOrderRelation: 0 },
+    { stageId: stages.settle, targetSourceId: sources.evidence, signalId: signals.failed, targetOrderRelation: 0 },
+    { stageId: stages.settle, targetSourceId: sources.evidence, signalId: signals.failed, targetOrderRelation: 0 },
   ],
 );
 

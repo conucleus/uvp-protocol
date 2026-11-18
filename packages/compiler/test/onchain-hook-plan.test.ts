@@ -178,7 +178,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
         stageId: capability.stageId,
         targetSourceId: capability.targetSourceId,
         signalId: capability.signalId,
-        targetOrderRelation: capability.targetOrderRelation === "current" ? 0 : 1,
+        targetOrderRelation: 0,
       })),
     ),
   );
@@ -762,7 +762,7 @@ test("compiles capability tables beyond gas caps into a verifiable capabilitiesR
     stageId: keccak256Hex(`capability.stage-${index}`),
     targetSourceId: keccak256Hex(`capability.source-${index}`),
     signalId: keccak256Hex(`stage.signal-${index}`),
-    targetOrderRelation: (index % 2 === 0 ? 0 : 1) as 0 | 1,
+    targetOrderRelation: 0 as const,
   }));
   const root = capabilitiesRootOf(tableBindings, tableCapabilities);
   assert.notEqual(root, EMPTY_MERKLE_ROOT);
@@ -807,18 +807,6 @@ test("compiles capability tables beyond gas caps into a verifiable capabilitiesR
       ),
     );
   }
-  assert.ok(
-    !verifyMerkleProof(
-      root,
-      signalCapabilityLeaf(
-        deepCapability.stageId,
-        deepCapability.targetSourceId,
-        deepCapability.signalId,
-        (deepCapability.targetOrderRelation === 0 ? 1 : 0) as 0 | 1,
-      ),
-      deepCapabilityProof,
-    ),
-  );
 
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
   const template = onchain.signalCapabilities[0];
@@ -2291,16 +2279,6 @@ test("capabilitiesRoot varies with table contents and pins empty tables to EMPTY
   assert.notEqual(withBinding.capabilitiesRoot, withoutBinding.capabilitiesRoot);
   assert.notEqual(withoutBinding.capabilitiesRoot, EMPTY_MERKLE_ROOT);
 
-  const tables = capabilityTablesOf(withoutBinding);
-  const flipped = tables.signalCapabilities.map((capability, index) =>
-    index === 0
-      ? { ...capability, targetOrderRelation: (capability.targetOrderRelation === 0 ? 1 : 0) as 0 | 1 }
-      : capability,
-  );
-  assert.notEqual(
-    capabilitiesRootOf(tables.selectorBindings, flipped),
-    withoutBinding.capabilitiesRoot,
-  );
   assert.equal(
     withBinding.capabilitiesRoot,
     artifactCapabilitiesRoot(withBinding),

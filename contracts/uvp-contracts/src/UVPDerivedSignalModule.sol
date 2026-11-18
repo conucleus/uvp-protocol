@@ -16,13 +16,6 @@ interface IUVPPlanMetadataModuleForDerivedSignal {
     ) external view returns (bool);
 }
 
-interface IUVPOrderLinkModuleForDerivedSignal {
-    function targetOrderRelation(bytes32 fromPlanId, bytes32 fromOrderId, bytes32 targetPlanId, bytes32 targetOrderId)
-        external
-        view
-        returns (uint8);
-}
-
 contract UVPDerivedSignalModule {
     error ExpiredSignalSignature(uint256 deadline);
     error InvalidSignalCapability();
@@ -31,6 +24,7 @@ contract UVPDerivedSignalModule {
     error UnauthorizedSignalCaller(address expectedCaller, address actualCaller);
     error UnauthorizedSignalSubmitter(bytes32 orderId, bytes32 sourceId, bytes32 signalId, address submitter);
     error UnknownOrder();
+    error UnsupportedTargetOrderRelation();
     error ZeroSignalId();
     error ZeroSourceId();
     error ZeroSubmitter();
@@ -74,7 +68,6 @@ contract UVPDerivedSignalModule {
 
     struct DerivedSignalProofs {
         bytes32[] fromCapabilityProof;
-        bytes32[] targetCapabilityProof;
     }
 
     constructor(address stateMachineAddress) {
@@ -191,41 +184,21 @@ contract UVPDerivedSignalModule {
         if (request.signalId == bytes32(0)) {
             revert ZeroSignalId();
         }
-        if (
-            !stateMachine.orderExists(request.fromPlanId, request.fromOrderId)
-                || !stateMachine.orderExists(request.targetPlanId, request.targetOrderId)
-        ) {
+        relation = _targetOrderRelation(request);
+        if (!stateMachine.orderExists(request.fromPlanId, request.fromOrderId)) {
             revert UnknownOrder();
         }
 
-        {
-            relation = _targetOrderRelation(
-                request.fromPlanId, request.fromOrderId, request.targetPlanId, request.targetOrderId
-            );
-            if (!_planMetadata()
-                    .verifySignalCapability(
-                        request.fromPlanId,
-                        request.fromStageId,
-                        request.targetSourceId,
-                        request.signalId,
-                        relation,
-                        proofs.fromCapabilityProof
-                    )) {
-                revert InvalidSignalCapability();
-            }
-            if (relation != 0) {
-                if (!_planMetadata()
-                        .verifySignalCapability(
-                            request.targetPlanId,
-                            request.fromStageId,
-                            request.targetSourceId,
-                            request.signalId,
-                            relation,
-                            proofs.targetCapabilityProof
-                        )) {
-                    revert InvalidSignalCapability();
-                }
-            }
+        if (!_planMetadata()
+                .verifySignalCapability(
+                    request.fromPlanId,
+                    request.fromStageId,
+                    request.targetSourceId,
+                    request.signalId,
+                    relation,
+                    proofs.fromCapabilityProof
+                )) {
+            revert InvalidSignalCapability();
         }
         if (!stateMachine.isEffectiveStageAccount(
                 request.fromPlanId, request.fromOrderId, request.fromStageId, submitter
@@ -234,16 +207,11 @@ contract UVPDerivedSignalModule {
         }
     }
 
-    function _targetOrderRelation(bytes32 fromPlanId, bytes32 fromOrderId, bytes32 targetPlanId, bytes32 targetOrderId)
-        private
-        view
-        returns (uint8)
-    {
-        if (fromPlanId == targetPlanId && fromOrderId == targetOrderId) {
-            return 0;
+    function _targetOrderRelation(DerivedSignalRequest calldata request) private pure returns (uint8) {
+        if (request.fromPlanId != request.targetPlanId || request.fromOrderId != request.targetOrderId) {
+            revert UnsupportedTargetOrderRelation();
         }
-        return IUVPOrderLinkModuleForDerivedSignal(stateMachine.orderLinkModule())
-            .targetOrderRelation(fromPlanId, fromOrderId, targetPlanId, targetOrderId);
+        return 0;
     }
 
     function _planMetadata() private view returns (IUVPPlanMetadataModuleForDerivedSignal) {

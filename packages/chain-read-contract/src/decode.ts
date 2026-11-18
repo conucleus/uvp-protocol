@@ -17,10 +17,8 @@ import type {
   ChainHook,
   ChainHookStatus,
   ChainModuleProjection,
-  ChainOrderFork,
   ChainOrderProjection,
   ChainOrderStatus,
-  ChainOrderTriggerLink,
   ChainPlanAdmission,
   ChainPlanAdmissionsResponse,
   ChainPlanProjection,
@@ -60,7 +58,7 @@ const TASK_STATUSES: readonly ChainTaskStatus[] = ["ready", "submitted", "cancel
 const HOOK_STATUSES: readonly ChainHookStatus[] = ["init", "waiting", "ready", "cancelled", "unknown"];
 const SUPPLIER_BINDING_KINDS: readonly ChainSupplierBinding["kind"][] = ["default", "candidate"];
 const SUPPLIER_STATUSES: readonly ChainSupplierStatus[] = ["pending", "active", "suspended", "revoked"];
-const SIGNAL_TARGET_RELATIONS: readonly ChainSignalTargetRelation[] = ["current", "triggerOrigin", "unknown"];
+const SIGNAL_TARGET_RELATIONS: readonly ChainSignalTargetRelation[] = ["current", "unknown"];
 const DEPLOYMENT_STATUSES: readonly ChainDeploymentStatus[] = [
   "candidate",
   "canary",
@@ -123,7 +121,6 @@ export function decodeSignalWire(value: unknown, path = "signal"): ChainSignal {
   }
   optionalString(record, "relayer", path);
   optionalString(record, "factStageId", path);
-  optionalBoolean(record, "replayedFromFork", path);
   decodeProvenanceWire(record["submittedAt"], `${path}.submittedAt`);
   decodeProofWire(record["proof"], `${path}.proof`);
   return value as ChainSignal;
@@ -269,50 +266,6 @@ export function decodeTaskWire(value: unknown, path = "task"): ChainTaskProjecti
   return value as ChainTaskProjection;
 }
 
-export function decodeOrderTriggerLinkWire(
-  value: unknown,
-  path = "triggerLink"
-): ChainOrderTriggerLink {
-  const record = wireRecord(value, path);
-  for (const field of [
-    "triggeredOrderId",
-    "triggerOriginOrderId",
-    "triggerStageId",
-    "originSourceId",
-    "originSignalId"
-  ] as const) {
-    requireString(record, field, path);
-  }
-  optionalString(record, "originPlanId", path);
-  decodeProvenanceWire(record["linkedAt"], `${path}.linkedAt`);
-  decodeProofWire(record["proof"], `${path}.proof`);
-  return value as ChainOrderTriggerLink;
-}
-
-export function decodeOrderForkWire(value: unknown, path = "forkLineage"): ChainOrderFork {
-  const record = wireRecord(value, path);
-  for (const field of [
-    "orderId",
-    "parentOrderId",
-    "approvalSourceId",
-    "approvalSignalId",
-    "initiator"
-  ] as const) {
-    requireString(record, field, path);
-  }
-  optionalString(record, "forkPayloadHash", path);
-  if (record["replayedFactKeys"] !== undefined) {
-    decodeArray(record["replayedFactKeys"], `${path}.replayedFactKeys`).forEach((key, index) => {
-      if (typeof key !== "string") {
-        throw new ChainReadContractError(`${path}.replayedFactKeys[${index}]`, "must be a string");
-      }
-    });
-  }
-  decodeProvenanceWire(record["forkedAt"], `${path}.forkedAt`);
-  decodeProofWire(record["proof"], `${path}.proof`);
-  return value as ChainOrderFork;
-}
-
 export function decodeOrderWire(value: unknown, path = "order"): ChainOrderProjection {
   const record = wireRecord(value, path);
   requireString(record, "orderId", path);
@@ -324,7 +277,6 @@ export function decodeOrderWire(value: unknown, path = "order"): ChainOrderProje
   requireEnum(record, "status", path, ORDER_STATUSES);
   optionalString(record, "currentStage", path);
   optionalString(record, "relayer", path);
-  optionalString(record, "creator", path);
   decodeRecordMap(record["signals"], `${path}.signals`, decodeSignalWire);
   decodeRecordMap(record["derivedSignals"], `${path}.derivedSignals`, decodeDerivedSignalWire);
   decodeRecordMap(record["stageMaterializations"], `${path}.stageMaterializations`, decodeStageMaterializationWire);
@@ -340,12 +292,6 @@ export function decodeOrderWire(value: unknown, path = "order"): ChainOrderProje
   });
   optionalProvenance(record, "registeredAt", path);
   decodeProvenanceWire(record["updatedAt"], `${path}.updatedAt`);
-  if (record["triggerLink"] !== undefined) {
-    decodeOrderTriggerLinkWire(record["triggerLink"], `${path}.triggerLink`);
-  }
-  if (record["forkLineage"] !== undefined) {
-    decodeOrderForkWire(record["forkLineage"], `${path}.forkLineage`);
-  }
   return value as ChainOrderProjection;
 }
 
@@ -416,7 +362,6 @@ export function decodePlanWire(value: unknown, path = "plan"): ChainPlanProjecti
   optionalString(record, "hooksHash", path);
   optionalString(record, "capabilitiesRoot", path);
   optionalString(record, "supplierBindingsRoot", path);
-  optionalString(record, "birthAuthorizer", path);
   optionalProvenance(record, "committedAt", path);
   optionalProvenance(record, "finalizedAt", path);
   decodeArray(record["selectorBindings"], `${path}.selectorBindings`).forEach((binding, index) => {

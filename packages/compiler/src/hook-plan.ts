@@ -38,10 +38,7 @@ export class HookPlanArtifactValidationError extends Error {
   }
 }
 
-export function compareCanonicalKey(left: string, right: string): number {
-  const order = compareByCodePoint(left, right);
-  return order < 0 ? -1 : order > 0 ? 1 : 0;
-}
+export { compareCanonicalKey } from "./canonical-key.js";
 
 export function compileZhixuHookPlan(
   definition: ZhixuDefinition,

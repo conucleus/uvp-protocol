@@ -34,6 +34,13 @@ interface IUVPFileResourceModule {
         bytes32 signalStageId
     ) external;
 
+    function filePatchHash(FilePatch calldata filePatch) external pure returns (bytes32);
+
+    function filePatchDigest(bytes32 planId, bytes32 orderId, FilePatch calldata filePatch)
+        external
+        pure
+        returns (bytes32);
+
     function getStageFile(bytes32 planId, bytes32 orderId, bytes32 targetStageId, bytes32 key)
         external
         view

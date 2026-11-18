@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import {UVPStateMachine} from "../src/UVPStateMachine.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
-import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
@@ -45,8 +44,6 @@ contract Handler {
     InvariantVm private constant vm = InvariantVm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
     uint256 private constant PUBLISHER_PRIVATE_KEY = 0xc0ffee;
-    uint256 private constant SUBMITTER_PRIVATE_KEY = 0xa11ce;
-    address private constant ORDER_CREATOR = address(uint160(0xc0de));
     bytes32 private constant EMPTY_MERKLE_ROOT = keccak256("");
     bytes32 private constant SUPPLIER_BINDING_LEAF_DOMAIN = keccak256("UVP_SUPPLIER_BINDING_V1");
     uint8 private constant FLAG_ORDER_TRIGGER_MINT = 1;
@@ -54,12 +51,9 @@ contract Handler {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.19");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.20");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,address birthAuthorizer,uint256 deadline)"
-    );
-    bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
-        "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,uint256 deadline)"
     );
 
     uint256 private constant ORDER_COUNT = 2;
@@ -95,12 +89,10 @@ contract Handler {
         UVPDerivedSignalModule derivedSignal = new UVPDerivedSignalModule(address(machine));
         UVPPlanMetadataModule planMetadata = new UVPPlanMetadataModule(address(machine));
         UVPDockRegistry dockRegistry = new UVPDockRegistry(address(machine));
-        UVPOrderLinkModule orderLink = new UVPOrderLinkModule(address(machine));
         machine.setStagePatchModule(address(stagePatch));
         machine.setDerivedSignalModule(address(derivedSignal));
         machine.setDockRegistry(address(dockRegistry));
         machine.setPlanMetadataModule(address(planMetadata));
-        machine.setOrderLinkModule(address(orderLink));
         machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
         machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.setSupplierRegistry(address(registry));
@@ -173,15 +165,21 @@ contract Handler {
         bytes32 orderId = orderIds[seed % ORDER_COUNT];
         bytes32 signalId = signalIds[seed % SIGNAL_COUNT];
         try machine.submitSignal(
-            planId,
-            orderId,
-            SOURCE,
-            signalId,
-            keccak256(abi.encode("payload", seed)),
-            keccak256(abi.encode("idem", seed)),
-            _noAttribution()
-        , bytes32(0), emptyFilePatch()) {}
-            catch {}
+            UVPStateMachine.SignalSubmission({
+                planId: planId,
+                orderId: orderId,
+                sourceId: SOURCE,
+                signalId: signalId,
+                payloadHash: keccak256(abi.encode("payload", seed)),
+                idempotencyKey: keccak256(abi.encode("idem", seed)),
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        ) {} catch {}
         _observe();
     }
 
@@ -243,23 +241,40 @@ contract Handler {
     }
 
     function _birthOrder(uint256 orderIdx) private returns (bytes32 orderId) {
-        bytes32 payload = keccak256(abi.encode("birth", orderIdx));
-        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = UVPStateMachine.TriggerOrderFromOutsideRequest({
+        UVPStateMachine.SignalSubmission memory submission = UVPStateMachine.SignalSubmission({
             planId: planId,
-            creator: ORDER_CREATOR,
-            triggerHookId: hookIds[0],
-            triggerStageId: keccak256("invariant.stage.0"),
+            orderId: bytes32(0),
             sourceId: SOURCE,
             signalId: signalIds[0],
-            payloadHash: payload,
+            payloadHash: keccak256(abi.encode("birth", orderIdx)),
             idempotencyKey: keccak256(abi.encode("birth-idem", orderIdx)),
-            submitter: vm.addr(SUBMITTER_PRIVATE_KEY),
-            deadline: type(uint256).max
+            attribution: _noAttribution(),
+            filePatch: emptyFilePatch(),
+            patchHash: bytes32(0),
+            submitter: address(this),
+            deadline: block.timestamp + 1 hours
         });
-        bytes memory signature = _outsideTriggerSignature(trigger);
-        machine.triggerOrderFromOutsideFor(trigger, signature, _noAttribution());
-        return machine.triggerOrderIdFor(planId, SOURCE, signalIds[0], payload);
+        machine.submitSignal(submission, hex"");
+        try machine.submitSignal(submission, hex"") {
+            revert("duplicate trigger submission did not revert");
+        } catch (bytes memory reason) {
+            require(reason.length == 100, "unexpected duplicate trigger payload length");
+            bytes4 selector;
+            assembly ("memory-safe") {
+                selector := mload(add(reason, 0x20))
+            }
+            require(selector == UVPStateMachine.DuplicateTriggerKey.selector, "unexpected duplicate trigger revert");
+            (, , orderId) = abi.decode(_withoutSelector(reason), (address, bytes32, bytes32));
+        }
     }
+
+    function _withoutSelector(bytes memory reason) private pure returns (bytes memory data) {
+        data = new bytes(reason.length - 4);
+        for (uint256 i = 4; i < reason.length; i++) {
+            data[i - 4] = reason[i];
+        }
+    }
+
 
     function _registerPlan(
         UVPStateMachine.CompactHook[] memory hooks,
@@ -292,7 +307,6 @@ contract Handler {
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: EMPTY_MERKLE_ROOT,
             supplierBindingsRoot: MerkleCommitment.root(leaves),
-            birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: type(uint256).max
         });
         bytes32 structHash = keccak256(
@@ -302,7 +316,6 @@ contract Handler {
                 commit.hooksHash,
                 commit.capabilitiesRoot,
                 commit.supplierBindingsRoot,
-                commit.birthAuthorizer,
                 commit.deadline
             )
         );
@@ -310,29 +323,6 @@ contract Handler {
         bytes32 registered = machine.commitPlan(commit, hooks, bindings, _packedSignature(v, r, s));
         machine.finalizePlan(registered);
         return registered;
-    }
-
-    function _outsideTriggerSignature(UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger)
-        private
-        returns (bytes memory)
-    {
-        bytes32 structHash = keccak256(
-            abi.encode(
-                TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH,
-                trigger.planId,
-                trigger.creator,
-                trigger.triggerHookId,
-                trigger.triggerStageId,
-                trigger.sourceId,
-                trigger.signalId,
-                trigger.payloadHash,
-                trigger.idempotencyKey,
-                trigger.submitter,
-                trigger.deadline
-            )
-        );
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(SUBMITTER_PRIVATE_KEY, _digest(structHash));
-        return _packedSignature(v, r, s);
     }
 
     function _digest(bytes32 structHash) private view returns (bytes32) {

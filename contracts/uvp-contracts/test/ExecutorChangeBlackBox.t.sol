@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import {UVPStateMachine} from "../src/UVPStateMachine.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
-import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
@@ -85,15 +84,16 @@ contract StageSupplierChangeBlackBoxTest {
     uint256 private constant DYN_PRIVATE_KEY = 0xb10;
     uint256 private constant PUBLISHER_PRIVATE_KEY = 0xc0ffee;
 
-    address private constant CREATOR = address(uint160(0xc0de));
     address private constant STRANGER = address(uint160(0xbad));
 
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,address birthAuthorizer,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,uint256 deadline)"
     );
-    bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
-        "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
+    bytes32 private constant SIGNAL_SUBMISSION_TYPEHASH = keccak256(
+        "UVPStateMachineSignalSubmission(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 patchHash,bytes32 attributionHash,address submitter,uint256 deadline)"
     );
+    bytes32 private constant FACT_ATTRIBUTION_TYPEHASH =
+        keccak256("FactAttribution(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof)");
 
     UVPStateMachine private machine;
     UVPStagePatchModule private stagePatch;
@@ -173,7 +173,7 @@ contract StageSupplierChangeBlackBoxTest {
         );
     }
 
-    function testSelectorMustBeEffectiveSupplierAccountAndOrderCreatorHasNoBypass() public {
+    function testSelectorMustBeEffectiveSupplierAccount() public {
         UVPStagePatchModule.StageSupplierPatch memory patch =
             _patch(STAGE_AUDIT, supplierCand1, bytes32(0), 1);
 
@@ -181,10 +181,10 @@ contract StageSupplierChangeBlackBoxTest {
         bytes32[] memory candidateProof = _candidateProof(supplierCand1);
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStagePatchModule.UnauthorizedStageSupplierPatchSelector.selector, orderId, STAGE_INIT, CREATOR
+                UVPStagePatchModule.UnauthorizedStageSupplierPatchSelector.selector, orderId, STAGE_INIT, STRANGER
             )
         );
-        vm.prank(CREATOR);
+        vm.prank(STRANGER);
         stagePatch.applyStageSupplierPatch(planId, orderId, patch, selectorProof, candidateProof);
 
         PreparedPatch memory prepared = _prepareWithSelector(patch, _cand1(), CAND1_PRIVATE_KEY);
@@ -412,77 +412,6 @@ contract StageSupplierChangeBlackBoxTest {
         );
     }
 
-    function testPatchOnForkedOrderUsesReplayedStageCounts() public {
-        _applyDirect(
-            _patch(STAGE_AUDIT, supplierCand1, bytes32(0), 1),
-            _bindingProof(STAGE_AUDIT),
-            _candidateProof(supplierCand1)
-        );
-        _submit(STAGE_AUDIT, STAGE_AUDIT, SIGNAL_STAGE_DONE, _cand1());
-
-        UVPStateMachine.ForkBirthFact[] memory facts = new UVPStateMachine.ForkBirthFact[](2);
-        facts[0] = UVPStateMachine.ForkBirthFact({
-            sourceId: STAGE_AUDIT, signalId: SIGNAL_STAGE_DONE, payloadHash: PAYLOAD_HASH, idempotencyKey: IDEMPOTENCY_KEY
-        });
-        facts[1] = UVPStateMachine.ForkBirthFact({
-            sourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_INIT_CMP,
-            payloadHash: PAYLOAD_HASH,
-            idempotencyKey: IDEMPOTENCY_KEY
-        });
-        vm.prank(CREATOR);
-        bytes32 child = machine.forkOrder(
-            planId, orderId, bytes32(uint256(0xF100)), STAGE_AUDIT, SIGNAL_STAGE_DONE, facts
-        );
-        (uint256 childCount, address childLast,,) = machine.stageSignalState(planId, child, STAGE_AUDIT);
-        require(childCount == 1 && childLast == _cand1(), "replayed stage count wrong");
-
-        _expectPatchRevertOn(
-            child,
-            abi.encodeWithSelector(UVPStagePatchModule.StageAlreadyHasSignal.selector, child, STAGE_AUDIT),
-            _patch(STAGE_AUDIT, supplierCand2, bytes32(0), 1),
-            _bindingProof(STAGE_AUDIT),
-            _candidateProof(supplierCand2)
-        );
-        _expectPatchRevertOn(
-            child,
-            abi.encodeWithSelector(
-                UVPStagePatchModule.StageSupplierPatchPreviousSupplierMismatch.selector,
-                child,
-                STAGE_AUDIT,
-                supplierDefault,
-                supplierCand1
-            ),
-            _patch(STAGE_AUDIT, supplierCand2, supplierCand1, 2),
-            _bindingProof(STAGE_AUDIT),
-            _candidateProof(supplierCand2)
-        );
-
-        PreparedPatch memory handoff =
-            _prepareFor(child, _patch(STAGE_AUDIT, supplierCand2, supplierDefault, 2));
-        handoff.previousSupplierSignature =
-            _signatureOver(DEFAULT_PRIVATE_KEY, _digestFor(child, handoff.patch, handoff.selector, handoff.deadline));
-        _sendRelayedFor(child, handoff);
-        (bytes32 supplierId,,) = machine.stageSupplierAssignment(planId, child, STAGE_AUDIT);
-        require(supplierId == supplierCand2, "fork child handoff failed");
-
-        UVPStateMachine.FactAttribution memory reviewAttribution =
-            _attribution(STAGE_AUDIT, STAGE_AUDIT, SIGNAL_STAGE_REVIEW);
-        FilePatch memory noFilePatch = emptyFilePatch();
-        vm.prank(_cand2());
-        machine.submitSignal(
-            planId,
-            child,
-            STAGE_AUDIT,
-            SIGNAL_STAGE_REVIEW,
-            PAYLOAD_HASH_2,
-            IDEMPOTENCY_KEY_2,
-            reviewAttribution,
-            bytes32(0),
-            noFilePatch
-        );
-    }
-
     function _deployStack() private {
         machine = new UVPStateMachine();
         suppliers = new UVPSupplierRegistry();
@@ -490,13 +419,11 @@ contract StageSupplierChangeBlackBoxTest {
         stagePatch = new UVPStagePatchModule(address(machine));
         UVPDerivedSignalModule derivedSignal = new UVPDerivedSignalModule(address(machine));
         UVPDockRegistry dockRegistry = new UVPDockRegistry(address(machine));
-        UVPOrderLinkModule orderLink = new UVPOrderLinkModule(address(machine));
         files = new UVPFileResourceModule(address(machine));
         machine.setStagePatchModule(address(stagePatch));
         machine.setDerivedSignalModule(address(derivedSignal));
         machine.setDockRegistry(address(dockRegistry));
         machine.setPlanMetadataModule(address(metadata));
-        machine.setOrderLinkModule(address(orderLink));
         machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.setFileResourceModule(address(files));
         machine.setSupplierRegistry(address(suppliers));
@@ -561,31 +488,26 @@ contract StageSupplierChangeBlackBoxTest {
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: MerkleCommitment.root(capabilityLeaves),
             supplierBindingsRoot: MerkleCommitment.root(bindingLeaves),
-            birthAuthorizer: _selector(),
             deadline: block.timestamp + 1 hours
         });
         planId = machine.commitPlan(commit, hooks, bindings, _sign(PUBLISHER_PRIVATE_KEY, _planCommitDigest(commit)));
         machine.finalizePlan(planId);
 
-        orderId = machine.triggerOrderIdFor(planId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, PAYLOAD_HASH);
-        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger =
-            UVPStateMachine.TriggerOrderFromOutsideRequest({
-                planId: planId,
-                creator: CREATOR,
-                triggerHookId: HOOK_BIRTH,
-                triggerStageId: STAGE_INIT,
-                sourceId: SOURCE_BOOTSTRAP,
-                signalId: SIGNAL_ORDER_START,
-                payloadHash: PAYLOAD_HASH,
-                idempotencyKey: IDEMPOTENCY_KEY,
-                submitter: _selector(),
-                deadline: block.timestamp + 1 hours
-            });
-        machine.triggerOrderFromOutsideFor(
-            trigger,
-            _sign(SELECTOR_PRIVATE_KEY, _triggerDigest(trigger)),
-            _attribution(STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START)
-        );
+        UVPStateMachine.SignalSubmission memory birth = UVPStateMachine.SignalSubmission({
+            planId: planId,
+            orderId: bytes32(0),
+            sourceId: SOURCE_BOOTSTRAP,
+            signalId: SIGNAL_ORDER_START,
+            payloadHash: PAYLOAD_HASH,
+            idempotencyKey: IDEMPOTENCY_KEY,
+            attribution: _attribution(STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START),
+            filePatch: emptyFilePatch(),
+            patchHash: bytes32(0),
+            submitter: _selector(),
+            deadline: block.timestamp + 1 hours
+        });
+        machine.submitSignal(birth, _sign(SELECTOR_PRIVATE_KEY, _signalSubmissionDigest(birth)));
+        orderId = _createdTriggerOrderId(birth);
 
         _submit(SOURCE_BOOTSTRAP, STAGE_INIT, SIGNAL_INIT_CMP, _selector());
         _submit(SOURCE_BOOTSTRAP, STAGE_INIT, SIGNAL_FIXED_READY, _selector());
@@ -702,13 +624,23 @@ contract StageSupplierChangeBlackBoxTest {
     }
 
     function _submit(bytes32 sourceId, bytes32 factStageId, bytes32 signalId, address submitter) private {
-        UVPStateMachine.FactAttribution memory attribution = _attribution(factStageId, sourceId, signalId);
-        FilePatch memory noFilePatch = emptyFilePatch();
+        UVPStateMachine.SignalSubmission memory submission = UVPStateMachine.SignalSubmission({
+            planId: planId,
+            orderId: orderId,
+            sourceId: sourceId,
+            signalId: signalId,
+            payloadHash: PAYLOAD_HASH,
+            idempotencyKey: IDEMPOTENCY_KEY,
+            attribution: _attribution(factStageId, sourceId, signalId),
+            filePatch: emptyFilePatch(),
+            patchHash: bytes32(0),
+            submitter: submitter,
+            deadline: block.timestamp + 1 hours
+        });
         vm.prank(submitter);
-        machine.submitSignal(
-            planId, orderId, sourceId, signalId, PAYLOAD_HASH, IDEMPOTENCY_KEY, attribution, bytes32(0), noFilePatch
-        );
+        machine.submitSignal(submission, hex"");
     }
+
 
     function _submitExpectRevert(
         bytes memory revertData,
@@ -717,14 +649,81 @@ contract StageSupplierChangeBlackBoxTest {
         bytes32 signalId,
         address submitter
     ) private {
-        UVPStateMachine.FactAttribution memory attribution = _attribution(factStageId, sourceId, signalId);
-        FilePatch memory noFilePatch = emptyFilePatch();
+        UVPStateMachine.SignalSubmission memory submission = UVPStateMachine.SignalSubmission({
+            planId: planId,
+            orderId: orderId,
+            sourceId: sourceId,
+            signalId: signalId,
+            payloadHash: PAYLOAD_HASH,
+            idempotencyKey: IDEMPOTENCY_KEY,
+            attribution: _attribution(factStageId, sourceId, signalId),
+            filePatch: emptyFilePatch(),
+            patchHash: bytes32(0),
+            submitter: submitter,
+            deadline: block.timestamp + 1 hours
+        });
         vm.expectRevert(revertData);
         vm.prank(submitter);
-        machine.submitSignal(
-            planId, orderId, sourceId, signalId, PAYLOAD_HASH, IDEMPOTENCY_KEY, attribution, bytes32(0), noFilePatch
-        );
+        machine.submitSignal(submission, hex"");
     }
+
+    function _createdTriggerOrderId(UVPStateMachine.SignalSubmission memory submission)
+        private
+        returns (bytes32 generatedOrderId)
+    {
+        try machine.submitSignal(submission, _sign(SELECTOR_PRIVATE_KEY, _signalSubmissionDigest(submission))) {
+            revert("duplicate trigger submission did not revert");
+        } catch (bytes memory reason) {
+            require(reason.length == 100, "unexpected duplicate trigger payload length");
+            bytes4 selector;
+            assembly ("memory-safe") {
+                selector := mload(add(reason, 0x20))
+            }
+            require(selector == UVPStateMachine.DuplicateTriggerKey.selector, "unexpected duplicate trigger revert");
+            (, , generatedOrderId) = abi.decode(_withoutSelector(reason), (address, bytes32, bytes32));
+        }
+    }
+
+
+    function _withoutSelector(bytes memory reason) private pure returns (bytes memory data) {
+        data = new bytes(reason.length - 4);
+        for (uint256 i = 4; i < reason.length; i++) {
+            data[i - 4] = reason[i];
+        }
+    }
+
+    function _signalSubmissionDigest(UVPStateMachine.SignalSubmission memory submission)
+        private
+        view
+        returns (bytes32)
+    {
+        bytes32 attributionHash = keccak256(
+            abi.encode(
+                FACT_ATTRIBUTION_TYPEHASH,
+                submission.attribution.sourceId,
+                submission.attribution.signalId,
+                submission.attribution.stageId,
+                keccak256(abi.encode(submission.attribution.capabilityProof))
+            )
+        );
+        bytes32 structHash = keccak256(
+            abi.encode(
+                SIGNAL_SUBMISSION_TYPEHASH,
+                submission.planId,
+                submission.orderId,
+                submission.sourceId,
+                submission.signalId,
+                submission.payloadHash,
+                submission.idempotencyKey,
+                submission.patchHash,
+                attributionHash,
+                submission.submitter,
+                submission.deadline
+            )
+        );
+        return keccak256(abi.encodePacked("\x19\x01", machine.DOMAIN_SEPARATOR(), structHash));
+    }
+
 
     function _attribution(bytes32 stageId, bytes32 sourceId, bytes32 signalId)
         private
@@ -781,36 +780,7 @@ contract StageSupplierChangeBlackBoxTest {
                         commit.hooksHash,
                         commit.capabilitiesRoot,
                         commit.supplierBindingsRoot,
-                        commit.birthAuthorizer,
                         commit.deadline
-                    )
-                )
-            )
-        );
-    }
-
-    function _triggerDigest(UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger)
-        private
-        view
-        returns (bytes32)
-    {
-        return keccak256(
-            abi.encodePacked(
-                "\x19\x01",
-                machine.DOMAIN_SEPARATOR(),
-                keccak256(
-                    abi.encode(
-                        TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH,
-                        trigger.planId,
-                        trigger.creator,
-                        trigger.triggerHookId,
-                        trigger.triggerStageId,
-                        trigger.sourceId,
-                        trigger.signalId,
-                        trigger.payloadHash,
-                        trigger.idempotencyKey,
-                        trigger.submitter,
-                        trigger.deadline
                     )
                 )
             )

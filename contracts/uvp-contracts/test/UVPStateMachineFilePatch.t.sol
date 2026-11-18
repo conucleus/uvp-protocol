@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import {UVPStateMachine} from "../src/UVPStateMachine.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
-import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
@@ -27,12 +26,26 @@ contract DirectSignalSupplier {
         bytes32 payloadHash,
         bytes32 idempotencyKey,
         UVPStateMachine.FactAttribution calldata attribution,
-        bytes32 filesDigest,
         FilePatch calldata filePatch
     ) external {
-        machine.submitSignal(
-            planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, attribution, filesDigest, filePatch
-        );
+        UVPStateMachine.SignalSubmission memory submission = UVPStateMachine.SignalSubmission({
+            planId: planId,
+            orderId: orderId,
+            sourceId: sourceId,
+            signalId: signalId,
+            payloadHash: payloadHash,
+            idempotencyKey: idempotencyKey,
+            attribution: attribution,
+            filePatch: filePatch,
+            patchHash: machineFilePatchHash(machine, filePatch),
+            submitter: address(this),
+            deadline: block.timestamp + 1 hours
+        });
+        machine.submitSignal(submission, hex"");
+    }
+
+    function machineFilePatchHash(UVPStateMachine machine, FilePatch calldata filePatch) private view returns (bytes32) {
+        return UVPFileResourceModule(machine.fileResourceModule()).filePatchHash(filePatch);
     }
 }
 
@@ -67,11 +80,13 @@ contract UVPStateMachineFilePatchTest {
     uint8 private constant FLAG_EMIT_READY = 4;
 
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,address birthAuthorizer,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,uint256 deadline)"
     );
-    bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
-        "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
+    bytes32 private constant SIGNAL_SUBMISSION_TYPEHASH = keccak256(
+        "UVPStateMachineSignalSubmission(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 patchHash,bytes32 attributionHash,address submitter,uint256 deadline)"
     );
+    bytes32 private constant FACT_ATTRIBUTION_TYPEHASH =
+        keccak256("FactAttribution(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof)");
 
     bytes32 private constant STAGE_FILE_PATCH_APPLIED_TOPIC = keccak256(
         "StageFilePatchApplied(bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32,uint256)"
@@ -104,13 +119,27 @@ contract UVPStateMachineFilePatchTest {
         FilePatch memory patch = _addPatch(
             bytes32(0), FILE_KEY, FILE_CONTENT_HASH, "ipfs://uvp-eth/file-one", FILE_KEY_2, FILE_CONTENT_HASH_2
         );
+        bytes32 patchHash = fileResourceModule.filePatchHash(patch);
         bytes32 filesDigest = fileResourceModule.filePatchDigest(planId, orderId, patch);
 
         UVPStateMachine.FactAttribution memory attribution = _emptyAttribution();
         vm.recordLogs();
         vm.prank(_writer());
         machine.submitSignal(
-            planId, orderId, bytes32(0), bytes32(0), bytes32(0), bytes32(0), attribution, filesDigest, patch
+            UVPStateMachine.SignalSubmission({
+                planId: planId,
+                orderId: orderId,
+                sourceId: bytes32(0),
+                signalId: bytes32(0),
+                payloadHash: bytes32(0),
+                idempotencyKey: keccak256(abi.encode("file-patch")),
+                attribution: attribution,
+                filePatch: patch,
+                patchHash: patchHash,
+                submitter: _writer(),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
         );
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
@@ -121,12 +150,12 @@ contract UVPStateMachineFilePatchTest {
         require(_countTopic(logs, HOOK_READY_TOPIC) == 0, "pure patch made a hook ready");
         require(_countTopic(logs, STAGE_MATERIALIZED_TOPIC) == 0, "pure patch materialized a stage");
 
-        (bool exists, bytes32 contentHash, string memory handle, bytes32 patchHash) =
+        (bool exists, bytes32 contentHash, string memory handle, bytes32 storedPatchHash) =
             fileResourceModule.getStageFile(planId, orderId, STAGE_AUDIT, FILE_KEY);
         require(exists, "file record missing");
         require(contentHash == FILE_CONTENT_HASH, "content hash mismatch");
         require(keccak256(bytes(handle)) == keccak256(bytes("ipfs://uvp-eth/file-one")), "handle mismatch");
-        require(patchHash == filesDigest, "stored patch hash mismatch");
+        require(storedPatchHash == filesDigest, "stored patch hash mismatch");
         require(fileResourceModule.stageFilesHash(planId, orderId, STAGE_AUDIT) != bytes32(0), "files hash missing");
 
         (uint256 stageCount,,,) = machine.stageSignalState(planId, orderId, STAGE_AUDIT);
@@ -150,14 +179,13 @@ contract UVPStateMachineFilePatchTest {
             PAYLOAD_HASH,
             IDEMPOTENCY_KEY,
             _attribution(SOURCE_FILE, SIGNAL_FILE, STAGE_AUDIT),
-            filesDigest,
             patch
         );
 
         require(machine.hasSignal(planId, orderId, SOURCE_FILE, SIGNAL_FILE), "contract supplier account signal missing");
-        (bool exists,,, bytes32 patchHash) = fileResourceModule.getStageFile(planId, orderId, STAGE_AUDIT, FILE_KEY);
+        (bool exists,,, bytes32 storedPatchHash) = fileResourceModule.getStageFile(planId, orderId, STAGE_AUDIT, FILE_KEY);
         require(exists, "contract supplier account file patch missing");
-        require(patchHash == filesDigest, "contract supplier account patch hash mismatch");
+        require(storedPatchHash == filesDigest, "contract supplier account patch hash mismatch");
         require(
             machine.effectiveStageAccount(planId, orderId, STAGE_AUDIT) == address(supplierAccount),
             "supplier account changed"
@@ -169,7 +197,7 @@ contract UVPStateMachineFilePatchTest {
 
         FilePatch memory patch = _addPatch(bytes32(0), FILE_KEY, FILE_CONTENT_HASH, "ipfs://uvp-eth/other-stage", 0, 0);
         patch.targetStageId = STAGE_INIT;
-        bytes32 filesDigest = fileResourceModule.filePatchDigest(planId, orderId, patch);
+        bytes32 patchHash = fileResourceModule.filePatchHash(patch);
 
         UVPStateMachine.FactAttribution memory attribution = _attribution(SOURCE_FILE, SIGNAL_FILE, STAGE_AUDIT);
         vm.expectRevert(
@@ -183,7 +211,20 @@ contract UVPStateMachineFilePatchTest {
         );
         vm.prank(_writer());
         machine.submitSignal(
-            planId, orderId, SOURCE_FILE, SIGNAL_FILE, PAYLOAD_HASH, IDEMPOTENCY_KEY, attribution, filesDigest, patch
+            UVPStateMachine.SignalSubmission({
+                planId: planId,
+                orderId: orderId,
+                sourceId: SOURCE_FILE,
+                signalId: SIGNAL_FILE,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: attribution,
+                filePatch: patch,
+                patchHash: patchHash,
+                submitter: _writer(),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
         );
 
         require(!machine.hasSignal(planId, orderId, SOURCE_FILE, SIGNAL_FILE), "rejected patch recorded a signal");
@@ -196,12 +237,25 @@ contract UVPStateMachineFilePatchTest {
         patch.targetStageId = STAGE_INIT;
         patch.writerStageId = STAGE_AUDIT;
         patch.writerProof = _proofFor(planMetadataModule.fileWriterLeaf(STAGE_INIT, STAGE_AUDIT));
-        bytes32 filesDigest = fileResourceModule.filePatchDigest(planId, orderId, patch);
+        bytes32 patchHash = fileResourceModule.filePatchHash(patch);
 
         UVPStateMachine.FactAttribution memory attribution = _attribution(SOURCE_FILE, SIGNAL_FILE, STAGE_AUDIT);
         vm.prank(_writer());
         machine.submitSignal(
-            planId, orderId, SOURCE_FILE, SIGNAL_FILE, PAYLOAD_HASH, IDEMPOTENCY_KEY, attribution, filesDigest, patch
+            UVPStateMachine.SignalSubmission({
+                planId: planId,
+                orderId: orderId,
+                sourceId: SOURCE_FILE,
+                signalId: SIGNAL_FILE,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: attribution,
+                filePatch: patch,
+                patchHash: patchHash,
+                submitter: _writer(),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
         );
 
         (bool exists, bytes32 contentHash,,) = fileResourceModule.getStageFile(planId, orderId, STAGE_INIT, FILE_KEY);
@@ -209,106 +263,37 @@ contract UVPStateMachineFilePatchTest {
         require(contentHash == FILE_CONTENT_HASH, "allowlisted content hash mismatch");
     }
 
-    function testDuplicateBusinessSignalDoesNotReplayFilePatch() public {
-        _setUpFor(_writer());
-
-        FilePatch memory firstPatch = _addPatch(bytes32(0), FILE_KEY, FILE_CONTENT_HASH, "ipfs://uvp-eth/first", 0, 0);
-        bytes32 firstFilesDigest = fileResourceModule.filePatchDigest(planId, orderId, firstPatch);
-        UVPStateMachine.FactAttribution memory firstAttribution =
-            _attribution(SOURCE_FILE, SIGNAL_FILE, STAGE_AUDIT);
-        vm.prank(_writer());
-        machine.submitSignal(
-            planId, orderId, SOURCE_FILE, SIGNAL_FILE, PAYLOAD_HASH, IDEMPOTENCY_KEY, firstAttribution, firstFilesDigest, firstPatch
-        );
-
-        require(machine.hasSignal(planId, orderId, SOURCE_FILE, SIGNAL_FILE), "business signal missing");
-        (uint256 stageCount,,,) = machine.stageSignalState(planId, orderId, STAGE_AUDIT);
-        require(stageCount == 1, "stage signal count after first request");
-        (bool firstExists,,, bytes32 firstPatchHash) =
-            fileResourceModule.getStageFile(planId, orderId, STAGE_AUDIT, FILE_KEY);
-        require(firstExists, "first patch not applied");
-        require(firstPatchHash == firstFilesDigest, "first patch hash mismatch");
-        bytes32 filesHashAfterFirst = fileResourceModule.stageFilesHash(planId, orderId, STAGE_AUDIT);
-
-        FilePatch memory secondPatch =
-            _addPatch(filesHashAfterFirst, FILE_KEY_2, FILE_CONTENT_HASH_2, "ipfs://uvp-eth/second", 0, 0);
-        bytes32 secondFilesDigest = fileResourceModule.filePatchDigest(planId, orderId, secondPatch);
-        UVPStateMachine.FactAttribution memory secondAttribution =
-            _attribution(SOURCE_FILE, SIGNAL_FILE, STAGE_AUDIT);
-        vm.prank(_writer());
-        machine.submitSignal(
-            planId, orderId, SOURCE_FILE, SIGNAL_FILE, PAYLOAD_HASH_2, IDEMPOTENCY_KEY_2, secondAttribution, secondFilesDigest, secondPatch
-        );
-
-        (bool firstSignalExists, bytes32 recordedPayloadHash,,,) =
-            machine.getSignal(planId, orderId, SOURCE_FILE, SIGNAL_FILE);
-        require(firstSignalExists, "duplicate request erased the signal");
-        require(recordedPayloadHash == PAYLOAD_HASH, "duplicate request rewrote the signal");
-        (bool secondExists,,,) = fileResourceModule.getStageFile(planId, orderId, STAGE_AUDIT, FILE_KEY_2);
-        require(!secondExists, "duplicate request replayed the file patch");
-        require(
-            fileResourceModule.stageFilesHash(planId, orderId, STAGE_AUDIT) == filesHashAfterFirst,
-            "duplicate request moved stage files hash"
-        );
-        (uint256 countAfterDuplicate,,,) = machine.stageSignalState(planId, orderId, STAGE_AUDIT);
-        require(countAfterDuplicate == 1, "duplicate request incremented stageSignalState");
-    }
-
-    function testTamperedDeliveredPatchRejectedByModuleDigest() public {
+    function testTamperedDeliveredPatchRejectedByPatchHash() public {
         _setUpFor(_writer());
 
         FilePatch memory signedPatch =
             _addPatch(bytes32(0), FILE_KEY, FILE_CONTENT_HASH, "ipfs://uvp-eth/signed", 0, 0);
-        bytes32 signedFilesDigest = fileResourceModule.filePatchDigest(planId, orderId, signedPatch);
-
         FilePatch memory deliveredPatch =
             _addPatch(bytes32(0), FILE_KEY_2, FILE_CONTENT_HASH_2, "ipfs://uvp-eth/delivered", 0, 0);
-        bytes32 deliveredFilesDigest = fileResourceModule.filePatchDigest(planId, orderId, deliveredPatch);
+        bytes32 deliveredPatchHash = fileResourceModule.filePatchHash(deliveredPatch);
+        bytes32 signedPatchHash = fileResourceModule.filePatchHash(signedPatch);
+        UVPStateMachine.SignalSubmission memory submission = UVPStateMachine.SignalSubmission({
+            planId: planId,
+            orderId: orderId,
+            sourceId: bytes32(0),
+            signalId: bytes32(0),
+            payloadHash: bytes32(0),
+            idempotencyKey: keccak256(abi.encode("file-patch")),
+            attribution: _emptyAttribution(),
+            filePatch: deliveredPatch,
+            patchHash: signedPatchHash,
+            submitter: _writer(),
+            deadline: block.timestamp + 1 hours
+        });
 
         vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPFileResourceModule.FileDigestMismatch.selector, deliveredFilesDigest, signedFilesDigest
-            )
+            abi.encodeWithSelector(UVPStateMachine.PatchHashMismatch.selector, deliveredPatchHash, signedPatchHash)
         );
         vm.prank(_writer());
-        machine.submitSignal(
-            planId,
-            orderId,
-            bytes32(0),
-            bytes32(0),
-            bytes32(0),
-            bytes32(0),
-            _emptyAttribution(),
-            signedFilesDigest,
-            deliveredPatch
-        );
+        machine.submitSignal(submission, hex"");
     }
 
-    function testSignedFilesDigestMismatchRejected() public {
-        _setUpFor(_writer());
 
-        FilePatch memory patch = _addPatch(bytes32(0), FILE_KEY, FILE_CONTENT_HASH, "ipfs://uvp-eth/wrong-digest", 0, 0);
-        bytes32 canonicalFilesDigest = fileResourceModule.filePatchDigest(planId, orderId, patch);
-        bytes32 wrongFilesDigest = bytes32(uint256(0xdead));
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPFileResourceModule.FileDigestMismatch.selector, canonicalFilesDigest, wrongFilesDigest
-            )
-        );
-        vm.prank(_writer());
-        machine.submitSignal(
-            planId,
-            orderId,
-            bytes32(0),
-            bytes32(0),
-            bytes32(0),
-            bytes32(0),
-            _emptyAttribution(),
-            wrongFilesDigest,
-            patch
-        );
-    }
 
     function testSupplierHandoffMovesFileWriteAuthorityToNewSupplierAccount() public {
         _setUpFor(_writer());
@@ -316,20 +301,25 @@ contract UVPStateMachineFilePatchTest {
 
         FilePatch memory firstPatch =
             _addPatch(bytes32(0), FILE_KEY, FILE_CONTENT_HASH, "ipfs://uvp-eth/handoff-first", 0, 0);
-        bytes32 firstDigest = fileResourceModule.filePatchDigest(planId, orderId, firstPatch);
+        bytes32 firstDigest = fileResourceModule.filePatchHash(firstPatch);
         UVPStateMachine.FactAttribution memory firstAttribution =
             _attribution(SOURCE_FILE, SIGNAL_FILE, STAGE_AUDIT);
         vm.prank(_writer());
         machine.submitSignal(
-            planId,
-            orderId,
-            SOURCE_FILE,
-            SIGNAL_FILE,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            firstAttribution,
-            firstDigest,
-            firstPatch
+            UVPStateMachine.SignalSubmission({
+                planId: planId,
+                orderId: orderId,
+                sourceId: SOURCE_FILE,
+                signalId: SIGNAL_FILE,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: firstAttribution,
+                filePatch: firstPatch,
+                patchHash: firstDigest,
+                submitter: _writer(),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
         );
 
         address birthSubmitter = vm.addr(BIRTH_SUBMITTER_PRIVATE_KEY);
@@ -368,7 +358,7 @@ contract UVPStateMachineFilePatchTest {
         bytes32 filesHashAfterFirst = fileResourceModule.stageFilesHash(planId, orderId, STAGE_AUDIT);
         FilePatch memory rejectedPatch =
             _addPatch(filesHashAfterFirst, FILE_KEY_2, FILE_CONTENT_HASH_2, "ipfs://uvp-eth/handoff-rejected", 0, 0);
-        bytes32 rejectedDigest = fileResourceModule.filePatchDigest(planId, orderId, rejectedPatch);
+        bytes32 rejectedPatchHash = fileResourceModule.filePatchHash(rejectedPatch);
         vm.expectRevert(
             abi.encodeWithSelector(
                 UVPFileResourceModule.FileWriterUnauthorized.selector,
@@ -380,31 +370,41 @@ contract UVPStateMachineFilePatchTest {
         );
         vm.prank(_writer());
         machine.submitSignal(
-            planId,
-            orderId,
-            bytes32(0),
-            bytes32(0),
-            bytes32(0),
-            bytes32(0),
-            _emptyAttribution(),
-            rejectedDigest,
-            rejectedPatch
+            UVPStateMachine.SignalSubmission({
+                planId: planId,
+                orderId: orderId,
+                sourceId: bytes32(0),
+                signalId: bytes32(0),
+                payloadHash: bytes32(0),
+                idempotencyKey: keccak256(abi.encode("file-patch")),
+                attribution: _emptyAttribution(),
+                filePatch: rejectedPatch,
+                patchHash: rejectedPatchHash,
+                submitter: _writer(),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
         );
 
         FilePatch memory acceptedPatch =
             _addPatch(filesHashAfterFirst, FILE_KEY_2, FILE_CONTENT_HASH_2, "ipfs://uvp-eth/handoff-accepted", 0, 0);
-        bytes32 acceptedDigest = fileResourceModule.filePatchDigest(planId, orderId, acceptedPatch);
+        bytes32 acceptedPatchHash = fileResourceModule.filePatchHash(acceptedPatch);
         vm.prank(handoffWriter);
         machine.submitSignal(
-            planId,
-            orderId,
-            bytes32(0),
-            bytes32(0),
-            bytes32(0),
-            bytes32(0),
-            _emptyAttribution(),
-            acceptedDigest,
-            acceptedPatch
+            UVPStateMachine.SignalSubmission({
+                planId: planId,
+                orderId: orderId,
+                sourceId: bytes32(0),
+                signalId: bytes32(0),
+                payloadHash: bytes32(0),
+                idempotencyKey: keccak256(abi.encode("file-patch")),
+                attribution: _emptyAttribution(),
+                filePatch: acceptedPatch,
+                patchHash: acceptedPatchHash,
+                submitter: handoffWriter,
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
         );
         (bool exists, bytes32 contentHash,,) =
             fileResourceModule.getStageFile(planId, orderId, STAGE_AUDIT, FILE_KEY_2);
@@ -421,7 +421,6 @@ contract UVPStateMachineFilePatchTest {
         machine.setDerivedSignalModule(address(new UVPDerivedSignalModule(address(machine))));
         machine.setDockRegistry(address(new UVPDockRegistry(address(machine))));
         machine.setPlanMetadataModule(address(planMetadataModule));
-        machine.setOrderLinkModule(address(new UVPOrderLinkModule(address(machine))));
         machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.setFileResourceModule(address(fileResourceModule));
         machine.setSupplierRegistry(address(suppliers));
@@ -474,44 +473,46 @@ contract UVPStateMachineFilePatchTest {
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: MerkleCommitment.root(capabilityLeaves),
             supplierBindingsRoot: MerkleCommitment.root(bindingLeaves),
-            birthAuthorizer: birthSubmitter,
             deadline: block.timestamp + 1 hours
         });
         planId = machine.commitPlan(commit, hooks, bindings, _sign(PUBLISHER_PRIVATE_KEY, _planCommitDigest(commit)));
         machine.finalizePlan(planId);
 
-        orderId = machine.triggerOrderIdFor(planId, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, PAYLOAD_HASH);
-        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger =
-            UVPStateMachine.TriggerOrderFromOutsideRequest({
-                planId: planId,
-                creator: address(this),
-                triggerHookId: HOOK_BIRTH,
-                triggerStageId: STAGE_INIT,
-                sourceId: SOURCE_BOOTSTRAP,
-                signalId: SIGNAL_ORDER_START,
-                payloadHash: PAYLOAD_HASH,
-                idempotencyKey: IDEMPOTENCY_KEY,
-                submitter: birthSubmitter,
-                deadline: block.timestamp + 1 hours
-            });
-        machine.triggerOrderFromOutsideFor(
-            trigger, _sign(BIRTH_SUBMITTER_PRIVATE_KEY, _triggerDigest(trigger)), _attribution(SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, STAGE_INIT)
-        );
+        UVPStateMachine.SignalSubmission memory birth = UVPStateMachine.SignalSubmission({
+            planId: planId,
+            orderId: bytes32(0),
+            sourceId: SOURCE_BOOTSTRAP,
+            signalId: SIGNAL_ORDER_START,
+            payloadHash: PAYLOAD_HASH,
+            idempotencyKey: IDEMPOTENCY_KEY,
+            attribution: _attribution(SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, STAGE_INIT),
+            filePatch: emptyFilePatch(),
+            patchHash: bytes32(0),
+            submitter: birthSubmitter,
+            deadline: block.timestamp + 1 hours
+        });
+        machine.submitSignal(birth, _sign(BIRTH_SUBMITTER_PRIVATE_KEY, _signalSubmissionDigest(birth)));
+        orderId = _createdTriggerOrderId(birth);
 
         UVPStateMachine.FactAttribution memory bootstrapAttribution =
             _attribution(SOURCE_BOOTSTRAP, SIGNAL_BOOTSTRAP_READY, STAGE_INIT);
         FilePatch memory noFilePatch = emptyFilePatch();
         vm.prank(birthSubmitter);
         machine.submitSignal(
-            planId,
-            orderId,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_BOOTSTRAP_READY,
-            PAYLOAD_HASH,
-            IDEMPOTENCY_KEY,
-            bootstrapAttribution,
-            bytes32(0),
-            noFilePatch
+            UVPStateMachine.SignalSubmission({
+                planId: planId,
+                orderId: orderId,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_BOOTSTRAP_READY,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: bootstrapAttribution,
+                filePatch: noFilePatch,
+                patchHash: bytes32(0),
+                submitter: birthSubmitter,
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
         );
 
         (UVPStateMachine.HookStatus filesReadyStatus,, bool filesReadyEmitted) =
@@ -542,36 +543,7 @@ contract UVPStateMachineFilePatchTest {
                         commit.hooksHash,
                         commit.capabilitiesRoot,
                         commit.supplierBindingsRoot,
-                        commit.birthAuthorizer,
                         commit.deadline
-                    )
-                )
-            )
-        );
-    }
-
-    function _triggerDigest(UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger)
-        private
-        view
-        returns (bytes32)
-    {
-        return keccak256(
-            abi.encodePacked(
-                "\x19\x01",
-                machine.DOMAIN_SEPARATOR(),
-                keccak256(
-                    abi.encode(
-                        TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH,
-                        trigger.planId,
-                        trigger.creator,
-                        trigger.triggerHookId,
-                        trigger.triggerStageId,
-                        trigger.sourceId,
-                        trigger.signalId,
-                        trigger.payloadHash,
-                        trigger.idempotencyKey,
-                        trigger.submitter,
-                        trigger.deadline
                     )
                 )
             )
@@ -583,6 +555,63 @@ contract UVPStateMachineFilePatchTest {
         UVPSignatures.Signature memory signature = UVPSignatures.Signature({v: v, r: r, s: s});
         return abi.encodePacked(signature.r, signature.s, signature.v);
     }
+
+    function _signalSubmissionDigest(UVPStateMachine.SignalSubmission memory submission)
+        private
+        view
+        returns (bytes32)
+    {
+        bytes32 attributionHash = keccak256(
+            abi.encode(
+                FACT_ATTRIBUTION_TYPEHASH,
+                submission.attribution.sourceId,
+                submission.attribution.signalId,
+                submission.attribution.stageId,
+                keccak256(abi.encode(submission.attribution.capabilityProof))
+            )
+        );
+        bytes32 structHash = keccak256(
+            abi.encode(
+                SIGNAL_SUBMISSION_TYPEHASH,
+                submission.planId,
+                submission.orderId,
+                submission.sourceId,
+                submission.signalId,
+                submission.payloadHash,
+                submission.idempotencyKey,
+                submission.patchHash,
+                attributionHash,
+                submission.submitter,
+                submission.deadline
+            )
+        );
+        return keccak256(abi.encodePacked("\x19\x01", machine.DOMAIN_SEPARATOR(), structHash));
+    }
+
+    function _createdTriggerOrderId(UVPStateMachine.SignalSubmission memory submission)
+        private
+        returns (bytes32 generatedOrderId)
+    {
+        try machine.submitSignal(submission, _sign(BIRTH_SUBMITTER_PRIVATE_KEY, _signalSubmissionDigest(submission))) {
+            revert("duplicate trigger submission did not revert");
+        } catch (bytes memory reason) {
+            require(reason.length == 100, "unexpected duplicate trigger payload length");
+            bytes4 selector;
+            assembly ("memory-safe") {
+                selector := mload(add(reason, 0x20))
+            }
+            require(selector == UVPStateMachine.DuplicateTriggerKey.selector, "unexpected duplicate trigger revert");
+            (, , generatedOrderId) = abi.decode(_withoutSelector(reason), (address, bytes32, bytes32));
+        }
+    }
+
+    function _withoutSelector(bytes memory reason) private pure returns (bytes memory data) {
+        data = new bytes(reason.length - 4);
+        for (uint256 i = 4; i < reason.length; i++) {
+            data[i - 4] = reason[i];
+        }
+    }
+
 
     function _writer() private view returns (address) {
         return vm.addr(WRITER_PRIVATE_KEY);

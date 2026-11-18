@@ -438,7 +438,7 @@ function capabilitiesRootCommitmentIssues(
     stageId: HexString;
     targetSourceId: HexString;
     signalId: HexString;
-    targetOrderRelation: 0 | 1;
+    targetOrderRelation: 0;
   }[] = [];
   for (const capability of signalCapabilities) {
     if (

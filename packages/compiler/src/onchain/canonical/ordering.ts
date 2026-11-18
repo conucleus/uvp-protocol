@@ -1,4 +1,4 @@
-import { compareCanonicalKey } from "../../hook-plan.js";
+import { compareCanonicalKey } from "../../canonical-key.js";
 import { isRecord } from "../shape.js";
 import type {
   StageSupplierBinding,
@@ -12,7 +12,7 @@ import type {
 
 /**
  * 编译产物的确定性排序口径（同一 plan 唯一数组形态）与制品边界的规范序
- * 检查；比较器复用根 hook-plan.ts 的 compareCanonicalKey（码点序 = Rust str Ord）。
+ * 检查；比较器来自 canonical-key.ts（码点序 = Rust str Ord）。
  */
 
 function compareOnchainHooks(

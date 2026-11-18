@@ -72,7 +72,6 @@ function internalOrder() {
     planHash: PLAN_HASH,
     status: "registered" as const,
     currentStage: STAGE_ID,
-    creator: WALLET,
     signals: {
       [SIGNAL_ID]: {
         orderId: ORDER_ID,

@@ -353,7 +353,7 @@ export interface SolidityRegisterSignalCapabilityArg {
   readonly stageId: HexString;
   readonly targetSourceId: HexString;
   readonly signalId: HexString;
-  readonly targetOrderRelation: 0 | 1;
+  readonly targetOrderRelation: 0;
 }
 
 export interface SolidityRegisterSupplierBindingArg {

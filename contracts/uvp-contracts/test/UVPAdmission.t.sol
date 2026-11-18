@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import {UVPStateMachine} from "../src/UVPStateMachine.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
-import {UVPOrderLinkModule} from "../src/UVPOrderLinkModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
@@ -42,27 +41,63 @@ contract BatchSubmitter {
         bytes32 secondSignalId
     ) external {
         machine.submitSignal(
-            planId,
-            orderId,
-            firstSourceId,
-            firstSignalId,
-            bytes32(uint256(0x8001)),
-            bytes32(uint256(0x9001)),
-            UVPStateMachine.FactAttribution({
+            UVPStateMachine.SignalSubmission({
+                planId: planId,
+                orderId: orderId,
+                sourceId: firstSourceId,
+                signalId: firstSignalId,
+                payloadHash: bytes32(uint256(0x8001)),
+                idempotencyKey: bytes32(uint256(0x9001)),
+                attribution: UVPStateMachine.FactAttribution({
                 sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
-            })
-        , bytes32(0), emptyFilePatch());
+            }),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         machine.submitSignal(
-            planId,
-            orderId,
-            secondSourceId,
-            secondSignalId,
-            bytes32(uint256(0x8002)),
-            bytes32(uint256(0x9002)),
-            UVPStateMachine.FactAttribution({
+            UVPStateMachine.SignalSubmission({
+                planId: planId,
+                orderId: orderId,
+                sourceId: secondSourceId,
+                signalId: secondSignalId,
+                payloadHash: bytes32(uint256(0x8002)),
+                idempotencyKey: bytes32(uint256(0x9002)),
+                attribution: UVPStateMachine.FactAttribution({
                 sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
-            })
-        , bytes32(0), emptyFilePatch());
+            }),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
+    }
+
+    function submitBirth(UVPStateMachine machine, UVPStateMachine.SignalSubmission calldata submission)
+        external
+        returns (bytes32 orderId)
+    {
+        machine.submitSignal(submission, "");
+        try machine.submitSignal(submission, "") {
+            revert("duplicate trigger submission did not revert");
+        } catch (bytes memory reason) {
+            require(reason.length == 100, "unexpected duplicate trigger payload length");
+            bytes4 selector;
+            assembly ("memory-safe") {
+                selector := mload(add(reason, 0x20))
+            }
+            require(selector == UVPStateMachine.DuplicateTriggerKey.selector, "unexpected duplicate trigger revert");
+            bytes memory payload = new bytes(reason.length - 4);
+            for (uint256 i = 4; i < reason.length; i++) {
+                payload[i - 4] = reason[i];
+            }
+            (, , orderId) = abi.decode(payload, (address, bytes32, bytes32));
+        }
     }
 }
 
@@ -84,19 +119,20 @@ contract UVPAdmissionTest {
     bytes32 private constant HOOK_NAME_ORDER_START = bytes32(uint256(0x7005));
     bytes32 private constant PAYLOAD_HASH = bytes32(uint256(0x8001));
     bytes32 private constant IDEMPOTENCY_KEY = bytes32(uint256(0x9001));
-    address private constant ORDER_CREATOR = address(uint160(0xc0de));
-    uint256 private constant SUBMITTER_PRIVATE_KEY = 0xa11ce;
     uint256 private constant PUBLISHER_PRIVATE_KEY = 0xc0ffee;
+    uint256 private constant BATCH_PRIVATE_KEY = 0xba7c4;
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.19");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.20");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,address birthAuthorizer,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,uint256 deadline)"
     );
-    bytes32 private constant TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH = keccak256(
-        "UVPStateMachineTriggerOrderFromOutside(bytes32 planId,address creator,bytes32 triggerHookId,bytes32 triggerStageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
+    bytes32 private constant SIGNAL_SUBMISSION_TYPEHASH = keccak256(
+        "UVPStateMachineSignalSubmission(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 patchHash,bytes32 attributionHash,address submitter,uint256 deadline)"
     );
+    bytes32 private constant FACT_ATTRIBUTION_TYPEHASH =
+        keccak256("FactAttribution(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof)");
     uint8 private constant FLAG_ORDER_TRIGGER_MINT = 1;
     uint8 private constant FLAG_EMIT_READY = 4;
     uint8 private constant FLAG_ADMISSION = 8;
@@ -106,6 +142,7 @@ contract UVPAdmissionTest {
     mapping(address machine => UVPSupplierRegistry) private _registries;
     mapping(address machine => mapping(address account => bytes32 supplierId)) private _suppliers;
     mapping(address machine => mapping(bytes32 stageId => address account)) private _stageSupplierAccounts;
+    mapping(address account => uint256 privateKey) private _supplierKeys;
 
     bytes32 private PLAN_ID;
     bytes32 private ORDER_ID;
@@ -281,11 +318,37 @@ contract UVPAdmissionTest {
         vm.warp(100);
 
         machine.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_ANCHOR,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         machine.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_TRIGGER,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
 
         (bool exists,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(exists, "admitted fact missing");
@@ -305,8 +368,21 @@ contract UVPAdmissionTest {
             )
         );
         machine.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_TRIGGER,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
 
         (bool exists,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(!exists, "rejected emission must not record a fact");
@@ -314,7 +390,7 @@ contract UVPAdmissionTest {
         require(status == UVPStateMachine.HookStatus.Init, "rejected emission must not advance hooks");
         Vm.Log[] memory logs = vm.getRecordedLogs();
         require(
-            _countTopic(logs, keccak256("SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32)"))
+            _countTopic(logs, keccak256("SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,address,bytes32)"))
                 == 0,
             "rejected emission emitted events"
         );
@@ -335,12 +411,25 @@ contract UVPAdmissionTest {
         }
         hooks[base.length] = _admissionHook(SIGNAL_TRIGGER, instructions);
         _registerPlan(machine, hooks);
-        _submitTriggerOrderFromOutside(machine);
+        _submitTriggerBirth(machine);
 
         vm.warp(100);
         machine.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_ANCHOR,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
 
         vm.warp(103);
         vm.expectRevert(
@@ -349,13 +438,39 @@ contract UVPAdmissionTest {
             )
         );
         machine.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_TRIGGER,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
 
         vm.warp(105);
         machine.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_TRIGGER,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         (bool exists,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(exists, "admitted emission missing at anchored maturity");
     }
@@ -375,10 +490,23 @@ contract UVPAdmissionTest {
         }
         hooks[base.length] = _admissionHook(SIGNAL_TRIGGER, instructions);
         _registerPlan(machine, hooks);
-        _submitTriggerOrderFromOutside(machine);
+        _submitTriggerBirth(machine);
         machine.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_TRIGGER,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         (bool admitted,,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(admitted, "double-vacuum tie must resolve value-Ready and admit");
 
@@ -395,10 +523,23 @@ contract UVPAdmissionTest {
         }
         swappedHooks[base.length] = _admissionHook(SIGNAL_TRIGGER, swappedInstrs);
         _registerPlan(swapped, swappedHooks);
-        _submitTriggerOrderFromOutside(swapped);
+        _submitTriggerBirth(swapped);
         swapped.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_TRIGGER,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         (bool admittedSwapped,,,,) = swapped.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(admittedSwapped, "double-vacuum tie outcome must be fold-order independent");
 
@@ -417,18 +558,57 @@ contract UVPAdmissionTest {
         }
         asymHooks[base.length] = _admissionHook(SIGNAL_TRIGGER, asymInstrs);
         _registerPlan(asymmetric, asymHooks);
-        _submitTriggerOrderFromOutside(asymmetric);
+        _submitTriggerBirth(asymmetric);
         vm.warp(100);
         asymmetric.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_ANCHOR,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         asymmetric.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_CANCEL,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         vm.warp(101);
         asymmetric.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_TRIGGER,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         (bool admittedAsym,,,,) = asymmetric.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(admittedAsym, "asymmetric-payload (0,0) tie must stay value-Ready and admit");
     }
@@ -437,24 +617,89 @@ contract UVPAdmissionTest {
         UVPStateMachine before = _gatedMachine(5);
         vm.warp(100);
         before.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_ANCHOR,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         before.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_CANCEL,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         vm.warp(104);
         before.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_TRIGGER,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
 
         UVPStateMachine atExpiry = _gatedMachine(5);
         vm.warp(100);
         atExpiry.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_ANCHOR,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         atExpiry.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_CANCEL,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         vm.warp(105);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -462,8 +707,21 @@ contract UVPAdmissionTest {
             )
         );
         atExpiry.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_TRIGGER,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
     }
 
     function testDuplicateAbsorbsAfterWindowExpiry() public {
@@ -471,25 +729,71 @@ contract UVPAdmissionTest {
         vm.warp(100);
 
         machine.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_ANCHOR,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         machine.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_TRIGGER,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         machine.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_CANCEL, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_CANCEL,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
 
         vm.warp(1000);
         machine.submitSignal(
-            PLAN_ID,
-            ORDER_ID,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TRIGGER,
-            bytes32(uint256(0x8004)),
-            IDEMPOTENCY_KEY,
-            _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_TRIGGER,
+                payloadHash: bytes32(uint256(0x8004)),
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
 
         (, bytes32 payloadHash,,,) = machine.getSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
         require(payloadHash == PAYLOAD_HASH, "absorbed retry overwrote the first write");
@@ -507,20 +811,31 @@ contract UVPAdmissionTest {
         bytes32 planId = _registerPlan(machine, hooks);
         PLAN_ID = planId;
 
-        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = _outsideTriggerRequest();
-        bytes memory signature = _triggerOrderFromOutsideSignature(machine, trigger, SUBMITTER_PRIVATE_KEY);
-
+        UVPStateMachine.SignalSubmission memory submission = UVPStateMachine.SignalSubmission({
+            planId: planId,
+            orderId: bytes32(0),
+            sourceId: SOURCE_BOOTSTRAP,
+            signalId: SIGNAL_ORDER_START,
+            payloadHash: PAYLOAD_HASH,
+            idempotencyKey: IDEMPOTENCY_KEY,
+            attribution: _noAttribution(),
+            filePatch: emptyFilePatch(),
+            patchHash: bytes32(0),
+            submitter: address(this),
+            deadline: block.timestamp + 1 hours
+        });
         vm.expectRevert(
             abi.encodeWithSelector(
-                UVPStateMachine.SignalAdmissionRejected.selector, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START
+                UVPStateMachine.SignalAdmissionRejected.selector, bytes32(0), SOURCE_BOOTSTRAP, SIGNAL_ORDER_START
             )
         );
-        machine.triggerOrderFromOutsideFor(trigger, signature, _noAttribution());
+        machine.submitSignal(submission, hex"");
     }
+
 
     function testMultiSignalTxWithIneligibleEmissionRevertsEntirely() public {
         BatchSubmitter submitter = new BatchSubmitter();
-        UVPStateMachine machine = _gatedMachineFor(5, address(submitter), false);
+        UVPStateMachine machine = _gatedMachineFor(5, address(submitter), 0, false);
         vm.warp(100);
 
         vm.expectRevert(
@@ -542,45 +857,136 @@ contract UVPAdmissionTest {
         vm.warp(100);
         uint256 gasBefore = gasleft();
         machine.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_TRIGGER,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         uint256 spent = gasBefore - gasleft();
 
-        require(spent <= 128_082 + 5_000, "no-admission submit overhead exceeds the constant budget");
+        require(spent <= 137_500, "no-admission submit must stay on the fixed envelope path");
     }
 
     function testAdmissionSubmitGasIsConstantIncrement() public {
         UVPStateMachine plain = _plainMachine();
         vm.warp(100);
         plain.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_ANCHOR,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         uint256 gasBefore = gasleft();
         plain.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_TRIGGER,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         uint256 plainSpent = gasBefore - gasleft();
 
         UVPStateMachine machine = _gatedTriggerMachine(5);
         vm.warp(100);
         machine.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_ANCHOR,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         gasBefore = gasleft();
         machine.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_TRIGGER,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         uint256 admissionSpent = gasBefore - gasleft();
 
         UVPStateMachine machineHour = _gatedTriggerMachine(1 hours);
         vm.warp(100);
         machineHour.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_ANCHOR,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         gasBefore = gasleft();
         machineHour.submitSignal(
-            PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER, PAYLOAD_HASH, IDEMPOTENCY_KEY, _noAttribution()
-        , bytes32(0), emptyFilePatch());
+            UVPStateMachine.SignalSubmission({
+                planId: PLAN_ID,
+                orderId: ORDER_ID,
+                sourceId: SOURCE_BOOTSTRAP,
+                signalId: SIGNAL_TRIGGER,
+                payloadHash: PAYLOAD_HASH,
+                idempotencyKey: IDEMPOTENCY_KEY,
+                attribution: _noAttribution(),
+                filePatch: emptyFilePatch(),
+                patchHash: bytes32(0),
+                submitter: address(this),
+                deadline: block.timestamp + 1 hours
+            }),
+            hex""
+        );
         uint256 hourSpent = gasBefore - gasleft();
 
         require(admissionSpent > plainSpent, "admission face must cost more than the ungated path");
@@ -601,7 +1007,6 @@ contract UVPAdmissionTest {
         machine.setDerivedSignalModule(address(new UVPDerivedSignalModule(address(machine))));
         machine.setDockRegistry(address(new UVPDockRegistry(address(machine))));
         machine.setPlanMetadataModule(address(new UVPPlanMetadataModule(address(machine))));
-        machine.setOrderLinkModule(address(new UVPOrderLinkModule(address(machine))));
         machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
         machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.setSupplierRegistry(address(registry));
@@ -625,29 +1030,37 @@ contract UVPAdmissionTest {
     }
 
     function _gatedMachine(uint64 delaySeconds) private returns (UVPStateMachine machine) {
-        return _gatedMachineFor(delaySeconds, address(0), false);
+        return _gatedMachineFor(delaySeconds, address(0), 0, false);
     }
 
     function _gatedTriggerMachine(uint64 delaySeconds) private returns (UVPStateMachine machine) {
-        return _gatedMachineFor(delaySeconds, address(0), true);
+        return _gatedMachineFor(delaySeconds, address(0), 0, true);
     }
 
-    function _gatedMachineFor(uint64 delaySeconds, address extraSubmitter, bool watcherIsTrigger)
-        private
-        returns (UVPStateMachine machine)
-    {
+    function _gatedMachineFor(
+        uint64 delaySeconds,
+        address extraSubmitter,
+        uint256 extraSubmitterKey,
+        bool watcherIsTrigger
+    ) private returns (UVPStateMachine machine) {
         machine = _newMachine();
         if (extraSubmitter != address(0)) {
             _stageSupplierAccounts[address(machine)][STAGE_INIT] = extraSubmitter;
+            _supplierKeys[extraSubmitter] = extraSubmitterKey;
         }
         _registerPlan(machine, _admissionPlan(delaySeconds, watcherIsTrigger));
-        _submitTriggerOrderFromOutside(machine);
+        if (extraSubmitter.code.length != 0) {
+            ORDER_ID = BatchSubmitter(extraSubmitter).submitBirth(machine, _birthSubmission(extraSubmitter));
+        } else {
+            _submitTriggerBirth(machine);
+        }
     }
+
 
     function _plainMachine() private returns (UVPStateMachine machine) {
         machine = _newMachine();
         _registerPlan(machine, _basePlan(true));
-        _submitTriggerOrderFromOutside(machine);
+        _submitTriggerBirth(machine);
     }
 
     function _admissionPlan(uint64 delaySeconds, bool watcherIsTrigger)
@@ -828,10 +1241,6 @@ contract UVPAdmissionTest {
         planId = _commitPlan(machine, hooks);
         machine.finalizePlan(planId);
         PLAN_ID = planId;
-        ORDER_ID = bytes32(
-            uint256(keccak256(abi.encode(PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, PAYLOAD_HASH)))
-                & ~uint256(1 << 255)
-        );
     }
 
     function _commitOnly(UVPStateMachine machine, UVPStateMachine.CompactHook[] memory hooks) private {
@@ -882,7 +1291,6 @@ contract UVPAdmissionTest {
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: EMPTY_MERKLE_ROOT,
             supplierBindingsRoot: _bindingsRoot(bindings),
-            birthAuthorizer: vm.addr(SUBMITTER_PRIVATE_KEY),
             deadline: block.timestamp + 1 hours
         });
         bytes32 structHash = keccak256(
@@ -892,7 +1300,6 @@ contract UVPAdmissionTest {
                 commit.hooksHash,
                 commit.capabilitiesRoot,
                 commit.supplierBindingsRoot,
-                commit.birthAuthorizer,
                 commit.deadline
             )
         );
@@ -948,55 +1355,132 @@ contract UVPAdmissionTest {
         return MerkleCommitment.root(leaves);
     }
 
-    function _submitTriggerOrderFromOutside(UVPStateMachine machine) private {
-        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger = _outsideTriggerRequest();
-        bytes memory signature = _triggerOrderFromOutsideSignature(machine, trigger, SUBMITTER_PRIVATE_KEY);
-        machine.triggerOrderFromOutsideFor(trigger, signature, _noAttribution());
-    }
-
-    function _outsideTriggerRequest() private returns (UVPStateMachine.TriggerOrderFromOutsideRequest memory) {
-        ORDER_ID = bytes32(
-            uint256(keccak256(abi.encode(PLAN_ID, SOURCE_BOOTSTRAP, SIGNAL_ORDER_START, PAYLOAD_HASH)))
-                & ~uint256(1 << 255)
-        );
-        return UVPStateMachine.TriggerOrderFromOutsideRequest({
+    function _birthSubmission(address submitter) private view returns (UVPStateMachine.SignalSubmission memory) {
+        return UVPStateMachine.SignalSubmission({
             planId: PLAN_ID,
-            creator: ORDER_CREATOR,
-            triggerHookId: HOOK_ORDER_START,
-            triggerStageId: STAGE_INIT,
+            orderId: bytes32(0),
             sourceId: SOURCE_BOOTSTRAP,
             signalId: SIGNAL_ORDER_START,
             payloadHash: PAYLOAD_HASH,
             idempotencyKey: IDEMPOTENCY_KEY,
-            submitter: vm.addr(SUBMITTER_PRIVATE_KEY),
+            attribution: _noAttribution(),
+            filePatch: emptyFilePatch(),
+            patchHash: bytes32(0),
+            submitter: submitter,
             deadline: block.timestamp + 1 hours
         });
     }
 
-    function _triggerOrderFromOutsideSignature(
+    function _submitTriggerBirth(UVPStateMachine machine) private {
+        address submitter = _stageSupplierAccounts[address(machine)][STAGE_INIT];
+        if (submitter == address(0)) {
+            submitter = address(this);
+        }
+        UVPStateMachine.SignalSubmission memory submission = _birthSubmission(submitter);
+        if (submitter == address(this)) {
+            machine.submitSignal(submission, hex"");
+        } else {
+            machine.submitSignal(submission, _signalSignature(machine, submission, _supplierKeys[submitter]));
+        }
+        ORDER_ID = _createdTriggerOrderId(machine, submission);
+    }
+
+
+    function _createdTriggerOrderId(UVPStateMachine machine, UVPStateMachine.SignalSubmission memory submission)
+        private
+        returns (bytes32 orderId)
+    {
+        bytes memory signature = submission.submitter == address(this)
+            ? bytes("")
+            : _signalSignature(machine, submission, _supplierKeys[submission.submitter]);
+        try machine.submitSignal(submission, signature) {
+            revert("duplicate trigger submission did not revert");
+        } catch (bytes memory reason) {
+            require(reason.length == 100, "unexpected duplicate trigger payload length");
+            bytes4 selector;
+            assembly ("memory-safe") {
+                selector := mload(add(reason, 0x20))
+            }
+            require(selector == UVPStateMachine.DuplicateTriggerKey.selector, "unexpected duplicate trigger revert");
+            (, , orderId) = abi.decode(_withoutSelector(reason), (address, bytes32, bytes32));
+        }
+    }
+
+
+    function _withoutSelector(bytes memory reason) private pure returns (bytes memory data) {
+        data = new bytes(reason.length - 4);
+        for (uint256 i = 4; i < reason.length; i++) {
+            data[i - 4] = reason[i];
+        }
+    }
+
+    function _signalSignature(
         UVPStateMachine machine,
-        UVPStateMachine.TriggerOrderFromOutsideRequest memory trigger,
-        uint256 submitterPrivateKey
+        UVPStateMachine.SignalSubmission memory submission,
+        uint256 privateKey
     ) private returns (bytes memory) {
+        bytes32 attributionHash = keccak256(
+            abi.encode(
+                FACT_ATTRIBUTION_TYPEHASH,
+                submission.attribution.sourceId,
+                submission.attribution.signalId,
+                submission.attribution.stageId,
+                keccak256(abi.encode(submission.attribution.capabilityProof))
+            )
+        );
         bytes32 structHash = keccak256(
             abi.encode(
-                TRIGGER_ORDER_FROM_OUTSIDE_TYPEHASH,
-                trigger.planId,
-                trigger.creator,
-                trigger.triggerHookId,
-                trigger.triggerStageId,
-                trigger.sourceId,
-                trigger.signalId,
-                trigger.payloadHash,
-                trigger.idempotencyKey,
-                trigger.submitter,
-                trigger.deadline
+                SIGNAL_SUBMISSION_TYPEHASH,
+                submission.planId,
+                submission.orderId,
+                submission.sourceId,
+                submission.signalId,
+                submission.payloadHash,
+                submission.idempotencyKey,
+                submission.patchHash,
+                attributionHash,
+                submission.submitter,
+                submission.deadline
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _stateMachineDomainSeparator(machine), structHash));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(submitterPrivateKey, digest);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
         return _packedSignature(v, r, s);
     }
+
+    function _businessSubmission(bytes32 sourceId, bytes32 signalId, bytes32 payloadHash, bytes32 idempotencyKey)
+        private
+        view
+        returns (UVPStateMachine.SignalSubmission memory)
+    {
+        return UVPStateMachine.SignalSubmission({
+            planId: PLAN_ID,
+            orderId: ORDER_ID,
+            sourceId: sourceId,
+            signalId: signalId,
+            payloadHash: payloadHash,
+            idempotencyKey: idempotencyKey,
+            attribution: _noAttribution(),
+            filePatch: emptyFilePatch(),
+            patchHash: bytes32(0),
+            submitter: address(this),
+            deadline: block.timestamp + 1 hours
+        });
+    }
+
+    function _submit(UVPStateMachine machine, bytes32 sourceId, bytes32 signalId) private {
+        machine.submitSignal(_businessSubmission(sourceId, signalId, PAYLOAD_HASH, IDEMPOTENCY_KEY), hex"");
+    }
+
+    function _submitWithPayload(
+        UVPStateMachine machine,
+        bytes32 sourceId,
+        bytes32 signalId,
+        bytes32 payloadHash
+    ) private {
+        machine.submitSignal(_businessSubmission(sourceId, signalId, payloadHash, IDEMPOTENCY_KEY), hex"");
+    }
+
 
     function _stateMachineDomainSeparator(UVPStateMachine machine) private view returns (bytes32) {
         return keccak256(

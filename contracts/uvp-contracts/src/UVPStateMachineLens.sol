@@ -54,28 +54,9 @@ interface IUVPPlanMetadataModuleLens {
     ) external view returns (bool);
 }
 
-interface IUVPOrderLinkModuleLens {
-    function targetOrderRelation(bytes32 fromPlanId, bytes32 fromOrderId, bytes32 targetPlanId, bytes32 targetOrderId)
-        external
-        view
-        returns (uint8);
-    function getTriggerOriginLink(bytes32 planId, bytes32 triggeredOrderId)
-        external
-        view
-        returns (
-            bool exists,
-            bytes32 triggerOriginOrderId,
-            bytes32 triggerOriginPlanId,
-            bytes32 originSourceId,
-            bytes32 originSignalId,
-            bytes32 triggerStageId
-        );
-}
-
 interface IUVPStateMachineModuleDirectory {
     function stagePatchModule() external view returns (address);
     function planMetadataModule() external view returns (address);
-    function orderLinkModule() external view returns (address);
 }
 
 contract UVPStateMachineLens {
@@ -204,30 +185,5 @@ contract UVPStateMachineLens {
     ) external view returns (bool) {
         return IUVPPlanMetadataModuleLens(_moduleDirectory.planMetadataModule())
             .verifyStageSelectorBinding(planId, selectorStageId, targetStageId, proof);
-    }
-
-    function targetOrderRelation(bytes32 fromPlanId, bytes32 fromOrderId, bytes32 targetPlanId, bytes32 targetOrderId)
-        external
-        view
-        returns (uint8)
-    {
-        return IUVPOrderLinkModuleLens(_moduleDirectory.orderLinkModule())
-            .targetOrderRelation(fromPlanId, fromOrderId, targetPlanId, targetOrderId);
-    }
-
-    function getTriggerOriginLink(bytes32 planId, bytes32 triggeredOrderId)
-        external
-        view
-        returns (
-            bool exists,
-            bytes32 triggerOriginOrderId,
-            bytes32 triggerOriginPlanId,
-            bytes32 originSourceId,
-            bytes32 originSignalId,
-            bytes32 triggerStageId
-        )
-    {
-        return IUVPOrderLinkModuleLens(_moduleDirectory.orderLinkModule())
-            .getTriggerOriginLink(planId, triggeredOrderId);
     }
 }

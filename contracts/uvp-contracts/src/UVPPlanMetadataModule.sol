@@ -9,11 +9,11 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     error PlanMetadataAlreadyFinalized(bytes32 planId);
     error UnauthorizedStateMachine(address caller);
     error UnknownPlan();
+    error UnsupportedSignalTargetRelation(uint8 relation);
 
     IUVPStateMachineCore public immutable stateMachine;
 
     uint8 public constant SIGNAL_TARGET_CURRENT_ORDER = 0;
-    uint8 public constant SIGNAL_TARGET_TRIGGER_ORIGIN = 1;
 
     bytes32 private constant _DOMAIN_SIGNAL_CAPABILITY = keccak256("UVP_SIGNAL_CAPABILITY_V1");
     bytes32 private constant _DOMAIN_SELECTOR_BINDING = keccak256("UVP_SELECTOR_BINDING_V1");
@@ -72,6 +72,9 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
         bytes32[] calldata proof
     ) external view returns (bool) {
         _requireKnownPlan(planId);
+        if (relation != SIGNAL_TARGET_CURRENT_ORDER) {
+            revert UnsupportedSignalTargetRelation(relation);
+        }
         bytes32 leaf = signalCapabilityLeaf(stageId, targetSourceId, signalId, relation);
         return MerkleCommitment.verify(_capabilitiesRoots[planId], leaf, proof);
     }

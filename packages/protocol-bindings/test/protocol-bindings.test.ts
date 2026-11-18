@@ -10,6 +10,7 @@ import {
   encodeAbiParameters,
   hashTypedData,
   keccak256,
+  parseAbiParameters,
   stringToHex,
   toEventHash,
 } from "viem";
@@ -20,38 +21,32 @@ import {
 } from "@uvp-eth/protocol-bindings/solana";
 import {
   DERIVED_SIGNAL_MODULE_ABI,
-  ORDER_LINK_MODULE_ABI,
-  STATE_MACHINE_ABI,
-  STAGE_PATCH_MODULE_ABI,
+  FILE_PATCH_HASH_DOMAIN,
   SIGNAL_SUBMISSION_PRIMARY_TYPE,
   SIGNAL_SUBMISSION_TYPED_DATA_FIELDS,
+  STAGE_PATCH_MODULE_ABI,
+  STAGE_SUPPLIER_PATCH_PAYLOAD_HASH_DOMAIN,
+  STATE_MACHINE_ABI,
   buildApplyStageSupplierPatchForCall,
   buildDerivedSignalTypedData,
   buildPlanCommitTypedData,
   buildSignalSubmissionTypedData,
   buildStageSupplierPatchTypedData,
   buildSubmitDerivedSignalForCall,
-  buildSubmitSignalForCall,
-  buildTriggerOrderFromOutsideForCall,
-  buildTriggerOrderFromSignalForCall,
-  buildTriggerOrderFromSignalTypedData,
+  buildSubmitSignalCall,
   capabilitiesRootOf,
-  deriveOrderLinkOrderId,
-  deriveTriggerOrderId,
   EMPTY_CAPABILITIES_ROOT,
-  EMPTY_FILE_PATCH,
   factAttribution,
   factAttributionHash,
+  filePatchHash,
   hashStageSupplierPatchPayload,
   selectorBindingLeaf,
   selectorBindingProofFor,
   signalCapabilityLeaf,
-  STAGE_SUPPLIER_PATCH_PAYLOAD_HASH_DOMAIN,
   recoverDerivedSignalSigner,
   recoverPlanCommitSigner,
   recoverSignalSubmissionSigner,
   recoverStageSupplierPatchSigner,
-  recoverTriggerOrderFromSignalSigner,
 } from "../src/index.js";
 
 // 能力树 golden 语料同源消费（模式对齐 compiler 侧
@@ -67,7 +62,7 @@ interface GoldenCapabilityInput {
   readonly stageId: `0x${string}`;
   readonly targetSourceId: `0x${string}`;
   readonly signalId: `0x${string}`;
-  readonly targetOrderRelation: 0 | 1;
+  readonly targetOrderRelation: 0;
 }
 
 interface GoldenSample {
@@ -157,26 +152,18 @@ const verifyingContract = "0x8888888888888888888888888888888888888888" as const;
 const zeroAddress = "0x0000000000000000000000000000000000000000" as const;
 const zeroBytes32 = bytes32("");
 const orderId = bytes32("01");
-const triggerOriginOrderId = bytes32("12");
 const planId = bytes32("13");
-const originPlanId = bytes32("18");
-const localPlanId = bytes32("19");
-const linkedPlanId = bytes32("20");
 const targetPlanId = bytes32("21");
-const triggerHookId = bytes32("14");
-const triggerStageId = bytes32("15");
+const targetStageId = bytes32("07");
+const patchHash = bytes32("0c");
 const sourceId = bytes32("02");
 const signalId = bytes32("03");
 const payloadHash = bytes32("04");
 const idempotencyKey = bytes32("05");
 const selectorStageId = bytes32("06");
-const targetStageId = bytes32("07");
 const supplierId = bytes32("08");
 const previousSupplierId = bytes32("09");
 const replacementSupplierId = bytes32("0a");
-const approvalSignalId = bytes32("10");
-const originSourceId = bytes32("16");
-const originSignalId = bytes32("17");
 const deadline = "1777777777";
 const supplierPatchNonce = "3";
 const handoffPatchNonce = "4";
@@ -269,7 +256,6 @@ describe("protocol bindings", () => {
       hooksHash: payloadHash,
       capabilitiesRoot: idempotencyKey,
       supplierBindingsRoot: idempotencyKey,
-      birthAuthorizer: submitter,
       deadline,
     });
     const signature = await account.signTypedData(
@@ -279,7 +265,7 @@ describe("protocol bindings", () => {
     assert.equal(typedData.primaryType, "UVPStateMachinePlanCommit");
     assert.deepEqual(typedData.domain, {
       name: "UVPStateMachine",
-      version: "0.19",
+      version: "0.20",
       chainId: 31337,
       verifyingContract,
     });
@@ -290,63 +276,11 @@ describe("protocol bindings", () => {
         "hooksHash",
         "capabilitiesRoot",
         "supplierBindingsRoot",
-        "birthAuthorizer",
         "deadline",
       ],
     );
     assert.equal(
       await recoverPlanCommitSigner(typedData, signature),
-      submitter,
-    );
-  });
-
-  it("builds and recovers trigger-origin order typed data", async () => {
-    const typedData = buildTriggerOrderFromSignalTypedData({
-      chainId: 31337,
-      verifyingContract,
-      orderId,
-      planId,
-      creator: submitter,
-      triggerOriginOrderId,
-      originPlanId,
-      triggerHookId,
-      triggerStageId,
-      originSourceId,
-      originSignalId,
-      payloadHash,
-      idempotencyKey,
-      submitter,
-      deadline,
-    });
-    const signature = await account.signTypedData(
-      typedData as unknown as Parameters<typeof account.signTypedData>[0],
-    );
-
-    assert.equal(typedData.domain.version, "0.9");
-    assert.deepEqual(
-      typedData.types.UVPOrderLinkModuleTriggerOrderFromSignal.map(
-        (field) => field.name,
-      ),
-      [
-        "orderId",
-        "planId",
-        "creator",
-        "triggerOriginOrderId",
-        "originPlanId",
-        "triggerHookId",
-        "triggerStageId",
-        "originSourceId",
-        "originSignalId",
-        "payloadHash",
-        "idempotencyKey",
-        "submitter",
-        "deadline",
-      ],
-    );
-    assert.equal("authorizationsHash" in typedData.message, false);
-    assert.equal(typedData.message.triggerOriginOrderId, triggerOriginOrderId);
-    assert.equal(
-      await recoverTriggerOrderFromSignalSigner(typedData, signature),
       submitter,
     );
   });
@@ -462,7 +396,7 @@ describe("protocol bindings", () => {
       signalId,
       payloadHash,
       idempotencyKey,
-      filesDigest: zeroBytes32,
+      patchHash,
       attribution,
       submitter,
       deadline,
@@ -471,20 +405,20 @@ describe("protocol bindings", () => {
     assert.equal(typedData.primaryType, SIGNAL_SUBMISSION_PRIMARY_TYPE);
     assert.deepEqual(typedData.domain, {
       name: "UVPStateMachine",
-      version: "0.19",
+      version: "0.20",
       chainId: 31337,
       verifyingContract,
     });
     assert.deepEqual(
       typedData.types.UVPStateMachineSignalSubmission.map((field) => field.name),
-      ["planId", "orderId", "sourceId", "signalId", "payloadHash", "idempotencyKey", "filesDigest", "attributionHash", "submitter", "deadline"],
+      ["planId", "orderId", "sourceId", "signalId", "payloadHash", "idempotencyKey", "patchHash", "attributionHash", "submitter", "deadline"],
     );
     assert.deepEqual(
       typedData.types.UVPStateMachineSignalSubmission,
       SIGNAL_SUBMISSION_TYPED_DATA_FIELDS,
     );
     assert.equal(typedData.message.attributionHash, factAttributionHash(attribution));
-    assert.equal(typedData.message.filesDigest, zeroBytes32);
+    assert.equal(typedData.message.patchHash, patchHash);
 
     // 与 UVPStateMachine._signalSubmissionDigest 的链上公式逐字段对拍：
     // typehash 字段名/顺序、attributionHash 的 FactAttribution typehash 与
@@ -521,7 +455,7 @@ describe("protocol bindings", () => {
 
     const typehash = keccak256(
       stringToHex(
-        "UVPStateMachineSignalSubmission(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 filesDigest,bytes32 attributionHash,address submitter,uint256 deadline)",
+        "UVPStateMachineSignalSubmission(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 patchHash,bytes32 attributionHash,address submitter,uint256 deadline)",
       ),
     );
     const domainSeparator = keccak256(
@@ -540,7 +474,7 @@ describe("protocol bindings", () => {
             ),
           ),
           keccak256(stringToHex("UVPStateMachine")),
-          keccak256(stringToHex("0.19")),
+          keccak256(stringToHex("0.20")),
           31337n,
           verifyingContract,
         ],
@@ -569,7 +503,7 @@ describe("protocol bindings", () => {
           signalId,
           payloadHash,
           idempotencyKey,
-          zeroBytes32,
+          patchHash,
           expectedAttributionHash,
           submitter,
           BigInt(deadline),
@@ -601,15 +535,51 @@ describe("protocol bindings", () => {
     );
   });
 
-  it("builds submitSignalFor calldata with the signed attribution and files digest", () => {
+  it("builds submitSignal calldata from the frozen struct, file patch, and patchHash", () => {
     const attribution = {
       sourceId,
       signalId,
       stageId: targetStageId,
       capabilityProof: [payloadHash],
     } as const;
+    const fileKey = bytes32("0d");
+    const fileContentHash = bytes32("0e");
+    const filePatch = {
+      targetStageId,
+      baseHash: payloadHash,
+      writerStageId: selectorStageId,
+      writerProof: [idempotencyKey],
+      ops: [
+        {
+          kind: 0 as const,
+          key: fileKey,
+          contentHash: fileContentHash,
+          handle: "uvp://files/1",
+        },
+      ],
+    } as const;
+    const submissionPatchHash = filePatchHash(filePatch);
+    assert.equal(
+      submissionPatchHash,
+      keccak256(
+        encodeAbiParameters(
+          parseAbiParameters(
+            "bytes32,bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]",
+          ),
+          [
+            keccak256(stringToHex(FILE_PATCH_HASH_DOMAIN)),
+            targetStageId,
+            payloadHash,
+            selectorStageId,
+            [idempotencyKey],
+            [[0, fileKey, fileContentHash, "uvp://files/1"]],
+          ] as never,
+        ),
+      ),
+    );
+
     const signature = `0x${"ab".repeat(65)}` as const;
-    const call = buildSubmitSignalForCall(
+    const call = buildSubmitSignalCall(
       { stateMachineAddress: verifyingContract, chainId: 31337 },
       {
         planId,
@@ -619,6 +589,8 @@ describe("protocol bindings", () => {
         payloadHash,
         idempotencyKey,
         attribution,
+        filePatch,
+        patchHash: submissionPatchHash,
         submitter,
         deadline,
         signature,
@@ -627,29 +599,50 @@ describe("protocol bindings", () => {
 
     assert.equal(call.address, verifyingContract);
     assert.equal(call.chainId, 31337);
-    assert.equal(call.functionName, "submitSignalFor");
-    assert.deepEqual(call.args, [
-      planId,
-      orderId,
-      sourceId,
-      signalId,
-      payloadHash,
-      idempotencyKey,
-      attribution,
-      zeroBytes32,
-      EMPTY_FILE_PATCH,
-      submitter,
-      BigInt(deadline),
-      signature,
-    ]);
+    assert.equal(call.functionName, "submitSignal");
+    const [submission, callSignature] = call.args;
+    assert.equal(submission.planId, planId);
+    assert.equal(submission.orderId, orderId);
+    assert.equal(submission.patchHash, submissionPatchHash);
+    assert.equal(submission.filePatch.baseHash, payloadHash);
+    assert.equal(submission.filePatch.ops[0]?.handle, "uvp://files/1");
+    assert.equal(submission.attribution.stageId, targetStageId);
+    assert.equal(callSignature, signature);
+
     const decoded = decodeFunctionData({
       abi: STATE_MACHINE_ABI,
       data: call.data,
     });
-    assert.equal(decoded.functionName, "submitSignalFor");
+    assert.equal(decoded.functionName, "submitSignal");
     assert.ok(decoded.args);
-    assert.deepEqual(decoded.args[6], attribution);
-    assert.equal(decoded.args[11], signature);
+    const decodedSubmission = decoded.args[0] as {
+      readonly orderId: `0x${string}`;
+      readonly patchHash: `0x${string}`;
+      readonly filePatch: {
+        readonly ops: readonly { readonly handle: string }[];
+      };
+    };
+    assert.equal(decodedSubmission.orderId, orderId);
+    assert.equal(decodedSubmission.patchHash, submissionPatchHash);
+    assert.equal(decodedSubmission.filePatch.ops[0]?.handle, "uvp://files/1");
+    assert.equal(decoded.args[1], signature);
+
+    const triggerCall = buildSubmitSignalCall(
+      { stateMachineAddress: verifyingContract },
+      {
+        planId,
+        sourceId,
+        signalId,
+        payloadHash,
+        idempotencyKey,
+        attribution,
+        patchHash: zeroBytes32,
+        submitter,
+        deadline,
+      },
+    );
+    assert.equal(triggerCall.args[0].orderId, zeroBytes32);
+    assert.equal(triggerCall.args[1], "0x");
   });
 
   it("matches the shared capabilities-root golden vectors consumed by compiler and Foundry", () => {
@@ -722,8 +715,8 @@ describe("protocol bindings", () => {
         );
       }
 
-      // 每条能力输入：叶公式重算；relation=0 是事实属主自证材料（stageId +
-      // proof 与 pinned 叶证明一致），relation=1 不构成属主自证。
+      // 每条能力输入：relation 恒为 current-order(0)，即事实属主自证材料
+      // （stageId + proof 与 pinned 叶证明一致）。
       for (const [index, capability] of signalCapabilities.entries()) {
         const leaf = signalCapabilityLeaf(
           capability.stageId,
@@ -738,16 +731,12 @@ describe("protocol bindings", () => {
           capability.targetSourceId,
           capability.signalId,
         );
-        if (capability.relation === 0) {
-          assert.ok(attribution, "relation=0 fact key must resolve to an owner");
-          assert.equal(attribution.stageId, capability.stageId);
-          assert.deepEqual(
-            attribution.capabilityProof,
-            expected.signalCapabilityLeaves[index]!.proof,
-          );
-        } else {
-          assert.equal(attribution, undefined);
-        }
+        assert.ok(attribution, "current-order fact key must resolve to an owner");
+        assert.equal(attribution.stageId, capability.stageId);
+        assert.deepEqual(
+          attribution.capabilityProof,
+          expected.signalCapabilityLeaves[index]!.proof,
+        );
       }
     }
 
@@ -798,81 +787,10 @@ describe("protocol bindings", () => {
     );
   });
 
-  it("builds triggerOrderFromSignalFor calls from the order-link module ABI", () => {
-    const signature = `0x${"ac".repeat(65)}` as const;
-    const originFactAttributions = [
-      { sourceId: originSourceId, signalId: originSignalId, stageId: targetStageId, capabilityProof: [payloadHash] },
-    ] as const;
-    const call = buildTriggerOrderFromSignalForCall(
-      {
-        orderLinkModuleAddress: verifyingContract,
-        chainId: 31337,
-      },
-      {
-        orderId,
-        planId,
-        creator: submitter,
-        triggerOriginOrderId,
-        originPlanId,
-        triggerHookId,
-        triggerStageId,
-        originSourceId,
-        originSignalId,
-        payloadHash,
-        idempotencyKey,
-        submitter,
-        deadline,
-        signature,
-        originFactAttributions,
-      },
-    );
-    const decoded = decodeFunctionData({
-      abi: ORDER_LINK_MODULE_ABI,
-      data: call.data,
-    });
-
-    assert.equal(call.address, verifyingContract);
-    assert.equal(call.abi, ORDER_LINK_MODULE_ABI);
-    assert.equal(call.functionName, "triggerOrderFromSignalFor");
-    assert.equal(call.args[0].triggerOriginOrderId, triggerOriginOrderId);
-    assert.equal(call.args[1], signature);
-    assert.deepEqual(call.args[2], [
-      {
-        sourceId: originSourceId,
-        signalId: originSignalId,
-        stageId: targetStageId,
-        capabilityProof: [payloadHash],
-      },
-    ]);
-    assert.equal(decoded.functionName, "triggerOrderFromSignalFor");
-    const decodedArgs = decoded.args as unknown as readonly [
-      { triggerOriginOrderId: `0x${string}` },
-      `0x${string}`,
-      readonly {
-        sourceId: `0x${string}`;
-        signalId: `0x${string}`;
-        stageId: `0x${string}`;
-        capabilityProof: readonly `0x${string}`[];
-      }[],
-    ];
-    assert.ok(decodedArgs);
-    assert.equal(decodedArgs[0].triggerOriginOrderId, triggerOriginOrderId);
-    assert.equal(decodedArgs[1], signature);
-    assert.deepEqual(decodedArgs[2], [
-      {
-        sourceId: originSourceId,
-        signalId: originSignalId,
-        stageId: targetStageId,
-        capabilityProof: [payloadHash],
-      },
-    ]);
-  });
-
   it("builds submitDerivedSignalFor calls from the derived signal module ABI", () => {
     const signature = `0x${"ab".repeat(65)}` as const;
     const proofs = {
       fromCapabilityProof: [payloadHash],
-      targetCapabilityProof: [idempotencyKey],
     } as const;
     const call = buildSubmitDerivedSignalForCall(
       {
@@ -916,7 +834,6 @@ describe("protocol bindings", () => {
       signature,
       {
         fromCapabilityProof: [payloadHash],
-        targetCapabilityProof: [idempotencyKey],
       },
     ]);
     assert.match(call.data, /^0x[0-9a-f]+$/);
