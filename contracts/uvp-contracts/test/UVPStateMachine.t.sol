@@ -648,9 +648,8 @@ contract UVPStateMachineTest {
             submitter: address(this),
             deadline: block.timestamp + 1 hours
         });
-        vm.recordLogs();
-        machine.submitSignal(submission, hex"");
-        bytes32 secondOrderId = _recordedTriggerOrderId(PLAN_ID);
+        (bytes32 secondOrderId, bool secondInserted) = machine.submitSignal(submission, hex"");
+        require(secondInserted, "second trigger birth must report inserted");
         require(secondOrderId != firstOrderId, "second order id collided");
         require(machine.orderExists(PLAN_ID, secondOrderId), "second order missing");
     }
@@ -707,6 +706,40 @@ contract UVPStateMachineTest {
         require(payloadHash == PAYLOAD_HASH, "duplicate trigger signal rewrote the first write");
     }
 
+    function testTriggerBirthReturnsGeneratedOrderIdAndInsertedTrue() public {
+        UVPStateMachine machine = _newMachine();
+        bytes32 planId = _registerPlan(machine, _birthPlan());
+        UVPStateMachine.SignalSubmission memory submission = UVPStateMachine.SignalSubmission({
+            planId: planId,
+            orderId: bytes32(0),
+            sourceId: SOURCE_BOOTSTRAP,
+            signalId: SIGNAL_BIRTH,
+            payloadHash: PAYLOAD_HASH,
+            idempotencyKey: IDEMPOTENCY_KEY,
+            attribution: _noAttribution(),
+            filePatch: emptyFilePatch(),
+            patchHash: bytes32(0),
+            submitter: address(this),
+            deadline: block.timestamp + 1 hours
+        });
+        (bytes32 createdOrderId, bool inserted) = machine.submitSignal(submission, hex"");
+        require(inserted, "trigger birth must report inserted");
+        require(createdOrderId != bytes32(0), "trigger birth must return a generated order id");
+        require(machine.orderExists(planId, createdOrderId), "returned order id does not exist");
+    }
+
+    function testBusinessSignalReturnsOrderIdAndInsertedFlag() public {
+        UVPStateMachine machine = _supplierMachine();
+        UVPStateMachine.SignalSubmission memory submission =
+            _businessSubmission(PLAN_ID, ORDER_ID, STAGE_AUDIT, SIGNAL_DONE, _noAttribution(), address(this));
+        (bytes32 insertedOrderId, bool inserted) = machine.submitSignal(submission, hex"");
+        require(insertedOrderId == ORDER_ID, "new signal must return the input order id");
+        require(inserted, "new signal must report inserted");
+        (bytes32 duplicateOrderId, bool duplicateInserted) = machine.submitSignal(submission, hex"");
+        require(duplicateOrderId == ORDER_ID, "duplicate signal must return the input order id");
+        require(!duplicateInserted, "duplicate signal must report not inserted");
+    }
+
     function testTriggerWithFilePatchCreatesOrderAndWritesFile() public {
         UVPStateMachine machine = _newMachine();
         bytes32 planId = _registerPlan(machine, _birthPlan());
@@ -724,8 +757,8 @@ contract UVPStateMachineTest {
             submitter: address(this),
             deadline: block.timestamp + 1 hours
         });
-        machine.submitSignal(submission, hex"");
-        bytes32 orderId = _createdTriggerOrderId(machine, submission);
+        (bytes32 orderId, bool inserted) = machine.submitSignal(submission, hex"");
+        require(inserted, "trigger with file must report inserted");
         require(machine.orderExists(planId, orderId), "trigger order missing");
         (bool exists, bytes32 contentHash,,) =
             _fileModules[address(machine)].getStageFile(planId, orderId, STAGE_INIT, keccak256("birth-file"));
@@ -759,8 +792,8 @@ contract UVPStateMachineTest {
 
         submission.filePatch = emptyFilePatch();
         submission.patchHash = bytes32(0);
-        machine.submitSignal(submission, hex"");
-        bytes32 orderId = _createdTriggerOrderId(machine, submission);
+        (bytes32 orderId, bool inserted) = machine.submitSignal(submission, hex"");
+        require(inserted, "retried trigger birth must report inserted");
         require(machine.orderExists(planId, orderId), "retry after reverted birth did not create the order");
         require(
             _fileModules[address(machine)].stageFilesHash(planId, orderId, STAGE_INIT) == bytes32(0),
@@ -776,28 +809,6 @@ contract UVPStateMachineTest {
             abi.encodeWithSelector(UVPStateMachine.UnauthorizedDirectSubmitter.selector, OUTSIDER, address(this))
         );
         machine.submitSignal(submission, hex"");
-    }
-
-    function _createdTriggerOrderId(UVPStateMachine machine, UVPStateMachine.SignalSubmission memory submission)
-        private
-        returns (bytes32)
-    {
-        try machine.submitSignal(submission, hex"") {
-            revert("duplicate trigger submission did not revert");
-        } catch (bytes memory reason) {
-            require(reason.length == 100, "unexpected duplicate trigger payload length");
-            bytes4 selector;
-            assembly ("memory-safe") {
-                selector := mload(add(reason, 0x20))
-            }
-            require(selector == UVPStateMachine.DuplicateTriggerKey.selector, "unexpected duplicate trigger revert");
-            bytes memory payload = new bytes(reason.length - 4);
-            for (uint256 i = 4; i < reason.length; i++) {
-                payload[i - 4] = reason[i];
-            }
-            (, , bytes32 orderId) = abi.decode(payload, (address, bytes32, bytes32));
-            return orderId;
-        }
     }
 
     function testCrossStageObservationMaterializesBothStages() public {
@@ -1432,9 +1443,9 @@ contract UVPStateMachineTest {
             submitter: _triggerSubmitter(machine),
             deadline: block.timestamp + 1 hours
         });
-        vm.recordLogs();
-        _submitEnvelope(machine, submission);
-        ORDER_ID = _recordedTriggerOrderId(planId);
+        (bytes32 createdOrderId, bool inserted) = _submitEnvelope(machine, submission);
+        require(inserted, "trigger birth must report inserted");
+        ORDER_ID = createdOrderId;
         PLAN_ID = planId;
     }
 
@@ -1443,28 +1454,20 @@ contract UVPStateMachineTest {
         return submitter == address(0) ? address(this) : submitter;
     }
 
-    function _recordedTriggerOrderId(bytes32 planId) private returns (bytes32) {
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        for (uint256 i = 0; i < logs.length; i++) {
-            if (
-                logs[i].topics.length >= 3 && logs[i].topics[0] == ORDER_TRIGGERED_TOPIC && logs[i].topics[2] == planId
-            ) {
-                return logs[i].topics[1];
-            }
-        }
-        revert("OrderTriggered missing");
-    }
-
-    function _submitEnvelope(UVPStateMachine machine, UVPStateMachine.SignalSubmission memory submission) private {
+    function _submitEnvelope(UVPStateMachine machine, UVPStateMachine.SignalSubmission memory submission)
+        private
+        returns (bytes32 orderId, bool inserted)
+    {
         if (submission.submitter == address(this)) {
-            machine.submitSignal(submission, hex"");
-            return;
+            return machine.submitSignal(submission, hex"");
         }
         bytes memory signature = submission.submitter.code.length == 0
             ? _signSignalSubmission(machine, submission, _privateKeyFor(submission.submitter))
             : bytes(hex"01");
-        machine.submitSignal(submission, signature);
+        return machine.submitSignal(submission, signature);
     }
+
+
 
     function _privateKeyFor(address account) private returns (uint256) {
         if (account == vm.addr(BIRTH_PRIVATE_KEY)) {

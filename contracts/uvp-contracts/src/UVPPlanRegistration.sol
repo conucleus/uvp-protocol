@@ -572,7 +572,7 @@ library UVPPlanRegistration {
         UVPStateMachine.SignalSubmission calldata submission,
         bytes calldata signature,
         address fileResourceModule
-    ) external {
+    ) external returns (bytes32 orderId, bool inserted) {
         if (block.timestamp > submission.deadline) {
             revert UVPStateMachine.ExpiredSignalSignature(submission.deadline);
         }
@@ -582,9 +582,9 @@ library UVPPlanRegistration {
         _authenticate(submission, signature);
 
         if (submission.orderId == bytes32(0)) {
-            _createOrderFromTrigger(_s, submission, fileResourceModule);
+            (orderId, inserted) = _createOrderFromTrigger(_s, submission, fileResourceModule);
         } else {
-            _submitToOrder(_s, submission, fileResourceModule);
+            (orderId, inserted) = _submitToOrder(_s, submission, fileResourceModule);
         }
     }
 
@@ -620,7 +620,7 @@ library UVPPlanRegistration {
         UVPStateMachine.SMState storage _s,
         UVPStateMachine.SignalSubmission calldata submission,
         address fileResourceModule
-    ) private {
+    ) private returns (bytes32 orderId, bool inserted) {
         (bytes32 triggerHookId, bytes32 triggerStageId) =
             _resolveTriggerHook(_s, submission.planId, submission.sourceId, submission.signalId);
         bytes32 attributedStageId = L_resolveSourceStage(
@@ -641,7 +641,7 @@ library UVPPlanRegistration {
             );
         }
 
-        bytes32 orderId = _newOrderId(_s, submission.planId);
+        orderId = _newOrderId(_s, submission.planId);
         L_createOrder(_s, submission.planId, orderId);
         emit UVPStateMachine.OrderTriggered(
             orderId,
@@ -667,31 +667,34 @@ library UVPPlanRegistration {
         _requireTriggerHookReady(_s, submission.planId, orderId, triggerHookId);
         _s.usedTriggerKeys[submission.submitter][submission.idempotencyKey] = orderId;
         _applyFilePatch(submission, orderId, triggerStageId, fileResourceModule);
+        inserted = true;
     }
 
     function _submitToOrder(
         UVPStateMachine.SMState storage _s,
         UVPStateMachine.SignalSubmission calldata submission,
         address fileResourceModule
-    ) private {
-        if (!_s.orders[submission.planId][submission.orderId].exists) {
+    ) private returns (bytes32 orderId, bool inserted) {
+        orderId = submission.orderId;
+        if (!_s.orders[submission.planId][orderId].exists) {
             revert UVPStateMachine.UnknownOrder();
         }
         if (submission.signalId == bytes32(0)) {
             if (submission.filePatch.ops.length == 0) {
                 revert FilePatchEmpty();
             }
-            _applyFilePatch(submission, submission.orderId, bytes32(0), fileResourceModule);
-            return;
+            _applyFilePatch(submission, orderId, bytes32(0), fileResourceModule);
+            return (orderId, false);
         }
-        bytes32 sourceStageId = _submitBusinessSignal(_s, submission);
-        _applyFilePatch(submission, submission.orderId, sourceStageId, fileResourceModule);
+        bytes32 sourceStageId;
+        (sourceStageId, inserted) = _submitBusinessSignal(_s, submission);
+        _applyFilePatch(submission, orderId, sourceStageId, fileResourceModule);
     }
 
     function _submitBusinessSignal(
         UVPStateMachine.SMState storage _s,
         UVPStateMachine.SignalSubmission calldata submission
-    ) private returns (bytes32 sourceStageId) {
+    ) private returns (bytes32 sourceStageId, bool inserted) {
         if (submission.sourceId == bytes32(0)) {
             revert UVPStateMachine.ZeroSourceId();
         }
@@ -710,7 +713,7 @@ library UVPPlanRegistration {
             _s, submission.planId, submission.orderId, sourceStageId, submission.submitter
         );
         if (L_hasSignal(_s, submission.planId, submission.orderId, submission.sourceId, submission.signalId)) {
-            return sourceStageId;
+            return (sourceStageId, false);
         }
         L_requireSignalAdmission(
             _s, submission.planId, submission.orderId, submission.sourceId, submission.signalId
@@ -727,6 +730,7 @@ library UVPPlanRegistration {
             false,
             sourceStageId
         );
+        inserted = true;
     }
 
     function _resolveTriggerHook(

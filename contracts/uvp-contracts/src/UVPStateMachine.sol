@@ -503,8 +503,11 @@ contract UVPStateMachine {
         return keccak256(abi.encode(_PLAN_ID_HASH_DOMAIN, publisher, runtimePlanHash));
     }
 
-    function submitSignal(SignalSubmission calldata submission, bytes calldata signature) external {
-        UVPPlanRegistration.submitSignal(_s, submission, signature, fileResourceModule);
+    function submitSignal(SignalSubmission calldata submission, bytes calldata signature)
+        external
+        returns (bytes32 orderId, bool inserted)
+    {
+        return UVPPlanRegistration.submitSignal(_s, submission, signature, fileResourceModule);
     }
 
     function activateStageSupplierFromModule(

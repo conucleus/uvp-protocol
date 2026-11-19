@@ -125,7 +125,7 @@ contract UVPStateMachineFilePatchTest {
         UVPStateMachine.FactAttribution memory attribution = _emptyAttribution();
         vm.recordLogs();
         vm.prank(_writer());
-        machine.submitSignal(
+        (bytes32 returnedOrderId, bool inserted) = machine.submitSignal(
             UVPStateMachine.SignalSubmission({
                 planId: planId,
                 orderId: orderId,
@@ -142,6 +142,8 @@ contract UVPStateMachineFilePatchTest {
             hex""
         );
         Vm.Log[] memory logs = vm.getRecordedLogs();
+        require(returnedOrderId == orderId, "pure patch must return the input order id");
+        require(!inserted, "pure patch must report not inserted");
 
         require(_countTopic(logs, STAGE_FILE_PATCH_APPLIED_TOPIC) == 1, "patch event count");
         require(_countTopic(logs, STAGE_FILE_OP_APPLIED_TOPIC) == 2, "op event count");
