@@ -5,7 +5,6 @@ import type {
 import { HookPlanCompilationError } from "../../hook-plan.js";
 import { OnchainHookPlanArtifactValidationError } from "../validate/artifact.js";
 import {
-  FILE_TYPES,
   PLAN_SUPPLIER_TYPES,
   selectorBindingKey,
 } from "../validate/capabilities.js";
@@ -158,9 +157,9 @@ function compileSupplierRoute(
         typeof resource === "object" && resource !== null
           ? (resource as { readonly fileType?: unknown }).fileType
           : undefined;
-      if (typeof fileType !== "string" || !FILE_TYPES.includes(fileType)) {
+      if (typeof fileType !== "string" || fileType.length === 0) {
         throw new HookPlanCompilationError([
-          `supplier route "${route.stageIdentifier}" ${label}[${JSON.stringify(key)}].fileType must be one of ${FILE_TYPES.join("|")}, received ${JSON.stringify(fileType)}`,
+          `supplier route "${route.stageIdentifier}" ${label}[${JSON.stringify(key)}].fileType is required and must be a non-empty string, received ${JSON.stringify(fileType)}`,
         ]);
       }
     }

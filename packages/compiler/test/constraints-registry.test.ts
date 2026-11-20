@@ -229,6 +229,27 @@ const TS_PROBES = new Map<string, Probe>([
       `op=XOR 应触发闭集锚点，实际 issues：${JSON.stringify(issues)}`,
     );
   }],
+  ["file-resource-type-required", async () => {
+    const definition = await loadZhixuDefinition(FIXTURE_PATH);
+    const withFiles = structuredClone(definition) as unknown as {
+      spec: { stages: Array<Record<string, unknown>> };
+    };
+    withFiles.spec.stages[0]!.fileResources = {
+      doc: { fileType: "app1_blob", locator: "documents/app1" },
+    };
+    compileZhixuHookPlan(withFiles as unknown as typeof definition);
+    for (const resource of [{}, { fileType: "" }, { fileType: 7 }]) {
+      const mutated = structuredClone(withFiles);
+      mutated.spec.stages[0]!.fileResources = { doc: resource };
+      assert.throws(
+        () => compileZhixuHookPlan(mutated as unknown as typeof definition),
+        (error: unknown) =>
+          error instanceof Error &&
+          error.message.includes("fileType is required and must be a non-empty string"),
+        `fileType=${JSON.stringify(resource)} must be rejected`,
+      );
+    }
+  }],
   ["plan-dependencies-max-count", async () => {
     const definition = await loadZhixuDefinition(FIXTURE_PATH);
     const hookPlan = compileZhixuHookPlan(definition);

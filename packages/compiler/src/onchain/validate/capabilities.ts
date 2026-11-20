@@ -30,7 +30,7 @@ import type {
 /**
  * 能力声明族校验：supplierRoutes / supplierBindings / selectorBindings /
  * signalCapabilities 的形状与承诺重算，事实键唯一属主镜像，
- * supplierType/fileType/supplier-binding-kind 闭集词表。
+ * supplierType / supplier-binding-kind 闭集词表（fileType 值域开放，不在编译期收窄）。
  */
 
 const SUPPLIER_ROUTE_FIELDS: readonly string[] = [
@@ -78,9 +78,7 @@ const SUPPLIER_TYPES: readonly string[] = ["individual", "organization", "dock"]
 
 const PLAN_SUPPLIER_TYPES: readonly string[] = ["individual", "organization"];
 
-const FILE_TYPES: readonly string[] = ["local", "http", "txcloud", "plain_text"];
-
-export { SUPPLIER_TYPES, PLAN_SUPPLIER_TYPES, FILE_TYPES };
+export { SUPPLIER_TYPES, PLAN_SUPPLIER_TYPES };
 
 function duplicateCurrentOrderFactKeyIssues(
   capabilities: readonly {

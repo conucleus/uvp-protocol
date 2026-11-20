@@ -1581,86 +1581,84 @@ test("rejects whitespace-padded supplierType at the on-chain compile boundary", 
   }
 });
 
-test("rejects selectableResource fileType outside the closed enum at the on-chain compile boundary", () => {
-  const selectorStage = baseZhixu.spec.stages[0]!;
-  const withSelectableZhixu: ZhixuDefinition = {
+test("accepts application-defined fileType values at the on-chain compile boundary", () => {
+  const definition = {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
-      stages: [
-        ...baseZhixu.spec.stages.slice(0, 1).map((stage) => ({
-          ...stage,
-          executor: {
-            ...stage.executor!,
-            selectableResource: {
-              dataset: { fileType: "plain_text", plainText: { content: "x" } },
-            },
-          },
-        })),
-        ...baseZhixu.spec.stages.slice(1),
-      ],
+      stages: baseZhixu.spec.stages.map((stage) =>
+        stage.name === "assign"
+          ? {
+              ...stage,
+              executor: {
+                ...stage.executor!,
+                selectableResource: {
+                  dataset: { fileType: "app2_ref", locator: "dataset/app2" },
+                },
+              },
+              fileResources: {
+                contract_template: {
+                  fileType: "app1_blob",
+                  locator: "documents/app1",
+                },
+              },
+            }
+          : stage,
+      ),
     },
-  };
-  compileOnchainHookPlan(compileZhixuHookPlan(withSelectableZhixu));
+  } as ZhixuDefinition;
 
-  const hookPlan = compileZhixuHookPlan(baseZhixu);
-  for (const fileType of ["tx_cloud", " local", "http "]) {
-    const mutated = resign({
-      ...hookPlan,
-      supplierRoutes: {
-        ...hookPlan.supplierRoutes,
-        "assign": {
-          ...hookPlan.supplierRoutes["assign"]!,
-          executor: {
-            ...hookPlan.supplierRoutes["assign"]!.executor,
-            selectableResource: {
-              dataset: { fileType, plainText: { content: "x" } },
-            },
-          },
-        },
-      },
-    } as typeof hookPlan);
-    assert.throws(
-      () => compileOnchainHookPlan(mutated),
-      (error: unknown) => {
-        assert.ok(error instanceof HookPlanCompilationError);
-        assert.match(
-          error.issues.join("; "),
-          /executor\.selectableResource\["dataset"\]\.fileType must be one of local\|http\|txcloud\|plain_text/,
-        );
-        return true;
-      },
-      `fileType=${JSON.stringify(fileType)} must be rejected by exact match`,
-    );
-  }
+  const hookPlan = compileZhixuHookPlan(definition);
+  assert.equal(
+    hookPlan.supplierRoutes["assign"]?.fileResources?.["contract_template"]?.fileType,
+    "app1_blob",
+  );
+  assert.equal(
+    hookPlan.supplierRoutes["assign"]?.executor.selectableResource?.["dataset"]?.fileType,
+    "app2_ref",
+  );
+  assert.doesNotThrow(() => compileZhixuOnchainHookPlan(definition));
 });
 
-test("rejects fileResources fileType outside the closed enum at the on-chain compile boundary", () => {
+test("rejects missing or empty fileType at the on-chain artifact boundary", () => {
   const hookPlan = compileZhixuHookPlan(baseZhixu);
-  const route = hookPlan.supplierRoutes["assign"]!;
-  const mutated = resign({
-    ...hookPlan,
-    supplierRoutes: {
-      ...hookPlan.supplierRoutes,
-      "assign": {
-        ...route,
-        fileResources: {
-          contract_template: { fileType: "locale", path: "./template.md" },
+  for (const [label, resource] of [
+    ["missing", { locator: "x" }],
+    ["empty", { fileType: "" }],
+  ] as const) {
+    for (const face of ["fileResources", "selectableResource"] as const) {
+      const route = hookPlan.supplierRoutes["assign"]!;
+      const mutated = resign({
+        ...hookPlan,
+        supplierRoutes: {
+          ...hookPlan.supplierRoutes,
+          assign: {
+            ...route,
+            ...(face === "fileResources"
+              ? { fileResources: { contract_template: resource } }
+              : {
+                  executor: {
+                    ...route.executor,
+                    selectableResource: { dataset: resource },
+                  },
+                }),
+          },
         },
-      },
-    },
-  } as typeof hookPlan);
-  assert.throws(
-    () => compileOnchainHookPlan(mutated),
-    (error: unknown) => {
-      assert.ok(error instanceof HookPlanCompilationError);
-      assert.match(
-        error.issues.join("; "),
-        /fileType must be one of local\|http\|txcloud\|plain_text, received "locale"/,
+      } as typeof hookPlan);
+      assert.throws(
+        () => compileOnchainHookPlan(mutated),
+        (error: unknown) => {
+          assert.ok(error instanceof HookPlanCompilationError);
+          assert.match(
+            error.issues.join("; "),
+            /fileType is required and must be a non-empty string/,
+          );
+          return true;
+        },
+        `${label} ${face} must be rejected`,
       );
-      return true;
-    },
-  );
+    }
+  }
 });
 
 test("rejects non-map file-resource shapes at the on-chain compile boundary", () => {
