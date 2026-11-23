@@ -1,25 +1,23 @@
 import { HookPlanCompilationError } from "../hook-plan.js";
-import { fileWriterLeaf } from "./capabilities-root.js";
 import { compareStageFileWriters } from "./canonical/ordering.js";
 import { onchainStageId } from "./hash/route.js";
 import { expectClosedKeySet, expectHexHash, expectNonEmptyString, isHexHash, isRecord } from "./shape.js";
 import type { OnchainStageFileWriter } from "../types/index.js";
 
 /**
- * 阶段文件写入者能力叶：从定义快照读取 `spec.stages[].fileWriters`，生成
- * (targetStageId, writerStageId) 叶并入 capabilitiesRoot；DSL 语义校验
- * （存在/自引用/去重/上限的具名错误）归 uvp-core，本模块只做链轨产物边界
- * 的形状与承诺重算。
+ * 阶段文件写入者声明：从定义快照读取 `spec.stages[].fileWriters`，生成
+ * 计划级 (targetStageId, writerStageId) 明文段；定义级 DSL 语义由 uvp-core
+ * analyze 校验，本模块只做链轨产物边界的形状、阶段存在性与 EVM 注册上限。
  */
 
 export const MAX_FILE_WRITERS_PER_STAGE = 8;
+export const MAX_FILE_WRITERS = 64;
 
 const STAGE_FILE_WRITER_FIELDS: readonly string[] = [
   "targetStageIdentifier",
   "targetStageId",
   "writerStageIdentifier",
   "writerStageId",
-  "fileWriterLeaf",
 ];
 
 export function compileStageFileWriters(
@@ -53,7 +51,7 @@ export function compileStageFileWriters(
     }
     if (declaredWriters.length > MAX_FILE_WRITERS_PER_STAGE) {
       issues.push(
-        `stage ${targetStageIdentifier} declares ${declaredWriters.length} fileWriters, above the ${MAX_FILE_WRITERS_PER_STAGE} capability leaves a stage may grant`,
+        `stage ${targetStageIdentifier} declares ${declaredWriters.length} fileWriters, above the ${MAX_FILE_WRITERS_PER_STAGE} writer stages a stage may declare`,
       );
       continue;
     }
@@ -100,9 +98,13 @@ export function compileStageFileWriters(
         targetStageId,
         writerStageIdentifier,
         writerStageId,
-        fileWriterLeaf: fileWriterLeaf(targetStageId, writerStageId),
       });
     }
+  }
+  if (entries.length > MAX_FILE_WRITERS) {
+    issues.push(
+      `plan declares ${entries.length} file writer pairs, above the ${MAX_FILE_WRITERS} cap the state machine accepts at commit`,
+    );
   }
   if (issues.length > 0) {
     throw new HookPlanCompilationError(issues);
@@ -117,6 +119,11 @@ export function validateOnchainStageFileWriters(
   const issues: string[] = [];
   const seen = new Set<string>();
   const writersPerTarget = new Map<string, number>();
+  if (bindings.length > MAX_FILE_WRITERS) {
+    issues.push(
+      `stageFileWriters declares ${bindings.length} pairs, above the ${MAX_FILE_WRITERS} cap the state machine accepts at commit`,
+    );
+  }
   for (const [index, binding] of bindings.entries()) {
     const prefix = `stageFileWriters[${index}]`;
     if (!isRecord(binding)) {
@@ -136,7 +143,6 @@ export function validateOnchainStageFileWriters(
     );
     expectHexHash(binding.targetStageId, `${prefix}.targetStageId`, issues);
     expectHexHash(binding.writerStageId, `${prefix}.writerStageId`, issues);
-    expectHexHash(binding.fileWriterLeaf, `${prefix}.fileWriterLeaf`, issues);
     if (
       typeof binding.targetStageIdentifier === "string" &&
       binding.targetStageIdentifier === binding.writerStageIdentifier
@@ -176,15 +182,6 @@ export function validateOnchainStageFileWriters(
       binding.writerStageId !== onchainStageId(binding.writerStageIdentifier)
     ) {
       issues.push(`${prefix}.writerStageId must be keccak256(writerStageIdentifier)`);
-    }
-    if (
-      isHexHash(binding.targetStageId) &&
-      isHexHash(binding.writerStageId) &&
-      binding.fileWriterLeaf !== fileWriterLeaf(binding.targetStageId, binding.writerStageId)
-    ) {
-      issues.push(
-        `${prefix}.fileWriterLeaf must match keccak256("UVP_FILE_WRITER_V1", targetStageId, writerStageId)`,
-      );
     }
     if (isHexHash(binding.targetStageId) && isHexHash(binding.writerStageId)) {
       const key = `${binding.targetStageId}:${binding.writerStageId}`;

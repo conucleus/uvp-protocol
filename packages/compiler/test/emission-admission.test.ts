@@ -11,17 +11,14 @@ import {
   onchainStageId,
   parseZhixuDefinition,
   toSolidityRegisterPlanArgs,
-  validateHookPlanArtifact,
   validateOnchainHookPlanArtifact,
   ZhixuLoadError,
   type CompiledHookPlanAdmission,
-  type HookPlanArtifact,
   type OnchainCompiledAdmission,
   type OnchainHookInstruction,
   type OnchainHookPlanArtifact,
   type ZhixuDefinition,
 } from "../src/index.js";
-import { hookPlanHashOf } from "../src/hook-plan/assemble.js";
 import { compileZhixuOnchainHookPlan } from "../src/onchain/compile.js";
 import { hashOnchainPlanPayload } from "../src/onchain/hash/plan.js";
 import {
@@ -101,44 +98,6 @@ test("declared validWhen compiles into hook_plan admissions; unconditional entri
       ["negative", "slot_a", "work.cmp_err"],
       ["positive", "slot_a", "gate.seed"],
     ],
-  );
-});
-
-test("hook-plan source binding rejects a stripped validWhen admission", () => {
-  const plan = compileZhixuHookPlan(admissionZhixu("slot_a::gate.seed"));
-  assert.equal(plan.admissions.length, 1);
-
-  const stripped = { ...plan, admissions: [] };
-  const resigned = {
-    ...stripped,
-    planHash: hookPlanHashOf(stripped as HookPlanArtifact),
-  };
-  assert.deepEqual(validateHookPlanArtifact(resigned), [
-    "admissions must include work::work.cmp from the source definition's sendSignals[].validWhen; "
-      + "a stripped admission would bypass the emission gate",
-  ]);
-});
-
-test("hook-plan source binding rejects an admission without a source validWhen declaration", () => {
-  const plan = compileZhixuHookPlan(admissionZhixu("slot_a::gate.seed"));
-  const forgedAdmission = {
-    ...(plan.admissions[0] as CompiledHookPlanAdmission),
-    stageIdentifier: "gate",
-    signalName: "gate.seed",
-  };
-  const forged = {
-    ...plan,
-    admissions: [...plan.admissions, forgedAdmission],
-  };
-  const resigned = {
-    ...forged,
-    planHash: hookPlanHashOf(forged as HookPlanArtifact),
-  };
-  assert.ok(
-    validateHookPlanArtifact(resigned).includes(
-      "admissions[1] gate::gate.seed is not declared with validWhen by the source definition; "
-        + "a forged admission would gate an emission the source never declared",
-    ),
   );
 });
 

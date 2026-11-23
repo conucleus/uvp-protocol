@@ -24,13 +24,18 @@ interface IUVPStateMachineCore {
         uint64 delaySeconds;
     }
 
-    function supplierRegistry() external view returns (address);
+    function identityRegistry() external view returns (address);
 
     function effectiveStageSupplier(bytes32 planId, bytes32 orderId, bytes32 stageId) external view returns (bytes32);
 
     function effectiveStageAccount(bytes32 planId, bytes32 orderId, bytes32 stageId) external view returns (address);
 
     function isEffectiveStageAccount(bytes32 planId, bytes32 orderId, bytes32 stageId, address account)
+        external
+        view
+        returns (bool);
+
+    function isAuthorizedFileWriter(bytes32 planId, bytes32 orderId, bytes32 targetStageId, address account)
         external
         view
         returns (bool);

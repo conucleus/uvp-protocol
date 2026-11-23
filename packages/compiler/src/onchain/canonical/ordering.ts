@@ -66,8 +66,7 @@ function compareStageFileWriters(
 ): number {
   return (
     compareCanonicalKey(left.targetStageId, right.targetStageId) ||
-    compareCanonicalKey(left.writerStageId, right.writerStageId) ||
-    compareCanonicalKey(left.fileWriterLeaf, right.fileWriterLeaf)
+    compareCanonicalKey(left.writerStageId, right.writerStageId)
   );
 }
 
@@ -179,7 +178,6 @@ function fileWriterOrderKey(binding: Record<string, unknown>): readonly string[]
   return [
     String(binding.targetStageId),
     String(binding.writerStageId),
-    String(binding.fileWriterLeaf),
   ];
 }
 

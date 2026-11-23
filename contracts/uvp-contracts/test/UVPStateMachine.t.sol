@@ -10,11 +10,11 @@ import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {IUVPDockRegistry} from "../src/interfaces/IUVPDockRegistry.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
-import {UVPSupplierRegistry} from "../src/UVPSupplierRegistry.sol";
+import {UVPIdentityRegistry} from "../src/UVPIdentityRegistry.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
-import {FileOp, FileOpKind, FilePatch} from "../src/interfaces/IUVPFileResourceModule.sol";
+import {StageFile} from "../src/interfaces/IUVPFileResourceModule.sol";
 import {MerkleCommitment} from "../src/libraries/MerkleCommitment.sol";
-import {emptyFilePatch} from "./FilePatchTestHelpers.sol";
+import {emptyStageFiles} from "./StageFileTestHelpers.sol";
 
 interface Vm {
     struct Log {
@@ -46,7 +46,7 @@ contract Eip1271SupplierAccount {
         return valid ? _MAGIC : bytes4(0xffffffff);
     }
 
-    function registerSupplier(UVPSupplierRegistry registry) external returns (bytes32 supplierId) {
+    function registerSupplier(UVPIdentityRegistry registry) external returns (bytes32 supplierId) {
         supplierId = registry.registerSupplier(address(this));
     }
 }
@@ -163,10 +163,10 @@ contract UVPStateMachineTest {
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
     bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("1");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,bytes32 fileWritersHash,uint256 deadline)"
     );
     bytes32 private constant SIGNAL_SUBMISSION_TYPEHASH = keccak256(
-        "UVPStateMachineSignalSubmission(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 patchHash,bytes32 attributionHash,address submitter,uint256 deadline)"
+        "UVPStateMachineSignalSubmission(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 targetStageId,bytes32 filesHash,bytes32 attributionHash,address submitter,uint256 deadline)"
     );
     bytes32 private constant ORDER_TRIGGERED_TOPIC =
         keccak256("OrderTriggered(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)");
@@ -179,7 +179,7 @@ contract UVPStateMachineTest {
         keccak256("StageMaterialized(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32)");
     bytes32 private constant HOOK_READY_TOPIC = keccak256("HookReady(bytes32,bytes32,bytes32,bytes32,bytes32)");
 
-    mapping(address machine => UVPSupplierRegistry) private _registries;
+    mapping(address machine => UVPIdentityRegistry) private _registries;
     mapping(address machine => UVPFileResourceModule) private _fileModules;
     mapping(address machine => UVPDerivedSignalModule) private _derivedModules;
     mapping(address machine => StagePatchActivationMock) private _patchModules;
@@ -209,30 +209,30 @@ contract UVPStateMachineTest {
         require(machine.owner() == NON_OWNER, "owner transfer missing");
     }
 
-    function testFreezeRequiresSupplierRegistryModule() public {
-        UVPStateMachine machine = _deployModulesWithoutSupplierRegistry();
+    function testFreezeRequiresIdentityRegistryModule() public {
+        UVPStateMachine machine = _deployModulesWithoutIdentityRegistry();
         vm.expectRevert(UVPStateMachine.IncompleteModuleConfiguration.selector);
         machine.freezeModules();
 
-        UVPSupplierRegistry registry = new UVPSupplierRegistry();
-        machine.setSupplierRegistry(address(registry));
+        UVPIdentityRegistry registry = new UVPIdentityRegistry();
+        machine.setIdentityRegistry(address(registry));
         machine.freezeModules();
         require(machine.modulesFrozen(), "modules not frozen");
-        require(machine.supplierRegistry() == address(registry), "registry slot missing");
+        require(machine.identityRegistry() == address(registry), "registry slot missing");
     }
 
     function testFrozenModulesCannotBeReconfigured() public {
         UVPStateMachine machine = _newMachine();
-        UVPSupplierRegistry registry = new UVPSupplierRegistry();
+        UVPIdentityRegistry registry = new UVPIdentityRegistry();
         address replacementPatch = address(new StagePatchActivationMock(address(machine)));
         vm.expectRevert(UVPStateMachine.ModulesFrozen.selector);
-        machine.setSupplierRegistry(address(registry));
+        machine.setIdentityRegistry(address(registry));
         vm.expectRevert(UVPStateMachine.ModulesFrozen.selector);
         machine.setStagePatchModule(replacementPatch);
     }
 
     function testCommitPlanRequiresFrozenModules() public {
-        UVPStateMachine machine = _deployModulesWithoutSupplierRegistry();
+        UVPStateMachine machine = _deployModulesWithoutIdentityRegistry();
         UVPStateMachine.CompactHook[] memory hooks = _birthPlan();
         UVPStateMachine.StageSupplierBinding[] memory bindings = new UVPStateMachine.StageSupplierBinding[](0);
         UVPStateMachine.PlanCommit memory commit = _planCommit(
@@ -240,7 +240,7 @@ contract UVPStateMachineTest {
         );
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
         vm.expectRevert(UVPStateMachine.ModulesNotFrozen.selector);
-        machine.commitPlan(commit, hooks, bindings, signature);
+        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
     }
 
     function testPlanExistsOnlyAfterFinalize() public {
@@ -307,7 +307,7 @@ contract UVPStateMachineTest {
                 UVPStateMachine.SupplierBindingsRootMismatch.selector, bytes32(uint256(0x1234)), _bindingsRoot(bindings)
             )
         );
-        machine.commitPlan(commit, hooks, bindings, signature);
+        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
     }
 
     function testCommitPlanRejectsTooManySupplierBindings() public {
@@ -323,7 +323,7 @@ contract UVPStateMachineTest {
         );
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
         vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.TooManySupplierBindings.selector, 257));
-        machine.commitPlan(commit, hooks, bindings, signature);
+        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
     }
 
     function testCommitPlanRejectsDuplicateSupplierBinding() public {
@@ -345,7 +345,7 @@ contract UVPStateMachineTest {
                 UVPStateMachine.DuplicateSupplierBinding.selector, bindings[0].stageId, bindings[0].supplierId, bindings[0].kind
             )
         );
-        machine.commitPlan(commit, hooks, duplicated, signature);
+        machine.commitPlan(commit, hooks, duplicated, new UVPStateMachine.StageFileWriter[](0), signature);
     }
 
     function testCommitPlanRejectsInactiveSupplier() public {
@@ -359,7 +359,7 @@ contract UVPStateMachineTest {
         );
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
         vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.SupplierNotActive.selector, unknownSupplier));
-        machine.commitPlan(commit, hooks, bindings, signature);
+        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
     }
 
     function testCommitPlanRejectsBindingForUnknownStage() public {
@@ -383,7 +383,7 @@ contract UVPStateMachineTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPStateMachine.UnknownPlanStage.selector, bytes32(uint256(0x7777)))
         );
-        machine.commitPlan(commit, hooks, withUnknown, signature);
+        machine.commitPlan(commit, hooks, withUnknown, new UVPStateMachine.StageFileWriter[](0), signature);
     }
 
     function testCommitPlanRejectsBindingOnDynamicStage() public {
@@ -407,7 +407,7 @@ contract UVPStateMachineTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPStateMachine.SupplierBindingForbiddenForStage.selector, STAGE_DYN)
         );
-        machine.commitPlan(commit, hooks, withDynamic, signature);
+        machine.commitPlan(commit, hooks, withDynamic, new UVPStateMachine.StageFileWriter[](0), signature);
     }
 
     function testCommitPlanRejectsBindingOnDockStage() public {
@@ -430,7 +430,7 @@ contract UVPStateMachineTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPStateMachine.SupplierBindingForbiddenForStage.selector, STAGE_DOCK)
         );
-        machine.commitPlan(commit, hooks, withDock, signature);
+        machine.commitPlan(commit, hooks, withDock, new UVPStateMachine.StageFileWriter[](0), signature);
     }
 
     function testCommitPlanRejectsCandidateOnBirthStage() public {
@@ -454,7 +454,7 @@ contract UVPStateMachineTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPStateMachine.CandidateSupplierBindingForbiddenForStage.selector, STAGE_INIT)
         );
-        machine.commitPlan(commit, hooks, withCandidate, signature);
+        machine.commitPlan(commit, hooks, withCandidate, new UVPStateMachine.StageFileWriter[](0), signature);
     }
 
     function testCommitPlanRejectsCandidateWithoutDefault() public {
@@ -486,7 +486,7 @@ contract UVPStateMachineTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPStateMachine.CandidateSupplierBindingRequiresDefault.selector, STAGE_AUDIT)
         );
-        machine.commitPlan(commit, hooks, trimmed, signature);
+        machine.commitPlan(commit, hooks, trimmed, new UVPStateMachine.StageFileWriter[](0), signature);
     }
 
     function testCommitPlanRejectsInvalidBindingKind() public {
@@ -508,7 +508,7 @@ contract UVPStateMachineTest {
         );
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
         vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.InvalidSupplierBindingKind.selector, 2));
-        machine.commitPlan(commit, hooks, withInvalid, signature);
+        machine.commitPlan(commit, hooks, withInvalid, new UVPStateMachine.StageFileWriter[](0), signature);
     }
 
     function testCommitPlanRejectsInconsistentDynamicSupplierFlag() public {
@@ -530,7 +530,7 @@ contract UVPStateMachineTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPStateMachine.InconsistentDynamicSupplierFlag.selector, STAGE_DYN)
         );
-        machine.commitPlan(commit, hooks, bindings, signature);
+        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
     }
 
     function testCommitPlanRejectsWrongPublisherSignature() public {
@@ -546,7 +546,7 @@ contract UVPStateMachineTest {
                 UVPStateMachine.InvalidPlanSignature.selector, vm.addr(PUBLISHER_PRIVATE_KEY), vm.addr(BIRTH_PRIVATE_KEY)
             )
         );
-        machine.commitPlan(commit, hooks, bindings, signature);
+        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
     }
 
     function testCommitPlanRejectsExpiredSignature() public {
@@ -559,7 +559,7 @@ contract UVPStateMachineTest {
         vm.warp(block.timestamp + 2 hours);
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
         vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.ExpiredPlanSignature.selector, commit.deadline));
-        machine.commitPlan(commit, hooks, bindings, signature);
+        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
     }
 
     function testCommitPlanRejectsHooksHashMismatch() public {
@@ -576,7 +576,7 @@ contract UVPStateMachineTest {
                 UVPStateMachine.HooksHashMismatch.selector, bytes32(uint256(0x1234)), keccak256(abi.encode(hooks))
             )
         );
-        machine.commitPlan(commit, hooks, bindings, signature);
+        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
     }
 
     function testPlanCommittedEventCarriesSupplierBindingsRoot() public {
@@ -623,8 +623,8 @@ contract UVPStateMachineTest {
             payloadHash: PAYLOAD_HASH,
             idempotencyKey: IDEMPOTENCY_KEY,
             attribution: _noAttribution(),
-            filePatch: emptyFilePatch(),
-            patchHash: bytes32(0),
+            targetStageId: bytes32(0),
+            files: emptyStageFiles(),
             submitter: address(this),
             deadline: block.timestamp + 1 hours
         });
@@ -648,8 +648,8 @@ contract UVPStateMachineTest {
             payloadHash: PAYLOAD_HASH,
             idempotencyKey: keccak256("second-key"),
             attribution: _noAttribution(),
-            filePatch: emptyFilePatch(),
-            patchHash: bytes32(0),
+            targetStageId: bytes32(0),
+            files: emptyStageFiles(),
             submitter: address(this),
             deadline: block.timestamp + 1 hours
         });
@@ -670,8 +670,8 @@ contract UVPStateMachineTest {
             payloadHash: PAYLOAD_HASH,
             idempotencyKey: IDEMPOTENCY_KEY,
             attribution: _noAttribution(),
-            filePatch: emptyFilePatch(),
-            patchHash: bytes32(0),
+            targetStageId: bytes32(0),
+            files: emptyStageFiles(),
             submitter: address(this),
             deadline: block.timestamp + 1 hours
         });
@@ -722,8 +722,8 @@ contract UVPStateMachineTest {
             payloadHash: PAYLOAD_HASH,
             idempotencyKey: IDEMPOTENCY_KEY,
             attribution: _noAttribution(),
-            filePatch: emptyFilePatch(),
-            patchHash: bytes32(0),
+            targetStageId: bytes32(0),
+            files: emptyStageFiles(),
             submitter: address(this),
             deadline: block.timestamp + 1 hours
         });
@@ -745,10 +745,10 @@ contract UVPStateMachineTest {
         require(!duplicateInserted, "duplicate signal must report not inserted");
     }
 
-    function testTriggerWithFilePatchCreatesOrderAndWritesFile() public {
+    function testTriggerWithFilesCreatesOrderAndWritesFiles() public {
         UVPStateMachine machine = _newMachine();
         bytes32 planId = _registerPlan(machine, _birthPlan());
-        FilePatch memory patch = _addFilePatch(0, keccak256("birth-file"), keccak256("birth-content"));
+        StageFile[] memory files = _oneFile("birth-file", bytes("birth-content"));
         UVPStateMachine.SignalSubmission memory submission = UVPStateMachine.SignalSubmission({
             planId: planId,
             orderId: bytes32(0),
@@ -757,24 +757,25 @@ contract UVPStateMachineTest {
             payloadHash: PAYLOAD_HASH,
             idempotencyKey: IDEMPOTENCY_KEY,
             attribution: _noAttribution(),
-            filePatch: patch,
-            patchHash: _fileModules[address(machine)].filePatchHash(patch),
+            targetStageId: STAGE_INIT,
+            files: files,
             submitter: address(this),
             deadline: block.timestamp + 1 hours
         });
         (bytes32 orderId, bool inserted) = machine.submitSignal(submission, hex"");
         require(inserted, "trigger with file must report inserted");
         require(machine.orderExists(planId, orderId), "trigger order missing");
-        (bool exists, bytes32 contentHash,,) =
-            _fileModules[address(machine)].getStageFile(planId, orderId, STAGE_INIT, keccak256("birth-file"));
+        (bool exists, bytes memory payload) =
+            _fileModules[address(machine)].getStageFile(planId, orderId, STAGE_INIT, "birth-file");
         require(exists, "birth file patch missing");
-        require(contentHash == keccak256("birth-content"), "birth file content mismatch");
+        require(keccak256(payload) == keccak256(bytes("birth-content")), "birth file content mismatch");
     }
 
-    function testTriggerWithFailedFilePatchRevertsWholeOrderCreation() public {
+    function testTriggerWithFailedFilesRevertsWholeOrderCreation() public {
         UVPStateMachine machine = _newMachine();
         bytes32 planId = _registerPlan(machine, _birthPlan());
-        FilePatch memory patch = _addFilePatch(keccak256("wrong-base"), keccak256("failed-file"), keccak256("c"));
+        bytes32 unknownStageId = keccak256("unknown-target-stage");
+        StageFile[] memory files = _oneFile("failed-file", bytes("content"));
         UVPStateMachine.SignalSubmission memory submission = UVPStateMachine.SignalSubmission({
             planId: planId,
             orderId: bytes32(0),
@@ -783,27 +784,23 @@ contract UVPStateMachineTest {
             payloadHash: PAYLOAD_HASH,
             idempotencyKey: IDEMPOTENCY_KEY,
             attribution: _noAttribution(),
-            filePatch: patch,
-            patchHash: _fileModules[address(machine)].filePatchHash(patch),
+            targetStageId: unknownStageId,
+            files: files,
             submitter: address(this),
             deadline: block.timestamp + 1 hours
         });
         vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPFileResourceModule.FileBaseHashMismatch.selector, bytes32(0), keccak256("wrong-base")
-            )
+            abi.encodeWithSelector(UVPFileResourceModule.FileTargetStageUnknown.selector, planId, unknownStageId)
         );
         machine.submitSignal(submission, hex"");
 
-        submission.filePatch = emptyFilePatch();
-        submission.patchHash = bytes32(0);
+        submission.targetStageId = STAGE_INIT;
+        submission.files = emptyStageFiles();
         (bytes32 orderId, bool inserted) = machine.submitSignal(submission, hex"");
         require(inserted, "retried trigger birth must report inserted");
         require(machine.orderExists(planId, orderId), "retry after reverted birth did not create the order");
-        require(
-            _fileModules[address(machine)].stageFilesHash(planId, orderId, STAGE_INIT) == bytes32(0),
-            "reverted birth file patch leaked into the order"
-        );
+        (bool exists,) = _fileModules[address(machine)].getStageFile(planId, orderId, STAGE_INIT, "failed-file");
+        require(!exists, "reverted birth file patch leaked into the order");
     }
 
     function testDirectSubmitSignalRejectsSubmitterThatIsNotCaller() public {
@@ -1146,25 +1143,22 @@ contract UVPStateMachineTest {
     }
 
 
-    function testPureFilePatchUsesEffectiveSupplierAccount() public {
+    function testPureFilesUseEffectiveSupplierAccount() public {
         UVPStateMachine machine = _supplierMachine();
-        FilePatch memory patch = _addFilePatch(0, keccak256("k1"), keccak256("content"));
-        _submitFilePatchAs(machine, patch, address(this));
-        (bool exists,,,) = _fileModules[address(machine)].getStageFile(PLAN_ID, ORDER_ID, STAGE_INIT, keccak256("k1"));
+        _submitFilesAs(machine, STAGE_INIT, _oneFile("k1", bytes("content")), address(this));
+        (bool exists, bytes memory payload) =
+            _fileModules[address(machine)].getStageFile(PLAN_ID, ORDER_ID, STAGE_INIT, "k1");
         require(exists, "file record missing");
+        require(keccak256(payload) == keccak256(bytes("content")), "file payload mismatch");
     }
 
 
-    function testPureFilePatchRejectsNonSupplierAccount() public {
+    function testPureFilesRejectNonSupplierAccount() public {
         UVPStateMachine machine = _supplierMachine();
-        FilePatch memory patch = _addFilePatch(0, keccak256("k2"), keccak256("content"));
-        bytes32 patchHash = _fileModules[address(machine)].filePatchHash(patch);
         UVPStateMachine.SignalSubmission memory submission =
-            _filePatchSubmission(PLAN_ID, ORDER_ID, patch, patchHash, OUTSIDER);
+            _fileSubmission(PLAN_ID, ORDER_ID, STAGE_INIT, _oneFile("k2", bytes("content")), OUTSIDER);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPFileResourceModule.FileWriterUnauthorized.selector, ORDER_ID, STAGE_INIT, bytes32(0), OUTSIDER
-            )
+            abi.encodeWithSelector(UVPFileResourceModule.FileWriterUnauthorized.selector, ORDER_ID, STAGE_INIT, OUTSIDER)
         );
         vm.prank(OUTSIDER);
         machine.submitSignal(submission, hex"");
@@ -1172,12 +1166,11 @@ contract UVPStateMachineTest {
 
 
 
-    function testBusinessSignalWithFilePatchUsesEffectiveSupplierAccount() public {
+    function testBusinessSignalWithFilesUsesEffectiveSupplierAccount() public {
         UVPStateMachine machine = _supplierMachine();
-        FilePatch memory patch = _addFilePatch(0, keccak256("k3"), keccak256("content"));
-        _submitBusinessWithFilePatch(machine, SOURCE_BOOTSTRAP, SIGNAL_DONE, patch);
+        _submitBusinessWithFiles(machine, SOURCE_BOOTSTRAP, SIGNAL_DONE, _oneFile("k3", bytes("content")));
         require(machine.hasSignal(PLAN_ID, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_DONE), "business signal missing");
-        (bool exists,,,) = _fileModules[address(machine)].getStageFile(PLAN_ID, ORDER_ID, STAGE_INIT, keccak256("k3"));
+        (bool exists,) = _fileModules[address(machine)].getStageFile(PLAN_ID, ORDER_ID, STAGE_INIT, "k3");
         require(exists, "file record missing");
     }
 
@@ -1349,8 +1342,8 @@ contract UVPStateMachineTest {
             payloadHash: keccak256("dock.b.birth.payload"),
             idempotencyKey: keccak256("dock.b.birth.idempotency"),
             attribution: _capabilityAttribution(machine, planB, STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_BIRTH),
-            filePatch: emptyFilePatch(),
-            patchHash: bytes32(0),
+            targetStageId: bytes32(0),
+            files: emptyStageFiles(),
             submitter: _triggerSubmitter(machine),
             deadline: block.timestamp + 1 hours
         });
@@ -1418,24 +1411,10 @@ contract UVPStateMachineTest {
         machine.activateStageDockSupplierFromModule(planB, orderB, STAGE_DOCK, supplierId, dkid, 1);
 
         bytes memory payload = _dockPayload(orderA);
-        FileOp[] memory ops = new FileOp[](1);
-        ops[0] = FileOp({
-            kind: uint8(FileOpKind.Add),
-            key: keccak256("dock_link"),
-            contentHash: keccak256(payload),
-            handle: ""
-        });
-        FilePatch memory patch = FilePatch({
-            targetStageId: STAGE_DOCK,
-            baseHash: bytes32(0),
-            writerStageId: STAGE_DOCK,
-            writerProof: new bytes32[](0),
-            ops: ops
-        });
+        StageFile[] memory files = _oneFile("dock_link", payload);
         UVPFileResourceModule fileModule = UVPFileResourceModule(machine.fileResourceModule());
-        bytes32 filesDigest = fileModule.filePatchDigest(planB, orderB, patch);
         vm.prank(address(machine));
-        fileModule.applyStageFilePatch(planB, orderB, filesDigest, patch, address(this), STAGE_DOCK);
+        fileModule.applyStageFiles(planB, orderB, STAGE_DOCK, files, address(this));
 
         bytes32[][] memory proofs = new bytes32[][](2);
         proofs[0] = bProof;
@@ -1726,7 +1705,7 @@ contract UVPStateMachineTest {
     function testSetModuleRejectsEOATarget() public {
         UVPStateMachine machine = new UVPStateMachine();
         vm.expectRevert(UVPStateMachine.InvalidModuleAddress.selector);
-        machine.setSupplierRegistry(NON_OWNER);
+        machine.setIdentityRegistry(NON_OWNER);
     }
 
     bytes32 private constant EMPTY_ROOT = keccak256("");
@@ -1764,7 +1743,7 @@ contract UVPStateMachineTest {
 
     function _newDockMachine() private returns (UVPStateMachine machine, UVPStagePatchModule stagePatch) {
         machine = new UVPStateMachine();
-        UVPSupplierRegistry registry = new UVPSupplierRegistry();
+        UVPIdentityRegistry registry = new UVPIdentityRegistry();
         _registries[address(machine)] = registry;
         stagePatch = new UVPStagePatchModule(address(machine));
         machine.setStagePatchModule(address(stagePatch));
@@ -1773,7 +1752,7 @@ contract UVPStateMachineTest {
         machine.setPlanMetadataModule(address(new UVPPlanMetadataModule(address(machine))));
         machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
         machine.setLens(address(new UVPStateMachineLens(address(machine))));
-        machine.setSupplierRegistry(address(registry));
+        machine.setIdentityRegistry(address(registry));
         machine.freezeModules();
     }
 
@@ -1790,8 +1769,8 @@ contract UVPStateMachineTest {
 
     function _newMachine() private returns (UVPStateMachine machine) {
         machine = _deployModules();
-        UVPSupplierRegistry registry = new UVPSupplierRegistry();
-        machine.setSupplierRegistry(address(registry));
+        UVPIdentityRegistry registry = new UVPIdentityRegistry();
+        machine.setIdentityRegistry(address(registry));
         _registries[address(machine)] = registry;
         machine.freezeModules();
     }
@@ -1811,7 +1790,7 @@ contract UVPStateMachineTest {
         machine.setLens(address(new UVPStateMachineLens(address(machine))));
     }
 
-    function _deployModulesWithoutSupplierRegistry() private returns (UVPStateMachine machine) {
+    function _deployModulesWithoutIdentityRegistry() private returns (UVPStateMachine machine) {
         machine = _deployModules();
     }
 
@@ -1820,7 +1799,7 @@ contract UVPStateMachineTest {
         if (supplierId != bytes32(0)) {
             return supplierId;
         }
-        UVPSupplierRegistry registry = _registries[address(machine)];
+        UVPIdentityRegistry registry = _registries[address(machine)];
         if (account == address(this)) {
             supplierId = registry.registerSupplier(account);
         } else if (account.code.length != 0) {
@@ -1865,8 +1844,8 @@ contract UVPStateMachineTest {
             payloadHash: PAYLOAD_HASH,
             idempotencyKey: IDEMPOTENCY_KEY,
             attribution: attribution,
-            filePatch: emptyFilePatch(),
-            patchHash: bytes32(0),
+            targetStageId: bytes32(0),
+            files: emptyStageFiles(),
             submitter: _triggerSubmitter(machine),
             deadline: block.timestamp + 1 hours
         });
@@ -1931,37 +1910,41 @@ contract UVPStateMachineTest {
             payloadHash: PAYLOAD_HASH,
             idempotencyKey: keccak256(abi.encode(sourceId, signalId, submitter)),
             attribution: attribution,
-            filePatch: emptyFilePatch(),
-            patchHash: bytes32(0),
+            targetStageId: bytes32(0),
+            files: emptyStageFiles(),
             submitter: submitter,
             deadline: block.timestamp + 1 hours
         });
     }
 
-    function _submitFilePatchAs(UVPStateMachine machine, FilePatch memory patch, address submitter) private {
-        bytes32 patchHash = _fileModules[address(machine)].filePatchHash(patch);
+    function _submitFilesAs(
+        UVPStateMachine machine,
+        bytes32 targetStageId,
+        StageFile[] memory files,
+        address submitter
+    ) private {
         vm.prank(submitter);
-        machine.submitSignal(_filePatchSubmission(PLAN_ID, ORDER_ID, patch, patchHash, submitter), hex"");
+        machine.submitSignal(_fileSubmission(PLAN_ID, ORDER_ID, targetStageId, files, submitter), hex"");
     }
 
-    function _submitBusinessWithFilePatch(
+    function _submitBusinessWithFiles(
         UVPStateMachine machine,
         bytes32 sourceId,
         bytes32 signalId,
-        FilePatch memory patch
+        StageFile[] memory files
     ) private {
         UVPStateMachine.SignalSubmission memory submission =
             _businessSubmission(PLAN_ID, ORDER_ID, sourceId, signalId, _noAttribution(), address(this));
-        submission.filePatch = patch;
-        submission.patchHash = _fileModules[address(machine)].filePatchHash(patch);
+        submission.targetStageId = STAGE_INIT;
+        submission.files = files;
         machine.submitSignal(submission, hex"");
     }
 
-    function _filePatchSubmission(
+    function _fileSubmission(
         bytes32 planId,
         bytes32 orderId,
-        FilePatch memory patch,
-        bytes32 patchHash,
+        bytes32 targetStageId,
+        StageFile[] memory files,
         address submitter
     ) private view returns (UVPStateMachine.SignalSubmission memory) {
         return UVPStateMachine.SignalSubmission({
@@ -1970,13 +1953,18 @@ contract UVPStateMachineTest {
             sourceId: bytes32(0),
             signalId: bytes32(0),
             payloadHash: bytes32(0),
-            idempotencyKey: keccak256(abi.encode("file-patch", patchHash)),
+            idempotencyKey: keccak256(abi.encode("files", targetStageId, files.length)),
             attribution: _noAttribution(),
-            filePatch: patch,
-            patchHash: patchHash,
+            targetStageId: targetStageId,
+            files: files,
             submitter: submitter,
             deadline: block.timestamp + 1 hours
         });
+    }
+
+    function _oneFile(string memory key, bytes memory payload) private pure returns (StageFile[] memory files) {
+        files = new StageFile[](1);
+        files[0] = StageFile({key: key, payload: payload});
     }
 
 
@@ -2074,10 +2062,13 @@ contract UVPStateMachineTest {
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: MerkleCommitment.root(leaves),
             supplierBindingsRoot: _bindingsRoot(bindings),
+            fileWritersHash: keccak256(abi.encode(new UVPStateMachine.StageFileWriter[](0))),
             deadline: block.timestamp + 1 hours
         });
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(publisherPrivateKey, _planCommitDigest(machine, commit));
-        planId = machine.commitPlan(commit, hooks, bindings, _packedSignature(v, r, s));
+        planId = machine.commitPlan(
+            commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), _packedSignature(v, r, s)
+        );
 
         PLAN_ID = planId;
         CapabilityTables storage tables = _tables[address(machine)][planId];
@@ -2096,6 +2087,7 @@ contract UVPStateMachineTest {
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: MerkleCommitment.root(_capabilityLeaves(selectorBindings, signalCapabilities)),
             supplierBindingsRoot: _bindingsRoot(bindings),
+            fileWritersHash: keccak256(abi.encode(new UVPStateMachine.StageFileWriter[](0))),
             deadline: block.timestamp + 1 hours
         });
     }
@@ -2113,6 +2105,7 @@ contract UVPStateMachineTest {
                 commit.hooksHash,
                 commit.capabilitiesRoot,
                 commit.supplierBindingsRoot,
+                commit.fileWritersHash,
                 commit.deadline
             )
         );
@@ -2154,7 +2147,8 @@ contract UVPStateMachineTest {
                 submission.signalId,
                 submission.payloadHash,
                 submission.idempotencyKey,
-                submission.patchHash,
+                submission.targetStageId,
+                keccak256(abi.encode(submission.files)),
                 _attributionHash(submission.attribution),
                 submission.submitter,
                 submission.deadline
@@ -2376,22 +2370,6 @@ contract UVPStateMachineTest {
         for (uint256 i = 0; i < count; i++) {
             proof[i] = buffer[i];
         }
-    }
-
-    function _addFilePatch(bytes32 baseHash, bytes32 key, bytes32 contentHash)
-        private
-        pure
-        returns (FilePatch memory patch)
-    {
-        FileOp[] memory ops = new FileOp[](1);
-        ops[0] = FileOp({kind: 0, key: key, contentHash: contentHash, handle: "uvp://file/test"});
-        patch = FilePatch({
-            targetStageId: STAGE_INIT,
-            baseHash: baseHash,
-            writerStageId: bytes32(0),
-            writerProof: new bytes32[](0),
-            ops: ops
-        });
     }
 
     function _birthPlan() private pure returns (UVPStateMachine.CompactHook[] memory hooks) {

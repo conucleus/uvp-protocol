@@ -24,8 +24,8 @@ import { lowerHookPlanShell } from "./hook-plan/lower.js";
  * 链轨 hook_plan 入口：uvp-core `analyze` 是定义级 DSL/表达式校验的唯一
  * authority（形状、出生信号集、物化门、hook 解析），本模块只消费 analyze
  * 结果做链轨 lowering 与 planId/planHash 承诺，不再重复校验输入定义；
- * `validateHookPlanArtifact` 是外部传入 artifact 的边界校验（跨包入口），
- * 不在本模块的编译路径上二次调用。
+ * `validateHookPlanArtifact` 只校验 artifact 自身的承诺与 source 身份绑定
+ * （跨包反序列化入口），不重跑 analyze，也不在编译路径上二次调用。
  */
 
 export class HookPlanCompilationError extends Error {
@@ -263,118 +263,17 @@ function sourceBindingIssues(value: Record<string, unknown>): readonly string[] 
       "zhixuName must equal source.metadata.name; the carried source snapshot is the only owner of the plan's display identity",
     );
   }
-
-  let analysis: ZhixuAnalysis | undefined;
-  try {
-    analysis = analyzeWithUvpCore({ definition: value.source });
-  } catch (error) {
-    issues.push(
-      "source must be an analyzable Zhixu definition: "
-        + (error instanceof Error ? error.message : String(error)),
-    );
-  }
-  if (analysis !== undefined) {
+  const sourceSpec = isRecord(value.source.spec) ? value.source.spec : undefined;
+  if (isPlatform(value.platform) && sourceSpec !== undefined) {
     if (
-      isPlatform(value.platform)
-      && !canonicalEqual(
-        analysis.platform,
+      !canonicalEqual(
         normalizePlatformPreimage(value.platform),
+        normalizePlatformPreimage(sourceSpec.platform),
       )
     ) {
       issues.push(
         "platform must match the source definition's spec.platform (empty params normalize away)",
       );
-    }
-    const expectedCapabilities = new Map<string, unknown>();
-    for (const capability of analysis.signalCapabilities) {
-      if (
-        isRecord(capability) &&
-        typeof capability.stageIdentifier === "string" &&
-        typeof capability.targetSignalName === "string"
-      ) {
-        expectedCapabilities.set(
-          `${capability.stageIdentifier}\u0000${capability.targetSignalName}`,
-          capability,
-        );
-      }
-    }
-    if (Array.isArray(value.signalCapabilities)) {
-      for (const [index, capability] of value.signalCapabilities.entries()) {
-        if (
-          !isRecord(capability) ||
-          typeof capability.stageIdentifier !== "string" ||
-          typeof capability.targetSignalName !== "string"
-        ) {
-          continue;
-        }
-        const expected = expectedCapabilities.get(
-          `${capability.stageIdentifier}\u0000${capability.targetSignalName}`,
-        );
-        if (expected === undefined) {
-          issues.push(
-            `signalCapabilities[${index}] ${capability.stageIdentifier}::${capability.targetSignalName} is not a sendSignal declared by the source definition; `
-              + "a capability can only be declared by the stage that owns the signal",
-          );
-        } else if (!canonicalEqual(expected, capability)) {
-          issues.push(
-            `signalCapabilities[${index}] must match the source definition's sendSignals as analyzed by uvp-core`,
-          );
-        }
-      }
-    }
-
-    const expectedAdmissions = new Map<string, unknown>();
-    for (const admission of analysis.admissions) {
-      if (
-        isRecord(admission) &&
-        typeof admission.stageIdentifier === "string" &&
-        typeof admission.signalName === "string"
-      ) {
-        expectedAdmissions.set(
-          `${admission.stageIdentifier}\u0000${admission.signalName}`,
-          admission,
-        );
-      }
-    }
-    if (Array.isArray(value.admissions)) {
-      const declaredAdmissions = new Set<string>();
-      for (const [index, admission] of value.admissions.entries()) {
-        if (
-          !isRecord(admission) ||
-          typeof admission.stageIdentifier !== "string" ||
-          typeof admission.signalName !== "string"
-        ) {
-          continue;
-        }
-        const key = `${admission.stageIdentifier}\u0000${admission.signalName}`;
-        const expected = expectedAdmissions.get(key);
-        if (expected === undefined) {
-          issues.push(
-            `admissions[${index}] ${admission.stageIdentifier}::${admission.signalName} is not declared with validWhen by the source definition; `
-              + "a forged admission would gate an emission the source never declared",
-          );
-          continue;
-        }
-        declaredAdmissions.add(key);
-        if (!canonicalEqual(expected, admission)) {
-          issues.push(
-            `admissions[${index}] must match the source definition's sendSignals[].validWhen as analyzed by uvp-core`,
-          );
-        }
-      }
-      for (const [key, admission] of expectedAdmissions) {
-        if (declaredAdmissions.has(key)) {
-          continue;
-        }
-        const expected = admission as {
-          readonly stageIdentifier: string;
-          readonly signalName: string;
-        };
-        issues.push(
-          `admissions must include ${expected.stageIdentifier}::${expected.signalName} from the source definition's sendSignals[].validWhen; `
-            + "a stripped admission would bypass the emission gate",
-        );
-      }
     }
   }
   return issues;

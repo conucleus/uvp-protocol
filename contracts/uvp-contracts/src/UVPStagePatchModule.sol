@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
 import {IUVPFileResourceModule} from "./interfaces/IUVPFileResourceModule.sol";
 import {IUVPDockRegistry} from "./interfaces/IUVPDockRegistry.sol";
-import {IUVPSupplierRegistry} from "./interfaces/IUVPSupplierRegistry.sol";
+import {IUVPIdentityRegistry} from "./interfaces/IUVPIdentityRegistry.sol";
 import {ECDSA} from "./libraries/ECDSA.sol";
 import {UVPSignatures} from "./libraries/UVPSignatures.sol";
 import {MerkleCommitment} from "./libraries/MerkleCommitment.sol";
@@ -20,6 +20,7 @@ interface IUVPPlanMetadataModuleForStagePatch {
 }
 
 contract UVPStagePatchModule {
+    string private constant _DOCK_PAYLOAD_FILE_KEY_NAME = "dock_link";
     bytes32 private constant _DOCK_PAYLOAD_FILE_KEY = keccak256("dock_link");
     bytes32 private constant _DOCK_BINDING_ID_DOMAIN = keccak256("uvp.dock.binding_id.v1");
     uint8 private constant _SUPPLIER_BINDING_KIND_CANDIDATE = 1;
@@ -316,8 +317,8 @@ contract UVPStagePatchModule {
             return (false, false, bytes32(0), bytes32(0), address(0), bytes32(0), bytes32(0));
         }
         supplierAccount = stateMachine.effectiveStageAccount(planId, orderId, targetStageId);
-        (bool payloadExists,,,) = IUVPFileResourceModule(stateMachine.fileResourceModule())
-            .getStageFile(planId, orderId, targetStageId, _DOCK_PAYLOAD_FILE_KEY);
+        (bool payloadExists,) = IUVPFileResourceModule(stateMachine.fileResourceModule())
+            .getStageFile(planId, orderId, targetStageId, _DOCK_PAYLOAD_FILE_KEY_NAME);
         current = payloadExists && fromOrderId != bytes32(0);
         if (!current) {
             return (true, false, dockId, supplierId, supplierAccount, fromPlanId, bytes32(0));
@@ -347,8 +348,8 @@ contract UVPStagePatchModule {
             return (false, false, 0, false, false);
         }
         IUVPDockRegistry registry = _dockRegistry();
-        (bool payloadExists,,,) = IUVPFileResourceModule(stateMachine.fileResourceModule())
-            .getStageFile(planId, orderId, targetStageId, _DOCK_PAYLOAD_FILE_KEY);
+        (bool payloadExists,) = IUVPFileResourceModule(stateMachine.fileResourceModule())
+            .getStageFile(planId, orderId, targetStageId, _DOCK_PAYLOAD_FILE_KEY_NAME);
         current = payloadExists && fromOrderId != bytes32(0);
         if (outputIndex >= registry.dockOutputCount(dockId)) {
             return (current, false, 0, false, false);
@@ -579,7 +580,7 @@ contract UVPStagePatchModule {
         if (!stateMachine.isEffectiveStageAccount(planId, orderId, patch.selectorStageId, selector)) {
             revert UnauthorizedStageSupplierPatchSelector(orderId, patch.selectorStageId, selector);
         }
-        if (!_supplierRegistry().isActiveSupplier(patch.supplierId)) {
+        if (!_identityRegistry().isActiveSupplier(patch.supplierId)) {
             revert SupplierNotActive(patch.supplierId);
         }
     }
@@ -610,7 +611,7 @@ contract UVPStagePatchModule {
                 orderId, patch.targetStageId, effectiveSupplierId, patch.previousSupplierId
             );
         }
-        address previousSupplierAccount = _supplierRegistry().accountOf(patch.previousSupplierId);
+        address previousSupplierAccount = _identityRegistry().accountOf(patch.previousSupplierId);
         if (previousSupplierSigner != previousSupplierAccount) {
             revert InvalidStageSupplierPatchSignature(previousSupplierAccount, previousSupplierSigner);
         }
@@ -668,7 +669,7 @@ contract UVPStagePatchModule {
         if (!stateMachine.isEffectiveStageAccount(planId, orderId, selection.selectorStageId, selector)) {
             revert UnauthorizedStageSupplierPatchSelector(orderId, selection.selectorStageId, selector);
         }
-        if (!_supplierRegistry().isActiveSupplier(selection.supplierId)) {
+        if (!_identityRegistry().isActiveSupplier(selection.supplierId)) {
             revert SupplierNotActive(selection.supplierId);
         }
     }
@@ -688,14 +689,16 @@ contract UVPStagePatchModule {
         if (!stateMachine.orderExists(fromPlanId, fromOrderId)) {
             revert DockBindingFromOrderUnknown(fromPlanId, fromOrderId);
         }
-        (bool payloadExists, bytes32 contentHash,,) = IUVPFileResourceModule(stateMachine.fileResourceModule())
-            .getStageFile(planId, orderId, targetStageId, _DOCK_PAYLOAD_FILE_KEY);
+        (bool payloadExists, bytes memory storedPayload) =
+            IUVPFileResourceModule(stateMachine.fileResourceModule())
+                .getStageFile(planId, orderId, targetStageId, _DOCK_PAYLOAD_FILE_KEY_NAME);
         if (!payloadExists) {
             revert DockBindingPayloadMissing(planId, orderId, targetStageId);
         }
+        bytes32 storedContentHash = keccak256(storedPayload);
         bytes32 actualContentHash = keccak256(payloadContent);
-        if (actualContentHash != contentHash) {
-            revert DockBindingContentHashMismatch(contentHash, actualContentHash);
+        if (actualContentHash != storedContentHash) {
+            revert DockBindingContentHashMismatch(storedContentHash, actualContentHash);
         }
         bytes32 parsedFromOrderId = _parseDockPayload(payloadContent);
         if (parsedFromOrderId != fromOrderId) {
@@ -825,8 +828,8 @@ contract UVPStagePatchModule {
         return IUVPDockRegistry(stateMachine.dockRegistry());
     }
 
-    function _supplierRegistry() private view returns (IUVPSupplierRegistry) {
-        return IUVPSupplierRegistry(stateMachine.supplierRegistry());
+    function _identityRegistry() private view returns (IUVPIdentityRegistry) {
+        return IUVPIdentityRegistry(stateMachine.identityRegistry());
     }
 
     function _recoverStageSupplierPatchSigner(bytes32 digest, bytes calldata signature)

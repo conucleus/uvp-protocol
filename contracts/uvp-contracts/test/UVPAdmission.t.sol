@@ -8,11 +8,11 @@ import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
-import {UVPSupplierRegistry} from "../src/UVPSupplierRegistry.sol";
+import {UVPIdentityRegistry} from "../src/UVPIdentityRegistry.sol";
 import {AdmissionVerdict} from "../src/UVPStateMachineConstants.sol";
 import {MerkleCommitment} from "../src/libraries/MerkleCommitment.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
-import {emptyFilePatch} from "./FilePatchTestHelpers.sol";
+import {emptyStageFiles} from "./StageFileTestHelpers.sol";
 
 interface Vm {
     struct Log {
@@ -52,8 +52,8 @@ contract BatchSubmitter {
                 attribution: UVPStateMachine.FactAttribution({
                 sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
             }),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -70,8 +70,8 @@ contract BatchSubmitter {
                 attribution: UVPStateMachine.FactAttribution({
                 sourceId: bytes32(0), signalId: bytes32(0), stageId: bytes32(0), capabilityProof: new bytes32[](0)
             }),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -128,10 +128,10 @@ contract UVPAdmissionTest {
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
     bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("1");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,bytes32 fileWritersHash,uint256 deadline)"
     );
     bytes32 private constant SIGNAL_SUBMISSION_TYPEHASH = keccak256(
-        "UVPStateMachineSignalSubmission(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 patchHash,bytes32 attributionHash,address submitter,uint256 deadline)"
+        "UVPStateMachineSignalSubmission(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 targetStageId,bytes32 filesHash,bytes32 attributionHash,address submitter,uint256 deadline)"
     );
     bytes32 private constant FACT_ATTRIBUTION_TYPEHASH =
         keccak256("FactAttribution(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof)");
@@ -141,7 +141,7 @@ contract UVPAdmissionTest {
     bytes32 private constant EMPTY_MERKLE_ROOT = keccak256("");
     bytes32 private constant SUPPLIER_BINDING_LEAF_DOMAIN = keccak256("UVP_SUPPLIER_BINDING_V1");
 
-    mapping(address machine => UVPSupplierRegistry) private _registries;
+    mapping(address machine => UVPIdentityRegistry) private _registries;
     mapping(address machine => mapping(address account => bytes32 supplierId)) private _suppliers;
     mapping(address machine => mapping(bytes32 stageId => address account)) private _stageSupplierAccounts;
     mapping(address account => uint256 privateKey) private _supplierKeys;
@@ -425,8 +425,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -441,8 +441,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -475,8 +475,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -522,8 +522,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -545,8 +545,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -563,8 +563,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -599,8 +599,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -632,8 +632,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -668,8 +668,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -684,8 +684,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -701,8 +701,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -724,8 +724,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -740,8 +740,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -757,8 +757,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -776,8 +776,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -792,8 +792,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -814,8 +814,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -836,8 +836,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -852,8 +852,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -868,8 +868,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -886,8 +886,8 @@ contract UVPAdmissionTest {
                 payloadHash: bytes32(uint256(0x8004)),
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -918,8 +918,8 @@ contract UVPAdmissionTest {
             payloadHash: PAYLOAD_HASH,
             idempotencyKey: IDEMPOTENCY_KEY,
             attribution: _noAttribution(),
-            filePatch: emptyFilePatch(),
-            patchHash: bytes32(0),
+            targetStageId: bytes32(0),
+            files: emptyStageFiles(),
             submitter: address(this),
             deadline: block.timestamp + 1 hours
         });
@@ -964,8 +964,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -988,8 +988,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -1005,8 +1005,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -1025,8 +1025,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -1042,8 +1042,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -1062,8 +1062,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -1079,8 +1079,8 @@ contract UVPAdmissionTest {
                 payloadHash: PAYLOAD_HASH,
                 idempotencyKey: IDEMPOTENCY_KEY,
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -1100,7 +1100,7 @@ contract UVPAdmissionTest {
 
     function _newMachine() private returns (UVPStateMachine machine) {
         machine = new UVPStateMachine();
-        UVPSupplierRegistry registry = new UVPSupplierRegistry();
+        UVPIdentityRegistry registry = new UVPIdentityRegistry();
         _registries[address(machine)] = registry;
         machine.setStagePatchModule(address(new UVPStagePatchModule(address(machine))));
         machine.setDerivedSignalModule(address(new UVPDerivedSignalModule(address(machine))));
@@ -1108,7 +1108,7 @@ contract UVPAdmissionTest {
         machine.setPlanMetadataModule(address(new UVPPlanMetadataModule(address(machine))));
         machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
         machine.setLens(address(new UVPStateMachineLens(address(machine))));
-        machine.setSupplierRegistry(address(registry));
+        machine.setIdentityRegistry(address(registry));
         machine.freezeModules();
     }
 
@@ -1117,7 +1117,7 @@ contract UVPAdmissionTest {
         if (supplierId != bytes32(0)) {
             return supplierId;
         }
-        UVPSupplierRegistry registry = _registries[address(machine)];
+        UVPIdentityRegistry registry = _registries[address(machine)];
         if (account == address(this)) {
             supplierId = registry.registerSupplier(account);
         } else {
@@ -1364,7 +1364,7 @@ contract UVPAdmissionTest {
         if (expectedRevert.length != 0) {
             vm.expectRevert(expectedRevert);
         }
-        machine.commitPlan(commit, hooks, bindings, signature);
+        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
     }
 
     function _commitPlan(UVPStateMachine machine, UVPStateMachine.CompactHook[] memory hooks)
@@ -1373,7 +1373,7 @@ contract UVPAdmissionTest {
     {
         (UVPStateMachine.PlanCommit memory commit, UVPStateMachine.StageSupplierBinding[] memory bindings, bytes memory signature) =
             _buildCommit(machine, hooks);
-        planId = machine.commitPlan(commit, hooks, bindings, signature);
+        planId = machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
     }
 
     function _buildCommit(UVPStateMachine machine, UVPStateMachine.CompactHook[] memory hooks)
@@ -1390,6 +1390,7 @@ contract UVPAdmissionTest {
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: EMPTY_MERKLE_ROOT,
             supplierBindingsRoot: _bindingsRoot(bindings),
+            fileWritersHash: keccak256(abi.encode(new UVPStateMachine.StageFileWriter[](0))),
             deadline: block.timestamp + 1 hours
         });
         bytes32 structHash = keccak256(
@@ -1399,6 +1400,7 @@ contract UVPAdmissionTest {
                 commit.hooksHash,
                 commit.capabilitiesRoot,
                 commit.supplierBindingsRoot,
+                commit.fileWritersHash,
                 commit.deadline
             )
         );
@@ -1463,8 +1465,8 @@ contract UVPAdmissionTest {
             payloadHash: PAYLOAD_HASH,
             idempotencyKey: IDEMPOTENCY_KEY,
             attribution: _noAttribution(),
-            filePatch: emptyFilePatch(),
-            patchHash: bytes32(0),
+            targetStageId: bytes32(0),
+            files: emptyStageFiles(),
             submitter: submitter,
             deadline: block.timestamp + 1 hours
         });
@@ -1536,7 +1538,8 @@ contract UVPAdmissionTest {
                 submission.signalId,
                 submission.payloadHash,
                 submission.idempotencyKey,
-                submission.patchHash,
+                submission.targetStageId,
+                keccak256(abi.encode(submission.files)),
                 attributionHash,
                 submission.submitter,
                 submission.deadline
@@ -1560,8 +1563,8 @@ contract UVPAdmissionTest {
             payloadHash: payloadHash,
             idempotencyKey: idempotencyKey,
             attribution: _noAttribution(),
-            filePatch: emptyFilePatch(),
-            patchHash: bytes32(0),
+            targetStageId: bytes32(0),
+            files: emptyStageFiles(),
             submitter: address(this),
             deadline: block.timestamp + 1 hours
         });

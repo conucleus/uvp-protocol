@@ -81,6 +81,7 @@ interface CommitmentGoldenCase {
     readonly hooksHash: string;
     readonly capabilitiesRoot: string;
     readonly supplierBindingsRoot: string;
+    readonly fileWritersHash: string;
     readonly supplierBindings: readonly GoldenSupplierBinding[];
   };
 }
@@ -228,6 +229,7 @@ function buildDefinitionCase(
       hooksHash: args.hooksHash,
       capabilitiesRoot: args.capabilitiesRoot,
       supplierBindingsRoot: args.supplierBindingsRoot,
+      fileWritersHash: args.fileWritersHash,
       supplierBindings: args.supplierBindings.map((binding) => ({
         stageId: binding.stageId,
         supplierId: binding.supplierId,

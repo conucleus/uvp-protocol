@@ -31,9 +31,9 @@ const dockRegistryArtifactPath = resolve(
   contractsDir,
   "out/UVPDockRegistry.sol/UVPDockRegistry.json",
 );
-const supplierRegistryArtifactPath = resolve(
+const identityRegistryArtifactPath = resolve(
   contractsDir,
-  "out/UVPSupplierRegistry.sol/UVPSupplierRegistry.json",
+  "out/UVPIdentityRegistry.sol/UVPIdentityRegistry.json",
 );
 // Single declaration point shared by UVPStateMachine and the linked
 // UVPPlanRegistration library; the flags bit values are not recoverable
@@ -68,8 +68,8 @@ async function main(): Promise<void> {
   const dockRegistryArtifact = JSON.parse(
     await readFile(dockRegistryArtifactPath, "utf8"),
   ) as FoundryArtifact;
-  const supplierRegistryArtifact = JSON.parse(
-    await readFile(supplierRegistryArtifactPath, "utf8"),
+  const identityRegistryArtifact = JSON.parse(
+    await readFile(identityRegistryArtifactPath, "utf8"),
   ) as FoundryArtifact;
 
   const abiJson = JSON.stringify(artifact.abi, null, 2);
@@ -110,8 +110,8 @@ export const FILE_RESOURCE_MODULE_ABI = ${JSON.stringify(fileResourceModuleArtif
 export const DOCK_REGISTRY_CONTRACT_NAME = "UVPDockRegistry" as const;
 export const DOCK_REGISTRY_ABI = ${JSON.stringify(dockRegistryArtifact.abi, null, 2)} as const;
 
-export const SUPPLIER_REGISTRY_CONTRACT_NAME = "UVPSupplierRegistry" as const;
-export const SUPPLIER_REGISTRY_ABI = ${JSON.stringify(supplierRegistryArtifact.abi, null, 2)} as const;
+export const IDENTITY_REGISTRY_CONTRACT_NAME = "UVPIdentityRegistry" as const;
+export const IDENTITY_REGISTRY_ABI = ${JSON.stringify(identityRegistryArtifact.abi, null, 2)} as const;
 
 ${flagLines.join("\n")}
 `;

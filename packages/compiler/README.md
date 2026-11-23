@@ -45,8 +45,9 @@ the Dock DSL validation.
 
 - EVM-facing `OnchainHookPlanArtifact`;
 - Solidity registration args for the two-step `UVPStateMachine.commitPlan` +
-  `finalizePlan` flow, including the `StageSupplierBinding[]` list and
-  `supplierBindingsRoot`;
+  `finalizePlan` flow, including the `StageSupplierBinding[]` list,
+  `supplierBindingsRoot`, the `StageFileWriter[]` list, and
+  `fileWritersHash`;
 - deterministic `planId`, `planHash`, source `zhixuId` and `sourcePlanHash`,
   plus the `hooksHash` / `capabilitiesRoot` / `supplierBindingsRoot` /
   `artifactHash` tuple of the Solidity registration args;
@@ -129,7 +130,12 @@ executor and the materialization gate) is not re-implemented here: it is part
 of uvp-core `analyze`'s shared validation, and `signalCapabilities`/EvmStrict
 admissions are consumed from the same analysis. This package consumes analyze
 issues and parsed ASTs verbatim and must not re-implement shape/dock/admission/
-DSL validation or rewrite its error text.
+DSL validation or rewrite its error text. In particular, a trigger stage's
+static-executor requirement and the single-owner rule for current-order fact
+keys are enforced only by `analyze`; `compile.ts` does not repeat them in EVM
+terms. The on-chain artifact boundary still re-asserts the compiled hook shape
+(the materialization bit and trigger/emit-ready flags) because that shape is
+the EVM flag contract, not a second definition-level gate.
 
 A dock stage never enters `supplierRoutes` or supplier bindings: its supplier
 is selected once through the stage supplier patch (dkid), so the compiler
@@ -246,12 +252,13 @@ overrides the UUID encoding.
 - compiles `selectedStageBindings` into sorted `selectorBindings` for
   `StageSelectorBinding` registration;
 - lowers `spec.stages[].fileWriters` into a sorted `stageFileWriters` section
-  (one `(targetStageId, writerStageId)` leaf per declared writer stage; self is
-  implicit and never a leaf);
-- commits the three capability tables — `selectorBindings`,
-  `signalCapabilities`, and `stageFileWriters` — into a single
-  `capabilitiesRoot` (domain-separated leaves mixed into one sorted paired
-  Merkle tree; empty tables pin `keccak256("")`), and includes the tables in the
+  (one `(targetStageId, writerStageId)` pair per declared writer stage; self is
+  implicit and never a pair); the section is a plain plan-level declaration,
+  not a Merkle capability leaf;
+- commits the two capability tables — `selectorBindings` and
+  `signalCapabilities` — into a single `capabilitiesRoot` (domain-separated
+  leaves mixed into one sorted paired Merkle tree; empty tables pin
+  `keccak256("")`), and includes the tables plus the `fileWritersHash` in the
   canonical on-chain `planHash`;
 - compiles each trigger signal's `validWhen` into the `admissions` section as a
   standalone CompactHook entry (flag 8) so the birth path can evaluate it in the
@@ -266,10 +273,18 @@ Stable ids use raw Keccak-256:
 - `signalKey = keccak256(abi.encodePacked(sourceId, signalId))`;
 - `selectorStageId` / `targetStageId = keccak256(stageIdentifier)`.
 
-`validateHookPlanArtifact(value)` recomputes `definitionUid(source)`, binds
-`zhixuName` to `source.metadata.name`, and re-analyzes the carried source so a
-capability or admission that drifts from the source's `sendSignals` is rejected.
-`validateOnchainHookPlanArtifact(value)` checks the compact artifact shape,
+`validateHookPlanArtifact(value)` is the deserialization boundary for an
+externally supplied `HookPlanArtifact`: it recomputes `definitionUid(source)`,
+binds `zhixuName` to `source.metadata.name`, and checks the carried platform
+against `source.spec.platform`, but does not re-run uvp-core `analyze` — the
+definition-level DSL validation already happened once when the shell was
+lowered. The internal compile path (`compileZhixuHookPlan` →
+`compileZhixuOnchainHookPlan`) does not re-validate the IR it just produced;
+only the public artifact entrypoints do. `compileOnchainHookPlan(ir, candidates?)`
+converts an already-lowered IR artifact into the on-chain artifact without
+re-running `analyze`; raw definitions go through `compileZhixuOnchainHookPlan`,
+which analyzes once. `validateOnchainHookPlanArtifact(value)` checks the compact
+artifact shape,
 recomputes ids, validates instruction stack shape, verifies `dependencyIndex`,
 recomputes `supplierBindingsRoot`, and verifies `planHash`.
 `toSolidityRegisterPlanArgs(value)` strips audit labels and returns a
@@ -320,8 +335,8 @@ tampered entry. Hook identity — including the trigger bit — stays inside
 The current state-machine alignment is `toSolidityRegisterPlanArgs()`:
 
 - `planId` and `planHash` are the state-machine plan identity; the plan runtime
-  hash domain is `uvp.plan.runtime.v7` and covers `hooksHash`,
-  `capabilitiesRoot`, and `supplierBindingsRoot`;
+  hash domain is `uvp.plan.runtime.v8` and covers `hooksHash`,
+  `capabilitiesRoot`, `supplierBindingsRoot`, and `fileWritersHash`;
 - `hooks` map to `UVPStateMachine.CompactHook`; hook flags are
   `ORDER_TRIGGER_MINT` for `orderTriggerKind: "trigger"`, `EMIT_READY`,
   `HOOK_FLAG_ADMISSION` for admission entries, `HOOK_FLAG_DOCK_EXECUTOR` for
@@ -332,17 +347,18 @@ The current state-machine alignment is `toSolidityRegisterPlanArgs()`:
   `signalId`, to `triggerOrderFromOutsideFor`;
 - `supplierBindings` map to `UVPStateMachine.StageSupplierBinding` and
   `supplierBindingsRoot` is signed inside `PlanCommit`; `commitPlan` takes
-  `(commit, hooks, bindings, signature)`;
-- `selectorBindings` map to `UVPStateMachine.StageSelectorBinding` and
-  `stageFileWriters` to `UVPPlanMetadataModule.fileWriterLeaf`;
+  `(commit, hooks, bindings, fileWriters, signature)`;
+- `selectorBindings` map to `UVPStateMachine.StageSelectorBinding`; the
+  `stageFileWriters` section maps to `UVPStateMachine.StageFileWriter[]` and
+  is signed through `PlanCommit.fileWritersHash`;
 - `capabilitiesRoot` is the domain-separated leaf-mixed Merkle root over
-  `selectorBindings` + `signalCapabilities` + `stageFileWriters`
+  `selectorBindings` + `signalCapabilities`
   (`src/onchain/capabilities-root.ts` is the authoritative implementation,
   byte-identical to the `UVPPlanMetadataModule` leaf formulas). The chain
   stores only the root: `finalizePlan` takes just the `planId`, so
   registration cost is decoupled from table size, and membership is verified
   off-chain by recomputing the leaf from its fields and carrying
-  `signalCapabilityProof` / `selectorBindingProof` / `fileWriterProof` through
+  `signalCapabilityProof` / `selectorBindingProof` through
   `verifyMerkleProof`. Empty tables pin `keccak256("")`;
 - `instructions` map to compact `Signal`, `Not`, `And`, `Or`, and `Delay`
   operations;
@@ -351,14 +367,14 @@ The current state-machine alignment is `toSolidityRegisterPlanArgs()`:
   `uvp-client` for routing;
 - there is no order-level submitter authorization construction in the compiler:
   signal submission authority is the source stage's assigned supplier account,
-  resolved on chain from the supplier registry (SID active); the artifact only
+  resolved on chain from the identity registry supplier namespace (SID active); the artifact only
   commits the default/candidate supplier bindings and the dynamic/stage shape.
 
 ## Overlay Hashing
 
 Supplier identity encoding, supplier binding leaves/roots, stage supplier
-patch hashing, and the file patch canonical digest live in this package
-(supplier bindings) and `@uvp-eth/protocol-bindings` (patch/selection typed
-data). The compiler owns selector binding, file-writer leaf, supplier-binding
-tree, and on-chain HookPlan artifact hashing only; file content and handles
-stay outside compiler artifacts.
+patch hashing, and the stage-files hash live in this package (supplier
+bindings) and `@uvp-eth/protocol-bindings` (signal/selection typed data). The
+compiler owns selector binding, supplier-binding tree, file-writer stage
+declarations, and on-chain HookPlan artifact hashing only; file keys and
+payloads stay outside compiler artifacts.

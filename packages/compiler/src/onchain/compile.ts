@@ -4,7 +4,6 @@ import {
   HookPlanCompilationError,
 } from "../hook-plan.js";
 import {
-  birthStageStaticSupplierIssues,
   declaredStageIdentifiers,
   dynamicStageRouteIssues,
   dockStageRouteIssues,
@@ -14,7 +13,6 @@ import {
   validateOnchainCompiledHooks,
 } from "./validate/hooks.js";
 import { planDependencyCountIssues } from "./validate/limits.js";
-import { duplicateCurrentOrderFactKeyIssues } from "./validate/capabilities.js";
 import { onchainPlanTriggersOf } from "./triggers.js";
 import { capabilitiesRootOf } from "./capabilities-root.js";
 import { compileStageFileWriters } from "./file-writers.js";
@@ -53,7 +51,7 @@ import {
   buildOnchainDependencyIndex,
   compileDependency,
 } from "./instructions/dependencies.js";
-import { toSolidityRegisterPlanArgs } from "./solidity/registration.js";
+import { packSolidityRegisterPlanArgs } from "./solidity/registration.js";
 import { isRecord } from "./shape.js";
 import {
   ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
@@ -72,14 +70,23 @@ import {
 
 /**
  * 链轨编译流水线编排：校验（preflight）→ 转换 → 排序（canonical 序）→
- * 哈希（planHash 承诺）→ 编码（Solidity 注册参数）。
+ * 哈希（planHash 承诺）→ 编码（Solidity 注册参数）。`compileZhixu*` 入口
+ * 直接消费刚产出的 hook_plan shell，不再对内部 IR 二次 settle；只有公开的
+ * 反序列化入口（`compileOnchainHookPlan` / `toSolidityRegisterPlanArgs`）
+ * 才走 artifact 边界校验。
  */
 export function compileOnchainHookPlan(
   hookPlanArtifact: HookPlanArtifact,
   supplierCandidates?: readonly SupplierCandidateInput[],
 ): OnchainHookPlanArtifact {
   assertHookPlanArtifact(hookPlanArtifact);
+  return lowerOnchainHookPlan(hookPlanArtifact, supplierCandidates);
+}
 
+function lowerOnchainHookPlan(
+  hookPlanArtifact: HookPlanArtifact,
+  supplierCandidates?: readonly SupplierCandidateInput[],
+): OnchainHookPlanArtifact {
   const compiledHooks = hookPlanArtifact.compiledHooks
     .map((hook) => ({
       hookId: onchainHookId(hook.stageIdentifier, hook.hookName),
@@ -126,19 +133,8 @@ export function compileOnchainHookPlan(
   );
   const silentTriggerIssues = silentOrderTriggerIssues(compiledHooks);
   const dependencyCountIssues = planDependencyCountIssues(compiledHooks);
-  const currentOrderFactKeyIssues = duplicateCurrentOrderFactKeyIssues(
-    hookPlanArtifact.signalCapabilities.map((capability) => ({
-      stage: capability.stageIdentifier,
-      sourceId: onchainSourceId(capability.targetSource),
-      signalId: onchainSignalId(capability.targetSignalName),
-    })),
-  );
   const dockRouteIssues = dockStageRouteIssues(compiledHooks, supplierRoutes);
   const dynamicRouteIssues = dynamicStageRouteIssues(compiledHooks, supplierRoutes);
-  const birthStageSupplierIssues = birthStageStaticSupplierIssues(
-    compiledHooks,
-    supplierRoutes,
-  );
   const hookShapeIssues: readonly string[] = compiledHooks.length === 0
     ? ["compiledHooks must not be empty (contract reverts EmptyPlan)"]
     : [
@@ -156,10 +152,8 @@ export function compileOnchainHookPlan(
   const bindingSetIssues = supplierBindingSetIssues(supplierBindings);
   const preflightIssues = [
     ...materializationIssues,
-    ...birthStageSupplierIssues,
     ...silentTriggerIssues,
     ...dependencyCountIssues,
-    ...currentOrderFactKeyIssues,
     ...dockRouteIssues,
     ...dynamicRouteIssues,
     ...hookShapeIssues,
@@ -192,14 +186,9 @@ export function compileOnchainHookPlan(
     signalId: capability.signalId,
     targetOrderRelation: 0 as const,
   }));
-  const solidityFileWriterBindings = stageFileWriters.map((binding) => ({
-    targetStageId: binding.targetStageId,
-    writerStageId: binding.writerStageId,
-  }));
   const capabilitiesRoot = capabilitiesRootOf(
     soliditySelectorBindings,
     soliditySignalCapabilities,
-    solidityFileWriterBindings,
   );
   const triggers = onchainPlanTriggersOf(compiledHooks);
   const payload = {
@@ -232,7 +221,7 @@ export function compileZhixuOnchainHookPlan(
   definition: ZhixuDefinition,
   supplierCandidates?: readonly SupplierCandidateInput[],
 ): OnchainHookPlanArtifact {
-  return compileOnchainHookPlan(
+  return lowerOnchainHookPlan(
     compileZhixuHookPlan(definition),
     supplierCandidates,
   );
@@ -398,7 +387,7 @@ export function compileZhixuRegisterPlanArgs(
   definition: ZhixuDefinition,
   supplierCandidates?: readonly SupplierCandidateInput[],
 ): SolidityRegisterPlanArgs {
-  return toSolidityRegisterPlanArgs(
+  return packSolidityRegisterPlanArgs(
     compileZhixuOnchainHookPlan(definition, supplierCandidates),
   );
 }

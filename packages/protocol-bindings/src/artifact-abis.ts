@@ -128,6 +128,19 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
+    "name": "IDENTITY_REGISTRY_MODULE_ID",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "LENS_MODULE_ID",
     "inputs": [],
     "outputs": [
@@ -135,6 +148,19 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_FILE_WRITERS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -207,19 +233,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   {
     "type": "function",
     "name": "STAGE_PATCH_MODULE_ID",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "SUPPLIER_REGISTRY_MODULE_ID",
     "inputs": [],
     "outputs": [
       {
@@ -331,6 +344,11 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             "internalType": "bytes32"
           },
           {
+            "name": "fileWritersHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
             "name": "deadline",
             "type": "uint256",
             "internalType": "uint256"
@@ -420,6 +438,23 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             "name": "kind",
             "type": "uint8",
             "internalType": "uint8"
+          }
+        ]
+      },
+      {
+        "name": "fileWriters",
+        "type": "tuple[]",
+        "internalType": "struct UVPStateMachine.StageFileWriter[]",
+        "components": [
+          {
+            "name": "targetStageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "writerStageId",
+            "type": "bytes32",
+            "internalType": "bytes32"
           }
         ]
       },
@@ -774,6 +809,53 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
+    "name": "identityRegistry",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isAuthorizedFileWriter",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "targetStageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isEffectiveStageAccount",
     "inputs": [
       {
@@ -795,6 +877,35 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "account",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isPlanFileWriter",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "targetStageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "writerStageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "outputs": [
@@ -1033,6 +1144,25 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
+    "name": "planFileWritersHash",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "planFinalized",
     "inputs": [
       {
@@ -1225,6 +1355,11 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "supplierBindingsRoot",
         "type": "bytes32",
         "internalType": "bytes32"
+      },
+      {
+        "name": "fileWritersHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "outputs": [
@@ -1391,6 +1526,19 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
+    "name": "setIdentityRegistry",
+    "inputs": [
+      {
+        "name": "moduleAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setLens",
     "inputs": [
       {
@@ -1418,19 +1566,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   {
     "type": "function",
     "name": "setStagePatchModule",
-    "inputs": [
-      {
-        "name": "moduleAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setSupplierRegistry",
     "inputs": [
       {
         "name": "moduleAddress",
@@ -1860,63 +1995,26 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             ]
           },
           {
-            "name": "filePatch",
-            "type": "tuple",
-            "internalType": "struct FilePatch",
-            "components": [
-              {
-                "name": "targetStageId",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "baseHash",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "writerStageId",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "writerProof",
-                "type": "bytes32[]",
-                "internalType": "bytes32[]"
-              },
-              {
-                "name": "ops",
-                "type": "tuple[]",
-                "internalType": "struct FileOp[]",
-                "components": [
-                  {
-                    "name": "kind",
-                    "type": "uint8",
-                    "internalType": "uint8"
-                  },
-                  {
-                    "name": "key",
-                    "type": "bytes32",
-                    "internalType": "bytes32"
-                  },
-                  {
-                    "name": "contentHash",
-                    "type": "bytes32",
-                    "internalType": "bytes32"
-                  },
-                  {
-                    "name": "handle",
-                    "type": "string",
-                    "internalType": "string"
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "name": "patchHash",
+            "name": "targetStageId",
             "type": "bytes32",
             "internalType": "bytes32"
+          },
+          {
+            "name": "files",
+            "type": "tuple[]",
+            "internalType": "struct StageFile[]",
+            "components": [
+              {
+                "name": "key",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "payload",
+                "type": "bytes",
+                "internalType": "bytes"
+              }
+            ]
           },
           {
             "name": "submitter",
@@ -1949,19 +2047,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
       }
     ],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "supplierRegistry",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -2572,6 +2657,22 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
+    "name": "DuplicateFileWriter",
+    "inputs": [
+      {
+        "name": "targetStageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "writerStageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "DuplicateSupplierBinding",
     "inputs": [
       {
@@ -2641,6 +2742,22 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
+    "name": "FileWritersHashMismatch",
+    "inputs": [
+      {
+        "name": "expectedHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "actualHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "HookAlreadyRegistered",
     "inputs": []
   },
@@ -2681,6 +2798,11 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "bytes32"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "IdentityRegistryNotConfigured",
+    "inputs": []
   },
   {
     "type": "error",
@@ -2741,6 +2863,22 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
       },
       {
         "name": "claimedStageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidFileWriter",
+    "inputs": [
+      {
+        "name": "targetStageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "writerStageId",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -2889,22 +3027,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     "inputs": [
       {
         "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "PatchHashMismatch",
-    "inputs": [
-      {
-        "name": "expectedPatchHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "providedPatchHash",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -3081,11 +3203,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "error",
-    "name": "SupplierRegistryNotConfigured",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "TimerNotDue",
     "inputs": []
   },
@@ -3098,6 +3215,17 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     "type": "error",
     "name": "TooManyDependencies",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooManyFileWriters",
+    "inputs": [
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -3203,6 +3331,11 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   {
     "type": "error",
     "name": "ZeroDockId",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroFileTargetStageId",
     "inputs": []
   },
   {
@@ -3328,7 +3461,46 @@ export const FILE_RESOURCE_MODULE_ABI = [
   },
   {
     "type": "function",
-    "name": "applyStageFilePatch",
+    "name": "MAX_STAGE_FILES",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_STAGE_FILE_KEY_BYTES",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_STAGE_FILE_PAYLOAD_BYTES",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "applyStageFiles",
     "inputs": [
       {
         "name": "planId",
@@ -3341,61 +3513,24 @@ export const FILE_RESOURCE_MODULE_ABI = [
         "internalType": "bytes32"
       },
       {
-        "name": "filesDigest",
+        "name": "targetStageId",
         "type": "bytes32",
         "internalType": "bytes32"
       },
       {
-        "name": "filePatch",
-        "type": "tuple",
-        "internalType": "struct FilePatch",
+        "name": "files",
+        "type": "tuple[]",
+        "internalType": "struct StageFile[]",
         "components": [
           {
-            "name": "targetStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
+            "name": "key",
+            "type": "string",
+            "internalType": "string"
           },
           {
-            "name": "baseHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "writerStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "writerProof",
-            "type": "bytes32[]",
-            "internalType": "bytes32[]"
-          },
-          {
-            "name": "ops",
-            "type": "tuple[]",
-            "internalType": "struct FileOp[]",
-            "components": [
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "uint8"
-              },
-              {
-                "name": "key",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "contentHash",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "handle",
-                "type": "string",
-                "internalType": "string"
-              }
-            ]
+            "name": "payload",
+            "type": "bytes",
+            "internalType": "bytes"
           }
         ]
       },
@@ -3403,161 +3538,10 @@ export const FILE_RESOURCE_MODULE_ABI = [
         "name": "submitter",
         "type": "address",
         "internalType": "address"
-      },
-      {
-        "name": "signalStageId",
-        "type": "bytes32",
-        "internalType": "bytes32"
       }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "filePatchDigest",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "filePatch",
-        "type": "tuple",
-        "internalType": "struct FilePatch",
-        "components": [
-          {
-            "name": "targetStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "baseHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "writerStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "writerProof",
-            "type": "bytes32[]",
-            "internalType": "bytes32[]"
-          },
-          {
-            "name": "ops",
-            "type": "tuple[]",
-            "internalType": "struct FileOp[]",
-            "components": [
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "uint8"
-              },
-              {
-                "name": "key",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "contentHash",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "handle",
-                "type": "string",
-                "internalType": "string"
-              }
-            ]
-          }
-        ]
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "pure"
-  },
-  {
-    "type": "function",
-    "name": "filePatchHash",
-    "inputs": [
-      {
-        "name": "filePatch",
-        "type": "tuple",
-        "internalType": "struct FilePatch",
-        "components": [
-          {
-            "name": "targetStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "baseHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "writerStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "writerProof",
-            "type": "bytes32[]",
-            "internalType": "bytes32[]"
-          },
-          {
-            "name": "ops",
-            "type": "tuple[]",
-            "internalType": "struct FileOp[]",
-            "components": [
-              {
-                "name": "kind",
-                "type": "uint8",
-                "internalType": "uint8"
-              },
-              {
-                "name": "key",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "contentHash",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "handle",
-                "type": "string",
-                "internalType": "string"
-              }
-            ]
-          }
-        ]
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -3580,8 +3564,8 @@ export const FILE_RESOURCE_MODULE_ABI = [
       },
       {
         "name": "key",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "type": "string",
+        "internalType": "string"
       }
     ],
     "outputs": [
@@ -3591,48 +3575,9 @@ export const FILE_RESOURCE_MODULE_ABI = [
         "internalType": "bool"
       },
       {
-        "name": "contentHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "handle",
-        "type": "string",
-        "internalType": "string"
-      },
-      {
-        "name": "patchHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "stageFilesHash",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "targetStageId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "name": "payload",
+        "type": "bytes",
+        "internalType": "bytes"
       }
     ],
     "stateMutability": "view"
@@ -3652,7 +3597,7 @@ export const FILE_RESOURCE_MODULE_ABI = [
   },
   {
     "type": "event",
-    "name": "StageFileOpApplied",
+    "name": "StageFileWritten",
     "inputs": [
       {
         "name": "planId",
@@ -3671,185 +3616,27 @@ export const FILE_RESOURCE_MODULE_ABI = [
         "type": "bytes32",
         "indexed": true,
         "internalType": "bytes32"
-      },
-      {
-        "name": "kind",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "uint8"
       },
       {
         "name": "key",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "contentHash",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "handle",
         "type": "string",
         "indexed": false,
         "internalType": "string"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "StageFilePatchApplied",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
       },
       {
-        "name": "orderId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "targetStageId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "patchHash",
-        "type": "bytes32",
+        "name": "payload",
+        "type": "bytes",
         "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "baseHash",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
+        "internalType": "bytes"
       },
       {
         "name": "submitter",
         "type": "address",
         "indexed": false,
         "internalType": "address"
-      },
-      {
-        "name": "writerStageId",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "opCount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
       }
     ],
     "anonymous": false
-  },
-  {
-    "type": "error",
-    "name": "FileBaseHashMismatch",
-    "inputs": [
-      {
-        "name": "expected",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "provided",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "FileDigestMismatch",
-    "inputs": [
-      {
-        "name": "expected",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "provided",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "FileHandleTooLong",
-    "inputs": [
-      {
-        "name": "length",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "FileKeyExists",
-    "inputs": [
-      {
-        "name": "key",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "FileKeyMissing",
-    "inputs": [
-      {
-        "name": "key",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "FileOpKeyZero",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "FileOpKindInvalid",
-    "inputs": [
-      {
-        "name": "kind",
-        "type": "uint8",
-        "internalType": "uint8"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "FileOpsTooMany",
-    "inputs": [
-      {
-        "name": "count",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "FilePatchEmpty",
-    "inputs": []
   },
   {
     "type": "error",
@@ -3882,14 +3669,52 @@ export const FILE_RESOURCE_MODULE_ABI = [
         "internalType": "bytes32"
       },
       {
-        "name": "writerStageId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
         "name": "submitter",
         "type": "address",
         "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "StageFileKeyEmpty",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "StageFileKeyTooLong",
+    "inputs": [
+      {
+        "name": "length",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "StageFilePayloadTooLarge",
+    "inputs": [
+      {
+        "name": "length",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "StageFilesEmpty",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "StageFilesTooMany",
+    "inputs": [
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   },
@@ -4630,8 +4455,8 @@ export const DOCK_REGISTRY_ABI = [
   }
 ] as const;
 
-export const SUPPLIER_REGISTRY_CONTRACT_NAME = "UVPSupplierRegistry" as const;
-export const SUPPLIER_REGISTRY_ABI = [
+export const IDENTITY_REGISTRY_CONTRACT_NAME = "UVPIdentityRegistry" as const;
+export const IDENTITY_REGISTRY_ABI = [
   {
     "type": "constructor",
     "inputs": [],
@@ -4671,6 +4496,97 @@ export const SUPPLIER_REGISTRY_ABI = [
   },
   {
     "type": "function",
+    "name": "activeBindingForAccount",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "bindingId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "bindingNonce",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getIdentityBinding",
+    "inputs": [
+      {
+        "name": "bindingId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "subjectId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "descriptorHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "descriptorURI",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "registrar",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "registered",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "revoked",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "revokeReasonHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "revokeReasonURI",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isActiveSupplier",
     "inputs": [
       {
@@ -4703,6 +4619,40 @@ export const SUPPLIER_REGISTRY_ABI = [
   },
   {
     "type": "function",
+    "name": "registerIdentityBinding",
+    "inputs": [
+      {
+        "name": "subjectId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "descriptorHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "descriptorURI",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "bindingId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "registerSupplier",
     "inputs": [
       {
@@ -4718,6 +4668,29 @@ export const SUPPLIER_REGISTRY_ABI = [
         "internalType": "bytes32"
       }
     ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "revokeIdentityBinding",
+    "inputs": [
+      {
+        "name": "bindingId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "reasonHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "reasonURI",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
@@ -4765,7 +4738,7 @@ export const SUPPLIER_REGISTRY_ABI = [
       {
         "name": "",
         "type": "uint8",
-        "internalType": "enum IUVPSupplierRegistry.SupplierStatus"
+        "internalType": "enum IUVPIdentityRegistry.SupplierStatus"
       }
     ],
     "stateMutability": "view"
@@ -4814,6 +4787,80 @@ export const SUPPLIER_REGISTRY_ABI = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "IdentityBindingRegistered",
+    "inputs": [
+      {
+        "name": "bindingId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "subjectId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "account",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "descriptorHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "descriptorURI",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "registrar",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "IdentityBindingRevoked",
+    "inputs": [
+      {
+        "name": "bindingId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "reasonHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "reasonURI",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "revoker",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -4886,13 +4933,13 @@ export const SUPPLIER_REGISTRY_ABI = [
         "name": "previousStatus",
         "type": "uint8",
         "indexed": false,
-        "internalType": "enum IUVPSupplierRegistry.SupplierStatus"
+        "internalType": "enum IUVPIdentityRegistry.SupplierStatus"
       },
       {
         "name": "newStatus",
         "type": "uint8",
         "indexed": false,
-        "internalType": "enum IUVPSupplierRegistry.SupplierStatus"
+        "internalType": "enum IUVPIdentityRegistry.SupplierStatus"
       },
       {
         "name": "account",
@@ -4905,6 +4952,22 @@ export const SUPPLIER_REGISTRY_ABI = [
   },
   {
     "type": "error",
+    "name": "AccountAlreadyBound",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "bindingId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "AccountAlreadyRegistered",
     "inputs": [
       {
@@ -4914,6 +4977,17 @@ export const SUPPLIER_REGISTRY_ABI = [
       },
       {
         "name": "supplierId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BindingAlreadyRevoked",
+    "inputs": [
+      {
+        "name": "bindingId",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -4937,6 +5011,11 @@ export const SUPPLIER_REGISTRY_ABI = [
   },
   {
     "type": "error",
+    "name": "EmptyDescriptorURI",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidSupplierStatusTransition",
     "inputs": [
       {
@@ -4947,12 +5026,12 @@ export const SUPPLIER_REGISTRY_ABI = [
       {
         "name": "currentStatus",
         "type": "uint8",
-        "internalType": "enum IUVPSupplierRegistry.SupplierStatus"
+        "internalType": "enum IUVPIdentityRegistry.SupplierStatus"
       },
       {
         "name": "nextStatus",
         "type": "uint8",
-        "internalType": "enum IUVPSupplierRegistry.SupplierStatus"
+        "internalType": "enum IUVPIdentityRegistry.SupplierStatus"
       }
     ]
   },
@@ -4968,6 +5047,17 @@ export const SUPPLIER_REGISTRY_ABI = [
   },
   {
     "type": "error",
+    "name": "UnknownIdentityBinding",
+    "inputs": [
+      {
+        "name": "bindingId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "UnknownSupplier",
     "inputs": [
       {
@@ -4979,7 +5069,22 @@ export const SUPPLIER_REGISTRY_ABI = [
   },
   {
     "type": "error",
+    "name": "ZeroAccount",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroDescriptorHash",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ZeroOwner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroSubjectId",
     "inputs": []
   }
 ] as const;

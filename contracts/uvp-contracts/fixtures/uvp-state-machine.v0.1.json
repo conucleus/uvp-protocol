@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x7e00ac46a91e5c5ce1f6351ac7d0556148c8b553ea83a37991f805694ef17609",
-    "bytecodeHash": "0x7ba16de0b49f2ef296022ad76f8dac431d44c276d505490251afadb2831d8d1f",
-    "deployedBytecodeHash": "0xdda7ff1217f74199f195a62dd2b4d1c289f7c945e013cd278919b285fb02702f",
-    "artifactHash": "0x61d260b2d6314ea811f937f32b60ca8be555d1f91c6047501ef3660b94870c5b"
+    "abiHash": "0x67e50c8d339d69f57c533f6f136c7596c8047ccd76884828ecaf1d255d35d853",
+    "bytecodeHash": "0x53fe9af2110566a149ed0481132b22498af380fdb9034d7941ff3037938358ab",
+    "deployedBytecodeHash": "0x997c98e215cfaeeebb745105122f230d19d4ec1e97dba305052d2cb988990262",
+    "artifactHash": "0x83ce880bfc13c6251dc27b836ac12ab78a7e4ea112189cacac400d23d1a3cce6"
   },
   "events": {
     "HookReady": {
@@ -121,9 +121,17 @@
       "signature": "HOOK_FLAG_ORDER_TRIGGER_MINT()",
       "selector": "0x11d86eb3"
     },
+    "IDENTITY_REGISTRY_MODULE_ID": {
+      "signature": "IDENTITY_REGISTRY_MODULE_ID()",
+      "selector": "0x4d56a9e2"
+    },
     "LENS_MODULE_ID": {
       "signature": "LENS_MODULE_ID()",
       "selector": "0x1a781337"
+    },
+    "MAX_FILE_WRITERS": {
+      "signature": "MAX_FILE_WRITERS()",
+      "selector": "0x2efaf8ee"
     },
     "MAX_HOOK_DELAY_SECONDS": {
       "signature": "MAX_HOOK_DELAY_SECONDS()",
@@ -149,10 +157,6 @@
       "signature": "STAGE_PATCH_MODULE_ID()",
       "selector": "0x3d5f9dc0"
     },
-    "SUPPLIER_REGISTRY_MODULE_ID": {
-      "signature": "SUPPLIER_REGISTRY_MODULE_ID()",
-      "selector": "0x2e723476"
-    },
     "activateStageDockSupplierFromModule": {
       "signature": "activateStageDockSupplierFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,uint256)",
       "selector": "0xdea54119"
@@ -162,8 +166,8 @@
       "selector": "0xba1525eb"
     },
     "commitPlan": {
-      "signature": "commitPlan((address,bytes32,bytes32,bytes32,uint256),(bytes32,bytes32,bytes32,uint8,(uint8,bytes32,bytes32,uint16,uint64)[],bytes32[])[],(bytes32,bytes32,uint8)[],bytes)",
-      "selector": "0x9bdc8bb5"
+      "signature": "commitPlan((address,bytes32,bytes32,bytes32,bytes32,uint256),(bytes32,bytes32,bytes32,uint8,(uint8,bytes32,bytes32,uint16,uint64)[],bytes32[])[],(bytes32,bytes32,uint8)[],(bytes32,bytes32)[],bytes)",
+      "selector": "0x35019c1c"
     },
     "derivedSignalModule": {
       "signature": "derivedSignalModule()",
@@ -213,9 +217,21 @@
       "signature": "hasSourceSignal(bytes32,bytes32,bytes32)",
       "selector": "0xca69a3e9"
     },
+    "identityRegistry": {
+      "signature": "identityRegistry()",
+      "selector": "0x134e18f4"
+    },
+    "isAuthorizedFileWriter": {
+      "signature": "isAuthorizedFileWriter(bytes32,bytes32,bytes32,address)",
+      "selector": "0x1090b1a9"
+    },
     "isEffectiveStageAccount": {
       "signature": "isEffectiveStageAccount(bytes32,bytes32,bytes32,address)",
       "selector": "0x93484acc"
+    },
+    "isPlanFileWriter": {
+      "signature": "isPlanFileWriter(bytes32,bytes32,bytes32)",
+      "selector": "0xf8bc0d6a"
     },
     "isPlanStage": {
       "signature": "isPlanStage(bytes32,bytes32)",
@@ -261,6 +277,10 @@
       "signature": "planExists(bytes32)",
       "selector": "0x1df23e4d"
     },
+    "planFileWritersHash": {
+      "signature": "planFileWritersHash(bytes32)",
+      "selector": "0xc81dc283"
+    },
     "planFinalized": {
       "signature": "planFinalized(bytes32)",
       "selector": "0xfad0244c"
@@ -294,8 +314,8 @@
       "selector": "0x1b3c6520"
     },
     "planRuntimeHash": {
-      "signature": "planRuntimeHash(bytes32,bytes32,bytes32)",
-      "selector": "0x5e51dea7"
+      "signature": "planRuntimeHash(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x9e54357c"
     },
     "planStageDefaultSupplier": {
       "signature": "planStageDefaultSupplier(bytes32,bytes32)",
@@ -329,6 +349,10 @@
       "signature": "setFileResourceModule(address)",
       "selector": "0xe648a069"
     },
+    "setIdentityRegistry": {
+      "signature": "setIdentityRegistry(address)",
+      "selector": "0xcbf3f861"
+    },
     "setLens": {
       "signature": "setLens(address)",
       "selector": "0x6f338582"
@@ -340,10 +364,6 @@
     "setStagePatchModule": {
       "signature": "setStagePatchModule(address)",
       "selector": "0x61e22a35"
-    },
-    "setSupplierRegistry": {
-      "signature": "setSupplierRegistry(address)",
-      "selector": "0xca4c9e8b"
     },
     "signalAdmissionVerdict": {
       "signature": "signalAdmissionVerdict(bytes32,bytes32,bytes32,bytes32)",
@@ -382,12 +402,8 @@
       "selector": "0xd1caf3b4"
     },
     "submitSignal": {
-      "signature": "submitSignal((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[]),(bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]),bytes32,address,uint256),bytes)",
-      "selector": "0x9e4c756d"
-    },
-    "supplierRegistry": {
-      "signature": "supplierRegistry()",
-      "selector": "0x22d3b5a0"
+      "signature": "submitSignal((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[]),bytes32,(string,bytes)[],address,uint256),bytes)",
+      "selector": "0x00066bea"
     },
     "transferOwnership": {
       "signature": "transferOwnership(address)",

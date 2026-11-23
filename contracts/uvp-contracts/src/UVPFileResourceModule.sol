@@ -1,238 +1,95 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {
-    FileOp,
-    FileOpKind,
-    FilePatch,
-    FilePatchEmpty,
-    IUVPFileResourceModule
-} from "./interfaces/IUVPFileResourceModule.sol";
-import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
+import {IUVPFileResourceModule, StageFile, StageFilesEmpty} from "./interfaces/IUVPFileResourceModule.sol";
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
 
-/// File-map owner: per (plan, order, targetStage, key) contentHash/handle/patchHash and the
-/// per-target filesHash chain. The canonical file-patch digest is single-sourced in
-/// protocol-bindings; this contract mirrors it byte-for-byte for the golden vector.
+/// File-map owner: per (plan, order, target stage) opaque key -> payload entries.
+/// Write authority is resolved by the state machine from the plan's fileWriters
+/// stage list; this module never interprets a key or payload.
 contract UVPFileResourceModule is IUVPFileResourceModule {
     struct FileRecord {
-        bytes32 contentHash;
-        string handle;
-        bytes32 patchHash;
+        bytes payload;
         bool exists;
     }
 
-    error FileBaseHashMismatch(bytes32 expected, bytes32 provided);
-    error FileDigestMismatch(bytes32 expected, bytes32 provided);
-    error FileHandleTooLong(uint256 length);
-    error FileKeyExists(bytes32 key);
-    error FileKeyMissing(bytes32 key);
-    error FileOpKindInvalid(uint8 kind);
-    error FileOpKeyZero();
-    error FileOpsTooMany(uint256 count);
+    error StageFilesTooMany(uint256 count);
+    error StageFileKeyEmpty();
+    error StageFileKeyTooLong(uint256 length);
+    error StageFilePayloadTooLarge(uint256 length);
     error FileTargetStageUnknown(bytes32 planId, bytes32 targetStageId);
-    error FileWriterUnauthorized(bytes32 orderId, bytes32 targetStageId, bytes32 writerStageId, address submitter);
+    error FileWriterUnauthorized(bytes32 orderId, bytes32 targetStageId, address submitter);
     error UnknownOrder();
     error UnauthorizedStateMachine(address caller);
 
-    uint256 private constant _MAX_FILE_OPS = 16;
-    uint256 private constant _MAX_FILE_HANDLE_BYTES = 512;
-    bytes32 private constant _DOMAIN_FILE_PATCH = keccak256("UVP_FILE_PATCH_V1");
-    bytes32 private constant _DOMAIN_FILE_PATCH_HASH = keccak256("UVP_FILE_PATCH_HASH_V1");
+    uint256 public constant MAX_STAGE_FILES = 16;
+    uint256 public constant MAX_STAGE_FILE_KEY_BYTES = 128;
+    uint256 public constant MAX_STAGE_FILE_PAYLOAD_BYTES = 4096;
 
     IUVPStateMachineCore public immutable stateMachine;
 
     mapping(
         bytes32 planId
-            => mapping(bytes32 orderId => mapping(bytes32 targetStageId => mapping(bytes32 key => FileRecord record)))
+            => mapping(bytes32 orderId => mapping(bytes32 targetStageId => mapping(bytes32 keyHash => FileRecord record)))
     ) private _stageFiles;
-    mapping(bytes32 planId => mapping(bytes32 orderId => mapping(bytes32 targetStageId => bytes32 filesHash))) private
-        _stageFilesHashes;
-    mapping(
-        bytes32 planId
-            => mapping(bytes32 orderId => mapping(bytes32 targetStageId => mapping(bytes32 patchHash => bool applied)))
-    ) private _appliedPatchHashes;
 
     constructor(address stateMachineAddress) {
         stateMachine = IUVPStateMachineCore(stateMachineAddress);
     }
 
-    function applyStageFilePatch(
+    function applyStageFiles(
         bytes32 planId,
         bytes32 orderId,
-        bytes32 filesDigest,
-        FilePatch calldata filePatch,
-        address submitter,
-        bytes32 signalStageId
+        bytes32 targetStageId,
+        StageFile[] calldata files,
+        address submitter
     ) external {
         if (msg.sender != address(stateMachine)) {
             revert UnauthorizedStateMachine(msg.sender);
         }
-
-        uint256 opCount = filePatch.ops.length;
-        if (opCount == 0) {
-            revert FilePatchEmpty();
+        uint256 fileCount = files.length;
+        if (fileCount == 0) {
+            revert StageFilesEmpty();
         }
-        if (opCount > _MAX_FILE_OPS) {
-            revert FileOpsTooMany(opCount);
+        if (fileCount > MAX_STAGE_FILES) {
+            revert StageFilesTooMany(fileCount);
         }
-
-        bytes32 patchHash = filePatchDigest(planId, orderId, filePatch);
-        if (patchHash != filesDigest) {
-            revert FileDigestMismatch(patchHash, filesDigest);
-        }
-        if (_appliedPatchHashes[planId][orderId][filePatch.targetStageId][patchHash]) {
-            return;
-        }
-
         if (!stateMachine.orderExists(planId, orderId)) {
             revert UnknownOrder();
         }
-        if (!stateMachine.isPlanStage(planId, filePatch.targetStageId)) {
-            revert FileTargetStageUnknown(planId, filePatch.targetStageId);
+        if (!stateMachine.isPlanStage(planId, targetStageId)) {
+            revert FileTargetStageUnknown(planId, targetStageId);
         }
-        for (uint256 i = 0; i < opCount; i++) {
-            _validateOp(filePatch.ops[i]);
-        }
-
-        _requireFileWriter(planId, orderId, filePatch, submitter, signalStageId);
-
-        bytes32 previousFilesHash = _stageFilesHashes[planId][orderId][filePatch.targetStageId];
-        if (filePatch.baseHash != previousFilesHash) {
-            revert FileBaseHashMismatch(previousFilesHash, filePatch.baseHash);
+        if (!stateMachine.isAuthorizedFileWriter(planId, orderId, targetStageId, submitter)) {
+            revert FileWriterUnauthorized(orderId, targetStageId, submitter);
         }
 
-        mapping(bytes32 => FileRecord) storage targetFiles = _stageFiles[planId][orderId][filePatch.targetStageId];
-        for (uint256 i = 0; i < opCount; i++) {
-            _applyOp(targetFiles, filePatch.ops[i], patchHash);
-        }
-        _appliedPatchHashes[planId][orderId][filePatch.targetStageId][patchHash] = true;
-        _stageFilesHashes[planId][orderId][filePatch.targetStageId] =
-            keccak256(abi.encode(previousFilesHash, patchHash));
-
-        emit StageFilePatchApplied(
-            planId,
-            orderId,
-            filePatch.targetStageId,
-            patchHash,
-            filePatch.baseHash,
-            submitter,
-            filePatch.writerStageId,
-            opCount
-        );
-        for (uint256 i = 0; i < opCount; i++) {
-            FileOp calldata op = filePatch.ops[i];
-            emit StageFileOpApplied(
-                planId, orderId, filePatch.targetStageId, op.kind, op.key, op.contentHash, op.handle
-            );
+        mapping(bytes32 => FileRecord) storage targetFiles = _stageFiles[planId][orderId][targetStageId];
+        for (uint256 i = 0; i < fileCount; i++) {
+            StageFile calldata file = files[i];
+            uint256 keyLength = bytes(file.key).length;
+            if (keyLength == 0) {
+                revert StageFileKeyEmpty();
+            }
+            if (keyLength > MAX_STAGE_FILE_KEY_BYTES) {
+                revert StageFileKeyTooLong(keyLength);
+            }
+            uint256 payloadLength = file.payload.length;
+            if (payloadLength > MAX_STAGE_FILE_PAYLOAD_BYTES) {
+                revert StageFilePayloadTooLarge(payloadLength);
+            }
+            bytes32 keyHash = keccak256(bytes(file.key));
+            targetFiles[keyHash] = FileRecord({payload: file.payload, exists: true});
+            emit StageFileWritten(planId, orderId, targetStageId, file.key, file.payload, submitter);
         }
     }
 
-    function getStageFile(bytes32 planId, bytes32 orderId, bytes32 targetStageId, bytes32 key)
+    function getStageFile(bytes32 planId, bytes32 orderId, bytes32 targetStageId, string calldata key)
         external
         view
-        returns (bool exists, bytes32 contentHash, string memory handle, bytes32 patchHash)
+        returns (bool exists, bytes memory payload)
     {
-        FileRecord storage record = _stageFiles[planId][orderId][targetStageId][key];
-        return (record.exists, record.contentHash, record.handle, record.patchHash);
-    }
-
-    function stageFilesHash(bytes32 planId, bytes32 orderId, bytes32 targetStageId) external view returns (bytes32) {
-        return _stageFilesHashes[planId][orderId][targetStageId];
-    }
-
-    function filePatchHash(FilePatch calldata filePatch) public pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                _DOMAIN_FILE_PATCH_HASH,
-                filePatch.targetStageId,
-                filePatch.baseHash,
-                filePatch.writerStageId,
-                filePatch.writerProof,
-                filePatch.ops
-            )
-        );
-    }
-
-    function filePatchDigest(bytes32 planId, bytes32 orderId, FilePatch calldata filePatch)
-        public
-        pure
-        returns (bytes32)
-    {
-        return keccak256(
-            abi.encode(
-                _DOMAIN_FILE_PATCH,
-                planId,
-                orderId,
-                filePatch.targetStageId,
-                filePatch.baseHash,
-                filePatch.writerStageId,
-                filePatch.ops
-            )
-        );
-    }
-
-    function _validateOp(FileOp calldata op) private pure {
-        if (op.kind > uint8(FileOpKind.Remove)) {
-            revert FileOpKindInvalid(op.kind);
-        }
-        if (op.key == bytes32(0)) {
-            revert FileOpKeyZero();
-        }
-        uint256 handleLength = bytes(op.handle).length;
-        if (handleLength > _MAX_FILE_HANDLE_BYTES) {
-            revert FileHandleTooLong(handleLength);
-        }
-    }
-
-    function _requireFileWriter(
-        bytes32 planId,
-        bytes32 orderId,
-        FilePatch calldata filePatch,
-        address submitter,
-        bytes32 signalStageId
-    ) private view {
-        bytes32 writerStageId = filePatch.writerStageId;
-        if (writerStageId == bytes32(0)) {
-            writerStageId = signalStageId == bytes32(0) ? filePatch.targetStageId : signalStageId;
-        }
-        if (writerStageId != filePatch.targetStageId) {
-            bool capability = IUVPPlanMetadataModule(stateMachine.planMetadataModule())
-                .verifyFileWriter(planId, filePatch.targetStageId, writerStageId, filePatch.writerProof);
-            if (!capability) {
-                revert FileWriterUnauthorized(orderId, filePatch.targetStageId, filePatch.writerStageId, submitter);
-            }
-        }
-        if (!stateMachine.isEffectiveStageAccount(planId, orderId, writerStageId, submitter)) {
-            revert FileWriterUnauthorized(orderId, filePatch.targetStageId, filePatch.writerStageId, submitter);
-        }
-    }
-
-    function _applyOp(mapping(bytes32 => FileRecord) storage targetFiles, FileOp calldata op, bytes32 patchHash)
-        private
-    {
-        FileRecord storage record = targetFiles[op.key];
-        if (op.kind == uint8(FileOpKind.Add)) {
-            if (record.exists) {
-                revert FileKeyExists(op.key);
-            }
-            record.contentHash = op.contentHash;
-            record.handle = op.handle;
-            record.exists = true;
-        } else if (op.kind == uint8(FileOpKind.Replace)) {
-            if (!record.exists) {
-                revert FileKeyMissing(op.key);
-            }
-            record.contentHash = op.contentHash;
-            record.handle = op.handle;
-        } else {
-            if (!record.exists) {
-                revert FileKeyMissing(op.key);
-            }
-            record.contentHash = bytes32(0);
-            delete record.handle;
-            record.exists = false;
-        }
-        record.patchHash = patchHash;
+        FileRecord storage record = _stageFiles[planId][orderId][targetStageId][keccak256(bytes(key))];
+        return (record.exists, record.payload);
     }
 }

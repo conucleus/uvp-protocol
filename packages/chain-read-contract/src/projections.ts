@@ -89,7 +89,7 @@ export interface ChainStageSupplierAssignment {
   readonly patchNonce: string;
   readonly dockId?: Hex;
   readonly fromPlanId?: Hex;
-  /** SupplierRegistry 在投影时点解析的 accountOf(supplierId)。 */
+  /** UVPIdentityRegistry 供应商命名空间在投影时点解析的 accountOf(supplierId)。 */
   readonly supplierAccount?: Address;
   readonly updatedAt: ChainProvenance;
   readonly activatedAt?: ChainProvenance;
@@ -98,10 +98,8 @@ export interface ChainStageSupplierAssignment {
 }
 
 export interface ChainStageFileEntry {
-  readonly key: Hex;
-  readonly contentHash: Hex;
-  readonly handle: string;
-  readonly patchHash: Hex;
+  readonly key: string;
+  readonly payload: Hex;
   readonly updatedAt: ChainProvenance;
   readonly proof: ChainProof;
 }
@@ -110,7 +108,6 @@ export interface ChainStageFileMap {
   readonly planId: Hex;
   readonly orderId: Hex;
   readonly targetStageId: Hex;
-  readonly filesHash: Hex;
   readonly files: Readonly<Record<string, ChainStageFileEntry>>;
   readonly updatedAt: ChainProvenance;
   readonly proof: ChainProof;
@@ -148,7 +145,7 @@ export interface ChainTaskProjection {
   readonly stageIdentifier: Hex;
   readonly hookName: Hex;
   readonly assigneeSupplierId?: Hex;
-  /** SupplierRegistry 在投影时点解析的 accountOf(assigneeSupplierId)。 */
+  /** UVPIdentityRegistry 供应商命名空间在投影时点解析的 accountOf(assigneeSupplierId)。 */
   readonly assigneeSupplierAccount?: Address;
   readonly status: ChainTaskStatus;
   readonly submitSignals?: readonly ChainSubmitSignal[];
@@ -442,7 +439,7 @@ export interface ChainDockBinding {
 export type ChainSupplierStatus = "pending" | "active" | "suspended" | "revoked";
 
 /**
- * SupplierRegistry binding at projection time: the UUID-encoded supplierId is
+ * UVPIdentityRegistry supplier binding at projection time: the UUID-encoded supplierId is
  * permanently bound to one account; status gates formal use. Revoked suppliers
  * keep their account and revocation proof.
  */

@@ -231,7 +231,6 @@ export interface OnchainStageFileWriter {
   readonly targetStageId: HexString;
   readonly writerStageIdentifier: string;
   readonly writerStageId: HexString;
-  readonly fileWriterLeaf: HexString;
 }
 
 export interface OnchainSignalCapability {
@@ -377,5 +376,6 @@ export interface SolidityRegisterPlanArgs {
   readonly supplierBindings: readonly SolidityRegisterSupplierBindingArg[];
   readonly selectorBindings: readonly SolidityRegisterStageSelectorBindingArg[];
   readonly signalCapabilities: readonly SolidityRegisterSignalCapabilityArg[];
-  readonly fileWriterBindings: readonly SolidityRegisterFileWriterBindingArg[];
+  readonly fileWriters: readonly SolidityRegisterFileWriterBindingArg[];
+  readonly fileWritersHash: HexString;
 }

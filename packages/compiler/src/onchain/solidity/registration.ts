@@ -10,7 +10,6 @@ import {
   OnchainHookPlanArtifactValidationError,
 } from "../validate/artifact.js";
 import { ZERO_HASH, onchainHookName } from "../hash/route.js";
-import { capabilitiesRootOf } from "../capabilities-root.js";
 import { assertNever } from "../shape.js";
 import type {
   HexString,
@@ -26,7 +25,7 @@ import type {
  * CompactHook flags 与各哈希的 ABI 编码冻结口径。
  */
 
-const PLAN_RUNTIME_HASH_DOMAIN = "uvp.plan.runtime.v7";
+const PLAN_RUNTIME_HASH_DOMAIN = "uvp.plan.runtime.v8";
 
 export const HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
 export const HOOK_FLAG_EMIT_READY = 4;
@@ -60,7 +59,12 @@ export function toSolidityRegisterPlanArgs(
   artifact: OnchainHookPlanArtifact,
 ): SolidityRegisterPlanArgs {
   assertOnchainHookPlanArtifact(artifact);
+  return packSolidityRegisterPlanArgs(artifact);
+}
 
+export function packSolidityRegisterPlanArgs(
+  artifact: OnchainHookPlanArtifact,
+): SolidityRegisterPlanArgs {
   const hooks = [
     ...artifact.compiledHooks.map((hook) => {
       const dependencyKeys = uniqueSorted(
@@ -119,26 +123,24 @@ export function toSolidityRegisterPlanArgs(
     signalId: capability.signalId,
     targetOrderRelation: 0 as const,
   }));
-  const fileWriterBindings = artifact.stageFileWriters.map((binding) => ({
+  const fileWriters = artifact.stageFileWriters.map((binding) => ({
     targetStageId: binding.targetStageId,
     writerStageId: binding.writerStageId,
   }));
   const hooksHash = hashSolidityHooks(hooks);
-  const capabilitiesRoot = capabilitiesRootOf(
-    selectorBindings,
-    signalCapabilities,
-    fileWriterBindings,
-  );
+  const capabilitiesRoot = artifact.capabilitiesRoot;
+  const fileWritersHash = hashSolidityFileWriters(fileWriters);
   const planHash = keccak256(
     encodeAbiParameters(
       parseAbiParameters(
-        "bytes32 domain, bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 supplierBindingsRoot",
+        "bytes32 domain, bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 supplierBindingsRoot, bytes32 fileWritersHash",
       ),
       [
         keccak256(stringToHex(PLAN_RUNTIME_HASH_DOMAIN)),
         hooksHash,
         capabilitiesRoot,
         artifact.supplierBindingsRoot,
+        fileWritersHash,
       ],
     ),
   ) as HexString;
@@ -175,8 +177,25 @@ export function toSolidityRegisterPlanArgs(
     })),
     selectorBindings,
     signalCapabilities,
-    fileWriterBindings,
+    fileWriters,
+    fileWritersHash,
   };
+}
+
+export function hashSolidityFileWriters(
+  fileWriters: SolidityRegisterPlanArgs["fileWriters"],
+): HexString {
+  return keccak256(
+    encodeAbiParameters(
+      parseAbiParameters("(bytes32 targetStageId,bytes32 writerStageId)[] writers"),
+      [
+        fileWriters.map((writer) => ({
+          targetStageId: writer.targetStageId,
+          writerStageId: writer.writerStageId,
+        })),
+      ] as never,
+    ),
+  ) as HexString;
 }
 
 export function planIdForPublisher(

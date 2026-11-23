@@ -9,41 +9,37 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x5d96958a90806a3c822ac7aa4dc5313361e7b9728de7918e2b5b5a7abddf8aa2",
-    "bytecodeHash": "0x066d2e246351d440996d2241da5506c23de187a541e220a4a1de6100b69cabe2",
-    "deployedBytecodeHash": "0x64e9576154c3c57566518ef7e54ec130053726330fbde0a99281de9b951bb1c5",
-    "artifactHash": "0x825b18003cd0a39f675458f97a5988bcd4944674d7b919e5584a7dfbd4e51f17"
+    "abiHash": "0xb230044e8a842e9fe6053ba713cf413b7c605246ff357157b27c109762fb5e25",
+    "bytecodeHash": "0xca231b93cfc7c26fbc9feaca1552a69724d147007ddac55280a04ef11bc0bd01",
+    "deployedBytecodeHash": "0x8bed3999f9ec115159db21a3427b90161d6d39ea16f5cd4cf20318089a428530",
+    "artifactHash": "0x1f43cb314e9ac3cf5c7d4b6644fc5b7e9973e5d3aed024bb244884ca157b2924"
   },
   "events": {
-    "StageFileOpApplied": {
-      "signature": "StageFileOpApplied(bytes32,bytes32,bytes32,uint8,bytes32,bytes32,string)",
-      "topic": "0xd3e15cfb955ca78efe8c3ad6bb348afc3f5afaca3f1a7e9552e159a4acd2f28d"
-    },
-    "StageFilePatchApplied": {
-      "signature": "StageFilePatchApplied(bytes32,bytes32,bytes32,bytes32,bytes32,address,bytes32,uint256)",
-      "topic": "0x9c9e91715c306419f27f78608285750b6d3faec0a13604fa8800a5ee832a15f0"
+    "StageFileWritten": {
+      "signature": "StageFileWritten(bytes32,bytes32,bytes32,string,bytes,address)",
+      "topic": "0x92f9dbd266b8743b3a9b93b7376d754d8dd4669db15bdc63834f36860e723f15"
     }
   },
   "functions": {
-    "applyStageFilePatch": {
-      "signature": "applyStageFilePatch(bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]),address,bytes32)",
-      "selector": "0x64646535"
+    "MAX_STAGE_FILES": {
+      "signature": "MAX_STAGE_FILES()",
+      "selector": "0x3e53638e"
     },
-    "filePatchDigest": {
-      "signature": "filePatchDigest(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]))",
-      "selector": "0x7bb668f7"
+    "MAX_STAGE_FILE_KEY_BYTES": {
+      "signature": "MAX_STAGE_FILE_KEY_BYTES()",
+      "selector": "0xe505a2ff"
     },
-    "filePatchHash": {
-      "signature": "filePatchHash((bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]))",
-      "selector": "0xd85fe0a9"
+    "MAX_STAGE_FILE_PAYLOAD_BYTES": {
+      "signature": "MAX_STAGE_FILE_PAYLOAD_BYTES()",
+      "selector": "0x4d85184c"
+    },
+    "applyStageFiles": {
+      "signature": "applyStageFiles(bytes32,bytes32,bytes32,(string,bytes)[],address)",
+      "selector": "0x8b67f618"
     },
     "getStageFile": {
-      "signature": "getStageFile(bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0xd11d6534"
-    },
-    "stageFilesHash": {
-      "signature": "stageFilesHash(bytes32,bytes32,bytes32)",
-      "selector": "0x9dffdd35"
+      "signature": "getStageFile(bytes32,bytes32,bytes32,string)",
+      "selector": "0xe988b483"
     },
     "stateMachine": {
       "signature": "stateMachine()",

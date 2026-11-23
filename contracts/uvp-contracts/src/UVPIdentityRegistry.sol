@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-// Off-chain-subject to wallet binding ledger. Its whole scope is registration
-// and revocation of display/resolution bindings: it grants no execution
-// authority, and UVPStateMachine never reads it. On-chain execution identity
-// (which account may submit a stage's signals) is owned solely by
-// UVPSupplierRegistry (SID + permanently bound account + status).
-contract UVPIdentityRegistry {
+import {IUVPIdentityRegistry} from "./interfaces/IUVPIdentityRegistry.sol";
+
+// Single on-chain identity boundary. Owner-gated subject/account bindings are
+// the trust-attestation surface; supplier capability/account bindings are the
+// execution-identity source the state machine resolves stage authority through.
+// The two namespaces share one owner but never authorize each other: an
+// identity binding grants no execution authority, and a supplier status grants
+// no off-chain subject claim.
+contract UVPIdentityRegistry is IUVPIdentityRegistry {
     struct IdentityBinding {
         bytes32 subjectId;
         address account;
@@ -20,10 +23,15 @@ contract UVPIdentityRegistry {
     }
 
     error AccountAlreadyBound(address account, bytes32 bindingId);
+    error AccountAlreadyRegistered(address account, bytes32 supplierId);
     error BindingAlreadyRevoked(bytes32 bindingId);
+    error CallerNotAccount(address caller, address account);
     error EmptyDescriptorURI();
+    error InvalidSupplierStatusTransition(bytes32 supplierId, SupplierStatus currentStatus, SupplierStatus nextStatus);
     error NotOwner();
+    error NotRegistrar();
     error UnknownIdentityBinding(bytes32 bindingId);
+    error UnknownSupplier(bytes32 supplierId);
     error ZeroAccount();
     error ZeroDescriptorHash();
     error ZeroOwner();
@@ -37,16 +45,11 @@ contract UVPIdentityRegistry {
     mapping(bytes32 bindingId => IdentityBinding binding) private _bindings;
     mapping(address account => bytes32 bindingId) public activeBindingForAccount;
 
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-    event IdentityBindingRegistered(
-        bytes32 indexed bindingId,
-        bytes32 indexed subjectId,
-        address indexed account,
-        bytes32 descriptorHash,
-        string descriptorURI,
-        address registrar
-    );
-    event IdentityBindingRevoked(bytes32 indexed bindingId, bytes32 reasonHash, string reasonURI, address revoker);
+    mapping(bytes32 supplierId => address account) private _accountOf;
+    mapping(address account => bytes32 supplierId) private _supplierOf;
+    mapping(bytes32 supplierId => SupplierStatus status) private _statusOf;
+    mapping(address registrar => bool allowed) private _registrars;
+    uint256 private _uuidNonce;
 
     constructor() {
         owner = msg.sender;
@@ -56,6 +59,13 @@ contract UVPIdentityRegistry {
     modifier onlyOwner() {
         if (msg.sender != owner) {
             revert NotOwner();
+        }
+        _;
+    }
+
+    modifier onlyRegistrar() {
+        if (msg.sender != owner && !_registrars[msg.sender]) {
+            revert NotRegistrar();
         }
         _;
     }
@@ -161,5 +171,97 @@ contract UVPIdentityRegistry {
             binding.revokeReasonHash,
             binding.revokeReasonURI
         );
+    }
+
+    function registerSupplier(address account) external returns (bytes32 supplierId) {
+        if (msg.sender != account) {
+            revert CallerNotAccount(msg.sender, account);
+        }
+        bytes32 existingSupplierId = _supplierOf[account];
+        if (existingSupplierId != bytes32(0)) {
+            revert AccountAlreadyRegistered(account, existingSupplierId);
+        }
+        supplierId = _mintSupplierId(account);
+        _accountOf[supplierId] = account;
+        _supplierOf[account] = supplierId;
+        emit SupplierRegistered(supplierId, account);
+    }
+
+    function activateSupplier(bytes32 supplierId) external onlyRegistrar {
+        SupplierStatus currentStatus = _requireSupplier(supplierId);
+        if (currentStatus != SupplierStatus.Pending && currentStatus != SupplierStatus.Suspended) {
+            revert InvalidSupplierStatusTransition(supplierId, currentStatus, SupplierStatus.Active);
+        }
+        _applyStatus(supplierId, currentStatus, SupplierStatus.Active);
+    }
+
+    function suspendSupplier(bytes32 supplierId) external onlyRegistrar {
+        SupplierStatus currentStatus = _requireSupplier(supplierId);
+        if (currentStatus != SupplierStatus.Active) {
+            revert InvalidSupplierStatusTransition(supplierId, currentStatus, SupplierStatus.Suspended);
+        }
+        _applyStatus(supplierId, currentStatus, SupplierStatus.Suspended);
+    }
+
+    function revokeSupplier(bytes32 supplierId) external onlyRegistrar {
+        SupplierStatus currentStatus = _requireSupplier(supplierId);
+        if (currentStatus == SupplierStatus.Revoked) {
+            revert InvalidSupplierStatusTransition(supplierId, currentStatus, SupplierStatus.Revoked);
+        }
+        _applyStatus(supplierId, currentStatus, SupplierStatus.Revoked);
+    }
+
+    function setRegistrar(address registrar, bool allowed) external onlyOwner {
+        _registrars[registrar] = allowed;
+        emit SupplierRegistrarSet(registrar, allowed);
+    }
+
+    function accountOf(bytes32 supplierId) external view returns (address) {
+        return _accountOf[supplierId];
+    }
+
+    function statusOf(bytes32 supplierId) external view returns (SupplierStatus) {
+        return _requireSupplier(supplierId);
+    }
+
+    function isActiveSupplier(bytes32 supplierId) external view returns (bool) {
+        return _accountOf[supplierId] != address(0) && _statusOf[supplierId] == SupplierStatus.Active;
+    }
+
+    function supplierOf(address account) external view returns (bytes32) {
+        return _supplierOf[account];
+    }
+
+    function _applyStatus(bytes32 supplierId, SupplierStatus currentStatus, SupplierStatus newStatus) private {
+        _statusOf[supplierId] = newStatus;
+        emit SupplierStatusChanged(supplierId, currentStatus, newStatus, _accountOf[supplierId]);
+    }
+
+    function _requireSupplier(bytes32 supplierId) private view returns (SupplierStatus) {
+        if (_accountOf[supplierId] == address(0)) {
+            revert UnknownSupplier(supplierId);
+        }
+        return _statusOf[supplierId];
+    }
+
+    function _mintSupplierId(address account) private returns (bytes32 supplierId) {
+        uint256 nonce = _uuidNonce;
+        while (true) {
+            uint256 entropy = uint256(keccak256(abi.encodePacked(account, block.prevrandao, block.timestamp, nonce)));
+            uint128 uuid = uint128(entropy);
+            // The store formats this value as a standard 36-character UUID, so
+            // the v4 version nibble and RFC 4122 variant bits are part of the
+            // on-chain output contract.
+            uuid = (uuid & ~(uint128(0xf) << 76)) | (uint128(0x4) << 76);
+            uuid = (uuid & ~(uint128(0x3) << 62)) | (uint128(0x2) << 62);
+            supplierId = bytes32(uint256(uuid));
+            if (_accountOf[supplierId] == address(0)) {
+                _uuidNonce = nonce + 1;
+                return supplierId;
+            }
+            unchecked {
+                ++nonce;
+            }
+        }
     }
 }

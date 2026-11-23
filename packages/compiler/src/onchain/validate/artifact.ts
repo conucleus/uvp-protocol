@@ -25,14 +25,12 @@ import {
 } from "../shape.js";
 import { onchainPlanTriggerIssues } from "../triggers.js";
 import {
-  duplicateCurrentOrderFactKeyIssues,
   validateOnchainSelectorBindings,
   validateOnchainSignalCapabilities,
   validateOnchainSupplierBindings,
   validateOnchainSupplierRoutes,
 } from "./capabilities.js";
 import {
-  birthStageStaticSupplierIssues,
   declaredStageIdentifiers,
   dockStageRouteIssues,
   dynamicStageRouteIssues,
@@ -245,9 +243,6 @@ export function validateOnchainHookPlanArtifact(
       ...silentOrderTriggerIssues(compiledHooks as readonly OnchainCompiledHook[]),
     );
     issues.push(
-      ...birthStageStaticSupplierIssues(compiledHooks, supplierRoutes ?? []),
-    );
-    issues.push(
       ...dockStageRouteIssues(compiledHooks, supplierRoutes ?? []),
     );
     issues.push(
@@ -282,24 +277,6 @@ export function validateOnchainHookPlanArtifact(
       ),
     );
     issues.push(...validateOnchainSignalCapabilities(signalCapabilities));
-    issues.push(
-      ...duplicateCurrentOrderFactKeyIssues(
-        (signalCapabilities as readonly unknown[]).flatMap((capability) =>
-          isRecord(capability) &&
-          typeof capability.stageIdentifier === "string" &&
-          typeof capability.targetSourceId === "string" &&
-          typeof capability.signalId === "string"
-            ? [
-                {
-                  stage: capability.stageIdentifier,
-                  sourceId: capability.targetSourceId,
-                  signalId: capability.signalId,
-                },
-              ]
-            : [],
-        ),
-      ),
-    );
   }
   if (admissions) {
     issues.push(...validateOnchainCompiledAdmissions(admissions));
@@ -475,13 +452,9 @@ function capabilitiesRootCommitmentIssues(
   const signalCapabilities = Array.isArray(value.signalCapabilities)
     ? value.signalCapabilities
     : undefined;
-  const stageFileWriters = Array.isArray(value.stageFileWriters)
-    ? value.stageFileWriters
-    : undefined;
   if (
     !selectorBindings ||
     !signalCapabilities ||
-    !stageFileWriters ||
     !isHexHash(value.capabilitiesRoot)
   ) {
     return [];
@@ -531,31 +504,12 @@ function capabilitiesRootCommitmentIssues(
     }
   }
 
-  const fileWriters: {
-    targetStageId: HexString;
-    writerStageId: HexString;
-  }[] = [];
-  for (const binding of stageFileWriters) {
-    if (
-      isRecord(binding) &&
-      isHexHash(binding.targetStageId) &&
-      isHexHash(binding.writerStageId)
-    ) {
-      fileWriters.push({
-        targetStageId: binding.targetStageId,
-        writerStageId: binding.writerStageId,
-      });
-    } else {
-      return [];
-    }
-  }
-
   if (
     value.capabilitiesRoot !==
-    capabilitiesRootOf(bindings, capabilities, fileWriters)
+    capabilitiesRootOf(bindings, capabilities)
   ) {
     return [
-      "capabilitiesRoot must match the recomputed root over selector bindings, signal capabilities, and stage file writers",
+      "capabilitiesRoot must match the recomputed root over selector bindings and signal capabilities",
     ];
   }
   return [];

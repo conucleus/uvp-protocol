@@ -1173,40 +1173,6 @@ function isOnchainHookDependency(
   );
 }
 
-function birthStageStaticSupplierIssues(
-  hooks: readonly unknown[],
-  supplierRoutes: readonly unknown[],
-): readonly string[] {
-  const routedStages = new Set<string>();
-  for (const route of supplierRoutes) {
-    if (isRecord(route) && typeof route.stageIdentifier === "string") {
-      routedStages.add(route.stageIdentifier);
-    }
-  }
-  const issues: string[] = [];
-  const reported = new Set<string>();
-  for (const hook of hooks) {
-    if (
-      !isRecord(hook) ||
-      hook.orderTriggerKind !== "trigger" ||
-      typeof hook.stageIdentifier !== "string"
-    ) {
-      continue;
-    }
-    const stageIdentifier = hook.stageIdentifier;
-    if (routedStages.has(stageIdentifier) || reported.has(stageIdentifier)) {
-      continue;
-    }
-    reported.add(stageIdentifier);
-    issues.push(
-      `stage ${stageIdentifier} is a trigger birth stage (trigger order-trigger hook) and requires its own static supplier route; `
-        + "trigger stages reject dock delegation and runtime supplier patches "
-        + "— the Rust compiler must reject this shape",
-    );
-  }
-  return issues;
-}
-
 export {
   validateOnchainCompiledHooks,
   validateOnchainCompiledAdmissions,
@@ -1215,6 +1181,5 @@ export {
   silentOrderTriggerIssues,
   dockStageRouteIssues,
   validateOnchainDependencyIndex,
-  birthStageStaticSupplierIssues,
   dynamicStageRouteIssues,
 };

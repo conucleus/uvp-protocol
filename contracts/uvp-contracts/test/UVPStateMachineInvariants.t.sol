@@ -8,10 +8,10 @@ import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
-import {UVPSupplierRegistry} from "../src/UVPSupplierRegistry.sol";
+import {UVPIdentityRegistry} from "../src/UVPIdentityRegistry.sol";
 import {MerkleCommitment} from "../src/libraries/MerkleCommitment.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
-import {emptyFilePatch} from "./FilePatchTestHelpers.sol";
+import {emptyStageFiles} from "./StageFileTestHelpers.sol";
 
 interface InvariantVm {
     function addr(uint256 privateKey) external returns (address keyAddr);
@@ -53,7 +53,7 @@ contract Handler {
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
     bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("1");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,bytes32 fileWritersHash,uint256 deadline)"
     );
 
     uint256 private constant ORDER_COUNT = 2;
@@ -68,7 +68,7 @@ contract Handler {
     bytes32 private constant STAGE_BIRTH = keccak256("invariant.stage.0");
     bytes32 private constant SOURCE = STAGE_BIRTH;
 
-    UVPSupplierRegistry private registry;
+    UVPIdentityRegistry private registry;
     mapping(bytes32 stageId => bytes32 supplierId) private stageSuppliers;
 
     mapping(bytes32 orderId => mapping(bytes32 hookId => uint8 terminalStatus)) private ghostTerminal;
@@ -84,7 +84,7 @@ contract Handler {
         require(!bootstrapped, "already bootstrapped");
         bootstrapped = true;
         machine = new UVPStateMachine();
-        registry = new UVPSupplierRegistry();
+        registry = new UVPIdentityRegistry();
         UVPStagePatchModule stagePatch = new UVPStagePatchModule(address(machine));
         UVPDerivedSignalModule derivedSignal = new UVPDerivedSignalModule(address(machine));
         UVPPlanMetadataModule planMetadata = new UVPPlanMetadataModule(address(machine));
@@ -95,7 +95,7 @@ contract Handler {
         machine.setPlanMetadataModule(address(planMetadata));
         machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
         machine.setLens(address(new UVPStateMachineLens(address(machine))));
-        machine.setSupplierRegistry(address(registry));
+        machine.setIdentityRegistry(address(registry));
         machine.freezeModules();
 
         signalIds[0] = bytes32(uint256(0x4000));
@@ -173,8 +173,8 @@ contract Handler {
                 payloadHash: keccak256(abi.encode("payload", seed)),
                 idempotencyKey: keccak256(abi.encode("idem", seed)),
                 attribution: _noAttribution(),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -249,8 +249,8 @@ contract Handler {
             payloadHash: keccak256(abi.encode("birth", orderIdx)),
             idempotencyKey: keccak256(abi.encode("birth-idem", orderIdx)),
             attribution: _noAttribution(),
-            filePatch: emptyFilePatch(),
-            patchHash: bytes32(0),
+            targetStageId: bytes32(0),
+            files: emptyStageFiles(),
             submitter: address(this),
             deadline: block.timestamp + 1 hours
         });
@@ -307,6 +307,7 @@ contract Handler {
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: EMPTY_MERKLE_ROOT,
             supplierBindingsRoot: MerkleCommitment.root(leaves),
+            fileWritersHash: keccak256(abi.encode(new UVPStateMachine.StageFileWriter[](0))),
             deadline: type(uint256).max
         });
         bytes32 structHash = keccak256(
@@ -316,11 +317,12 @@ contract Handler {
                 commit.hooksHash,
                 commit.capabilitiesRoot,
                 commit.supplierBindingsRoot,
+                commit.fileWritersHash,
                 commit.deadline
             )
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PUBLISHER_PRIVATE_KEY, _digest(structHash));
-        bytes32 registered = machine.commitPlan(commit, hooks, bindings, _packedSignature(v, r, s));
+        bytes32 registered = machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), _packedSignature(v, r, s));
         machine.finalizePlan(registered);
         return registered;
     }

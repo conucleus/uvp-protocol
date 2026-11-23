@@ -12,24 +12,18 @@ under this folder; repository-level deployment scripts live under
 
 ## Layout
 
-- `src/UVPIdentityRegistry.sol`: owner-controlled offline-subject to wallet
-  bindings. Its complete scope is subject/account registration and revocation;
-  it is a resolution/trust-attestation surface, not an execution-identity
-  source (the state machine never reads it).
-- `src/UVPSupplierRegistry.sol` (+ `src/interfaces/IUVPSupplierRegistry.sol`):
-  the sole active on-chain execution identity. A supplier self-registers with
-  its own account;
-  the registry mints a UUID SID (128-bit low half of a `bytes32`) and binds it
-  permanently to that one account. Status is `pending` until a registrar
-  activates it; `suspend`/`revoke` are registrar-gated. There is no
-  rotate/setAccount write path, revoking does not free the account, and the
-  reverse mapping `supplierOf` stays permanent. No EIP-712, no struct,
-  no tier/validity/descriptor; identity/KYC data stays off chain.
-- `src/UVPSupplierRegistryDebug.sol`: **QA-only** stand-in implementing the same
-  interface (every nonzero `supplierId` resolves to one fixed debug account and
-  reads as active; writes revert instead of faking registration). Production
-  deployment scripts must never wire it — production uses
-  `UVPSupplierRegistry` and its registration/status checks.
+- `src/UVPIdentityRegistry.sol` (+ `src/interfaces/IUVPIdentityRegistry.sol`):
+  the single on-chain identity boundary. It carries two independent namespaces:
+  owner-controlled subject/account bindings (descriptor hash/URI, revocable,
+  trust-attestation only), and supplier capability/account bindings. A supplier
+  self-registers with its own account; the registry mints a UUID SID (128-bit
+  low half of a `bytes32`) and binds it permanently to that one account.
+  Supplier status is `pending` until a registrar activates it; `suspend`/`revoke`
+  are registrar-gated. There is no rotate/setAccount write path, revoking does
+  not free the account, and the reverse mapping `supplierOf` stays permanent.
+  No EIP-712, no struct, no tier/validity/descriptor; identity/KYC data stays
+  off chain. The two namespaces never authorize each other: an identity binding
+  grants no execution authority, and supplier status grants no subject claim.
 - `src/UVPStateMachine.sol`: compact core state machine for plan, order, signal,
   timer, hook status, signed Plan publication, supplier-bound signal
   submission & order birth (`submitSignal`), and dynamic-stage supplier
@@ -59,7 +53,6 @@ under this folder; repository-level deployment scripts live under
   `fixtures/uvp-plan-registration.v0.1.json`,
   `fixtures/uvp-stage-patch-module.v0.1.json`,
   `fixtures/uvp-derived-signal-module.v0.1.json`,
-  `fixtures/uvp-supplier-registry.v0.1.json`,
   `fixtures/uvp-file-resource-module.v0.1.json`,
   `fixtures/uvp-state-machine-lens.v0.1.json`,
   `fixtures/uvp-dock-registry.v0.1.json`,
@@ -97,10 +90,10 @@ uvp-deploy/qa/scripts/bootstrap-local-anvil.sh --failure
 ```
 
 That script deploys `UVPDeploymentRegistry`, `UVPStateMachine`, the protocol
-modules (including `UVPSupplierRegistry`), and `UVPIdentityRegistry`, publishes
-signed compiler output, submits chain signals, records registry cutover
-evidence, and verifies emitted events through the TypeScript `statemachine`
-oracle.
+modules, and the single `UVPIdentityRegistry` (wired as the identity/supplier
+module), publishes signed compiler output, submits chain signals, records
+registry cutover evidence, and verifies emitted events through the TypeScript
+`statemachine` oracle.
 
 ## ABI Fixture
 
@@ -110,20 +103,22 @@ these as public interfaces:
 - its no-argument constructor;
 - one-time module configuration followed by irreversible `freezeModules`; the
   module set is stage patch, derived signal, dock registry, plan metadata,
-  lens, file resource, and supplier registry (all seven slots must be set
+  lens, file resource, and identity registry (all seven slots must be set
   before freeze);
 - core function selectors for signed `commitPlan(commit, hooks, bindings,
-  signature)` (five-field `PlanCommit`: `publisher`, `hooksHash`,
-  `capabilitiesRoot`, `supplierBindingsRoot`, `deadline`), permissionless
+  fileWriters, signature)` (six-field `PlanCommit`: `publisher`, `hooksHash`,
+  `capabilitiesRoot`, `supplierBindingsRoot`, `fileWritersHash`, `deadline`),
+  permissionless
   single-argument `finalizePlan(bytes32)`, unified `submitSignal(submission,
   signature)` (handles both order birth when `orderId == bytes32(0)` with
   runtime `orderId = keccak256(abi.encode(block.prevrandao, address(this),
   orderNonce))` and `usedTriggerKeys[submitter][idempotencyKey]`
   deduplication, and existing-order submission when `orderId != bytes32(0)`
-  where `signalId == 0` means a pure file patch; supports direct `msg.sender`
+  where `signalId == 0` means bare stage files; supports direct `msg.sender`
   when `signature.length == 0` and EIP-712 relayer when `signature.length > 0`
   via ECDSA or EIP-1271; `SignalSubmission` carries `attribution`,
-  `filePatch`, and `patchHash`), module configuration, module-only writebacks
+  `targetStageId`, and the opaque `StageFile[] files`), module configuration,
+  module-only writebacks
   (including the stage-patch activations `activateStageSupplierFromModule` /
   `activateStageDockSupplierFromModule`), `DOMAIN_SEPARATOR`, `pokeTimer`,
   `getHookStatus`, `hasSignal`/`getSignal`, the supplier views
@@ -147,19 +142,20 @@ these as public interfaces:
   `applyStageSupplierPatch`/`For` with `bindingProof` + `candidateProof` and
   the signed selector/previous-supplier-account consent, dock supplier
   selection with `supplierId` + `patchNonce`), file resource (single
-  `applyStageFilePatch` entry gated on `msg.sender == stateMachine`, writer
-  authority = writer-stage assigned supplier account + `fileWriters`
-  capability),
+  `applyStageFiles` entry gated on `msg.sender == stateMachine`; write
+  authority = the target stage's assigned supplier account or a declared
+  `fileWriters` stage's assigned supplier account),
   derived signal (`submitDerivedSignal`/`For`, submit authority = from-stage
   assigned supplier account), dock registry (`registerDock`/`getDock`/
-  `getDockOutput`), supplier registry
-  (`registerSupplier`/`activateSupplier`/`suspendSupplier`/`revokeSupplier`/
-  `setRegistrar`/`transferOwnership`/`accountOf`/`statusOf`/
-  `isActiveSupplier`/`supplierOf`), and lens
+  `getDockOutput`), identity registry (`registerIdentityBinding`/
+  `revokeIdentityBinding` and supplier capability calls `registerSupplier`/
+  `activateSupplier`/`suspendSupplier`/`revokeSupplier`/`setRegistrar`/
+  `transferOwnership`/`accountOf`/`statusOf`/`isActiveSupplier`/
+  `supplierOf`), and lens
   entrypoints/digest helpers/views, plus plan-metadata module views
-  `capabilitiesRoot`, `hasCapabilityVocabulary`, `verifySignalCapability`,
-  `verifyStageSelectorBinding`, and `verifyFileWriter` (membership is checked
-  as field-recomputed leaves against caller-supplied Merkle proofs);
+  `capabilitiesRoot`, `hasCapabilityVocabulary`, `verifySignalCapability`, and
+  `verifyStageSelectorBinding` (membership is checked as field-recomputed
+  leaves against caller-supplied Merkle proofs);
 - event topics for ownership, module configuration/freeze,
   `PlanCommitted` (carries `supplierBindingsRoot`), `PlanFinalized`,
   `PlanRegistered`, `PlanPublisherRecorded`, `OrderRegistered`,
@@ -174,8 +170,8 @@ these as public interfaces:
   `supplierId`), `DockBindingPoked`, `DockOutputDeferred` (carries the B-side
   verdict and due time), and `DockOutputSubmitted`; derived signal
   module event topics for `DerivedSignalSubmitted`; file resource module
-  (`UVPFileResourceModule`) event topics for `StageFilePatchApplied` and
-  `StageFileOpApplied`; supplier registry event topics for `SupplierRegistered`
+  (`UVPFileResourceModule`) event topic for `StageFileWritten`; identity
+  registry event topics for `SupplierRegistered`
   (carries `supplierId` +
   `account`), `SupplierStatusChanged` (carries `supplierId`, previous/new
   status, `account`), `SupplierRegistrarSet`, and `OwnershipTransferred`; and
@@ -191,22 +187,22 @@ code do not silently drift away from the contract ABI.
 
 ## MVP Chain Behavior
 
-1. The deployer creates a thin `UVPIdentityRegistry` for Store-operated identity
-   bindings; the StateMachine never queries it and no binding registered there
-   authorizes a signal, a plan, or a birth.
-2. `UVPSupplierRegistry` is deployed and wired as the seventh module before
-   `freezeModules`; the StateMachine resolves every stage supplier and its
-   account through it, and it is the only execution identity on chain
-   (`zhixu-registry` records and identity bindings grant no execution
-   authority). `UVPSupplierRegistryDebug` exists only for QA/local flows and is
-   never part of a production deployment.
+1. The deployer creates one `UVPIdentityRegistry` and wires it as the seventh
+   state-machine module before `freezeModules`. The StateMachine resolves every
+   stage supplier and its account through it, and it is the only execution
+   identity on chain (`zhixu-registry` records and identity bindings grant no
+   execution authority).
+2. The same registry carries Store-operated off-chain subject/account bindings
+   for product-facing trust attestations. Those bindings are owner-gated and
+   revocable; they never authorize a plan, an order, or a birth.
 3. `UVPStateMachine` is deployed without registry constructor arguments.
 4. The owner configures the complete module set and irreversibly freezes it.
    Runtime or module upgrades require a new state-machine deployment; existing
    orders remain on their original deployment and module set.
-5. A publisher signs the five-field `PlanCommit` (`publisher`, `hooksHash`,
-   `capabilitiesRoot`, `supplierBindingsRoot`, `deadline`) together
-   with the hooks and the `StageSupplierBinding[]` list; any relayer commits it.
+5. A publisher signs the six-field `PlanCommit` (`publisher`, `hooksHash`,
+   `capabilitiesRoot`, `supplierBindingsRoot`, `fileWritersHash`, `deadline`)
+   together with the hooks, the `StageSupplierBinding[]` list, and the
+   `StageFileWriter[]` declaration; any relayer commits it.
    Binding kinds are `0 = default` and `1 = candidate`; the contract recomputes
    `supplierBindingsRoot` and rejects a mismatch. Bindings are capped at 256
    (`TooManySupplierBindings`), must be unique, must reference stages declared
@@ -232,19 +228,19 @@ code do not silently drift away from the contract ABI.
    already used), generates `orderId = keccak256(abi.encode(block.prevrandao,
    address(this), orderNonce))`, and atomically creates the order, records the
    trigger fact, materializes the trigger stage, and applies any attached
-   `filePatch`.
+   `files`.
 7. Signal submission authority is the source stage's **assigned supplier
    account**: the effective supplierId is the active stage-patch supplier when
    one exists, else the plan's default supplier (fixed/candidate/birth), else
    zero for a dynamic stage; the account is
-   `supplierRegistry.accountOf(effectiveSupplierId)` and the SID must be
+   `identityRegistry.accountOf(effectiveSupplierId)` and the SID must be
    `active`. `submitSignal` uses `msg.sender` directly when
    `signature.length == 0`, or lets a relayer submit when
    `signature.length > 0` and the EIP-712 signature (ECDSA or EIP-1271) binds
    `submission.submitter` to the same supplier account. Missing
    assignment reverts `StageSupplierNotAssigned`, a non-active SID reverts
    `SupplierNotActive`, a missing registry wiring reverts
-   `SupplierRegistryNotConfigured`, and a wrong wallet reverts
+   `IdentityRegistryNotConfigured`, and a wrong wallet reverts
    `UnauthorizedStageSupplierAccount`. There is no order-level submitter
    allowlist.
    External submissions are idempotent first-win: a fact already recorded for
@@ -294,28 +290,27 @@ code do not silently drift away from the contract ABI.
      `StageSupplierPatchForbiddenOnBirthStage`. Assignments must point at an
      active SID (`SupplierNotActive`).
 10. Stage file maps are owned by `UVPFileResourceModule` (configured as
-    `fileResourceModule()` before `freezeModules`). A stage's map is
-    `key -> (contentHash, handle)`: the chain stores a content hash and an
-    opaque bounded handle, never plaintext, and never resolves the handle. The
-    chain does not define or interpret a file type: types are backend-defined,
-    freestyle and non-enumerable, and the engine must not carry a type/taxonomy
-    or storage decision on chain.
-    Writes are first-class patch facts (`add` requires the key absent,
-    `replace`/`remove` require it present; strict, whole-patch atomic) carrying
-    a mandatory `baseHash` equal to the stage's current files version —
-    mismatch rejects the whole request, and there is no nonce (the projection
-    holds exactly one current value per key). Write authority is the writer
-    stage's **assigned supplier account** (the submitter of the business signal or
-    file patch); when the writer stage differs from the target stage, the
-    `fileWriters` capability leaf (`UVP_FILE_WRITER_V1`) must also prove the
-    stage pair. There is no reserved `FILE_WRITE_SIGNAL_ID` row and no
-    order-level authorization table. `writerStageId == 0` resolves to the
-    business signal's stage, or to the target stage for a pure file patch. A
-    file patch may ride one business signal in the same direct call, or stand
-    alone as an empty signal (`signalId == 0`); a pure file patch is not a
-    business signal — it does not increment business signal counts, does not
-    evaluate hooks, and does not run admission. There is no "stage has signal"
-    gate for files.
+    `fileResourceModule()` before `freezeModules`). A stage's map is an opaque
+    `string key -> bytes payload` map. The engine never parses a key or payload
+    and never resolves storage references; callers pass opaque references (for
+    example content hashes or metadata URIs), not plaintext evidence.
+    The chain does not define or interpret a file type: types are
+    backend-defined, freestyle and non-enumerable.
+    The single write entry is `submitSignal`: `StageFile[] files` is an opaque
+    entry list, and writing an existing key replaces its payload. There is no
+    add/replace/remove op state machine, no `baseHash` rolling hash, no
+    `contentHash`/`patchHash` double hashing, and no per-key version counter.
+    Write authority is the target stage's assigned supplier account, or the
+    assigned supplier account of a stage declared in that target stage's
+    `fileWriters` list; self is implicit. `fileWriters` is a plain plan-level
+    `StageFileWriter[]` declaration signed inside `PlanCommit`; it is not a
+    Merkle capability tree and there is no separate file-writer registration.
+    A submission with files and a business signal applies both atomically; a
+    duplicate business signal absorbs the whole request and does not re-apply
+    files. A bare file write uses `signalId == 0` with a non-zero
+    `targetStageId`; it is not a business signal, does not increment signal
+    counts, and does not evaluate hooks or admission. There is no "stage has
+    signal" gate for files.
 11. Docking is a static A -> B time-window binding. A Dock is registered in
     `UVPDockRegistry` as a B-side declaration: from/to plans, `from.source`,
     `to.stage`, B output signal ids, the A-side `validWhen` window program
@@ -387,29 +382,29 @@ rather than treating `orderId` as globally unique.
 
 ## Registry Boundaries
 
-Three registries exist; only one carries execution authority.
+One on-chain identity registry; one off-chain content store.
 
 | Registry | Scope | Execution authority |
 | --- | --- | --- |
-| `UVPSupplierRegistry` | SID minting, permanent SID->account binding, `pending/active/suspended/revoked` status | **The only one.** Every stage's submitting account is `accountOf(effectiveSupplierId)` with `active` status; `submitSignal`, birth, dock output, derived signal, and file writes all resolve authority here. |
-| `UVPIdentityRegistry` | subjectId<->account bindings with descriptor hash/URI, owner-registered and revocable | None. `UVPStateMachine` has no reference to it; a binding there never authorizes a plan, order, or signal. It backs product-facing trust attestations only. |
-| `zhixu-registry` (`zhixu-store/registry`, off-chain) | Permissionless `ZhixuRecord`/`IdentityClaim` data registration | None on chain. It is a non-user-facing data layer; it mints no SID and is never consulted by the state machine. |
+| `UVPIdentityRegistry` | Two independent namespaces: (a) subjectId<->account bindings with descriptor hash/URI, owner-registered and revocable; (b) SID minting, permanent SID->account binding, `pending/active/suspended/revoked` status | **Only the supplier namespace.** Every stage's submitting account is `accountOf(effectiveSupplierId)` with `active` status; `submitSignal`, birth, dock output, derived signal, and file writes all resolve authority here. Identity bindings grant none. |
+| `zhixu-registry` (`zhixu-store/registry`, off-chain) | Permissionless `ZhixuRecord` content-addressed registration | None on chain. It is a non-user-facing data layer; it mints no SID and is never consulted by the state machine. |
 
 Consequences that must hold in code review: adding an executor/authorization
-path that reads `UVPIdentityRegistry` (or any off-chain registry) is a
-boundary violation; a "supplier" account is never derived from an identity
-binding; and the state-machine module set keeps `supplierRegistry` as the only
-slot that can answer "who may submit this stage's facts".
+path that reads the identity-binding namespace is a boundary violation; a
+"supplier" account is never derived from an identity binding; and the
+state-machine module set keeps exactly one identity registry slot that answers
+"who may submit this stage's facts".
 
 ## EIP-712 Domains
 
 Every EIP-712 domain version is the single fixed baseline `1`: main
 `UVPStateMachine`/product-submit and `UVPPlanRegistration` `1`,
-`UVPStagePatchModule` `1`, `UVPDerivedSignalModule` `1`; `UVPSupplierRegistry`
+`UVPStagePatchModule` `1`, `UVPDerivedSignalModule` `1`; `UVPIdentityRegistry`
 and `UVPDockRegistry` have no EIP-712 signature domain (registration is
 permissionless / owner or registrar gated). The plan runtime hash domain
-(non-EIP-712, hashed by `planRuntimeHash`) is `uvp.plan.runtime.v7` over
-`hooksHash`, `capabilitiesRoot`, and `supplierBindingsRoot`; it is a frozen
+(non-EIP-712, hashed by `planRuntimeHash`) is `uvp.plan.runtime.v8` over
+`hooksHash`, `capabilitiesRoot`, `supplierBindingsRoot`, and
+`fileWritersHash`; it is a frozen
 cross-track commitment domain, not a release version, and only moves with a
 regenerated commitment corpus. Contract ABI fixtures all carry the fixed `0.1`
 baseline. The single mechanical source for versions and frozen ABI fixtures is
@@ -435,8 +430,7 @@ Indexer and replay tooling should treat these event names as public interfaces:
 - `SignalSubmitted`
 - `StageMaterialized`
 - `StageSupplierPatchApplied`
-- `StageFilePatchApplied`
-- `StageFileOpApplied`
+- `StageFileWritten`
 - `StageSupplierAssigned`
 - `HookStatusChanged`
 - `HookReady`
@@ -446,8 +440,8 @@ The module fixtures add these public events:
 
 - `DerivedSignalSubmitted` (derived-signal module; carries `fromPlanId` +
   `targetPlanId`);
-- `StageFilePatchApplied` / `StageFileOpApplied` (file resource module;
-  patch-level and per-op records, replayed in log order);
+- `StageFileWritten` (file resource module; one opaque key/payload write,
+  replayed in log order);
 - `DockRegistered` (dock registry; carries the full Dock outputs, atoms, and
   A-window programs);
 - `StageDockSupplierSelected`, `DockBindingPoked`, `DockOutputDeferred`, and
@@ -551,9 +545,10 @@ adapter with its own authorization and accounting checks.
 Known limits:
 
 - Role administration is owner-managed and intentionally minimal (owner +
-  supplier registrars).
-- Supplier identity/KYC is off-chain (`zhixu-store`); the chain records the
-  SID, its permanently bound supplier account, and `pending/active/suspended/
+  supplier registrars on the same identity registry).
+- Supplier identity/KYC evidence stays off chain; the chain records the SID,
+  its permanently bound supplier account, and `pending/active/suspended/
   revoked` status. `suspendSupplier` can be reversed by activating again;
   `revokeSupplier` is terminal and keeps the SID/account binding.
-- `UVPSupplierRegistryDebug` is QA-only and must never be wired in production.
+- There is no second supplier registry or QA stand-in; local/QA stacks wire the
+  production `UVPIdentityRegistry` and use the deployer as registrar.

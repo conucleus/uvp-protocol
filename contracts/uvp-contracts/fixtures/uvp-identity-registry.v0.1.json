@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x748547465799e38b645c8637222522460cefda5ed6fba341c636afa179fe0b3e",
-    "bytecodeHash": "0x2e539e3cff0ceb29247c09a4a622dae5515734e9dc94870b5b49dcf5b590d335",
-    "deployedBytecodeHash": "0x972cae03f585f961193870c2b05dbf20da598a2b6c64151481e9bb8a307d3ccd",
-    "artifactHash": "0x1362ce35e5cdc71ac924eec6f47b3ceff4787843bd3f7845b5868cca108c41ea"
+    "abiHash": "0x33211c0b611e368c9f1ee7c94d4f65b563cefe1d73dfc45583d00cb9a9e3d105",
+    "bytecodeHash": "0x43fb476b997c93075253c9e0f558157786e9f6ae94c10a5b96b7646c32847bca",
+    "deployedBytecodeHash": "0xa635663b720d58517ff930aa3d997a806444d62752c8759fa9dead2dd95e09d7",
+    "artifactHash": "0x19e4a64459fe34e380357b0fc029eb97a5254758f38ad1a8224e747dc60d51bb"
   },
   "events": {
     "IdentityBindingRegistered": {
@@ -26,9 +26,29 @@
     "OwnershipTransferred": {
       "signature": "OwnershipTransferred(address,address)",
       "topic": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
+    },
+    "SupplierRegistered": {
+      "signature": "SupplierRegistered(bytes32,address)",
+      "topic": "0xe959a2a3b6952a320e8b6f1ea0438f6c1e7155cca819495f5e3e566abfbabf37"
+    },
+    "SupplierRegistrarSet": {
+      "signature": "SupplierRegistrarSet(address,bool)",
+      "topic": "0x2ebb1be4b3e457f1e827f1518bbeb0c849feec5c021fd7a1496482eab7f651c8"
+    },
+    "SupplierStatusChanged": {
+      "signature": "SupplierStatusChanged(bytes32,uint8,uint8,address)",
+      "topic": "0xcad9d40f9f1f27c41e20818280db630876c8d4cce08f069cd3cce39ce8328bdd"
     }
   },
   "functions": {
+    "accountOf": {
+      "signature": "accountOf(bytes32)",
+      "selector": "0x0b61a887"
+    },
+    "activateSupplier": {
+      "signature": "activateSupplier(bytes32)",
+      "selector": "0x919cc1ae"
+    },
     "activeBindingForAccount": {
       "signature": "activeBindingForAccount(address)",
       "selector": "0x6fae5ebb"
@@ -41,6 +61,10 @@
       "signature": "getIdentityBinding(bytes32)",
       "selector": "0xd29e61af"
     },
+    "isActiveSupplier": {
+      "signature": "isActiveSupplier(bytes32)",
+      "selector": "0x7329d13f"
+    },
     "owner": {
       "signature": "owner()",
       "selector": "0x8da5cb5b"
@@ -49,9 +73,33 @@
       "signature": "registerIdentityBinding(bytes32,address,bytes32,string)",
       "selector": "0x73af5536"
     },
+    "registerSupplier": {
+      "signature": "registerSupplier(address)",
+      "selector": "0xcf7f5e5f"
+    },
     "revokeIdentityBinding": {
       "signature": "revokeIdentityBinding(bytes32,bytes32,string)",
       "selector": "0xcb8bddef"
+    },
+    "revokeSupplier": {
+      "signature": "revokeSupplier(bytes32)",
+      "selector": "0x035bac62"
+    },
+    "setRegistrar": {
+      "signature": "setRegistrar(address,bool)",
+      "selector": "0xc1bf1dcf"
+    },
+    "statusOf": {
+      "signature": "statusOf(bytes32)",
+      "selector": "0xc7df14e2"
+    },
+    "supplierOf": {
+      "signature": "supplierOf(address)",
+      "selector": "0xf761160b"
+    },
+    "suspendSupplier": {
+      "signature": "suspendSupplier(bytes32)",
+      "selector": "0xfb5f47f6"
     },
     "transferOwnership": {
       "signature": "transferOwnership(address)",

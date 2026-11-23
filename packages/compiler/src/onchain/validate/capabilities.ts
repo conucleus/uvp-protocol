@@ -29,8 +29,8 @@ import type {
 
 /**
  * 能力声明族校验：supplierRoutes / supplierBindings / selectorBindings /
- * signalCapabilities 的形状与承诺重算，事实键唯一属主镜像，
- * supplierType / supplier-binding-kind 闭集词表（fileType 值域开放，不在编译期收窄）。
+ * signalCapabilities 的形状与承诺重算，supplierType / supplier-binding-kind
+ * 闭集词表（事实键唯一属主归 uvp-core analyze；fileType 值域开放，不在编译期收窄）。
  */
 
 const SUPPLIER_ROUTE_FIELDS: readonly string[] = [
@@ -122,34 +122,6 @@ function capabilityStageOwnershipIssues(
     ];
   }
   return [];
-}
-
-function duplicateCurrentOrderFactKeyIssues(
-  capabilities: readonly {
-    readonly stage: string;
-    readonly sourceId: string;
-    readonly signalId: string;
-  }[],
-): readonly string[] {
-  const issues: string[] = [];
-  const owners = new Map<string, string>();
-  for (const capability of capabilities) {
-    const factKey = `${capability.sourceId}:${capability.signalId}`;
-    const owner = owners.get(factKey);
-    if (owner === undefined) {
-      owners.set(factKey, capability.stage);
-      continue;
-    }
-    if (owner !== capability.stage) {
-      issues.push(
-        `stage ${capability.stage} declares the current-order fact key `
-          + `(${capability.sourceId}, ${capability.signalId}) already owned by stage ${owner}; `
-          + "current-order fact keys must resolve to exactly one owner stage "
-          + "for proof-carrying attribution to be unambiguous",
-      );
-    }
-  }
-  return issues;
 }
 
 export interface OnchainSupplierBindingRecord extends StageSupplierBinding {}
@@ -561,7 +533,6 @@ function selectorBindingKey(
 }
 
 export {
-  duplicateCurrentOrderFactKeyIssues,
   validateOnchainSupplierBindings,
   validateOnchainSupplierRoutes,
   validateOnchainSelectorBindings,

@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xd07a4b1324fb0ce197a09dde1fb7157ce22de8589f8cdac2bb64123d5508623a",
-    "bytecodeHash": "0x9c65dfd00ee567a0d384a74c8f1304a3158d95be0e9692819c453df22e05659d",
-    "deployedBytecodeHash": "0xa00653a1aa00dcf7460a81df5a7875c1b52b201f59868beb1e49e30313fa3d24",
-    "artifactHash": "0x6dd332dc6a2a2776e891309a286e52d8725f0581d2c37bb705847e93ab245825"
+    "abiHash": "0x740bc4425f470bd1e44004513a252f452715c1a63bf1537c02a2e9c69e2c2d43",
+    "bytecodeHash": "0x2c7571e26583e139f1191e271e11479c3edec78c858ecc4628e0e82f985cca1c",
+    "deployedBytecodeHash": "0xe49d5c73038205e0c50fcb0f0b4d074c2f7d1ca9ad4ef52bfbd46f201a9519df",
+    "artifactHash": "0xa9ea00741bc6c7113a7aa326b1ffecc3e2eed3f85b3e9295172d87388844184f"
   },
   "events": {},
   "functions": {
@@ -23,10 +23,6 @@
     "capabilitiesRoot": {
       "signature": "capabilitiesRoot(bytes32)",
       "selector": "0x773e7fcb"
-    },
-    "fileWriterLeaf": {
-      "signature": "fileWriterLeaf(bytes32,bytes32)",
-      "selector": "0xfac61420"
     },
     "finalizePlanMetadata": {
       "signature": "finalizePlanMetadata(bytes32,bytes32)",
@@ -51,10 +47,6 @@
     "stateMachine": {
       "signature": "stateMachine()",
       "selector": "0x37b416d8"
-    },
-    "verifyFileWriter": {
-      "signature": "verifyFileWriter(bytes32,bytes32,bytes32,bytes32[])",
-      "selector": "0x7931bc1d"
     },
     "verifySignalCapability": {
       "signature": "verifySignalCapability(bytes32,bytes32,bytes32,bytes32,uint8,bytes32[])",

@@ -21,7 +21,6 @@ import {
 import {
   compileZhixuHookPlan,
   compareCanonicalKey,
-  HookPlanArtifactValidationError,
   HookPlanCompilationError,
 } from "../src/hook-plan.js";
 import { hookPlanHashOf } from "../src/hook-plan/assemble.js";
@@ -36,7 +35,6 @@ import {
   signalCapabilityLeaf,
   signalCapabilityProof,
 } from "../src/onchain/capabilities-root.js";
-import { fileWriterLeaf, fileWriterProof } from "../src/index.js";
 import {
   onchainSignalId,
   onchainSignalKey,
@@ -101,7 +99,6 @@ const SUPPLIER_SELECTOR = "5f0b1e2a-7c9d-4e1f-9a2b-000000000001";
 const SUPPLIER_WORK = "5f0b1e2a-7c9d-4e1f-9a2b-000000000002";
 const SUPPLIER_WATCHER = "5f0b1e2a-7c9d-4e1f-9a2b-000000000003";
 const SUPPLIER_FULFILLER = "5f0b1e2a-7c9d-4e1f-9a2b-000000000004";
-const SUPPLIER_ROUTING = "5f0b1e2a-7c9d-4e1f-9a2b-000000000005";
 const SUPPLIER_AUDIT = "5f0b1e2a-7c9d-4e1f-9a2b-000000000006";
 
 const baseZhixu: ZhixuDefinition = {
@@ -420,7 +417,7 @@ test("rejects a repinned capabilitiesRoot that drifts from the capability tables
     validateOnchainHookPlanArtifact(repinned).some(
       (issue) =>
         issue ===
-        "capabilitiesRoot must match the recomputed root over selector bindings, signal capabilities, and stage file writers",
+        "capabilitiesRoot must match the recomputed root over selector bindings and signal capabilities",
     ),
   );
   assert.throws(
@@ -439,7 +436,7 @@ test("rejects a repinned capabilitiesRoot that drifts from the capability tables
   assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
 });
 
-test("compiles fileWriters into artifact leaves and the capabilities root", () => {
+test("compiles fileWriters into a plan section outside the capabilities root", () => {
   const withFileWriters: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
@@ -462,37 +459,19 @@ test("compiles fileWriters into artifact leaves and the capabilities root", () =
     targetStageId,
     writerStageIdentifier: "assign",
     writerStageId,
-    fileWriterLeaf: fileWriterLeaf(targetStageId, writerStageId),
   });
 
   const tables = capabilityTablesOf(withWriters);
   assert.equal(
     withWriters.capabilitiesRoot,
-    capabilitiesRootOf(
-      tables.selectorBindings,
-      tables.signalCapabilities,
-      tables.fileWriterBindings,
-    ),
+    capabilitiesRootOf(tables.selectorBindings, tables.signalCapabilities),
   );
-  assert.notEqual(withWriters.capabilitiesRoot, without.capabilitiesRoot);
+  assert.equal(withWriters.capabilitiesRoot, without.capabilitiesRoot);
   assert.notEqual(withWriters.planHash, without.planHash);
 
-  const proof = fileWriterProof(
-    tables.selectorBindings,
-    tables.signalCapabilities,
-    tables.fileWriterBindings,
-    targetStageId,
-    writerStageId,
-  );
-  assert.ok(proof);
-  assert.equal(
-    verifyMerkleProof(
-      withWriters.capabilitiesRoot,
-      fileWriterLeaf(targetStageId, writerStageId),
-      proof,
-    ),
-    true,
-  );
+  const args = toSolidityRegisterPlanArgs(withWriters);
+  assert.deepEqual(args.fileWriters, [{ targetStageId, writerStageId }]);
+  assert.match(args.fileWritersHash, /^0x[0-9a-f]{64}$/);
   assert.deepEqual(validateOnchainHookPlanArtifact(withWriters), []);
 
   const { planHash: _staleHash, ...payload } = withWriters;
@@ -509,7 +488,7 @@ test("compiles fileWriters into artifact leaves and the capabilities root", () =
     ...tampered,
     planHash: hashOnchainPlanPayload(tampered),
   }), [
-    'stageFileWriters[0].fileWriterLeaf must match keccak256("UVP_FILE_WRITER_V1", targetStageId, writerStageId)',
+    "unknown field `fileWriterLeaf` on stageFileWriters[0] — the artifact schema is a closed field set, so the artifact would not be the plan's unique byte form; remove it or recompile",
   ]);
 });
 
@@ -869,30 +848,6 @@ test("compiles capability tables beyond gas caps into a verifiable capabilitiesR
   assert.equal(
     expandedArgs.capabilitiesRoot,
     capabilitiesRootOf(expandedArgs.selectorBindings, expandedArgs.signalCapabilities),
-  );
-});
-
-test("rejects a stage declaring another stage's current-order signal (E16 ownership)", () => {
-  const sourcePlan = compileZhixuHookPlan(baseZhixu);
-  const fact = sourcePlan.signalCapabilities[0]!;
-  const otherStage =
-    sourcePlan.signalCapabilities.find(
-      (capability) => capability.stageIdentifier !== fact.stageIdentifier,
-    )?.stageIdentifier ?? "other";
-  const crossStageDeclaration = resign({
-    ...sourcePlan,
-    signalCapabilities: [
-      ...sourcePlan.signalCapabilities,
-      { ...fact, stageIdentifier: otherStage, targetOrderRelation: "current" as const },
-    ],
-  });
-  assert.throws(
-    () => compileOnchainHookPlan(crossStageDeclaration),
-    (error: unknown) =>
-      error instanceof HookPlanArtifactValidationError &&
-      error.issues.some((issue) =>
-        /is not a sendSignal declared by the source definition/.test(issue),
-      ),
   );
 });
 
@@ -2194,121 +2149,6 @@ test("rejects undeclared extra fields on deep on-chain artifact objects (L9 mirr
   );
 });
 
-test("rejects trigger birth stages without their own static supplier route", () => {
-  const zhixu: ZhixuDefinition = {
-    ...baseZhixu,
-    spec: {
-      ...baseZhixu.spec,
-      stages: [
-        ...baseZhixu.spec.stages.map((stage) =>
-          stage.name === "assign"
-            ? {
-                ...stage,
-                name: "selector",
-                receiveSignals: { PLACE: "buyer::selector.seed" },
-              }
-            : stage.name === "main"
-              ? {
-                  ...stage,
-                  receiveSignals: {
-                    START: "buyer::selector.executor_selected",
-                    TIMEOUT:
-                      "buyer::(selector.executor_selected +5s) & ~main.cmp",
-                  },
-                }
-              : stage,
-        ),
-        {
-          name: "birth",
-          source: "fulfiller",
-          sendSignals: [{ name: "str", trigger: true }, { name: "cmp" }, { name: "err" }],
-          executor: { supplierType: "organization", supplierID: SUPPLIER_FULFILLER },
-        },
-        {
-          name: "routing",
-          source: "buyer",
-          selectedStages: ["birth"],
-          receiveSignals: { PLACE: "buyer::routing.seed" },
-          sendSignals: [{ name: "picked" }, { name: "seed" }],
-          executor: { supplierType: "organization", supplierID: SUPPLIER_ROUTING },
-        }],
-    },
-  };
-
-  const ir = compileZhixuHookPlan(zhixu);
-  const onchain = compileOnchainHookPlan(ir);
-  const birthHook = onchain.compiledHooks.find(
-    (hook) => hook.stageIdentifier === "birth",
-  );
-  assert.ok(birthHook, "birth hook missing from compiled plan");
-  assert.equal(birthHook.orderTriggerKind, "trigger");
-  assert.ok(
-    onchain.selectorBindings.some(
-      (binding) => binding.targetStageIdentifier === "birth",
-    ),
-    "fixture must anchor the birth stage through selectedStages",
-  );
-  assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
-
-  const strippedIr = resign({
-    ...ir,
-    supplierRoutes: Object.fromEntries(
-      Object.entries(ir.supplierRoutes).filter(
-        ([stageIdentifier]) => stageIdentifier !== "birth",
-      ),
-    ),
-    compiledHooks: ir.compiledHooks.map((hook) => {
-      if (hook.stageIdentifier !== "birth") {
-        return hook;
-      }
-      const { route: _omitted, ...withoutRoute } = hook;
-      void _omitted;
-      return withoutRoute;
-    }),
-  } as typeof ir);
-  assert.throws(
-    () => compileOnchainHookPlan(strippedIr),
-    (error: unknown) =>
-      error instanceof HookPlanCompilationError &&
-      error.issues.some((issue) =>
-        /birth is a trigger birth stage \(trigger order-trigger hook\) and requires its own static supplier route/.test(
-          issue,
-        )
-      ),
-    "compile preflight must reject a trigger birth stage without its own supplier route",
-  );
-
-  const rehashed = (mutated: OnchainHookPlanArtifact): OnchainHookPlanArtifact => {
-    const { planHash: _drop, ...payload } = mutated;
-    void _drop;
-    return {
-      ...mutated,
-      planHash: hashOnchainPlanPayload(payload as never),
-    } as OnchainHookPlanArtifact;
-  };
-  const strippedOnchain = rehashed({
-    ...structuredClone(onchain),
-    supplierRoutes: onchain.supplierRoutes.filter(
-      (route) => route.stageIdentifier !== "birth",
-    ),
-    compiledHooks: onchain.compiledHooks.map((hook) => {
-      if (hook.stageIdentifier !== "birth") {
-        return hook;
-      }
-      const { routeRef: _omitted, ...withoutRouteRef } = hook;
-      void _omitted;
-      return withoutRouteRef;
-    }),
-  } as OnchainHookPlanArtifact);
-  assert.ok(
-    validateOnchainHookPlanArtifact(strippedOnchain).some((issue) =>
-      /birth is a trigger birth stage \(trigger order-trigger hook\) and requires its own static supplier route/.test(
-        issue,
-      )
-    ),
-    "artifact boundary must reject a trigger birth stage without its own supplier route",
-  );
-});
 test("hook dependencies must mirror the SIGNAL atom key set (contract mirror)", () => {
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
   const watcher = onchain.compiledHooks.find(

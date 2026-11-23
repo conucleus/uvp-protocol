@@ -190,10 +190,9 @@ export function decodeStageFileEntryWire(
   path = "stageFileEntry"
 ): ChainStageFileEntry {
   const record = wireRecord(value, path);
-  for (const field of ["key", "contentHash", "patchHash"] as const) {
+  for (const field of ["key", "payload"] as const) {
     requireString(record, field, path);
   }
-  requireString(record, "handle", path);
   decodeProvenanceWire(record["updatedAt"], `${path}.updatedAt`);
   decodeProofWire(record["proof"], `${path}.proof`);
   return value as ChainStageFileEntry;
@@ -204,7 +203,7 @@ export function decodeStageFileMapWire(
   path = "stageFileMap"
 ): ChainStageFileMap {
   const record = wireRecord(value, path);
-  for (const field of ["planId", "orderId", "targetStageId", "filesHash"] as const) {
+  for (const field of ["planId", "orderId", "targetStageId"] as const) {
     requireString(record, field, path);
   }
   decodeRecordMap(record["files"], `${path}.files`, decodeStageFileEntryWire);

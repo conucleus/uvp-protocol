@@ -29,7 +29,7 @@ import {
   SIGNAL_SUBMITTED_ABI,
   SIGNAL_SUBMITTED_TOPIC,
   STATE_MACHINE_ABI,
-  SUPPLIER_REGISTRY_ABI,
+  IDENTITY_REGISTRY_ABI,
   UVP_STATE_MACHINE_ARTIFACT_ABI,
 } from "../src/index.js";
 
@@ -42,9 +42,9 @@ const fileResourceModuleArtifactPath = resolve(
   packageDir,
   "../../contracts/uvp-contracts/out/UVPFileResourceModule.sol/UVPFileResourceModule.json",
 );
-const supplierRegistryArtifactPath = resolve(
+const identityRegistryArtifactPath = resolve(
   packageDir,
-  "../../contracts/uvp-contracts/out/UVPSupplierRegistry.sol/UVPSupplierRegistry.json",
+  "../../contracts/uvp-contracts/out/UVPIdentityRegistry.sol/UVPIdentityRegistry.json",
 );
 
 interface FoundryArtifact {
@@ -57,8 +57,8 @@ const artifactAvailable = existsSync(artifactPath);
 const fileResourceModuleArtifactAvailable = existsSync(
   fileResourceModuleArtifactPath,
 );
-const supplierRegistryArtifactAvailable = existsSync(
-  supplierRegistryArtifactPath,
+const identityRegistryArtifactAvailable = existsSync(
+  identityRegistryArtifactPath,
 );
 
 describe("generated artifact ABI bindings", () => {
@@ -108,14 +108,14 @@ describe("generated artifact ABI bindings", () => {
     assert.deepEqual(UVP_STATE_MACHINE_ARTIFACT_ABI, artifact.abi);
   });
 
-  it("mirrors the supplier registry forge artifact ABI verbatim", async (t) => {
-    if (!supplierRegistryArtifactAvailable) {
+  it("mirrors the identity registry forge artifact ABI verbatim", async (t) => {
+    if (!identityRegistryArtifactAvailable) {
       return t.skip("forge artifacts not built");
     }
     const artifact = JSON.parse(
-      await readFile(supplierRegistryArtifactPath, "utf8"),
+      await readFile(identityRegistryArtifactPath, "utf8"),
     ) as FoundryArtifact;
-    assert.deepEqual(SUPPLIER_REGISTRY_ABI, artifact.abi);
+    assert.deepEqual(IDENTITY_REGISTRY_ABI, artifact.abi);
   });
 
   it("mirrors the full file resource module forge artifact ABI verbatim", async (t) => {

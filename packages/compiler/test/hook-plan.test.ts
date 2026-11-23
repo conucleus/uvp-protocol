@@ -291,7 +291,7 @@ test("rejects artifacts tampering compiledHooks/planId/source against the carrie
   ]);
 });
 
-test("binds the carried source to zhixuId, zhixuName, capabilities, and admissions", () => {
+test("binds the carried source to zhixuId, zhixuName, and platform", () => {
   const plan = compileZhixuHookPlan(baseZhixu);
 
   const forgedId = {
@@ -323,27 +323,6 @@ test("binds the carried source to zhixuId, zhixuName, capabilities, and admissio
   assert.deepEqual(validateHookPlanArtifact(resign(forgedPlatform)), [
     "platform must match the source definition's spec.platform (empty params normalize away)",
   ]);
-
-  const forgedCapability = {
-    ...plan,
-    signalCapabilities: [
-      ...plan.signalCapabilities,
-      {
-        stageIdentifier: "main",
-        source: "buyer",
-        declaredSignal: "seed",
-        targetSource: "buyer",
-        targetSignalName: "main.seed",
-        targetOrderRelation: "current" as const,
-      },
-    ],
-  };
-  assert.ok(
-    validateHookPlanArtifact(resign(forgedCapability)).includes(
-      `signalCapabilities[${plan.signalCapabilities.length}] main::main.seed is not a sendSignal declared by the source definition; `
-        + "a capability can only be declared by the stage that owns the signal",
-    ),
-  );
 });
 
 test("rejects metadata stage references outside the hooks stage set (stage existence mirror)", () => {

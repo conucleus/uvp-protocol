@@ -21,7 +21,6 @@ import {
 } from "@uvp-eth/protocol-bindings/solana";
 import {
   DERIVED_SIGNAL_MODULE_ABI,
-  FILE_PATCH_HASH_DOMAIN,
   SIGNAL_SUBMISSION_PRIMARY_TYPE,
   SIGNAL_SUBMISSION_TYPED_DATA_FIELDS,
   STAGE_PATCH_MODULE_ABI,
@@ -38,8 +37,8 @@ import {
   EMPTY_CAPABILITIES_ROOT,
   factAttribution,
   factAttributionHash,
-  filePatchHash,
   hashStageSupplierPatchPayload,
+  stageFilesHash,
   selectorBindingLeaf,
   selectorBindingProofFor,
   signalCapabilityLeaf,
@@ -155,7 +154,6 @@ const orderId = bytes32("01");
 const planId = bytes32("13");
 const targetPlanId = bytes32("21");
 const targetStageId = bytes32("07");
-const patchHash = bytes32("0c");
 const sourceId = bytes32("02");
 const signalId = bytes32("03");
 const payloadHash = bytes32("04");
@@ -255,6 +253,7 @@ describe("protocol bindings", () => {
       hooksHash: payloadHash,
       capabilitiesRoot: idempotencyKey,
       supplierBindingsRoot: idempotencyKey,
+      fileWritersHash: idempotencyKey,
       deadline,
     });
     const signature = await account.signTypedData(
@@ -275,6 +274,7 @@ describe("protocol bindings", () => {
         "hooksHash",
         "capabilitiesRoot",
         "supplierBindingsRoot",
+        "fileWritersHash",
         "deadline",
       ],
     );
@@ -395,7 +395,8 @@ describe("protocol bindings", () => {
       signalId,
       payloadHash,
       idempotencyKey,
-      patchHash,
+      targetStageId,
+      files: [{ key: "uvp://files/1", payload: "0x1234" }],
       attribution,
       submitter,
       deadline,
@@ -410,14 +411,18 @@ describe("protocol bindings", () => {
     });
     assert.deepEqual(
       typedData.types.UVPStateMachineSignalSubmission.map((field) => field.name),
-      ["planId", "orderId", "sourceId", "signalId", "payloadHash", "idempotencyKey", "patchHash", "attributionHash", "submitter", "deadline"],
+      ["planId", "orderId", "sourceId", "signalId", "payloadHash", "idempotencyKey", "targetStageId", "filesHash", "attributionHash", "submitter", "deadline"],
     );
     assert.deepEqual(
       typedData.types.UVPStateMachineSignalSubmission,
       SIGNAL_SUBMISSION_TYPED_DATA_FIELDS,
     );
     assert.equal(typedData.message.attributionHash, factAttributionHash(attribution));
-    assert.equal(typedData.message.patchHash, patchHash);
+    assert.equal(typedData.message.targetStageId, targetStageId);
+    assert.equal(
+      typedData.message.filesHash,
+      stageFilesHash([{ key: "uvp://files/1", payload: "0x1234" }]),
+    );
 
     // 与 UVPStateMachine._signalSubmissionDigest 的链上公式逐字段对拍：
     // typehash 字段名/顺序、attributionHash 的 FactAttribution typehash 与
@@ -454,7 +459,7 @@ describe("protocol bindings", () => {
 
     const typehash = keccak256(
       stringToHex(
-        "UVPStateMachineSignalSubmission(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 patchHash,bytes32 attributionHash,address submitter,uint256 deadline)",
+        "UVPStateMachineSignalSubmission(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 targetStageId,bytes32 filesHash,bytes32 attributionHash,address submitter,uint256 deadline)",
       ),
     );
     const domainSeparator = keccak256(
@@ -491,6 +496,7 @@ describe("protocol bindings", () => {
           { type: "bytes32" },
           { type: "bytes32" },
           { type: "bytes32" },
+          { type: "bytes32" },
           { type: "address" },
           { type: "uint256" },
         ],
@@ -502,7 +508,8 @@ describe("protocol bindings", () => {
           signalId,
           payloadHash,
           idempotencyKey,
-          patchHash,
+          targetStageId,
+          stageFilesHash([{ key: "uvp://files/1", payload: "0x1234" }]),
           expectedAttributionHash,
           submitter,
           BigInt(deadline),
@@ -534,49 +541,14 @@ describe("protocol bindings", () => {
     );
   });
 
-  it("builds submitSignal calldata from the frozen struct, file patch, and patchHash", () => {
+  it("builds submitSignal calldata from the files array and targetStageId", () => {
     const attribution = {
       sourceId,
       signalId,
       stageId: targetStageId,
       capabilityProof: [payloadHash],
     } as const;
-    const fileKey = bytes32("0d");
-    const fileContentHash = bytes32("0e");
-    const filePatch = {
-      targetStageId,
-      baseHash: payloadHash,
-      writerStageId: selectorStageId,
-      writerProof: [idempotencyKey],
-      ops: [
-        {
-          kind: 0 as const,
-          key: fileKey,
-          contentHash: fileContentHash,
-          handle: "uvp://files/1",
-        },
-      ],
-    } as const;
-    const submissionPatchHash = filePatchHash(filePatch);
-    assert.equal(
-      submissionPatchHash,
-      keccak256(
-        encodeAbiParameters(
-          parseAbiParameters(
-            "bytes32,bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]",
-          ),
-          [
-            keccak256(stringToHex(FILE_PATCH_HASH_DOMAIN)),
-            targetStageId,
-            payloadHash,
-            selectorStageId,
-            [idempotencyKey],
-            [[0, fileKey, fileContentHash, "uvp://files/1"]],
-          ] as never,
-        ),
-      ),
-    );
-
+    const files = [{ key: "uvp://files/1", payload: "0x1234" }] as const;
     const signature = `0x${"ab".repeat(65)}` as const;
     const call = buildSubmitSignalCall(
       { stateMachineAddress: verifyingContract, chainId: 31337 },
@@ -587,9 +559,9 @@ describe("protocol bindings", () => {
         signalId,
         payloadHash,
         idempotencyKey,
+        targetStageId,
+        files,
         attribution,
-        filePatch,
-        patchHash: submissionPatchHash,
         submitter,
         deadline,
         signature,
@@ -602,9 +574,9 @@ describe("protocol bindings", () => {
     const [submission, callSignature] = call.args;
     assert.equal(submission.planId, planId);
     assert.equal(submission.orderId, orderId);
-    assert.equal(submission.patchHash, submissionPatchHash);
-    assert.equal(submission.filePatch.baseHash, payloadHash);
-    assert.equal(submission.filePatch.ops[0]?.handle, "uvp://files/1");
+    assert.equal(submission.targetStageId, targetStageId);
+    assert.equal(submission.files[0]?.key, "uvp://files/1");
+    assert.equal(submission.files[0]?.payload, "0x1234");
     assert.equal(submission.attribution.stageId, targetStageId);
     assert.equal(callSignature, signature);
 
@@ -616,14 +588,13 @@ describe("protocol bindings", () => {
     assert.ok(decoded.args);
     const decodedSubmission = decoded.args[0] as {
       readonly orderId: `0x${string}`;
-      readonly patchHash: `0x${string}`;
-      readonly filePatch: {
-        readonly ops: readonly { readonly handle: string }[];
-      };
+      readonly targetStageId: `0x${string}`;
+      readonly files: readonly { readonly key: string; readonly payload: string }[];
     };
     assert.equal(decodedSubmission.orderId, orderId);
-    assert.equal(decodedSubmission.patchHash, submissionPatchHash);
-    assert.equal(decodedSubmission.filePatch.ops[0]?.handle, "uvp://files/1");
+    assert.equal(decodedSubmission.targetStageId, targetStageId);
+    assert.equal(decodedSubmission.files[0]?.key, "uvp://files/1");
+    assert.equal(decodedSubmission.files[0]?.payload, "0x1234");
     assert.equal(decoded.args[1], signature);
 
     const triggerCall = buildSubmitSignalCall(
@@ -635,12 +606,13 @@ describe("protocol bindings", () => {
         payloadHash,
         idempotencyKey,
         attribution,
-        patchHash: zeroBytes32,
         submitter,
         deadline,
       },
     );
     assert.equal(triggerCall.args[0].orderId, zeroBytes32);
+    assert.equal(triggerCall.args[0].targetStageId, zeroBytes32);
+    assert.deepEqual(triggerCall.args[0].files, []);
     assert.equal(triggerCall.args[1], "0x");
   });
 

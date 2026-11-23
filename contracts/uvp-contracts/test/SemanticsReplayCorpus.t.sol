@@ -8,10 +8,10 @@ import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
-import {UVPSupplierRegistry} from "../src/UVPSupplierRegistry.sol";
+import {UVPIdentityRegistry} from "../src/UVPIdentityRegistry.sol";
 import {MerkleCommitment} from "../src/libraries/MerkleCommitment.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
-import {emptyFilePatch} from "./FilePatchTestHelpers.sol";
+import {emptyStageFiles} from "./StageFileTestHelpers.sol";
 
 interface CorpusVm {
     struct Log {
@@ -125,7 +125,7 @@ contract SemanticsReplayCorpusTest {
 
     UVPStateMachine private machine;
     UVPDockRegistry private dockRegistry;
-    UVPSupplierRegistry private registry;
+    UVPIdentityRegistry private registry;
     bytes32 private testSupplierId;
     mapping(bytes32 chainPlanId => bytes32[] sortedLeaves) private planCapabilityLeaves;
     mapping(bytes32 chainPlanId => bytes32 stageId) private planBirthStages;
@@ -164,7 +164,7 @@ contract SemanticsReplayCorpusTest {
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
     bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("1");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,bytes32 fileWritersHash,uint256 deadline)"
     );
     bytes32 private constant TOPIC_SIGNAL_SUBMITTED =
         keccak256("SignalSubmitted(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,address,bytes32)");
@@ -881,6 +881,7 @@ contract SemanticsReplayCorpusTest {
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: capabilitiesRoot,
             supplierBindingsRoot: _bindingsRoot(bindings),
+            fileWritersHash: keccak256(abi.encode(new UVPStateMachine.StageFileWriter[](0))),
             deadline: type(uint256).max
         });
         bytes32 structHash = keccak256(
@@ -890,12 +891,13 @@ contract SemanticsReplayCorpusTest {
                 commit.hooksHash,
                 commit.capabilitiesRoot,
                 commit.supplierBindingsRoot,
+                commit.fileWritersHash,
                 commit.deadline
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _stateMachineDomainSeparator(), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PUBLISHER_PRIVATE_KEY, digest);
-        try machine.commitPlan(commit, hooks, bindings, _packedSignature(v, r, s)) returns (bytes32 committed) {
+        try machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), _packedSignature(v, r, s)) returns (bytes32 committed) {
             machine.finalizePlan(committed);
             return (committed, 0);
         } catch (bytes memory reason) {
@@ -933,8 +935,8 @@ contract SemanticsReplayCorpusTest {
             payloadHash: payload,
             idempotencyKey: keccak256(abi.encode(caseIdx, "birth", orderIdx)),
             attribution: _attributionFor(order.chainPlanId, sourceId, signalId),
-            filePatch: emptyFilePatch(),
-            patchHash: bytes32(0),
+            targetStageId: bytes32(0),
+            files: emptyStageFiles(),
             submitter: address(this),
             deadline: type(uint256).max
         });
@@ -997,8 +999,8 @@ contract SemanticsReplayCorpusTest {
                 payloadHash: payloadHash,
                 idempotencyKey: idempotencyKey,
                 attribution: _attributionFor(planId, sourceId, signalId),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: type(uint256).max
             }),
@@ -1341,8 +1343,8 @@ contract SemanticsReplayCorpusTest {
             payloadHash: keccak256(abi.encode(caseIdx, "filter-birth")),
             idempotencyKey: keccak256(abi.encode(caseIdx, "filter-birth-idem")),
             attribution: _attributionFor(planId, birthSource, birthSignal),
-            filePatch: emptyFilePatch(),
-            patchHash: bytes32(0),
+            targetStageId: bytes32(0),
+            files: emptyStageFiles(),
             submitter: address(this),
             deadline: type(uint256).max
         });
@@ -1401,8 +1403,8 @@ contract SemanticsReplayCorpusTest {
                 payloadHash: emitPayload,
                 idempotencyKey: bytes32(uint256(1)),
                 attribution: _attributionFor(planId, emitSource, emitSignal),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -1421,8 +1423,8 @@ contract SemanticsReplayCorpusTest {
                 payloadHash: emitPayload,
                 idempotencyKey: bytes32(uint256(1)),
                 attribution: _attributionFor(planId, emitSource, emitSignal),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -1445,8 +1447,8 @@ contract SemanticsReplayCorpusTest {
                 payloadHash: emitPayload,
                 idempotencyKey: bytes32(uint256(1)),
                 attribution: _attributionFor(planId, emitSource, emitSignal),
-                filePatch: emptyFilePatch(),
-                patchHash: bytes32(0),
+                targetStageId: bytes32(0),
+                files: emptyStageFiles(),
                 submitter: address(this),
                 deadline: block.timestamp + 1 hours
             }),
@@ -1496,6 +1498,7 @@ contract SemanticsReplayCorpusTest {
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: MerkleCommitment.root(leaves),
             supplierBindingsRoot: _bindingsRoot(bindings),
+            fileWritersHash: keccak256(abi.encode(new UVPStateMachine.StageFileWriter[](0))),
             deadline: type(uint256).max
         });
         bytes32 structHash = keccak256(
@@ -1505,13 +1508,14 @@ contract SemanticsReplayCorpusTest {
                 commit.hooksHash,
                 commit.capabilitiesRoot,
                 commit.supplierBindingsRoot,
+                commit.fileWritersHash,
                 commit.deadline
             )
         );
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _stateMachineDomainSeparator(), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PUBLISHER_PRIVATE_KEY, digest);
         vm.expectRevert(UVPStateMachine.InvalidInstruction.selector);
-        machine.commitPlan(commit, hooks, bindings, _packedSignature(v, r, s));
+        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), _packedSignature(v, r, s));
     }
 
     function _filterSource() private pure returns (bytes32) {
@@ -1524,7 +1528,7 @@ contract SemanticsReplayCorpusTest {
 
     function _newCaseMachine() private returns (UVPStateMachine newMachine) {
         newMachine = new UVPStateMachine();
-        registry = new UVPSupplierRegistry();
+        registry = new UVPIdentityRegistry();
         testSupplierId = registry.registerSupplier(address(this));
         registry.activateSupplier(testSupplierId);
         UVPStagePatchModule stagePatch = new UVPStagePatchModule(address(newMachine));
@@ -1537,7 +1541,7 @@ contract SemanticsReplayCorpusTest {
         newMachine.setPlanMetadataModule(address(planMetadata));
         newMachine.setFileResourceModule(address(new UVPFileResourceModule(address(newMachine))));
         newMachine.setLens(address(new UVPStateMachineLens(address(newMachine))));
-        newMachine.setSupplierRegistry(address(registry));
+        newMachine.setIdentityRegistry(address(registry));
         newMachine.freezeModules();
     }
 

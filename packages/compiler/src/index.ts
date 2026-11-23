@@ -85,9 +85,6 @@ export {
   capabilityTablesOf,
   capabilitiesRootOf,
   factAttribution,
-  FILE_WRITER_LEAF_DOMAIN,
-  fileWriterLeaf,
-  fileWriterProof,
   SELECTOR_BINDING_LEAF_DOMAIN,
   selectorBindingLeaf,
   selectorBindingProof,
@@ -96,6 +93,7 @@ export {
   signalCapabilityProof,
 } from "./onchain/capabilities-root.js";
 export {
+  MAX_FILE_WRITERS,
   MAX_FILE_WRITERS_PER_STAGE,
   compileStageFileWriters,
   validateOnchainStageFileWriters,

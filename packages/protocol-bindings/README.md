@@ -15,17 +15,17 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
 ## Boundary
 
 - Exposes core and module ABI constants (`UVP_STATE_MACHINE_ARTIFACT_ABI`,
-  `STATE_MACHINE_ABI`, `FILE_RESOURCE_MODULE_ABI`, `SUPPLIER_REGISTRY_ABI`,
+  `STATE_MACHINE_ABI`, `FILE_RESOURCE_MODULE_ABI`, `IDENTITY_REGISTRY_ABI`,
   `DOCK_REGISTRY_ABI`, `DERIVED_SIGNAL_MODULE_ABI`,
   `STATE_MACHINE_LENS_ABI`, module call surfaces — including the stage-patch
   executor patch/dock selection and output events), stage executor patch and
   stage dock executor selection typed-data helpers, plan executor binding
   registration helpers, signal submission typed data
   (`UVPStateMachineSignalSubmission`) and the single `submitSignal` call
-  builder, `UVPZhixuRegistry/1` registry typed data (`ZhixuRecord`/
-  `IdentityClaim` schema, builders, type hashes), file patch call construction
-  (`filePatchHash`, `filePatchDigest`, `FileOp`/`FilePatch`), capability-tree
-  root/proof helpers, and address/bytes32 validation. Canonical JSON
+  builder, opaque stage-file bindings (`StageFile`, `stageFilesHash`),
+  `UVPZhixuRegistry/1` registry typed data (`ZhixuRecord`/
+  `ZhixuRecord` schema, builders, type hashes), capability-tree root/proof
+  helpers, and address/bytes32 validation. Canonical JSON
   serialization and evidence hashing are owned by `@uvp-eth/canonical-json`.
 - Trigger hooks are committed through `buildCompactHookFlags` (`OrderTriggerKind`
   `"none" | "trigger"`); trigger birth itself is the same `submitSignal`
@@ -43,11 +43,11 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
 
 - `PlanCommitPayload` / `PlanCommitTypedData` mirror
   `UVPStateMachine.PlanCommit`: the publisher signs `publisher`, `hooksHash`,
-  `capabilitiesRoot`, `supplierBindingsRoot`, `deadline` under the main
-  `UVPStateMachine` domain (`1`).
+  `capabilitiesRoot`, `supplierBindingsRoot`, `fileWritersHash`, `deadline`
+  under the main `UVPStateMachine` domain (`1`).
 - `ExecutorBinding` is `{ stageId, supplierId, kind }` with kind `0`
   (default) / `1` (candidate); `buildPlanCommitCall` encodes
-  `commitPlan(commit, hooks, bindings, signature)` from
+  `commitPlan(commit, hooks, bindings, fileWriters, signature)` from
   `PlanRegistrationArgs.executorBindings` and
   `PlanRegistrationArgs.executorBindingsRoot`. Supplier IDs, binding roots,
   binding proofs, and default-vs-candidate derivation are owned by
@@ -57,22 +57,23 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
 
 - `buildSignalSubmissionTypedData` builds
   `UVPStateMachineSignalSubmission(planId, orderId, sourceId, signalId,
-  payloadHash, idempotencyKey, patchHash, attributionHash, submitter,
-  deadline)` under the main domain (`1`); `factAttributionHash` is the
-  `FactAttribution(sourceId, signalId, stageId, capabilityProof)` digest that
-  enters the signature, and `recoverSignalSubmissionSigner` recovers the
+  payloadHash, idempotencyKey, targetStageId, filesHash, attributionHash,
+  submitter, deadline)` under the main domain (`1`); `stageFilesHash` is the
+  `keccak256(abi.encode(StageFile[]))` commitment covered by the signature,
+  `factAttributionHash` is the `FactAttribution(sourceId, signalId, stageId,
+  capabilityProof)` digest, and `recoverSignalSubmissionSigner` recovers the
   signer. Omit `orderId` (or pass zero) to sign the trigger-birth context,
   where the contract generates the order id.
 - `buildSubmitSignalCall` encodes `submitSignal(submission, signature)` from
   `SubmitSignalCallArgs`. An omitted or empty signature is a direct submit
   (`submitter` must equal `msg.sender`); a non-empty signature is a relayed
-  submit signed by `submitter`. `patchHash` is covered by the signature; pass
-  `filePatchHash(filePatch)` for patch-bearing submissions and zero otherwise.
+  submit signed by `submitter`. `targetStageId` and `files` are covered by the
+  signature through `filesHash`; omit `files` for a signal-only submission.
 - `orderId == 0` is trigger birth: the contract resolves the trigger hook from
   `(sourceId, signalId)`, requires the trigger-stage assigned supplier, and
   enforces the `(submitter, idempotencyKey)` first-win rule before creating
-  the order. `orderId != 0` targets an existing order; `signalId == 0` is a
-  file-only patch.
+  the order. `orderId != 0` targets an existing order; `signalId == 0` with
+  non-empty `files` is a bare stage-file write.
 
 ## Dock Write Surface
 
@@ -89,7 +90,7 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
   payload (`UVPStagePatchModule`, version `1`), and
   `recoverStageDockExecutorSelectionSigner` recovers it. The selection carries
   `supplierId` + `patchNonce`; executor addresses are resolved on chain from
-  the supplier registry.
+  the identity registry supplier namespace.
 - `buildPokeDockBindingCall` encodes `pokeDockBinding` (payload content, A
   order id, per-output capability proofs); `dockBindingId` mirrors the
   contract binding-id preimage (7 words, no payload hash).
@@ -98,17 +99,16 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
 
 ## Capability Tree Helpers
 
-- The plan capability tables (stage selector bindings + signal capabilities +
-  stage file writers) live on-chain only as a Merkle root: `commitPlan` has
+- The plan capability tables (stage selector bindings + signal capabilities)
+  live on-chain only as a Merkle root: `commitPlan` has
   the publisher sign `capabilitiesRoot`, and submitters re-derive leaves and
   carry proofs.
-- `signalCapabilityLeaf` / `selectorBindingLeaf` / `fileWriterLeaf` mirror the
-  on-chain leaf formulas: `keccak256(abi.encode(keccak256(domain), …words))`
-  with the `UVP_SIGNAL_CAPABILITY_V1` / `UVP_SELECTOR_BINDING_V1` /
-  `UVP_FILE_WRITER_V1` domain separators. `signalCapabilityLeaf` relation is
+- `signalCapabilityLeaf` / `selectorBindingLeaf` mirror the on-chain leaf
+  formulas: `keccak256(abi.encode(keccak256(domain), …words))` with the
+  `UVP_SIGNAL_CAPABILITY_V1` / `UVP_SELECTOR_BINDING_V1` domain separators. `signalCapabilityLeaf` relation is
   current-order (`0`) only.
 - `capabilitiesRootOf` builds the sorted-pairing tree root over the capability
-  tables (signal capabilities, selector bindings, file writers)
+  tables (signal capabilities, selector bindings)
   (dedup + sort, `keccak256(min ‖ max)` per level, odd tail leaf promoted,
   empty tables normalize to `EMPTY_CAPABILITIES_ROOT = keccak256("")`).
 - `factAttribution` returns the owning stage plus its capability proof for a
@@ -116,9 +116,6 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
   the `submitSignal` call's `attribution` argument.
 - `selectorBindingProofFor` returns the selector stage plus its binding proof
   for a bound target stage; wire it into the `selectorBinding` argument.
-- `fileWriterProofFor` returns the capability proof for a
-  `(targetStageId, writerStageId)` file-writer leaf; wire it into a
-  `FilePatch.writerProof`.
 
 ## Stage Executor Patch Helpers
 
@@ -146,19 +143,12 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
 
 ## File Patch Helpers
 
-- `FileOp` / `FilePatch` mirror the `IUVPFileResourceModule` structs:
-  `writerStageId == 0` means the target stage's own executor, `handle` is the
-  opaque UTF-8 reference, and `kind` is `0|1|2` (add/replace/remove) via
-  `FILE_OP_KIND`.
-- `filePatchHash(filePatch)` is the signed patch envelope covered by the
-  `submitSignal` EIP-712 signature:
-  `keccak256(abi.encode(keccak256("UVP_FILE_PATCH_HASH_V1"), targetStageId,
-  baseHash, writerStageId, writerProof, ops))`; `planId`/`orderId` are not in
-  the preimage (the contract recomputes it from calldata and rejects a
-  relayer-replaced patch with `PatchHashMismatch`). Empty-file submissions
-  carry `patchHash == 0`.
-- `filePatchDigest(planId, orderId, filePatch)` is the canonical
-  `filesDigest` the state machine hands to the file module after the order id
-  exists: `keccak256(abi.encode(keccak256("UVP_FILE_PATCH_V1"), planId,
-  orderId, targetStageId, baseHash, writerStageId, ops))`; `writerProof` is a
-  witness and is excluded. `EMPTY_FILE_PATCH` is the no-patch value.
+- `StageFile` is `{ key: string, payload: bytes }`; the module stores an
+  opaque `key -> payload` map per `(plan, order, target stage)` and never
+  parses either field. `stageFilesHash(files)` is the
+  `keccak256(abi.encode(StageFile[]))` commitment used by the signal
+  submission typed data; the contract mirrors the same encoding and computes
+  it from calldata.
+- Write authority is the target stage's supplier account or a declared
+  `fileWriters` stage's supplier account; there is no file-writer Merkle leaf
+  and no separate file-writer registration.

@@ -26,7 +26,6 @@ import {
 import { signalCapabilityProofFor } from "./capabilities-root.js";
 import { DOCK_REGISTRY_ABI } from "./artifact-abis.js";
 import type {
-  FileWriterTableEntry,
   SignalCapabilityTableEntry,
   StageSelectorBindingTableEntry,
 } from "./capabilities-root.js";
@@ -56,7 +55,7 @@ export const STATE_MACHINE_ABI = [
   "function planMetadataModule() view returns (address)",
   "function fileResourceModule() view returns (address)",
   "function lens() view returns (address)",
-  "function supplierRegistry() view returns (address)",
+  "function identityRegistry() view returns (address)",
   "function modulesFrozen() view returns (bool)",
   "function moduleSetHash() view returns (bytes32)",
   "function transferOwnership(address newOwner)",
@@ -66,15 +65,15 @@ export const STATE_MACHINE_ABI = [
   "function setPlanMetadataModule(address moduleAddress)",
   "function setLens(address moduleAddress)",
   "function setFileResourceModule(address moduleAddress)",
-  "function setSupplierRegistry(address moduleAddress)",
+  "function setIdentityRegistry(address moduleAddress)",
   "function freezeModules()",
-  "function commitPlan((address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,uint256 deadline) commit,(bytes32 hookId,bytes32 stageId,bytes32 hookName,uint8 flags,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks,(bytes32 stageId,bytes32 supplierId,uint8 kind)[] bindings,bytes signature) returns (bytes32 planId)",
+  "function commitPlan((address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,bytes32 fileWritersHash,uint256 deadline) commit,(bytes32 hookId,bytes32 stageId,bytes32 hookName,uint8 flags,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions,bytes32[] dependencyKeys)[] hooks,(bytes32 stageId,bytes32 supplierId,uint8 kind)[] bindings,(bytes32 targetStageId,bytes32 writerStageId)[] fileWriters,bytes signature) returns (bytes32 planId)",
   "function finalizePlan(bytes32 planId)",
-  "function planRuntimeHash(bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot) pure returns (bytes32)",
+  "function planRuntimeHash(bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,bytes32 fileWritersHash) pure returns (bytes32)",
   "function planIdFor(address publisher,bytes32 runtimePlanHash) pure returns (bytes32)",
   "function stageHasOrderTriggerHook(bytes32 planId,bytes32 stageId) view returns (bool)",
-  "function submitSignal((bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution,(bytes32 targetStageId,bytes32 baseHash,bytes32 writerStageId,bytes32[] writerProof,(uint8 kind,bytes32 key,bytes32 contentHash,string handle)[] ops) filePatch,bytes32 patchHash,address submitter,uint256 deadline) submission,bytes signature) returns (bytes32 orderId,bool inserted)",
-  "function submitDerivedSignalFromModule(bytes32 planId,bytes32 orderId,bytes32 fromPlanId,bytes32 fromOrderId,bytes32 stageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter)",
+  "function submitSignal((bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution,bytes32 targetStageId,(string key,bytes payload)[] files,address submitter,uint256 deadline) submission,bytes signature) returns (bytes32 orderId,bool inserted)",
+  "function submitDerivedSignalFromModule(bytes32 planId,bytes32 orderId,bytes32 fromPlanId,bytes32 fromOrderId,bytes32 stageId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter) returns (bool inserted)",
   "function planHookFlags(bytes32 planId,bytes32 hookId) view returns (uint8)",
   "function planHookStageId(bytes32 planId,bytes32 hookId) view returns (bytes32)",
   "function activateStageSupplierFromModule(bytes32 planId,bytes32 orderId,bytes32 targetStageId,bytes32 supplierId,uint256 patchNonce)",
@@ -88,6 +87,10 @@ export const STATE_MACHINE_ABI = [
   "function effectiveStageSupplier(bytes32 planId,bytes32 orderId,bytes32 stageId) view returns (bytes32)",
   "function effectiveStageAccount(bytes32 planId,bytes32 orderId,bytes32 stageId) view returns (address)",
   "function isEffectiveStageAccount(bytes32 planId,bytes32 orderId,bytes32 stageId,address account) view returns (bool)",
+  "function isAuthorizedFileWriter(bytes32 planId,bytes32 orderId,bytes32 targetStageId,address account) view returns (bool)",
+  "function isPlanFileWriter(bytes32 planId,bytes32 targetStageId,bytes32 writerStageId) view returns (bool)",
+  "function planFileWritersHash(bytes32 planId) view returns (bytes32)",
+  "function MAX_FILE_WRITERS() view returns (uint256)",
   "function stageSupplierAssignment(bytes32 planId,bytes32 orderId,bytes32 targetStageId) view returns (bytes32 supplierId,uint256 patchNonce,bytes32 dockId)",
   "function SIGNAL_TARGET_CURRENT_ORDER() view returns (uint8)",
   "function DERIVED_SIGNAL_MODULE_ID() view returns (bytes32)",
@@ -104,7 +107,7 @@ export const STATE_MACHINE_ABI = [
   "function MAX_PLAN_DEPENDENCIES() view returns (uint256)",
   "function PLAN_METADATA_MODULE_ID() view returns (bytes32)",
   "function STAGE_PATCH_MODULE_ID() view returns (bytes32)",
-  "function SUPPLIER_REGISTRY_MODULE_ID() view returns (bytes32)",
+  "function IDENTITY_REGISTRY_MODULE_ID() view returns (bytes32)",
   "function sourceSignalCount(bytes32 planId,bytes32 orderId,bytes32 sourceId) view returns (uint256)",
   "function lastSignalSubmitter(bytes32 planId,bytes32 orderId,bytes32 sourceId) view returns (address)",
   "function hasSourceSignal(bytes32 planId,bytes32 orderId,bytes32 sourceId) view returns (bool)",
@@ -112,6 +115,7 @@ export const STATE_MACHINE_ABI = [
   "function submitDockOutputSignalFromModule(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,(bytes32 sourceId,bytes32 signalId,bytes32 stageId,bytes32[] capabilityProof) attribution) returns (bool submitted)",
   "function evaluateDockWindow(bytes32 planId,bytes32 orderId,(uint8 op,bytes32 sourceId,bytes32 signalId,uint16 arity,uint64 delaySeconds)[] instructions) view returns (bool satisfied,uint64 dueInSeconds)",
   "function isSignalAdmissionSatisfied(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId) view returns (bool)",
+  "function signalAdmissionVerdict(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId) view returns (uint8 verdict,uint64 dueAt)",
   "function DOMAIN_SEPARATOR() view returns (bytes32)",
   "function planExists(bytes32 planId) view returns (bool)",
   "function planCommitted(bytes32 planId) view returns (bool)",
@@ -218,6 +222,8 @@ export const STAGE_PATCH_MODULE_ABI = [
   "event StageDockSupplierSelected(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 dockId,bytes32 supplierId,uint256 patchNonce)",
   "event DockBindingPoked(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 dockId,bytes32 bindingId,bytes32 fromPlanId,bytes32 fromOrderId,bytes32 supplierId,uint256 emittedCount)",
   "event DockOutputSubmitted(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed targetStageId,bytes32 bindingId,uint256 outputIndex,bytes32 signalId,bytes32 supplierId)",
+  "event DockOutputDeferred(bytes32 indexed planId,bytes32 indexed orderId,bytes32 indexed bindingId,uint256 outputIndex,bytes32 signalId,uint8 verdict,uint64 dueAt)",
+  "function dockOutputAdmissionVerdict(bytes32 planId,bytes32 orderId,bytes32 targetStageId,uint256 outputIndex) view returns (uint8 verdict,uint64 dueAt)",
   "function DOCK_PAYLOAD_FILE_KEY() view returns (bytes32)",
   "function DOCK_BINDING_ID_DOMAIN() view returns (bytes32)",
   "function applyStageSupplierPatch(bytes32 planId,bytes32 orderId,(bytes32 selectorStageId,bytes32 targetStageId,bytes32 supplierId,bytes32 previousSupplierId,uint256 patchNonce) patch,(bytes32 selectorStageId,bytes32[] proof) bindingProof,bytes32[] candidateProof)",
@@ -288,8 +294,8 @@ export {
   HOOK_FLAG_ORDER_TRIGGER_MINT,
   SIGNAL_SUBMITTED_ABI,
   SIGNAL_SUBMITTED_TOPIC,
-  SUPPLIER_REGISTRY_ABI,
-  SUPPLIER_REGISTRY_CONTRACT_NAME,
+  IDENTITY_REGISTRY_ABI,
+  IDENTITY_REGISTRY_CONTRACT_NAME,
   UVP_STATE_MACHINE_ARTIFACT_ABI,
 } from "./artifact-abis.js";
 
@@ -339,6 +345,7 @@ export const PLAN_COMMIT_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDataField
     { name: "hooksHash", type: "bytes32" },
     { name: "capabilitiesRoot", type: "bytes32" },
     { name: "supplierBindingsRoot", type: "bytes32" },
+    { name: "fileWritersHash", type: "bytes32" },
     { name: "deadline", type: "uint256" },
   ];
 
@@ -350,7 +357,8 @@ export const SIGNAL_SUBMISSION_TYPED_DATA_FIELDS: readonly ProductSubmitTypedDat
     { name: "signalId", type: "bytes32" },
     { name: "payloadHash", type: "bytes32" },
     { name: "idempotencyKey", type: "bytes32" },
-    { name: "patchHash", type: "bytes32" },
+    { name: "targetStageId", type: "bytes32" },
+    { name: "filesHash", type: "bytes32" },
     { name: "attributionHash", type: "bytes32" },
     { name: "submitter", type: "address" },
     { name: "deadline", type: "uint256" },
@@ -385,90 +393,27 @@ export const STAGE_SUPPLIER_PATCH_TYPED_DATA_FIELDS: readonly ProductSubmitTyped
     { name: "deadline", type: "uint256" },
   ];
 
-export const FILE_PATCH_DIGEST_DOMAIN = "UVP_FILE_PATCH_V1";
-
-export type FileOpKind = 0 | 1 | 2;
-
-export const FILE_OP_KIND = {
-  add: 0,
-  replace: 1,
-  remove: 2,
-} as const;
-
-export interface FileOp {
-  readonly kind: FileOpKind;
-  readonly key: Hex;
-  readonly contentHash: Hex;
-  readonly handle: string;
+export interface StageFile {
+  readonly key: string;
+  readonly payload: Hex | string;
 }
 
-export interface FilePatch {
-  readonly targetStageId: Hex;
-  readonly baseHash: Hex;
-  readonly writerStageId: Hex;
-  readonly writerProof: readonly Hex[];
-  readonly ops: readonly FileOp[];
+export interface StageFileCallStruct {
+  readonly key: string;
+  readonly payload: Hex;
 }
 
-export interface FileOpCallStruct {
-  readonly kind: FileOpKind;
-  readonly key: Hex;
-  readonly contentHash: Hex;
-  readonly handle: string;
-}
+export const STAGE_FILES_LIMIT = 16;
 
-export interface FilePatchCallStruct {
-  readonly targetStageId: Hex;
-  readonly baseHash: Hex;
-  readonly writerStageId: Hex;
-  readonly writerProof: readonly Hex[];
-  readonly ops: readonly FileOpCallStruct[];
-}
-
-export const FILE_OPS_LIMIT = 16;
-export const FILE_HANDLE_MAX_BYTES = 512;
-
-export function filePatchDigest(
-  planId: Hex | string,
-  orderId: Hex | string,
-  filePatch: FilePatch,
-): Hex {
-  const patch = normalizeFilePatchCallStruct(filePatch);
+export function stageFilesHash(files: readonly StageFile[]): Hex {
+  const normalized = files.map((file, index) => ({
+    key: file.key,
+    payload: normalizeHex(file.payload, `files[${index}].payload`),
+  }));
   return keccak256(
     encodeAbiParameters(
-      parseAbiParameters(
-        "bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,(uint8,bytes32,bytes32,string)[]",
-      ),
-      [
-        keccak256(stringToHex(FILE_PATCH_DIGEST_DOMAIN)),
-        normalizeBytes32(planId, "planId"),
-        normalizeBytes32(orderId, "orderId"),
-        patch.targetStageId,
-        patch.baseHash,
-        patch.writerStageId,
-        patch.ops.map((op) => [op.kind, op.key, op.contentHash, op.handle]),
-      ] as never,
-    ),
-  );
-}
-
-export const FILE_PATCH_HASH_DOMAIN = "UVP_FILE_PATCH_HASH_V1";
-
-export function filePatchHash(filePatch: FilePatch): Hex {
-  const patch = normalizeFilePatchCallStruct(filePatch);
-  return keccak256(
-    encodeAbiParameters(
-      parseAbiParameters(
-        "bytes32,bytes32,bytes32,bytes32,bytes32[],(uint8,bytes32,bytes32,string)[]",
-      ),
-      [
-        keccak256(stringToHex(FILE_PATCH_HASH_DOMAIN)),
-        patch.targetStageId,
-        patch.baseHash,
-        patch.writerStageId,
-        patch.writerProof,
-        patch.ops.map((op) => [op.kind, op.key, op.contentHash, op.handle]),
-      ] as never,
+      parseAbiParameters("(string key,bytes payload)[] files"),
+      [normalized] as never,
     ),
   );
 }
@@ -491,7 +436,8 @@ export interface SignalSubmissionTypedData {
     readonly signalId: Hex;
     readonly payloadHash: Hex;
     readonly idempotencyKey: Hex;
-    readonly patchHash: Hex;
+    readonly targetStageId: Hex;
+    readonly filesHash: Hex;
     readonly attributionHash: Hex;
     readonly submitter: Address;
     readonly deadline: string;
@@ -507,7 +453,8 @@ export interface SignalSubmissionPayload {
   readonly signalId: Hex | string;
   readonly payloadHash: Hex | string;
   readonly idempotencyKey: Hex | string;
-  readonly patchHash: Hex | string;
+  readonly targetStageId?: Hex | string;
+  readonly files?: readonly StageFile[];
   readonly attribution: SignalAttributionPayload;
   readonly submitter: Address | string;
   readonly deadline: bigint | number | string;
@@ -522,6 +469,8 @@ export interface PlanCommitPayload {
   readonly capabilitiesRoot: Hex | string;
   /** supplier 绑定树根（default/candidate 叶，空集归一化为 EMPTY_ROOT）。 */
   readonly supplierBindingsRoot: Hex | string;
+  /** fileWriters 阶段名单的运行期哈希（不进入 capabilitiesRoot）。 */
+  readonly fileWritersHash: Hex | string;
   readonly deadline: bigint | number | string;
 }
 
@@ -536,6 +485,7 @@ export interface PlanCommitTypedData {
     readonly hooksHash: Hex;
     readonly capabilitiesRoot: Hex;
     readonly supplierBindingsRoot: Hex;
+    readonly fileWritersHash: Hex;
     readonly deadline: string;
   };
 }
@@ -784,8 +734,8 @@ export interface SubmitSignalCallArgs {
   readonly payloadHash: Hex | string;
   readonly idempotencyKey: Hex | string;
   readonly attribution: SignalAttributionPayload;
-  readonly filePatch?: FilePatch;
-  readonly patchHash: Hex | string;
+  readonly targetStageId?: Hex | string;
+  readonly files?: readonly StageFile[];
   readonly submitter: Address | string;
   readonly deadline: bigint | number | string;
   readonly signature?: Hex | string;
@@ -832,8 +782,8 @@ export interface SignalSubmissionCallStruct {
   readonly payloadHash: Hex;
   readonly idempotencyKey: Hex;
   readonly attribution: SignalAttributionCallStruct;
-  readonly filePatch: FilePatchCallStruct;
-  readonly patchHash: Hex;
+  readonly targetStageId: Hex;
+  readonly files: readonly StageFileCallStruct[];
   readonly submitter: Address;
   readonly deadline: bigint;
 }
@@ -880,47 +830,19 @@ export interface ApplyStageSupplierPatchForCall {
 const BYTES32_RE = /^0x[a-fA-F0-9]{64}$/;
 const ZERO_BYTES32 = `0x${"0".repeat(64)}` as Hex;
 
-export const EMPTY_FILE_PATCH: FilePatch = {
-  targetStageId: ZERO_BYTES32,
-  baseHash: ZERO_BYTES32,
-  writerStageId: ZERO_BYTES32,
-  writerProof: [],
-  ops: [],
-};
-
-function normalizeFileOpCallStruct(op: FileOp): FileOpCallStruct {
-  if (op.kind !== FILE_OP_KIND.add && op.kind !== FILE_OP_KIND.replace && op.kind !== FILE_OP_KIND.remove) {
-    throw new Error("filePatch.ops[].kind must be 0 (add), 1 (replace), or 2 (remove)");
+function normalizeStageFiles(files: readonly StageFile[]): readonly StageFileCallStruct[] {
+  if (!Array.isArray(files)) {
+    throw new Error("files must be an array");
   }
-  if (typeof op.handle !== "string") {
-    throw new Error("filePatch.ops[].handle must be a string");
-  }
-  return {
-    kind: op.kind,
-    key: normalizeBytes32(op.key, "filePatch.ops[].key"),
-    contentHash: normalizeBytes32(op.contentHash, "filePatch.ops[].contentHash"),
-    handle: op.handle,
-  };
-}
-
-function normalizeFilePatchCallStruct(
-  filePatch: FilePatch,
-): FilePatchCallStruct {
-  if (!Array.isArray(filePatch.ops)) {
-    throw new Error("filePatch.ops must be an array");
-  }
-  if (!Array.isArray(filePatch.writerProof)) {
-    throw new Error("filePatch.writerProof must be an array");
-  }
-  return {
-    targetStageId: normalizeBytes32(filePatch.targetStageId, "filePatch.targetStageId"),
-    baseHash: normalizeBytes32(filePatch.baseHash, "filePatch.baseHash"),
-    writerStageId: normalizeBytes32(filePatch.writerStageId, "filePatch.writerStageId"),
-    writerProof: filePatch.writerProof.map((word, index) =>
-      normalizeBytes32(word, `filePatch.writerProof[${index}]`),
-    ),
-    ops: filePatch.ops.map(normalizeFileOpCallStruct),
-  };
+  return files.map((file, index) => {
+    if (typeof file.key !== "string") {
+      throw new Error(`files[${index}].key must be a string`);
+    }
+    return {
+      key: file.key,
+      payload: normalizeHex(file.payload, `files[${index}].payload`),
+    };
+  });
 }
 
 export function buildPlanCommitTypedData(
@@ -950,6 +872,10 @@ export function buildPlanCommitTypedData(
       supplierBindingsRoot: normalizeBytes32(
         input.supplierBindingsRoot,
         "supplierBindingsRoot",
+      ),
+      fileWritersHash: normalizeBytes32(
+        input.fileWritersHash,
+        "fileWritersHash",
       ),
       deadline: normalizeUintString(input.deadline, "deadline"),
     },
@@ -1015,7 +941,11 @@ export function buildSignalSubmissionTypedData(
       signalId: normalizeBytes32(input.signalId, "signalId"),
       payloadHash: normalizeBytes32(input.payloadHash, "payloadHash"),
       idempotencyKey: normalizeBytes32(input.idempotencyKey, "idempotencyKey"),
-      patchHash: normalizeBytes32(input.patchHash, "patchHash"),
+      targetStageId: normalizeBytes32(
+        input.targetStageId ?? ZERO_BYTES32,
+        "targetStageId",
+      ),
+      filesHash: stageFilesHash(input.files ?? []),
       attributionHash: factAttributionHash(input.attribution),
       submitter: normalizeAddress(input.submitter, "submitter"),
       deadline: normalizeUintString(input.deadline, "deadline"),
@@ -1233,8 +1163,11 @@ export function buildSubmitSignalCall(
     payloadHash: normalizeBytes32(args.payloadHash, "payloadHash"),
     idempotencyKey: normalizeBytes32(args.idempotencyKey, "idempotencyKey"),
     attribution: normalizeSignalAttribution(args.attribution),
-    filePatch: normalizeFilePatchCallStruct(args.filePatch ?? EMPTY_FILE_PATCH),
-    patchHash: normalizeBytes32(args.patchHash, "patchHash"),
+    targetStageId: normalizeBytes32(
+      args.targetStageId ?? ZERO_BYTES32,
+      "targetStageId",
+    ),
+    files: normalizeStageFiles(args.files ?? []),
     submitter: normalizeAddress(args.submitter, "submitter"),
     deadline: normalizeUintBigInt(args.deadline, "deadline"),
   };
@@ -1522,8 +1455,15 @@ export interface PlanRegistrationArgs {
   readonly hooksHash: Hex | string;
   readonly capabilitiesRoot: Hex | string;
   readonly supplierBindingsRoot: Hex | string;
+  readonly fileWritersHash: Hex | string;
   readonly hooks: readonly PlanRegistrationHook[];
   readonly supplierBindings: readonly StageSupplierBinding[];
+  readonly fileWriters: readonly StageFileWriter[];
+}
+
+export interface StageFileWriter {
+  readonly targetStageId: Hex | string;
+  readonly writerStageId: Hex | string;
 }
 
 export interface PlanRegistrationSource {
@@ -1531,8 +1471,10 @@ export interface PlanRegistrationSource {
   readonly hooksHash: Hex | string;
   readonly capabilitiesRoot: Hex | string;
   readonly supplierBindingsRoot: Hex | string;
+  readonly fileWritersHash: Hex | string;
   readonly hooks: readonly PlanRegistrationHook[];
   readonly supplierBindings: readonly StageSupplierBinding[];
+  readonly fileWriters: readonly StageFileWriter[];
 }
 
 export interface StateMachineCallConfig {
@@ -1558,8 +1500,10 @@ export function planRegistrationArgs(
     hooksHash: source.hooksHash,
     capabilitiesRoot: source.capabilitiesRoot,
     supplierBindingsRoot: source.supplierBindingsRoot,
+    fileWritersHash: source.fileWritersHash,
     hooks: source.hooks,
     supplierBindings: source.supplierBindings,
+    fileWriters: source.fileWriters,
   };
 }
 
@@ -1581,6 +1525,7 @@ interface PlanCommitTuple {
   readonly hooksHash: Hex;
   readonly capabilitiesRoot: Hex;
   readonly supplierBindingsRoot: Hex;
+  readonly fileWritersHash: Hex;
   readonly deadline: bigint;
 }
 
@@ -1619,6 +1564,7 @@ export function buildPlanCommitTypedDataFor(
     hooksHash: commit.hooksHash,
     capabilitiesRoot: commit.capabilitiesRoot,
     supplierBindingsRoot: commit.supplierBindingsRoot,
+    fileWritersHash: commit.fileWritersHash,
     deadline: commit.deadline,
   });
 }
@@ -1639,10 +1585,20 @@ export function buildPlanCommitCall(
     ),
     kind: normalizeSupplierBindingKind(binding.kind),
   }));
+  const fileWriters = args.registration.fileWriters.map((writer) => ({
+    targetStageId: normalizeBytes32(
+      writer.targetStageId,
+      "fileWriters[].targetStageId",
+    ),
+    writerStageId: normalizeBytes32(
+      writer.writerStageId,
+      "fileWriters[].writerStageId",
+    ),
+  }));
   const data = encodeFunctionData({
     abi: STATE_MACHINE_ABI,
     functionName: "commitPlan",
-    args: [commit, hooks, bindings, signature],
+    args: [commit, hooks, bindings, fileWriters, signature],
   });
   return planCallObject(address, "commitPlan", data, config.chainId);
 }
@@ -1700,6 +1656,10 @@ function planCommitTuple(
     supplierBindingsRoot: normalizeBytes32(
       args.registration.supplierBindingsRoot,
       "supplierBindingsRoot",
+    ),
+    fileWritersHash: normalizeBytes32(
+      args.registration.fileWritersHash,
+      "fileWritersHash",
     ),
     deadline: normalizeUintBigInt(args.deadline, "deadline"),
   };
@@ -1969,8 +1929,9 @@ function describeHookDecodeError(error: unknown): string {
 
 // Dock 注册/选择/poke 写面：DockRegistry 的 window 栈机与 stage patch 的
 // selector 签名都从 T3 合约 ABI/typehash 派生，不手写 tuple 调用。
+export const DOCK_PAYLOAD_FILE_KEY_NAME = "dock_link";
 export const DOCK_PAYLOAD_FILE_KEY = keccak256(
-  stringToHex("dock_link"),
+  stringToHex(DOCK_PAYLOAD_FILE_KEY_NAME),
 ) as Hex;
 export const DOCK_BINDING_ID_DOMAIN = keccak256(
   stringToHex("uvp.dock.binding_id.v1"),
@@ -2309,7 +2270,6 @@ export interface StageDockWindowInstruction {
 export interface DockRegistrationCapabilityTables {
   readonly selectorBindings?: readonly StageSelectorBindingTableEntry[];
   readonly signalCapabilities: readonly SignalCapabilityTableEntry[];
-  readonly fileWriterBindings?: readonly FileWriterTableEntry[];
 }
 
 export interface RegisterDockAtomInput {
@@ -2420,7 +2380,6 @@ function resolveDockAtomProof(
     fromSourceId,
     atom.signalId,
     atom.relation ?? 0,
-    tables.fileWriterBindings ?? [],
   );
   if (proof === undefined) {
     throw new Error(`${path} is not in the from plan capability table`);
@@ -2450,7 +2409,6 @@ function resolveDockOutputProof(
     toSourceId,
     output.signalId,
     output.relation ?? 0,
-    tables.fileWriterBindings ?? [],
   );
   if (proof === undefined) {
     throw new Error(`${path} is not in the to plan capability table`);
@@ -2587,18 +2545,14 @@ export {
 export {
   EMPTY_CAPABILITIES_ROOT,
   SIGNAL_CAPABILITY_RELATION_CURRENT_ORDER,
-  UVP_FILE_WRITER_V1,
   UVP_SELECTOR_BINDING_V1,
   UVP_SIGNAL_CAPABILITY_V1,
   capabilitiesRootOf,
   factAttribution,
-  fileWriterLeaf,
-  fileWriterProofFor,
   selectorBindingLeaf,
   selectorBindingProofFor,
   signalCapabilityLeaf,
   signalCapabilityProofFor,
-  type FileWriterTableEntry,
   type SignalCapabilityTableEntry,
   type StageSelectorBindingTableEntry,
 } from "./capabilities-root.js";
