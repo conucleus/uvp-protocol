@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+enum AdmissionVerdict {
+    Wait,
+    Impossible,
+    Ready
+}
+
 uint8 constant _HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
 uint8 constant _HOOK_FLAG_EMIT_READY = 4;
 uint8 constant _HOOK_FLAG_ADMISSION = 8;
@@ -20,7 +26,7 @@ uint256 constant _MAX_SUPPLIER_BINDINGS = 256;
 bytes32 constant _EIP712_DOMAIN_TYPEHASH =
     keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 bytes32 constant _EIP712_NAME_HASH = keccak256("UVPStateMachine");
-bytes32 constant _EIP712_VERSION_HASH = keccak256("0.20");
+bytes32 constant _EIP712_VERSION_HASH = keccak256("1");
 
 bytes32 constant _PLAN_RUNTIME_HASH_DOMAIN = keccak256("uvp.plan.runtime.v7");
 bytes32 constant _PLAN_ID_HASH_DOMAIN = keccak256("uvp.plan.id.v1");

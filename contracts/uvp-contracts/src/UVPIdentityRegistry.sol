@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+// Off-chain-subject to wallet binding ledger. Its whole scope is registration
+// and revocation of display/resolution bindings: it grants no execution
+// authority, and UVPStateMachine never reads it. On-chain execution identity
+// (which account may submit a stage's signals) is owned solely by
+// UVPSupplierRegistry (SID + permanently bound account + status).
 contract UVPIdentityRegistry {
     struct IdentityBinding {
         bytes32 subjectId;

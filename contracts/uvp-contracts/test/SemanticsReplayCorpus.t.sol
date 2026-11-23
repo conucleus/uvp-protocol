@@ -162,7 +162,7 @@ contract SemanticsReplayCorpusTest {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.20");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("1");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
         "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,uint256 deadline)"
     );
@@ -516,13 +516,16 @@ contract SemanticsReplayCorpusTest {
         require(bytes(hookName).length <= 31, "corpus hookName too long");
         hook.hookNameWord = bytes32(bytes(hookName));
         string memory triggerKind = vm.parseJsonString(json, string.concat(hookBase, ".orderTriggerKind"));
-        if (keccak256(bytes(triggerKind)) == keccak256("trigger")) {
-            hook.flags |= FLAG_ORDER_TRIGGER_MINT;
-        }
         if (vm.parseJsonBool(json, string.concat(hookBase, ".emitReady"))) {
             hook.flags |= FLAG_EMIT_READY;
         }
         _collectInstrs(json, hookBase, hook.instrs, true);
+        if (
+            keccak256(bytes(triggerKind)) == keccak256("trigger") && hook.instrs.length == 1
+                && hook.instrs[0].op == uint8(UVPStateMachine.InstructionOp.Signal)
+        ) {
+            hook.flags |= FLAG_ORDER_TRIGGER_MINT;
+        }
         hook.exists = true;
     }
 
@@ -833,10 +836,11 @@ contract SemanticsReplayCorpusTest {
             instrs[i] = _instruction(raw.op, sourceId, signalId, raw.arity, raw.delaySeconds);
         }
         SignalRow storage emitted = signals[_firstSignalOnPlan(plans[planIdx].corpusPlanId)];
+        bytes32 admissionStageId = plans[planIdx].hooks[0].stageId;
         return UVPStateMachine.CompactHook({
             hookId: keccak256(abi.encode(emitted.sourceId, emitted.signalId)),
-            stageId: plans[planIdx].hooks[0].stageId,
-            hookName: keccak256(abi.encode("corpus.admission", caseIdx)),
+            stageId: admissionStageId,
+            hookName: emitted.signalId,
             flags: FLAG_ADMISSION,
             instructions: instrs,
             dependencyKeys: _depsOf(instrs)
@@ -1220,7 +1224,7 @@ contract SemanticsReplayCorpusTest {
             signalNameCount += 1;
         }
 
-        bytes32 emitSource = keccak256("corpus.filter.emit.source");
+        bytes32 emitSource = birthStage;
         bytes32 emitSignal = keccak256("corpus.filter.emit.signal");
         UVPStateMachine.Instruction[] memory admissionInstrs;
         if (form == FILTER_FORM_A) {
@@ -1310,7 +1314,7 @@ contract SemanticsReplayCorpusTest {
         hooks[1] = UVPStateMachine.CompactHook({
             hookId: keccak256(abi.encode(emitSource, emitSignal)),
             stageId: birthStage,
-            hookName: keccak256(abi.encode("corpus.filter.admission", caseIdx)),
+            hookName: emitSignal,
             flags: FLAG_ADMISSION,
             instructions: admissionInstrs,
             dependencyKeys: _depsOf(admissionInstrs)
@@ -1477,7 +1481,7 @@ contract SemanticsReplayCorpusTest {
         hooks[1] = UVPStateMachine.CompactHook({
             hookId: keccak256(abi.encode(emitSource, emitSignal)),
             stageId: birthStage,
-            hookName: keccak256("corpus.filter.admission"),
+            hookName: emitSignal,
             flags: FLAG_ADMISSION,
             instructions: admissionInstrs,
             dependencyKeys: _depsOf(admissionInstrs)

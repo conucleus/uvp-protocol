@@ -6,7 +6,9 @@ import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
 import {FilePatch} from "./interfaces/IUVPFileResourceModule.sol";
 import {UVPPlanRegistration} from "./UVPPlanRegistration.sol";
+import {UVPHookEvaluator} from "./libraries/UVPHookEvaluator.sol";
 import {
+    AdmissionVerdict,
     _HOOK_FLAG_ORDER_TRIGGER_MINT,
     _HOOK_FLAG_EMIT_READY,
     _HOOK_FLAG_ADMISSION,
@@ -22,6 +24,10 @@ import {
     _PLAN_ID_HASH_DOMAIN
 } from "./UVPStateMachineConstants.sol";
 
+// Core state machine. Stage submission authority is resolved exclusively
+// through the configured UVPSupplierRegistry module slot (effective SID ->
+// account -> active status); no identity-binding registry is consulted, so
+// subject/account bindings never authorize execution.
 contract UVPStateMachine {
     enum HookStatus {
         Init,
@@ -209,6 +215,7 @@ contract UVPStateMachine {
     error SignalAlreadyExists();
     error SignalAdmissionRejected(bytes32 orderId, bytes32 sourceId, bytes32 signalId);
     error AdmissionAlreadyRegistered(bytes32 signalKey);
+    error InvalidAdmissionHook(bytes32 hookId);
     error SilentOrderTriggerHook(bytes32 hookId);
     error StageSupplierNotAssigned(bytes32 orderId, bytes32 targetStageId);
     error StageNotMaterializable(bytes32 stageId);
@@ -620,7 +627,19 @@ contract UVPStateMachine {
         if (!_s.orders[planId][orderId].exists) {
             return false;
         }
-        return _signalAdmissionSatisfied(planId, orderId, sourceId, signalId);
+        (AdmissionVerdict verdict,) = _signalAdmissionVerdict(planId, orderId, sourceId, signalId);
+        return verdict == AdmissionVerdict.Ready;
+    }
+
+    function signalAdmissionVerdict(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId)
+        external
+        view
+        returns (AdmissionVerdict verdict, uint64 dueAt)
+    {
+        if (!_s.orders[planId][orderId].exists) {
+            return (AdmissionVerdict.Impossible, 0);
+        }
+        return _signalAdmissionVerdict(planId, orderId, sourceId, signalId);
     }
 
     function submitDockOutputSignalFromModule(
@@ -654,8 +673,9 @@ contract UVPStateMachine {
         if (_hasSignal(planId, orderId, sourceId, signalId)) {
             return false;
         }
-        if (!_signalAdmissionSatisfied(planId, orderId, sourceId, signalId)) {
-            return false;
+        (AdmissionVerdict verdict,) = _signalAdmissionVerdict(planId, orderId, sourceId, signalId);
+        if (verdict != AdmissionVerdict.Ready) {
+            revert SignalAdmissionRejected(orderId, sourceId, signalId);
         }
         _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false, sourceStageId);
         return true;
@@ -672,7 +692,7 @@ contract UVPStateMachine {
         bytes32 payloadHash,
         bytes32 idempotencyKey,
         address submitter
-    ) external {
+    ) external returns (bool inserted) {
         if (msg.sender != derivedSignalModule) {
             revert UnauthorizedStateMachineModule(msg.sender);
         }
@@ -685,9 +705,10 @@ contract UVPStateMachine {
         _requireEffectiveSupplier(fromPlanId, fromOrderId, stageId, submitter);
         _requireSourceStageReady(planId, orderId, stageId);
         if (_hasSignal(planId, orderId, sourceId, signalId)) {
-            return;
+            return false;
         }
         _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false, stageId);
+        return true;
     }
 
     function _activateStageSupplierAssignment(
@@ -721,20 +742,20 @@ contract UVPStateMachine {
         emit StageSupplierAssigned(planId, orderId, targetStageId, supplierId, patchNonce);
     }
 
-    function _signalAdmissionSatisfied(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId)
+    function _signalAdmissionVerdict(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId)
         private
         view
-        returns (bool)
+        returns (AdmissionVerdict verdict, uint64 dueAt)
     {
         if (!_s.orders[planId][orderId].admissionsDeclared) {
-            return true;
+            return (AdmissionVerdict.Ready, 0);
         }
         StoredAdmission storage admission = _s.plans[planId].admissions[_signalKey(sourceId, signalId)];
         if (!admission.exists) {
-            return true;
+            return (AdmissionVerdict.Ready, 0);
         }
         EvalValue memory result = _evaluateInstructions(planId, orderId, admission.instructions);
-        return result.value && !result.wait && !result.cancel;
+        return (UVPHookEvaluator.verdict(result), result.dueAt);
     }
 
     function _requireSourceStageReady(bytes32 planId, bytes32 orderId, bytes32 sourceStageId) private view {
@@ -1179,11 +1200,7 @@ contract UVPStateMachine {
         view
         returns (EvalValue memory)
     {
-        Instruction[] memory loaded = new Instruction[](instructions.length);
-        for (uint256 i = 0; i < instructions.length; i++) {
-            loaded[i] = instructions[i];
-        }
-        return _evaluateMemoryInstructions(planId, orderId, loaded);
+        return UVPHookEvaluator.evaluateStorage(_s.signals[planId][orderId], instructions);
     }
 
     function _evaluateMemoryInstructions(bytes32 planId, bytes32 orderId, Instruction[] memory instructions)
@@ -1191,132 +1208,7 @@ contract UVPStateMachine {
         view
         returns (EvalValue memory)
     {
-        EvalValue[] memory stack = new EvalValue[](instructions.length);
-        uint256 stackDepth;
-        for (uint256 i = 0; i < instructions.length; i++) {
-            Instruction memory instruction = instructions[i];
-            if (instruction.op == uint8(InstructionOp.Signal)) {
-                stack[stackDepth++] = _signalValue(planId, orderId, instruction.sourceId, instruction.signalId);
-            } else if (instruction.op == uint8(InstructionOp.Not)) {
-                stack[stackDepth - 1] = _notValue(stack[stackDepth - 1]);
-            } else if (instruction.op == uint8(InstructionOp.Delay)) {
-                stack[stackDepth - 1] = _delayValue(stack[stackDepth - 1], instruction.delaySeconds);
-            } else if (instruction.op == uint8(InstructionOp.And)) {
-                EvalValue memory value = stack[stackDepth - instruction.arity];
-                for (uint256 j = stackDepth - instruction.arity + 1; j < stackDepth; j++) {
-                    value = _andValue(value, stack[j]);
-                }
-                stackDepth = stackDepth - instruction.arity;
-                stack[stackDepth++] = value;
-            } else if (instruction.op == uint8(InstructionOp.Or)) {
-                EvalValue memory value = stack[stackDepth - instruction.arity];
-                for (uint256 j = stackDepth - instruction.arity + 1; j < stackDepth; j++) {
-                    value = _orValue(value, stack[j]);
-                }
-                stackDepth = stackDepth - instruction.arity;
-                stack[stackDepth++] = value;
-            } else {
-                revert InvalidInstruction();
-            }
-        }
-        return stack[0];
-    }
-
-    function _signalValue(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId)
-        private
-        view
-        returns (EvalValue memory)
-    {
-        SignalRecord storage signal = _s.signals[planId][orderId][_signalKey(sourceId, signalId)];
-        if (!signal.exists) {
-            return EvalValue({value: false, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
-        }
-        return EvalValue({value: true, wait: false, cancel: false, dueAt: 0, anchorAt: signal.submittedAt});
-    }
-
-    function _notValue(EvalValue memory value) private pure returns (EvalValue memory) {
-        if (value.value) {
-            return EvalValue({value: false, wait: false, cancel: true, dueAt: 0, anchorAt: 0});
-        }
-        if (value.wait) {
-            return EvalValue({value: true, wait: false, cancel: false, dueAt: value.dueAt, anchorAt: 0});
-        }
-        if (value.cancel) {
-            return EvalValue({value: true, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
-        }
-        return EvalValue({value: true, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
-    }
-
-    function _delayValue(EvalValue memory value, uint64 delaySeconds) private view returns (EvalValue memory) {
-        if (value.cancel || !value.value) {
-            return value;
-        }
-        if (value.anchorAt == 0) {
-            return EvalValue({value: false, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
-        }
-        uint64 dueAt = value.anchorAt + delaySeconds;
-        if (block.timestamp < dueAt) {
-            return EvalValue({value: false, wait: true, cancel: false, dueAt: dueAt, anchorAt: value.anchorAt});
-        }
-        return EvalValue({value: true, wait: false, cancel: false, dueAt: 0, anchorAt: dueAt});
-    }
-
-    function _andValue(EvalValue memory left, EvalValue memory right) private pure returns (EvalValue memory) {
-        if (left.cancel || right.cancel) {
-            return EvalValue({value: false, wait: false, cancel: true, dueAt: 0, anchorAt: 0});
-        }
-        if (left.value && right.value) {
-            return EvalValue({
-                value: true,
-                wait: false,
-                cancel: false,
-                dueAt: _minDue(left.dueAt, right.dueAt),
-                anchorAt: _maxAnchor(left.anchorAt, right.anchorAt)
-            });
-        }
-        if ((left.wait && (right.value || right.wait)) || (right.wait && (left.value || left.wait))) {
-            return EvalValue({
-                value: false,
-                wait: true,
-                cancel: false,
-                dueAt: _maxDue(left.wait ? left.dueAt : 0, right.wait ? right.dueAt : 0),
-                anchorAt: _maxAnchor(left.anchorAt, right.anchorAt)
-            });
-        }
-        return EvalValue({value: false, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
-    }
-
-    function _orValue(EvalValue memory left, EvalValue memory right) private pure returns (EvalValue memory) {
-        if (left.value || right.value) {
-            bool leftWins;
-            if (left.value && !right.value) {
-                leftWins = true;
-            } else if (!left.value && right.value) {
-                leftWins = false;
-            } else {
-                leftWins = !(right.anchorAt != 0 && (left.anchorAt == 0 || right.anchorAt < left.anchorAt));
-            }
-            return EvalValue({
-                value: true,
-                wait: false,
-                cancel: false,
-                dueAt: leftWins ? left.dueAt : right.dueAt,
-                anchorAt: leftWins ? left.anchorAt : right.anchorAt
-            });
-        }
-        if (left.wait || right.wait) {
-            return EvalValue({
-                value: false,
-                wait: true,
-                cancel: false,
-                dueAt: _minDue(left.wait ? left.dueAt : 0, right.wait ? right.dueAt : 0),
-                anchorAt: _minAnchor(left.anchorAt, right.anchorAt)
-            });
-        }
-        if (left.cancel && right.cancel) {
-            return EvalValue({value: false, wait: false, cancel: true, dueAt: 0, anchorAt: 0});
-        }
-        return EvalValue({value: false, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
+        return UVPHookEvaluator.evaluate(_s.signals[planId][orderId], instructions);
     }
 
     function _hasSignal(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId)
@@ -1376,33 +1268,5 @@ contract UVPStateMachine {
             return false;
         }
         return IUVPPlanMetadataModule(_s.planMetadataModule).hasCapabilityVocabulary(planId);
-    }
-
-    function _minDue(uint64 left, uint64 right) private pure returns (uint64) {
-        if (left == 0) {
-            return right;
-        }
-        if (right == 0 || left < right) {
-            return left;
-        }
-        return right;
-    }
-
-    function _maxDue(uint64 left, uint64 right) private pure returns (uint64) {
-        return left > right ? left : right;
-    }
-
-    function _maxAnchor(uint64 left, uint64 right) private pure returns (uint64) {
-        return left > right ? left : right;
-    }
-
-    function _minAnchor(uint64 left, uint64 right) private pure returns (uint64) {
-        if (left == 0) {
-            return right;
-        }
-        if (right == 0 || left < right) {
-            return left;
-        }
-        return right;
     }
 }

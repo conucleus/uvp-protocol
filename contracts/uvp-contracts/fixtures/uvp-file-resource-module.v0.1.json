@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPFileResourceModule",
-  "abiVersion": "0.3",
+  "abiVersion": "0.1",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPFileResourceModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPFileResourceModule.sol/UVPFileResourceModule.json",
   "compiler": {

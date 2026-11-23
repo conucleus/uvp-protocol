@@ -10,7 +10,9 @@ streams. It is a test oracle, not a backend runtime or Solidity source.
 - plan and order facts reconstructed from chain events;
 - order signal set with first-writer-wins semantics;
 - hook lifecycle: `init | wait | ready | cxl`;
-- delay/timer evaluation from `SignalSubmitted` and `TimerPoked`;
+- delay/timer evaluation from `SignalSubmitted` and `TimerPoked`; `TimerPoked`
+  events are only filtered when the observed runtime state proves them
+  impossible, otherwise eligibility is delegated to `uvp-core` replay;
 - deterministic replay from `UVPStateMachine` event logs.
 
 ## Replay Goal
@@ -33,6 +35,8 @@ pnpm --filter @uvp-eth/statemachine typecheck
   set — `PlanRegistered`, `OrderRegistered`, `OrderMaterialized`,
   `OrderTriggered`, `SignalSubmitted`, `StageMaterialized`,
   `HookStatusChanged`, `HookReady`, and `TimerPoked` (`ChainModeEvent`).
+`ChainReplayMismatch` mirrors the native wire fields
+(`hook`/`occurrence`/`reason` plus optional `expected`/`observed`).
 - `fixtures/chain-hook-oracle.events.json`: chain-mode golden fixture for
   duplicate signals, timer due, negative cancellation, and ready-once behavior.
 - `test/chain.test.ts`: chain adapter, golden replay tests, and parity checks

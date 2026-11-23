@@ -5,8 +5,8 @@ Zhixu compiler for deterministic EVM state-machine artifacts.
 This module compiles UVP DSL directly into deterministic on-chain artifacts.
 The public protocol output is `OnchainHookPlanArtifact` and the registration
 args for the two-step `UVPStateMachine.commitPlan` + `finalizePlan` flow.
-`HookPlanArtifact` is compiler-internal IR (`uvp.hookPlan.v8`); the public
-`OnchainHookPlanArtifact` schema is `uvp.onchainHookPlan.v8`. The package
+`HookPlanArtifact` is compiler-internal IR (`uvp.hookPlan.v1`); the public
+`OnchainHookPlanArtifact` schema is `uvp.onchainHookPlan.v1`. The package
 version is `0.3.0`.
 
 ## Inputs
@@ -16,7 +16,7 @@ version is `0.3.0`.
   birth set: `sendSignals` entries marked `trigger: true` birth an order when
   submitted with an empty order id. Trigger sets are fixed at compile time and
   enter the definition identity;
-- the neutral `analyze` result from uvp-core (`uvp.zhixuAnalysis.v4`): shared
+- the neutral `analyze` result from uvp-core (`uvp.zhixuAnalysis.v1`): shared
   definition validation (including the chain target's trigger-set validation
   and stage materialization gate), parsed hooks/AST, the normalized per-stage
   trigger names, signal capabilities, composed admissions, and each stage's
@@ -182,12 +182,18 @@ pnpm --filter @uvp-eth/compiler typecheck
   uvp-core `analyzeDock` output (resolved ids plus each output's Hook DSL
   `ast`/`dependencies`/`atoms`).
 - `src/identity.ts`: content-derived `zx-<32hex>` definition uid and display
-  stripping.
+  stripping. The definition preimage excludes display fields
+  (`metadata.name`/`metadata.annotations`/`metadata.labels`) and track
+  selectors (`spec.platform`/`spec.nucleation`), so the same logic has one uid
+  across tracks; dock identity excludes only `metadata.name`/`annotations` and
+  keeps `metadata.labels` as committed content.
 - `src/merkle.ts`: the single Merkle/word hashing implementation used by the
   capability, supplier-binding, and file-writer trees.
 - `src/onchain/`: public Zhixu-to-on-chain artifact compiler and Solidity
   registration input builder (`compile.ts` pipeline, `validate/` boundary
-  checks, `canonical/` ordering, `hash/` commitments,
+  checks mirroring `_validateHook`/`_validateAdmission` including the 120
+  instruction-depth cap and nested-delay rejection, `canonical/` ordering,
+  `hash/` commitments,
   `solidity/registration.ts` calldata assembly,
   `onchain/capabilities-root.ts` — the authoritative capability-tree
   implementation, `onchain/supplier-bindings.ts` — the authoritative
@@ -218,7 +224,7 @@ with a canonical UUID `supplierID`. It is not an address list and never
 overrides the UUID encoding.
 
 `compileZhixuOnchainHookPlan(zhixu)` emits schema
-`uvp.onchainHookPlan.v8`. It:
+`uvp.onchainHookPlan.v1`. It:
 
 - emits stable `planId` and `planHash`;
 - carries target `platform` from Zhixu YAML as a protocol field
@@ -260,6 +266,9 @@ Stable ids use raw Keccak-256:
 - `signalKey = keccak256(abi.encodePacked(sourceId, signalId))`;
 - `selectorStageId` / `targetStageId = keccak256(stageIdentifier)`.
 
+`validateHookPlanArtifact(value)` recomputes `definitionUid(source)`, binds
+`zhixuName` to `source.metadata.name`, and re-analyzes the carried source so a
+capability or admission that drifts from the source's `sendSignals` is rejected.
 `validateOnchainHookPlanArtifact(value)` checks the compact artifact shape,
 recomputes ids, validates instruction stack shape, verifies `dependencyIndex`,
 recomputes `supplierBindingsRoot`, and verifies `planHash`.

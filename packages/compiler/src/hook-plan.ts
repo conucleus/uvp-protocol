@@ -8,15 +8,25 @@ import {
   type ZhixuPlatform,
   type ZhixuDefinition,
 } from "./types/index.js";
-import { compareByCodePoint } from "@uvp-eth/canonical-json";
+import { compareByCodePoint, canonicalJson } from "@uvp-eth/canonical-json";
 import { hashCanonical } from "./hash.js";
+import { definitionUid } from "./identity.js";
 import {
   assembleChainTrackHookPlan,
   hookPlanPayloadForHash,
+  normalizePlatformPreimage,
   planIdOf,
   HOOK_PLAN_HASH_DOMAIN,
 } from "./hook-plan/assemble.js";
 import { lowerHookPlanShell } from "./hook-plan/lower.js";
+
+/**
+ * 链轨 hook_plan 入口：uvp-core `analyze` 是定义级 DSL/表达式校验的唯一
+ * authority（形状、出生信号集、物化门、hook 解析），本模块只消费 analyze
+ * 结果做链轨 lowering 与 planId/planHash 承诺，不再重复校验输入定义；
+ * `validateHookPlanArtifact` 是外部传入 artifact 的边界校验（跨包入口），
+ * 不在本模块的编译路径上二次调用。
+ */
 
 export class HookPlanCompilationError extends Error {
   readonly issues: readonly string[];
@@ -43,11 +53,6 @@ export { compareCanonicalKey } from "./canonical-key.js";
 export function compileZhixuHookPlan(
   definition: ZhixuDefinition,
 ): HookPlanArtifact {
-  const issues = validateZhixuShape(definition);
-  if (issues.length > 0) {
-    throw new HookPlanCompilationError(issues);
-  }
-
   let analysis: ZhixuAnalysis;
   try {
     analysis = analyzeWithUvpCore({ definition });
@@ -57,9 +62,8 @@ export function compileZhixuHookPlan(
     ]);
   }
 
-  let artifact: HookPlanArtifact;
   try {
-    artifact = assembleChainTrackHookPlan(
+    return assembleChainTrackHookPlan(
       definition,
       lowerHookPlanShell(analysis),
     );
@@ -68,12 +72,6 @@ export function compileZhixuHookPlan(
       error instanceof Error ? error.message : String(error),
     ]);
   }
-
-  const artifactIssues = validateHookPlanArtifact(artifact);
-  if (artifactIssues.length > 0) {
-    throw new HookPlanArtifactValidationError(artifactIssues);
-  }
-  return artifact;
 }
 
 const HOOK_PLAN_ARTIFACT_FIELDS: readonly string[] = [
@@ -135,21 +133,24 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
     issues.push(
       "source is required (the canonical annotation-stripped definition snapshot in the planHash preimage)",
     );
-  } else if (typeof value.planHash === "string" && /^0x[0-9a-f]{64}$/.test(value.planHash)) {
-    try {
-      const recomputedPlanHash = hashCanonical(
-        HOOK_PLAN_HASH_DOMAIN,
-        hookPlanPayloadForHash(value as Omit<HookPlanArtifact, "planHash">),
-      );
-      if (value.planHash !== recomputedPlanHash) {
+  } else {
+    issues.push(...sourceBindingIssues(value));
+    if (typeof value.planHash === "string" && /^0x[0-9a-f]{64}$/.test(value.planHash)) {
+      try {
+        const recomputedPlanHash = hashCanonical(
+          HOOK_PLAN_HASH_DOMAIN,
+          hookPlanPayloadForHash(value as Omit<HookPlanArtifact, "planHash">),
+        );
+        if (value.planHash !== recomputedPlanHash) {
+          issues.push(
+            "planHash must match the recomputed H(uvp:hook-plan-artifact:v1; payload) over the carried fields",
+          );
+        }
+      } catch {
         issues.push(
-          "planHash must match the recomputed H(uvp:hook-plan-artifact:v1; payload) over the carried fields",
+          "planHash preimage is not canonicalizable (payload carries undefined or non-JSON values)",
         );
       }
-    } catch {
-      issues.push(
-        "planHash preimage is not canonicalizable (payload carries undefined or non-JSON values)",
-      );
     }
   }
 
@@ -228,6 +229,163 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
   }
 
   return issues;
+}
+
+function sourceBindingIssues(value: Record<string, unknown>): readonly string[] {
+  const issues: string[] = [];
+  if (!isRecord(value.source)) {
+    return [
+      "source must be the canonical Zhixu definition object the artifact was compiled from",
+    ];
+  }
+  if (typeof value.zhixuId === "string") {
+    try {
+      if (definitionUid(value.source) !== value.zhixuId) {
+        issues.push(
+          "zhixuId must equal definitionUid(source); a forged or swapped id would bind the plan to another definition's identity",
+        );
+      }
+    } catch {
+      issues.push(
+        "source must be content-canonicalizable so definitionUid(source) can be recomputed",
+      );
+    }
+  }
+  const sourceMetadata = isRecord(value.source.metadata)
+    ? value.source.metadata
+    : undefined;
+  if (
+    typeof value.zhixuName === "string" &&
+    typeof sourceMetadata?.name === "string" &&
+    value.zhixuName !== sourceMetadata.name
+  ) {
+    issues.push(
+      "zhixuName must equal source.metadata.name; the carried source snapshot is the only owner of the plan's display identity",
+    );
+  }
+
+  let analysis: ZhixuAnalysis | undefined;
+  try {
+    analysis = analyzeWithUvpCore({ definition: value.source });
+  } catch (error) {
+    issues.push(
+      "source must be an analyzable Zhixu definition: "
+        + (error instanceof Error ? error.message : String(error)),
+    );
+  }
+  if (analysis !== undefined) {
+    if (
+      isPlatform(value.platform)
+      && !canonicalEqual(
+        analysis.platform,
+        normalizePlatformPreimage(value.platform),
+      )
+    ) {
+      issues.push(
+        "platform must match the source definition's spec.platform (empty params normalize away)",
+      );
+    }
+    const expectedCapabilities = new Map<string, unknown>();
+    for (const capability of analysis.signalCapabilities) {
+      if (
+        isRecord(capability) &&
+        typeof capability.stageIdentifier === "string" &&
+        typeof capability.targetSignalName === "string"
+      ) {
+        expectedCapabilities.set(
+          `${capability.stageIdentifier}\u0000${capability.targetSignalName}`,
+          capability,
+        );
+      }
+    }
+    if (Array.isArray(value.signalCapabilities)) {
+      for (const [index, capability] of value.signalCapabilities.entries()) {
+        if (
+          !isRecord(capability) ||
+          typeof capability.stageIdentifier !== "string" ||
+          typeof capability.targetSignalName !== "string"
+        ) {
+          continue;
+        }
+        const expected = expectedCapabilities.get(
+          `${capability.stageIdentifier}\u0000${capability.targetSignalName}`,
+        );
+        if (expected === undefined) {
+          issues.push(
+            `signalCapabilities[${index}] ${capability.stageIdentifier}::${capability.targetSignalName} is not a sendSignal declared by the source definition; `
+              + "a capability can only be declared by the stage that owns the signal",
+          );
+        } else if (!canonicalEqual(expected, capability)) {
+          issues.push(
+            `signalCapabilities[${index}] must match the source definition's sendSignals as analyzed by uvp-core`,
+          );
+        }
+      }
+    }
+
+    const expectedAdmissions = new Map<string, unknown>();
+    for (const admission of analysis.admissions) {
+      if (
+        isRecord(admission) &&
+        typeof admission.stageIdentifier === "string" &&
+        typeof admission.signalName === "string"
+      ) {
+        expectedAdmissions.set(
+          `${admission.stageIdentifier}\u0000${admission.signalName}`,
+          admission,
+        );
+      }
+    }
+    if (Array.isArray(value.admissions)) {
+      const declaredAdmissions = new Set<string>();
+      for (const [index, admission] of value.admissions.entries()) {
+        if (
+          !isRecord(admission) ||
+          typeof admission.stageIdentifier !== "string" ||
+          typeof admission.signalName !== "string"
+        ) {
+          continue;
+        }
+        const key = `${admission.stageIdentifier}\u0000${admission.signalName}`;
+        const expected = expectedAdmissions.get(key);
+        if (expected === undefined) {
+          issues.push(
+            `admissions[${index}] ${admission.stageIdentifier}::${admission.signalName} is not declared with validWhen by the source definition; `
+              + "a forged admission would gate an emission the source never declared",
+          );
+          continue;
+        }
+        declaredAdmissions.add(key);
+        if (!canonicalEqual(expected, admission)) {
+          issues.push(
+            `admissions[${index}] must match the source definition's sendSignals[].validWhen as analyzed by uvp-core`,
+          );
+        }
+      }
+      for (const [key, admission] of expectedAdmissions) {
+        if (declaredAdmissions.has(key)) {
+          continue;
+        }
+        const expected = admission as {
+          readonly stageIdentifier: string;
+          readonly signalName: string;
+        };
+        issues.push(
+          `admissions must include ${expected.stageIdentifier}::${expected.signalName} from the source definition's sendSignals[].validWhen; `
+            + "a stripped admission would bypass the emission gate",
+        );
+      }
+    }
+  }
+  return issues;
+}
+
+function canonicalEqual(left: unknown, right: unknown): boolean {
+  try {
+    return canonicalJson(left) === canonicalJson(right);
+  } catch {
+    return false;
+  }
 }
 
 export function assertHookPlanArtifact(value: unknown): asserts value is HookPlanArtifact {
@@ -567,26 +725,6 @@ function isHookDependency(value: unknown): value is HookDependencyLike {
 
 function hookDependencyKey(dependency: HookDependencyLike): string {
   return `${dependency.source}::${dependency.signalName}`;
-}
-
-function validateZhixuShape(definition: ZhixuDefinition): readonly string[] {
-  const issues: string[] = [];
-  if (definition.apiVersion !== "uvp/v0") {
-    issues.push("apiVersion must be uvp/v0");
-  }
-  if (definition.kind !== "Zhixu") {
-    issues.push("kind must be Zhixu");
-  }
-  if (!definition.metadata?.name) {
-    issues.push("metadata.name is required");
-  }
-  if (!isPlatform(definition.spec?.platform)) {
-    issues.push("spec.platform must be an object with a non-empty type");
-  }
-  if (!definition.spec?.stages?.length) {
-    issues.push("spec.stages must contain at least one stage");
-  }
-  return issues;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

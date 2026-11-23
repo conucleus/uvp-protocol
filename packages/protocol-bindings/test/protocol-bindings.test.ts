@@ -201,8 +201,7 @@ const handoffReplacementSupplierPatchHash = hashStageSupplierPatchPayload(
 
 describe("protocol bindings", () => {
   it("exposes plan-scoped hook observation events", () => {
-    // 订单级事件自 v0.10 起携带 planId（事件口径冻结面，事件签名不随
-    // EIP-712 版本走；当前签名域版本 0.12）。
+    // 订单级事件携带 planId（事件口径冻结面，事件签名不随 EIP-712 域版本走）。
     assert.equal(
       toEventHash("HookStatusChanged(bytes32,bytes32,bytes32,uint8,uint8,uint64)"),
       "0xa0c688f78d307bee6d38b69ad4c19b02d9e1be8c6772327015b60fd21ec38fd2"
@@ -265,7 +264,7 @@ describe("protocol bindings", () => {
     assert.equal(typedData.primaryType, "UVPStateMachinePlanCommit");
     assert.deepEqual(typedData.domain, {
       name: "UVPStateMachine",
-      version: "0.20",
+      version: "1",
       chainId: 31337,
       verifyingContract,
     });
@@ -304,7 +303,7 @@ describe("protocol bindings", () => {
       deadline,
     });
 
-    assert.equal(firstTypedData.domain.version, "0.5");
+    assert.equal(firstTypedData.domain.version, "1");
     assert.deepEqual(
       firstTypedData.types.UVPStagePatchModuleStageSupplierPatch,
       [
@@ -405,7 +404,7 @@ describe("protocol bindings", () => {
     assert.equal(typedData.primaryType, SIGNAL_SUBMISSION_PRIMARY_TYPE);
     assert.deepEqual(typedData.domain, {
       name: "UVPStateMachine",
-      version: "0.20",
+      version: "1",
       chainId: 31337,
       verifyingContract,
     });
@@ -474,7 +473,7 @@ describe("protocol bindings", () => {
             ),
           ),
           keccak256(stringToHex("UVPStateMachine")),
-          keccak256(stringToHex("0.20")),
+          keccak256(stringToHex("1")),
           31337n,
           verifyingContract,
         ],
@@ -857,7 +856,7 @@ describe("protocol bindings", () => {
     });
 
     assert.equal(typedData.domain.name, "UVPDerivedSignalModule");
-    assert.equal(typedData.domain.version, "0.7");
+    assert.equal(typedData.domain.version, "1");
     assert.equal(typedData.primaryType, "UVPDerivedSignalModuleSignal");
 
     // 与 UVPDerivedSignalModule.derivedSignalDigest 的链上公式逐字段对拍：
@@ -883,7 +882,7 @@ describe("protocol bindings", () => {
             ),
           ),
           keccak256(stringToHex("UVPDerivedSignalModule")),
-          keccak256(stringToHex("0.7")),
+          keccak256(stringToHex("1")),
           31337n,
           verifyingContract,
         ],
@@ -1016,7 +1015,7 @@ describe("protocol bindings", () => {
     // .encode(keccak256(domain), …payload))。独立重算而非同源引用。
     assert.equal(
       STAGE_SUPPLIER_PATCH_PAYLOAD_HASH_DOMAIN,
-      "uvp:stage-supplier-patch-payload:v2",
+      "uvp:stage-supplier-patch-payload:v1",
     );
     assert.equal(
       assignSupplierPatchHash,

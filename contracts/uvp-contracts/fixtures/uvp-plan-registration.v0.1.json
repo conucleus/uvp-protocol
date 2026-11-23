@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPPlanRegistration",
-  "abiVersion": "0.9",
+  "abiVersion": "0.1",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPPlanRegistration.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPPlanRegistration.sol/UVPPlanRegistration.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x94137ef4d7d70c7e450c6473288282e09575b00b35b4f2b4b38f90d33e2c213d",
-    "bytecodeHash": "0x55f699645fdfabc532cdfde5a23e08fd4ee537b4495a3edb6831007ab45b12c8",
-    "deployedBytecodeHash": "0x04d9cba8192852aa7094b7c2dc4746e4e6e07992cdae38f13c4c88444c3f9424",
-    "artifactHash": "0xd9d8f638156179c0ea1bbdf95e073edfb02b821ff4ae5eb5cc346d4dc4ce449d"
+    "abiHash": "0x2f11cdb592ef89e6814eb02d4f16c8b78692c0db52df418b1d1aa386ec2fe363",
+    "bytecodeHash": "0xf8824df3601676487422179f73368a92ca33cbd803840fd119c6a2edc91525f3",
+    "deployedBytecodeHash": "0x888b3173258a8791a513cec9ba8029f8a24fe621f479a4fc58024fb56513faf9",
+    "artifactHash": "0x6eba259a978668bfd48bc092b6051c208eb6ee12818806614cc4dc40d79b3e9c"
   },
   "events": {
     "HookReady": {

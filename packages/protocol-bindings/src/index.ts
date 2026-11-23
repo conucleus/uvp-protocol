@@ -258,19 +258,19 @@ export const STATE_MACHINE_LENS_ABI = parseAbi([
 ]);
 
 export const PRODUCT_SUBMIT_DOMAIN_NAME = "UVPStateMachine";
-export const PRODUCT_SUBMIT_DOMAIN_VERSION = "0.20";
+export const PRODUCT_SUBMIT_DOMAIN_VERSION = "1";
 export const SIGNAL_SUBMISSION_PRIMARY_TYPE =
   "UVPStateMachineSignalSubmission";
 export const PLAN_COMMIT_PRIMARY_TYPE = "UVPStateMachinePlanCommit";
 export const DERIVED_SIGNAL_DOMAIN_NAME = "UVPDerivedSignalModule";
-export const DERIVED_SIGNAL_DOMAIN_VERSION = "0.7";
+export const DERIVED_SIGNAL_DOMAIN_VERSION = "1";
 export const DERIVED_SIGNAL_PRIMARY_TYPE = "UVPDerivedSignalModuleSignal";
 export const STAGE_PATCH_MODULE_DOMAIN_NAME = "UVPStagePatchModule";
-export const STAGE_PATCH_MODULE_DOMAIN_VERSION = "0.5";
+export const STAGE_PATCH_MODULE_DOMAIN_VERSION = "1";
 export const STAGE_SUPPLIER_PATCH_PRIMARY_TYPE =
   "UVPStagePatchModuleStageSupplierPatch";
 export const STAGE_SUPPLIER_PATCH_PAYLOAD_HASH_DOMAIN =
-  "uvp:stage-supplier-patch-payload:v2";
+  "uvp:stage-supplier-patch-payload:v1";
 import {
   HOOK_FLAG_DOCK_EXECUTOR,
   HOOK_FLAG_DYNAMIC_EXECUTOR,

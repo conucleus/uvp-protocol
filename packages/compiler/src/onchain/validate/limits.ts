@@ -5,10 +5,16 @@ import type { OnchainCompiledHook } from "../../types/index.js";
  */
 
 const MAX_ONCHAIN_HOOK_DELAY_SECONDS = 2_592_000;
+const MAX_ONCHAIN_INSTRUCTION_DEPTH = 120;
 const MAX_PLAN_DEPENDENCIES = 1024;
 const MAX_HOOKS_PER_DEPENDENCY_KEY = 16;
 
-export { MAX_ONCHAIN_HOOK_DELAY_SECONDS, MAX_PLAN_DEPENDENCIES, MAX_HOOKS_PER_DEPENDENCY_KEY };
+export {
+  MAX_ONCHAIN_HOOK_DELAY_SECONDS,
+  MAX_ONCHAIN_INSTRUCTION_DEPTH,
+  MAX_PLAN_DEPENDENCIES,
+  MAX_HOOKS_PER_DEPENDENCY_KEY,
+};
 
 function planDependencyCountIssues(
   hooks: readonly OnchainCompiledHook[],

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.uvpDeploymentRegistryAbiFixture.v1",
   "contractName": "UVPDeploymentRegistry",
-  "abiVersion": "0.2",
+  "abiVersion": "0.1",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPDeploymentRegistry.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPDeploymentRegistry.sol/UVPDeploymentRegistry.json",
   "compiler": {

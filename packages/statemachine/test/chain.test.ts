@@ -169,7 +169,12 @@ test("chain-mode reports mismatched golden hook events", async () => {
   }
   assert.ok(mismatchError !== undefined, "strict replay must throw on mismatch");
   assert.equal(mismatchError.mismatches.length, 1);
-  assert.equal(mismatchError.mismatches[0]?.reason, "semantic-mismatch");
+  const mismatch = mismatchError.mismatches[0]!;
+  assert.equal(mismatch.reason, "semantic-mismatch");
+  assert.equal(mismatch.hook, `${badReady.planId}::${badReady.orderId}::${badReady.hookId}`);
+  assert.equal(mismatch.occurrence, 0);
+  assert.equal(mismatch.expected?.eventName, "HookReady");
+  assert.equal(mismatch.observed?.eventName, "HookReady");
 });
 
 test("chain-mode keeps AND delayed branches waiting until the latest live timer", () => {
@@ -376,6 +381,224 @@ test("chain replay filters contract-impossible TimerPoked events (pokeTimer gate
   assert.deepEqual(polluted.observed, polluted.expected);
   assert.deepEqual(polluted.state, clean.state);
   assert.deepEqual(polluted.observed, clean.observed);
+});
+
+test("chain replay keys TimerPoked eligibility on uvp-core state, not the event's dueAt claim", () => {
+  const planId = "0x000000000000000000000000000000000000000000000000000000000000d001" as `0x${string}`;
+  const hookId = "0x000000000000000000000000000000000000000000000000000000000000d101" as `0x${string}`;
+  const stageId = "0x000000000000000000000000000000000000000000000000000000000000d201" as `0x${string}`;
+  const sourceId = "0x000000000000000000000000000000000000000000000000000000000000d301" as `0x${string}`;
+  const signalId = "0x000000000000000000000000000000000000000000000000000000000000d401" as `0x${string}`;
+  const signalKey = "0x000000000000000000000000000000000000000000000000000000000000d501" as `0x${string}`;
+  const zhixuId = "poke-due";
+  const orderId = "order-due";
+  const events: ChainModeEvent[] = [
+    {
+      eventName: "PlanRegistered",
+      blockNumber: 1,
+      logIndex: 0,
+      transactionHash: "0xd1",
+      plan: {
+        planId,
+        zhixuId,
+        compiledHooks: [
+          {
+            hookId,
+            stageId,
+            stageIdentifier: "timer_stage",
+            hookName: "TIMEOUT",
+            orderTriggerKind: "none",
+            emitReady: true,
+            instructions: [
+              { op: "SIGNAL", sourceId, signalId, signalKey },
+              { op: "DELAY", delaySeconds: 5 },
+            ],
+          },
+        ],
+        dependencyIndex: { [signalKey]: [hookId] },
+      },
+    },
+    {
+      eventName: "OrderRegistered",
+      blockNumber: 2,
+      logIndex: 0,
+      transactionHash: "0xd2",
+      planId,
+      zhixuId,
+      orderId,
+      registeredAt: "2026-04-27T00:00:00.000Z",
+    },
+    {
+      eventName: "SignalSubmitted",
+      blockNumber: 3,
+      logIndex: 0,
+      transactionHash: "0xd3",
+      planId,
+      zhixuId,
+      orderId,
+      sourceId,
+      signalId,
+      signalKey,
+      senderId: "executor",
+      submittedAt: "2026-04-27T00:00:00.000Z",
+    },
+    {
+      eventName: "HookStatusChanged",
+      blockNumber: 3,
+      logIndex: 1,
+      transactionHash: "0xd4",
+      planId,
+      zhixuId,
+      orderId,
+      hookId,
+      previousStatus: "init",
+      newStatus: "wait",
+      dueAt: "2026-04-27T00:00:05.000Z",
+    },
+    {
+      eventName: "TimerPoked",
+      blockNumber: 4,
+      logIndex: 0,
+      transactionHash: "0xd5",
+      planId,
+      zhixuId,
+      orderId,
+      hookId,
+      dueAt: "2026-04-27T00:00:01.000Z",
+      pokedAt: "2026-04-27T00:00:06.000Z",
+    },
+    {
+      eventName: "HookReady",
+      blockNumber: 5,
+      logIndex: 0,
+      transactionHash: "0xd6",
+      planId,
+      zhixuId,
+      orderId,
+      hookId,
+      stageIdentifier: "timer_stage",
+      hookName: "TIMEOUT",
+    },
+  ];
+
+  const result = replayChainEvents(events);
+  assert.deepEqual(result.mismatches, []);
+  assert.equal(
+    result.state.orders[`${planId}::${orderId}`]?.hookStatuses[hookId]?.status,
+    "ready",
+  );
+});
+
+test("chain replay does not drop a due TimerPoked when no status observation was seen", () => {
+  const planId = "0x000000000000000000000000000000000000000000000000000000000000e101" as `0x${string}`;
+  const hookId = "0x000000000000000000000000000000000000000000000000000000000000e201" as `0x${string}`;
+  const stageId = "0x000000000000000000000000000000000000000000000000000000000000e301" as `0x${string}`;
+  const sourceId = "0x000000000000000000000000000000000000000000000000000000000000e401" as `0x${string}`;
+  const signalId = "0x000000000000000000000000000000000000000000000000000000000000e501" as `0x${string}`;
+  const signalKey = "0x000000000000000000000000000000000000000000000000000000000000e601" as `0x${string}`;
+  const zhixuId = "poke-unknown-status";
+  const orderId = "order-unknown-status";
+  const events: ChainModeEvent[] = [
+    {
+      eventName: "PlanRegistered",
+      blockNumber: 1,
+      logIndex: 0,
+      transactionHash: "0xe1",
+      plan: {
+        planId,
+        zhixuId,
+        compiledHooks: [
+          {
+            hookId,
+            stageId,
+            stageIdentifier: "timer_stage",
+            hookName: "TIMEOUT",
+            orderTriggerKind: "none",
+            emitReady: true,
+            instructions: [
+              { op: "SIGNAL", sourceId, signalId, signalKey },
+              { op: "DELAY", delaySeconds: 5 },
+            ],
+          },
+        ],
+        dependencyIndex: { [signalKey]: [hookId] },
+      },
+    },
+    {
+      eventName: "OrderRegistered",
+      blockNumber: 2,
+      logIndex: 0,
+      transactionHash: "0xe2",
+      planId,
+      zhixuId,
+      orderId,
+      registeredAt: "2026-04-27T00:00:00.000Z",
+    },
+    {
+      eventName: "SignalSubmitted",
+      blockNumber: 3,
+      logIndex: 0,
+      transactionHash: "0xe3",
+      planId,
+      zhixuId,
+      orderId,
+      sourceId,
+      signalId,
+      signalKey,
+      senderId: "executor",
+      submittedAt: "2026-04-27T00:00:00.000Z",
+    },
+    {
+      eventName: "TimerPoked",
+      blockNumber: 4,
+      logIndex: 0,
+      transactionHash: "0xe4",
+      planId,
+      zhixuId,
+      orderId,
+      hookId,
+      dueAt: "2026-04-27T00:00:05.000Z",
+      pokedAt: "2026-04-27T00:00:06.000Z",
+    },
+    {
+      eventName: "HookReady",
+      blockNumber: 5,
+      logIndex: 0,
+      transactionHash: "0xe5",
+      planId,
+      zhixuId,
+      orderId,
+      hookId,
+      stageIdentifier: "timer_stage",
+      hookName: "TIMEOUT",
+    },
+  ];
+
+  let mismatchError: ChainReplayMismatchError | undefined;
+  try {
+    replayChainEvents(events);
+  } catch (error) {
+    assert.ok(error instanceof ChainReplayMismatchError);
+    mismatchError = error;
+  }
+  assert.ok(mismatchError !== undefined);
+  assert.equal(
+    mismatchError.mismatches.some(
+      (mismatch) =>
+        mismatch.reason === "missing-observed"
+        && mismatch.expected?.eventName === "HookReady"
+        && mismatch.expected.hookId === hookId,
+    ),
+    false,
+  );
+  assert.equal(
+    mismatchError.mismatches.some(
+      (mismatch) =>
+        mismatch.observed?.eventName === "HookReady"
+        && mismatch.observed.hookId === hookId,
+    ),
+    true,
+  );
 });
 
 test("chain replay fails loudly when TimerPoked targets an unknown order/plan/hook", () => {

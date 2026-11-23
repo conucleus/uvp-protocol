@@ -1,8 +1,8 @@
 export const COMPILER_NAME = "uvp-eth-compiler" as const;
 export const COMPILER_VERSION = "0.3.0" as const;
-export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v8" as const;
+export const HOOK_PLAN_SCHEMA_VERSION = "uvp.hookPlan.v1" as const;
 export const ONCHAIN_HOOK_PLAN_SCHEMA_VERSION =
-  "uvp.onchainHookPlan.v8" as const;
+  "uvp.onchainHookPlan.v1" as const;
 
 export type HexString = `0x${string}`;
 export type Address = HexString;

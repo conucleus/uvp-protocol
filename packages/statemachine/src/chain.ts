@@ -229,7 +229,8 @@ export interface ChainOracleHookRuntime {
 }
 
 export interface ChainReplayMismatch {
-  readonly index?: number;
+  readonly hook: string;
+  readonly occurrence: number;
   readonly reason: "missing-observed" | "unexpected-observed" | "semantic-mismatch";
   readonly expected?: ChainHookObservation;
   readonly observed?: ChainHookObservation;
@@ -319,7 +320,10 @@ class TimerPokeGate {
       );
     }
     const runtime = this.runtimes.get(runtimeKey(event));
-    if (runtime === undefined || runtime.status !== "wait" || runtime.dueAt === undefined) {
+    if (runtime === undefined) {
+      return true;
+    }
+    if (runtime.status !== "wait" || runtime.dueAt === undefined) {
       return false;
     }
     const trackedDueAt = chainOracleTimestampSeconds(runtime.dueAt);
@@ -329,12 +333,6 @@ class TimerPokeGate {
     const pokedAt = chainOracleTimestampSeconds(event.pokedAt);
     if (pokedAt === undefined) {
       throw new Error(`invalid chain oracle timestamp ${event.pokedAt}`);
-    }
-    if (event.dueAt !== undefined) {
-      const eventDueAt = chainOracleTimestampSeconds(event.dueAt);
-      if (eventDueAt === undefined || eventDueAt !== trackedDueAt) {
-        return false;
-      }
     }
     return pokedAt >= trackedDueAt;
   }
@@ -483,7 +481,7 @@ function normalizeChainEventForOracle(event: ChainModeEvent): OracleFeedEvent | 
   if (event.eventName === "HookStatusChanged") {
     if (!("newStatus" in event) || typeof event.newStatus !== "string") {
       throw new Error(
-        `HookStatusChanged ${event.hookId} is missing a valid newStatus; frozen v0.10 events must carry previousStatus/newStatus`
+        `HookStatusChanged ${event.hookId} is missing a valid newStatus; frozen v0.1 events must carry previousStatus/newStatus`
       );
     }
     if (event.newStatus !== "wait" && event.newStatus !== "cxl") {
@@ -491,7 +489,7 @@ function normalizeChainEventForOracle(event: ChainModeEvent): OracleFeedEvent | 
         return undefined;
       }
       throw new Error(
-        `HookStatusChanged ${event.hookId} carries unknown newStatus ${JSON.stringify(event.newStatus)}; frozen v0.10 statuses are init/wait/ready/cxl`
+        `HookStatusChanged ${event.hookId} carries unknown newStatus ${JSON.stringify(event.newStatus)}; frozen v0.1 statuses are init/wait/ready/cxl`
       );
     }
     const { previousStatus: _previousStatus, newStatus: _newStatus, ...rest } = event;

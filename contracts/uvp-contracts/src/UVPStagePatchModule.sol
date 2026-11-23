@@ -8,7 +8,7 @@ import {IUVPSupplierRegistry} from "./interfaces/IUVPSupplierRegistry.sol";
 import {ECDSA} from "./libraries/ECDSA.sol";
 import {UVPSignatures} from "./libraries/UVPSignatures.sol";
 import {MerkleCommitment} from "./libraries/MerkleCommitment.sol";
-import {_SUPPLIER_BINDING_LEAF_DOMAIN} from "./UVPStateMachineConstants.sol";
+import {AdmissionVerdict, _SUPPLIER_BINDING_LEAF_DOMAIN} from "./UVPStateMachineConstants.sol";
 
 interface IUVPPlanMetadataModuleForStagePatch {
     function verifyStageSelectorBinding(
@@ -57,6 +57,7 @@ contract UVPStagePatchModule {
     error DockBindingFromOrderUnknown(bytes32 planId, bytes32 orderId);
     error DockBindingNotSelected(bytes32 planId, bytes32 orderId, bytes32 targetStageId);
     error DockBindingPayloadMissing(bytes32 planId, bytes32 orderId, bytes32 targetStageId);
+    error DockIdMismatch(bytes32 dockId, bytes32 docHash);
     error DockOrderPlanMismatch(bytes32 expectedPlanId, bytes32 providedPlanId);
     error DockOutputProofCountMismatch(uint256 expectedCount, uint256 providedCount);
     error DockPayloadMalformed(uint256 length);
@@ -98,7 +99,7 @@ contract UVPStagePatchModule {
     bytes32 private constant _EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _EIP712_NAME_HASH = keccak256("UVPStagePatchModule");
-    bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.5");
+    bytes32 private constant _EIP712_VERSION_HASH = keccak256("1");
     bytes32 private constant _STAGE_SUPPLIER_PATCH_TYPEHASH = keccak256(
         "UVPStagePatchModuleStageSupplierPatch(bytes32 planId,bytes32 orderId,bytes32 selectorStageId,bytes32 targetStageId,bytes32 supplierId,bytes32 previousSupplierId,uint256 patchNonce,address selector,uint256 deadline)"
     );
@@ -134,6 +135,15 @@ contract UVPStagePatchModule {
         bytes32 fromOrderId,
         bytes32 supplierId,
         uint256 emittedCount
+    );
+    event DockOutputDeferred(
+        bytes32 indexed planId,
+        bytes32 indexed orderId,
+        bytes32 indexed bindingId,
+        uint256 outputIndex,
+        bytes32 signalId,
+        uint8 verdict,
+        uint64 dueAt
     );
     event DockOutputSubmitted(
         bytes32 indexed planId,
@@ -238,7 +248,7 @@ contract UVPStagePatchModule {
             revert DockBindingNotSelected(planId, orderId, targetStageId);
         }
         IUVPDockRegistry registry = _dockRegistry();
-        (bytes32 fromPlanId,, bytes32 toSourceId,, bool dockExists) = _dockFields(dockId);
+        (bytes32 fromPlanId,, bytes32 toSourceId,,, bool dockExists) = _dockFields(dockId);
         if (!dockExists) {
             revert DockUnknown(dockId);
         }
@@ -300,7 +310,7 @@ contract UVPStagePatchModule {
         if (!selected) {
             return (false, false, bytes32(0), bytes32(0), address(0), bytes32(0), bytes32(0));
         }
-        (bytes32 dockFromPlanId,,, bytes32 dockToStageId, bool dockExists) = _dockFields(dockId);
+        (bytes32 dockFromPlanId,,, bytes32 dockToStageId,, bool dockExists) = _dockFields(dockId);
         fromPlanId = dockFromPlanId;
         if (!dockExists || dockToStageId != targetStageId) {
             return (false, false, bytes32(0), bytes32(0), address(0), bytes32(0), bytes32(0));
@@ -332,7 +342,7 @@ contract UVPStagePatchModule {
         if (supplierId == bytes32(0) || dockId == bytes32(0)) {
             return (false, false, 0, false, false);
         }
-        (bytes32 fromPlanId,, bytes32 toSourceId, bytes32 toStageId, bool dockExists) = _dockFields(dockId);
+        (bytes32 fromPlanId,, bytes32 toSourceId, bytes32 toStageId,, bool dockExists) = _dockFields(dockId);
         if (!dockExists || toStageId != targetStageId) {
             return (false, false, 0, false, false);
         }
@@ -346,8 +356,31 @@ contract UVPStagePatchModule {
         (bytes32 signalId,,, IUVPStateMachineCore.WindowInstruction[] memory window) =
             registry.getDockOutput(dockId, outputIndex);
         (aSatisfied, aDueInSeconds) = stateMachine.evaluateDockWindow(fromPlanId, fromOrderId, window);
-        bSatisfied = stateMachine.isSignalAdmissionSatisfied(planId, orderId, toSourceId, signalId);
+        (AdmissionVerdict bVerdict,) = stateMachine.signalAdmissionVerdict(planId, orderId, toSourceId, signalId);
+        bSatisfied = bVerdict == AdmissionVerdict.Ready;
         emitted = stateMachine.hasSignal(planId, orderId, toSourceId, signalId);
+    }
+
+    function dockOutputAdmissionVerdict(
+        bytes32 planId,
+        bytes32 orderId,
+        bytes32 targetStageId,
+        uint256 outputIndex
+    ) external view returns (AdmissionVerdict verdict, uint64 dueAt) {
+        (bytes32 supplierId,, bytes32 dockId) = stateMachine.stageSupplierAssignment(planId, orderId, targetStageId);
+        if (supplierId == bytes32(0) || dockId == bytes32(0)) {
+            return (AdmissionVerdict.Wait, 0);
+        }
+        (, , bytes32 toSourceId, bytes32 toStageId, , bool dockExists) = _dockFields(dockId);
+        if (!dockExists || toStageId != targetStageId) {
+            return (AdmissionVerdict.Impossible, 0);
+        }
+        IUVPDockRegistry registry = _dockRegistry();
+        if (outputIndex >= registry.dockOutputCount(dockId)) {
+            return (AdmissionVerdict.Impossible, 0);
+        }
+        (bytes32 signalId,,,) = registry.getDockOutput(dockId, outputIndex);
+        return stateMachine.signalAdmissionVerdict(planId, orderId, toSourceId, signalId);
     }
 
     function DOMAIN_SEPARATOR() public view returns (bytes32) {
@@ -614,7 +647,7 @@ contract UVPStagePatchModule {
         if (!stateMachine.stageHasDockExecutorHook(planId, selection.targetStageId)) {
             revert DockStageNotDockExecutor(planId, selection.targetStageId);
         }
-        (, bytes32 toPlanId,, bytes32 toStageId, bool exists) = _dockFields(selection.dockId);
+        (, bytes32 toPlanId,, bytes32 toStageId,, bool exists) = _dockFields(selection.dockId);
         if (!exists) {
             revert DockUnknown(selection.dockId);
         }
@@ -699,6 +732,20 @@ contract UVPStagePatchModule {
         if (stateMachine.hasSignal(context.planId, context.orderId, context.toSourceId, signalId)) {
             return false;
         }
+        (AdmissionVerdict bVerdict, uint64 bDueAt) =
+            stateMachine.signalAdmissionVerdict(context.planId, context.orderId, context.toSourceId, signalId);
+        if (bVerdict != AdmissionVerdict.Ready) {
+            emit DockOutputDeferred(
+                context.planId,
+                context.orderId,
+                context.bindingId,
+                outputIndex,
+                signalId,
+                uint8(bVerdict),
+                bDueAt
+            );
+            return false;
+        }
         IUVPStateMachineCore.FactAttribution memory attribution = IUVPStateMachineCore.FactAttribution({
             sourceId: context.toSourceId,
             signalId: signalId,
@@ -760,10 +807,14 @@ contract UVPStagePatchModule {
             bytes32 toPlanId,
             bytes32 toSourceId,
             bytes32 toStageId,
+            bytes32 docHash,
             bool exists
         )
     {
-        (fromPlanId, , toPlanId, toStageId, toSourceId, , , exists) = _dockRegistry().getDock(dockId);
+        (fromPlanId, , toPlanId, toStageId, toSourceId, docHash, , exists) = _dockRegistry().getDock(dockId);
+        if (exists && dockId != bytes32(bytes16(docHash))) {
+            revert DockIdMismatch(dockId, docHash);
+        }
     }
 
     function _planMetadata() private view returns (IUVPPlanMetadataModuleForStagePatch) {

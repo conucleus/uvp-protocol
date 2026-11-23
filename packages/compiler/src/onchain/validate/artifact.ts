@@ -306,6 +306,11 @@ export function validateOnchainHookPlanArtifact(
     issues.push(
       ...canonicalOrderIssues(admissions, admissionOrderKey, "admissions"),
     );
+    if (signalCapabilities) {
+      issues.push(
+        ...admissionCapabilityIssues(admissions, signalCapabilities),
+      );
+    }
   }
   if (supplierBindings) {
     const { records, issues: bindingShapeIssues } =
@@ -392,6 +397,73 @@ export function assertOnchainHookPlanArtifact(
   if (issues.length > 0) {
     throw new OnchainHookPlanArtifactValidationError(issues);
   }
+}
+
+function admissionCapabilityIssues(
+  admissions: readonly unknown[],
+  signalCapabilities: readonly unknown[],
+): readonly string[] {
+  const issues: string[] = [];
+  const capabilities = new Map<
+    string,
+    {
+      readonly stageId: unknown;
+      readonly targetSourceId: unknown;
+      readonly signalId: unknown;
+    }
+  >();
+  for (const capability of signalCapabilities) {
+    if (
+      isRecord(capability) &&
+      typeof capability.stageIdentifier === "string" &&
+      typeof capability.targetSignalName === "string"
+    ) {
+      capabilities.set(
+        `${capability.stageIdentifier}\u0000${capability.targetSignalName}`,
+        {
+          stageId: capability.stageId,
+          targetSourceId: capability.targetSourceId,
+          signalId: capability.signalId,
+        },
+      );
+    }
+  }
+  for (const [index, admission] of admissions.entries()) {
+    if (
+      !isRecord(admission) ||
+      typeof admission.stageIdentifier !== "string" ||
+      typeof admission.signalName !== "string"
+    ) {
+      continue;
+    }
+    const prefix = `admissions[${index}]`;
+    const capability = capabilities.get(
+      `${admission.stageIdentifier}\u0000${admission.signalName}`,
+    );
+    if (capability === undefined) {
+      issues.push(
+        `${prefix} ${admission.stageIdentifier}::${admission.signalName} has no current-order signal capability for the declared emission; `
+          + "the admission face addresses the emitted fact key (sourceId, signalId), which only the declaring stage's capability carries",
+      );
+      continue;
+    }
+    if (admission.stageId !== capability.stageId) {
+      issues.push(
+        `${prefix}.stageId must equal the capability stageId of the same declared emission`,
+      );
+    }
+    if (admission.sourceId !== capability.targetSourceId) {
+      issues.push(
+        `${prefix}.sourceId must equal the capability targetSourceId of the same declared emission`,
+      );
+    }
+    if (admission.signalId !== capability.signalId) {
+      issues.push(
+        `${prefix}.signalId must equal the capability signalId of the same declared emission`,
+      );
+    }
+  }
+  return issues;
 }
 
 function capabilitiesRootCommitmentIssues(

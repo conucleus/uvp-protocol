@@ -16,7 +16,7 @@ import {
   isHexHash,
   isRecord,
 } from "../shape.js";
-import { MAX_ONCHAIN_HOOK_DELAY_SECONDS } from "./limits.js";
+import { MAX_ONCHAIN_HOOK_DELAY_SECONDS, MAX_ONCHAIN_INSTRUCTION_DEPTH } from "./limits.js";
 import type {
   OnchainCompiledHook,
   OnchainHookDependency,
@@ -332,6 +332,17 @@ function validateOnchainCompiledHooks(
   return issues;
 }
 
+function instructionDepthIssue(
+  prefix: string,
+  depth: number,
+  contractValidator: "_validateHook" | "_validateAdmission",
+): string | undefined {
+  if (depth <= MAX_ONCHAIN_INSTRUCTION_DEPTH) {
+    return undefined;
+  }
+  return `${prefix} instruction nesting depth ${depth} exceeds MAX_INSTRUCTION_DEPTH ${MAX_ONCHAIN_INSTRUCTION_DEPTH} (contract ${contractValidator} reverts InvalidInstruction)`;
+}
+
 function validateInstructions(
   instructions: readonly unknown[],
   path: string,
@@ -342,8 +353,10 @@ function validateInstructions(
   const bareSignal: boolean[] = [];
   const hasPosAnchor: boolean[] = [];
   const delayResult: boolean[] = [];
+  const delayInside: boolean[] = [];
   const vetoTerm: boolean[] = [];
   const vetoInside: boolean[] = [];
+  const instructionDepth: number[] = [];
 
   for (const [index, instruction] of instructions.entries()) {
     if (!isRecord(instruction)) {
@@ -395,8 +408,10 @@ function validateInstructions(
         bareSignal[stackDepth] = true;
         hasPosAnchor[stackDepth] = true;
         delayResult[stackDepth] = false;
+        delayInside[stackDepth] = false;
         vetoTerm[stackDepth] = false;
         vetoInside[stackDepth] = false;
+        instructionDepth[stackDepth] = 0;
         stackDepth += 1;
         break;
       case "NOT": {
@@ -416,6 +431,15 @@ function validateInstructions(
         bareSignal[stackDepth - 1] = false;
         delayResult[stackDepth - 1] = false;
         hasPosAnchor[stackDepth - 1] = false;
+        instructionDepth[stackDepth - 1] = (instructionDepth[stackDepth - 1] ?? 0) + 1;
+        const depthIssue = instructionDepthIssue(
+          prefix,
+          instructionDepth[stackDepth - 1]!,
+          "_validateHook",
+        );
+        if (depthIssue !== undefined) {
+          issues.push(depthIssue);
+        }
         break;
       }
       case "AND":
@@ -432,8 +456,9 @@ function validateInstructions(
           issues.push(`${prefix}.op requires ${arity} stack items`);
           break;
         }
+        const firstOperand = stackDepth - arity;
         if (instruction.op === "OR") {
-          for (let j = stackDepth - arity; j < stackDepth; j++) {
+          for (let j = firstOperand; j < stackDepth; j++) {
             if (vetoTerm[j]) {
               issues.push(
                 `${prefix}.op cannot take a decaying veto operand; `
@@ -447,20 +472,36 @@ function validateInstructions(
         const anchored =
           instruction.op === "AND"
             ? hasPosAnchor
-                .slice(stackDepth - arity, stackDepth)
+                .slice(firstOperand, stackDepth)
                 .some(Boolean)
             : hasPosAnchor
-                .slice(stackDepth - arity, stackDepth)
+                .slice(firstOperand, stackDepth)
                 .every(Boolean);
         const vetoInsideResult = vetoInside
-          .slice(stackDepth - arity, stackDepth)
+          .slice(firstOperand, stackDepth)
           .some(Boolean);
-        stackDepth = stackDepth - arity + 1;
+        const delayInsideResult = delayInside
+          .slice(firstOperand, stackDepth)
+          .some(Boolean);
+        const operandDepth = Math.max(
+          ...instructionDepth.slice(firstOperand, stackDepth),
+        );
+        stackDepth = firstOperand + 1;
         bareSignal[stackDepth - 1] = false;
         delayResult[stackDepth - 1] = false;
+        delayInside[stackDepth - 1] = delayInsideResult;
         vetoTerm[stackDepth - 1] = false;
         vetoInside[stackDepth - 1] = vetoInsideResult;
         hasPosAnchor[stackDepth - 1] = anchored;
+        instructionDepth[stackDepth - 1] = operandDepth + 1;
+        const depthIssue = instructionDepthIssue(
+          prefix,
+          instructionDepth[stackDepth - 1]!,
+          "_validateHook",
+        );
+        if (depthIssue !== undefined) {
+          issues.push(depthIssue);
+        }
         break;
       }
       case "DELAY":
@@ -493,17 +534,34 @@ function validateInstructions(
               + "(contract _validateHook reverts InvalidInstruction for delay over purely-negative operands)",
           );
         }
+        if (delayInside[stackDepth - 1]) {
+          issues.push(
+            `${prefix}.op DELAY cannot consume an operand containing another DELAY `
+              + "(contract _validateHook reverts InvalidInstruction for nested delay operands; "
+              + "collapse the chain into a single duration)",
+          );
+        }
         if (vetoTerm[stackDepth - 1] || vetoInside[stackDepth - 1]) {
           issues.push(
             `${prefix}.op DELAY cannot consume an operand containing a decaying veto `
-              + "(contract _validateHook reverts InvalidInstruction; a decaying veto's readiness expires "
-              + "while delay maturity is permanent, so the outer delay would anchor on an expired veto)",
+            + "(contract _validateHook reverts InvalidInstruction; a decaying veto's readiness expires "
+            + "while delay maturity is permanent, so the outer delay would anchor on an expired veto)",
           );
         }
         bareSignal[stackDepth - 1] = false;
         delayResult[stackDepth - 1] = true;
+        delayInside[stackDepth - 1] = true;
         vetoTerm[stackDepth - 1] = false;
         vetoInside[stackDepth - 1] = false;
+        instructionDepth[stackDepth - 1] = (instructionDepth[stackDepth - 1] ?? 0) + 1;
+        const depthIssue = instructionDepthIssue(
+          prefix,
+          instructionDepth[stackDepth - 1]!,
+          "_validateHook",
+        );
+        if (depthIssue !== undefined) {
+          issues.push(depthIssue);
+        }
         break;
       default:
         issues.push(`${prefix}.op must be one of SIGNAL, NOT, AND, OR, DELAY`);
@@ -538,6 +596,7 @@ function validateAdmissionInstructions(
   const delayResult: boolean[] = [];
   const hasPosAnchor: boolean[] = [];
   const delayInside: boolean[] = [];
+  const instructionDepth: number[] = [];
 
   for (const [index, instruction] of instructions.entries()) {
     if (!isRecord(instruction)) {
@@ -590,6 +649,7 @@ function validateAdmissionInstructions(
         delayResult[stackDepth] = false;
         hasPosAnchor[stackDepth] = true;
         delayInside[stackDepth] = false;
+        instructionDepth[stackDepth] = 0;
         stackDepth += 1;
         break;
       case "NOT": {
@@ -606,6 +666,15 @@ function validateAdmissionInstructions(
         bareSignal[stackDepth - 1] = false;
         delayResult[stackDepth - 1] = false;
         hasPosAnchor[stackDepth - 1] = false;
+        instructionDepth[stackDepth - 1] = (instructionDepth[stackDepth - 1] ?? 0) + 1;
+        const depthIssue = instructionDepthIssue(
+          prefix,
+          instructionDepth[stackDepth - 1]!,
+          "_validateAdmission",
+        );
+        if (depthIssue !== undefined) {
+          issues.push(depthIssue);
+        }
         break;
       }
       case "AND":
@@ -622,17 +691,30 @@ function validateAdmissionInstructions(
           issues.push(`${prefix}.op requires ${arity} stack items`);
           break;
         }
+        const firstOperand = stackDepth - arity;
         const delayInsideResult = delayInside
-          .slice(stackDepth - arity, stackDepth)
+          .slice(firstOperand, stackDepth)
           .some(Boolean);
         const anchored = hasPosAnchor
-          .slice(stackDepth - arity, stackDepth)
+          .slice(firstOperand, stackDepth)
           .some(Boolean);
-        stackDepth = stackDepth - arity + 1;
+        const operandDepth = Math.max(
+          ...instructionDepth.slice(firstOperand, stackDepth),
+        );
+        stackDepth = firstOperand + 1;
         bareSignal[stackDepth - 1] = false;
         delayResult[stackDepth - 1] = false;
         delayInside[stackDepth - 1] = delayInsideResult;
         hasPosAnchor[stackDepth - 1] = anchored;
+        instructionDepth[stackDepth - 1] = operandDepth + 1;
+        const depthIssue = instructionDepthIssue(
+          prefix,
+          instructionDepth[stackDepth - 1]!,
+          "_validateAdmission",
+        );
+        if (depthIssue !== undefined) {
+          issues.push(depthIssue);
+        }
         break;
       }
       case "DELAY":
@@ -669,6 +751,15 @@ function validateAdmissionInstructions(
         bareSignal[stackDepth - 1] = false;
         delayResult[stackDepth - 1] = true;
         delayInside[stackDepth - 1] = true;
+        instructionDepth[stackDepth - 1] = (instructionDepth[stackDepth - 1] ?? 0) + 1;
+        const depthIssue = instructionDepthIssue(
+          prefix,
+          instructionDepth[stackDepth - 1]!,
+          "_validateAdmission",
+        );
+        if (depthIssue !== undefined) {
+          issues.push(depthIssue);
+        }
         break;
       default:
         issues.push(`${prefix}.op must be one of SIGNAL, NOT, AND, OR, DELAY`);

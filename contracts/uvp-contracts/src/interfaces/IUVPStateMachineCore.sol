@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {AdmissionVerdict} from "../UVPStateMachineConstants.sol";
+
 interface IUVPStateMachineCore {
     struct FactAttribution {
         bytes32 sourceId;
@@ -104,6 +106,11 @@ interface IUVPStateMachineCore {
         view
         returns (bool);
 
+    function signalAdmissionVerdict(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId)
+        external
+        view
+        returns (AdmissionVerdict verdict, uint64 dueAt);
+
     function planHookFlags(bytes32 planId, bytes32 hookId) external view returns (uint8);
 
     function getHookStatus(bytes32 planId, bytes32 orderId, bytes32 hookId)
@@ -142,7 +149,7 @@ interface IUVPStateMachineCore {
         bytes32 payloadHash,
         bytes32 idempotencyKey,
         address submitter
-    ) external;
+    ) external returns (bool inserted);
 
     function getSignal(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId)
         external

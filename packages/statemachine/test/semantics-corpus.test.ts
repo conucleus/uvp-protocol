@@ -105,7 +105,7 @@ test("chain replay follows shared hook semantic corpus", async () => {
           error instanceof ChainReplayMismatchError,
           `${item.name} must surface mismatches as ChainReplayMismatchError`
         );
-        const mismatches = error.mismatches as unknown as readonly Record<string, unknown>[];
+        const mismatches = error.mismatches;
         assert.equal(mismatches.length, item.expect.mismatchCount, item.name);
         const details = item.expect.mismatchDetails ?? [];
         assert.equal(mismatches.length, details.length, `${item.name} mismatch set size`);

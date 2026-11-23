@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStagePatchModule",
-  "abiVersion": "0.10",
+  "abiVersion": "0.1",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStagePatchModule.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStagePatchModule.sol/UVPStagePatchModule.json",
   "compiler": {
@@ -9,15 +9,19 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xc49c6d8c084a2f85f57463de4297b231a958f9b466bb2a8b86a0ed22e1fe94d4",
-    "bytecodeHash": "0x4e9a7df14759c02a7c6ec186802742aaf18c81f66a822d2234e1e86a45e7b320",
-    "deployedBytecodeHash": "0x0159227c8286c3bbc8407ab231e8dc4be4b8be1631c2efc165a6407e34ebb667",
-    "artifactHash": "0x9a602dd36c8983c865788574838f992b7e512c25990dbb45981c9439780bb90e"
+    "abiHash": "0x8fe29edd32533135fe86cb28fca63f1d844274b22548cb74e44e6d0f5dd6b83a",
+    "bytecodeHash": "0xc7a484ce5935d0217509c59df256b3f5125dbc110873f2d8cee074de0ca10490",
+    "deployedBytecodeHash": "0xc5fafd1fe9bd99751f427afde2af554bb7a040a133561649785e16f3a92ccd3e",
+    "artifactHash": "0x7b36ec57529c3553c5bbb8968a2f3e575e14643ec521a872bb1128f3a7b09c0e"
   },
   "events": {
     "DockBindingPoked": {
       "signature": "DockBindingPoked(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256)",
       "topic": "0x533b8d18f42a6710b091d838d81968d51fb0a935a2a1ef4d6b27cafaa2ee2b9f"
+    },
+    "DockOutputDeferred": {
+      "signature": "DockOutputDeferred(bytes32,bytes32,bytes32,uint256,bytes32,uint8,uint64)",
+      "topic": "0x31b7b7a30bf8f1281932318b5cb4be3a96f1d8a8745b3a566c14294ebc39c2b2"
     },
     "DockOutputSubmitted": {
       "signature": "DockOutputSubmitted(bytes32,bytes32,bytes32,bytes32,uint256,bytes32,bytes32)",
@@ -52,6 +56,10 @@
     "applyStageSupplierPatchFor": {
       "signature": "applyStageSupplierPatchFor(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,uint256),address,uint256,bytes,bytes,(bytes32,bytes32[]),bytes32[])",
       "selector": "0x4ab70719"
+    },
+    "dockOutputAdmissionVerdict": {
+      "signature": "dockOutputAdmissionVerdict(bytes32,bytes32,bytes32,uint256)",
+      "selector": "0xc62f902d"
     },
     "dockOutputWindow": {
       "signature": "dockOutputWindow(bytes32,bytes32,bytes32,bytes32,uint256)",

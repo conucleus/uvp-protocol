@@ -11,15 +11,19 @@ import {
   onchainStageId,
   parseZhixuDefinition,
   toSolidityRegisterPlanArgs,
+  validateHookPlanArtifact,
   validateOnchainHookPlanArtifact,
   ZhixuLoadError,
   type CompiledHookPlanAdmission,
+  type HookPlanArtifact,
   type OnchainCompiledAdmission,
   type OnchainHookInstruction,
   type OnchainHookPlanArtifact,
   type ZhixuDefinition,
 } from "../src/index.js";
+import { hookPlanHashOf } from "../src/hook-plan/assemble.js";
 import { compileZhixuOnchainHookPlan } from "../src/onchain/compile.js";
+import { hashOnchainPlanPayload } from "../src/onchain/hash/plan.js";
 import {
   commitmentGoldenCase,
   commitmentRegisterHooksArgs,
@@ -97,6 +101,70 @@ test("declared validWhen compiles into hook_plan admissions; unconditional entri
       ["negative", "slot_a", "work.cmp_err"],
       ["positive", "slot_a", "gate.seed"],
     ],
+  );
+});
+
+test("hook-plan source binding rejects a stripped validWhen admission", () => {
+  const plan = compileZhixuHookPlan(admissionZhixu("slot_a::gate.seed"));
+  assert.equal(plan.admissions.length, 1);
+
+  const stripped = { ...plan, admissions: [] };
+  const resigned = {
+    ...stripped,
+    planHash: hookPlanHashOf(stripped as HookPlanArtifact),
+  };
+  assert.deepEqual(validateHookPlanArtifact(resigned), [
+    "admissions must include work::work.cmp from the source definition's sendSignals[].validWhen; "
+      + "a stripped admission would bypass the emission gate",
+  ]);
+});
+
+test("hook-plan source binding rejects an admission without a source validWhen declaration", () => {
+  const plan = compileZhixuHookPlan(admissionZhixu("slot_a::gate.seed"));
+  const forgedAdmission = {
+    ...(plan.admissions[0] as CompiledHookPlanAdmission),
+    stageIdentifier: "gate",
+    signalName: "gate.seed",
+  };
+  const forged = {
+    ...plan,
+    admissions: [...plan.admissions, forgedAdmission],
+  };
+  const resigned = {
+    ...forged,
+    planHash: hookPlanHashOf(forged as HookPlanArtifact),
+  };
+  assert.ok(
+    validateHookPlanArtifact(resigned).includes(
+      "admissions[1] gate::gate.seed is not declared with validWhen by the source definition; "
+        + "a forged admission would gate an emission the source never declared",
+    ),
+  );
+});
+
+test("on-chain artifact boundary rejects an admission without a matching signal capability", () => {
+  const onchain = compileZhixuOnchainHookPlan(admissionZhixu("slot_a::gate.seed"));
+  const realAdmission = firstAdmission(onchain.admissions);
+  const signalName = "work.unknown";
+  const signalId = onchainSignalId(signalName);
+  const sourceId = onchainSourceId("slot_a");
+  const forgedAdmission: OnchainCompiledAdmission = {
+    ...realAdmission,
+    signalName,
+    signalId,
+    admissionId: onchainSignalKey(sourceId, signalId),
+  };
+  const { planHash: _staleHash, ...payload } = onchain;
+  const forged = { ...payload, admissions: [forgedAdmission] };
+  const resigned = {
+    ...forged,
+    planHash: hashOnchainPlanPayload(forged),
+  };
+  assert.ok(
+    validateOnchainHookPlanArtifact(resigned).includes(
+      `admissions[0] work::${signalName} has no current-order signal capability for the declared emission; `
+        + "the admission face addresses the emitted fact key (sourceId, signalId), which only the declaring stage's capability carries",
+    ),
   );
 });
 
@@ -199,6 +267,23 @@ test("filter-profile mirror rejects anchorless delay operands (UB-1)", () => {
   assert.match(
     issues.join("; "),
     /DELAY requires an operand with a positive signal anchor/,
+  );
+});
+
+test("filter-profile mirror caps instruction nesting at MAX_INSTRUCTION_DEPTH (120)", () => {
+  const atom = seedInstruction("gate.seed");
+  const issues = admissionIssuesOf((admission) => ({
+    ...admission,
+    instructions: [
+      ...Array.from({ length: 122 }, () => atom),
+      ...Array.from({ length: 121 }, () => ({ op: "AND" as const, arity: 2 })),
+    ],
+  }));
+  assert.ok(
+    issues.some((issue) =>
+      /instruction nesting depth 121 exceeds MAX_INSTRUCTION_DEPTH 120 \(contract _validateAdmission reverts InvalidInstruction\)/.test(issue),
+    ),
+    issues.join("; "),
   );
 });
 

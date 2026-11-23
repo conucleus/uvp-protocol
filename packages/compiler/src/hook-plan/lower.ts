@@ -22,7 +22,7 @@ import {
 /**
  * Chain hook_plan shell 总装：analyze 只给共享校验与 hook 解析结果，本模块按
  * stage.triggers 的每个信号合成一条 order-trigger hook，并补 emit-ready/route/
- * dock/dynamic executor 装饰与 dependencyIndex/supplierRoutes，输出 hookPlan.v8
+ * dock/dynamic executor 装饰与 dependencyIndex/supplierRoutes，输出 hookPlan.v1
  * shell 形态。
  */
 

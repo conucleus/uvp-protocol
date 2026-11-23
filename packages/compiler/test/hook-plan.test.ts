@@ -9,6 +9,7 @@ import {
   validateHookPlanArtifact,
 } from "../src/hook-plan.js";
 import { hookPlanHashOf, planIdOf } from "../src/hook-plan/assemble.js";
+import { definitionUid } from "../src/identity.js";
 import type {
   HookPlanArtifact,
   ZhixuDefinition,
@@ -106,7 +107,7 @@ function topologyZhixu(stages: readonly ZhixuStage[]): ZhixuDefinition {
 test("compiles internal HookPlan IR", () => {
   const plan = compileZhixuHookPlan(baseZhixu);
 
-  assert.equal(plan.schemaVersion, "uvp.hookPlan.v8");
+  assert.equal(plan.schemaVersion, "uvp.hookPlan.v1");
   assert.match(plan.zhixuId, /^zx-[0-9a-f]{32}$/);
   assert.deepEqual(plan.platform, { type: "cloud" });
   assert.match(plan.planId, /^0x[0-9a-f]{64}$/);
@@ -177,7 +178,7 @@ test("preserves opaque platform metadata for future target schemas at the intern
   assert.deepEqual(validateHookPlanArtifact(plan), []);
 });
 
-test("planId preimage drops empty platform params across compile/validate calibers", () => {
+test("definitionUid is track-agnostic while planId drops empty platform params", () => {
   const withoutParams = compileZhixuHookPlan(baseZhixu);
   const withEmptyParams = compileZhixuHookPlan({
     ...baseZhixu,
@@ -187,7 +188,8 @@ test("planId preimage drops empty platform params across compile/validate calibe
     },
   });
   assert.deepEqual(withEmptyParams.platform, withoutParams.platform);
-  assert.notEqual(withEmptyParams.zhixuId, withoutParams.zhixuId);
+  assert.equal(withEmptyParams.zhixuId, withoutParams.zhixuId);
+  assert.equal(withEmptyParams.planId, withoutParams.planId);
   assert.equal(
     planIdOf(withEmptyParams.zhixuId, withEmptyParams.zhixuName, {
       ...withEmptyParams.platform,
@@ -203,12 +205,44 @@ test("planId preimage drops empty platform params across compile/validate calibe
   assert.deepEqual(validateHookPlanArtifact(resign(carryingEmptyParams)), []);
 });
 
+test("definitionUid derives from track-neutral logic, not display or deployment selectors", () => {
+  const baseUid = definitionUid(baseZhixu);
+  const retargeted = {
+    ...baseZhixu,
+    metadata: {
+      ...baseZhixu.metadata,
+      name: "renamed_zhixu",
+      labels: { domain: "another-car" },
+      annotations: { origin: "another-console" },
+    },
+    spec: {
+      ...baseZhixu.spec,
+      platform: { type: "blockchain", provider: "eth", network: "base" },
+      nucleation: { id: "another-org" },
+    },
+  };
+  assert.equal(definitionUid(retargeted), baseUid);
+
+  const changedLogic = {
+    ...baseZhixu,
+    spec: {
+      ...baseZhixu.spec,
+      stages: baseZhixu.spec.stages.map((stage, index) =>
+        index === 0
+          ? { ...stage, sendSignals: [...stage.sendSignals!, { name: "extra" }] }
+          : stage,
+      ),
+    },
+  };
+  assert.notEqual(definitionUid(changedLogic), baseUid);
+});
+
 test("validates HookPlan IR artifacts at the internal boundary", () => {
   const plan = compileZhixuHookPlan(baseZhixu);
 
   assert.deepEqual(
     validateHookPlanArtifact(resign({ ...plan, schemaVersion: "wrong" })),
-    ["schemaVersion must be uvp.hookPlan.v8"]
+    ["schemaVersion must be uvp.hookPlan.v1"]
   );
   assert.deepEqual(
     validateHookPlanArtifact(
@@ -255,6 +289,61 @@ test("rejects artifacts tampering compiledHooks/planId/source against the carrie
   assert.deepEqual(validateHookPlanArtifact({ ...plan, source: undefined }), [
     "source is required (the canonical annotation-stripped definition snapshot in the planHash preimage)",
   ]);
+});
+
+test("binds the carried source to zhixuId, zhixuName, capabilities, and admissions", () => {
+  const plan = compileZhixuHookPlan(baseZhixu);
+
+  const forgedId = {
+    ...plan,
+    zhixuId: `zx-${"00".repeat(16)}`,
+    planId: planIdOf(`zx-${"00".repeat(16)}`, plan.zhixuName, plan.platform),
+  };
+  assert.deepEqual(validateHookPlanArtifact(resign(forgedId)), [
+    "zhixuId must equal definitionUid(source); a forged or swapped id would bind the plan to another definition's identity",
+  ]);
+
+  const forgedName = {
+    ...plan,
+    zhixuName: "renamed_zhixu",
+    planId: planIdOf(plan.zhixuId, "renamed_zhixu", plan.platform),
+  };
+  assert.deepEqual(validateHookPlanArtifact(resign(forgedName)), [
+    "zhixuName must equal source.metadata.name; the carried source snapshot is the only owner of the plan's display identity",
+  ]);
+
+  const forgedPlatform = {
+    ...plan,
+    platform: { ...plan.platform, type: "blockchain" },
+    planId: planIdOf(plan.zhixuId, plan.zhixuName, {
+      ...plan.platform,
+      type: "blockchain",
+    }),
+  };
+  assert.deepEqual(validateHookPlanArtifact(resign(forgedPlatform)), [
+    "platform must match the source definition's spec.platform (empty params normalize away)",
+  ]);
+
+  const forgedCapability = {
+    ...plan,
+    signalCapabilities: [
+      ...plan.signalCapabilities,
+      {
+        stageIdentifier: "main",
+        source: "buyer",
+        declaredSignal: "seed",
+        targetSource: "buyer",
+        targetSignalName: "main.seed",
+        targetOrderRelation: "current" as const,
+      },
+    ],
+  };
+  assert.ok(
+    validateHookPlanArtifact(resign(forgedCapability)).includes(
+      `signalCapabilities[${plan.signalCapabilities.length}] main::main.seed is not a sendSignal declared by the source definition; `
+        + "a capability can only be declared by the stage that owns the signal",
+    ),
+  );
 });
 
 test("rejects metadata stage references outside the hooks stage set (stage existence mirror)", () => {

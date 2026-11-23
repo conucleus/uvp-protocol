@@ -78,7 +78,51 @@ const SUPPLIER_TYPES: readonly string[] = ["individual", "organization", "dock"]
 
 const PLAN_SUPPLIER_TYPES: readonly string[] = ["individual", "organization"];
 
+const SIGNAL_IDENTIFIER_SEGMENT = /^[A-Za-z][A-Za-z0-9_-]*$/;
+
 export { SUPPLIER_TYPES, PLAN_SUPPLIER_TYPES };
+
+function isSignalDeclaration(value: string): boolean {
+  const segments = value.split(".");
+  return (
+    (segments.length === 1 || segments.length === 2) &&
+    segments.every((segment) => SIGNAL_IDENTIFIER_SEGMENT.test(segment))
+  );
+}
+
+function capabilityStageOwnershipIssues(
+  prefix: string,
+  stageIdentifier: string,
+  declaredSignal: string,
+  targetSignalName: string,
+): readonly string[] {
+  if (!isSignalDeclaration(declaredSignal)) {
+    return [
+      `${prefix}.declaredSignal ${JSON.stringify(declaredSignal)} must be a bare signal name or the canonical stage.signal form with identifier-grammar segments`,
+    ];
+  }
+  let expectedTargetSignalName: string;
+  if (declaredSignal.includes(".")) {
+    if (!declaredSignal.startsWith(`${stageIdentifier}.`)) {
+      return [
+        `${prefix}.declaredSignal ${JSON.stringify(declaredSignal)} does not address the declaring stage ${JSON.stringify(stageIdentifier)}; `
+          + "a capability may only declare its own stage's sendSignals, never another stage's signal "
+          + "(uvp-core build_signal_capabilities rejects a canonical self-reference whose stage prefix differs)",
+      ];
+    }
+    expectedTargetSignalName = declaredSignal;
+  } else {
+    expectedTargetSignalName = `${stageIdentifier}.${declaredSignal}`;
+  }
+  if (targetSignalName !== expectedTargetSignalName) {
+    return [
+      `${prefix}.targetSignalName must be ${JSON.stringify(expectedTargetSignalName)} for declaredSignal ${JSON.stringify(declaredSignal)}; `
+        + "bare names expand to <stageIdentifier>.<name> and canonical names are self-references, "
+        + "so a capability cannot point at another stage's emitted fact",
+    ];
+  }
+  return [];
+}
 
 function duplicateCurrentOrderFactKeyIssues(
   capabilities: readonly {
@@ -434,6 +478,30 @@ function validateOnchainSignalCapabilities(
       issues,
     );
 
+    if (
+      typeof capability.stageIdentifier === "string" &&
+      typeof capability.declaredSignal === "string" &&
+      typeof capability.targetSignalName === "string"
+    ) {
+      issues.push(
+        ...capabilityStageOwnershipIssues(
+          prefix,
+          capability.stageIdentifier,
+          capability.declaredSignal,
+          capability.targetSignalName,
+        ),
+      );
+    }
+    if (
+      typeof capability.source === "string" &&
+      typeof capability.targetSource === "string" &&
+      capability.source !== capability.targetSource
+    ) {
+      issues.push(
+        `${prefix}.targetSource must equal source ${JSON.stringify(capability.source)}; `
+          + "a capability targets the declaring stage's own source",
+      );
+    }
     if (
       typeof capability.stageIdentifier === "string" &&
       typeof capability.stageId === "string" &&

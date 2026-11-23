@@ -1443,6 +1443,45 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
+    "name": "signalAdmissionVerdict",
+    "inputs": [
+      {
+        "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "sourceId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "signalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "verdict",
+        "type": "uint8",
+        "internalType": "enum AdmissionVerdict"
+      },
+      {
+        "name": "dueAt",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "sourceSignalCount",
     "inputs": [
       {
@@ -1669,7 +1708,13 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "address"
       }
     ],
-    "outputs": [],
+    "outputs": [
+      {
+        "name": "inserted",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
     "stateMutability": "nonpayable"
   },
   {
@@ -2648,6 +2693,17 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
     "inputs": [
       {
         "name": "stageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidAdmissionHook",
+    "inputs": [
+      {
+        "name": "hookId",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -4399,6 +4455,22 @@ export const DOCK_REGISTRY_ABI = [
     "inputs": [
       {
         "name": "planId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DockIdMismatch",
+    "inputs": [
+      {
+        "name": "dkid",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "docHash",
         "type": "bytes32",
         "internalType": "bytes32"
       }

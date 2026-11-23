@@ -35,7 +35,7 @@ contract UVPDerivedSignalModule {
     bytes32 private constant _EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant _EIP712_NAME_HASH = keccak256("UVPDerivedSignalModule");
-    bytes32 private constant _EIP712_VERSION_HASH = keccak256("0.7");
+    bytes32 private constant _EIP712_VERSION_HASH = keccak256("1");
     bytes32 private constant _DERIVED_SIGNAL_TYPEHASH = keccak256(
         "UVPDerivedSignalModuleSignal(bytes32 fromPlanId,bytes32 fromOrderId,bytes32 fromStageId,bytes32 targetPlanId,bytes32 targetOrderId,bytes32 targetSourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,address submitter,uint256 deadline)"
     );
@@ -143,18 +143,22 @@ contract UVPDerivedSignalModule {
     }
 
     function _executeDerivedSignal(DerivedSignalRequest calldata request, address submitter, uint8 relation) private {
-        stateMachine.submitDerivedSignalFromModule(
-            request.targetPlanId,
-            request.targetOrderId,
-            request.fromPlanId,
-            request.fromOrderId,
-            request.fromStageId,
-            request.targetSourceId,
-            request.signalId,
-            request.payloadHash,
-            request.idempotencyKey,
-            submitter
-        );
+        if (
+            !stateMachine.submitDerivedSignalFromModule(
+                request.targetPlanId,
+                request.targetOrderId,
+                request.fromPlanId,
+                request.fromOrderId,
+                request.fromStageId,
+                request.targetSourceId,
+                request.signalId,
+                request.payloadHash,
+                request.idempotencyKey,
+                submitter
+            )
+        ) {
+            return;
+        }
         emit DerivedSignalSubmitted(
             request.fromOrderId,
             request.targetOrderId,

@@ -5,8 +5,12 @@ import {IUVPSupplierRegistry} from "./interfaces/IUVPSupplierRegistry.sol";
 
 // Supplier identity registry: permissionless self-registration mints the SID
 // and binds the caller's account permanently; only registrar-gated status
-// changes follow. UUID minting and its encoding live here as the single source;
-// off-chain layers only format the low 16 bytes as a UUID string.
+// changes follow. This registry is the sole on-chain execution identity — the
+// state machine resolves every stage's submitting account here
+// (`accountOf` + `active` status), so no other registry participates in
+// execution authorization. UUID minting and its encoding live here as the
+// single source; off-chain layers only format the low 16 bytes as a UUID
+// string.
 contract UVPSupplierRegistry is IUVPSupplierRegistry {
     error AccountAlreadyRegistered(address account, bytes32 supplierId);
     error CallerNotAccount(address caller, address account);

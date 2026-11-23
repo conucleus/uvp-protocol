@@ -9,6 +9,7 @@ import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {UVPSupplierRegistry} from "../src/UVPSupplierRegistry.sol";
+import {AdmissionVerdict} from "../src/UVPStateMachineConstants.sol";
 import {MerkleCommitment} from "../src/libraries/MerkleCommitment.sol";
 import {UVPSignatures} from "../src/libraries/UVPSignatures.sol";
 import {emptyFilePatch} from "./FilePatchTestHelpers.sol";
@@ -113,6 +114,7 @@ contract UVPAdmissionTest {
     bytes32 private constant SIGNAL_TRIGGER = bytes32(uint256(0x4002));
     bytes32 private constant SIGNAL_ANCHOR = bytes32(uint256(0x4008));
     bytes32 private constant SIGNAL_CANCEL = bytes32(uint256(0x4009));
+    bytes32 private constant SIGNAL_GUARD = bytes32(uint256(0x400a));
     bytes32 private constant HOOK_ORDER_START = bytes32(uint256(0x6000));
     bytes32 private constant HOOK_INIT = bytes32(uint256(0x6001));
     bytes32 private constant HOOK_NAME_TRIGGER = bytes32(uint256(0x7001));
@@ -124,7 +126,7 @@ contract UVPAdmissionTest {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
-    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("0.20");
+    bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("1");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
         "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,uint256 deadline)"
     );
@@ -146,6 +148,103 @@ contract UVPAdmissionTest {
 
     bytes32 private PLAN_ID;
     bytes32 private ORDER_ID;
+
+    function testOrderTriggerHookRequiresSingleSignalInstruction() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.Instruction[] memory instrs = new UVPStateMachine.Instruction[](3);
+        instrs[0] = _signal(SIGNAL_ORDER_START);
+        instrs[1] = _signal(SIGNAL_ANCHOR);
+        instrs[2] = _and(2);
+        bytes32 hookId = keccak256("multi.instruction.trigger");
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](1);
+        hooks[0] = UVPStateMachine.CompactHook({
+            hookId: hookId,
+            stageId: STAGE_INIT,
+            hookName: HOOK_NAME_ORDER_START,
+            flags: FLAG_ORDER_TRIGGER_MINT | FLAG_EMIT_READY,
+            instructions: instrs,
+            dependencyKeys: _declaredKeys(instrs)
+        });
+        _commitOnly(machine, hooks, abi.encodeWithSelector(UVPStateMachine.InvalidTriggerHook.selector, hookId));
+    }
+
+    function testAdmissionRejectsArbitraryHookId() public {
+        UVPStateMachine machine = _newMachine();
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](1);
+        instructions[0] = _signal(SIGNAL_ANCHOR);
+        UVPStateMachine.CompactHook[] memory hooks = _withOrderStart(_admissionOnly(instructions));
+        hooks[1].hookId = keccak256("arbitrary.admission.key");
+        _commitOnly(
+            machine,
+            hooks,
+            abi.encodeWithSelector(UVPStateMachine.InvalidAdmissionHook.selector, hooks[1].hookId)
+        );
+    }
+
+    function testAdmissionKeyMayUseDeclaredSourceDistinctFromStage() public {
+        UVPStateMachine machine = _newMachine();
+        bytes32 materialStage = keccak256("admission.material.stage");
+        UVPStateMachine.Instruction[] memory birthInstrs = new UVPStateMachine.Instruction[](1);
+        birthInstrs[0] = _signal(SIGNAL_ORDER_START);
+        UVPStateMachine.Instruction[] memory admissionInstrs = new UVPStateMachine.Instruction[](1);
+        admissionInstrs[0] = _signal(SIGNAL_ANCHOR);
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](2);
+        hooks[0] = UVPStateMachine.CompactHook({
+            hookId: HOOK_ORDER_START,
+            stageId: materialStage,
+            hookName: HOOK_NAME_ORDER_START,
+            flags: FLAG_ORDER_TRIGGER_MINT | FLAG_EMIT_READY,
+            instructions: birthInstrs,
+            dependencyKeys: _declaredKeys(birthInstrs)
+        });
+        hooks[1] = UVPStateMachine.CompactHook({
+            hookId: keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_TRIGGER)),
+            stageId: materialStage,
+            hookName: SIGNAL_TRIGGER,
+            flags: FLAG_ADMISSION,
+            instructions: admissionInstrs,
+            dependencyKeys: _declaredKeys(admissionInstrs)
+        });
+        bytes32 planId = _registerPlan(machine, hooks);
+        require(machine.planExists(planId), "source-distinct admission key rejected");
+    }
+
+    function testAdmissionVerdictSeparatesWaitImpossibleReady() public {
+        UVPStateMachine machine = _newMachine();
+
+        UVPStateMachine.Instruction[] memory waitInstrs = new UVPStateMachine.Instruction[](1);
+        waitInstrs[0] = _signal(SIGNAL_ANCHOR);
+        UVPStateMachine.Instruction[] memory impossibleInstrs = new UVPStateMachine.Instruction[](2);
+        impossibleInstrs[0] = _signal(SIGNAL_CANCEL);
+        impossibleInstrs[1] = _not();
+
+        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](3);
+        hooks[0] = _signalHook(HOOK_ORDER_START, STAGE_INIT, HOOK_NAME_ORDER_START, true, SIGNAL_ORDER_START);
+        hooks[1] = _admissionHook(SIGNAL_TRIGGER, waitInstrs);
+        hooks[2] = _admissionHook(SIGNAL_GUARD, impossibleInstrs);
+        bytes32 planId = _registerPlan(machine, hooks);
+        _submitTriggerBirth(machine);
+
+        (AdmissionVerdict triggerVerdict, uint64 triggerDueAt) =
+            machine.signalAdmissionVerdict(planId, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
+        require(triggerVerdict == AdmissionVerdict.Wait, "missing anchor must be Wait");
+        require(triggerDueAt == 0, "missing anchor must not carry a due time");
+        (AdmissionVerdict guardVerdict,) =
+            machine.signalAdmissionVerdict(planId, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_GUARD);
+        require(guardVerdict == AdmissionVerdict.Ready, "absent negated fact must be Ready");
+
+        _submit(machine, SOURCE_BOOTSTRAP, SIGNAL_CANCEL);
+        (guardVerdict,) = machine.signalAdmissionVerdict(planId, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_GUARD);
+        require(guardVerdict == AdmissionVerdict.Impossible, "present negated fact must be Impossible");
+        require(
+            !machine.isSignalAdmissionSatisfied(planId, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_GUARD),
+            "Impossible admission must not read as satisfied"
+        );
+
+        _submit(machine, SOURCE_BOOTSTRAP, SIGNAL_ANCHOR);
+        (triggerVerdict,) = machine.signalAdmissionVerdict(planId, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_TRIGGER);
+        require(triggerVerdict == AdmissionVerdict.Ready, "present anchor must become Ready");
+    }
 
     function testValidAdmissionPlanRegisters() public {
         UVPStateMachine machine = _newMachine();
@@ -1106,7 +1205,7 @@ contract UVPAdmissionTest {
         return UVPStateMachine.CompactHook({
             hookId: keccak256(abi.encode(SOURCE_BOOTSTRAP, signalId)),
             stageId: STAGE_INIT,
-            hookName: keccak256(abi.encode(signalId)),
+            hookName: signalId,
             flags: FLAG_ADMISSION,
             instructions: instructions,
             dependencyKeys: _declaredKeys(instructions)

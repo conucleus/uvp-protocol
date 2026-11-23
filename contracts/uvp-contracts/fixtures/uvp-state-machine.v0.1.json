@@ -1,7 +1,7 @@
 {
   "schemaVersion": "uvp-eth.contractAbiFixture.v2",
   "contractName": "UVPStateMachine",
-  "abiVersion": "0.23",
+  "abiVersion": "0.1",
   "sourcePath": "uvp-protocol/contracts/uvp-contracts/src/UVPStateMachine.sol",
   "artifactPath": "uvp-protocol/contracts/uvp-contracts/out/UVPStateMachine.sol/UVPStateMachine.json",
   "compiler": {
@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x76862eac7a24c7b77af27d091a73b42b1d43b25a7735c897d22115cb6c8feeb9",
-    "bytecodeHash": "0x3cc9cac0b265872b5e5ac5a83b5b8ddad105f343c28cf8270e2149c0f01c9907",
-    "deployedBytecodeHash": "0x02025870f692b6f95f3aafeb4b82cca7389b33f7ff19bb77aeaadd8903dce759",
-    "artifactHash": "0xa13df9e4bd069d2ecf9a51b6cc87f5f87be2b08484d23195f8d2dca7f8933b01"
+    "abiHash": "0x7e00ac46a91e5c5ce1f6351ac7d0556148c8b553ea83a37991f805694ef17609",
+    "bytecodeHash": "0x7ba16de0b49f2ef296022ad76f8dac431d44c276d505490251afadb2831d8d1f",
+    "deployedBytecodeHash": "0xdda7ff1217f74199f195a62dd2b4d1c289f7c945e013cd278919b285fb02702f",
+    "artifactHash": "0x61d260b2d6314ea811f937f32b60ca8be555d1f91c6047501ef3660b94870c5b"
   },
   "events": {
     "HookReady": {
@@ -344,6 +344,10 @@
     "setSupplierRegistry": {
       "signature": "setSupplierRegistry(address)",
       "selector": "0xca4c9e8b"
+    },
+    "signalAdmissionVerdict": {
+      "signature": "signalAdmissionVerdict(bytes32,bytes32,bytes32,bytes32)",
+      "selector": "0x60b459d5"
     },
     "sourceSignalCount": {
       "signature": "sourceSignalCount(bytes32,bytes32,bytes32)",

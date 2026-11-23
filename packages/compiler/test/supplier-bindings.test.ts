@@ -317,7 +317,7 @@ test("register args carry the binding set, root, and dynamic hook flag end-to-en
   const args = compileZhixuRegisterPlanArgs(staticZhixu(), [
     { stageIdentifier: "deal", supplierID: SUPPLIER_CANDIDATE },
   ]);
-  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v8");
+  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v1");
   assert.equal(args.supplierBindings.length, 3);
   assert.equal(
     args.supplierBindingsRoot,

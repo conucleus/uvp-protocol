@@ -44,7 +44,7 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
 - `PlanCommitPayload` / `PlanCommitTypedData` mirror
   `UVPStateMachine.PlanCommit`: the publisher signs `publisher`, `hooksHash`,
   `capabilitiesRoot`, `supplierBindingsRoot`, `deadline` under the main
-  `UVPStateMachine` domain (`0.20`).
+  `UVPStateMachine` domain (`1`).
 - `ExecutorBinding` is `{ stageId, supplierId, kind }` with kind `0`
   (default) / `1` (candidate); `buildPlanCommitCall` encodes
   `commitPlan(commit, hooks, bindings, signature)` from
@@ -58,7 +58,7 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
 - `buildSignalSubmissionTypedData` builds
   `UVPStateMachineSignalSubmission(planId, orderId, sourceId, signalId,
   payloadHash, idempotencyKey, patchHash, attributionHash, submitter,
-  deadline)` under the main domain (`0.20`); `factAttributionHash` is the
+  deadline)` under the main domain (`1`); `factAttributionHash` is the
   `FactAttribution(sourceId, signalId, stageId, capabilityProof)` digest that
   enters the signature, and `recoverSignalSubmissionSigner` recovers the
   signer. Omit `orderId` (or pass zero) to sign the trigger-birth context,
@@ -86,7 +86,7 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
   plan capability tables (single-source leaf/proof helpers above).
 - `selectStageDockExecutor` / `For` builders select a dkid once;
   `buildStageDockExecutorSelectionTypedData` builds the selector EIP-712
-  payload (`UVPStagePatchModule`, version `0.5`), and
+  payload (`UVPStagePatchModule`, version `1`), and
   `recoverStageDockExecutorSelectionSigner` recovers it. The selection carries
   `supplierId` + `patchNonce`; executor addresses are resolved on chain from
   the supplier registry.
@@ -122,9 +122,9 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
 
 ## Stage Executor Patch Helpers
 
-- `buildStageExecutorPatchTypedData` builds
-  `UVPStagePatchModuleStageExecutorPatch` EIP-712 typed data (module domain
-  `0.5`) for supplier assignment and handoff payloads. The payload is
+- `buildStageSupplierPatchTypedData` builds
+  `UVPStagePatchModuleStageSupplierPatch` EIP-712 typed data (module domain
+  `1`) for supplier assignment and handoff payloads. The payload is
   `selectorStageId, targetStageId, supplierId, previousSupplierId,
   patchNonce`; there is no mode/role/metadata/patch-hash field.
   `previousSupplierId == 0` is the assign transition (before the stage's
@@ -138,9 +138,9 @@ pnpm --filter @uvp-eth/protocol-bindings generate:artifact-abis
   previous-executor consent. `bindingProof` proves the selector stage binding;
   `candidateProof` proves candidate membership only for candidate stages and
   is empty for dynamic stages.
-- `hashStageExecutorPatchPayload` commits to the
-  `uvp:stage-executor-patch-payload:v2` domain
-  (`STAGE_EXECUTOR_PATCH_PAYLOAD_HASH_DOMAIN`, hashed as the leading
+- `hashStageSupplierPatchPayload` commits to the
+  `uvp:stage-supplier-patch-payload:v1` domain
+  (`STAGE_SUPPLIER_PATCH_PAYLOAD_HASH_DOMAIN`, hashed as the leading
   `keccak256(domain)` word of the abi-encoded preimage) plus selector stage,
   target stage, supplier, previous supplier, and nonce.
 

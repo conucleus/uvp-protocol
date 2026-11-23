@@ -1,11 +1,11 @@
 import type { HookDependency, HookExpressionAst } from "./types.js";
 
 /**
- * 中立分析（uvp.zhixuAnalysis.v3）请求/响应类型：uvp-core 只做共享 DSL 校验与
+ * 中立分析（uvp.zhixuAnalysis.v1）请求/响应类型：uvp-core 只做共享 DSL 校验与
  * hook 解析，chain hook 装饰与 hook_plan shell 总装归链轨编译器。
  */
 
-export const ZHIXU_ANALYSIS_SCHEMA_VERSION = "uvp.zhixuAnalysis.v4" as const;
+export const ZHIXU_ANALYSIS_SCHEMA_VERSION = "uvp.zhixuAnalysis.v1" as const;
 
 export interface ZhixuAnalysisRequest {
   readonly definition: unknown;

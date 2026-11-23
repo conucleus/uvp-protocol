@@ -4,6 +4,8 @@ pragma solidity ^0.8.24;
 // Supplier identity boundary: a supplierId is a chain-minted UUID carried in the
 // low 16 bytes of a bytes32 and is permanently bound to exactly one supplier
 // account. Status gates formal use; the bound account is never written again.
+// This is the only execution identity the state machine accepts: per-stage
+// authority is the active stage supplier's bound account, resolved here.
 interface IUVPSupplierRegistry {
     enum SupplierStatus {
         Pending,

@@ -8,6 +8,7 @@ import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 import {IUVPSupplierRegistry} from "./interfaces/IUVPSupplierRegistry.sol";
 import {IUVPFileResourceModule, FilePatch, FilePatchEmpty} from "./interfaces/IUVPFileResourceModule.sol";
 import {UVPStateMachine} from "./UVPStateMachine.sol";
+import {UVPHookEvaluator} from "./libraries/UVPHookEvaluator.sol";
 import {
     _HOOK_FLAG_ORDER_TRIGGER_MINT as HOOK_FLAG_ORDER_TRIGGER_MINT,
     _HOOK_FLAG_EMIT_READY as HOOK_FLAG_EMIT_READY,
@@ -270,6 +271,15 @@ library UVPPlanRegistration {
             return seenCount;
         }
         _validateInstructions(input, false);
+        if (
+            _isOrderTrigger(input.flags)
+                && (
+                    input.instructions.length != 1
+                        || input.instructions[0].op != uint8(UVPStateMachine.InstructionOp.Signal)
+                )
+        ) {
+            revert UVPStateMachine.InvalidTriggerHook(input.hookId);
+        }
         if (_isOrderTrigger(input.flags) && input.flags & HOOK_FLAG_EMIT_READY == 0) {
             revert UVPStateMachine.SilentOrderTriggerHook(input.hookId);
         }
@@ -322,6 +332,9 @@ library UVPPlanRegistration {
         if (input.flags != HOOK_FLAG_ADMISSION) {
             revert UVPStateMachine.InvalidHook();
         }
+        if (!_admissionKeyMatches(plan, input)) {
+            revert UVPStateMachine.InvalidAdmissionHook(input.hookId);
+        }
         _validateInstructions(input, true);
         UVPStateMachine.StoredAdmission storage admission = plan.admissions[input.hookId];
         if (admission.exists) {
@@ -332,6 +345,36 @@ library UVPPlanRegistration {
             admission.instructions.push(input.instructions[j]);
         }
         plan.admissionsDeclared = true;
+    }
+
+    function _admissionKeyMatches(UVPStateMachine.Plan storage plan, UVPStateMachine.CompactHook calldata input)
+        private
+        view
+        returns (bool)
+    {
+        if (input.hookId == L_signalKey(input.stageId, input.hookName)) {
+            return true;
+        }
+        for (uint256 h = 0; h < plan.hookIds.length; h++) {
+            UVPStateMachine.Instruction[] storage instructions = plan.hooks[plan.hookIds[h]].instructions;
+            for (uint256 i = 0; i < instructions.length; i++) {
+                if (instructions[i].op != uint8(UVPStateMachine.InstructionOp.Signal)) {
+                    continue;
+                }
+                if (input.hookId == L_signalKey(instructions[i].sourceId, input.hookName)) {
+                    return true;
+                }
+            }
+        }
+        for (uint256 i = 0; i < input.instructions.length; i++) {
+            if (input.instructions[i].op != uint8(UVPStateMachine.InstructionOp.Signal)) {
+                continue;
+            }
+            if (input.hookId == L_signalKey(input.instructions[i].sourceId, input.hookName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     uint256 private constant _SLOT_BARE_SIGNAL = 1 << 0;
@@ -1014,7 +1057,7 @@ library UVPPlanRegistration {
             return;
         }
         UVPStateMachine.EvalValue memory result =
-            L_evaluateInstructions(_s.signals[planId][orderId], admission.instructions);
+            UVPHookEvaluator.evaluateStorage(_s.signals[planId][orderId], admission.instructions);
         if (!result.value || result.wait || result.cancel) {
             revert UVPStateMachine.SignalAdmissionRejected(orderId, sourceId, signalId);
         }
@@ -1126,7 +1169,8 @@ library UVPPlanRegistration {
 
         UVPStateMachine.HookStatus previousStatus = runtime.status;
         uint64 previousDueAt = runtime.dueAt;
-        UVPStateMachine.EvalValue memory result = L_evaluateInstructions(_s.signals[planId][orderId], hook.instructions);
+        UVPStateMachine.EvalValue memory result =
+            UVPHookEvaluator.evaluateStorage(_s.signals[planId][orderId], hook.instructions);
         UVPStateMachine.HookStatus nextStatus = UVPStateMachine.HookStatus.Init;
         uint64 nextDueAt;
         if (result.cancel) {
@@ -1211,182 +1255,6 @@ library UVPPlanRegistration {
         runtime.readyEmitted = true;
         UVPStateMachine.StoredHook storage hook = _s.plans[planId].hooks[hookId];
         emit UVPStateMachine.HookReady(planId, orderId, hookId, hook.stageId, hook.hookName);
-    }
-
-    function L_evaluateInstructions(
-        mapping(bytes32 => UVPStateMachine.SignalRecord) storage orderSignals,
-        UVPStateMachine.Instruction[] storage instructions
-    ) private view returns (UVPStateMachine.EvalValue memory) {
-        UVPStateMachine.EvalValue[] memory stack = new UVPStateMachine.EvalValue[](instructions.length);
-        uint256 stackDepth;
-        for (uint256 i = 0; i < instructions.length; i++) {
-            UVPStateMachine.Instruction storage instruction = instructions[i];
-            if (instruction.op == uint8(UVPStateMachine.InstructionOp.Signal)) {
-                stack[stackDepth++] = L_signalValue(orderSignals, instruction.sourceId, instruction.signalId);
-            } else if (instruction.op == uint8(UVPStateMachine.InstructionOp.Not)) {
-                stack[stackDepth - 1] = L_notValue(stack[stackDepth - 1]);
-            } else if (instruction.op == uint8(UVPStateMachine.InstructionOp.Delay)) {
-                stack[stackDepth - 1] = L_delayValue(stack[stackDepth - 1], instruction.delaySeconds);
-            } else if (instruction.op == uint8(UVPStateMachine.InstructionOp.And)) {
-                UVPStateMachine.EvalValue memory value = stack[stackDepth - instruction.arity];
-                for (uint256 j = stackDepth - instruction.arity + 1; j < stackDepth; j++) {
-                    value = L_andValue(value, stack[j]);
-                }
-                stackDepth = stackDepth - instruction.arity;
-                stack[stackDepth++] = value;
-            } else if (instruction.op == uint8(UVPStateMachine.InstructionOp.Or)) {
-                UVPStateMachine.EvalValue memory value = stack[stackDepth - instruction.arity];
-                for (uint256 j = stackDepth - instruction.arity + 1; j < stackDepth; j++) {
-                    value = L_orValue(value, stack[j]);
-                }
-                stackDepth = stackDepth - instruction.arity;
-                stack[stackDepth++] = value;
-            } else {
-                revert UVPStateMachine.InvalidInstruction();
-            }
-        }
-        return stack[0];
-    }
-
-    function L_signalValue(
-        mapping(bytes32 => UVPStateMachine.SignalRecord) storage orderSignals,
-        bytes32 sourceId,
-        bytes32 signalId
-    ) private view returns (UVPStateMachine.EvalValue memory) {
-        UVPStateMachine.SignalRecord storage signal = orderSignals[L_signalKey(sourceId, signalId)];
-        if (!signal.exists) {
-            return UVPStateMachine.EvalValue({value: false, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
-        }
-        return
-            UVPStateMachine.EvalValue({value: true, wait: false, cancel: false, dueAt: 0, anchorAt: signal.submittedAt});
-    }
-
-    function L_notValue(UVPStateMachine.EvalValue memory value)
-        private
-        pure
-        returns (UVPStateMachine.EvalValue memory)
-    {
-        if (value.value) {
-            return UVPStateMachine.EvalValue({value: false, wait: false, cancel: true, dueAt: 0, anchorAt: 0});
-        }
-        if (value.wait) {
-            return UVPStateMachine.EvalValue({value: true, wait: false, cancel: false, dueAt: value.dueAt, anchorAt: 0});
-        }
-        return UVPStateMachine.EvalValue({value: true, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
-    }
-
-    function L_delayValue(UVPStateMachine.EvalValue memory value, uint64 delaySeconds)
-        private
-        view
-        returns (UVPStateMachine.EvalValue memory)
-    {
-        if (value.cancel || !value.value) {
-            return value;
-        }
-        if (value.anchorAt == 0) {
-            return UVPStateMachine.EvalValue({value: false, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
-        }
-        uint64 dueAt = value.anchorAt + delaySeconds;
-        if (block.timestamp < dueAt) {
-            return UVPStateMachine.EvalValue({
-                value: false, wait: true, cancel: false, dueAt: dueAt, anchorAt: value.anchorAt
-            });
-        }
-        return UVPStateMachine.EvalValue({value: true, wait: false, cancel: false, dueAt: 0, anchorAt: dueAt});
-    }
-
-    function L_andValue(UVPStateMachine.EvalValue memory left, UVPStateMachine.EvalValue memory right)
-        private
-        pure
-        returns (UVPStateMachine.EvalValue memory)
-    {
-        if (left.cancel || right.cancel) {
-            return UVPStateMachine.EvalValue({value: false, wait: false, cancel: true, dueAt: 0, anchorAt: 0});
-        }
-        if (left.value && right.value) {
-            return UVPStateMachine.EvalValue({
-                value: true,
-                wait: false,
-                cancel: false,
-                dueAt: L_minDue(left.dueAt, right.dueAt),
-                anchorAt: L_maxAnchor(left.anchorAt, right.anchorAt)
-            });
-        }
-        if ((left.wait && (right.value || right.wait)) || (right.wait && (left.value || left.wait))) {
-            return UVPStateMachine.EvalValue({
-                value: false,
-                wait: true,
-                cancel: false,
-                dueAt: L_maxDue(left.wait ? left.dueAt : 0, right.wait ? right.dueAt : 0),
-                anchorAt: L_maxAnchor(left.anchorAt, right.anchorAt)
-            });
-        }
-        return UVPStateMachine.EvalValue({value: false, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
-    }
-
-    function L_orValue(UVPStateMachine.EvalValue memory left, UVPStateMachine.EvalValue memory right)
-        private
-        pure
-        returns (UVPStateMachine.EvalValue memory)
-    {
-        if (left.value || right.value) {
-            bool leftWins;
-            if (left.value && !right.value) {
-                leftWins = true;
-            } else if (!left.value && right.value) {
-                leftWins = false;
-            } else {
-                leftWins = !(right.anchorAt != 0 && (left.anchorAt == 0 || right.anchorAt < left.anchorAt));
-            }
-            return UVPStateMachine.EvalValue({
-                value: true,
-                wait: false,
-                cancel: false,
-                dueAt: leftWins ? left.dueAt : right.dueAt,
-                anchorAt: leftWins ? left.anchorAt : right.anchorAt
-            });
-        }
-        if (left.wait || right.wait) {
-            return UVPStateMachine.EvalValue({
-                value: false,
-                wait: true,
-                cancel: false,
-                dueAt: L_minDue(left.wait ? left.dueAt : 0, right.wait ? right.dueAt : 0),
-                anchorAt: L_minAnchor(left.anchorAt, right.anchorAt)
-            });
-        }
-        if (left.cancel && right.cancel) {
-            return UVPStateMachine.EvalValue({value: false, wait: false, cancel: true, dueAt: 0, anchorAt: 0});
-        }
-        return UVPStateMachine.EvalValue({value: false, wait: false, cancel: false, dueAt: 0, anchorAt: 0});
-    }
-
-    function L_minDue(uint64 left, uint64 right) private pure returns (uint64) {
-        if (left == 0) {
-            return right;
-        }
-        if (right == 0 || left < right) {
-            return left;
-        }
-        return right;
-    }
-
-    function L_maxDue(uint64 left, uint64 right) private pure returns (uint64) {
-        return left > right ? left : right;
-    }
-
-    function L_maxAnchor(uint64 left, uint64 right) private pure returns (uint64) {
-        return left > right ? left : right;
-    }
-
-    function L_minAnchor(uint64 left, uint64 right) private pure returns (uint64) {
-        if (left == 0) {
-            return right;
-        }
-        if (right == 0 || left < right) {
-            return left;
-        }
-        return right;
     }
 
     function L_recoverSignalSubmitter(bytes32 digest, bytes calldata signature) private pure returns (address) {

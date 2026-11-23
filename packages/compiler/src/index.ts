@@ -60,6 +60,7 @@ export {
   DEFINITION_UID_DOMAIN,
   DOCK_UID_DOMAIN,
   stripAnnotations,
+  stripDefinitionIdentityFields,
   stripDisplayFields,
 } from "./identity.js";
 export type { DockIdentity } from "./identity.js";

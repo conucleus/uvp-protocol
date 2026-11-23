@@ -21,6 +21,7 @@ import {
 import {
   compileZhixuHookPlan,
   compareCanonicalKey,
+  HookPlanArtifactValidationError,
   HookPlanCompilationError,
 } from "../src/hook-plan.js";
 import { hookPlanHashOf } from "../src/hook-plan/assemble.js";
@@ -152,7 +153,7 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
   const again = compileZhixuOnchainHookPlan(baseZhixu);
 
   assert.deepEqual(onchain, again);
-  assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v8");
+  assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v1");
   assert.equal(onchain.planId, sourcePlan.planId);
   assert.deepEqual(onchain.platform, sourcePlan.platform);
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
@@ -516,7 +517,7 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
   const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
   const args = toSolidityRegisterPlanArgs(onchain);
 
-  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v8");
+  assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v1");
   assert.equal(args.sourcePlanId, onchain.planId);
   const { planHash: _storedPlanHash, ...artifactPayload } = onchain;
   assert.equal(args.artifactHash, hashOnchainPlanPayload(artifactPayload));
@@ -813,11 +814,14 @@ test("compiles capability tables beyond gas caps into a verifiable capabilitiesR
   assert.ok(template);
   const expanded = Array.from({ length: 400 }, (_, index) => {
     const targetSource = `bulk-source-${index}`;
-    const targetSignalName = `main.bulk-${index}`;
+    const declaredSignal = `bulk-${index}`;
+    const targetSignalName = `${template.stageIdentifier}.${declaredSignal}`;
     const targetSourceId = onchainSourceId(targetSource);
     const signalId = onchainSignalId(targetSignalName);
     return {
       ...template,
+      source: targetSource,
+      declaredSignal,
       targetSource,
       targetSourceId,
       targetSignalName,
@@ -868,29 +872,97 @@ test("compiles capability tables beyond gas caps into a verifiable capabilitiesR
   );
 });
 
-test("rejects cross-stage current-order fact key duplication (E16 mirror)", () => {
+test("rejects a stage declaring another stage's current-order signal (E16 ownership)", () => {
   const sourcePlan = compileZhixuHookPlan(baseZhixu);
   const fact = sourcePlan.signalCapabilities[0]!;
   const otherStage =
     sourcePlan.signalCapabilities.find(
       (capability) => capability.stageIdentifier !== fact.stageIdentifier,
     )?.stageIdentifier ?? "other";
-  const crossStageDuplicate = resign({
+  const crossStageDeclaration = resign({
     ...sourcePlan,
     signalCapabilities: [
-      ...sourcePlan.signalCapabilities.map((capability) =>
-        capability === fact ? { ...capability, targetOrderRelation: "current" as const } : capability,
-      ),
+      ...sourcePlan.signalCapabilities,
       { ...fact, stageIdentifier: otherStage, targetOrderRelation: "current" as const },
     ],
   });
   assert.throws(
-    () => compileOnchainHookPlan(crossStageDuplicate),
+    () => compileOnchainHookPlan(crossStageDeclaration),
     (error: unknown) =>
-      error instanceof HookPlanCompilationError &&
+      error instanceof HookPlanArtifactValidationError &&
       error.issues.some((issue) =>
-        /current-order fact key .* already owned by stage .*must resolve to exactly one owner stage/.test(issue),
+        /is not a sendSignal declared by the source definition/.test(issue),
       ),
+  );
+});
+
+test("rejects a signal capability that declares another stage's signal", () => {
+  const onchain = compileOnchainHookPlan(compileZhixuHookPlan(baseZhixu));
+  const foreign = onchain.signalCapabilities.find(
+    (capability) =>
+      capability.stageIdentifier === "main"
+      && capability.targetSignalName.endsWith(".str"),
+  );
+  const declaringStage = onchain.signalCapabilities.find(
+    (capability) => capability.stageIdentifier === "assign",
+  );
+  assert.ok(foreign, "main.str capability expected");
+  assert.ok(declaringStage, "assign capability expected");
+  const foreignIndex = onchain.signalCapabilities.indexOf(foreign);
+  const foreignSignal = foreign.targetSignalName.slice(foreign.targetSignalName.lastIndexOf(".") + 1);
+
+  const withReplacedCapability = (
+    capability: (typeof onchain.signalCapabilities)[number],
+  ): OnchainHookPlanArtifact => {
+    const { planHash: _staleHash, capabilitiesRoot: _staleRoot, ...payload } = onchain;
+    const replaced = {
+      ...payload,
+      signalCapabilities: onchain.signalCapabilities.map((candidate) =>
+        candidate === foreign ? capability : candidate,
+      ),
+    };
+    const rooted = { ...replaced, capabilitiesRoot: artifactCapabilitiesRoot(replaced as unknown as OnchainHookPlanArtifact) };
+    return { ...rooted, planHash: hashOnchainPlanPayload(rooted) };
+  };
+
+  const bareForeignName = withReplacedCapability({
+    ...foreign,
+    stageIdentifier: declaringStage.stageIdentifier,
+    stageId: declaringStage.stageId,
+    declaredSignal: foreignSignal,
+    capabilityHash: onchainSignalCapabilityHash(
+      declaringStage.stageId,
+      foreign.targetSourceId,
+      foreign.signalId,
+      "current",
+    ),
+  });
+  assert.ok(
+    validateOnchainHookPlanArtifact(bareForeignName).includes(
+      `signalCapabilities[${foreignIndex}].targetSignalName must be "assign.${foreignSignal}" for declaredSignal "${foreignSignal}"; `
+        + "bare names expand to <stageIdentifier>.<name> and canonical names are self-references, "
+        + "so a capability cannot point at another stage's emitted fact",
+    ),
+  );
+
+  const canonicalForeignName = withReplacedCapability({
+    ...foreign,
+    stageIdentifier: declaringStage.stageIdentifier,
+    stageId: declaringStage.stageId,
+    declaredSignal: foreign.targetSignalName,
+    capabilityHash: onchainSignalCapabilityHash(
+      declaringStage.stageId,
+      foreign.targetSourceId,
+      foreign.signalId,
+      "current",
+    ),
+  });
+  assert.ok(
+    validateOnchainHookPlanArtifact(canonicalForeignName).includes(
+      `signalCapabilities[${foreignIndex}].declaredSignal "${foreign.targetSignalName}" does not address the declaring stage "assign"; `
+        + "a capability may only declare its own stage's sendSignals, never another stage's signal "
+        + "(uvp-core build_signal_capabilities rejects a canonical self-reference whose stage prefix differs)",
+    ),
   );
 });
 
@@ -919,7 +991,7 @@ test("rejects invalid on-chain HookPlan artifact shapes", () => {
 
   assert.deepEqual(
     validateOnchainHookPlanArtifact({ ...onchain, schemaVersion: "wrong" }),
-    ["schemaVersion must be uvp.onchainHookPlan.v8"],
+    ["schemaVersion must be uvp.onchainHookPlan.v1"],
   );
   assert.match(
     validateOnchainHookPlanArtifact({
@@ -1271,7 +1343,7 @@ test("rejects silent order-trigger hooks (trigger without emitReady)", () => {
   );
 });
 
-test("mirrors _validateHook DELAY/NOT/anchor rejection branches at the artifact boundary", () => {
+test("mirrors _validateHook DELAY/NOT/anchor/depth rejection branches at the artifact boundary", () => {
   const baseOnchain = compileOnchainHookPlan(
     compileZhixuHookPlan(baseZhixu),
   );
@@ -1346,6 +1418,39 @@ test("mirrors _validateHook DELAY/NOT/anchor rejection branches at the artifact 
   assert.ok(
     validateOnchainHookPlanArtifact(pureNegative).some((issue) =>
       /at least one positive signal anchor/.test(issue),
+    ),
+  );
+
+
+  const nestedDelay = mutateHookInstructions("TIMEOUT", [
+    timeoutInstructions[0],
+    { op: "DELAY", delaySeconds: 5 },
+    { op: "DELAY", delaySeconds: 10 },
+  ]);
+  assert.ok(
+    validateOnchainHookPlanArtifact(nestedDelay).some((issue) =>
+      /DELAY cannot consume an operand containing another DELAY/.test(issue),
+    ),
+  );
+
+  const atDepthLimit = mutateHookInstructions("TIMEOUT", [
+    ...Array.from({ length: 121 }, () => timeoutInstructions[0]),
+    ...Array.from({ length: 120 }, () => ({ op: "AND", arity: 2 })),
+  ]);
+  assert.equal(
+    validateOnchainHookPlanArtifact(atDepthLimit).some((issue) =>
+      /exceeds MAX_INSTRUCTION_DEPTH/.test(issue),
+    ),
+    false,
+  );
+
+  const tooDeep = mutateHookInstructions("TIMEOUT", [
+    ...Array.from({ length: 122 }, () => timeoutInstructions[0]),
+    ...Array.from({ length: 121 }, () => ({ op: "AND", arity: 2 })),
+  ]);
+  assert.ok(
+    validateOnchainHookPlanArtifact(tooDeep).some((issue) =>
+      /instruction nesting depth 121 exceeds MAX_INSTRUCTION_DEPTH 120 \(contract _validateHook reverts InvalidInstruction\)/.test(issue),
     ),
   );
 

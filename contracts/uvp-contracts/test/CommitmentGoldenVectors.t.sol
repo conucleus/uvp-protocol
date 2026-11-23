@@ -9,7 +9,6 @@ interface CommitmentVm {
     function parseJsonBytes32(string calldata json, string calldata key) external view returns (bytes32);
     function parseJsonUint(string calldata json, string calldata key) external view returns (uint256);
     function parseJsonString(string calldata json, string calldata key) external view returns (string memory);
-    function parseJsonAddress(string calldata json, string calldata key) external view returns (address);
 }
 
 contract CommitmentGoldenVectorsTest {
@@ -54,20 +53,20 @@ contract CommitmentGoldenVectorsTest {
     function testCaseCountsArePinned() public {
         string memory fixture = _fixture();
         (bool caseBeyond,) =
-            _tryAddress(fixture, string.concat(".cases[", toString(CASE_COUNT), "].expected.hooksHash"));
+            _tryBytes32(fixture, string.concat(".cases[", toString(CASE_COUNT), "].expected.hooksHash"));
         require(!caseBeyond, "commitment golden cases grew; bump CASE_COUNT and add entrypoints");
-        (bool vectorBeyond,) = _tryAddress(
+        (bool vectorBeyond,) = _tryBytes32(
             fixture,
             string.concat(".registerHooksVectors[", toString(REGISTER_HOOKS_VECTOR_COUNT), "].expected.hooksHash")
         );
         require(!vectorBeyond, "register-hooks golden vectors grew; bump REGISTER_HOOKS_VECTOR_COUNT");
     }
 
-    function _tryAddress(string memory json, string memory path) private returns (bool ok, address value) {
-        try vm.parseJsonAddress(json, path) returns (address parsed) {
+    function _tryBytes32(string memory json, string memory path) private returns (bool ok, bytes32 value) {
+        try vm.parseJsonBytes32(json, path) returns (bytes32 parsed) {
             return (true, parsed);
         } catch {
-            return (false, address(0));
+            return (false, bytes32(0));
         }
     }
 
