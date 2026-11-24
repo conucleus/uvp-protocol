@@ -1173,6 +1173,60 @@ function isOnchainHookDependency(
   );
 }
 
+function uncoveredDockStageIssues(
+  hooks: readonly unknown[],
+  supplierRoutes: readonly unknown[],
+  selectedStageBindings: readonly unknown[],
+): readonly string[] {
+  const staticPlainStages = new Set<string>();
+  for (const route of supplierRoutes) {
+    if (isRecord(route) && typeof route.stageIdentifier === "string") {
+      staticPlainStages.add(route.stageIdentifier);
+    }
+  }
+  const targetsBySelector = new Map<string, string[]>();
+  for (const binding of selectedStageBindings) {
+    if (
+      isRecord(binding) &&
+      typeof binding.selectorStageIdentifier === "string" &&
+      typeof binding.targetStageIdentifier === "string"
+    ) {
+      const targets = targetsBySelector.get(binding.selectorStageIdentifier) ?? [];
+      targets.push(binding.targetStageIdentifier);
+      targetsBySelector.set(binding.selectorStageIdentifier, targets);
+    }
+  }
+  const reachable = new Set<string>(staticPlainStages);
+  const queue = [...staticPlainStages];
+  while (queue.length > 0) {
+    const selector = queue.shift()!;
+    for (const target of targetsBySelector.get(selector) ?? []) {
+      if (!reachable.has(target)) {
+        reachable.add(target);
+        queue.push(target);
+      }
+    }
+  }
+  const issues: string[] = [];
+  const reported = new Set<string>();
+  for (const hook of hooks) {
+    if (
+      !isRecord(hook) ||
+      hook.dockExecutor !== true ||
+      typeof hook.stageIdentifier !== "string" ||
+      reachable.has(hook.stageIdentifier) ||
+      reported.has(hook.stageIdentifier)
+    ) {
+      continue;
+    }
+    reported.add(hook.stageIdentifier);
+    issues.push(
+      `dock stage ${hook.stageIdentifier} has no static-executor selector: on chain, every dock stage (supplierType: "dock") must be covered by at least one static-executor stage's selectedStages`,
+    );
+  }
+  return issues;
+}
+
 export {
   validateOnchainCompiledHooks,
   validateOnchainCompiledAdmissions,
@@ -1180,6 +1234,7 @@ export {
   declaredStageIdentifiers,
   silentOrderTriggerIssues,
   dockStageRouteIssues,
+  uncoveredDockStageIssues,
   validateOnchainDependencyIndex,
   dynamicStageRouteIssues,
 };

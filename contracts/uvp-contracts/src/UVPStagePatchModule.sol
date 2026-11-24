@@ -58,7 +58,6 @@ contract UVPStagePatchModule {
     error DockBindingFromOrderUnknown(bytes32 planId, bytes32 orderId);
     error DockBindingNotSelected(bytes32 planId, bytes32 orderId, bytes32 targetStageId);
     error DockBindingPayloadMissing(bytes32 planId, bytes32 orderId, bytes32 targetStageId);
-    error DockIdMismatch(bytes32 dockId, bytes32 docHash);
     error DockOrderPlanMismatch(bytes32 expectedPlanId, bytes32 providedPlanId);
     error DockOutputProofCountMismatch(uint256 expectedCount, uint256 providedCount);
     error DockPayloadMalformed(uint256 length);
@@ -815,9 +814,6 @@ contract UVPStagePatchModule {
         )
     {
         (fromPlanId, , toPlanId, toStageId, toSourceId, docHash, , exists) = _dockRegistry().getDock(dockId);
-        if (exists && dockId != bytes32(bytes16(docHash))) {
-            revert DockIdMismatch(dockId, docHash);
-        }
     }
 
     function _planMetadata() private view returns (IUVPPlanMetadataModuleForStagePatch) {

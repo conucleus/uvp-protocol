@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  compileZhixuHookPlan,
   compileZhixuOnchainHookPlan,
   compileZhixuRegisterPlanArgs,
   EMPTY_MERKLE_ROOT,
@@ -112,6 +113,7 @@ function dockZhixu(): ZhixuDefinition {
           receiveSignals: { OPEN: "acceptor::gate.open" },
           sendSignals: [{ name: "open" }],
           executor: { supplierType: "organization", supplierID: SUPPLIER_GATE },
+          selectedStages: ["accept"],
         },
       ],
     },
@@ -486,11 +488,11 @@ test("the binding cap mirrors the contract's MAX_SUPPLIER_BINDINGS bound", () =>
   );
 });
 
-test("a binding-free plan pins the empty binding root and rejects tampered roots", () => {
-  const dockOnly: ZhixuDefinition = {
+test("uncovered dock stage is rejected on chain compiler", () => {
+  const uncoveredDock: ZhixuDefinition = {
     apiVersion: "uvp/v0",
     kind: "Zhixu",
-    metadata: { name: "binding_empty_demo" },
+    metadata: { name: "uncovered_dock_demo" },
     spec: {
       platform: { type: "blockchain", provider: "eth" },
       nucleation: { id: "core" },
@@ -502,13 +504,30 @@ test("a binding-free plan pins the empty binding root and rejects tampered roots
           sendSignals: [{ name: "accepted" }, { name: "check" }],
           executor: { supplierType: "dock" },
         },
+        {
+          name: "gate",
+          source: "acceptor",
+          receiveSignals: { OPEN: "acceptor::gate.open" },
+          sendSignals: [{ name: "open" }],
+          executor: { supplierType: "organization", supplierID: SUPPLIER_GATE },
+        },
       ],
     },
   };
-  const emptyArtifact = compileZhixuOnchainHookPlan(dockOnly);
-  assert.deepEqual(emptyArtifact.supplierBindings, []);
-  assert.equal(emptyArtifact.supplierBindingsRoot, EMPTY_MERKLE_ROOT);
-  assert.deepEqual(validateOnchainHookPlanArtifact(emptyArtifact), []);
+  assert.throws(
+    () => compileZhixuHookPlan(uncoveredDock),
+    (error: unknown) =>
+      isCompilationIssue(error, "dock stage accept has no static-executor selector"),
+  );
+  assert.throws(
+    () => compileZhixuOnchainHookPlan(uncoveredDock),
+    (error: unknown) =>
+      isCompilationIssue(error, "dock stage accept has no static-executor selector"),
+  );
+});
+
+test("empty binding root matches EMPTY_MERKLE_ROOT and tampered roots are rejected", () => {
+  assert.equal(supplierBindingsRootOf([]), EMPTY_MERKLE_ROOT);
 
   const artifact = compileZhixuOnchainHookPlan(staticZhixu());
   const tamperedRoot = repin({

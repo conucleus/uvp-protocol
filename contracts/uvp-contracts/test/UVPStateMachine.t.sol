@@ -1406,7 +1406,7 @@ contract UVPStateMachineTest {
         IUVPDockRegistry dockRegistry = IUVPDockRegistry(machine.dockRegistry());
         bytes32 dkid =
             dockRegistry.registerDock(planA, SOURCE_BOOTSTRAP, planB, STAGE_DOCK, SOURCE_BOOTSTRAP, docHash, outputs);
-        require(dkid == bytes32(bytes16(docHash)), "dock id mismatch");
+        require(dkid == keccak256(abi.encode(docHash, planA, planB, keccak256(abi.encode(outputs)))), "dock id mismatch");
 
         bytes32 supplierId = _supplierFor(machine, address(this));
         vm.prank(address(stagePatch));
@@ -1460,6 +1460,161 @@ contract UVPStateMachineTest {
         (current, aSatisfied,, bSatisfied, outputEmitted) =
             stagePatch.dockOutputWindow(planB, orderB, STAGE_DOCK, orderA, 1);
         require(current && aSatisfied && !bSatisfied && !outputEmitted, "impossible window readback mismatch");
+    }
+
+    function testDockIdScopingAllowsDistinctPlanPairsAndDistinctOutputs() public {
+        UVPStateMachine machine = _newMachine();
+        SignalCapability[] memory aCapabilities = new SignalCapability[](1);
+        aCapabilities[0] = SignalCapability({
+            stageId: STAGE_INIT,
+            targetSourceId: SOURCE_BOOTSTRAP,
+            signalId: SIGNAL_BIRTH,
+            targetOrderRelation: 0
+        });
+        bytes32 planA = _registerPlan(machine, _dockPlan(), new StageSelectorBinding[](0), aCapabilities);
+
+        SignalCapability[] memory bCapabilities = new SignalCapability[](2);
+        bCapabilities[0] = SignalCapability({
+            stageId: STAGE_DOCK,
+            targetSourceId: SOURCE_BOOTSTRAP,
+            signalId: SIGNAL_DONE,
+            targetOrderRelation: 0
+        });
+        bCapabilities[1] = SignalCapability({
+            stageId: STAGE_DOCK,
+            targetSourceId: SOURCE_BOOTSTRAP,
+            signalId: SIGNAL_BLOCKED,
+            targetOrderRelation: 0
+        });
+        UVPStateMachine.CompactHook[] memory baseHooks = _dockPlan();
+        UVPStateMachine.CompactHook[] memory bHooks = new UVPStateMachine.CompactHook[](baseHooks.length + 2);
+        for (uint256 i = 0; i < baseHooks.length; i++) {
+            bHooks[i] = baseHooks[i];
+        }
+        UVPStateMachine.Instruction[] memory doneInstrs = new UVPStateMachine.Instruction[](1);
+        doneInstrs[0] = UVPStateMachine.Instruction({
+            op: uint8(UVPStateMachine.InstructionOp.Signal),
+            sourceId: SOURCE_BOOTSTRAP,
+            signalId: SIGNAL_DONE,
+            arity: 0,
+            delaySeconds: 0
+        });
+        bHooks[baseHooks.length] = UVPStateMachine.CompactHook({
+            hookId: keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_DONE)),
+            stageId: STAGE_DOCK,
+            hookName: SIGNAL_DONE,
+            flags: 8,
+            instructions: doneInstrs,
+            dependencyKeys: _depsOf(doneInstrs)
+        });
+        UVPStateMachine.Instruction[] memory blockedInstrs = new UVPStateMachine.Instruction[](1);
+        blockedInstrs[0] = UVPStateMachine.Instruction({
+            op: uint8(UVPStateMachine.InstructionOp.Signal),
+            sourceId: SOURCE_BOOTSTRAP,
+            signalId: SIGNAL_BLOCKED,
+            arity: 0,
+            delaySeconds: 0
+        });
+        bHooks[baseHooks.length + 1] = UVPStateMachine.CompactHook({
+            hookId: keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_BLOCKED)),
+            stageId: STAGE_DOCK,
+            hookName: SIGNAL_BLOCKED,
+            flags: 8,
+            instructions: blockedInstrs,
+            dependencyKeys: _depsOf(blockedInstrs)
+        });
+        bytes32 planB = _registerPlan(machine, bHooks, new StageSelectorBinding[](0), bCapabilities);
+
+        UVPStateMachine.CompactHook[] memory cHooks = new UVPStateMachine.CompactHook[](baseHooks.length + 2);
+        for (uint256 i = 0; i < baseHooks.length; i++) {
+            cHooks[i] = baseHooks[i];
+        }
+        cHooks[baseHooks.length] = bHooks[baseHooks.length];
+        cHooks[baseHooks.length + 1] = UVPStateMachine.CompactHook({
+            hookId: keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_TIMER)),
+            stageId: STAGE_DOCK,
+            hookName: SIGNAL_TIMER,
+            flags: 8,
+            instructions: blockedInstrs,
+            dependencyKeys: _depsOf(blockedInstrs)
+        });
+        bytes32 planC = _registerPlan(machine, cHooks, new StageSelectorBinding[](0), bCapabilities);
+
+        bytes32[] memory aProof =
+            _capabilityAttribution(machine, planA, STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_BIRTH).capabilityProof;
+        bytes32[] memory bProofDone =
+            _capabilityAttribution(machine, planB, STAGE_DOCK, SOURCE_BOOTSTRAP, SIGNAL_DONE).capabilityProof;
+        bytes32[] memory bProofBlocked =
+            _capabilityAttribution(machine, planB, STAGE_DOCK, SOURCE_BOOTSTRAP, SIGNAL_BLOCKED).capabilityProof;
+        bytes32[] memory cProofDone =
+            _capabilityAttribution(machine, planC, STAGE_DOCK, SOURCE_BOOTSTRAP, SIGNAL_DONE).capabilityProof;
+
+        IUVPDockRegistry.DockAtomInput[] memory atoms = new IUVPDockRegistry.DockAtomInput[](1);
+        atoms[0] = IUVPDockRegistry.DockAtomInput({
+            stageId: STAGE_INIT,
+            signalId: SIGNAL_BIRTH,
+            relation: 0,
+            capabilityProof: aProof
+        });
+        IUVPStateMachineCore.WindowInstruction[] memory window = new IUVPStateMachineCore.WindowInstruction[](1);
+        window[0] = IUVPStateMachineCore.WindowInstruction({
+            op: 0,
+            sourceId: SOURCE_BOOTSTRAP,
+            signalId: SIGNAL_BIRTH,
+            arity: 0,
+            delaySeconds: 0
+        });
+
+        IUVPDockRegistry.DockOutputInput[] memory outputsReal = new IUVPDockRegistry.DockOutputInput[](1);
+        outputsReal[0] = IUVPDockRegistry.DockOutputInput({
+            signalId: SIGNAL_DONE,
+            relation: 0,
+            atoms: atoms,
+            window: window,
+            capabilityProof: bProofDone
+        });
+
+        IUVPDockRegistry.DockOutputInput[] memory outputsSquatter = new IUVPDockRegistry.DockOutputInput[](1);
+        outputsSquatter[0] = IUVPDockRegistry.DockOutputInput({
+            signalId: SIGNAL_BLOCKED,
+            relation: 0,
+            atoms: atoms,
+            window: window,
+            capabilityProof: bProofBlocked
+        });
+
+        IUVPDockRegistry.DockOutputInput[] memory outputsPlanC = new IUVPDockRegistry.DockOutputInput[](1);
+        outputsPlanC[0] = IUVPDockRegistry.DockOutputInput({
+            signalId: SIGNAL_DONE,
+            relation: 0,
+            atoms: atoms,
+            window: window,
+            capabilityProof: cProofDone
+        });
+
+        bytes32 docHash = keccak256("dock.shared.doc");
+        IUVPDockRegistry dockRegistry = IUVPDockRegistry(machine.dockRegistry());
+
+        bytes32 dkidSquatter = dockRegistry.registerDock(
+            planA, SOURCE_BOOTSTRAP, planB, STAGE_DOCK, SOURCE_BOOTSTRAP, docHash, outputsSquatter
+        );
+        bytes32 dkidReal = dockRegistry.registerDock(
+            planA, SOURCE_BOOTSTRAP, planB, STAGE_DOCK, SOURCE_BOOTSTRAP, docHash, outputsReal
+        );
+        bytes32 dkidPlanC = dockRegistry.registerDock(
+            planA, SOURCE_BOOTSTRAP, planC, STAGE_DOCK, SOURCE_BOOTSTRAP, docHash, outputsPlanC
+        );
+
+        require(dkidSquatter != dkidReal, "different outputs must produce distinct dkid");
+        require(dkidReal != dkidPlanC, "different plan pair must produce distinct dkid");
+        require(dockRegistry.dockExists(dkidSquatter), "squatter dock missing");
+        require(dockRegistry.dockExists(dkidReal), "real dock missing");
+        require(dockRegistry.dockExists(dkidPlanC), "second plan pair dock missing");
+
+        vm.expectRevert(abi.encodeWithSelector(UVPDockRegistry.DockAlreadyRegistered.selector, dkidReal));
+        dockRegistry.registerDock(
+            planA, SOURCE_BOOTSTRAP, planB, STAGE_DOCK, SOURCE_BOOTSTRAP, docHash, outputsReal
+        );
     }
 
     function testDockOutputWriteRevertsWhenAdmissionNotReady() public {

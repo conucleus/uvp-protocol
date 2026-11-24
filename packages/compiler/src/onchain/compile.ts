@@ -7,6 +7,7 @@ import {
   declaredStageIdentifiers,
   dynamicStageRouteIssues,
   dockStageRouteIssues,
+  uncoveredDockStageIssues,
   silentOrderTriggerIssues,
   unmaterializableStageIssues,
   validateOnchainCompiledAdmissions,
@@ -134,6 +135,11 @@ function lowerOnchainHookPlan(
   const silentTriggerIssues = silentOrderTriggerIssues(compiledHooks);
   const dependencyCountIssues = planDependencyCountIssues(compiledHooks);
   const dockRouteIssues = dockStageRouteIssues(compiledHooks, supplierRoutes);
+  const uncoveredDockIssues = uncoveredDockStageIssues(
+    compiledHooks,
+    supplierRoutes,
+    hookPlanArtifact.selectedStageBindings,
+  );
   const dynamicRouteIssues = dynamicStageRouteIssues(compiledHooks, supplierRoutes);
   const hookShapeIssues: readonly string[] = compiledHooks.length === 0
     ? ["compiledHooks must not be empty (contract reverts EmptyPlan)"]
@@ -155,6 +161,7 @@ function lowerOnchainHookPlan(
     ...silentTriggerIssues,
     ...dependencyCountIssues,
     ...dockRouteIssues,
+    ...uncoveredDockIssues,
     ...dynamicRouteIssues,
     ...hookShapeIssues,
     ...admissionShapeIssues,

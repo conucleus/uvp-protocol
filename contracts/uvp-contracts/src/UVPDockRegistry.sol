@@ -26,7 +26,6 @@ contract UVPDockRegistry is IUVPDockRegistry {
     error DockAtomUnreferenced(bytes32 stageId, bytes32 signalId);
     error DockCapabilityVocabularyMissing(bytes32 planId);
     error DockDocHashZero();
-    error DockIdMismatch(bytes32 dkid, bytes32 docHash);
     error DockFromPlanUnknown(bytes32 planId);
     error DockOutputCapabilityNotFound(bytes32 planId, bytes32 signalId);
     error DockOutputDuplicate(bytes32 signalId);
@@ -94,7 +93,8 @@ contract UVPDockRegistry is IUVPDockRegistry {
             revert DockCapabilityVocabularyMissing(toPlanId);
         }
 
-        dkid = bytes32(bytes16(docHash));
+        bytes32 outputsHash = keccak256(abi.encode(outputs));
+        dkid = keccak256(abi.encode(docHash, fromPlanId, toPlanId, outputsHash));
         if (_docks[dkid].exists) {
             revert DockAlreadyRegistered(dkid);
         }
@@ -146,9 +146,6 @@ contract UVPDockRegistry is IUVPDockRegistry {
         )
     {
         StoredDock storage dock = _docks[dkid];
-        if (dock.exists && dkid != bytes32(bytes16(dock.docHash))) {
-            revert DockIdMismatch(dkid, dock.docHash);
-        }
         return (
             dock.fromPlanId,
             dock.fromSourceId,

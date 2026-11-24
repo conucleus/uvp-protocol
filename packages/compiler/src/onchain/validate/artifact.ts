@@ -34,6 +34,7 @@ import {
   declaredStageIdentifiers,
   dockStageRouteIssues,
   dynamicStageRouteIssues,
+  uncoveredDockStageIssues,
   silentOrderTriggerIssues,
   unmaterializableStageIssues,
   validateOnchainCompiledAdmissions,
@@ -244,6 +245,13 @@ export function validateOnchainHookPlanArtifact(
     );
     issues.push(
       ...dockStageRouteIssues(compiledHooks, supplierRoutes ?? []),
+    );
+    issues.push(
+      ...uncoveredDockStageIssues(
+        compiledHooks,
+        supplierRoutes ?? [],
+        selectorBindings ?? [],
+      ),
     );
     issues.push(
       ...dynamicStageRouteIssues(compiledHooks, supplierRoutes ?? []),

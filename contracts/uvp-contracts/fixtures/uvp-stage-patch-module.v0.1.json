@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0x8fe29edd32533135fe86cb28fca63f1d844274b22548cb74e44e6d0f5dd6b83a",
-    "bytecodeHash": "0x095f5789dc09f33dc856d72017f239ca10b3f19015a01eb47ba98475f56d9e7f",
-    "deployedBytecodeHash": "0x957bf0f3d720dec06b40cd5292974f8740dc59f4c0f59896e528587c7221d49b",
-    "artifactHash": "0x2ef567e5e2e7cd6c5cec665c1c4b95bc34ebd0047715e1f7a256e09854ec3130"
+    "abiHash": "0xf61c7d31a6498b00fc03c38d20ace4fcf25409283224152ca9da543d517d4674",
+    "bytecodeHash": "0x430868394b3589929b4379a5e296f93481bf689ae083a45f50226b6ce79aeafd",
+    "deployedBytecodeHash": "0x71efefb9bd0ffb9c66d7d7b3b643c797476ef4f511cf658a354fa9e3100e9dfb",
+    "artifactHash": "0x34f47e5460946504df8561127586f6441bb83b103beaec4ebd1da7f7e7b1a53e"
   },
   "events": {
     "DockBindingPoked": {

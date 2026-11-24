@@ -4287,22 +4287,6 @@ export const DOCK_REGISTRY_ABI = [
   },
   {
     "type": "error",
-    "name": "DockIdMismatch",
-    "inputs": [
-      {
-        "name": "dkid",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "docHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "DockOutputCapabilityNotFound",
     "inputs": [
       {
