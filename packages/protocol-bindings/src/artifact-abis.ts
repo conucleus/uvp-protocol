@@ -141,32 +141,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "LENS_MODULE_ID",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_FILE_WRITERS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "MAX_HOOK_DELAY_SECONDS",
     "inputs": [],
     "outputs": [
@@ -344,11 +318,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             "internalType": "bytes32"
           },
           {
-            "name": "fileWritersHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
             "name": "deadline",
             "type": "uint256",
             "internalType": "uint256"
@@ -438,23 +407,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
             "name": "kind",
             "type": "uint8",
             "internalType": "uint8"
-          }
-        ]
-      },
-      {
-        "name": "fileWriters",
-        "type": "tuple[]",
-        "internalType": "struct UVPStateMachine.StageFileWriter[]",
-        "components": [
-          {
-            "name": "targetStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "writerStageId",
-            "type": "bytes32",
-            "internalType": "bytes32"
           }
         ]
       },
@@ -890,35 +842,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   },
   {
     "type": "function",
-    "name": "isPlanFileWriter",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "targetStageId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "writerStageId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "isPlanStage",
     "inputs": [
       {
@@ -995,19 +918,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "internalType": "bytes32"
       }
     ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "lens",
-    "inputs": [],
     "outputs": [
       {
         "name": "",
@@ -1138,25 +1048,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "",
         "type": "bool",
         "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "planFileWritersHash",
-    "inputs": [
-      {
-        "name": "planId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -1355,11 +1246,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
         "name": "supplierBindingsRoot",
         "type": "bytes32",
         "internalType": "bytes32"
-      },
-      {
-        "name": "fileWritersHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
       }
     ],
     "outputs": [
@@ -1527,19 +1413,6 @@ export const UVP_STATE_MACHINE_ARTIFACT_ABI = [
   {
     "type": "function",
     "name": "setIdentityRegistry",
-    "inputs": [
-      {
-        "name": "moduleAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setLens",
     "inputs": [
       {
         "name": "moduleAddress",
@@ -3538,6 +3411,16 @@ export const FILE_RESOURCE_MODULE_ABI = [
         "name": "submitter",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "writerStageId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "fileWriterProof",
+        "type": "bytes32[]",
+        "internalType": "bytes32[]"
       }
     ],
     "outputs": [],

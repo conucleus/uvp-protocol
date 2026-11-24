@@ -6,7 +6,6 @@ import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
-import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {UVPIdentityRegistry} from "../src/UVPIdentityRegistry.sol";
 import {AdmissionVerdict} from "../src/UVPStateMachineConstants.sol";
@@ -128,7 +127,7 @@ contract UVPAdmissionTest {
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
     bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("1");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,bytes32 fileWritersHash,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,uint256 deadline)"
     );
     bytes32 private constant SIGNAL_SUBMISSION_TYPEHASH = keccak256(
         "UVPStateMachineSignalSubmission(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 targetStageId,bytes32 filesHash,bytes32 attributionHash,address submitter,uint256 deadline)"
@@ -1107,7 +1106,6 @@ contract UVPAdmissionTest {
         machine.setDockRegistry(address(new UVPDockRegistry(address(machine))));
         machine.setPlanMetadataModule(address(new UVPPlanMetadataModule(address(machine))));
         machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
-        machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.setIdentityRegistry(address(registry));
         machine.freezeModules();
     }
@@ -1364,7 +1362,7 @@ contract UVPAdmissionTest {
         if (expectedRevert.length != 0) {
             vm.expectRevert(expectedRevert);
         }
-        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
+        machine.commitPlan(commit, hooks, bindings, signature);
     }
 
     function _commitPlan(UVPStateMachine machine, UVPStateMachine.CompactHook[] memory hooks)
@@ -1373,7 +1371,7 @@ contract UVPAdmissionTest {
     {
         (UVPStateMachine.PlanCommit memory commit, UVPStateMachine.StageSupplierBinding[] memory bindings, bytes memory signature) =
             _buildCommit(machine, hooks);
-        planId = machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
+        planId = machine.commitPlan(commit, hooks, bindings, signature);
     }
 
     function _buildCommit(UVPStateMachine machine, UVPStateMachine.CompactHook[] memory hooks)
@@ -1390,7 +1388,6 @@ contract UVPAdmissionTest {
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: EMPTY_MERKLE_ROOT,
             supplierBindingsRoot: _bindingsRoot(bindings),
-            fileWritersHash: keccak256(abi.encode(new UVPStateMachine.StageFileWriter[](0))),
             deadline: block.timestamp + 1 hours
         });
         bytes32 structHash = keccak256(
@@ -1400,7 +1397,6 @@ contract UVPAdmissionTest {
                 commit.hooksHash,
                 commit.capabilitiesRoot,
                 commit.supplierBindingsRoot,
-                commit.fileWritersHash,
                 commit.deadline
             )
         );

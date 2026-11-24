@@ -23,8 +23,6 @@ uint256 constant _MAX_INSTRUCTION_DEPTH = 120;
 
 uint256 constant _MAX_SUPPLIER_BINDINGS = 256;
 
-uint256 constant _MAX_FILE_WRITERS = 64;
-
 bytes32 constant _EIP712_DOMAIN_TYPEHASH =
     keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 bytes32 constant _EIP712_NAME_HASH = keccak256("UVPStateMachine");
@@ -33,7 +31,7 @@ bytes32 constant _EIP712_VERSION_HASH = keccak256("1");
 bytes32 constant _PLAN_RUNTIME_HASH_DOMAIN = keccak256("uvp.plan.runtime.v8");
 bytes32 constant _PLAN_ID_HASH_DOMAIN = keccak256("uvp.plan.id.v1");
 bytes32 constant _PLAN_COMMIT_TYPEHASH = keccak256(
-    "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,bytes32 fileWritersHash,uint256 deadline)"
+    "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,uint256 deadline)"
 );
 bytes32 constant _SUPPLIER_BINDING_LEAF_DOMAIN = keccak256("UVP_SUPPLIER_BINDING_V1");
 bytes32 constant _FACT_ATTRIBUTION_TYPEHASH =

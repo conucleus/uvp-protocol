@@ -89,7 +89,7 @@ contract UVPFileResourceModuleTest {
     function testRejectsEmptyFiles() public {
         StageFile[] memory files = new StageFile[](0);
         vm.expectRevert(StageFilesEmpty.selector);
-        _fileModule.applyStageFiles(PLAN_ID, ORDER_ID, TARGET_STAGE, files, TARGET_ACCOUNT);
+        _fileModule.applyStageFiles(PLAN_ID, ORDER_ID, TARGET_STAGE, files, TARGET_ACCOUNT, bytes32(0), new bytes32[](0));
     }
 
     function testRejectsMoreThanTheCap() public {
@@ -100,7 +100,7 @@ contract UVPFileResourceModuleTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPFileResourceModule.StageFilesTooMany.selector, files.length)
         );
-        _fileModule.applyStageFiles(PLAN_ID, ORDER_ID, TARGET_STAGE, files, TARGET_ACCOUNT);
+        _fileModule.applyStageFiles(PLAN_ID, ORDER_ID, TARGET_STAGE, files, TARGET_ACCOUNT, bytes32(0), new bytes32[](0));
     }
 
     function testRejectsUnknownTargetStage() public {
@@ -108,7 +108,9 @@ contract UVPFileResourceModuleTest {
             abi.encodeWithSelector(UVPFileResourceModule.FileTargetStageUnknown.selector, PLAN_ID, OTHER_STAGE)
         );
         _fileModule.applyStageFiles(
-            PLAN_ID, ORDER_ID, OTHER_STAGE, _singleFile("key", bytes("payload")), TARGET_ACCOUNT
+            PLAN_ID, ORDER_ID, OTHER_STAGE, _singleFile("key", bytes("payload")), TARGET_ACCOUNT,
+            bytes32(0),
+            new bytes32[](0)
         );
     }
 
@@ -117,14 +119,16 @@ contract UVPFileResourceModuleTest {
             abi.encodeWithSelector(UVPFileResourceModule.FileWriterUnauthorized.selector, ORDER_ID, TARGET_STAGE, OUTSIDER)
         );
         _fileModule.applyStageFiles(
-            PLAN_ID, ORDER_ID, TARGET_STAGE, _singleFile("key", bytes("payload")), OUTSIDER
+            PLAN_ID, ORDER_ID, TARGET_STAGE, _singleFile("key", bytes("payload")), OUTSIDER, bytes32(0), new bytes32[](0)
         );
     }
 
     function testRejectsEmptyKey() public {
         vm.expectRevert(UVPFileResourceModule.StageFileKeyEmpty.selector);
         _fileModule.applyStageFiles(
-            PLAN_ID, ORDER_ID, TARGET_STAGE, _singleFile("", bytes("payload")), TARGET_ACCOUNT
+            PLAN_ID, ORDER_ID, TARGET_STAGE, _singleFile("", bytes("payload")), TARGET_ACCOUNT,
+            bytes32(0),
+            new bytes32[](0)
         );
     }
 
@@ -137,7 +141,9 @@ contract UVPFileResourceModuleTest {
             )
         );
         _fileModule.applyStageFiles(
-            PLAN_ID, ORDER_ID, TARGET_STAGE, _singleFile(key, bytes("payload")), TARGET_ACCOUNT
+            PLAN_ID, ORDER_ID, TARGET_STAGE, _singleFile(key, bytes("payload")), TARGET_ACCOUNT,
+            bytes32(0),
+            new bytes32[](0)
         );
     }
 
@@ -150,7 +156,9 @@ contract UVPFileResourceModuleTest {
             )
         );
         _fileModule.applyStageFiles(
-            PLAN_ID, ORDER_ID, TARGET_STAGE, _singleFile("key", payload), TARGET_ACCOUNT
+            PLAN_ID, ORDER_ID, TARGET_STAGE, _singleFile("key", payload), TARGET_ACCOUNT,
+            bytes32(0),
+            new bytes32[](0)
         );
     }
 
@@ -160,11 +168,11 @@ contract UVPFileResourceModuleTest {
             abi.encodeWithSelector(UVPFileResourceModule.UnauthorizedStateMachine.selector, OUTSIDER)
         );
         vm.prank(OUTSIDER);
-        _fileModule.applyStageFiles(PLAN_ID, ORDER_ID, TARGET_STAGE, files, TARGET_ACCOUNT);
+        _fileModule.applyStageFiles(PLAN_ID, ORDER_ID, TARGET_STAGE, files, TARGET_ACCOUNT, bytes32(0), new bytes32[](0));
     }
 
     function _apply(StageFile[] memory files, address submitter) private {
-        _fileModule.applyStageFiles(PLAN_ID, ORDER_ID, TARGET_STAGE, files, submitter);
+        _fileModule.applyStageFiles(PLAN_ID, ORDER_ID, TARGET_STAGE, files, submitter, bytes32(0), new bytes32[](0));
     }
 
     function _singleFile(string memory key, bytes memory payload) private pure returns (StageFile[] memory files) {

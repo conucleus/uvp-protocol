@@ -17,6 +17,7 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
 
     bytes32 private constant _DOMAIN_SIGNAL_CAPABILITY = keccak256("UVP_SIGNAL_CAPABILITY_V1");
     bytes32 private constant _DOMAIN_SELECTOR_BINDING = keccak256("UVP_SELECTOR_BINDING_V1");
+    bytes32 private constant _DOMAIN_FILE_WRITER_BINDING = keccak256("UVP_FILE_WRITER_BINDING_V1");
 
     mapping(bytes32 planId => bytes32 capabilitiesRoot) private _capabilitiesRoots;
     mapping(bytes32 planId => bool finalized) public planMetadataFinalized;
@@ -46,6 +47,10 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
 
     function selectorBindingLeaf(bytes32 selectorStageId, bytes32 targetStageId) public pure returns (bytes32) {
         return keccak256(abi.encode(_DOMAIN_SELECTOR_BINDING, selectorStageId, targetStageId));
+    }
+
+    function fileWriterBindingLeaf(bytes32 writerStageId, bytes32 targetStageId) public pure returns (bytes32) {
+        return keccak256(abi.encode(_DOMAIN_FILE_WRITER_BINDING, writerStageId, targetStageId));
     }
 
     function capabilitiesRoot(bytes32 planId) external view returns (bytes32) {
@@ -82,6 +87,17 @@ contract UVPPlanMetadataModule is IUVPPlanMetadataModule {
     ) external view returns (bool) {
         _requireKnownPlan(planId);
         bytes32 leaf = selectorBindingLeaf(selectorStageId, targetStageId);
+        return MerkleCommitment.verify(_capabilitiesRoots[planId], leaf, proof);
+    }
+
+    function verifyFileWriterBinding(
+        bytes32 planId,
+        bytes32 writerStageId,
+        bytes32 targetStageId,
+        bytes32[] calldata proof
+    ) external view returns (bool) {
+        _requireKnownPlan(planId);
+        bytes32 leaf = fileWriterBindingLeaf(writerStageId, targetStageId);
         return MerkleCommitment.verify(_capabilitiesRoots[planId], leaf, proof);
     }
 

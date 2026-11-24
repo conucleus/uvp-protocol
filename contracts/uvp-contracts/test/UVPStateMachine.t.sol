@@ -8,7 +8,6 @@ import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {IUVPDockRegistry} from "../src/interfaces/IUVPDockRegistry.sol";
-import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {UVPIdentityRegistry} from "../src/UVPIdentityRegistry.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
@@ -165,7 +164,7 @@ contract UVPStateMachineTest {
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
     bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("1");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,bytes32 fileWritersHash,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,uint256 deadline)"
     );
     bytes32 private constant SIGNAL_SUBMISSION_TYPEHASH = keccak256(
         "UVPStateMachineSignalSubmission(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 targetStageId,bytes32 filesHash,bytes32 attributionHash,address submitter,uint256 deadline)"
@@ -242,7 +241,7 @@ contract UVPStateMachineTest {
         );
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
         vm.expectRevert(UVPStateMachine.ModulesNotFrozen.selector);
-        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
+        machine.commitPlan(commit, hooks, bindings, signature);
     }
 
     function testPlanExistsOnlyAfterFinalize() public {
@@ -309,7 +308,7 @@ contract UVPStateMachineTest {
                 UVPStateMachine.SupplierBindingsRootMismatch.selector, bytes32(uint256(0x1234)), _bindingsRoot(bindings)
             )
         );
-        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
+        machine.commitPlan(commit, hooks, bindings, signature);
     }
 
     function testCommitPlanRejectsTooManySupplierBindings() public {
@@ -325,7 +324,7 @@ contract UVPStateMachineTest {
         );
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
         vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.TooManySupplierBindings.selector, 257));
-        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
+        machine.commitPlan(commit, hooks, bindings, signature);
     }
 
     function testCommitPlanRejectsDuplicateSupplierBinding() public {
@@ -347,7 +346,7 @@ contract UVPStateMachineTest {
                 UVPStateMachine.DuplicateSupplierBinding.selector, bindings[0].stageId, bindings[0].supplierId, bindings[0].kind
             )
         );
-        machine.commitPlan(commit, hooks, duplicated, new UVPStateMachine.StageFileWriter[](0), signature);
+        machine.commitPlan(commit, hooks, duplicated, signature);
     }
 
     function testCommitPlanRejectsInactiveSupplier() public {
@@ -361,7 +360,7 @@ contract UVPStateMachineTest {
         );
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
         vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.SupplierNotActive.selector, unknownSupplier));
-        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
+        machine.commitPlan(commit, hooks, bindings, signature);
     }
 
     function testCommitPlanRejectsBindingForUnknownStage() public {
@@ -385,7 +384,7 @@ contract UVPStateMachineTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPStateMachine.UnknownPlanStage.selector, bytes32(uint256(0x7777)))
         );
-        machine.commitPlan(commit, hooks, withUnknown, new UVPStateMachine.StageFileWriter[](0), signature);
+        machine.commitPlan(commit, hooks, withUnknown, signature);
     }
 
     function testCommitPlanRejectsBindingOnDynamicStage() public {
@@ -409,7 +408,7 @@ contract UVPStateMachineTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPStateMachine.SupplierBindingForbiddenForStage.selector, STAGE_DYN)
         );
-        machine.commitPlan(commit, hooks, withDynamic, new UVPStateMachine.StageFileWriter[](0), signature);
+        machine.commitPlan(commit, hooks, withDynamic, signature);
     }
 
     function testCommitPlanRejectsBindingOnDockStage() public {
@@ -432,7 +431,7 @@ contract UVPStateMachineTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPStateMachine.SupplierBindingForbiddenForStage.selector, STAGE_DOCK)
         );
-        machine.commitPlan(commit, hooks, withDock, new UVPStateMachine.StageFileWriter[](0), signature);
+        machine.commitPlan(commit, hooks, withDock, signature);
     }
 
     function testCommitPlanRejectsCandidateOnBirthStage() public {
@@ -456,7 +455,7 @@ contract UVPStateMachineTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPStateMachine.CandidateSupplierBindingForbiddenForStage.selector, STAGE_INIT)
         );
-        machine.commitPlan(commit, hooks, withCandidate, new UVPStateMachine.StageFileWriter[](0), signature);
+        machine.commitPlan(commit, hooks, withCandidate, signature);
     }
 
     function testCommitPlanRejectsCandidateWithoutDefault() public {
@@ -488,7 +487,7 @@ contract UVPStateMachineTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPStateMachine.CandidateSupplierBindingRequiresDefault.selector, STAGE_AUDIT)
         );
-        machine.commitPlan(commit, hooks, trimmed, new UVPStateMachine.StageFileWriter[](0), signature);
+        machine.commitPlan(commit, hooks, trimmed, signature);
     }
 
     function testCommitPlanRejectsInvalidBindingKind() public {
@@ -510,7 +509,7 @@ contract UVPStateMachineTest {
         );
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
         vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.InvalidSupplierBindingKind.selector, 2));
-        machine.commitPlan(commit, hooks, withInvalid, new UVPStateMachine.StageFileWriter[](0), signature);
+        machine.commitPlan(commit, hooks, withInvalid, signature);
     }
 
     function testCommitPlanRejectsInconsistentDynamicSupplierFlag() public {
@@ -532,7 +531,7 @@ contract UVPStateMachineTest {
         vm.expectRevert(
             abi.encodeWithSelector(UVPStateMachine.InconsistentDynamicSupplierFlag.selector, STAGE_DYN)
         );
-        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
+        machine.commitPlan(commit, hooks, bindings, signature);
     }
 
     function testCommitPlanRejectsWrongPublisherSignature() public {
@@ -548,7 +547,7 @@ contract UVPStateMachineTest {
                 UVPStateMachine.InvalidPlanSignature.selector, vm.addr(PUBLISHER_PRIVATE_KEY), vm.addr(BIRTH_PRIVATE_KEY)
             )
         );
-        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
+        machine.commitPlan(commit, hooks, bindings, signature);
     }
 
     function testCommitPlanRejectsExpiredSignature() public {
@@ -561,7 +560,7 @@ contract UVPStateMachineTest {
         vm.warp(block.timestamp + 2 hours);
         bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
         vm.expectRevert(abi.encodeWithSelector(UVPStateMachine.ExpiredPlanSignature.selector, commit.deadline));
-        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
+        machine.commitPlan(commit, hooks, bindings, signature);
     }
 
     function testCommitPlanRejectsHooksHashMismatch() public {
@@ -578,7 +577,7 @@ contract UVPStateMachineTest {
                 UVPStateMachine.HooksHashMismatch.selector, bytes32(uint256(0x1234)), keccak256(abi.encode(hooks))
             )
         );
-        machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), signature);
+        machine.commitPlan(commit, hooks, bindings, signature);
     }
 
     function testPlanCommittedEventCarriesSupplierBindingsRoot() public {
@@ -1416,7 +1415,7 @@ contract UVPStateMachineTest {
         StageFile[] memory files = _oneFile("dock_link", payload);
         UVPFileResourceModule fileModule = UVPFileResourceModule(machine.fileResourceModule());
         vm.prank(address(machine));
-        fileModule.applyStageFiles(planB, orderB, STAGE_DOCK, files, address(this));
+        fileModule.applyStageFiles(planB, orderB, STAGE_DOCK, files, address(this), bytes32(0), new bytes32[](0));
 
         bytes32[][] memory proofs = new bytes32[][](2);
         proofs[0] = bProof;
@@ -1942,7 +1941,6 @@ contract UVPStateMachineTest {
         machine.setDockRegistry(address(new UVPDockRegistry(address(machine))));
         machine.setPlanMetadataModule(address(new UVPPlanMetadataModule(address(machine))));
         machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
-        machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.setIdentityRegistry(address(registry));
         machine.freezeModules();
     }
@@ -1978,7 +1976,6 @@ contract UVPStateMachineTest {
         UVPFileResourceModule fileModule = new UVPFileResourceModule(address(machine));
         _fileModules[address(machine)] = fileModule;
         machine.setFileResourceModule(address(fileModule));
-        machine.setLens(address(new UVPStateMachineLens(address(machine))));
     }
 
     function _deployModulesWithoutIdentityRegistry() private returns (UVPStateMachine machine) {
@@ -2253,12 +2250,11 @@ contract UVPStateMachineTest {
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: MerkleCommitment.root(leaves),
             supplierBindingsRoot: _bindingsRoot(bindings),
-            fileWritersHash: keccak256(abi.encode(new UVPStateMachine.StageFileWriter[](0))),
             deadline: block.timestamp + 1 hours
         });
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(publisherPrivateKey, _planCommitDigest(machine, commit));
         planId = machine.commitPlan(
-            commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), _packedSignature(v, r, s)
+            commit, hooks, bindings, _packedSignature(v, r, s)
         );
 
         PLAN_ID = planId;
@@ -2278,7 +2274,6 @@ contract UVPStateMachineTest {
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: MerkleCommitment.root(_capabilityLeaves(selectorBindings, signalCapabilities)),
             supplierBindingsRoot: _bindingsRoot(bindings),
-            fileWritersHash: keccak256(abi.encode(new UVPStateMachine.StageFileWriter[](0))),
             deadline: block.timestamp + 1 hours
         });
     }
@@ -2296,7 +2291,6 @@ contract UVPStateMachineTest {
                 commit.hooksHash,
                 commit.capabilitiesRoot,
                 commit.supplierBindingsRoot,
-                commit.fileWritersHash,
                 commit.deadline
             )
         );

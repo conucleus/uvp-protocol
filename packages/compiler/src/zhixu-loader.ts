@@ -50,7 +50,7 @@ export const KNOWN_FIELDS = {
     "sendSignals",
     "receiveSignals",
     "fileResources",
-    "fileWriters",
+    "fileWriteTargets",
   ],
   sendSignalEntry: ["name", "validWhen", "trigger"],
   executor: ["supplierType", "supplierID", "selectableResource"],

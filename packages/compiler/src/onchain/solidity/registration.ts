@@ -123,31 +123,24 @@ export function packSolidityRegisterPlanArgs(
     signalId: capability.signalId,
     targetOrderRelation: 0 as const,
   }));
-  const fileWriters = artifact.stageFileWriters.map((binding) => ({
-    targetStageId: binding.targetStageId,
-    writerStageId: binding.writerStageId,
-  }));
   const hooksHash = hashSolidityHooks(hooks);
   const capabilitiesRoot = artifact.capabilitiesRoot;
-  const fileWritersHash = hashSolidityFileWriters(fileWriters);
   const planHash = keccak256(
     encodeAbiParameters(
       parseAbiParameters(
-        "bytes32 domain, bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 supplierBindingsRoot, bytes32 fileWritersHash",
+        "bytes32 domain, bytes32 hooksHash, bytes32 capabilitiesRoot, bytes32 supplierBindingsRoot",
       ),
       [
         keccak256(stringToHex(PLAN_RUNTIME_HASH_DOMAIN)),
         hooksHash,
         capabilitiesRoot,
         artifact.supplierBindingsRoot,
-        fileWritersHash,
       ],
     ),
   ) as HexString;
 
   return {
     schemaVersion: artifact.schemaVersion,
-    sourcePlanId: artifact.planId,
     zhixuId: artifact.zhixuId,
     planHash,
     artifactHash: artifact.planHash,
@@ -177,25 +170,7 @@ export function packSolidityRegisterPlanArgs(
     })),
     selectorBindings,
     signalCapabilities,
-    fileWriters,
-    fileWritersHash,
   };
-}
-
-export function hashSolidityFileWriters(
-  fileWriters: SolidityRegisterPlanArgs["fileWriters"],
-): HexString {
-  return keccak256(
-    encodeAbiParameters(
-      parseAbiParameters("(bytes32 targetStageId,bytes32 writerStageId)[] writers"),
-      [
-        fileWriters.map((writer) => ({
-          targetStageId: writer.targetStageId,
-          writerStageId: writer.writerStageId,
-        })),
-      ] as never,
-    ),
-  ) as HexString;
 }
 
 export function planIdForPublisher(

@@ -151,7 +151,6 @@ test("compiles a stable compact on-chain HookPlan artifact", () => {
 
   assert.deepEqual(onchain, again);
   assert.equal(onchain.schemaVersion, "uvp.onchainHookPlan.v1");
-  assert.equal(onchain.planId, sourcePlan.planId);
   assert.deepEqual(onchain.platform, sourcePlan.platform);
   assert.equal(onchain.sourcePlanHash, sourcePlan.planHash);
   const { planHash: _onchainPlanHash, ...onchainPayload } = onchain;
@@ -436,13 +435,13 @@ test("rejects a repinned capabilitiesRoot that drifts from the capability tables
   assert.deepEqual(validateOnchainHookPlanArtifact(onchain), []);
 });
 
-test("compiles fileWriters into a plan section outside the capabilities root", () => {
+test("compiles fileWriteTargets into capabilitiesRoot and stageFileWriters", () => {
   const withFileWriters: ZhixuDefinition = {
     ...baseZhixu,
     spec: {
       ...baseZhixu.spec,
       stages: baseZhixu.spec.stages.map((stage) =>
-        stage.name === "main" ? { ...stage, fileWriters: ["assign"] } : stage,
+        stage.name === "assign" ? { ...stage, fileWriteTargets: ["main"] } : stage,
       ),
     },
   };
@@ -464,14 +463,13 @@ test("compiles fileWriters into a plan section outside the capabilities root", (
   const tables = capabilityTablesOf(withWriters);
   assert.equal(
     withWriters.capabilitiesRoot,
-    capabilitiesRootOf(tables.selectorBindings, tables.signalCapabilities),
+    capabilitiesRootOf(tables.selectorBindings, tables.signalCapabilities, [
+      { writerStageId, targetStageId },
+    ]),
   );
-  assert.equal(withWriters.capabilitiesRoot, without.capabilitiesRoot);
+  assert.notEqual(withWriters.capabilitiesRoot, without.capabilitiesRoot);
   assert.notEqual(withWriters.planHash, without.planHash);
 
-  const args = toSolidityRegisterPlanArgs(withWriters);
-  assert.deepEqual(args.fileWriters, [{ targetStageId, writerStageId }]);
-  assert.match(args.fileWritersHash, /^0x[0-9a-f]{64}$/);
   assert.deepEqual(validateOnchainHookPlanArtifact(withWriters), []);
 
   const { planHash: _staleHash, ...payload } = withWriters;
@@ -497,7 +495,6 @@ test("maps on-chain artifacts to Solidity register-plan argument shape", () => {
   const args = toSolidityRegisterPlanArgs(onchain);
 
   assert.equal(args.schemaVersion, "uvp.onchainHookPlan.v1");
-  assert.equal(args.sourcePlanId, onchain.planId);
   const { planHash: _storedPlanHash, ...artifactPayload } = onchain;
   assert.equal(args.artifactHash, hashOnchainPlanPayload(artifactPayload));
   assert.notEqual(args.planHash, args.artifactHash);
@@ -969,14 +966,6 @@ test("rejects invalid on-chain HookPlan artifact shapes", () => {
         dependencyIndex: {},
       }),
     OnchainHookPlanArtifactValidationError,
-  );
-  assert.ok(
-    validateOnchainHookPlanArtifact({
-      ...onchain,
-      planId: `0x${"22".repeat(32)}`,
-    }).includes(
-      "planId must match the recomputed H(uvp:hook-plan-id:v1; compiler/platform/zhixuId/zhixuName)",
-    ),
   );
 });
 

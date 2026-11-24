@@ -94,7 +94,6 @@ export {
 } from "./onchain/capabilities-root.js";
 export {
   MAX_FILE_WRITERS,
-  MAX_FILE_WRITERS_PER_STAGE,
   compileStageFileWriters,
   validateOnchainStageFileWriters,
 } from "./onchain/file-writers.js";

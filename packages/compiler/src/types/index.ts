@@ -48,7 +48,7 @@ export interface ZhixuStage {
   readonly sendSignals?: readonly ZhixuSendSignal[];
   readonly receiveSignals?: Record<string, string>;
   readonly fileResources?: Record<string, FileResourceLike>;
-  readonly fileWriters?: readonly string[];
+  readonly fileWriteTargets?: readonly string[];
 }
 
 export interface ZhixuSendSignal {
@@ -66,7 +66,6 @@ export interface ExecuteConfigs {
 
 export interface HookPlanArtifact {
   readonly schemaVersion: typeof HOOK_PLAN_SCHEMA_VERSION;
-  readonly planId: HexString;
   readonly zhixuId: string;
   readonly zhixuName: string;
   readonly platform: ZhixuPlatform;
@@ -274,7 +273,6 @@ export interface OnchainCompiledAdmission {
 
 export interface OnchainHookPlanArtifact {
   readonly schemaVersion: typeof ONCHAIN_HOOK_PLAN_SCHEMA_VERSION;
-  readonly planId: HexString;
   readonly zhixuId: string;
   readonly zhixuName: string;
   readonly platform: ZhixuPlatform;
@@ -363,7 +361,6 @@ export interface SolidityRegisterSupplierBindingArg {
 
 export interface SolidityRegisterPlanArgs {
   readonly schemaVersion: typeof ONCHAIN_HOOK_PLAN_SCHEMA_VERSION;
-  readonly sourcePlanId: HexString;
   readonly zhixuId: string;
   readonly planHash: HexString;
   readonly artifactHash: HexString;
@@ -376,6 +373,4 @@ export interface SolidityRegisterPlanArgs {
   readonly supplierBindings: readonly SolidityRegisterSupplierBindingArg[];
   readonly selectorBindings: readonly SolidityRegisterStageSelectorBindingArg[];
   readonly signalCapabilities: readonly SolidityRegisterSignalCapabilityArg[];
-  readonly fileWriters: readonly SolidityRegisterFileWriterBindingArg[];
-  readonly fileWritersHash: HexString;
 }

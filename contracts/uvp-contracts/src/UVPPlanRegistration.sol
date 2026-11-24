@@ -20,7 +20,6 @@ import {
     _MAX_HOOKS_PER_DEPENDENCY_KEY as MAX_HOOKS_PER_DEPENDENCY_KEY,
     _MAX_INSTRUCTION_DEPTH as MAX_INSTRUCTION_DEPTH,
     _MAX_SUPPLIER_BINDINGS as MAX_SUPPLIER_BINDINGS,
-    _MAX_FILE_WRITERS as MAX_FILE_WRITERS,
     _EIP712_DOMAIN_TYPEHASH,
     _EIP712_NAME_HASH,
     _EIP712_VERSION_HASH,
@@ -45,7 +44,6 @@ library UVPPlanRegistration {
         UVPStateMachine.PlanCommit calldata commit,
         UVPStateMachine.CompactHook[] calldata hooks,
         UVPStateMachine.StageSupplierBinding[] calldata bindings,
-        UVPStateMachine.StageFileWriter[] calldata fileWriters,
         bytes calldata signature
     ) public returns (bytes32 planId) {
         if (!modulesFrozen) {
@@ -63,13 +61,6 @@ library UVPPlanRegistration {
         if (bindings.length > MAX_SUPPLIER_BINDINGS) {
             revert UVPStateMachine.TooManySupplierBindings(bindings.length);
         }
-        if (fileWriters.length > MAX_FILE_WRITERS) {
-            revert UVPStateMachine.TooManyFileWriters(fileWriters.length);
-        }
-        bytes32 actualFileWritersHash = keccak256(abi.encode(fileWriters));
-        if (actualFileWritersHash != commit.fileWritersHash) {
-            revert UVPStateMachine.FileWritersHashMismatch(commit.fileWritersHash, actualFileWritersHash);
-        }
         bytes32 actualHooksHash = keccak256(abi.encode(hooks));
         if (actualHooksHash != commit.hooksHash) {
             revert UVPStateMachine.HooksHashMismatch(commit.hooksHash, actualHooksHash);
@@ -85,7 +76,7 @@ library UVPPlanRegistration {
             revert UVPStateMachine.SupplierBindingsRootMismatch(commit.supplierBindingsRoot, supplierBindingsRoot);
         }
         bytes32 runtimePlanHash =
-            planRuntimeHash(commit.hooksHash, capabilitiesRoot, supplierBindingsRoot, commit.fileWritersHash);
+            planRuntimeHash(commit.hooksHash, capabilitiesRoot, supplierBindingsRoot);
         planId = planIdFor(commit.publisher, runtimePlanHash);
         UVPStateMachine.Plan storage plan = _plans[planId];
         if (plan.committed) {
@@ -95,7 +86,6 @@ library UVPPlanRegistration {
         plan.hooksHash = commit.hooksHash;
         plan.capabilitiesRoot = capabilitiesRoot;
         plan.supplierBindingsRoot = supplierBindingsRoot;
-        plan.fileWritersHash = commit.fileWritersHash;
         plan.publisher = commit.publisher;
         plan.committed = true;
 
@@ -148,7 +138,6 @@ library UVPPlanRegistration {
                 }
             }
             _applySupplierBindings(plan, bindings, identityRegistry, stages, stageKinds, stageCount);
-            _applyFileWriters(plan, fileWriters, stages, stageCount);
         }
 
         emit UVPStateMachine.PlanCommitted(
@@ -240,36 +229,6 @@ library UVPPlanRegistration {
             }
             _requireActiveSupplier(identityRegistry, binding.supplierId);
             plan.stageCandidateStages[binding.stageId] = true;
-        }
-    }
-
-    function _applyFileWriters(
-        UVPStateMachine.Plan storage plan,
-        UVPStateMachine.StageFileWriter[] calldata fileWriters,
-        bytes32[] memory stages,
-        uint256 stageCount
-    ) private {
-        for (uint256 i = 0; i < fileWriters.length; i++) {
-            UVPStateMachine.StageFileWriter calldata writer = fileWriters[i];
-            if (writer.targetStageId == bytes32(0)) {
-                revert UVPStateMachine.ZeroFileTargetStageId();
-            }
-            if (writer.writerStageId == bytes32(0) || writer.writerStageId == writer.targetStageId) {
-                revert UVPStateMachine.InvalidFileWriter(writer.targetStageId, writer.writerStageId);
-            }
-            if (_seenDependencyIndex(stages, stageCount, writer.targetStageId) == type(uint256).max) {
-                revert UVPStateMachine.UnknownPlanStage(writer.targetStageId);
-            }
-            if (_seenDependencyIndex(stages, stageCount, writer.writerStageId) == type(uint256).max) {
-                revert UVPStateMachine.UnknownPlanStage(writer.writerStageId);
-            }
-            bytes32[] storage targetWriters = plan.fileWriterStages[writer.targetStageId];
-            for (uint256 j = 0; j < targetWriters.length; j++) {
-                if (targetWriters[j] == writer.writerStageId) {
-                    revert UVPStateMachine.DuplicateFileWriter(writer.targetStageId, writer.writerStageId);
-                }
-            }
-            targetWriters.push(writer.writerStageId);
         }
     }
 
@@ -612,7 +571,6 @@ library UVPPlanRegistration {
                 commit.hooksHash,
                 commit.capabilitiesRoot,
                 commit.supplierBindingsRoot,
-                commit.fileWritersHash,
                 commit.deadline
             )
         );
@@ -638,11 +596,10 @@ library UVPPlanRegistration {
     function planRuntimeHash(
         bytes32 hooksHash,
         bytes32 capabilitiesRoot,
-        bytes32 supplierBindingsRoot,
-        bytes32 fileWritersHash
+        bytes32 supplierBindingsRoot
     ) private pure returns (bytes32) {
         return keccak256(
-            abi.encode(_PLAN_RUNTIME_HASH_DOMAIN, hooksHash, capabilitiesRoot, supplierBindingsRoot, fileWritersHash)
+            abi.encode(_PLAN_RUNTIME_HASH_DOMAIN, hooksHash, capabilitiesRoot, supplierBindingsRoot)
         );
     }
 
@@ -936,7 +893,13 @@ library UVPPlanRegistration {
             return;
         }
         IUVPFileResourceModule(fileResourceModule).applyStageFiles(
-            submission.planId, orderId, targetStageId, submission.files, submission.submitter
+            submission.planId,
+            orderId,
+            targetStageId,
+            submission.files,
+            submission.submitter,
+            submission.attribution.stageId,
+            submission.sourceId == bytes32(0) ? submission.attribution.capabilityProof : new bytes32[](0)
         );
     }
 

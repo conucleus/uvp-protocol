@@ -1,4 +1,3 @@
-import { planIdOf } from "../../hook-plan/assemble.js";
 import { hashOnchainPlanPayload } from "../hash/plan.js";
 import { capabilitiesRootOf } from "../capabilities-root.js";
 import {
@@ -70,7 +69,6 @@ export class OnchainHookPlanArtifactValidationError extends Error {
 
 const ONCHAIN_ARTIFACT_FIELDS: readonly string[] = [
   "schemaVersion",
-  "planId",
   "zhixuId",
   "zhixuName",
   "platform",
@@ -111,7 +109,6 @@ export function validateOnchainHookPlanArtifact(
     "schemaVersion",
     issues,
   );
-  expectHexHash(value.planId, "planId", issues);
   expectNonEmptyString(value.zhixuId, "zhixuId", issues);
   expectNonEmptyString(value.zhixuName, "zhixuName", issues);
   if (!isPlatform(value.platform)) {
@@ -119,28 +116,6 @@ export function validateOnchainHookPlanArtifact(
   }
   expectHexHash(value.sourcePlanHash, "sourcePlanHash", issues);
   expectHexHash(value.planHash, "planHash", issues);
-  if (
-    isPlatform(value.platform) &&
-    typeof value.zhixuId === "string" &&
-    typeof value.zhixuName === "string"
-  ) {
-    try {
-      const recomputedPlanId = planIdOf(
-        value.zhixuId,
-        value.zhixuName,
-        value.platform,
-      );
-      if (typeof value.planId === "string" && value.planId !== recomputedPlanId) {
-        issues.push(
-          "planId must match the recomputed H(uvp:hook-plan-id:v1; compiler/platform/zhixuId/zhixuName)",
-        );
-      }
-    } catch {
-      issues.push(
-        "planId preimage is not canonicalizable (platform carries non-JSON values)",
-      );
-    }
-  }
   expectHexHash(value.capabilitiesRoot, "capabilitiesRoot", issues);
   issues.push(...capabilitiesRootCommitmentIssues(value));
 
@@ -343,7 +318,6 @@ export function validateOnchainHookPlanArtifact(
     try {
       const expectedPlanHash = hashOnchainPlanPayload({
         schemaVersion: value.schemaVersion,
-        planId: value.planId,
         zhixuId: value.zhixuId,
         zhixuName: value.zhixuName,
         platform: value.platform,
@@ -512,9 +486,25 @@ function capabilitiesRootCommitmentIssues(
     }
   }
 
+  const writers: Array<{ writerStageId: HexString; targetStageId: HexString }> = [];
+  if (Array.isArray(value.stageFileWriters)) {
+    for (const writer of value.stageFileWriters) {
+      if (
+        isRecord(writer) &&
+        isHexHash(writer.writerStageId) &&
+        isHexHash(writer.targetStageId)
+      ) {
+        writers.push({
+          writerStageId: writer.writerStageId,
+          targetStageId: writer.targetStageId,
+        });
+      }
+    }
+  }
+
   if (
     value.capabilitiesRoot !==
-    capabilitiesRootOf(bindings, capabilities)
+    capabilitiesRootOf(bindings, capabilities, writers)
   ) {
     return [
       "capabilitiesRoot must match the recomputed root over selector bindings and signal capabilities",
@@ -669,7 +659,6 @@ function isPlanHashRecomputable(
 } {
   return (
     value.schemaVersion === ONCHAIN_HOOK_PLAN_SCHEMA_VERSION &&
-    isHexHash(value.planId) &&
     typeof value.zhixuId === "string" &&
     typeof value.zhixuName === "string" &&
     isPlatform(value.platform) &&

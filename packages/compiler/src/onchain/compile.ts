@@ -196,11 +196,11 @@ function lowerOnchainHookPlan(
   const capabilitiesRoot = capabilitiesRootOf(
     soliditySelectorBindings,
     soliditySignalCapabilities,
+    stageFileWriters,
   );
   const triggers = onchainPlanTriggersOf(compiledHooks);
   const payload = {
     schemaVersion: ONCHAIN_HOOK_PLAN_SCHEMA_VERSION,
-    planId: hookPlanArtifact.planId,
     zhixuId: hookPlanArtifact.zhixuId,
     zhixuName: hookPlanArtifact.zhixuName,
     platform: hookPlanArtifact.platform,

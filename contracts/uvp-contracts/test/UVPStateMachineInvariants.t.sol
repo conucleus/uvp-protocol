@@ -6,7 +6,6 @@ import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
-import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {UVPIdentityRegistry} from "../src/UVPIdentityRegistry.sol";
 import {MerkleCommitment} from "../src/libraries/MerkleCommitment.sol";
@@ -53,7 +52,7 @@ contract Handler {
     bytes32 private constant STATE_MACHINE_NAME_HASH = keccak256("UVPStateMachine");
     bytes32 private constant STATE_MACHINE_VERSION_HASH = keccak256("1");
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,bytes32 fileWritersHash,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,uint256 deadline)"
     );
 
     uint256 private constant ORDER_COUNT = 2;
@@ -94,7 +93,6 @@ contract Handler {
         machine.setDockRegistry(address(dockRegistry));
         machine.setPlanMetadataModule(address(planMetadata));
         machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
-        machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.setIdentityRegistry(address(registry));
         machine.freezeModules();
 
@@ -307,7 +305,6 @@ contract Handler {
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: EMPTY_MERKLE_ROOT,
             supplierBindingsRoot: MerkleCommitment.root(leaves),
-            fileWritersHash: keccak256(abi.encode(new UVPStateMachine.StageFileWriter[](0))),
             deadline: type(uint256).max
         });
         bytes32 structHash = keccak256(
@@ -317,12 +314,11 @@ contract Handler {
                 commit.hooksHash,
                 commit.capabilitiesRoot,
                 commit.supplierBindingsRoot,
-                commit.fileWritersHash,
                 commit.deadline
             )
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PUBLISHER_PRIVATE_KEY, _digest(structHash));
-        bytes32 registered = machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), _packedSignature(v, r, s));
+        bytes32 registered = machine.commitPlan(commit, hooks, bindings, _packedSignature(v, r, s));
         machine.finalizePlan(registered);
         return registered;
     }

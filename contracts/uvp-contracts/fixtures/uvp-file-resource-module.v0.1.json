@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xb230044e8a842e9fe6053ba713cf413b7c605246ff357157b27c109762fb5e25",
-    "bytecodeHash": "0xca231b93cfc7c26fbc9feaca1552a69724d147007ddac55280a04ef11bc0bd01",
-    "deployedBytecodeHash": "0x8bed3999f9ec115159db21a3427b90161d6d39ea16f5cd4cf20318089a428530",
-    "artifactHash": "0x1f43cb314e9ac3cf5c7d4b6644fc5b7e9973e5d3aed024bb244884ca157b2924"
+    "abiHash": "0xf72478ee16d9a29cb298f80684e1323dcf782bdefe730be49224cbf1834f0451",
+    "bytecodeHash": "0xdc1f72d73c239b54be8580bc04c1c8cd4bd2db242ee128816660a1fa25574e86",
+    "deployedBytecodeHash": "0x2f5de638ae632915a80ce9481839e39c6d7a385410cf18c6cc20fd807c2df482",
+    "artifactHash": "0x77d2d1232083a31c63061fd36933bf936b010fe84a43984e33eaf528538c9017"
   },
   "events": {
     "StageFileWritten": {
@@ -34,8 +34,8 @@
       "selector": "0x4d85184c"
     },
     "applyStageFiles": {
-      "signature": "applyStageFiles(bytes32,bytes32,bytes32,(string,bytes)[],address)",
-      "selector": "0x8b67f618"
+      "signature": "applyStageFiles(bytes32,bytes32,bytes32,(string,bytes)[],address,bytes32,bytes32[])",
+      "selector": "0x0cba8762"
     },
     "getStageFile": {
       "signature": "getStageFile(bytes32,bytes32,bytes32,string)",

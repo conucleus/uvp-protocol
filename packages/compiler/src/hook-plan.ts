@@ -15,7 +15,6 @@ import {
   assembleChainTrackHookPlan,
   hookPlanPayloadForHash,
   normalizePlatformPreimage,
-  planIdOf,
   HOOK_PLAN_HASH_DOMAIN,
 } from "./hook-plan/assemble.js";
 import { lowerHookPlanShell } from "./hook-plan/lower.js";
@@ -76,7 +75,6 @@ export function compileZhixuHookPlan(
 
 const HOOK_PLAN_ARTIFACT_FIELDS: readonly string[] = [
   "schemaVersion",
-  "planId",
   "zhixuId",
   "zhixuName",
   "platform",
@@ -105,30 +103,12 @@ export function validateHookPlanArtifact(value: unknown): readonly string[] {
   }
 
   expectLiteral(value.schemaVersion, HOOK_PLAN_SCHEMA_VERSION, "schemaVersion", issues);
-  expectHexHash(value.planId, "planId", issues);
   expectNonEmptyString(value.zhixuId, "zhixuId", issues);
   expectNonEmptyString(value.zhixuName, "zhixuName", issues);
   if (!isPlatform(value.platform)) {
     issues.push("platform must be an object with a non-empty type");
   }
   expectHexHash(value.planHash, "planHash", issues);
-
-  if (isPlatform(value.platform) && typeof value.zhixuId === "string" && typeof value.zhixuName === "string") {
-    try {
-      const recomputedPlanId = planIdOf(
-        value.zhixuId,
-        value.zhixuName,
-        value.platform,
-      );
-      if (typeof value.planId === "string" && value.planId !== recomputedPlanId) {
-        issues.push(
-          "planId must match the recomputed H(uvp:hook-plan-id:v1; compiler/platform/zhixuId/zhixuName)",
-        );
-      }
-    } catch {
-      issues.push("planId preimage is not canonicalizable (platform carries non-JSON values)");
-    }
-  }
   if (value.source === undefined) {
     issues.push(
       "source is required (the canonical annotation-stripped definition snapshot in the planHash preimage)",

@@ -253,7 +253,6 @@ describe("protocol bindings", () => {
       hooksHash: payloadHash,
       capabilitiesRoot: idempotencyKey,
       supplierBindingsRoot: idempotencyKey,
-      fileWritersHash: idempotencyKey,
       deadline,
     });
     const signature = await account.signTypedData(
@@ -274,7 +273,6 @@ describe("protocol bindings", () => {
         "hooksHash",
         "capabilitiesRoot",
         "supplierBindingsRoot",
-        "fileWritersHash",
         "deadline",
       ],
     );

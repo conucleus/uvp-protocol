@@ -6,7 +6,6 @@ import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
 import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
-import {UVPStateMachineLens} from "../src/UVPStateMachineLens.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {UVPIdentityRegistry} from "../src/UVPIdentityRegistry.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
@@ -86,7 +85,7 @@ contract StageSupplierChangeBlackBoxTest {
     address private constant STRANGER = address(uint160(0xbad));
 
     bytes32 private constant PLAN_COMMIT_TYPEHASH = keccak256(
-        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,bytes32 fileWritersHash,uint256 deadline)"
+        "UVPStateMachinePlanCommit(address publisher,bytes32 hooksHash,bytes32 capabilitiesRoot,bytes32 supplierBindingsRoot,uint256 deadline)"
     );
     bytes32 private constant SIGNAL_SUBMISSION_TYPEHASH = keccak256(
         "UVPStateMachineSignalSubmission(bytes32 planId,bytes32 orderId,bytes32 sourceId,bytes32 signalId,bytes32 payloadHash,bytes32 idempotencyKey,bytes32 targetStageId,bytes32 filesHash,bytes32 attributionHash,address submitter,uint256 deadline)"
@@ -423,7 +422,6 @@ contract StageSupplierChangeBlackBoxTest {
         machine.setDerivedSignalModule(address(derivedSignal));
         machine.setDockRegistry(address(dockRegistry));
         machine.setPlanMetadataModule(address(metadata));
-        machine.setLens(address(new UVPStateMachineLens(address(machine))));
         machine.setFileResourceModule(address(files));
         machine.setIdentityRegistry(address(suppliers));
         machine.freezeModules();
@@ -487,10 +485,9 @@ contract StageSupplierChangeBlackBoxTest {
             hooksHash: keccak256(abi.encode(hooks)),
             capabilitiesRoot: MerkleCommitment.root(capabilityLeaves),
             supplierBindingsRoot: MerkleCommitment.root(bindingLeaves),
-            fileWritersHash: keccak256(abi.encode(new UVPStateMachine.StageFileWriter[](0))),
             deadline: block.timestamp + 1 hours
         });
-        planId = machine.commitPlan(commit, hooks, bindings, new UVPStateMachine.StageFileWriter[](0), _sign(PUBLISHER_PRIVATE_KEY, _planCommitDigest(commit)));
+        planId = machine.commitPlan(commit, hooks, bindings, _sign(PUBLISHER_PRIVATE_KEY, _planCommitDigest(commit)));
         machine.finalizePlan(planId);
 
         UVPStateMachine.SignalSubmission memory birth = UVPStateMachine.SignalSubmission({
@@ -781,7 +778,6 @@ contract StageSupplierChangeBlackBoxTest {
                         commit.hooksHash,
                         commit.capabilitiesRoot,
                         commit.supplierBindingsRoot,
-                        commit.fileWritersHash,
                         commit.deadline
                     )
                 )

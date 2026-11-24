@@ -17,7 +17,6 @@ import {
     _MAX_HOOK_DELAY_SECONDS,
     _MAX_PLAN_DEPENDENCIES,
     _MAX_SUPPLIER_BINDINGS,
-    _MAX_FILE_WRITERS,
     _EIP712_DOMAIN_TYPEHASH,
     _EIP712_NAME_HASH,
     _EIP712_VERSION_HASH,
@@ -112,13 +111,7 @@ contract UVPStateMachine {
         bytes32 hooksHash;
         bytes32 capabilitiesRoot;
         bytes32 supplierBindingsRoot;
-        bytes32 fileWritersHash;
         uint256 deadline;
-    }
-
-    struct StageFileWriter {
-        bytes32 targetStageId;
-        bytes32 writerStageId;
     }
 
     struct StageSupplierBinding {
@@ -155,8 +148,6 @@ contract UVPStateMachine {
         mapping(bytes32 signalKey => StoredAdmission admission) admissions;
         mapping(bytes32 stageId => bool exists) stageExists;
         mapping(bytes32 stageId => bytes32 supplierId) stageDefaultSuppliers;
-        mapping(bytes32 targetStageId => bytes32[] writerStageIds) fileWriterStages;
-        bytes32 fileWritersHash;
         mapping(bytes32 stageId => bool) stageCandidateStages;
         mapping(bytes32 stageId => bool) dynamicSupplierStages;
         bool committed;
@@ -280,7 +271,6 @@ contract UVPStateMachine {
         return _s.identityRegistry;
     }
 
-    address public lens;
     bool public modulesFrozen;
 
     uint8 public constant SIGNAL_TARGET_CURRENT_ORDER = 0;
@@ -293,7 +283,6 @@ contract UVPStateMachine {
     uint64 public constant MAX_HOOK_DELAY_SECONDS = _MAX_HOOK_DELAY_SECONDS;
     uint256 public constant MAX_PLAN_DEPENDENCIES = _MAX_PLAN_DEPENDENCIES;
     uint256 public constant MAX_SUPPLIER_BINDINGS = _MAX_SUPPLIER_BINDINGS;
-    uint256 public constant MAX_FILE_WRITERS = _MAX_FILE_WRITERS;
 
     struct SMState {
         mapping(bytes32 => Plan) plans;
@@ -400,7 +389,6 @@ contract UVPStateMachine {
     bytes32 public constant DERIVED_SIGNAL_MODULE_ID = keccak256("uvp.module.derived_signal.v1");
     bytes32 public constant DOCK_REGISTRY_MODULE_ID = keccak256("uvp.module.dock_registry.v1");
     bytes32 public constant PLAN_METADATA_MODULE_ID = keccak256("uvp.module.plan_metadata.v1");
-    bytes32 public constant LENS_MODULE_ID = keccak256("uvp.module.lens.v1");
     bytes32 public constant FILE_RESOURCE_MODULE_ID = keccak256("uvp.module.file_resource.v1");
     bytes32 public constant IDENTITY_REGISTRY_MODULE_ID = keccak256("uvp.module.supplier_registry.v1");
 
@@ -441,10 +429,6 @@ contract UVPStateMachine {
         _s.planMetadataModule = _setModule(PLAN_METADATA_MODULE_ID, _s.planMetadataModule, moduleAddress);
     }
 
-    function setLens(address moduleAddress) external onlyOwner {
-        lens = _setModule(LENS_MODULE_ID, lens, moduleAddress);
-    }
-
     function setFileResourceModule(address moduleAddress) external onlyOwner {
         fileResourceModule = _setModule(FILE_RESOURCE_MODULE_ID, fileResourceModule, moduleAddress);
     }
@@ -459,7 +443,7 @@ contract UVPStateMachine {
         }
         if (
             stagePatchModule == address(0) || derivedSignalModule == address(0) || dockRegistry == address(0)
-                || _s.planMetadataModule == address(0) || lens == address(0) || fileResourceModule == address(0)
+                || _s.planMetadataModule == address(0) || fileResourceModule == address(0)
                 || _s.identityRegistry == address(0)
         ) {
             revert IncompleteModuleConfiguration();
@@ -476,7 +460,6 @@ contract UVPStateMachine {
                 derivedSignalModule,
                 dockRegistry,
                 _s.planMetadataModule,
-                lens,
                 fileResourceModule,
                 _s.identityRegistry
             )
@@ -501,11 +484,10 @@ contract UVPStateMachine {
         PlanCommit calldata commit,
         CompactHook[] calldata hooks,
         StageSupplierBinding[] calldata bindings,
-        StageFileWriter[] calldata fileWriters,
         bytes calldata signature
     ) external returns (bytes32 planId) {
         planId = UVPPlanRegistration.commitPlan(
-            _s.plans, modulesFrozen, _s.identityRegistry, commit, hooks, bindings, fileWriters, signature
+            _s.plans, modulesFrozen, _s.identityRegistry, commit, hooks, bindings, signature
         );
     }
 
@@ -516,11 +498,10 @@ contract UVPStateMachine {
     function planRuntimeHash(
         bytes32 hooksHash,
         bytes32 capabilitiesRoot,
-        bytes32 supplierBindingsRoot,
-        bytes32 fileWritersHash
+        bytes32 supplierBindingsRoot
     ) public pure returns (bytes32) {
         return keccak256(
-            abi.encode(_PLAN_RUNTIME_HASH_DOMAIN, hooksHash, capabilitiesRoot, supplierBindingsRoot, fileWritersHash)
+            abi.encode(_PLAN_RUNTIME_HASH_DOMAIN, hooksHash, capabilitiesRoot, supplierBindingsRoot)
         );
     }
 
@@ -847,23 +828,6 @@ contract UVPStateMachine {
         return _effectiveStageAccount(planId, orderId, stageId) == account;
     }
 
-    function _isPlanFileWriter(bytes32 planId, bytes32 targetStageId, bytes32 writerStageId)
-        private
-        view
-        returns (bool)
-    {
-        if (targetStageId == bytes32(0) || writerStageId == bytes32(0)) {
-            return false;
-        }
-        bytes32[] storage writers = _s.plans[planId].fileWriterStages[targetStageId];
-        for (uint256 i = 0; i < writers.length; i++) {
-            if (writers[i] == writerStageId) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     function _recordSignal(
         bytes32 planId,
         bytes32 orderId,
@@ -1054,33 +1018,12 @@ contract UVPStateMachine {
         return _isEffectiveStageAccount(planId, orderId, stageId, account);
     }
 
-    function isPlanFileWriter(bytes32 planId, bytes32 targetStageId, bytes32 writerStageId)
-        external
-        view
-        returns (bool)
-    {
-        return _isPlanFileWriter(planId, targetStageId, writerStageId);
-    }
-
     function isAuthorizedFileWriter(bytes32 planId, bytes32 orderId, bytes32 targetStageId, address account)
         external
         view
         returns (bool)
     {
-        if (!_isEffectiveStageAccount(planId, orderId, targetStageId, account)) {
-            bytes32[] storage writers = _s.plans[planId].fileWriterStages[targetStageId];
-            for (uint256 i = 0; i < writers.length; i++) {
-                if (_isEffectiveStageAccount(planId, orderId, writers[i], account)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        return true;
-    }
-
-    function planFileWritersHash(bytes32 planId) external view returns (bytes32) {
-        return _s.plans[planId].fileWritersHash;
+        return _isEffectiveStageAccount(planId, orderId, targetStageId, account);
     }
 
     function stageSupplierAssignment(bytes32 planId, bytes32 orderId, bytes32 targetStageId)

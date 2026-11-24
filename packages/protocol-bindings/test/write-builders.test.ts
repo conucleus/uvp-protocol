@@ -30,7 +30,6 @@ const registration: PlanRegistrationArgs = {
   hooksHash: bytes32("03"),
   capabilitiesRoot: bytes32("04"),
   supplierBindingsRoot: bytes32("07"),
-  fileWritersHash: bytes32("08"),
   hooks: [{
     hookId: bytes32("0a"),
     stageId: bytes32("0b"),
@@ -46,9 +45,6 @@ const registration: PlanRegistrationArgs = {
   supplierBindings: [
     { stageId: bytes32("10"), supplierId: bytes32("11"), kind: 0 },
     { stageId: bytes32("10"), supplierId: bytes32("12"), kind: 1 },
-  ],
-  fileWriters: [
-    { targetStageId: bytes32("13"), writerStageId: bytes32("14") },
   ],
 };
 
@@ -70,24 +66,21 @@ describe("plan registration builders", () => {
     const decoded = decodeFunctionData({ abi: STATE_MACHINE_ABI, data: call.data });
     assert.equal(decoded.functionName, "commitPlan");
     assert.ok(decoded.args);
-    const [commit, hooks, bindings, fileWriters, signature] = decoded.args as readonly [
+    const [commit, hooks, bindings, signature] = decoded.args as readonly [
       {
         readonly publisher: string;
         readonly deadline: bigint;
         readonly hooksHash: string;
         readonly supplierBindingsRoot: string;
-        readonly fileWritersHash: string;
       },
       readonly { readonly instructions: readonly { readonly op: number }[] }[],
       readonly { readonly supplierId: string; readonly kind: number }[],
-      readonly { readonly targetStageId: string; readonly writerStageId: string }[],
       string,
     ];
     assert.equal(commit.publisher, PUBLISHER);
     assert.equal(commit.deadline, 1_700_000_000n);
     assert.equal(commit.hooksHash, registration.hooksHash);
     assert.equal(commit.supplierBindingsRoot, registration.supplierBindingsRoot);
-    assert.equal(commit.fileWritersHash, registration.fileWritersHash);
     assert.deepEqual(hooks[0]?.instructions.map((instruction) => instruction.op), [0, 2, 4]);
     assert.deepEqual(
       bindings.map((binding) => [binding.supplierId, binding.kind]),
@@ -96,7 +89,6 @@ describe("plan registration builders", () => {
         [registration.supplierBindings[1]!.supplierId, 1],
       ],
     );
-    assert.deepEqual(fileWriters, registration.fileWriters);
     assert.equal(signature, SIGNATURE);
   });
 
@@ -119,7 +111,6 @@ describe("plan registration builders", () => {
       typedData.message.supplierBindingsRoot,
       registration.supplierBindingsRoot,
     );
-    assert.equal(typedData.message.fileWritersHash, registration.fileWritersHash);
     assert.equal(typedData.message.deadline, "1700000000");
   });
 

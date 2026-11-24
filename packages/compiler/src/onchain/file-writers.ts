@@ -5,12 +5,11 @@ import { expectClosedKeySet, expectHexHash, expectNonEmptyString, isHexHash, isR
 import type { OnchainStageFileWriter } from "../types/index.js";
 
 /**
- * 阶段文件写入者声明：从定义快照读取 `spec.stages[].fileWriters`，生成
- * 计划级 (targetStageId, writerStageId) 明文段；定义级 DSL 语义由 uvp-core
+ * 阶段文件写入目标声明：从定义快照读取 `spec.stages[].fileWriteTargets`，生成
+ * 计划级 (writerStageId, targetStageId) 明文段；定义级 DSL 语义由 uvp-core
  * analyze 校验，本模块只做链轨产物边界的形状、阶段存在性与 EVM 注册上限。
  */
 
-export const MAX_FILE_WRITERS_PER_STAGE = 8;
 export const MAX_FILE_WRITERS = 64;
 
 const STAGE_FILE_WRITER_FIELDS: readonly string[] = [
@@ -31,64 +30,58 @@ export function compileStageFileWriters(
     if (!isRecord(stage)) {
       continue;
     }
-    const targetStageIdentifier =
+    const writerStageIdentifier =
       typeof stage.name === "string" ? stage.name : undefined;
-    const declaredWriters = stage.fileWriters;
-    if (declaredWriters === undefined) {
+    const declaredTargets = stage.fileWriteTargets;
+    if (declaredTargets === undefined) {
       continue;
     }
-    if (targetStageIdentifier === undefined) {
+    if (writerStageIdentifier === undefined) {
       issues.push(
-        "a spec.stages[] entry carrying fileWriters has no string stage name",
+        "a spec.stages[] entry carrying fileWriteTargets has no string stage name",
       );
       continue;
     }
-    if (!Array.isArray(declaredWriters)) {
+    if (!Array.isArray(declaredTargets)) {
       issues.push(
-        `stage ${targetStageIdentifier} fileWriters must be an array of stage names`,
+        `stage ${writerStageIdentifier} fileWriteTargets must be an array of stage names`,
       );
       continue;
     }
-    if (declaredWriters.length > MAX_FILE_WRITERS_PER_STAGE) {
-      issues.push(
-        `stage ${targetStageIdentifier} declares ${declaredWriters.length} fileWriters, above the ${MAX_FILE_WRITERS_PER_STAGE} writer stages a stage may declare`,
-      );
-      continue;
-    }
-    for (const writerStageIdentifier of declaredWriters) {
+    for (const targetStageIdentifier of declaredTargets) {
       if (
-        typeof writerStageIdentifier !== "string" ||
-        writerStageIdentifier.trim().length === 0
+        typeof targetStageIdentifier !== "string" ||
+        targetStageIdentifier.trim().length === 0
       ) {
         issues.push(
-          `stage ${targetStageIdentifier} fileWriters entries must be non-empty stage names`,
+          `stage ${writerStageIdentifier} fileWriteTargets entries must be non-empty stage names`,
         );
         continue;
       }
-      if (writerStageIdentifier === targetStageIdentifier) {
+      if (targetStageIdentifier === writerStageIdentifier) {
         issues.push(
-          `stage ${targetStageIdentifier} lists itself in fileWriters; the stage's own executor is implicit and a self leaf is not a capability`,
+          `stage ${writerStageIdentifier} lists itself in fileWriteTargets; the stage's own executor is implicit and a self leaf is not a capability`,
         );
         continue;
-      }
-      if (!compiledStageIdentifiers.has(targetStageIdentifier)) {
-        issues.push(
-          `stage ${targetStageIdentifier} carries fileWriters but has no compiled hooks; an unmaterialized target stage has no on-chain file map`,
-        );
-        break;
       }
       if (!compiledStageIdentifiers.has(writerStageIdentifier)) {
         issues.push(
-          `stage ${targetStageIdentifier} names file writer ${writerStageIdentifier}, which has no compiled hooks in this plan`,
+          `stage ${writerStageIdentifier} carries fileWriteTargets but has no compiled hooks; an unmaterialized writer stage has no on-chain identity`,
+        );
+        break;
+      }
+      if (!compiledStageIdentifiers.has(targetStageIdentifier)) {
+        issues.push(
+          `stage ${writerStageIdentifier} names file write target ${targetStageIdentifier}, which has no compiled hooks in this plan`,
         );
         continue;
       }
       const targetStageId = onchainStageId(targetStageIdentifier);
       const writerStageId = onchainStageId(writerStageIdentifier);
-      const key = `${targetStageId}:${writerStageId}`;
+      const key = `${writerStageId}:${targetStageId}`;
       if (seen.has(key)) {
         issues.push(
-          `duplicate file writer capability ${targetStageIdentifier}->${writerStageIdentifier}`,
+          `duplicate file write target capability ${writerStageIdentifier}->${targetStageIdentifier}`,
         );
         continue;
       }
@@ -189,13 +182,6 @@ export function validateOnchainStageFileWriters(
         issues.push(`duplicate file writer capability ${key}`);
       }
       seen.add(key);
-      const current = writersPerTarget.get(binding.targetStageId) ?? 0;
-      writersPerTarget.set(binding.targetStageId, current + 1);
-      if (current + 1 === MAX_FILE_WRITERS_PER_STAGE + 1) {
-        issues.push(
-          `${prefix} exceeds the ${MAX_FILE_WRITERS_PER_STAGE} file writer capabilities bound for one target stage`,
-        );
-      }
     }
   }
   return issues;

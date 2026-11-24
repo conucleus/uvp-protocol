@@ -14,7 +14,9 @@ interface IUVPFileResourceModule {
         bytes32 orderId,
         bytes32 targetStageId,
         StageFile[] calldata files,
-        address submitter
+        address submitter,
+        bytes32 writerStageId,
+        bytes32[] calldata fileWriterProof
     ) external;
 
     function getStageFile(bytes32 planId, bytes32 orderId, bytes32 targetStageId, string calldata key)

@@ -8,7 +8,7 @@ import {
   HookPlanArtifactValidationError,
   validateHookPlanArtifact,
 } from "../src/hook-plan.js";
-import { hookPlanHashOf, planIdOf } from "../src/hook-plan/assemble.js";
+import { hookPlanHashOf } from "../src/hook-plan/assemble.js";
 import { definitionUid } from "../src/identity.js";
 import type {
   HookPlanArtifact,
@@ -110,7 +110,6 @@ test("compiles internal HookPlan IR", () => {
   assert.equal(plan.schemaVersion, "uvp.hookPlan.v1");
   assert.match(plan.zhixuId, /^zx-[0-9a-f]{32}$/);
   assert.deepEqual(plan.platform, { type: "cloud" });
-  assert.match(plan.planId, /^0x[0-9a-f]{64}$/);
   assert.match(plan.planHash, /^0x[0-9a-f]{64}$/);
   assert.equal(plan.compiledHooks.length, 3);
   assert.deepEqual(plan.compiledHooks.map((hook) => hook.hookId), [
@@ -178,7 +177,7 @@ test("preserves opaque platform metadata for future target schemas at the intern
   assert.deepEqual(validateHookPlanArtifact(plan), []);
 });
 
-test("definitionUid is track-agnostic while planId drops empty platform params", () => {
+test("definitionUid is track-agnostic and empty platform params normalize away", () => {
   const withoutParams = compileZhixuHookPlan(baseZhixu);
   const withEmptyParams = compileZhixuHookPlan({
     ...baseZhixu,
@@ -189,14 +188,6 @@ test("definitionUid is track-agnostic while planId drops empty platform params",
   });
   assert.deepEqual(withEmptyParams.platform, withoutParams.platform);
   assert.equal(withEmptyParams.zhixuId, withoutParams.zhixuId);
-  assert.equal(withEmptyParams.planId, withoutParams.planId);
-  assert.equal(
-    planIdOf(withEmptyParams.zhixuId, withEmptyParams.zhixuName, {
-      ...withEmptyParams.platform,
-      params: {},
-    }),
-    withEmptyParams.planId,
-  );
 
   const carryingEmptyParams: HookPlanArtifact = {
     ...withoutParams,
@@ -263,7 +254,7 @@ test("validates HookPlan IR artifacts at the internal boundary", () => {
   );
 });
 
-test("rejects artifacts tampering compiledHooks/planId/source against the carried commitments", () => {
+test("rejects artifacts tampering compiledHooks/source against the carried commitments", () => {
   const plan = compileZhixuHookPlan(baseZhixu);
 
   const tampered = {
@@ -279,13 +270,6 @@ test("rejects artifacts tampering compiledHooks/planId/source against the carrie
   ]);
   assert.deepEqual(validateHookPlanArtifact(resign(tampered)), []);
 
-  const tamperedPlanId = { ...plan, planId: `0x${"11".repeat(32)}` };
-  assert.ok(
-    validateHookPlanArtifact(tamperedPlanId).includes(
-      "planId must match the recomputed H(uvp:hook-plan-id:v1; compiler/platform/zhixuId/zhixuName)",
-    ),
-  );
-
   assert.deepEqual(validateHookPlanArtifact({ ...plan, source: undefined }), [
     "source is required (the canonical annotation-stripped definition snapshot in the planHash preimage)",
   ]);
@@ -297,7 +281,6 @@ test("binds the carried source to zhixuId, zhixuName, and platform", () => {
   const forgedId = {
     ...plan,
     zhixuId: `zx-${"00".repeat(16)}`,
-    planId: planIdOf(`zx-${"00".repeat(16)}`, plan.zhixuName, plan.platform),
   };
   assert.deepEqual(validateHookPlanArtifact(resign(forgedId)), [
     "zhixuId must equal definitionUid(source); a forged or swapped id would bind the plan to another definition's identity",
@@ -306,7 +289,6 @@ test("binds the carried source to zhixuId, zhixuName, and platform", () => {
   const forgedName = {
     ...plan,
     zhixuName: "renamed_zhixu",
-    planId: planIdOf(plan.zhixuId, "renamed_zhixu", plan.platform),
   };
   assert.deepEqual(validateHookPlanArtifact(resign(forgedName)), [
     "zhixuName must equal source.metadata.name; the carried source snapshot is the only owner of the plan's display identity",
@@ -315,10 +297,6 @@ test("binds the carried source to zhixuId, zhixuName, and platform", () => {
   const forgedPlatform = {
     ...plan,
     platform: { ...plan.platform, type: "blockchain" },
-    planId: planIdOf(plan.zhixuId, plan.zhixuName, {
-      ...plan.platform,
-      type: "blockchain",
-    }),
   };
   assert.deepEqual(validateHookPlanArtifact(resign(forgedPlatform)), [
     "platform must match the source definition's spec.platform (empty params normalize away)",

@@ -14,6 +14,7 @@ import type {
 
 export const SIGNAL_CAPABILITY_LEAF_DOMAIN = "UVP_SIGNAL_CAPABILITY_V1";
 export const SELECTOR_BINDING_LEAF_DOMAIN = "UVP_SELECTOR_BINDING_V1";
+export const FILE_WRITER_LEAF_DOMAIN = "UVP_FILE_WRITER_V1";
 
 export function signalCapabilityLeaf(
   stageId: HexString,
@@ -36,6 +37,18 @@ export function selectorBindingLeaf(
   return keccakWords(SELECTOR_BINDING_LEAF_DOMAIN, [selectorStageId, targetStageId]);
 }
 
+export function fileWriterLeaf(
+  writerStageId: HexString,
+  targetStageId: HexString,
+): HexString {
+  return keccakWords(FILE_WRITER_LEAF_DOMAIN, [writerStageId, targetStageId]);
+}
+
+interface FileWriterTableEntry {
+  readonly writerStageId: HexString;
+  readonly targetStageId: HexString;
+}
+
 interface SelectorBindingTableEntry {
   readonly selectorStageId: HexString;
   readonly targetStageId: HexString;
@@ -51,6 +64,7 @@ interface SignalCapabilityTableEntry {
 export function capabilityLeaves(
   selectorBindings: readonly SelectorBindingTableEntry[],
   signalCapabilities: readonly SignalCapabilityTableEntry[],
+  stageFileWriters: readonly FileWriterTableEntry[] = [],
 ): HexString[] {
   return [
     ...selectorBindings.map((binding) =>
@@ -64,14 +78,20 @@ export function capabilityLeaves(
         capability.targetOrderRelation,
       ),
     ),
+    ...stageFileWriters.map((writer) =>
+      fileWriterLeaf(writer.writerStageId, writer.targetStageId),
+    ),
   ];
 }
 
 export function capabilitiesRootOf(
   selectorBindings: readonly SelectorBindingTableEntry[],
   signalCapabilities: readonly SignalCapabilityTableEntry[],
+  stageFileWriters: readonly FileWriterTableEntry[] = [],
 ): HexString {
-  return merkleRoot(capabilityLeaves(selectorBindings, signalCapabilities));
+  return merkleRoot(
+    capabilityLeaves(selectorBindings, signalCapabilities, stageFileWriters),
+  );
 }
 
 export function signalCapabilityProof(

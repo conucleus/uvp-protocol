@@ -7,6 +7,7 @@ interface IUVPPlanMetadataModule {
         pure
         returns (bytes32);
     function selectorBindingLeaf(bytes32 selectorStageId, bytes32 targetStageId) external pure returns (bytes32);
+    function fileWriterBindingLeaf(bytes32 writerStageId, bytes32 targetStageId) external pure returns (bytes32);
 
     function finalizePlanMetadata(bytes32 planId, bytes32 capabilitiesRoot) external;
 
@@ -28,6 +29,13 @@ interface IUVPPlanMetadataModule {
     function verifyStageSelectorBinding(
         bytes32 planId,
         bytes32 selectorStageId,
+        bytes32 targetStageId,
+        bytes32[] calldata proof
+    ) external view returns (bool);
+
+    function verifyFileWriterBinding(
+        bytes32 planId,
+        bytes32 writerStageId,
         bytes32 targetStageId,
         bytes32[] calldata proof
     ) external view returns (bool);

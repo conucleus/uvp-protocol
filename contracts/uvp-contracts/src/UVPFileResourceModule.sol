@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IUVPFileResourceModule, StageFile, StageFilesEmpty} from "./interfaces/IUVPFileResourceModule.sol";
+import {IUVPPlanMetadataModule} from "./interfaces/IUVPPlanMetadataModule.sol";
 import {IUVPStateMachineCore} from "./interfaces/IUVPStateMachineCore.sol";
 
 /// File-map owner: per (plan, order, target stage) opaque key -> payload entries.
@@ -42,7 +43,9 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
         bytes32 orderId,
         bytes32 targetStageId,
         StageFile[] calldata files,
-        address submitter
+        address submitter,
+        bytes32 writerStageId,
+        bytes32[] calldata fileWriterProof
     ) external {
         if (msg.sender != address(stateMachine)) {
             revert UnauthorizedStateMachine(msg.sender);
@@ -61,7 +64,15 @@ contract UVPFileResourceModule is IUVPFileResourceModule {
             revert FileTargetStageUnknown(planId, targetStageId);
         }
         if (!stateMachine.isAuthorizedFileWriter(planId, orderId, targetStageId, submitter)) {
-            revert FileWriterUnauthorized(orderId, targetStageId, submitter);
+            if (
+                writerStageId == bytes32(0)
+                    || !stateMachine.isAuthorizedFileWriter(planId, orderId, writerStageId, submitter)
+                    || !IUVPPlanMetadataModule(stateMachine.planMetadataModule()).verifyFileWriterBinding(
+                        planId, writerStageId, targetStageId, fileWriterProof
+                    )
+            ) {
+                revert FileWriterUnauthorized(orderId, targetStageId, submitter);
+            }
         }
 
         mapping(bytes32 => FileRecord) storage targetFiles = _stageFiles[planId][orderId][targetStageId];

@@ -58,10 +58,8 @@ export function assembleChainTrackHookPlan(
 ): HookPlanArtifact {
   const zhixuId = definitionUid(definition);
   const platform = shell.platform as HookPlanArtifact["platform"];
-  const planId = planIdOf(zhixuId, shell.zhixuName, platform);
   const payload = {
     schemaVersion: HOOK_PLAN_SCHEMA_VERSION,
-    planId,
     zhixuId,
     zhixuName: shell.zhixuName,
     platform,
@@ -81,25 +79,11 @@ export function assembleChainTrackHookPlan(
   };
 }
 
-export function planIdOf(
-  zhixuId: string,
-  zhixuName: string,
-  platform: unknown,
-): HexString {
-  return hashCanonical(HOOK_PLAN_ID_DOMAIN, {
-    compiler: { name: COMPILER_NAME, version: COMPILER_VERSION },
-    platform: normalizePlatformPreimage(platform),
-    zhixuId,
-    zhixuName,
-  });
-}
-
 export function hookPlanPayloadForHash(
   artifact: Omit<HookPlanArtifact, "planHash">,
 ): Record<string, unknown> {
   return {
     schemaVersion: artifact.schemaVersion,
-    planId: artifact.planId,
     zhixuId: artifact.zhixuId,
     zhixuName: artifact.zhixuName,
     platform: artifact.platform,
