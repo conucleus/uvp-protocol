@@ -135,6 +135,8 @@ contract UVPStateMachineTest {
     bytes32 private constant HOOK_DOCK_DONE = bytes32(uint256(0x6007));
     bytes32 private constant HOOK_TIMER = bytes32(uint256(0x6005));
     bytes32 private constant HOOK_VETO = bytes32(uint256(0x6006));
+    bytes32 private constant HOOK_DECAY_REGISTRATION = bytes32(uint256(0x6008));
+    bytes32 private constant HOOK_DECAY_POKE = bytes32(uint256(0x6009));
     bytes32 private constant HOOK_OBSERVER_A = bytes32(uint256(0x6010));
     bytes32 private constant HOOK_OBSERVER_B = bytes32(uint256(0x6011));
     bytes32 private constant HOOK_WATCH_PRE = bytes32(uint256(0x6012));
@@ -1682,6 +1684,40 @@ contract UVPStateMachineTest {
         require(readyEmitted, "timer ready marker missing");
     }
 
+    function testReadyDecayingVetoDueAtSurvivesRegistrationEvaluation() public {
+        UVPStateMachine machine = _newMachine();
+        bytes32 planId = _registerPlan(machine, _decayingVetoRegistrationPlan());
+        _submitTriggerBirth(machine, planId);
+        _submit(machine, SOURCE_BOOTSTRAP, SIGNAL_VETO);
+        (,,, uint64 vetoSubmittedAt,) = machine.getSignal(planId, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VETO);
+        vm.warp(vetoSubmittedAt + 1);
+        _submit(machine, SOURCE_BOOTSTRAP, SIGNAL_OPEN);
+        (UVPStateMachine.HookStatus status, uint64 dueAt,) =
+            machine.getHookStatus(planId, ORDER_ID, HOOK_DECAY_REGISTRATION);
+        require(status == UVPStateMachine.HookStatus.Ready, "decaying veto not ready");
+        require(dueAt == vetoSubmittedAt + 5, "ready dueAt dropped on registration path");
+    }
+
+    function testReadyDecayingVetoDueAtSurvivesPokeTimerEvaluation() public {
+        UVPStateMachine machine = _newMachine();
+        bytes32 planId = _registerPlan(machine, _decayingVetoPokePlan());
+        _submitTriggerBirth(machine, planId);
+        _submit(machine, SOURCE_BOOTSTRAP, SIGNAL_OPEN);
+        (,,, uint64 openSubmittedAt,) = machine.getSignal(planId, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_OPEN);
+        vm.warp(openSubmittedAt + 8);
+        _submit(machine, SOURCE_BOOTSTRAP, SIGNAL_VETO);
+        (,,, uint64 vetoSubmittedAt,) = machine.getSignal(planId, ORDER_ID, SOURCE_BOOTSTRAP, SIGNAL_VETO);
+        (UVPStateMachine.HookStatus status, uint64 dueAt,) =
+            machine.getHookStatus(planId, ORDER_ID, HOOK_DECAY_POKE);
+        require(status == UVPStateMachine.HookStatus.Wait, "timer leg not waiting");
+        require(dueAt == openSubmittedAt + 10, "wait dueAt must follow the timer leg");
+        vm.warp(openSubmittedAt + 10);
+        machine.pokeTimer(planId, ORDER_ID, HOOK_DECAY_POKE);
+        (status, dueAt,) = machine.getHookStatus(planId, ORDER_ID, HOOK_DECAY_POKE);
+        require(status == UVPStateMachine.HookStatus.Ready, "decaying veto not ready after poke");
+        require(dueAt == vetoSubmittedAt + 5, "ready dueAt dropped on poke path");
+    }
+
     function testNegativeSignalCancelsHook() public {
         UVPStateMachine machine = _newMachine();
         bytes32 planId = _registerPlan(machine, _vetoPlan());
@@ -2449,6 +2485,115 @@ contract UVPStateMachineTest {
             hookId: HOOK_TIMER,
             stageId: STAGE_INIT,
             hookName: keccak256("timer.hook"),
+            flags: FLAG_EMIT_READY,
+            instructions: instructions,
+            dependencyKeys: _depsOf(instructions)
+        });
+    }
+
+    function _decayingVetoRegistrationPlan() private pure returns (UVPStateMachine.CompactHook[] memory hooks) {
+        hooks = new UVPStateMachine.CompactHook[](2);
+        hooks[0] = _signalHook(
+            HOOK_BIRTH, STAGE_INIT, SIGNAL_BIRTH, FLAG_ORDER_TRIGGER_MINT | FLAG_EMIT_READY, SOURCE_BOOTSTRAP
+        );
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](5);
+        instructions[0] = UVPStateMachine.Instruction({
+            op: uint8(UVPStateMachine.InstructionOp.Signal),
+            sourceId: SOURCE_BOOTSTRAP,
+            signalId: SIGNAL_VETO,
+            arity: 0,
+            delaySeconds: 0
+        });
+        instructions[1] = UVPStateMachine.Instruction({
+            op: uint8(UVPStateMachine.InstructionOp.Delay),
+            sourceId: bytes32(0),
+            signalId: bytes32(0),
+            arity: 0,
+            delaySeconds: 5
+        });
+        instructions[2] = UVPStateMachine.Instruction({
+            op: uint8(UVPStateMachine.InstructionOp.Not),
+            sourceId: bytes32(0),
+            signalId: bytes32(0),
+            arity: 0,
+            delaySeconds: 0
+        });
+        instructions[3] = UVPStateMachine.Instruction({
+            op: uint8(UVPStateMachine.InstructionOp.Signal),
+            sourceId: SOURCE_BOOTSTRAP,
+            signalId: SIGNAL_OPEN,
+            arity: 0,
+            delaySeconds: 0
+        });
+        instructions[4] = UVPStateMachine.Instruction({
+            op: uint8(UVPStateMachine.InstructionOp.And),
+            sourceId: bytes32(0),
+            signalId: bytes32(0),
+            arity: 2,
+            delaySeconds: 0
+        });
+        hooks[1] = UVPStateMachine.CompactHook({
+            hookId: HOOK_DECAY_REGISTRATION,
+            stageId: STAGE_INIT,
+            hookName: keccak256("decay.registration"),
+            flags: FLAG_EMIT_READY,
+            instructions: instructions,
+            dependencyKeys: _depsOf(instructions)
+        });
+    }
+
+    function _decayingVetoPokePlan() private pure returns (UVPStateMachine.CompactHook[] memory hooks) {
+        hooks = new UVPStateMachine.CompactHook[](2);
+        hooks[0] = _signalHook(
+            HOOK_BIRTH, STAGE_INIT, SIGNAL_BIRTH, FLAG_ORDER_TRIGGER_MINT | FLAG_EMIT_READY, SOURCE_BOOTSTRAP
+        );
+        UVPStateMachine.Instruction[] memory instructions = new UVPStateMachine.Instruction[](6);
+        instructions[0] = UVPStateMachine.Instruction({
+            op: uint8(UVPStateMachine.InstructionOp.Signal),
+            sourceId: SOURCE_BOOTSTRAP,
+            signalId: SIGNAL_OPEN,
+            arity: 0,
+            delaySeconds: 0
+        });
+        instructions[1] = UVPStateMachine.Instruction({
+            op: uint8(UVPStateMachine.InstructionOp.Delay),
+            sourceId: bytes32(0),
+            signalId: bytes32(0),
+            arity: 0,
+            delaySeconds: 10
+        });
+        instructions[2] = UVPStateMachine.Instruction({
+            op: uint8(UVPStateMachine.InstructionOp.Signal),
+            sourceId: SOURCE_BOOTSTRAP,
+            signalId: SIGNAL_VETO,
+            arity: 0,
+            delaySeconds: 0
+        });
+        instructions[3] = UVPStateMachine.Instruction({
+            op: uint8(UVPStateMachine.InstructionOp.Delay),
+            sourceId: bytes32(0),
+            signalId: bytes32(0),
+            arity: 0,
+            delaySeconds: 5
+        });
+        instructions[4] = UVPStateMachine.Instruction({
+            op: uint8(UVPStateMachine.InstructionOp.Not),
+            sourceId: bytes32(0),
+            signalId: bytes32(0),
+            arity: 0,
+            delaySeconds: 0
+        });
+        instructions[5] = UVPStateMachine.Instruction({
+            op: uint8(UVPStateMachine.InstructionOp.And),
+            sourceId: bytes32(0),
+            signalId: bytes32(0),
+            arity: 2,
+            delaySeconds: 0
+        });
+        hooks[1] = UVPStateMachine.CompactHook({
+            hookId: HOOK_DECAY_POKE,
+            stageId: STAGE_INIT,
+            hookName: keccak256("decay.poke"),
             flags: FLAG_EMIT_READY,
             instructions: instructions,
             dependencyKeys: _depsOf(instructions)

@@ -11,6 +11,9 @@ const CALLDATA_KEY_PATTERN = /(^|[_-])(calldata|raw[_-]?calldata|data|input)($|[
 const EVIDENCE_PAYLOAD_KEY_PATTERN = /(^|[_-])(textpayload|base64payload|jsonpayload|evidence[_-]?plaintext|plaintext|raw[_-]?evidence|evidence[_-]?payload|file[_-]?bytes|bytes|content)($|[_-])/i;
 const RPC_SECRET_PARAM_PATTERN = /^(api[_-]?key|apikey|access[_-]?token|auth|key|token|secret|signature|password|x-amz-signature|x-amz-credential|awsaccesskeyid|sig)$/i;
 const PRESIGNED_URL_PARAM_PATTERN = /^(x-amz-signature|x-amz-credential|x-goog-signature|x-goog-credential|awsaccesskeyid|sig|signature)$/i;
+const EMBEDDED_URL_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>`]+/gi;
+const URL_PATH_SECRET_PATTERN = /^[A-Za-z0-9_-]{32,}$/;
+const QUICKNODE_HOST_PATTERN = /^[A-Za-z0-9_-]{16,}\.quiknode\.pro$/i;
 
 export function redactSecrets<T>(value: T): T {
   return redactUnknown(value, undefined, new WeakSet()) as T;
@@ -77,7 +80,7 @@ function redactStringForKey(value: string, key: string | undefined): string {
 }
 
 function redactString(value: string): string {
-  let redacted = redactRpcUrl(value);
+  let redacted = redactEmbeddedUrls(value);
   redacted = redacted.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, `Bearer ${REDACTED_SECRET}`);
   redacted = redacted.replace(
     /\b(private[_\s-]?key|secret|token|authorization|signature|password)(\s*[:=]?\s*)0x[0-9a-fA-F]{64,}/gi,
@@ -100,6 +103,14 @@ function redactSecretLikeErrorHex(value: string): string {
   return redacted.replace(/\b0x[0-9a-fA-F]{130}\b/g, REDACTED_SECRET);
 }
 
+function redactEmbeddedUrls(value: string): string {
+  return value.replace(EMBEDDED_URL_PATTERN, (match) => {
+    const trailing = /[.,;:]+$/.exec(match)?.[0] ?? "";
+    const url = trailing ? match.slice(0, -trailing.length) : match;
+    return `${redactRpcUrl(url)}${trailing}`;
+  });
+}
+
 function redactRpcUrl(value: string): string {
   if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
     return value;
@@ -108,8 +119,11 @@ function redactRpcUrl(value: string): string {
   try {
     const url = new URL(value);
     if (url.username || url.password) {
-      url.username = REDACTED;
-      url.password = REDACTED;
+      url.username = "redacted";
+      url.password = "redacted";
+    }
+    if (QUICKNODE_HOST_PATTERN.test(url.hostname)) {
+      url.hostname = `redacted.quiknode.pro`;
     }
     if ([...url.searchParams.keys()].some((key) => PRESIGNED_URL_PARAM_PATTERN.test(key))) {
       return REDACTED_PRESIGNED_URL;
@@ -119,11 +133,31 @@ function redactRpcUrl(value: string): string {
         url.searchParams.set(key, REDACTED);
       }
     }
+    url.pathname = redactUrlPath(url.pathname);
     return url.toString();
   } catch {
     const queryStart = value.indexOf("?");
     return queryStart === -1 ? value : `${value.slice(0, queryStart)}?[redacted]`;
   }
+}
+
+function redactUrlPath(pathname: string): string {
+  const segments = pathname.split("/");
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index] as string;
+    if (segment === "") {
+      continue;
+    }
+    const previous = segments[index - 1];
+    if (previous === "v2" || previous === "v3") {
+      segments[index] = REDACTED;
+      continue;
+    }
+    if (URL_PATH_SECRET_PATTERN.test(segment)) {
+      segments[index] = REDACTED;
+    }
+  }
+  return segments.join("/");
 }
 
 function isLongHex(value: string): boolean {

@@ -48,7 +48,7 @@ export function canonicalize(value: unknown, path = "$"): CanonicalJsonValue {
 
   if (valueType === "object") {
     const record = value as Record<string, unknown>;
-    const sorted: Record<string, CanonicalJsonValue> = {};
+    const sorted = Object.create(null) as Record<string, CanonicalJsonValue>;
     for (const key of Object.keys(record).sort(compareByCodePoint)) {
       const child = record[key];
       if (typeof child === "undefined") {

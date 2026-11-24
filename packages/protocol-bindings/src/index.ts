@@ -27,6 +27,7 @@ import { signalCapabilityProofFor } from "./capabilities-root.js";
 import { DOCK_REGISTRY_ABI } from "./artifact-abis.js";
 import type {
   SignalCapabilityTableEntry,
+  SignalCapabilityTableEntryInput,
   StageSelectorBindingTableEntry,
 } from "./capabilities-root.js";
 
@@ -2269,7 +2270,7 @@ export interface StageDockWindowInstruction {
 
 export interface DockRegistrationCapabilityTables {
   readonly selectorBindings?: readonly StageSelectorBindingTableEntry[];
-  readonly signalCapabilities: readonly SignalCapabilityTableEntry[];
+  readonly signalCapabilities: readonly SignalCapabilityTableEntryInput[];
 }
 
 export interface RegisterDockAtomInput {
@@ -2553,7 +2554,9 @@ export {
   selectorBindingProofFor,
   signalCapabilityLeaf,
   signalCapabilityProofFor,
+  type CompilerSignalCapabilityTableEntry,
   type SignalCapabilityTableEntry,
+  type SignalCapabilityTableEntryInput,
   type StageSelectorBindingTableEntry,
 } from "./capabilities-root.js";
 

@@ -31,3 +31,15 @@ describe("evidence hash", () => {
     );
   });
 });
+
+describe("evidence hash __proto__ preimage", () => {
+  it("does not collide when the JSON owns a __proto__ key", () => {
+    const withProto = JSON.parse('{"__proto__":{"x":1},"a":1}') as Record<string, unknown>;
+    const withoutProto = { a: 1 };
+    assert.notEqual(
+      hashEvidenceJson(withProto).evidenceHash,
+      hashEvidenceJson(withoutProto).evidenceHash,
+    );
+    assert.ok(hashEvidenceJson(withProto).byteLength > hashEvidenceJson(withoutProto).byteLength);
+  });
+});

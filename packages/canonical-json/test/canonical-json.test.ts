@@ -91,3 +91,15 @@ test("canonical JSON orders integer-like keys by code point, not numeric order",
     '[{"10":2,"9":1},{"a":{"10":1,"9":2}}]',
   );
 });
+
+test("canonical JSON preserves own __proto__ keys instead of mutating the prototype", () => {
+  const value = JSON.parse('{"a":1,"__proto__":{"polluted":true},"b":2}') as Record<
+    string,
+    unknown
+  >;
+  assert.equal(
+    canonicalJson(value),
+    '{"__proto__":{"polluted":true},"a":1,"b":2}',
+  );
+  assert.equal(({} as Record<string, unknown>).polluted, undefined);
+});

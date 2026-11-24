@@ -1175,6 +1175,7 @@ contract UVPStateMachine {
             nextDueAt = result.dueAt;
         } else if (result.value) {
             nextStatus = HookStatus.Ready;
+            nextDueAt = result.dueAt;
         }
 
         runtime.status = nextStatus;

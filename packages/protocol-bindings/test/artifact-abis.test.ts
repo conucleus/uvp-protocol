@@ -5,9 +5,10 @@
 // 2. Why they cannot be collapsed into one source: the Forge artifacts are
 //    build products under contracts/uvp-contracts/out and are not importable
 //    package exports; downstream packages must consume a checked-in copy.
-// 3. Why the comparison cannot run through the generator alone: the unit lane
-//    has no Forge toolchain (and must not require it), so staleness of the
-//    checked-in generated file is only observable here.
+// 3. Why the comparison cannot run through the generator alone: staleness of
+//    the checked-in generated file is only observable here. The pin is
+//    fail-closed: missing Forge artifacts fail this suite instead of skipping,
+//    so `pnpm contracts:build` must run before it.
 // 4. Owner: protocol-bindings (L3) owns the ABI surface and the generator; this
 //    file never re-derives ABI shapes by hand.
 // 5. Exit condition: delete this pin when ABI generation becomes part of the
@@ -52,14 +53,15 @@ interface FoundryArtifact {
 }
 
 // The generated ABI mirrors a forge build product; without `forge build` the
-// artifact does not exist and the pin has nothing to compare against.
-const artifactAvailable = existsSync(artifactPath);
-const fileResourceModuleArtifactAvailable = existsSync(
-  fileResourceModuleArtifactPath,
-);
-const identityRegistryArtifactAvailable = existsSync(
-  identityRegistryArtifactPath,
-);
+// pin has no evidence, so a missing artifact is a hard failure.
+async function readForgeArtifact(path: string): Promise<FoundryArtifact> {
+  if (!existsSync(path)) {
+    assert.fail(
+      `forge artifact missing: ${path}; run \`pnpm contracts:build\` before the ABI freshness pin`,
+    );
+  }
+  return JSON.parse(await readFile(path, "utf8")) as FoundryArtifact;
+}
 
 describe("generated artifact ABI bindings", () => {
   it("keeps CompactHook flag bits pinned to the contract constants", () => {
@@ -81,13 +83,8 @@ describe("generated artifact ABI bindings", () => {
     assert.equal(buildCompactHookFlags(), 0);
   });
 
-  it("exposes the SignalSubmitted topic of the current composite-identity event", async (t) => {
-    if (!artifactAvailable) {
-      return t.skip("forge artifacts not built");
-    }
-    const artifact = JSON.parse(
-      await readFile(artifactPath, "utf8"),
-    ) as FoundryArtifact;
+  it("exposes the SignalSubmitted topic of the current composite-identity event", async () => {
+    const artifact = await readForgeArtifact(artifactPath);
     const event = artifact.abi.find(
       (item) => item.type === "event" && item.name === "SignalSubmitted",
     ) as AbiEvent | undefined;
@@ -98,47 +95,27 @@ describe("generated artifact ABI bindings", () => {
     assert.equal(SIGNAL_SUBMITTED_TOPIC, toEventHash(event));
   });
 
-  it("mirrors the full forge artifact ABI verbatim", async (t) => {
-    if (!artifactAvailable) {
-      return t.skip("forge artifacts not built");
-    }
-    const artifact = JSON.parse(
-      await readFile(artifactPath, "utf8"),
-    ) as FoundryArtifact;
+  it("mirrors the full forge artifact ABI verbatim", async () => {
+    const artifact = await readForgeArtifact(artifactPath);
     assert.deepEqual(UVP_STATE_MACHINE_ARTIFACT_ABI, artifact.abi);
   });
 
-  it("mirrors the identity registry forge artifact ABI verbatim", async (t) => {
-    if (!identityRegistryArtifactAvailable) {
-      return t.skip("forge artifacts not built");
-    }
-    const artifact = JSON.parse(
-      await readFile(identityRegistryArtifactPath, "utf8"),
-    ) as FoundryArtifact;
+  it("mirrors the identity registry forge artifact ABI verbatim", async () => {
+    const artifact = await readForgeArtifact(identityRegistryArtifactPath);
     assert.deepEqual(IDENTITY_REGISTRY_ABI, artifact.abi);
   });
 
-  it("mirrors the full file resource module forge artifact ABI verbatim", async (t) => {
-    if (!fileResourceModuleArtifactAvailable) {
-      return t.skip("forge artifacts not built");
-    }
-    const artifact = JSON.parse(
-      await readFile(fileResourceModuleArtifactPath, "utf8"),
-    ) as FoundryArtifact;
+  it("mirrors the full file resource module forge artifact ABI verbatim", async () => {
+    const artifact = await readForgeArtifact(fileResourceModuleArtifactPath);
     assert.deepEqual(FILE_RESOURCE_MODULE_ABI, artifact.abi);
   });
 
-  it("keeps finalizePlan free of capability-table size-gate errors", async (t) => {
-    if (!artifactAvailable) {
-      return t.skip("forge artifacts not built");
-    }
+  it("keeps finalizePlan free of capability-table size-gate errors", async () => {
     // 前提钉住：两表 Merkle 化形态下能力表/绑定表无链上规模闸——
     // TooManySelectorBindings / TooManySignalCapabilities 若出现在
     // 主 ABI（或手写镜像）里，说明合约侧回到了枚举式注册，本包的
     // capabilitiesRoot 工具面随之失效，必须红。
-    const stateMachineArtifact = JSON.parse(
-      await readFile(artifactPath, "utf8"),
-    ) as FoundryArtifact;
+    const stateMachineArtifact = await readForgeArtifact(artifactPath);
     const artifactErrorNames = stateMachineArtifact.abi
       .filter((item) => item.type === "error")
       .map((item) => item.name);
@@ -168,13 +145,8 @@ describe("generated artifact ABI bindings", () => {
     assert.equal(finalizePlan.inputs.length, 1);
   });
 
-  it("keeps the handwritten frozen STATE_MACHINE_ABI a subset of the artifact ABI", async (t) => {
-    if (!artifactAvailable) {
-      return t.skip("forge artifacts not built");
-    }
-    const artifact = JSON.parse(
-      await readFile(artifactPath, "utf8"),
-    ) as FoundryArtifact;
+  it("keeps the handwritten frozen STATE_MACHINE_ABI a subset of the artifact ABI", async () => {
+    const artifact = await readForgeArtifact(artifactPath);
     const artifactSignatures = new Set(
       artifact.abi.map((item) => abiSignature(item)),
     );
@@ -184,16 +156,11 @@ describe("generated artifact ABI bindings", () => {
     assert.deepEqual(missing, []);
   });
 
-  it("keeps handwritten ABI function outputs (names+types) pinned to the forge artifact", async (t) => {
+  it("keeps handwritten ABI function outputs (names+types) pinned to the forge artifact", async () => {
     // 2609100124 L-3 / 2609100406 L-3：getHookStatus 第三个输出名曾手写为
     // exists（合约与 forge 生成物是 readyEmitted）。签名子集钉只比输入形
     // 状，输出名漂移必须单独钉——解码方按名取值会拿到 undefined。
-    if (!artifactAvailable) {
-      return t.skip("forge artifacts not built");
-    }
-    const artifact = JSON.parse(
-      await readFile(artifactPath, "utf8"),
-    ) as FoundryArtifact;
+    const artifact = await readForgeArtifact(artifactPath);
     const artifactOutputs = new Map(
       artifact.abi
         .filter((item) => item.type === "function")

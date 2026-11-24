@@ -1232,6 +1232,7 @@ library UVPPlanRegistration {
             nextDueAt = result.dueAt;
         } else if (result.value) {
             nextStatus = UVPStateMachine.HookStatus.Ready;
+            nextDueAt = result.dueAt;
         }
 
         runtime.status = nextStatus;

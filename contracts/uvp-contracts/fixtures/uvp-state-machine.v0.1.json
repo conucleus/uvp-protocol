@@ -10,9 +10,9 @@
   },
   "hashes": {
     "abiHash": "0x67e50c8d339d69f57c533f6f136c7596c8047ccd76884828ecaf1d255d35d853",
-    "bytecodeHash": "0x53fe9af2110566a149ed0481132b22498af380fdb9034d7941ff3037938358ab",
-    "deployedBytecodeHash": "0x997c98e215cfaeeebb745105122f230d19d4ec1e97dba305052d2cb988990262",
-    "artifactHash": "0x83ce880bfc13c6251dc27b836ac12ab78a7e4ea112189cacac400d23d1a3cce6"
+    "bytecodeHash": "0x542ed6157a274eb4894d78c6b20d90f8401bc2dc1c9013e2d526f83d47782f44",
+    "deployedBytecodeHash": "0x9dbc1a14dce8eeb9bfe71f76f78b863bf2ce6a43c7dd066dfff4d7ac7a5bec77",
+    "artifactHash": "0x26890640fe207ef7f3c090d20a529eff2a3ab97043470760bcde45743553b87e"
   },
   "events": {
     "HookReady": {

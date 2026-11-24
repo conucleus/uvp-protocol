@@ -1,7 +1,8 @@
 /**
  * 协议侧能力树表项与造证入口：叶公式、Merkle 建树与证明的单源在
  * @uvp-eth/compiler/browser（onchain/capabilities-root.ts），本模块只保留
- * relation 字段的表项形状、Hex|string 归一与协议侧导出名。
+ * 能力表项形状（relation，或 compiler/ABI 的 targetOrderRelation）、
+ * Hex|string 归一与协议侧导出名。
  */
 
 import {
@@ -29,6 +30,19 @@ export interface SignalCapabilityTableEntry {
   readonly signalId: Hex | string;
   readonly relation: 0;
 }
+
+/** Capability row exactly as emitted by `@uvp-eth/compiler`'s `capabilityTablesOf` (ABI field name). */
+export interface CompilerSignalCapabilityTableEntry {
+  readonly stageId: Hex | string;
+  readonly targetSourceId: Hex | string;
+  readonly signalId: Hex | string;
+  readonly targetOrderRelation: 0;
+}
+
+/** Capability row accepted at the public boundary: `relation` or the compiler/ABI `targetOrderRelation`. */
+export type SignalCapabilityTableEntryInput =
+  | SignalCapabilityTableEntry
+  | CompilerSignalCapabilityTableEntry;
 
 export interface StageSelectorBindingTableEntry {
   readonly selectorStageId: Hex | string;
@@ -61,7 +75,7 @@ export function selectorBindingLeaf(
 
 export function capabilitiesRootOf(
   selectorBindings: readonly StageSelectorBindingTableEntry[],
-  signalCapabilities: readonly SignalCapabilityTableEntry[],
+  signalCapabilities: readonly SignalCapabilityTableEntryInput[],
 ): Hex {
   return sourceCapabilitiesRootOf(
     normalizeBindings(selectorBindings),
@@ -71,7 +85,7 @@ export function capabilitiesRootOf(
 
 export function factAttribution(
   selectorBindings: readonly StageSelectorBindingTableEntry[],
-  signalCapabilities: readonly SignalCapabilityTableEntry[],
+  signalCapabilities: readonly SignalCapabilityTableEntryInput[],
   sourceId: Hex | string,
   signalId: Hex | string,
 ): { readonly stageId: Hex; readonly capabilityProof: readonly Hex[] }
@@ -86,7 +100,7 @@ export function factAttribution(
 
 export function signalCapabilityProofFor(
   selectorBindings: readonly StageSelectorBindingTableEntry[],
-  signalCapabilities: readonly SignalCapabilityTableEntry[],
+  signalCapabilities: readonly SignalCapabilityTableEntryInput[],
   stageId: Hex | string,
   targetSourceId: Hex | string,
   signalId: Hex | string,
@@ -104,7 +118,7 @@ export function signalCapabilityProofFor(
 
 export function selectorBindingProofFor(
   selectorBindings: readonly StageSelectorBindingTableEntry[],
-  signalCapabilities: readonly SignalCapabilityTableEntry[],
+  signalCapabilities: readonly SignalCapabilityTableEntryInput[],
   targetStageId: Hex | string,
 ): { readonly selectorStageId: Hex; readonly proof: readonly Hex[] }
 | undefined {
@@ -141,22 +155,31 @@ function normalizeBindings(
 }
 
 function normalizeCapabilities(
-  signalCapabilities: readonly SignalCapabilityTableEntry[],
+  signalCapabilities: readonly SignalCapabilityTableEntryInput[],
 ): readonly {
   readonly stageId: Hex;
   readonly targetSourceId: Hex;
   readonly signalId: Hex;
   readonly targetOrderRelation: 0;
 }[] {
-  return signalCapabilities.map((capability) => ({
-    stageId: normalizeWord(capability.stageId, "capability.stageId"),
-    targetSourceId: normalizeWord(
-      capability.targetSourceId,
-      "capability.targetSourceId",
-    ),
-    signalId: normalizeWord(capability.signalId, "capability.signalId"),
-    targetOrderRelation: capability.relation,
-  }));
+  return signalCapabilities.map((capability) => {
+    const relation =
+      "relation" in capability
+        ? capability.relation
+        : capability.targetOrderRelation;
+    if (relation !== SIGNAL_CAPABILITY_RELATION_CURRENT_ORDER) {
+      throw new Error("capability.relation must be current-order (0)");
+    }
+    return {
+      stageId: normalizeWord(capability.stageId, "capability.stageId"),
+      targetSourceId: normalizeWord(
+        capability.targetSourceId,
+        "capability.targetSourceId",
+      ),
+      signalId: normalizeWord(capability.signalId, "capability.signalId"),
+      targetOrderRelation: relation,
+    };
+  });
 }
 
 const BYTES32_RE = /^0x[a-fA-F0-9]{64}$/;
