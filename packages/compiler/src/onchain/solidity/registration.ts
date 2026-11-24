@@ -30,13 +30,11 @@ const PLAN_RUNTIME_HASH_DOMAIN = "uvp.plan.runtime.v8";
 export const HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
 export const HOOK_FLAG_EMIT_READY = 4;
 export const HOOK_FLAG_ADMISSION = 8;
-export const HOOK_FLAG_DOCK_EXECUTOR = 16;
 export const HOOK_FLAG_DYNAMIC_EXECUTOR = 32;
 
 export function solidityHookFlags(
   orderTriggerKind: OrderTriggerKind,
   emitReady: boolean,
-  dockExecutor: boolean,
   dynamicExecutor: boolean,
 ): number {
   let flags = 0;
@@ -45,9 +43,6 @@ export function solidityHookFlags(
   }
   if (emitReady) {
     flags |= HOOK_FLAG_EMIT_READY;
-  }
-  if (dockExecutor) {
-    flags |= HOOK_FLAG_DOCK_EXECUTOR;
   }
   if (dynamicExecutor) {
     flags |= HOOK_FLAG_DYNAMIC_EXECUTOR;
@@ -84,7 +79,6 @@ export function packSolidityRegisterPlanArgs(
         flags: solidityHookFlags(
           hook.orderTriggerKind,
           hook.emitReady,
-          hook.dockExecutor,
           hook.dynamicExecutor,
         ),
         instructions: hook.instructions.map(toSolidityInstructionArg),

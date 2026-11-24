@@ -5,7 +5,6 @@ import {UVPStateMachine} from "../src/UVPStateMachine.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
-import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {UVPIdentityRegistry} from "../src/UVPIdentityRegistry.sol";
 import {StageFile, StageFilesEmpty} from "../src/interfaces/IUVPFileResourceModule.sol";
@@ -77,7 +76,6 @@ contract UVPStateMachineFileWriteTest {
         UVPStagePatchModule stagePatch = new UVPStagePatchModule(address(machine));
         machine.setStagePatchModule(address(stagePatch));
         machine.setDerivedSignalModule(address(new UVPDerivedSignalModule(address(machine))));
-        machine.setDockRegistry(address(new UVPDockRegistry(address(machine))));
         machine.setPlanMetadataModule(address(planMetadata));
         machine.setFileResourceModule(address(fileModule));
         machine.setIdentityRegistry(address(suppliers));

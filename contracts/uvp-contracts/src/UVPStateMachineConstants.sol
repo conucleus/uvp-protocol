@@ -10,7 +10,6 @@ enum AdmissionVerdict {
 uint8 constant _HOOK_FLAG_ORDER_TRIGGER_MINT = 1;
 uint8 constant _HOOK_FLAG_EMIT_READY = 4;
 uint8 constant _HOOK_FLAG_ADMISSION = 8;
-uint8 constant _HOOK_FLAG_DOCK_EXECUTOR = 16;
 uint8 constant _HOOK_FLAG_DYNAMIC_EXECUTOR = 32;
 
 uint64 constant _MAX_HOOK_DELAY_SECONDS = 30 days;

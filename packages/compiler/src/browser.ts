@@ -40,16 +40,4 @@ export type {
   SupplierBindingKind,
 } from "./types/index.js";
 
-export {
-  DOCK_WINDOW_OP,
-  dockWindowInstructionsOf,
-} from "./dock-artifact.js";
-
-export type {
-  DockArtifact,
-  DockArtifactAtom,
-  DockArtifactOutput,
-  DockWindowInstruction,
-} from "./dock-artifact.js";
-
 export { EMPTY_MERKLE_ROOT } from "./merkle.js";

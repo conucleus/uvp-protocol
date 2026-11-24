@@ -9,42 +9,18 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xf61c7d31a6498b00fc03c38d20ace4fcf25409283224152ca9da543d517d4674",
-    "bytecodeHash": "0x430868394b3589929b4379a5e296f93481bf689ae083a45f50226b6ce79aeafd",
-    "deployedBytecodeHash": "0x71efefb9bd0ffb9c66d7d7b3b643c797476ef4f511cf658a354fa9e3100e9dfb",
-    "artifactHash": "0x34f47e5460946504df8561127586f6441bb83b103beaec4ebd1da7f7e7b1a53e"
+    "abiHash": "0x633e3deda6b34809e5faf861d65df7024342b9102af174b02a0e81eafdcfbfa3",
+    "bytecodeHash": "0xb876d57be9173473e3a3b845fa3c8edf8f1efe17e78fab3d840f533878545507",
+    "deployedBytecodeHash": "0xda74adec2122029e144c78caf599f35711160616e998f5a569dba57abe16963a",
+    "artifactHash": "0xa7a9352d6a18997ce18d30b6083b01d295a764bd5e67dbaeb802c88006b824ee"
   },
   "events": {
-    "DockBindingPoked": {
-      "signature": "DockBindingPoked(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,uint256)",
-      "topic": "0x533b8d18f42a6710b091d838d81968d51fb0a935a2a1ef4d6b27cafaa2ee2b9f"
-    },
-    "DockOutputDeferred": {
-      "signature": "DockOutputDeferred(bytes32,bytes32,bytes32,uint256,bytes32,uint8,uint64)",
-      "topic": "0x31b7b7a30bf8f1281932318b5cb4be3a96f1d8a8745b3a566c14294ebc39c2b2"
-    },
-    "DockOutputSubmitted": {
-      "signature": "DockOutputSubmitted(bytes32,bytes32,bytes32,bytes32,uint256,bytes32,bytes32)",
-      "topic": "0x9816942eba65990b999d1e8aa4ee6e2bfaa6bb759e665db0567aff92be6e7fff"
-    },
-    "StageDockSupplierSelected": {
-      "signature": "StageDockSupplierSelected(bytes32,bytes32,bytes32,bytes32,bytes32,uint256)",
-      "topic": "0xf2eacac204742e7c4562246eda8ff81eb4724b7f2777c53ab8003710a0de4862"
-    },
     "StageSupplierPatchApplied": {
       "signature": "StageSupplierPatchApplied(bytes32,bytes32,bytes32,bytes32,address,bytes32,bytes32,uint256)",
       "topic": "0x83e961c75a8dc1c4114f9740a32994f7d7febaa0fba66668d37b4d9a1c344e16"
     }
   },
   "functions": {
-    "DOCK_BINDING_ID_DOMAIN": {
-      "signature": "DOCK_BINDING_ID_DOMAIN()",
-      "selector": "0x3fb8525f"
-    },
-    "DOCK_PAYLOAD_FILE_KEY": {
-      "signature": "DOCK_PAYLOAD_FILE_KEY()",
-      "selector": "0x6b7a3a78"
-    },
     "DOMAIN_SEPARATOR": {
       "signature": "DOMAIN_SEPARATOR()",
       "selector": "0x3644e515"
@@ -56,34 +32,6 @@
     "applyStageSupplierPatchFor": {
       "signature": "applyStageSupplierPatchFor(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,uint256),address,uint256,bytes,bytes,(bytes32,bytes32[]),bytes32[])",
       "selector": "0x4ab70719"
-    },
-    "dockOutputAdmissionVerdict": {
-      "signature": "dockOutputAdmissionVerdict(bytes32,bytes32,bytes32,uint256)",
-      "selector": "0xc62f902d"
-    },
-    "dockOutputWindow": {
-      "signature": "dockOutputWindow(bytes32,bytes32,bytes32,bytes32,uint256)",
-      "selector": "0xf3e1b066"
-    },
-    "getStageDockBinding": {
-      "signature": "getStageDockBinding(bytes32,bytes32,bytes32,bytes32)",
-      "selector": "0x35148333"
-    },
-    "pokeDockBinding": {
-      "signature": "pokeDockBinding(bytes32,bytes32,bytes32,bytes,bytes32,bytes32[][])",
-      "selector": "0x701e7fd5"
-    },
-    "selectStageDockSupplier": {
-      "signature": "selectStageDockSupplier(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,uint256),(bytes32,bytes32[]))",
-      "selector": "0xbd8bd009"
-    },
-    "selectStageDockSupplierFor": {
-      "signature": "selectStageDockSupplierFor(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,uint256),address,uint256,bytes,(bytes32,bytes32[]))",
-      "selector": "0x67aef98c"
-    },
-    "stageDockSupplierSelectionDigest": {
-      "signature": "stageDockSupplierSelectionDigest(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,uint256),address,uint256)",
-      "selector": "0xfe55205f"
     },
     "stageSupplierPatchDigest": {
       "signature": "stageSupplierPatchDigest(bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32,uint256),address,uint256)",

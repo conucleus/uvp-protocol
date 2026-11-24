@@ -18,7 +18,6 @@ import {
   compileZhixuHookPlan,
   compileZhixuOnchainHookPlan,
   definitionUid,
-  dockIdentity,
   hashSolidityRegisterHooks,
   keccak256Hex,
   toSolidityRegisterPlanArgs,
@@ -566,7 +565,7 @@ const dockToDefinition: ZhixuDefinition = {
         source: "acceptor",
         receiveSignals: { CHECK: "acceptor::accept.check" },
         sendSignals: [{ name: "accepted" }, { name: "shipped" }, { name: "check" }],
-        executor: { supplierType: "dock" },
+        executor: { supplierType: "organization", supplierID: "org-accept" },
       },
       {
         name: "gate",
@@ -596,7 +595,8 @@ function dockVector(
       signalMap,
     },
   };
-  const identity = dockIdentity(dock);
+  const docHash = keccak256Hex(JSON.stringify(dock));
+  const identity = { dkid: `zd-${docHash.slice(2, 34)}`, docHash };
   const parsedOf = (expression: string) => {
     const ast = parseHookExpression(`atelier::${expression}`);
     return { ast, dependencies: extractHookDependencies(ast) };

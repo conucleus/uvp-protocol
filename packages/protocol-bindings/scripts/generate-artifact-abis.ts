@@ -27,10 +27,6 @@ const fileResourceModuleArtifactPath = resolve(
   contractsDir,
   "out/UVPFileResourceModule.sol/UVPFileResourceModule.json",
 );
-const dockRegistryArtifactPath = resolve(
-  contractsDir,
-  "out/UVPDockRegistry.sol/UVPDockRegistry.json",
-);
 const identityRegistryArtifactPath = resolve(
   contractsDir,
   "out/UVPIdentityRegistry.sol/UVPIdentityRegistry.json",
@@ -51,7 +47,6 @@ const flagConstants: readonly FlagConstantSpec[] = [
   { name: "_HOOK_FLAG_ORDER_TRIGGER_MINT" },
   { name: "_HOOK_FLAG_EMIT_READY" },
   { name: "_HOOK_FLAG_ADMISSION" },
-  { name: "_HOOK_FLAG_DOCK_EXECUTOR" },
   { name: "_HOOK_FLAG_DYNAMIC_EXECUTOR" },
 ];
 
@@ -64,9 +59,6 @@ async function main(): Promise<void> {
   const constantsSource = await readFile(constantsSourcePath, "utf8");
   const fileResourceModuleArtifact = JSON.parse(
     await readFile(fileResourceModuleArtifactPath, "utf8"),
-  ) as FoundryArtifact;
-  const dockRegistryArtifact = JSON.parse(
-    await readFile(dockRegistryArtifactPath, "utf8"),
   ) as FoundryArtifact;
   const identityRegistryArtifact = JSON.parse(
     await readFile(identityRegistryArtifactPath, "utf8"),
@@ -106,9 +98,6 @@ export const SIGNAL_SUBMITTED_ABI = ${JSON.stringify([signalSubmitted], null, 2)
 export const SIGNAL_SUBMITTED_TOPIC = "${signalSubmittedTopic}" as Hex;
 
 export const FILE_RESOURCE_MODULE_ABI = ${JSON.stringify(fileResourceModuleArtifact.abi, null, 2)} as const;
-
-export const DOCK_REGISTRY_CONTRACT_NAME = "UVPDockRegistry" as const;
-export const DOCK_REGISTRY_ABI = ${JSON.stringify(dockRegistryArtifact.abi, null, 2)} as const;
 
 export const IDENTITY_REGISTRY_CONTRACT_NAME = "UVPIdentityRegistry" as const;
 export const IDENTITY_REGISTRY_ABI = ${JSON.stringify(identityRegistryArtifact.abi, null, 2)} as const;

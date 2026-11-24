@@ -9,10 +9,10 @@
     "version": "0.8.24+commit.e11b9ed9"
   },
   "hashes": {
-    "abiHash": "0xac5f8f3c887627e92fe13db3df338132c8024d72128d23b3657fe9530cab9366",
-    "bytecodeHash": "0x3d548d12dd7905615e3844e11901bbccc8f8bac976ef7c2d0591ab4f76fce100",
-    "deployedBytecodeHash": "0x2eea6e6beb311a6ab5a13e8953a47caeea91d84dadd960e89b80197c4cbeb2e4",
-    "artifactHash": "0xee98ea456cf402ab6d297cdafa87ce5eb72c8403aa6c42b36b08990a2217883d"
+    "abiHash": "0x5a4b7003db06ae403dabf9e27b48f47ca6e6eb6d3ebb966ccc2836c4909788db",
+    "bytecodeHash": "0xe6aa667541e4c79517ef19ba962dc1716ada2a0133fee16a04f6b9ed7dde1cda",
+    "deployedBytecodeHash": "0x8784883733344e148df4feafb461a5f01ef69bcdc480614a5863c3b37098501e",
+    "artifactHash": "0xa4189fda6994b23e4a733b22159884f21696f7ccddc82b5d76fcd40d1ca7e37e"
   },
   "events": {
     "HookReady": {
@@ -89,10 +89,6 @@
       "signature": "DERIVED_SIGNAL_MODULE_ID()",
       "selector": "0x540051d1"
     },
-    "DOCK_REGISTRY_MODULE_ID": {
-      "signature": "DOCK_REGISTRY_MODULE_ID()",
-      "selector": "0xa96f0e70"
-    },
     "DOMAIN_SEPARATOR": {
       "signature": "DOMAIN_SEPARATOR()",
       "selector": "0x3644e515"
@@ -104,10 +100,6 @@
     "HOOK_FLAG_ADMISSION": {
       "signature": "HOOK_FLAG_ADMISSION()",
       "selector": "0xefa7a053"
-    },
-    "HOOK_FLAG_DOCK_EXECUTOR": {
-      "signature": "HOOK_FLAG_DOCK_EXECUTOR()",
-      "selector": "0x84fdda21"
     },
     "HOOK_FLAG_DYNAMIC_EXECUTOR": {
       "signature": "HOOK_FLAG_DYNAMIC_EXECUTOR()",
@@ -149,10 +141,6 @@
       "signature": "STAGE_PATCH_MODULE_ID()",
       "selector": "0x3d5f9dc0"
     },
-    "activateStageDockSupplierFromModule": {
-      "signature": "activateStageDockSupplierFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,uint256)",
-      "selector": "0xdea54119"
-    },
     "activateStageSupplierFromModule": {
       "signature": "activateStageSupplierFromModule(bytes32,bytes32,bytes32,bytes32,uint256)",
       "selector": "0xba1525eb"
@@ -165,10 +153,6 @@
       "signature": "derivedSignalModule()",
       "selector": "0x6f72d009"
     },
-    "dockRegistry": {
-      "signature": "dockRegistry()",
-      "selector": "0xc156ce96"
-    },
     "effectiveStageAccount": {
       "signature": "effectiveStageAccount(bytes32,bytes32,bytes32)",
       "selector": "0x542f8828"
@@ -176,10 +160,6 @@
     "effectiveStageSupplier": {
       "signature": "effectiveStageSupplier(bytes32,bytes32,bytes32)",
       "selector": "0x5e55bde2"
-    },
-    "evaluateDockWindow": {
-      "signature": "evaluateDockWindow(bytes32,bytes32,(uint8,bytes32,bytes32,uint16,uint64)[])",
-      "selector": "0xdba25a35"
     },
     "fileResourceModule": {
       "signature": "fileResourceModule()",
@@ -321,10 +301,6 @@
       "signature": "setDerivedSignalModule(address)",
       "selector": "0xffef0d4c"
     },
-    "setDockRegistry": {
-      "signature": "setDockRegistry(address)",
-      "selector": "0x3e3d3f05"
-    },
     "setFileResourceModule": {
       "signature": "setFileResourceModule(address)",
       "selector": "0xe648a069"
@@ -349,10 +325,6 @@
       "signature": "sourceSignalCount(bytes32,bytes32,bytes32)",
       "selector": "0xca201c09"
     },
-    "stageHasDockExecutorHook": {
-      "signature": "stageHasDockExecutorHook(bytes32,bytes32)",
-      "selector": "0x71a4297f"
-    },
     "stageHasOrderTriggerHook": {
       "signature": "stageHasOrderTriggerHook(bytes32,bytes32)",
       "selector": "0xb4d89d5b"
@@ -372,10 +344,6 @@
     "submitDerivedSignalFromModule": {
       "signature": "submitDerivedSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address)",
       "selector": "0x047c6fbf"
-    },
-    "submitDockOutputSignalFromModule": {
-      "signature": "submitDockOutputSignalFromModule(bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,address,(bytes32,bytes32,bytes32,bytes32[]))",
-      "selector": "0xd1caf3b4"
     },
     "submitSignal": {
       "signature": "submitSignal((bytes32,bytes32,bytes32,bytes32,bytes32,bytes32,(bytes32,bytes32,bytes32,bytes32[]),bytes32,(string,bytes)[],address,uint256),bytes)",

@@ -54,10 +54,6 @@ export const KNOWN_FIELDS = {
   ],
   sendSignalEntry: ["name", "validWhen", "trigger"],
   executor: ["supplierType", "supplierID", "selectableResource"],
-  dockRoot: ["apiVersion", "kind", "metadata", "spec"],
-  dockSpec: ["from", "to", "signalMap"],
-  dockFrom: ["zhixu", "source"],
-  dockTo: ["zhixu", "stage"],
 } as const satisfies Record<string, readonly string[]>;
 
 function rejectUnknownFields(

@@ -33,7 +33,7 @@ test("parses and evaluates a single positive signal", () => {
   assert.deepEqual(evaluateHook(ast, index([]), at), { status: "init" });
   assert.deepEqual(
     evaluateHook(ast, index([["buyer", "main.cmp", at]]), at),
-    { status: "reg" }
+    { status: "wait" }
   );
 });
 
@@ -46,10 +46,10 @@ test("supports AND and OR expressions", () => {
     status: "init"
   });
   assert.deepEqual(evaluateHook(orAst, index([["buyer", "a.cmp", at]]), at), {
-    status: "reg"
+    status: "wait"
   });
   assert.deepEqual(evaluateHook(nestedAst, index([["buyer", "c.cmp", at]]), at), {
-    status: "reg"
+    status: "wait"
   });
 });
 
@@ -57,11 +57,11 @@ test("cancels negative branches under monotonic existence semantics", () => {
   const ast = parseHookExpression("buyer::~cancel.cmp & pay.cmp");
 
   assert.deepEqual(evaluateHook(ast, index([["buyer", "cancel.cmp", at]]), at), {
-    status: "cxl",
+    status: "cancelled",
     reason: "negated condition exists: cancel.cmp"
   });
   assert.deepEqual(evaluateHook(ast, index([["buyer", "pay.cmp", at]]), at), {
-    status: "reg"
+    status: "wait"
   });
 });
 
@@ -81,10 +81,10 @@ test("evaluates delayed hooks from first receive time", () => {
       ]),
       later
     ),
-    { status: "cxl", reason: "negated condition exists: refund.cmp" }
+    { status: "cancelled", reason: "negated condition exists: refund.cmp" }
   );
   assert.deepEqual(evaluateHook(ast, index([["buyer", "pay.cmp", at]]), later), {
-    status: "reg"
+    status: "wait"
   });
 });
 
@@ -96,7 +96,7 @@ test("keeps OR expressions waiting on the earliest live delayed branch", () => {
     dueAt: "2026-04-27T00:00:05.000Z"
   });
   assert.deepEqual(evaluateHook(ast, index([["buyer", "override.cmp", at]]), at), {
-    status: "reg"
+    status: "wait"
   });
 });
 
@@ -130,7 +130,7 @@ test("handles multiple delayed branches and chooses the earliest due timer", () 
       ]),
       later
     ),
-    { status: "reg" }
+    { status: "wait" }
   );
 });
 
@@ -163,7 +163,7 @@ test("evaluates timestamps at chain second precision", () => {
   );
   assert.deepEqual(
     evaluateHook(ast, index([["buyer", "pay.cmp", "2026-04-27T00:00:00.900Z"]]), "2026-04-27T00:00:05.001Z"),
-    { status: "reg" }
+    { status: "wait" }
   );
 });
 
@@ -195,7 +195,7 @@ test("evaluates nested parentheses with multiple negative guards", () => {
       ]),
       later
     ),
-    { status: "cxl", reason: "negated condition exists: fail.cmp" }
+    { status: "cancelled", reason: "negated condition exists: fail.cmp" }
   );
   assert.deepEqual(
     evaluateHook(
@@ -206,7 +206,7 @@ test("evaluates nested parentheses with multiple negative guards", () => {
       ]),
       at
     ),
-    { status: "reg" }
+    { status: "wait" }
   );
 });
 
@@ -214,7 +214,7 @@ test("cancels delayed hooks when the negative signal arrives before the anchor",
   const ast = parseHookExpression("buyer::(pay.cmp +5s) & ~refund.cmp");
 
   assert.deepEqual(evaluateHook(ast, index([["buyer", "refund.cmp", at]]), later), {
-    status: "cxl",
+    status: "cancelled",
     reason: "negated condition exists: refund.cmp"
   });
 });
@@ -230,7 +230,7 @@ test("evaluates the decaying veto across its three states", () => {
   ]);
   // 态一：被否定信号缺席 → 放行（无期限）。
   assert.deepEqual(evaluateHook(ast, index([["buyer", "pay.cmp", at]]), later), {
-    status: "reg"
+    status: "wait"
   });
   // 态二：在案未熟 → 放行，有效期钉在成熟时刻（前一毫秒仍放行）。
   assert.deepEqual(
@@ -242,7 +242,7 @@ test("evaluates the decaying veto across its three states", () => {
       ]),
       "2026-04-27T00:00:04.999Z"
     ),
-    { status: "reg", expiresAt: "2026-04-27T00:00:05.000Z" }
+    { status: "wait", expiresAt: "2026-04-27T00:00:05.000Z" }
   );
   // 态三：在案已熟 → 否决（Not 语义短路整个门，与 ~A 同一取消理由面）。
   assert.deepEqual(
@@ -254,7 +254,7 @@ test("evaluates the decaying veto across its three states", () => {
       ]),
       "2026-04-27T00:00:05.000Z"
     ),
-    { status: "cxl", reason: "negated condition exists: cancel.cmp+5s" }
+    { status: "cancelled", reason: "negated condition exists: cancel.cmp+5s" }
   );
 });
 

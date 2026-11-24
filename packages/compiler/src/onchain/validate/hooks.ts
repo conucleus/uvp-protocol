@@ -36,7 +36,6 @@ const COMPILED_HOOK_FIELDS: readonly string[] = [
   "kind",
   "orderTriggerKind",
   "emitReady",
-  "dockExecutor",
   "dynamicExecutor",
   "instructions",
   "dependencies",
@@ -129,17 +128,11 @@ function validateOnchainCompiledHooks(
       issues,
     );
     expectBoolean(hook.emitReady, `${prefix}.emitReady`, issues);
-    expectBoolean(hook.dockExecutor, `${prefix}.dockExecutor`, issues);
     expectBoolean(hook.dynamicExecutor, `${prefix}.dynamicExecutor`, issues);
     if (hook.dynamicExecutor === true) {
       if (hook.orderTriggerKind !== "none") {
         issues.push(
           `${prefix} is a dynamic-executor hook and must not carry an order-trigger bit; birth suppliers are fixed at plan time`,
-        );
-      }
-      if (hook.dockExecutor === true) {
-        issues.push(
-          `${prefix} cannot be both a dynamic-executor and a dock-executor hook; dock executors are selected once through the stage supplier patch`,
         );
       }
       if (hook.emitReady !== true) {
@@ -168,23 +161,6 @@ function validateOnchainCompiledHooks(
         issues.push(
           `stage ${String(hook.stageIdentifier)} mixes dynamic-executor hooks with non-dynamic hooks `
             + "(UVPStateMachine.commitPlan collects the per-stage dynamic set from hook flags and reverts InconsistentDynamicSupplierFlag)",
-        );
-      }
-    }
-    if (hook.dockExecutor === true) {
-      if (hook.orderTriggerKind !== "none") {
-        issues.push(
-          `${prefix} is a dock stage hook and must not carry an order-trigger bit (the contract's dock executor flag only decorates receive hooks)`,
-        );
-      }
-      if (hook.emitReady !== true) {
-        issues.push(
-          `${prefix} is a dock stage hook without EMIT_READY; a dock stage materializes only through its own emit-ready hooks, so the flag would be unreachable`,
-        );
-      }
-      if (hook.routeRef !== undefined) {
-        issues.push(
-          `${prefix} is a dock stage hook and must not carry a supplier route; the dock executor is selected once through the stage supplier patch (dkid)`,
         );
       }
     }
@@ -1233,8 +1209,6 @@ export {
   unmaterializableStageIssues,
   declaredStageIdentifiers,
   silentOrderTriggerIssues,
-  dockStageRouteIssues,
-  uncoveredDockStageIssues,
   validateOnchainDependencyIndex,
   dynamicStageRouteIssues,
 };

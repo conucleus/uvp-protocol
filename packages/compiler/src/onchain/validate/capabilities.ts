@@ -74,7 +74,7 @@ const SIGNAL_CAPABILITY_FIELDS: readonly string[] = [
   "capabilityHash",
 ];
 
-const SUPPLIER_TYPES: readonly string[] = ["individual", "organization", "dock"];
+const SUPPLIER_TYPES: readonly string[] = ["individual", "organization"];
 
 const PLAN_SUPPLIER_TYPES: readonly string[] = ["individual", "organization"];
 
@@ -254,7 +254,7 @@ function validateOnchainSupplierRoutes(
     ) {
       issues.push(
         `${prefix}.supplierType must be one of ${PLAN_SUPPLIER_TYPES.join("|")} (case-sensitive), received ${JSON.stringify(route.supplierType)}; `
-          + "a dock stage's supplier is selected once through the stage supplier patch (dkid) and never becomes a plan route",
+          + "every supplier route in a plan must carry a concrete supplierType/supplierID",
       );
     }
     if (typeof route.supplierID === "string" && route.supplierID.trim().length === 0) {

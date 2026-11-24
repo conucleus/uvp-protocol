@@ -65,7 +65,7 @@ export type HookEvaluation =
       readonly dueAt: string;
     }
   | {
-      readonly status: "reg";
+      readonly status: "wait";
       /**
        * 衰减否决位（合取直接子项上的 `~(A + duration)`）就绪时的有效期
        * （= 被否定延时的成熟时刻）。缺席 = 无限期。链上在信号到达交易内
@@ -75,6 +75,6 @@ export type HookEvaluation =
       readonly expiresAt?: string;
     }
   | {
-      readonly status: "cxl";
+      readonly status: "cancelled";
       readonly reason: string;
     };

@@ -3,16 +3,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { decodeFunctionData, type Hex } from "viem";
-import { capabilityTablesOf, type DockArtifact } from "@uvp-eth/compiler/browser";
 import {
-  DOCK_REGISTRY_ABI,
   PLAN_COMMIT_PRIMARY_TYPE,
   STATE_MACHINE_ABI,
   buildPlanCommitCall,
   buildPlanCommitTypedDataFor,
   buildPlanFinalizeCall,
-  buildRegisterDockCallFromArtifact,
-  capabilitiesRootOf,
   type PlanRegistrationArgs,
 } from "../src/index.js";
 
@@ -125,120 +121,3 @@ describe("plan registration builders", () => {
   });
 });
 
-describe("dock registration capability tables", () => {
-  const fromSourceId = bytes32("31");
-  const toSourceId = bytes32("32");
-  const toStageId = bytes32("33");
-  const atomStageId = bytes32("34");
-  const atomSignalId = bytes32("35");
-  const outputSignalId = bytes32("36");
-
-  const artifact = {
-    selectorBindings: [{ selectorStageId: atomStageId, targetStageId: toStageId }],
-    signalCapabilities: [
-      {
-        stageId: atomStageId,
-        targetSourceId: fromSourceId,
-        signalId: atomSignalId,
-        targetOrderRelation: 0 as const,
-      },
-      {
-        stageId: toStageId,
-        targetSourceId: toSourceId,
-        signalId: outputSignalId,
-        targetOrderRelation: 0 as const,
-      },
-    ],
-  } as unknown as Parameters<typeof capabilityTablesOf>[0];
-
-  const dockArtifact: DockArtifact = {
-    schemaVersion: "uvp.dock.v1",
-    dkid: "zd-00000000000000000000000000000000",
-    docHash: bytes32("40"),
-    from: { zhixu: "zx-from", source: "seller", sourceId: fromSourceId },
-    to: {
-      zhixu: "zx-to",
-      source: "buyer",
-      stage: "main",
-      stageId: toStageId,
-      sourceId: toSourceId,
-    },
-    signalMap: [{
-      signal: "delivered",
-      signalId: outputSignalId,
-      sourceId: toSourceId,
-      stageId: toStageId,
-      targetOrderRelation: 0,
-      rawExpression: "deliver.shipped",
-      ast: {
-        raw: "deliver.shipped",
-        source: "seller",
-        condition: { kind: "signal", signalName: "deliver.shipped" },
-      },
-      dependencies: [{ kind: "positive", source: "seller", signalName: "deliver.shipped" }],
-      atoms: [{
-        zhixu: "zx-from",
-        source: "seller",
-        sourceId: fromSourceId,
-        stage: "deliver",
-        stageId: atomStageId,
-        signal: "shipped",
-        signalId: atomSignalId,
-        targetOrderRelation: 0,
-      }],
-    }],
-  };
-
-  it("derives dock proofs from compiler capability tables without renaming fields", () => {
-    const tables = capabilityTablesOf(artifact);
-    const root = capabilitiesRootOf(tables.selectorBindings, tables.signalCapabilities);
-    assert.match(root, /^0x[0-9a-f]{64}$/);
-
-    const call = buildRegisterDockCallFromArtifact(
-      { dockRegistryAddress: STATE_MACHINE, chainId: 31337 },
-      {
-        artifact: dockArtifact,
-        fromPlanId: bytes32("50"),
-        toPlanId: bytes32("51"),
-        fromCapabilityTables: tables,
-        toCapabilityTables: tables,
-      },
-    );
-    assert.equal(call.functionName, "registerDock");
-    const decoded = decodeFunctionData({ abi: DOCK_REGISTRY_ABI, data: call.data });
-    const outputs = (decoded.args as readonly unknown[])[6] as readonly {
-      readonly atoms: readonly { readonly capabilityProof: readonly string[] }[];
-      readonly capabilityProof: readonly string[];
-    }[];
-    assert.equal(outputs.length, 1);
-    assert.ok((outputs[0]?.atoms[0]?.capabilityProof.length ?? 0) > 0);
-    assert.ok((outputs[0]?.capabilityProof.length ?? 0) > 0);
-
-    const relationTables = {
-      selectorBindings: tables.selectorBindings,
-      signalCapabilities: tables.signalCapabilities.map((capability) => ({
-        stageId: capability.stageId,
-        targetSourceId: capability.targetSourceId,
-        signalId: capability.signalId,
-        relation: 0 as const,
-      })),
-    };
-    assert.equal(
-      capabilitiesRootOf(relationTables.selectorBindings, relationTables.signalCapabilities),
-      root,
-    );
-    assert.equal(
-      buildRegisterDockCallFromArtifact(
-        { dockRegistryAddress: STATE_MACHINE, chainId: 31337 },
-        {
-          artifact: dockArtifact,
-          fromPlanId: bytes32("50"),
-          toPlanId: bytes32("51"),
-          fromCapabilityTables: relationTables,
-          toCapabilityTables: relationTables,
-        },
-      ).data,
-      call.data,
-    );
-  });
-});

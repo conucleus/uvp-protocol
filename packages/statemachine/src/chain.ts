@@ -20,8 +20,8 @@ export type ChainModeInputEvent =
   | ChainTimerPokedEvent;
 
 export type ChainModeExpectedEvent = ChainHookStatusChangedEvent | ChainHookReadyEvent;
-export type ChainObservableHookStatus = "wait" | "cxl";
-export type ChainOracleHookStatus = "init" | "wait" | "ready" | "cxl";
+export type ChainObservableHookStatus = "wait" | "cancelled";
+export type ChainOracleHookStatus = "init" | "wait" | "ready" | "cancelled";
 
 export interface ChainEventBase {
   readonly eventName: string;
@@ -285,7 +285,32 @@ export function replayChainEvents(
     throw new ChainReplayMismatchError(result.mismatches);
   }
 
-  return result;
+  if (!result.state?.orders) {
+    return result;
+  }
+
+  return {
+    ...result,
+    state: {
+      ...result.state,
+      orders: Object.fromEntries(
+        Object.entries(result.state.orders).map(([orderKey, order]) => [
+          orderKey,
+          {
+            ...order,
+            hookStatuses: Object.fromEntries(
+              Object.entries(order.hookStatuses).map(([hookId, runtime]) => [
+                hookId,
+                (runtime.status as string) === "cxl"
+                  ? { ...runtime, status: "cancelled" as const }
+                  : runtime,
+              ]),
+            ),
+          },
+        ]),
+      ),
+    },
+  };
 }
 
 interface TrackedHookRuntime {
@@ -484,16 +509,17 @@ function normalizeChainEventForOracle(event: ChainModeEvent): OracleFeedEvent | 
         `HookStatusChanged ${event.hookId} is missing a valid newStatus; frozen v0.1 events must carry previousStatus/newStatus`
       );
     }
-    if (event.newStatus !== "wait" && event.newStatus !== "cxl") {
-      if (event.newStatus === "ready" || event.newStatus === "init") {
+    const rawStatus = event.newStatus as string;
+    if (rawStatus !== "wait" && rawStatus !== "cancelled" && rawStatus !== "cxl") {
+      if (rawStatus === "ready" || rawStatus === "init") {
         return undefined;
       }
       throw new Error(
-        `HookStatusChanged ${event.hookId} carries unknown newStatus ${JSON.stringify(event.newStatus)}; frozen v0.1 statuses are init/wait/ready/cxl`
+        `HookStatusChanged ${event.hookId} carries unknown newStatus ${JSON.stringify(event.newStatus)}; frozen v0.1 statuses are init/wait/ready/cancelled`
       );
     }
     const { previousStatus: _previousStatus, newStatus: _newStatus, ...rest } = event;
-    return { ...rest, status: event.newStatus };
+    return { ...rest, status: rawStatus === "wait" ? "wait" : "cxl" };
   }
   return { ...event };
 }

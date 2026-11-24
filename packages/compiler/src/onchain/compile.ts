@@ -6,8 +6,6 @@ import {
 import {
   declaredStageIdentifiers,
   dynamicStageRouteIssues,
-  dockStageRouteIssues,
-  uncoveredDockStageIssues,
   silentOrderTriggerIssues,
   unmaterializableStageIssues,
   validateOnchainCompiledAdmissions,
@@ -97,7 +95,6 @@ function lowerOnchainHookPlan(
       kind: hook.kind,
       orderTriggerKind: hook.orderTriggerKind,
       emitReady: hook.emitReady,
-      dockExecutor: hook.dockExecutor,
       dynamicExecutor: hook.dynamicExecutor,
       instructions: compileHookInstructions(hook.ast, hook.stageIdentifier, {
         orderTriggerKind: hook.orderTriggerKind,
@@ -134,12 +131,6 @@ function lowerOnchainHookPlan(
   );
   const silentTriggerIssues = silentOrderTriggerIssues(compiledHooks);
   const dependencyCountIssues = planDependencyCountIssues(compiledHooks);
-  const dockRouteIssues = dockStageRouteIssues(compiledHooks, supplierRoutes);
-  const uncoveredDockIssues = uncoveredDockStageIssues(
-    compiledHooks,
-    supplierRoutes,
-    hookPlanArtifact.selectedStageBindings,
-  );
   const dynamicRouteIssues = dynamicStageRouteIssues(compiledHooks, supplierRoutes);
   const hookShapeIssues: readonly string[] = compiledHooks.length === 0
     ? ["compiledHooks must not be empty (contract reverts EmptyPlan)"]
@@ -160,8 +151,6 @@ function lowerOnchainHookPlan(
     ...materializationIssues,
     ...silentTriggerIssues,
     ...dependencyCountIssues,
-    ...dockRouteIssues,
-    ...uncoveredDockIssues,
     ...dynamicRouteIssues,
     ...hookShapeIssues,
     ...admissionShapeIssues,
@@ -324,12 +313,6 @@ function validateSupplierCandidates(
     if (stageHooks.some((hook) => hook.orderTriggerKind !== "none")) {
       issues.push(
         `supplier candidate stage "${stageIdentifier}" carries an order-trigger hook; birth-stage suppliers are immutable and cannot be per-order patch targets`,
-      );
-      continue;
-    }
-    if (stageHooks.some((hook) => hook.dockExecutor)) {
-      issues.push(
-        `supplier candidate stage "${stageIdentifier}" is a dock stage; its supplier is selected once through the stage supplier patch (dkid), never as a plan candidate`,
       );
       continue;
     }

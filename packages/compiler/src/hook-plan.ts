@@ -296,17 +296,11 @@ function validateCompiledHooks(hooks: readonly unknown[]): readonly string[] {
       issues,
     );
     expectBoolean(hook.emitReady, `${prefix}.emitReady`, issues);
-    expectBoolean(hook.dockExecutor, `${prefix}.dockExecutor`, issues);
     expectBoolean(hook.dynamicExecutor, `${prefix}.dynamicExecutor`, issues);
     if (hook.dynamicExecutor === true) {
       if (hook.orderTriggerKind !== "none") {
         issues.push(
           `${prefix} is a dynamic-executor hook and must not carry an order-trigger bit; birth executors are fixed at plan time`,
-        );
-      }
-      if (hook.dockExecutor === true) {
-        issues.push(
-          `${prefix} cannot be both a dynamic-executor and a dock-executor hook`,
         );
       }
       if (hook.emitReady !== true) {
@@ -317,21 +311,6 @@ function validateCompiledHooks(hooks: readonly unknown[]): readonly string[] {
       if (hook.route !== undefined) {
         issues.push(
           `${prefix} is a dynamic-executor hook and must not carry a supplier route; the supplier is assigned per order through the stage supplier patch`,
-        );
-      }
-    }
-    if (hook.dockExecutor === true) {
-      if (hook.orderTriggerKind !== "none") {
-        issues.push(`${prefix} is a dock stage hook and must not carry an order-trigger bit`);
-      }
-      if (hook.emitReady !== true) {
-        issues.push(
-          `${prefix} is a dock stage hook without EMIT_READY; a dock stage materializes only through its own emit-ready hooks, so the flag would be unreachable`,
-        );
-      }
-      if (hook.route !== undefined) {
-        issues.push(
-          `${prefix} is a dock stage hook and must not carry a supplier route; the dock supplier is selected once through the stage supplier patch (dkid)`,
         );
       }
     }

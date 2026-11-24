@@ -156,7 +156,7 @@ test("chain replay follows shared hook semantic corpus", async () => {
         for (const [hookId, status] of Object.entries(hooks)) {
           assert.equal(
             result.state.orders[orderKey]?.hookStatuses[hookId]?.status,
-            status,
+            status === "cxl" ? "cancelled" : status,
             item.name
           );
         }

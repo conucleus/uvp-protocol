@@ -31,9 +31,7 @@ import {
 } from "./capabilities.js";
 import {
   declaredStageIdentifiers,
-  dockStageRouteIssues,
   dynamicStageRouteIssues,
-  uncoveredDockStageIssues,
   silentOrderTriggerIssues,
   unmaterializableStageIssues,
   validateOnchainCompiledAdmissions,
@@ -217,16 +215,6 @@ export function validateOnchainHookPlanArtifact(
     );
     issues.push(
       ...silentOrderTriggerIssues(compiledHooks as readonly OnchainCompiledHook[]),
-    );
-    issues.push(
-      ...dockStageRouteIssues(compiledHooks, supplierRoutes ?? []),
-    );
-    issues.push(
-      ...uncoveredDockStageIssues(
-        compiledHooks,
-        supplierRoutes ?? [],
-        selectorBindings ?? [],
-      ),
     );
     issues.push(
       ...dynamicStageRouteIssues(compiledHooks, supplierRoutes ?? []),
@@ -535,7 +523,6 @@ function supplierBindingSemanticIssues(
     ),
   );
   const dynamicStageIds = new Set<string>();
-  const dockStageIds = new Set<string>();
   const birthStageIds = new Set<string>();
   for (const hook of compiledHooks) {
     if (!isRecord(hook) || !isHexHash(hook.stageId)) {
@@ -543,9 +530,6 @@ function supplierBindingSemanticIssues(
     }
     if (hook.dynamicExecutor === true) {
       dynamicStageIds.add(hook.stageId);
-    }
-    if (hook.dockExecutor === true) {
-      dockStageIds.add(hook.stageId);
     }
     if (
       typeof hook.orderTriggerKind === "string" &&
@@ -597,12 +581,6 @@ function supplierBindingSemanticIssues(
     if (dynamicStageIds.has(binding.stageId)) {
       issues.push(
         `dynamic stage ${label} must not carry plan supplier bindings; its supplier is assigned per order through the stage supplier patch`,
-      );
-      continue;
-    }
-    if (dockStageIds.has(binding.stageId)) {
-      issues.push(
-        `dock stage ${label} must not carry plan supplier bindings; its supplier is selected once through the stage supplier patch (dkid)`,
       );
       continue;
     }

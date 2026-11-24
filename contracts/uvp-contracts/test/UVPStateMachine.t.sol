@@ -5,9 +5,7 @@ import {UVPStateMachine} from "../src/UVPStateMachine.sol";
 import {AdmissionVerdict} from "../src/UVPStateMachineConstants.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
-import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
-import {IUVPDockRegistry} from "../src/interfaces/IUVPDockRegistry.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {UVPIdentityRegistry} from "../src/UVPIdentityRegistry.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
@@ -69,18 +67,6 @@ contract StagePatchActivationMock {
         );
     }
 
-    function activateDockSupplier(
-        bytes32 planId,
-        bytes32 orderId,
-        bytes32 targetStageId,
-        bytes32 supplierId,
-        bytes32 dockId,
-        uint256 patchNonce
-    ) external {
-        IUVPStateMachineCore(_machine).activateStageDockSupplierFromModule(
-            planId, orderId, targetStageId, supplierId, dockId, patchNonce
-        );
-    }
 }
 
 contract UVPStateMachineTest {
@@ -108,7 +94,6 @@ contract UVPStateMachineTest {
     bytes32 private constant STAGE_INIT = bytes32(uint256(0x5001));
     bytes32 private constant STAGE_AUDIT = bytes32(uint256(0x5002));
     bytes32 private constant STAGE_DYN = bytes32(uint256(0x5003));
-    bytes32 private constant STAGE_DOCK = bytes32(uint256(0x5004));
     bytes32 private constant STAGE_OBSERVER_A = bytes32(uint256(0x5005));
     bytes32 private constant STAGE_OBSERVER_B = bytes32(uint256(0x5006));
     bytes32 private constant STAGE_WATCH = bytes32(uint256(0x5007));
@@ -130,8 +115,6 @@ contract UVPStateMachineTest {
     bytes32 private constant HOOK_OPEN = bytes32(uint256(0x6001));
     bytes32 private constant HOOK_DONE = bytes32(uint256(0x6002));
     bytes32 private constant HOOK_DYN_OPEN = bytes32(uint256(0x6003));
-    bytes32 private constant HOOK_DOCK_OPEN = bytes32(uint256(0x6004));
-    bytes32 private constant HOOK_DOCK_DONE = bytes32(uint256(0x6007));
     bytes32 private constant HOOK_TIMER = bytes32(uint256(0x6005));
     bytes32 private constant HOOK_VETO = bytes32(uint256(0x6006));
     bytes32 private constant HOOK_DECAY_REGISTRATION = bytes32(uint256(0x6008));
@@ -143,12 +126,10 @@ contract UVPStateMachineTest {
 
     bytes32 private constant PAYLOAD_HASH = bytes32(uint256(0x8001));
     bytes32 private constant IDEMPOTENCY_KEY = bytes32(uint256(0x9001));
-    bytes32 private constant DOCK_ID = bytes32(uint256(0xd0c1));
 
     uint8 private constant FLAG_ORDER_TRIGGER_MINT = 1;
     uint8 private constant FLAG_EMIT_READY = 4;
     uint8 private constant FLAG_ADMISSION = 8;
-    uint8 private constant FLAG_DOCK_EXECUTOR = 16;
     uint8 private constant FLAG_DYNAMIC_EXECUTOR = 32;
 
     address private constant SUPPLIER_ACCOUNT_A = address(uint160(0xa11ce));
@@ -411,28 +392,6 @@ contract UVPStateMachineTest {
         machine.commitPlan(commit, hooks, withDynamic, signature);
     }
 
-    function testCommitPlanRejectsBindingOnDockStage() public {
-        UVPStateMachine machine = _newMachine();
-        UVPStateMachine.CompactHook[] memory hooks = _dockPlan();
-        UVPStateMachine.StageSupplierBinding[] memory bindings = _autoBindings(machine, hooks);
-        UVPStateMachine.StageSupplierBinding[] memory withDock = new UVPStateMachine.StageSupplierBinding[](bindings.length + 1);
-        for (uint256 i = 0; i < bindings.length; i++) {
-            withDock[i] = bindings[i];
-        }
-        withDock[bindings.length] = UVPStateMachine.StageSupplierBinding({
-            stageId: STAGE_DOCK,
-            supplierId: _supplierFor(machine, SUPPLIER_ACCOUNT_A),
-            kind: 0
-        });
-        UVPStateMachine.PlanCommit memory commit = _planCommit(
-            hooks, new StageSelectorBinding[](0), new SignalCapability[](0), withDock
-        );
-        bytes memory signature = _signPlanCommit(machine, commit, PUBLISHER_PRIVATE_KEY);
-        vm.expectRevert(
-            abi.encodeWithSelector(UVPStateMachine.SupplierBindingForbiddenForStage.selector, STAGE_DOCK)
-        );
-        machine.commitPlan(commit, hooks, withDock, signature);
-    }
 
     function testCommitPlanRejectsCandidateOnBirthStage() public {
         UVPStateMachine machine = _newMachine();
@@ -929,11 +888,10 @@ contract UVPStateMachineTest {
         _patchModules[address(machine)].activateSupplier(PLAN_ID, ORDER_ID, STAGE_AUDIT, supplierA, 1);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
-        (bytes32 patchedSupplier, uint256 patchNonce, bytes32 dockId) =
+        (bytes32 patchedSupplier, uint256 patchNonce) =
             machine.stageSupplierAssignment(PLAN_ID, ORDER_ID, STAGE_AUDIT);
         require(patchedSupplier == supplierA, "patch supplier mismatch");
         require(patchNonce == 1, "patch nonce mismatch");
-        require(dockId == bytes32(0), "unexpected dock id");
         require(machine.effectiveStageSupplier(PLAN_ID, ORDER_ID, STAGE_AUDIT) == supplierA, "effective supplier mismatch");
 
         bytes32 topic = keccak256("StageSupplierAssigned(bytes32,bytes32,bytes32,bytes32,uint256)");
@@ -960,16 +918,6 @@ contract UVPStateMachineTest {
         _submit(machine, STAGE_AUDIT, SIGNAL_TIMER);
     }
 
-    function testActivateDockSupplierRecordsDockId() public {
-        UVPStateMachine machine = _supplierMachine();
-        bytes32 supplierA = _supplierFor(machine, SUPPLIER_ACCOUNT_A);
-        _patchModules[address(machine)].activateDockSupplier(PLAN_ID, ORDER_ID, STAGE_AUDIT, supplierA, DOCK_ID, 1);
-        (bytes32 supplierId, uint256 patchNonce, bytes32 dockId) =
-            machine.stageSupplierAssignment(PLAN_ID, ORDER_ID, STAGE_AUDIT);
-        require(supplierId == supplierA, "dock supplier mismatch");
-        require(patchNonce == 1, "dock nonce mismatch");
-        require(dockId == DOCK_ID, "dock id mismatch");
-    }
 
     function testActivateStageSupplierRejectsNonIncreasingNonce() public {
         UVPStateMachine machine = _supplierMachine();
@@ -1224,484 +1172,8 @@ contract UVPStateMachineTest {
         require(machine.hasSignal(planId, ORDER_ID, STAGE_AUDIT, SIGNAL_DERIVED), "derived signal missing");
     }
 
-    function testDockOutputWaitsForBWindowThenEmits() public {
-        (UVPStateMachine machine, UVPStagePatchModule stagePatch) = _newDockMachine();
 
-        SignalCapability[] memory aCapabilities = new SignalCapability[](3);
-        aCapabilities[0] = SignalCapability({
-            stageId: STAGE_INIT,
-            targetSourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_BIRTH,
-            targetOrderRelation: 0
-        });
-        aCapabilities[1] = SignalCapability({
-            stageId: STAGE_AUDIT,
-            targetSourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_OPEN,
-            targetOrderRelation: 0
-        });
-        aCapabilities[2] = SignalCapability({
-            stageId: STAGE_AUDIT,
-            targetSourceId: STAGE_AUDIT,
-            signalId: SIGNAL_DONE,
-            targetOrderRelation: 0
-        });
-        bytes32 planA = _registerPlan(machine, _supplierPlan(), new StageSelectorBinding[](0), aCapabilities);
-        _submitTriggerBirthWithAttribution(
-            machine, planA, _capabilityAttribution(machine, planA, STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_BIRTH)
-        );
-        bytes32 orderA = ORDER_ID;
 
-        SignalCapability[] memory bCapabilities = new SignalCapability[](6);
-        bCapabilities[0] = SignalCapability({
-            stageId: STAGE_INIT,
-            targetSourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_BIRTH,
-            targetOrderRelation: 0
-        });
-        bCapabilities[1] = SignalCapability({
-            stageId: STAGE_INIT,
-            targetSourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_OPEN,
-            targetOrderRelation: 0
-        });
-        bCapabilities[2] = SignalCapability({
-            stageId: STAGE_DOCK,
-            targetSourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_DONE,
-            targetOrderRelation: 0
-        });
-        bCapabilities[3] = SignalCapability({
-            stageId: STAGE_INIT,
-            targetSourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_TIMER,
-            targetOrderRelation: 0
-        });
-        bCapabilities[4] = SignalCapability({
-            stageId: STAGE_INIT,
-            targetSourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_CANCEL,
-            targetOrderRelation: 0
-        });
-        bCapabilities[5] = SignalCapability({
-            stageId: STAGE_DOCK,
-            targetSourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_BLOCKED,
-            targetOrderRelation: 0
-        });
-
-        UVPStateMachine.Instruction[] memory admissionInstrs = new UVPStateMachine.Instruction[](1);
-        admissionInstrs[0] = UVPStateMachine.Instruction({
-            op: uint8(UVPStateMachine.InstructionOp.Signal),
-            sourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_TIMER,
-            arity: 0,
-            delaySeconds: 0
-        });
-        UVPStateMachine.CompactHook[] memory baseHooks = _dockPlan();
-        UVPStateMachine.Instruction[] memory blockedInstrs = new UVPStateMachine.Instruction[](2);
-        blockedInstrs[0] = UVPStateMachine.Instruction({
-            op: uint8(UVPStateMachine.InstructionOp.Signal),
-            sourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_CANCEL,
-            arity: 0,
-            delaySeconds: 0
-        });
-        blockedInstrs[1] = UVPStateMachine.Instruction({
-            op: uint8(UVPStateMachine.InstructionOp.Not),
-            sourceId: bytes32(0),
-            signalId: bytes32(0),
-            arity: 0,
-            delaySeconds: 0
-        });
-        UVPStateMachine.CompactHook[] memory bHooks = new UVPStateMachine.CompactHook[](baseHooks.length + 2);
-        for (uint256 i = 0; i < baseHooks.length; i++) {
-            bHooks[i] = baseHooks[i];
-        }
-        bHooks[baseHooks.length] = UVPStateMachine.CompactHook({
-            hookId: keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_DONE)),
-            stageId: STAGE_DOCK,
-            hookName: SIGNAL_DONE,
-            flags: 8,
-            instructions: admissionInstrs,
-            dependencyKeys: _depsOf(admissionInstrs)
-        });
-        bHooks[baseHooks.length + 1] = UVPStateMachine.CompactHook({
-            hookId: keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_BLOCKED)),
-            stageId: STAGE_DOCK,
-            hookName: SIGNAL_BLOCKED,
-            flags: 8,
-            instructions: blockedInstrs,
-            dependencyKeys: _depsOf(blockedInstrs)
-        });
-        bytes32 planB = _registerPlan(machine, bHooks, new StageSelectorBinding[](0), bCapabilities);
-        UVPStateMachine.SignalSubmission memory birthB = UVPStateMachine.SignalSubmission({
-            planId: planB,
-            orderId: bytes32(0),
-            sourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_BIRTH,
-            payloadHash: keccak256("dock.b.birth.payload"),
-            idempotencyKey: keccak256("dock.b.birth.idempotency"),
-            attribution: _capabilityAttribution(machine, planB, STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_BIRTH),
-            targetStageId: bytes32(0),
-            files: emptyStageFiles(),
-            submitter: _triggerSubmitter(machine),
-            deadline: block.timestamp + 1 hours
-        });
-        (bytes32 orderB, bool insertedB) = _submitEnvelope(machine, birthB);
-        require(insertedB, "dock B birth must report inserted");
-        ORDER_ID = orderB;
-        _submitWithAttribution(
-            machine,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_OPEN,
-            _capabilityAttribution(machine, planB, STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_OPEN)
-        );
-
-        bytes32[] memory aProof =
-            _capabilityAttribution(machine, planA, STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_BIRTH).capabilityProof;
-        _submitWithAttribution(
-            machine,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_CANCEL,
-            _capabilityAttribution(machine, planB, STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_CANCEL)
-        );
-        bytes32[] memory bProof =
-            _capabilityAttribution(machine, planB, STAGE_DOCK, SOURCE_BOOTSTRAP, SIGNAL_DONE).capabilityProof;
-        bytes32[] memory blockedProof =
-            _capabilityAttribution(machine, planB, STAGE_DOCK, SOURCE_BOOTSTRAP, SIGNAL_BLOCKED).capabilityProof;
-
-        IUVPDockRegistry.DockAtomInput[] memory atoms = new IUVPDockRegistry.DockAtomInput[](1);
-        atoms[0] = IUVPDockRegistry.DockAtomInput({
-            stageId: STAGE_INIT,
-            signalId: SIGNAL_BIRTH,
-            relation: 0,
-            capabilityProof: aProof
-        });
-        IUVPStateMachineCore.WindowInstruction[] memory window = new IUVPStateMachineCore.WindowInstruction[](1);
-        window[0] = IUVPStateMachineCore.WindowInstruction({
-            op: 0,
-            sourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_BIRTH,
-            arity: 0,
-            delaySeconds: 0
-        });
-        IUVPDockRegistry.DockOutputInput[] memory outputs = new IUVPDockRegistry.DockOutputInput[](2);
-        outputs[0] = IUVPDockRegistry.DockOutputInput({
-            signalId: SIGNAL_DONE,
-            relation: 0,
-            atoms: atoms,
-            window: window,
-            capabilityProof: bProof
-        });
-        outputs[1] = IUVPDockRegistry.DockOutputInput({
-            signalId: SIGNAL_BLOCKED,
-            relation: 0,
-            atoms: atoms,
-            window: window,
-            capabilityProof: blockedProof
-        });
-        bytes32 docHash = keccak256("dock.test.doc");
-        IUVPDockRegistry dockRegistry = IUVPDockRegistry(machine.dockRegistry());
-        bytes32 dkid =
-            dockRegistry.registerDock(planA, SOURCE_BOOTSTRAP, planB, STAGE_DOCK, SOURCE_BOOTSTRAP, docHash, outputs);
-        require(dkid == keccak256(abi.encode(docHash, planA, planB, keccak256(abi.encode(outputs)))), "dock id mismatch");
-
-        bytes32 supplierId = _supplierFor(machine, address(this));
-        vm.prank(address(stagePatch));
-        machine.activateStageDockSupplierFromModule(planB, orderB, STAGE_DOCK, supplierId, dkid, 1);
-
-        bytes memory payload = _dockPayload(orderA);
-        StageFile[] memory files = _oneFile("dock_link", payload);
-        UVPFileResourceModule fileModule = UVPFileResourceModule(machine.fileResourceModule());
-        vm.prank(address(machine));
-        fileModule.applyStageFiles(planB, orderB, STAGE_DOCK, files, address(this), bytes32(0), new bytes32[](0));
-
-        bytes32[][] memory proofs = new bytes32[][](2);
-        proofs[0] = bProof;
-        proofs[1] = blockedProof;
-        vm.recordLogs();
-        uint256 emitted = stagePatch.pokeDockBinding(planB, orderB, STAGE_DOCK, payload, orderA, proofs);
-        require(emitted == 0, "waiting B window must not emit");
-        require(!machine.hasSignal(planB, orderB, SOURCE_BOOTSTRAP, SIGNAL_DONE), "waiting B output was recorded");
-        require(!machine.hasSignal(planB, orderB, SOURCE_BOOTSTRAP, SIGNAL_BLOCKED), "blocked B output was recorded");
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        bytes32 deferredTopic =
-            keccak256("DockOutputDeferred(bytes32,bytes32,bytes32,uint256,bytes32,uint8,uint64)");
-        bool deferred;
-        for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == deferredTopic) {
-                deferred = true;
-            }
-        }
-        require(deferred, "waiting B window must be reported as deferred");
-        (AdmissionVerdict verdict,) = stagePatch.dockOutputAdmissionVerdict(planB, orderB, STAGE_DOCK, 0);
-        require(verdict == AdmissionVerdict.Wait, "B window must read Wait");
-
-        _submitWithAttribution(
-            machine,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TIMER,
-            _capabilityAttribution(machine, planB, STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_TIMER)
-        );
-        (verdict,) = stagePatch.dockOutputAdmissionVerdict(planB, orderB, STAGE_DOCK, 0);
-        require(verdict == AdmissionVerdict.Ready, "B window must become Ready");
-        (verdict,) = stagePatch.dockOutputAdmissionVerdict(planB, orderB, STAGE_DOCK, 1);
-        require(verdict == AdmissionVerdict.Impossible, "cancelled B window must read Impossible");
-        emitted = stagePatch.pokeDockBinding(planB, orderB, STAGE_DOCK, payload, orderA, proofs);
-        require(emitted == 1, "ready B window must emit exactly once");
-        require(machine.hasSignal(planB, orderB, SOURCE_BOOTSTRAP, SIGNAL_DONE), "dock output fact missing");
-        require(!machine.hasSignal(planB, orderB, SOURCE_BOOTSTRAP, SIGNAL_BLOCKED), "impossible output was recorded");
-
-        (bool current, bool aSatisfied,, bool bSatisfied, bool outputEmitted) =
-            stagePatch.dockOutputWindow(planB, orderB, STAGE_DOCK, orderA, 0);
-        require(current && aSatisfied && bSatisfied && outputEmitted, "dock window readback mismatch");
-        (current, aSatisfied,, bSatisfied, outputEmitted) =
-            stagePatch.dockOutputWindow(planB, orderB, STAGE_DOCK, orderA, 1);
-        require(current && aSatisfied && !bSatisfied && !outputEmitted, "impossible window readback mismatch");
-    }
-
-    function testDockIdScopingAllowsDistinctPlanPairsAndDistinctOutputs() public {
-        UVPStateMachine machine = _newMachine();
-        SignalCapability[] memory aCapabilities = new SignalCapability[](1);
-        aCapabilities[0] = SignalCapability({
-            stageId: STAGE_INIT,
-            targetSourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_BIRTH,
-            targetOrderRelation: 0
-        });
-        bytes32 planA = _registerPlan(machine, _dockPlan(), new StageSelectorBinding[](0), aCapabilities);
-
-        SignalCapability[] memory bCapabilities = new SignalCapability[](2);
-        bCapabilities[0] = SignalCapability({
-            stageId: STAGE_DOCK,
-            targetSourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_DONE,
-            targetOrderRelation: 0
-        });
-        bCapabilities[1] = SignalCapability({
-            stageId: STAGE_DOCK,
-            targetSourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_BLOCKED,
-            targetOrderRelation: 0
-        });
-        UVPStateMachine.CompactHook[] memory baseHooks = _dockPlan();
-        UVPStateMachine.CompactHook[] memory bHooks = new UVPStateMachine.CompactHook[](baseHooks.length + 2);
-        for (uint256 i = 0; i < baseHooks.length; i++) {
-            bHooks[i] = baseHooks[i];
-        }
-        UVPStateMachine.Instruction[] memory doneInstrs = new UVPStateMachine.Instruction[](1);
-        doneInstrs[0] = UVPStateMachine.Instruction({
-            op: uint8(UVPStateMachine.InstructionOp.Signal),
-            sourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_DONE,
-            arity: 0,
-            delaySeconds: 0
-        });
-        bHooks[baseHooks.length] = UVPStateMachine.CompactHook({
-            hookId: keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_DONE)),
-            stageId: STAGE_DOCK,
-            hookName: SIGNAL_DONE,
-            flags: 8,
-            instructions: doneInstrs,
-            dependencyKeys: _depsOf(doneInstrs)
-        });
-        UVPStateMachine.Instruction[] memory blockedInstrs = new UVPStateMachine.Instruction[](1);
-        blockedInstrs[0] = UVPStateMachine.Instruction({
-            op: uint8(UVPStateMachine.InstructionOp.Signal),
-            sourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_BLOCKED,
-            arity: 0,
-            delaySeconds: 0
-        });
-        bHooks[baseHooks.length + 1] = UVPStateMachine.CompactHook({
-            hookId: keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_BLOCKED)),
-            stageId: STAGE_DOCK,
-            hookName: SIGNAL_BLOCKED,
-            flags: 8,
-            instructions: blockedInstrs,
-            dependencyKeys: _depsOf(blockedInstrs)
-        });
-        bytes32 planB = _registerPlan(machine, bHooks, new StageSelectorBinding[](0), bCapabilities);
-
-        UVPStateMachine.CompactHook[] memory cHooks = new UVPStateMachine.CompactHook[](baseHooks.length + 2);
-        for (uint256 i = 0; i < baseHooks.length; i++) {
-            cHooks[i] = baseHooks[i];
-        }
-        cHooks[baseHooks.length] = bHooks[baseHooks.length];
-        cHooks[baseHooks.length + 1] = UVPStateMachine.CompactHook({
-            hookId: keccak256(abi.encode(SOURCE_BOOTSTRAP, SIGNAL_TIMER)),
-            stageId: STAGE_DOCK,
-            hookName: SIGNAL_TIMER,
-            flags: 8,
-            instructions: blockedInstrs,
-            dependencyKeys: _depsOf(blockedInstrs)
-        });
-        bytes32 planC = _registerPlan(machine, cHooks, new StageSelectorBinding[](0), bCapabilities);
-
-        bytes32[] memory aProof =
-            _capabilityAttribution(machine, planA, STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_BIRTH).capabilityProof;
-        bytes32[] memory bProofDone =
-            _capabilityAttribution(machine, planB, STAGE_DOCK, SOURCE_BOOTSTRAP, SIGNAL_DONE).capabilityProof;
-        bytes32[] memory bProofBlocked =
-            _capabilityAttribution(machine, planB, STAGE_DOCK, SOURCE_BOOTSTRAP, SIGNAL_BLOCKED).capabilityProof;
-        bytes32[] memory cProofDone =
-            _capabilityAttribution(machine, planC, STAGE_DOCK, SOURCE_BOOTSTRAP, SIGNAL_DONE).capabilityProof;
-
-        IUVPDockRegistry.DockAtomInput[] memory atoms = new IUVPDockRegistry.DockAtomInput[](1);
-        atoms[0] = IUVPDockRegistry.DockAtomInput({
-            stageId: STAGE_INIT,
-            signalId: SIGNAL_BIRTH,
-            relation: 0,
-            capabilityProof: aProof
-        });
-        IUVPStateMachineCore.WindowInstruction[] memory window = new IUVPStateMachineCore.WindowInstruction[](1);
-        window[0] = IUVPStateMachineCore.WindowInstruction({
-            op: 0,
-            sourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_BIRTH,
-            arity: 0,
-            delaySeconds: 0
-        });
-
-        IUVPDockRegistry.DockOutputInput[] memory outputsReal = new IUVPDockRegistry.DockOutputInput[](1);
-        outputsReal[0] = IUVPDockRegistry.DockOutputInput({
-            signalId: SIGNAL_DONE,
-            relation: 0,
-            atoms: atoms,
-            window: window,
-            capabilityProof: bProofDone
-        });
-
-        IUVPDockRegistry.DockOutputInput[] memory outputsSquatter = new IUVPDockRegistry.DockOutputInput[](1);
-        outputsSquatter[0] = IUVPDockRegistry.DockOutputInput({
-            signalId: SIGNAL_BLOCKED,
-            relation: 0,
-            atoms: atoms,
-            window: window,
-            capabilityProof: bProofBlocked
-        });
-
-        IUVPDockRegistry.DockOutputInput[] memory outputsPlanC = new IUVPDockRegistry.DockOutputInput[](1);
-        outputsPlanC[0] = IUVPDockRegistry.DockOutputInput({
-            signalId: SIGNAL_DONE,
-            relation: 0,
-            atoms: atoms,
-            window: window,
-            capabilityProof: cProofDone
-        });
-
-        bytes32 docHash = keccak256("dock.shared.doc");
-        IUVPDockRegistry dockRegistry = IUVPDockRegistry(machine.dockRegistry());
-
-        bytes32 dkidSquatter = dockRegistry.registerDock(
-            planA, SOURCE_BOOTSTRAP, planB, STAGE_DOCK, SOURCE_BOOTSTRAP, docHash, outputsSquatter
-        );
-        bytes32 dkidReal = dockRegistry.registerDock(
-            planA, SOURCE_BOOTSTRAP, planB, STAGE_DOCK, SOURCE_BOOTSTRAP, docHash, outputsReal
-        );
-        bytes32 dkidPlanC = dockRegistry.registerDock(
-            planA, SOURCE_BOOTSTRAP, planC, STAGE_DOCK, SOURCE_BOOTSTRAP, docHash, outputsPlanC
-        );
-
-        require(dkidSquatter != dkidReal, "different outputs must produce distinct dkid");
-        require(dkidReal != dkidPlanC, "different plan pair must produce distinct dkid");
-        require(dockRegistry.dockExists(dkidSquatter), "squatter dock missing");
-        require(dockRegistry.dockExists(dkidReal), "real dock missing");
-        require(dockRegistry.dockExists(dkidPlanC), "second plan pair dock missing");
-
-        vm.expectRevert(abi.encodeWithSelector(UVPDockRegistry.DockAlreadyRegistered.selector, dkidReal));
-        dockRegistry.registerDock(
-            planA, SOURCE_BOOTSTRAP, planB, STAGE_DOCK, SOURCE_BOOTSTRAP, docHash, outputsReal
-        );
-    }
-
-    function testDockOutputWriteRevertsWhenAdmissionNotReady() public {
-        UVPStateMachine machine = _newMachine();
-        SignalCapability[] memory capabilities = new SignalCapability[](4);
-        capabilities[0] = SignalCapability({
-            stageId: STAGE_INIT,
-            targetSourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_BIRTH,
-            targetOrderRelation: 0
-        });
-        capabilities[1] = SignalCapability({
-            stageId: STAGE_INIT,
-            targetSourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_OPEN,
-            targetOrderRelation: 0
-        });
-        capabilities[2] = SignalCapability({
-            stageId: STAGE_AUDIT,
-            targetSourceId: STAGE_AUDIT,
-            signalId: SIGNAL_DONE,
-            targetOrderRelation: 0
-        });
-        capabilities[3] = SignalCapability({
-            stageId: STAGE_INIT,
-            targetSourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_TIMER,
-            targetOrderRelation: 0
-        });
-
-        UVPStateMachine.Instruction[] memory admissionInstrs = new UVPStateMachine.Instruction[](1);
-        admissionInstrs[0] = UVPStateMachine.Instruction({
-            op: uint8(UVPStateMachine.InstructionOp.Signal),
-            sourceId: SOURCE_BOOTSTRAP,
-            signalId: SIGNAL_TIMER,
-            arity: 0,
-            delaySeconds: 0
-        });
-        UVPStateMachine.CompactHook[] memory baseHooks = _supplierPlan();
-        UVPStateMachine.CompactHook[] memory hooks = new UVPStateMachine.CompactHook[](baseHooks.length + 1);
-        for (uint256 i = 0; i < baseHooks.length; i++) {
-            hooks[i] = baseHooks[i];
-        }
-        hooks[baseHooks.length] = UVPStateMachine.CompactHook({
-            hookId: keccak256(abi.encode(STAGE_AUDIT, SIGNAL_DONE)),
-            stageId: STAGE_AUDIT,
-            hookName: SIGNAL_DONE,
-            flags: 8,
-            instructions: admissionInstrs,
-            dependencyKeys: _depsOf(admissionInstrs)
-        });
-        bytes32 planId = _registerPlan(machine, hooks, new StageSelectorBinding[](0), capabilities);
-        _submitTriggerBirthWithAttribution(
-            machine, planId, _capabilityAttribution(machine, planId, STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_BIRTH)
-        );
-        _submitWithAttribution(
-            machine,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_OPEN,
-            _capabilityAttribution(machine, planId, STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_OPEN)
-        );
-
-        UVPStateMachine.FactAttribution memory attribution =
-            _capabilityAttribution(machine, planId, STAGE_AUDIT, STAGE_AUDIT, SIGNAL_DONE);
-        address stagePatch = address(_patchModules[address(machine)]);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                UVPStateMachine.SignalAdmissionRejected.selector, ORDER_ID, STAGE_AUDIT, SIGNAL_DONE
-            )
-        );
-        vm.prank(stagePatch);
-        machine.submitDockOutputSignalFromModule(
-            planId, ORDER_ID, STAGE_AUDIT, SIGNAL_DONE, PAYLOAD_HASH, IDEMPOTENCY_KEY, address(this), attribution
-        );
-
-        _submitWithAttribution(
-            machine,
-            SOURCE_BOOTSTRAP,
-            SIGNAL_TIMER,
-            _capabilityAttribution(machine, planId, STAGE_INIT, SOURCE_BOOTSTRAP, SIGNAL_TIMER)
-        );
-        vm.prank(stagePatch);
-        bool submitted = machine.submitDockOutputSignalFromModule(
-            planId, ORDER_ID, STAGE_AUDIT, SIGNAL_DONE, PAYLOAD_HASH, IDEMPOTENCY_KEY, address(this), attribution
-        );
-        require(submitted, "dock output not submitted after admission became ready");
-        require(machine.hasSignal(planId, ORDER_ID, STAGE_AUDIT, SIGNAL_DONE), "dock output fact missing");
-    }
 
     function testDerivedSignalDuplicateDoesNotEmitSubmitted() public {
         UVPStateMachine machine = _newMachine();
@@ -1931,30 +1403,7 @@ contract UVPStateMachineTest {
         }
     }
 
-    function _newDockMachine() private returns (UVPStateMachine machine, UVPStagePatchModule stagePatch) {
-        machine = new UVPStateMachine();
-        UVPIdentityRegistry registry = new UVPIdentityRegistry();
-        _registries[address(machine)] = registry;
-        stagePatch = new UVPStagePatchModule(address(machine));
-        machine.setStagePatchModule(address(stagePatch));
-        machine.setDerivedSignalModule(address(new UVPDerivedSignalModule(address(machine))));
-        machine.setDockRegistry(address(new UVPDockRegistry(address(machine))));
-        machine.setPlanMetadataModule(address(new UVPPlanMetadataModule(address(machine))));
-        machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
-        machine.setIdentityRegistry(address(registry));
-        machine.freezeModules();
-    }
 
-    function _dockPayload(bytes32 orderId) private pure returns (bytes memory payload) {
-        bytes memory digits = bytes("0123456789abcdef");
-        bytes memory encoded = new bytes(64);
-        for (uint256 i = 0; i < 32; i++) {
-            uint8 value = uint8(orderId[i]);
-            encoded[i * 2] = digits[value >> 4];
-            encoded[i * 2 + 1] = digits[value & 0x0f];
-        }
-        payload = abi.encodePacked("0x", encoded);
-    }
 
     function _newMachine() private returns (UVPStateMachine machine) {
         machine = _deployModules();
@@ -1971,7 +1420,6 @@ contract UVPStateMachineTest {
         UVPDerivedSignalModule derivedModule = new UVPDerivedSignalModule(address(machine));
         _derivedModules[address(machine)] = derivedModule;
         machine.setDerivedSignalModule(address(derivedModule));
-        machine.setDockRegistry(address(new UVPDockRegistry(address(machine))));
         machine.setPlanMetadataModule(address(new UVPPlanMetadataModule(address(machine))));
         UVPFileResourceModule fileModule = new UVPFileResourceModule(address(machine));
         _fileModules[address(machine)] = fileModule;
@@ -2388,9 +1836,6 @@ contract UVPStateMachineTest {
             if (hooks[i].flags & FLAG_ORDER_TRIGGER_MINT != 0) {
                 kinds[stageIndex] |= 1;
             }
-            if (hooks[i].flags & FLAG_DOCK_EXECUTOR != 0) {
-                kinds[stageIndex] |= 2;
-            }
             if (hooks[i].flags & FLAG_DYNAMIC_EXECUTOR != 0) {
                 kinds[stageIndex] |= 4;
             }
@@ -2601,14 +2046,6 @@ contract UVPStateMachineTest {
         );
     }
 
-    function _dockPlan() private pure returns (UVPStateMachine.CompactHook[] memory hooks) {
-        hooks = new UVPStateMachine.CompactHook[](3);
-        hooks[0] = _signalHook(
-            HOOK_BIRTH, STAGE_INIT, SIGNAL_BIRTH, FLAG_ORDER_TRIGGER_MINT | FLAG_EMIT_READY, SOURCE_BOOTSTRAP
-        );
-        hooks[1] = _signalHook(HOOK_DOCK_OPEN, STAGE_DOCK, SIGNAL_OPEN, FLAG_EMIT_READY | FLAG_DOCK_EXECUTOR, SOURCE_BOOTSTRAP);
-        hooks[2] = _signalHook(HOOK_DOCK_DONE, STAGE_DOCK, SIGNAL_DONE, FLAG_DOCK_EXECUTOR, SOURCE_BOOTSTRAP);
-    }
 
     function _timerPlan() private pure returns (UVPStateMachine.CompactHook[] memory hooks) {
         hooks = new UVPStateMachine.CompactHook[](2);

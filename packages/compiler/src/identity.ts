@@ -10,25 +10,12 @@ import type { HexString } from "./types/index.js";
  */
 
 export const DEFINITION_UID_DOMAIN = "uvp:definition-uid:v2";
-export const DOCK_UID_DOMAIN = "uvp:dock-uid:v1";
-
-export interface DockIdentity {
-  readonly dkid: string;
-  readonly docHash: HexString;
-}
 
 export function definitionUid(definition: unknown): string {
   const digest = keccak256Hex(
     `${DEFINITION_UID_DOMAIN}:${canonicalJson(stripDefinitionIdentityFields(definition))}`,
   );
   return `zx-${digest.slice(2, 2 + 32)}`;
-}
-
-export function dockIdentity(dock: unknown): DockIdentity {
-  const docHash = keccak256Hex(
-    `${DOCK_UID_DOMAIN}:${canonicalJson(stripDisplayFields(dock))}`,
-  );
-  return { dkid: `zd-${docHash.slice(2, 2 + 32)}`, docHash };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

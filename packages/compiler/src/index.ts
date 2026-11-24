@@ -38,32 +38,19 @@ export {
 export { hashCanonical, keccak256Hex } from "./hash.js";
 export { hashOnchainPlanPayload } from "./onchain/hash/plan.js";
 export {
-  assertDockArtifact,
-  DOCK_ARTIFACT_SCHEMA_VERSION,
-  DOCK_WINDOW_OP,
-  DockArtifactValidationError,
-  dockWindowInstructionsOf,
-  validateDockArtifact,
-} from "./dock-artifact.js";
-export type {
-  DockArtifact,
-  DockWindowInstruction,
-  DockArtifactAtom,
-  DockArtifactOutput,
-  DockArtifactSide,
-  DockArtifactTarget,
-} from "./dock-artifact.js";
+  desugarDockToHooks,
+  type DesugaredHook,
+  type DockDesugarInput,
+  type DockSignalMapping,
+} from "./desugar-dock.js";
 export {
   definitionUid,
   displayIdentity,
-  dockIdentity,
   DEFINITION_UID_DOMAIN,
-  DOCK_UID_DOMAIN,
   stripAnnotations,
   stripDefinitionIdentityFields,
   stripDisplayFields,
 } from "./identity.js";
-export type { DockIdentity } from "./identity.js";
 export {
   EMPTY_MERKLE_ROOT,
   keccakWord,
@@ -73,7 +60,6 @@ export {
 } from "./merkle.js";
 export {
   HOOK_FLAG_ADMISSION,
-  HOOK_FLAG_DOCK_EXECUTOR,
   HOOK_FLAG_DYNAMIC_EXECUTOR,
   HOOK_FLAG_EMIT_READY,
   HOOK_FLAG_ORDER_TRIGGER_MINT,

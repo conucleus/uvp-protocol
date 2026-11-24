@@ -43,22 +43,13 @@ interface IUVPStateMachineCore {
     function stageSupplierAssignment(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
         external
         view
-        returns (bytes32 supplierId, uint256 patchNonce, bytes32 dockId);
+        returns (bytes32 supplierId, uint256 patchNonce);
 
     function activateStageSupplierFromModule(
         bytes32 planId,
         bytes32 orderId,
         bytes32 targetStageId,
         bytes32 supplierId,
-        uint256 patchNonce
-    ) external;
-
-    function activateStageDockSupplierFromModule(
-        bytes32 planId,
-        bytes32 orderId,
-        bytes32 targetStageId,
-        bytes32 supplierId,
-        bytes32 dockId,
         uint256 patchNonce
     ) external;
 
@@ -96,16 +87,6 @@ interface IUVPStateMachineCore {
 
     function sourceSignalCount(bytes32 planId, bytes32 orderId, bytes32 sourceId) external view returns (uint256);
 
-    function dockRegistry() external view returns (address);
-
-    function stageHasDockExecutorHook(bytes32 planId, bytes32 stageId) external view returns (bool);
-
-    function evaluateDockWindow(
-        bytes32 planId,
-        bytes32 orderId,
-        WindowInstruction[] calldata instructions
-    ) external view returns (bool satisfied, uint64 dueInSeconds);
-
     function isSignalAdmissionSatisfied(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId)
         external
         view
@@ -131,17 +112,6 @@ interface IUVPStateMachineCore {
         returns (bool);
 
     function stageHasOrderTriggerHook(bytes32 planId, bytes32 stageId) external view returns (bool);
-
-    function submitDockOutputSignalFromModule(
-        bytes32 planId,
-        bytes32 orderId,
-        bytes32 sourceId,
-        bytes32 signalId,
-        bytes32 payloadHash,
-        bytes32 idempotencyKey,
-        address submitter,
-        FactAttribution calldata attribution
-    ) external returns (bool submitted);
 
     function submitDerivedSignalFromModule(
         bytes32 planId,

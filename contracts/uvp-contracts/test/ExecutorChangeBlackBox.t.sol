@@ -5,7 +5,6 @@ import {UVPStateMachine} from "../src/UVPStateMachine.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
-import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {UVPIdentityRegistry} from "../src/UVPIdentityRegistry.sol";
 import {IUVPStateMachineCore} from "../src/interfaces/IUVPStateMachineCore.sol";
@@ -137,9 +136,9 @@ contract StageSupplierChangeBlackBoxTest {
         );
 
         _applyDirect(patch, _bindingProof(STAGE_AUDIT), _candidateProof(supplierCand1));
-        (bytes32 supplierId, uint256 patchNonce, bytes32 dockId) =
+        (bytes32 supplierId, uint256 patchNonce) =
             machine.stageSupplierAssignment(planId, orderId, STAGE_AUDIT);
-        require(supplierId == supplierCand1 && patchNonce == 1 && dockId == bytes32(0), "candidate patch not applied");
+        require(supplierId == supplierCand1 && patchNonce == 1, "candidate patch not applied");
         require(
             machine.effectiveStageSupplier(planId, orderId, STAGE_AUDIT) == supplierCand1
                 && machine.effectiveStageAccount(planId, orderId, STAGE_AUDIT) == _cand1(),
@@ -267,7 +266,7 @@ contract StageSupplierChangeBlackBoxTest {
         handoff.previousSupplierSignature =
             _signatureOver(CAND1_PRIVATE_KEY, _digestFor(orderId, handoff.patch, handoff.selector, handoff.deadline));
         _sendRelayed(handoff);
-        (bytes32 supplierId, uint256 patchNonce,) = machine.stageSupplierAssignment(planId, orderId, STAGE_AUDIT);
+        (bytes32 supplierId, uint256 patchNonce) = machine.stageSupplierAssignment(planId, orderId, STAGE_AUDIT);
         require(supplierId == supplierCand2 && patchNonce == 2, "handoff not applied");
 
         _submit(STAGE_AUDIT, STAGE_AUDIT, SIGNAL_STAGE_REVIEW, _cand2());
@@ -301,9 +300,9 @@ contract StageSupplierChangeBlackBoxTest {
         );
 
         _applyDirect(_patch(STAGE_DYN, supplierDyn, bytes32(0), 1), _bindingProof(STAGE_DYN), new bytes32[](0));
-        (bytes32 supplierId, uint256 patchNonce, bytes32 dockId) =
+        (bytes32 supplierId, uint256 patchNonce) =
             machine.stageSupplierAssignment(planId, orderId, STAGE_DYN);
-        require(supplierId == supplierDyn && patchNonce == 1 && dockId == bytes32(0), "dynamic assign not applied");
+        require(supplierId == supplierDyn && patchNonce == 1, "dynamic assign not applied");
 
         _submit(SOURCE_DYN, STAGE_DYN, SIGNAL_DYN, _dyn());
         (uint256 count,,,) = machine.stageSignalState(planId, orderId, STAGE_DYN);
@@ -416,11 +415,9 @@ contract StageSupplierChangeBlackBoxTest {
         metadata = new UVPPlanMetadataModule(address(machine));
         stagePatch = new UVPStagePatchModule(address(machine));
         UVPDerivedSignalModule derivedSignal = new UVPDerivedSignalModule(address(machine));
-        UVPDockRegistry dockRegistry = new UVPDockRegistry(address(machine));
         files = new UVPFileResourceModule(address(machine));
         machine.setStagePatchModule(address(stagePatch));
         machine.setDerivedSignalModule(address(derivedSignal));
-        machine.setDockRegistry(address(dockRegistry));
         machine.setPlanMetadataModule(address(metadata));
         machine.setFileResourceModule(address(files));
         machine.setIdentityRegistry(address(suppliers));

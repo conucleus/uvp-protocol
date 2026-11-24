@@ -51,7 +51,7 @@ test("chain-mode replay matches hook expectations from stable chain events", asy
     "2:0:0x03"
   );
   assert.equal(cancelOrder?.hookStatuses["0x0000000000000000000000000000000000000000000000000000000000003001"]?.status, "ready");
-  assert.equal(cancelOrder?.hookStatuses["0x0000000000000000000000000000000000000000000000000000000000003002"]?.status, "cxl");
+  assert.equal(cancelOrder?.hookStatuses["0x0000000000000000000000000000000000000000000000000000000000003002"]?.status, "cancelled");
 
   const cancelStartReadyCount = result.observed.filter(
     (event) =>

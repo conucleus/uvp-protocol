@@ -23,7 +23,6 @@ import { toEventHash, type Abi, type AbiEvent } from "viem";
 import {
   buildCompactHookFlags,
   FILE_RESOURCE_MODULE_ABI,
-  HOOK_FLAG_DOCK_EXECUTOR,
   HOOK_FLAG_DYNAMIC_EXECUTOR,
   HOOK_FLAG_EMIT_READY,
   HOOK_FLAG_ORDER_TRIGGER_MINT,
@@ -67,7 +66,6 @@ describe("generated artifact ABI bindings", () => {
   it("keeps CompactHook flag bits pinned to the contract constants", () => {
     assert.equal(HOOK_FLAG_ORDER_TRIGGER_MINT, 1);
     assert.equal(HOOK_FLAG_EMIT_READY, 4);
-    assert.equal(HOOK_FLAG_DOCK_EXECUTOR, 16);
     assert.equal(HOOK_FLAG_DYNAMIC_EXECUTOR, 32);
     // 编译器产物恒为 trigger|EMIT_READY：trigger=5。
     assert.equal(
@@ -75,7 +73,6 @@ describe("generated artifact ABI bindings", () => {
       5,
     );
     assert.equal(buildCompactHookFlags({ emitReady: true }), 4);
-    assert.equal(buildCompactHookFlags({ dockExecutor: true }), 16);
     assert.equal(
       buildCompactHookFlags({ emitReady: true, dynamicExecutor: true }),
       36,

@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import {UVPStateMachine} from "../src/UVPStateMachine.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
-import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {UVPIdentityRegistry} from "../src/UVPIdentityRegistry.sol";
@@ -1103,7 +1102,6 @@ contract UVPAdmissionTest {
         _registries[address(machine)] = registry;
         machine.setStagePatchModule(address(new UVPStagePatchModule(address(machine))));
         machine.setDerivedSignalModule(address(new UVPDerivedSignalModule(address(machine))));
-        machine.setDockRegistry(address(new UVPDockRegistry(address(machine))));
         machine.setPlanMetadataModule(address(new UVPPlanMetadataModule(address(machine))));
         machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
         machine.setIdentityRegistry(address(registry));

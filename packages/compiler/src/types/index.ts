@@ -58,7 +58,7 @@ export interface ZhixuSendSignal {
 }
 
 export interface ExecuteConfigs {
-  readonly supplierType: "individual" | "organization" | "dock";
+  readonly supplierType: "individual" | "organization";
   readonly supplierID?: string;
   readonly selectableResource?: Record<string, FileResourceLike>;
   readonly [key: string]: unknown;
@@ -100,7 +100,6 @@ export interface CompiledHookPlanHook {
   readonly hookName: string;
   readonly orderTriggerKind: OrderTriggerKind;
   readonly emitReady: boolean;
-  readonly dockExecutor: boolean;
   readonly dynamicExecutor: boolean;
   readonly rawExpression: string;
   readonly normalizedExpression: string;
@@ -253,7 +252,6 @@ export interface OnchainCompiledHook {
   readonly kind: "receive";
   readonly orderTriggerKind: OrderTriggerKind;
   readonly emitReady: boolean;
-  readonly dockExecutor: boolean;
   readonly dynamicExecutor: boolean;
   readonly instructions: readonly OnchainHookInstruction[];
   readonly dependencies: readonly OnchainHookDependency[];

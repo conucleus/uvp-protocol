@@ -13,7 +13,6 @@ import {
     _HOOK_FLAG_ORDER_TRIGGER_MINT as HOOK_FLAG_ORDER_TRIGGER_MINT,
     _HOOK_FLAG_EMIT_READY as HOOK_FLAG_EMIT_READY,
     _HOOK_FLAG_ADMISSION as HOOK_FLAG_ADMISSION,
-    _HOOK_FLAG_DOCK_EXECUTOR as HOOK_FLAG_DOCK_EXECUTOR,
     _HOOK_FLAG_DYNAMIC_EXECUTOR as HOOK_FLAG_DYNAMIC_EXECUTOR,
     _MAX_HOOK_DELAY_SECONDS as MAX_HOOK_DELAY_SECONDS,
     _MAX_PLAN_DEPENDENCIES as MAX_PLAN_DEPENDENCIES,
@@ -33,7 +32,6 @@ import {
 
 library UVPPlanRegistration {
     uint8 private constant _STAGE_TRIGGER = 1;
-    uint8 private constant _STAGE_DOCK = 2;
     uint8 private constant _STAGE_DYNAMIC = 4;
     bytes4 private constant _EIP1271_MAGIC_VALUE = 0x1626ba7e;
 
@@ -102,7 +100,7 @@ library UVPPlanRegistration {
                 bool dynamic = !admission && hookFlags & HOOK_FLAG_DYNAMIC_EXECUTOR != 0;
                 if (dynamic) {
                     if (
-                        hookFlags & (HOOK_FLAG_ORDER_TRIGGER_MINT | HOOK_FLAG_DOCK_EXECUTOR) != 0
+                        hookFlags & HOOK_FLAG_ORDER_TRIGGER_MINT != 0
                             || hookFlags & HOOK_FLAG_EMIT_READY == 0
                     ) {
                         revert UVPStateMachine.InconsistentDynamicSupplierFlag(hooks[i].stageId);
@@ -117,9 +115,6 @@ library UVPPlanRegistration {
                 if (!admission) {
                     if (hookFlags & HOOK_FLAG_ORDER_TRIGGER_MINT != 0) {
                         stageKinds[stageIndex] |= _STAGE_TRIGGER;
-                    }
-                    if (hookFlags & HOOK_FLAG_DOCK_EXECUTOR != 0) {
-                        stageKinds[stageIndex] |= _STAGE_DOCK;
                     }
                     if (dynamic) {
                         stageKinds[stageIndex] |= _STAGE_DYNAMIC;
@@ -189,7 +184,7 @@ library UVPPlanRegistration {
             if (stageIndex == type(uint256).max) {
                 revert UVPStateMachine.UnknownPlanStage(binding.stageId);
             }
-            if (stageKinds[stageIndex] & (_STAGE_DOCK | _STAGE_DYNAMIC) != 0) {
+            if (stageKinds[stageIndex] & _STAGE_DYNAMIC != 0) {
                 revert UVPStateMachine.SupplierBindingForbiddenForStage(binding.stageId);
             }
             if (plan.stageDefaultSuppliers[binding.stageId] != bytes32(0)) {
@@ -211,7 +206,7 @@ library UVPPlanRegistration {
             if (stageIndex == type(uint256).max) {
                 revert UVPStateMachine.UnknownPlanStage(binding.stageId);
             }
-            if (stageKinds[stageIndex] & (_STAGE_TRIGGER | _STAGE_DOCK | _STAGE_DYNAMIC) != 0) {
+            if (stageKinds[stageIndex] & (_STAGE_TRIGGER | _STAGE_DYNAMIC) != 0) {
                 revert UVPStateMachine.CandidateSupplierBindingForbiddenForStage(binding.stageId);
             }
             if (plan.stageDefaultSuppliers[binding.stageId] == bytes32(0)) {

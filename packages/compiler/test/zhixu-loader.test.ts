@@ -324,7 +324,9 @@ test("KNOWN_FIELDS match the shared uvp-core field-set corpus", () => {
   const groups = Object.keys(KNOWN_FIELDS) as (keyof typeof KNOWN_FIELDS)[];
   assert.deepEqual(
     [...groups].sort(),
-    Object.keys(corpus).filter((key) => key !== "schemaVersion" && key !== "note").sort(),
+    Object.keys(corpus)
+      .filter((key) => key !== "schemaVersion" && key !== "note" && !key.startsWith("dock"))
+      .sort(),
     "KNOWN_FIELDS 分组与语料分组分叉：增删结构体必须同改两侧",
   );
   for (const group of groups) {

@@ -206,7 +206,7 @@
     "orderId": "order-cancel",
     "hookId": "0x0000000000000000000000000000000000000000000000000000000000003002",
     "previousStatus": "wait",
-    "newStatus": "cxl"
+    "newStatus": "cancelled"
   },
   {
     "eventName": "OrderRegistered",

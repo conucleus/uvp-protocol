@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import {UVPStateMachine} from "../src/UVPStateMachine.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
-import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {UVPIdentityRegistry} from "../src/UVPIdentityRegistry.sol";
@@ -123,7 +122,6 @@ contract SemanticsReplayCorpusTest {
     }
 
     UVPStateMachine private machine;
-    UVPDockRegistry private dockRegistry;
     UVPIdentityRegistry private registry;
     bytes32 private testSupplierId;
     mapping(bytes32 chainPlanId => bytes32[] sortedLeaves) private planCapabilityLeaves;
@@ -1529,10 +1527,8 @@ contract SemanticsReplayCorpusTest {
         UVPStagePatchModule stagePatch = new UVPStagePatchModule(address(newMachine));
         UVPDerivedSignalModule derivedSignal = new UVPDerivedSignalModule(address(newMachine));
         UVPPlanMetadataModule planMetadata = new UVPPlanMetadataModule(address(newMachine));
-        dockRegistry = new UVPDockRegistry(address(newMachine));
         newMachine.setStagePatchModule(address(stagePatch));
         newMachine.setDerivedSignalModule(address(derivedSignal));
-        newMachine.setDockRegistry(address(dockRegistry));
         newMachine.setPlanMetadataModule(address(planMetadata));
         newMachine.setFileResourceModule(address(new UVPFileResourceModule(address(newMachine))));
         newMachine.setIdentityRegistry(address(registry));

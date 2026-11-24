@@ -37,7 +37,6 @@ export interface LoweredHookPlanShell extends HookPlanShell {
 export function lowerHookPlanShell(
   analysis: ZhixuAnalysis,
 ): LoweredHookPlanShell {
-  assertDockStagesCoveredByStaticExecutor(analysis);
   const compiledHooks: CompiledHookPlanHook[] = [];
   const supplierRoutes: Record<string, HookPlanSupplierRoute> = {};
   const dependencyHookIds = new Map<string, Set<string>>();
@@ -119,7 +118,6 @@ function compileReceiveHook(
     hookName: hook.hookName,
     orderTriggerKind,
     emitReady: true,
-    dockExecutor: isDockSupplier(stage.executor),
     dynamicExecutor: stage.executor === null || stage.executor === undefined,
     rawExpression: hook.rawExpression,
     normalizedExpression: hook.normalizedExpression,
@@ -159,7 +157,6 @@ function compileTriggerHook(
     hookName,
     orderTriggerKind: "trigger",
     emitReady: true,
-    dockExecutor: false,
     dynamicExecutor: false,
     rawExpression,
     normalizedExpression: rawExpression,
@@ -194,9 +191,6 @@ function supplierRouteOf(
   if (executor === null || executor === undefined) {
     return undefined;
   }
-  if (isDockSupplier(executor)) {
-    return undefined;
-  }
   const fileResources = stage.fileResources;
   return {
     stageIdentifier: stage.stageIdentifier,
@@ -205,55 +199,4 @@ function supplierRouteOf(
       ? {}
       : { fileResources: fileResources as Record<string, FileResourceLike> }),
   };
-}
-
-function isDockSupplier(executor: unknown): boolean {
-  return (
-    typeof executor === "object" &&
-    executor !== null &&
-    (executor as { readonly supplierType?: unknown }).supplierType === "dock"
-  );
-}
-
-function assertDockStagesCoveredByStaticExecutor(
-  analysis: ZhixuAnalysis,
-): void {
-  const staticPlainStages = new Set<string>();
-  const dockStages: string[] = [];
-  for (const stage of analysis.stages) {
-    if (stage.executor !== null && stage.executor !== undefined) {
-      if (isDockSupplier(stage.executor)) {
-        dockStages.push(stage.stageIdentifier);
-      } else {
-        staticPlainStages.add(stage.stageIdentifier);
-      }
-    }
-  }
-  if (dockStages.length === 0) {
-    return;
-  }
-  const targetsBySelector = new Map<string, string[]>();
-  for (const binding of analysis.selectedStageBindings as readonly SelectedStageBinding[]) {
-    const targets = targetsBySelector.get(binding.selectorStageIdentifier) ?? [];
-    targets.push(binding.targetStageIdentifier);
-    targetsBySelector.set(binding.selectorStageIdentifier, targets);
-  }
-  const reachable = new Set<string>(staticPlainStages);
-  const queue = [...staticPlainStages];
-  while (queue.length > 0) {
-    const selector = queue.shift()!;
-    for (const target of targetsBySelector.get(selector) ?? []) {
-      if (!reachable.has(target)) {
-        reachable.add(target);
-        queue.push(target);
-      }
-    }
-  }
-  for (const dockStage of dockStages) {
-    if (!reachable.has(dockStage)) {
-      throw new Error(
-        `dock stage ${dockStage} has no static-executor selector: on chain, every dock stage (supplierType: "dock") must be covered by at least one static-executor stage's selectedStages`,
-      );
-    }
-  }
 }

@@ -92,15 +92,15 @@ export function evaluateHook(
         // 衰减否决位的就绪带有效期（成熟时刻）；其余就绪无期限——不落
         // undefined 键，两类 reg 形态保持可区分。
         return evaluated.expiresAt === undefined
-          ? { status: "reg" }
-          : { status: "reg", expiresAt: evaluated.expiresAt };
+          ? { status: "wait" }
+          : { status: "wait", expiresAt: evaluated.expiresAt };
       case "wait":
         if (!evaluated.readyAt) {
           throw new HookExpressionError("uvp-core wait result is missing readyAt");
         }
         return { status: "wait", dueAt: evaluated.readyAt };
       case "impossible":
-        return { status: "cxl", reason: evaluated.reason ?? "condition is impossible" };
+        return { status: "cancelled", reason: evaluated.reason ?? "condition is impossible" };
       case "needs_more":
         return { status: "init" };
       default:

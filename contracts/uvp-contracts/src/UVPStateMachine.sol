@@ -12,7 +12,6 @@ import {
     _HOOK_FLAG_ORDER_TRIGGER_MINT,
     _HOOK_FLAG_EMIT_READY,
     _HOOK_FLAG_ADMISSION,
-    _HOOK_FLAG_DOCK_EXECUTOR,
     _HOOK_FLAG_DYNAMIC_EXECUTOR,
     _MAX_HOOK_DELAY_SECONDS,
     _MAX_PLAN_DEPENDENCIES,
@@ -167,7 +166,6 @@ contract UVPStateMachine {
     struct StageSupplierAssignment {
         bytes32 supplierId;
         uint256 patchNonce;
-        bytes32 dockId;
     }
 
     struct EvalValue {
@@ -242,7 +240,6 @@ contract UVPStateMachine {
     error ZeroSubmitter();
     error ZeroTargetStageId();
     error ZeroSupplierId();
-    error ZeroDockId();
     error IdentityRegistryNotConfigured();
     error SupplierNotActive(bytes32 supplierId);
     error SignalStageUnknown(bytes32 planId, bytes32 sourceId, bytes32 signalId);
@@ -260,7 +257,6 @@ contract UVPStateMachine {
     address public owner;
     address public stagePatchModule;
     address public derivedSignalModule;
-    address public dockRegistry;
     address public fileResourceModule;
 
     function planMetadataModule() external view returns (address) {
@@ -276,7 +272,6 @@ contract UVPStateMachine {
     uint8 public constant SIGNAL_TARGET_CURRENT_ORDER = 0;
 
     uint8 public constant HOOK_FLAG_ORDER_TRIGGER_MINT = _HOOK_FLAG_ORDER_TRIGGER_MINT;
-    uint8 public constant HOOK_FLAG_DOCK_EXECUTOR = _HOOK_FLAG_DOCK_EXECUTOR;
     uint8 public constant HOOK_FLAG_EMIT_READY = _HOOK_FLAG_EMIT_READY;
     uint8 public constant HOOK_FLAG_ADMISSION = _HOOK_FLAG_ADMISSION;
     uint8 public constant HOOK_FLAG_DYNAMIC_EXECUTOR = _HOOK_FLAG_DYNAMIC_EXECUTOR;
@@ -387,7 +382,6 @@ contract UVPStateMachine {
 
     bytes32 public constant STAGE_PATCH_MODULE_ID = keccak256("uvp.module.stage_patch.v1");
     bytes32 public constant DERIVED_SIGNAL_MODULE_ID = keccak256("uvp.module.derived_signal.v1");
-    bytes32 public constant DOCK_REGISTRY_MODULE_ID = keccak256("uvp.module.dock_registry.v1");
     bytes32 public constant PLAN_METADATA_MODULE_ID = keccak256("uvp.module.plan_metadata.v1");
     bytes32 public constant FILE_RESOURCE_MODULE_ID = keccak256("uvp.module.file_resource.v1");
     bytes32 public constant IDENTITY_REGISTRY_MODULE_ID = keccak256("uvp.module.supplier_registry.v1");
@@ -421,10 +415,6 @@ contract UVPStateMachine {
         derivedSignalModule = _setModule(DERIVED_SIGNAL_MODULE_ID, derivedSignalModule, moduleAddress);
     }
 
-    function setDockRegistry(address moduleAddress) external onlyOwner {
-        dockRegistry = _setModule(DOCK_REGISTRY_MODULE_ID, dockRegistry, moduleAddress);
-    }
-
     function setPlanMetadataModule(address moduleAddress) external onlyOwner {
         _s.planMetadataModule = _setModule(PLAN_METADATA_MODULE_ID, _s.planMetadataModule, moduleAddress);
     }
@@ -442,7 +432,7 @@ contract UVPStateMachine {
             revert ModulesAlreadyFrozen();
         }
         if (
-            stagePatchModule == address(0) || derivedSignalModule == address(0) || dockRegistry == address(0)
+            stagePatchModule == address(0) || derivedSignalModule == address(0)
                 || _s.planMetadataModule == address(0) || fileResourceModule == address(0)
                 || _s.identityRegistry == address(0)
         ) {
@@ -458,7 +448,6 @@ contract UVPStateMachine {
             abi.encode(
                 stagePatchModule,
                 derivedSignalModule,
-                dockRegistry,
                 _s.planMetadataModule,
                 fileResourceModule,
                 _s.identityRegistry
@@ -526,24 +515,7 @@ contract UVPStateMachine {
         if (msg.sender != stagePatchModule) {
             revert UnauthorizedStateMachineModule(msg.sender);
         }
-        _activateStageSupplierAssignment(planId, orderId, targetStageId, supplierId, patchNonce, bytes32(0));
-    }
-
-    function activateStageDockSupplierFromModule(
-        bytes32 planId,
-        bytes32 orderId,
-        bytes32 targetStageId,
-        bytes32 supplierId,
-        bytes32 dockId,
-        uint256 patchNonce
-    ) external {
-        if (msg.sender != stagePatchModule) {
-            revert UnauthorizedStateMachineModule(msg.sender);
-        }
-        if (dockId == bytes32(0)) {
-            revert ZeroDockId();
-        }
-        _activateStageSupplierAssignment(planId, orderId, targetStageId, supplierId, patchNonce, dockId);
+        _activateStageSupplierAssignment(planId, orderId, targetStageId, supplierId, patchNonce);
     }
 
     function planHookFlags(bytes32 planId, bytes32 hookId) external view returns (uint8) {
@@ -581,43 +553,6 @@ contract UVPStateMachine {
         return false;
     }
 
-    function stageHasDockExecutorHook(bytes32 planId, bytes32 stageId) external view returns (bool) {
-        Plan storage plan = _s.plans[planId];
-        bytes32[] storage stageHooks = plan.stageHookIds[stageId];
-        for (uint256 i = 0; i < stageHooks.length; i++) {
-            if (plan.hooks[stageHooks[i]].flags & HOOK_FLAG_DOCK_EXECUTOR != 0) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    function evaluateDockWindow(
-        bytes32 planId,
-        bytes32 orderId,
-        IUVPStateMachineCore.WindowInstruction[] calldata instructions
-    ) external view returns (bool satisfied, uint64 dueInSeconds) {
-        if (!_s.orders[planId][orderId].exists) {
-            return (false, 0);
-        }
-        Instruction[] memory converted = new Instruction[](instructions.length);
-        for (uint256 i = 0; i < instructions.length; i++) {
-            IUVPStateMachineCore.WindowInstruction calldata instruction = instructions[i];
-            converted[i] = Instruction({
-                op: instruction.op,
-                sourceId: instruction.sourceId,
-                signalId: instruction.signalId,
-                arity: instruction.arity,
-                delaySeconds: instruction.delaySeconds
-            });
-        }
-        EvalValue memory result = _evaluateMemoryInstructions(planId, orderId, converted);
-        satisfied = result.value && !result.wait && !result.cancel;
-        if (!satisfied && result.wait && result.dueAt > block.timestamp) {
-            dueInSeconds = result.dueAt - uint64(block.timestamp);
-        }
-    }
-
     function isSignalAdmissionSatisfied(bytes32 planId, bytes32 orderId, bytes32 sourceId, bytes32 signalId)
         external
         view
@@ -639,45 +574,6 @@ contract UVPStateMachine {
             return (AdmissionVerdict.Impossible, 0);
         }
         return _signalAdmissionVerdict(planId, orderId, sourceId, signalId);
-    }
-
-    function submitDockOutputSignalFromModule(
-        bytes32 planId,
-        bytes32 orderId,
-        bytes32 sourceId,
-        bytes32 signalId,
-        bytes32 payloadHash,
-        bytes32 idempotencyKey,
-        address submitter,
-        FactAttribution calldata attribution
-    ) external returns (bool submitted) {
-        if (msg.sender != stagePatchModule) {
-            revert UnauthorizedStateMachineModule(msg.sender);
-        }
-        if (submitter == address(0)) {
-            revert ZeroSubmitter();
-        }
-        if (sourceId == bytes32(0)) {
-            revert ZeroSourceId();
-        }
-        if (signalId == bytes32(0)) {
-            revert ZeroSignalId();
-        }
-        bytes32 sourceStageId = _resolveSourceStage(planId, sourceId, signalId, attribution);
-        if (sourceStageId == bytes32(0)) {
-            revert SignalStageUnknown(planId, sourceId, signalId);
-        }
-        _requireSourceStageReady(planId, orderId, sourceStageId);
-        _requireEffectiveSupplier(planId, orderId, sourceStageId, submitter);
-        if (_hasSignal(planId, orderId, sourceId, signalId)) {
-            return false;
-        }
-        (AdmissionVerdict verdict,) = _signalAdmissionVerdict(planId, orderId, sourceId, signalId);
-        if (verdict != AdmissionVerdict.Ready) {
-            revert SignalAdmissionRejected(orderId, sourceId, signalId);
-        }
-        _recordSignal(planId, orderId, sourceId, signalId, payloadHash, idempotencyKey, submitter, false, sourceStageId);
-        return true;
     }
 
     function submitDerivedSignalFromModule(
@@ -715,8 +611,7 @@ contract UVPStateMachine {
         bytes32 orderId,
         bytes32 targetStageId,
         bytes32 supplierId,
-        uint256 patchNonce,
-        bytes32 dockId
+        uint256 patchNonce
     ) private {
         if (supplierId == bytes32(0)) {
             revert ZeroSupplierId();
@@ -737,7 +632,6 @@ contract UVPStateMachine {
         }
         assignment.supplierId = supplierId;
         assignment.patchNonce = patchNonce;
-        assignment.dockId = dockId;
         emit StageSupplierAssigned(planId, orderId, targetStageId, supplierId, patchNonce);
     }
 
@@ -1029,10 +923,10 @@ contract UVPStateMachine {
     function stageSupplierAssignment(bytes32 planId, bytes32 orderId, bytes32 targetStageId)
         external
         view
-        returns (bytes32 supplierId, uint256 patchNonce, bytes32 dockId)
+        returns (bytes32 supplierId, uint256 patchNonce)
     {
         StageSupplierAssignment storage assignment = _s.stageSupplierAssignments[planId][orderId][targetStageId];
-        return (assignment.supplierId, assignment.patchNonce, assignment.dockId);
+        return (assignment.supplierId, assignment.patchNonce);
     }
 
     function DOMAIN_SEPARATOR() public view returns (bytes32) {

@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import {UVPStateMachine} from "../src/UVPStateMachine.sol";
 import {UVPDerivedSignalModule} from "../src/UVPDerivedSignalModule.sol";
 import {UVPPlanMetadataModule} from "../src/UVPPlanMetadataModule.sol";
-import {UVPDockRegistry} from "../src/UVPDockRegistry.sol";
 import {UVPStagePatchModule} from "../src/UVPStagePatchModule.sol";
 import {UVPFileResourceModule} from "../src/UVPFileResourceModule.sol";
 import {UVPIdentityRegistry} from "../src/UVPIdentityRegistry.sol";
@@ -87,10 +86,8 @@ contract Handler {
         UVPStagePatchModule stagePatch = new UVPStagePatchModule(address(machine));
         UVPDerivedSignalModule derivedSignal = new UVPDerivedSignalModule(address(machine));
         UVPPlanMetadataModule planMetadata = new UVPPlanMetadataModule(address(machine));
-        UVPDockRegistry dockRegistry = new UVPDockRegistry(address(machine));
         machine.setStagePatchModule(address(stagePatch));
         machine.setDerivedSignalModule(address(derivedSignal));
-        machine.setDockRegistry(address(dockRegistry));
         machine.setPlanMetadataModule(address(planMetadata));
         machine.setFileResourceModule(address(new UVPFileResourceModule(address(machine))));
         machine.setIdentityRegistry(address(registry));

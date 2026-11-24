@@ -91,35 +91,6 @@ function birthZhixu(): ZhixuDefinition {
   };
 }
 
-function dockZhixu(): ZhixuDefinition {
-  return {
-    apiVersion: "uvp/v0",
-    kind: "Zhixu",
-    metadata: { name: "binding_dock_demo" },
-    spec: {
-      platform: { type: "blockchain", provider: "eth" },
-      nucleation: { id: "core" },
-      stages: [
-        {
-          name: "accept",
-          source: "acceptor",
-          receiveSignals: { CHECK: "acceptor::accept.check" },
-          sendSignals: [{ name: "accepted" }, { name: "check" }],
-          executor: { supplierType: "dock" },
-        },
-        {
-          name: "gate",
-          source: "acceptor",
-          receiveSignals: { OPEN: "acceptor::gate.open" },
-          sendSignals: [{ name: "open" }],
-          executor: { supplierType: "organization", supplierID: SUPPLIER_GATE },
-          selectedStages: ["accept"],
-        },
-      ],
-    },
-  };
-}
-
 function dynamicZhixu(): ZhixuDefinition {
   return {
     apiVersion: "uvp/v0",
@@ -353,7 +324,6 @@ test("dynamic stage binds no plan supplier and materializes without a route", ()
   for (const hook of mainHooks) {
     assert.equal(hook.dynamicExecutor, true);
     assert.equal(hook.emitReady, true);
-    assert.equal(hook.dockExecutor, false);
     assert.equal(hook.orderTriggerKind, "none");
     assert.equal(hook.routeRef, undefined);
   }
@@ -374,7 +344,7 @@ test("dynamic stage binds no plan supplier and materializes without a route", ()
   );
 });
 
-test("dynamic, candidate, birth, and dock supplier bindings are mutually exclusive", () => {
+test("dynamic, candidate, and birth supplier bindings are mutually exclusive", () => {
   assert.throws(
     () =>
       compileZhixuOnchainHookPlan(dynamicZhixu(), [
@@ -388,13 +358,6 @@ test("dynamic, candidate, birth, and dock supplier bindings are mutually exclusi
         { stageIdentifier: "main", supplierID: SUPPLIER_CANDIDATE },
       ]),
     (error: unknown) => isCompilationIssue(error, "birth-stage suppliers are immutable"),
-  );
-  assert.throws(
-    () =>
-      compileZhixuOnchainHookPlan(dockZhixu(), [
-        { stageIdentifier: "accept", supplierID: SUPPLIER_CANDIDATE },
-      ]),
-    (error: unknown) => isCompilationIssue(error, "is a dock stage"),
   );
   assert.throws(
     () =>
@@ -485,44 +448,6 @@ test("the binding cap mirrors the contract's MAX_SUPPLIER_BINDINGS bound", () =>
   assert.throws(
     () => compileZhixuOnchainHookPlan(staticZhixu(), candidates),
     (error: unknown) => isCompilationIssue(error, "TooManySupplierBindings"),
-  );
-});
-
-test("uncovered dock stage is rejected on chain compiler", () => {
-  const uncoveredDock: ZhixuDefinition = {
-    apiVersion: "uvp/v0",
-    kind: "Zhixu",
-    metadata: { name: "uncovered_dock_demo" },
-    spec: {
-      platform: { type: "blockchain", provider: "eth" },
-      nucleation: { id: "core" },
-      stages: [
-        {
-          name: "accept",
-          source: "acceptor",
-          receiveSignals: { CHECK: "acceptor::accept.check" },
-          sendSignals: [{ name: "accepted" }, { name: "check" }],
-          executor: { supplierType: "dock" },
-        },
-        {
-          name: "gate",
-          source: "acceptor",
-          receiveSignals: { OPEN: "acceptor::gate.open" },
-          sendSignals: [{ name: "open" }],
-          executor: { supplierType: "organization", supplierID: SUPPLIER_GATE },
-        },
-      ],
-    },
-  };
-  assert.throws(
-    () => compileZhixuHookPlan(uncoveredDock),
-    (error: unknown) =>
-      isCompilationIssue(error, "dock stage accept has no static-executor selector"),
-  );
-  assert.throws(
-    () => compileZhixuOnchainHookPlan(uncoveredDock),
-    (error: unknown) =>
-      isCompilationIssue(error, "dock stage accept has no static-executor selector"),
   );
 });
 

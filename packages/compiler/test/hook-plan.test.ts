@@ -117,10 +117,6 @@ test("compiles internal HookPlan IR", () => {
     "main#START",
     "main#TIMEOUT"
   ]);
-  assert.deepEqual(
-    plan.compiledHooks.map((hook) => hook.dockExecutor),
-    [false, false, false],
-  );
   assert.deepEqual(plan.dependencyIndex["buyer::assign.executor_selected"], [
     "main#START",
     "main#TIMEOUT"
