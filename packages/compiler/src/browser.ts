@@ -41,3 +41,20 @@ export type {
 } from "./types/index.js";
 
 export { EMPTY_MERKLE_ROOT } from "./merkle.js";
+
+export {
+  DOCK_ARTIFACT_SCHEMA_VERSION,
+  DOCK_WINDOW_OP,
+  DockArtifactValidationError,
+  assertDockArtifact,
+  compileWindowCondition,
+  dockWindowInstructionsOf,
+  validateDockArtifact,
+  type DockArtifact,
+  type DockArtifactAtom,
+  type DockArtifactOutput,
+  type DockArtifactSide,
+  type DockArtifactTarget,
+  type DockWindowInstruction,
+  type DockWindowOp,
+} from "./dock-artifact.js";

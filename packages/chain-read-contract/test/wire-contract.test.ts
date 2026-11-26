@@ -424,6 +424,70 @@ describe("chain read wire contract", () => {
         error instanceof ChainReadContractError && error.path === "triggers[0].signalName"
     );
   });
+
+  it("round-trips optional order dockLinks (incoming/outgoing + windows) and rejects malformed fields by path", () => {
+    const link = {
+      linkId: bytes32("9"),
+      dkid: bytes32("8"),
+      fromPlanId: PLAN_ID,
+      fromOrderId: bytes32("7"),
+      toPlanId: PLAN_ID,
+      toOrderId: ORDER_ID,
+      toStageId: STAGE_ID,
+      toConsentStageId: STAGE_ID,
+      toConsent: WALLET,
+      boundAt: "1700000100",
+      windows: [
+        {
+          outputIndex: 0,
+          signalId: SIGNAL_ID,
+          active: true,
+          srcSatisfied: true,
+          srcDueAt: "0",
+          dstAdmissionReady: true,
+          emitted: false
+        }
+      ],
+      linkedAt: provenance(25n),
+      proof: proof(25n)
+    };
+    const orderWithDockLinks: ChainOrderProjection = toWire({
+      ...internalOrder(),
+      dockLinks: {
+        incoming: [link],
+        outgoing: []
+      }
+    });
+
+    assert.deepEqual(
+      decodeOrderWire(JSON.parse(JSON.stringify(orderWithDockLinks))),
+      orderWithDockLinks
+    );
+
+    const malformedDueAt = {
+      ...orderWithDockLinks,
+      dockLinks: {
+        incoming: [
+          {
+            ...orderWithDockLinks.dockLinks!.incoming[0]!,
+            windows: [
+              {
+                ...orderWithDockLinks.dockLinks!.incoming[0]!.windows![0]!,
+                srcDueAt: "not-a-timestamp"
+              }
+            ]
+          }
+        ],
+        outgoing: []
+      }
+    };
+    assert.throws(
+      () => decodeOrderWire(malformedDueAt),
+      (error: unknown) =>
+        error instanceof ChainReadContractError &&
+        error.path === "order.dockLinks.incoming[0].windows[0].srcDueAt"
+    );
+  });
 });
 
 function findBigints(value: unknown): bigint[] {

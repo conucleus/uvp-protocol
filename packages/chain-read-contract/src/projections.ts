@@ -154,6 +154,39 @@ export interface ChainTaskProjection {
   readonly proof: ChainProof;
 }
 
+export interface ChainDockLinkWindow {
+  readonly outputIndex: number;
+  readonly signalId?: Hex;
+  readonly active: boolean;
+  readonly srcSatisfied: boolean;
+  /** Decimal uint64 timestamp string ("0" when not waiting). */
+  readonly srcDueAt: string;
+  readonly dstAdmissionReady: boolean;
+  readonly emitted: boolean;
+}
+
+export interface ChainOrderDockLink {
+  readonly linkId: Hex;
+  readonly dkid: Hex;
+  readonly fromPlanId: Hex;
+  readonly fromOrderId: Hex;
+  readonly toPlanId: Hex;
+  readonly toOrderId: Hex;
+  readonly toStageId: Hex;
+  readonly toConsentStageId?: Hex;
+  readonly toConsent: Address;
+  /** Decimal uint64 timestamp string from DockLink.boundAt when known. */
+  readonly boundAt?: string;
+  readonly windows?: readonly ChainDockLinkWindow[];
+  readonly linkedAt: ChainProvenance;
+  readonly proof: ChainProof;
+}
+
+export interface ChainOrderDockLinks {
+  readonly incoming: readonly ChainOrderDockLink[];
+  readonly outgoing: readonly ChainOrderDockLink[];
+}
+
 export type ChainOrderStatus = "registered" | "unknown";
 
 export interface ChainOrderProjection {
@@ -173,6 +206,7 @@ export interface ChainOrderProjection {
   readonly stageFiles: Readonly<Record<string, ChainStageFileMap>>;
   readonly hooks: Readonly<Record<string, ChainHook>>;
   readonly tasks: Readonly<Record<string, ChainTaskProjection>>;
+  readonly dockLinks?: ChainOrderDockLinks;
   readonly timeline: readonly ChainTimelineEvent[];
   readonly proof: readonly ChainProof[];
   readonly registeredAt?: ChainProvenance;

@@ -1843,3 +1843,4 @@ export {
 
 export * from "./order-book.js";
 export * from "./registry.js";
+export * from "./dock-controller.js";

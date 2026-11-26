@@ -1,0 +1,15 @@
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.24"
+evm_version = "cancun"
+optimizer = true
+gas_limit = 4294967296
+optimizer_runs = 200
+via_ir = true
+bytecode_hash = "none"
+ffi = false
+remappings = ["uvp-contracts/=lib/uvp-contracts/src/"]
+allow_paths = ["../uvp-contracts"]

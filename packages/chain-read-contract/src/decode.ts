@@ -12,11 +12,14 @@ import type {
   ChainDockBindingRef,
   ChainDockBindingWindow,
   ChainDockFactRef,
+  ChainDockLinkWindow,
   ChainDockOutput,
   ChainDerivedSignal,
   ChainHook,
   ChainHookStatus,
   ChainModuleProjection,
+  ChainOrderDockLink,
+  ChainOrderDockLinks,
   ChainOrderProjection,
   ChainOrderStatus,
   ChainPlanAdmission,
@@ -265,6 +268,66 @@ export function decodeTaskWire(value: unknown, path = "task"): ChainTaskProjecti
   return value as ChainTaskProjection;
 }
 
+export function decodeDockLinkWindowWire(
+  value: unknown,
+  path = "dockLinkWindow"
+): ChainDockLinkWindow {
+  const record = wireRecord(value, path);
+  requireNumber(record, "outputIndex", path);
+  optionalString(record, "signalId", path);
+  requireBoolean(record, "active", path);
+  requireBoolean(record, "srcSatisfied", path);
+  requireDecimalString(record, "srcDueAt", path);
+  requireBoolean(record, "dstAdmissionReady", path);
+  requireBoolean(record, "emitted", path);
+  return value as ChainDockLinkWindow;
+}
+
+export function decodeOrderDockLinkWire(
+  value: unknown,
+  path = "dockLink"
+): ChainOrderDockLink {
+  const record = wireRecord(value, path);
+  for (const field of [
+    "linkId",
+    "dkid",
+    "fromPlanId",
+    "fromOrderId",
+    "toPlanId",
+    "toOrderId",
+    "toStageId",
+    "toConsent"
+  ] as const) {
+    requireString(record, field, path);
+  }
+  optionalString(record, "toConsentStageId", path);
+  if (record["boundAt"] !== undefined) {
+    requireDecimalString(record, "boundAt", path);
+  }
+  if (record["windows"] !== undefined) {
+    decodeArray(record["windows"], `${path}.windows`).forEach((win, index) => {
+      decodeDockLinkWindowWire(win, `${path}.windows[${index}]`);
+    });
+  }
+  decodeProvenanceWire(record["linkedAt"], `${path}.linkedAt`);
+  decodeProofWire(record["proof"], `${path}.proof`);
+  return value as ChainOrderDockLink;
+}
+
+export function decodeOrderDockLinksWire(
+  value: unknown,
+  path = "dockLinks"
+): ChainOrderDockLinks {
+  const record = wireRecord(value, path);
+  decodeArray(record["incoming"], `${path}.incoming`).forEach((link, index) => {
+    decodeOrderDockLinkWire(link, `${path}.incoming[${index}]`);
+  });
+  decodeArray(record["outgoing"], `${path}.outgoing`).forEach((link, index) => {
+    decodeOrderDockLinkWire(link, `${path}.outgoing[${index}]`);
+  });
+  return value as ChainOrderDockLinks;
+}
+
 export function decodeOrderWire(value: unknown, path = "order"): ChainOrderProjection {
   const record = wireRecord(value, path);
   requireString(record, "orderId", path);
@@ -283,6 +346,9 @@ export function decodeOrderWire(value: unknown, path = "order"): ChainOrderProje
   decodeRecordMap(record["stageFiles"], `${path}.stageFiles`, decodeStageFileMapWire);
   decodeRecordMap(record["hooks"], `${path}.hooks`, decodeHookWire);
   decodeRecordMap(record["tasks"], `${path}.tasks`, decodeTaskWire);
+  if (record["dockLinks"] !== undefined) {
+    decodeOrderDockLinksWire(record["dockLinks"], `${path}.dockLinks`);
+  }
   decodeArray(record["timeline"], `${path}.timeline`).forEach((event, index) => {
     decodeTimelineEventWire(event, `${path}.timeline[${index}]`);
   });

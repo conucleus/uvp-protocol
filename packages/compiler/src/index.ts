@@ -38,11 +38,21 @@ export {
 export { hashCanonical, keccak256Hex } from "./hash.js";
 export { hashOnchainPlanPayload } from "./onchain/hash/plan.js";
 export {
-  desugarDockToHooks,
-  type DesugaredHook,
-  type DockDesugarInput,
-  type DockSignalMapping,
-} from "./desugar-dock.js";
+  DOCK_ARTIFACT_SCHEMA_VERSION,
+  DOCK_WINDOW_OP,
+  DockArtifactValidationError,
+  assertDockArtifact,
+  compileWindowCondition,
+  dockWindowInstructionsOf,
+  validateDockArtifact,
+  type DockArtifact,
+  type DockArtifactAtom,
+  type DockArtifactOutput,
+  type DockArtifactSide,
+  type DockArtifactTarget,
+  type DockWindowInstruction,
+  type DockWindowOp,
+} from "./dock-artifact.js";
 export {
   definitionUid,
   displayIdentity,
